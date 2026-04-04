@@ -7,8 +7,8 @@ Your Docker container watchdog — monitors images for updates and lets you mana
 ![License](https://img.shields.io/github/license/amayer1983/docksentry)
 
 <p align="center">
-  <img src="docs/images/telegram-update-notification.jpg" alt="Update Notification" width="350">
-  <img src="docs/images/telegram-update-result.jpg" alt="Update Result" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-notification.jpg" alt="Update Notification" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-result.jpg" alt="Update Result" width="350">
 </p>
 
 ## Features
@@ -99,8 +99,8 @@ Run `docker login` on your host first, then add this volume:
 ## Telegram Commands
 
 <p align="center">
-  <img src="docs/images/telegram-help.jpg" alt="Help Command" width="350">
-  <img src="docs/images/telegram-status.jpg" alt="Status Command" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-help.jpg" alt="Help Command" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-status.jpg" alt="Status Command" width="350">
 </p>
 
 ### Updates & Monitoring
@@ -136,7 +136,7 @@ Run `docker login` on your host first, then add this volume:
 ## Update Workflow
 
 <p align="center">
-  <img src="docs/images/telegram-update-single.jpg" alt="Single Update" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-single.jpg" alt="Single Update" width="350">
 </p>
 
 When updates are found, you receive a Telegram message with image sizes, dates, and action buttons:
@@ -235,13 +235,13 @@ The Web UI is **disabled by default** to keep the container minimal. When enable
 The Web UI is fully translated — it follows the configured language.
 
 <p align="center">
-  <img src="docs/images/webui-status.png" alt="Web UI Status" width="700">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-status.png" alt="Web UI Status" width="700">
 </p>
 <p align="center">
-  <img src="docs/images/webui-history.png" alt="Web UI History" width="700">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-history.png" alt="Web UI History" width="700">
 </p>
 <p align="center">
-  <img src="docs/images/webui-settings.png" alt="Web UI Settings" width="700">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-settings.png" alt="Web UI Settings" width="700">
 </p>
 
 Access it at `http://your-server:8080` with the configured password.
