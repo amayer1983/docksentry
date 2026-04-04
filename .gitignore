@@ -3,3 +3,4 @@ __pycache__/
 .env
 *.log
 pending_updates.json
+docker-compose.dev.yml

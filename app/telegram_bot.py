@@ -686,6 +686,7 @@ class TelegramBot:
 
         elif text == "/debug":
             self.config.debug = not self.config.debug
+            self.config.save_persistent()
             status = self.t("debug_on") if self.config.debug else self.t("debug_off")
             self.send_message(self.t("debug_mode", status=status))
 
@@ -713,6 +714,7 @@ class TelegramBot:
             if len(parts) == 2 and parts[1].lower() in langs:
                 new_lang = parts[1].lower()
                 self.config.language = new_lang
+                self.config.save_persistent()
                 self.t = get_translator(new_lang)
                 self.send_message(self.t("lang_changed"))
             else:

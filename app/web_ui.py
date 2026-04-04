@@ -143,7 +143,16 @@ select {{ cursor: pointer; }}
 .stat .num {{ font-size: 32px; font-weight: bold; color: #58a6ff; }}
 .stat .label {{ font-size: 12px; color: #8b949e; }}
 .badge-red {{ background: #3a1a1a; color: #f85149; }}
+.badge-purple {{ background: #2a1a3a; color: #bc8cff; }}
 .btn-sm {{ padding: 3px 10px; border-radius: 4px; font-size: 12px; border: none; cursor: pointer; }}
+.toggle {{ position: relative; display: inline-block; width: 36px; height: 20px; vertical-align: middle; }}
+.toggle input {{ opacity: 0; width: 0; height: 0; }}
+.toggle .slider {{ position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #30363d; border-radius: 20px; transition: 0.2s; }}
+.toggle .slider:before {{ content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
+    background: #8b949e; border-radius: 50%; transition: 0.2s; }}
+.toggle input:checked + .slider {{ background: #238636; }}
+.toggle input:checked + .slider:before {{ transform: translateX(16px); background: #fff; }}
 .btn-green {{ background: #238636; color: #fff; }}
 .btn-green:hover {{ background: #2ea043; }}
 .btn-outline {{ background: transparent; color: #8b949e; border: 1px solid #30363d; }}
@@ -155,7 +164,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 </head>
 <body>
 <div class="header">
-<h1>🐳 <span>Docksentry</span></h1>
+<h1><img src="data:image/png;base64,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" alt="Logo" style="height:32px;vertical-align:middle;margin-right:8px"> <span>Docksentry</span></h1>
 <nav>{nav_html}</nav>
 </div>
 <div class="content">
@@ -200,11 +209,29 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                         config.language = new_lang
                         bot.t = get_translator(new_lang)
 
-                # Update debug
+                # Update debug & auto_selfupdate (checkboxes)
                 config.debug = "debug" in params
-
-                # Update auto_selfupdate
                 config.auto_selfupdate = "auto_selfupdate" in params
+
+                # Update cron schedule
+                if "cron_schedule" in params and params["cron_schedule"][0].strip():
+                    config.cron_schedule = params["cron_schedule"][0].strip()
+
+                # Update exclude containers
+                if "exclude_containers" in params:
+                    raw = params["exclude_containers"][0].strip()
+                    config.exclude_containers = [c.strip() for c in raw.split(",") if c.strip()] if raw else []
+
+                # Update Discord webhook
+                if "discord_webhook" in params:
+                    config.discord_webhook = params["discord_webhook"][0].strip()
+
+                # Update generic webhook
+                if "webhook_url" in params:
+                    config.webhook_url = params["webhook_url"][0].strip()
+
+                # Persist all changes
+                config.save_persistent()
 
                 self._send_redirect("/settings?saved=1")
             elif path == "/api/update":
@@ -237,6 +264,19 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                         pinned.remove(name)
                         bot._save_pinned(pinned)
                 self._send_redirect("/")
+            elif path == "/api/autoupdate":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0]
+                if name:
+                    auto_list = bot._get_autoupdate()
+                    if name in auto_list:
+                        auto_list.remove(name)
+                    else:
+                        auto_list.append(name)
+                    bot._save_autoupdate(auto_list)
+                self._send_redirect("/")
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -245,6 +285,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
             pending = self._get_pending()
             pending_names = [u["name"] for u in pending]
             pinned = bot._get_pinned()
+            auto_list = bot._get_autoupdate()
 
             from i18n import get_translator
             t = get_translator(config.language)
@@ -259,25 +300,31 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                 else:
                     status_badge = f'<span class="badge badge-blue">running</span>'
 
-                update_badge = ""
+                # Badges
+                badges = ""
                 if c["name"] in pending_names:
-                    update_badge = f' <span class="badge badge-yellow">update</span>'
-
-                pinned_badge = ""
+                    badges += f' <span class="badge badge-yellow">update</span>'
                 if c["name"] in pinned:
-                    pinned_badge = f' <span class="badge badge-red">{t("web_pinned_badge")}</span>'
+                    badges += f' <span class="badge badge-red">{t("web_pinned_badge")}</span>'
+                if c["name"] in auto_list:
+                    badges += f' <span class="badge badge-purple">{t("web_autoupdate_badge")}</span>'
 
                 # Action buttons
                 actions = ""
                 if c["name"] in pending_names:
                     actions += f'<form method="POST" action="/api/update" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-green">{t("web_update")}</button></form> '
                 if c["name"] in pinned:
-                    actions += f'<form method="POST" action="/api/unpin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_unpin")}</button></form>'
+                    actions += f'<form method="POST" action="/api/unpin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_unpin")}</button></form> '
                 else:
-                    actions += f'<form method="POST" action="/api/pin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_pin")}</button></form>'
+                    actions += f'<form method="POST" action="/api/pin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_pin")}</button></form> '
+                # Autoupdate toggle
+                is_auto = c["name"] in auto_list
+                checked = "checked" if is_auto else ""
+                auto_title = t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable")
+                actions += f'<form method="POST" action="/api/autoupdate" style="display:inline" title="{auto_title}"><input type="hidden" name="name" value="{c["name"]}"><label class="toggle"><input type="checkbox" {checked} onchange="this.form.submit()"><span class="slider"></span></label></form>'
 
                 rows += f"""<tr>
-<td>{c['name']}{update_badge}{pinned_badge}</td>
+<td>{c['name']}{badges}</td>
 <td><code>{c['image']}</code></td>
 <td>{status_badge}</td>
 <td>{actions}</td>
@@ -349,6 +396,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 
         def _page_settings(self):
             from i18n import available_languages, get_translator
+            from version import VERSION
             t = get_translator(config.language)
 
             saved = "?saved=1" in self.path
@@ -365,6 +413,10 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
             debug_checked = 'checked' if config.debug else ''
             auto_su_checked = 'checked' if config.auto_selfupdate else ''
 
+            # Mask sensitive values
+            token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"
+            chat_masked = f"{config.chat_id[:3]}...{config.chat_id[-3:]}" if len(config.chat_id) > 6 else "***"
+
             content = f"""
 {saved_html}
 <div class="card">
@@ -380,7 +432,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 </div>
 <div>
 <label>{t("web_cron_schedule")}</label>
-<input type="text" value="{config.cron_schedule}" disabled title="Change via CRON_SCHEDULE env var">
+<input type="text" name="cron_schedule" value="{config.cron_schedule}">
 </div>
 </div>
 
@@ -395,7 +447,17 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 
 <div style="margin-top:8px">
 <label>{t("web_excluded")}</label>
-<input type="text" value="{', '.join(config.exclude_containers)}" disabled title="Change via EXCLUDE_CONTAINERS env var">
+<input type="text" name="exclude_containers" value="{', '.join(config.exclude_containers)}" placeholder="container1, container2">
+</div>
+
+<div style="margin-top:8px">
+<label>Discord Webhook</label>
+<input type="text" name="discord_webhook" value="{config.discord_webhook}" placeholder="https://discord.com/api/webhooks/...">
+</div>
+
+<div style="margin-top:8px">
+<label>Webhook URL</label>
+<input type="text" name="webhook_url" value="{config.webhook_url}" placeholder="https://your-service/webhook">
 </div>
 
 <div style="margin-top:16px">
@@ -408,10 +470,12 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 <div class="card">
 <h2>Info</h2>
 <table>
-<tr><td>Bot Token</td><td><code>{config.bot_token[:8]}...{config.bot_token[-4:]}</code></td></tr>
-<tr><td>Chat ID</td><td><code>{config.chat_id}</code></td></tr>
+<tr><td>Version</td><td><code>v{VERSION}</code></td></tr>
+<tr><td>Bot Token</td><td><code>{token_masked}</code></td></tr>
+<tr><td>Chat ID</td><td><code>{chat_masked}</code></td></tr>
 <tr><td>Data Dir</td><td><code>{config.data_dir}</code></td></tr>
 </table>
+<p style="font-size:12px;color:#484f58;margin-top:8px">Bot Token and Chat ID can only be changed via environment variables.</p>
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))

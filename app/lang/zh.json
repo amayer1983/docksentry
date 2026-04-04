@@ -115,5 +115,8 @@
   "web_pin": "固定",
   "web_unpin": "取消固定",
   "web_actions": "操作",
-  "web_pinned_badge": "已固定"
+  "web_pinned_badge": "已固定",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "启用自动更新",
+  "web_autoupdate_disable": "禁用自动更新"
 }

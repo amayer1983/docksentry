@@ -115,5 +115,8 @@
   "web_pin": "تثبيت",
   "web_unpin": "إلغاء التثبيت",
   "web_actions": "إجراءات",
-  "web_pinned_badge": "مثبت"
+  "web_pinned_badge": "مثبت",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "تفعيل التحديث التلقائي",
+  "web_autoupdate_disable": "تعطيل التحديث التلقائي"
 }

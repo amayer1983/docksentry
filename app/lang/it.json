@@ -115,5 +115,8 @@
   "web_pin": "Blocca",
   "web_unpin": "Sblocca",
   "web_actions": "Azioni",
-  "web_pinned_badge": "bloccato"
+  "web_pinned_badge": "bloccato",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Attiva aggiornamento automatico",
+  "web_autoupdate_disable": "Disattiva aggiornamento automatico"
 }

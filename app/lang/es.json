@@ -115,5 +115,8 @@
   "web_pin": "Fijar",
   "web_unpin": "Desfijar",
   "web_actions": "Acciones",
-  "web_pinned_badge": "fijado"
+  "web_pinned_badge": "fijado",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Activar actualización automática",
+  "web_autoupdate_disable": "Desactivar actualización automática"
 }

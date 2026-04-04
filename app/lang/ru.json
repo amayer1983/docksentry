@@ -115,5 +115,8 @@
   "web_pin": "Закрепить",
   "web_unpin": "Открепить",
   "web_actions": "Действия",
-  "web_pinned_badge": "закреплён"
+  "web_pinned_badge": "закреплён",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Включить автообновление",
+  "web_autoupdate_disable": "Отключить автообновление"
 }

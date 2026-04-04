@@ -115,5 +115,8 @@
   "web_pin": "Закріпити",
   "web_unpin": "Відкріпити",
   "web_actions": "Дії",
-  "web_pinned_badge": "закріплено"
+  "web_pinned_badge": "закріплено",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Увімкнути автооновлення",
+  "web_autoupdate_disable": "Вимкнути автооновлення"
 }

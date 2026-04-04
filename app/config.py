@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
-"""Configuration from environment variables."""
+"""Configuration from environment variables with persistent overrides."""
 
+import json
 import os
+
+
+# Settings that can be changed via Web UI and persist across restarts
+PERSISTENT_KEYS = [
+    "cron_schedule", "exclude_containers", "auto_selfupdate",
+    "language", "web_password", "discord_webhook", "webhook_url", "debug",
+]
 
 
 class Config:
@@ -17,6 +25,7 @@ class Config:
         self.history_file = os.path.join(data_dir, "update_history.json")
         self.pinned_file = os.path.join(data_dir, "pinned_containers.json")
         self.autoupdate_file = os.path.join(data_dir, "autoupdate_containers.json")
+        self.settings_file = os.path.join(data_dir, "settings.json")
         self.debug = False
         self.auto_selfupdate = auto_selfupdate
         self.language = language
@@ -25,6 +34,33 @@ class Config:
         self.web_password = web_password
         self.discord_webhook = discord_webhook
         self.webhook_url = webhook_url
+
+        # Load persistent overrides from settings.json
+        self._load_persistent()
+
+    def _load_persistent(self):
+        """Load saved settings from settings.json, overriding ENV defaults."""
+        if not os.path.exists(self.settings_file):
+            return
+        try:
+            with open(self.settings_file) as f:
+                saved = json.load(f)
+            for key in PERSISTENT_KEYS:
+                if key in saved:
+                    setattr(self, key, saved[key])
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    def save_persistent(self):
+        """Save current settings to settings.json for persistence."""
+        data = {}
+        for key in PERSISTENT_KEYS:
+            data[key] = getattr(self, key)
+        try:
+            with open(self.settings_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except IOError as e:
+            print(f"Failed to save settings: {e}")
 
     @classmethod
     def from_env(cls):

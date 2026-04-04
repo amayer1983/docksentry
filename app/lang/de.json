@@ -67,7 +67,7 @@
   "web_language": "🌍 Sprache",
   "web_cron_schedule": "🗓 Zeitplan",
   "web_debug_mode": "🔍 Debug-Modus",
-  "web_auto_selfupdate": "🔄 Auto Self-Update",
+  "web_auto_selfupdate": "🔄 Auto Self-Update (nur Bot)",
   "web_excluded": "🚫 Ausgeschlossene Container",
   "web_save": "💾 Speichern",
   "web_saved": "✅ Einstellungen gespeichert!",
@@ -115,5 +115,8 @@
   "web_pin": "Pinnen",
   "web_unpin": "Entpinnen",
   "web_actions": "Aktionen",
-  "web_pinned_badge": "gepinnt"
+  "web_pinned_badge": "gepinnt",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Auto-Update aktivieren",
+  "web_autoupdate_disable": "Auto-Update deaktivieren"
 }

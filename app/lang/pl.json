@@ -115,5 +115,8 @@
   "web_pin": "Przypnij",
   "web_unpin": "Odepnij",
   "web_actions": "Akcje",
-  "web_pinned_badge": "przypięty"
+  "web_pinned_badge": "przypięty",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Włącz automatyczną aktualizację",
+  "web_autoupdate_disable": "Wyłącz automatyczną aktualizację"
 }

@@ -115,5 +115,8 @@
   "web_pin": "Épingler",
   "web_unpin": "Désépingler",
   "web_actions": "Actions",
-  "web_pinned_badge": "épinglé"
+  "web_pinned_badge": "épinglé",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Activer la mise à jour automatique",
+  "web_autoupdate_disable": "Désactiver la mise à jour automatique"
 }

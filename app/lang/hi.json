@@ -115,5 +115,8 @@
   "web_pin": "पिन करें",
   "web_unpin": "अनपिन करें",
   "web_actions": "कार्रवाइयाँ",
-  "web_pinned_badge": "पिन किया गया"
+  "web_pinned_badge": "पिन किया गया",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "स्वतः अपडेट सक्षम करें",
+  "web_autoupdate_disable": "स्वतः अपडेट अक्षम करें"
 }

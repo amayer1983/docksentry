@@ -115,5 +115,8 @@
   "web_pin": "고정",
   "web_unpin": "고정 해제",
   "web_actions": "작업",
-  "web_pinned_badge": "고정됨"
+  "web_pinned_badge": "고정됨",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "자동 업데이트 활성화",
+  "web_autoupdate_disable": "자동 업데이트 비활성화"
 }

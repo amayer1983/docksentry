@@ -115,5 +115,8 @@
   "web_pin": "Sabitle",
   "web_unpin": "Sabitlemeyi Kaldır",
   "web_actions": "İşlemler",
-  "web_pinned_badge": "sabitlenmiş"
+  "web_pinned_badge": "sabitlenmiş",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Otomatik güncellemeyi etkinleştir",
+  "web_autoupdate_disable": "Otomatik güncellemeyi devre dışı bırak"
 }

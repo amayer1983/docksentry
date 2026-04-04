@@ -115,5 +115,8 @@
   "web_pin": "Vastzetten",
   "web_unpin": "Losmaken",
   "web_actions": "Acties",
-  "web_pinned_badge": "vastgezet"
+  "web_pinned_badge": "vastgezet",
+  "web_autoupdate_badge": "auto",
+  "web_autoupdate_enable": "Automatisch bijwerken inschakelen",
+  "web_autoupdate_disable": "Automatisch bijwerken uitschakelen"
 }
