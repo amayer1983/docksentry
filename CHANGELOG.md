@@ -2,6 +2,26 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.9.0] - 2026-04-04
+
+### Added
+- **Startup notification** — all configured channels (Telegram, Discord, Webhook) receive a message on boot
+- **`/logs <container>`** — view last 30 log lines directly in Telegram
+- **Web UI: Update buttons** — update individual containers from the status page
+- **Web UI: Pin/Unpin buttons** — pin or unpin containers directly in the browser
+- **Web UI: Auto-update toggles** — toggle switches per container on the status page
+- **Web UI: Logs page** — view container logs with configurable line count
+- **Web UI: Full settings management** — cron schedule, exclude list, Discord webhook, webhook URL all editable
+- **Persistent settings** — Web UI and Telegram changes saved to `/data/settings.json`, survive restarts
+- **Logo** — new Docksentry logo in README and Web UI
+
+### Changed
+- README restructured: slim overview (~170 lines), detailed docs moved to `/docs/`
+- Documentation split into 6 pages: updates, web-ui, notifications, compose, security, languages
+- Sensitive values (Bot Token, Chat ID) masked in Web UI
+- Auto Self-Update label clarified as "Bot only"
+- New screenshots for Web UI and Discord
+
 ## [1.8.0] - 2026-04-04
 
 ### Added
