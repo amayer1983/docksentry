@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env
+*.log
+pending_updates.json

@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "Running pre-commit checks..."
+python3 "$(dirname "$0")/../scripts/pre-commit-check.py"

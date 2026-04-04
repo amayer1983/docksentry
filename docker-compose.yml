@@ -1,0 +1,25 @@
+services:
+  docksentry:
+    image: amayer1983/docksentry:latest
+    container_name: docksentry
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - CHAT_ID=${CHAT_ID}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 18 * * *}
+      - EXCLUDE_CONTAINERS=${EXCLUDE_CONTAINERS:-}
+      - AUTO_SELFUPDATE=${AUTO_SELFUPDATE:-false}
+      - LANGUAGE=${LANGUAGE:-en}
+      - TZ=${TZ:-Europe/Berlin}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docksentry_data:/data
+      # Docker credentials (for authenticated pulls, avoids rate limits)
+      - ${DOCKER_CONFIG:-/root/.docker/config.json}:/.docker/config.json:ro
+      # Compose project directories (needed to restart containers)
+      - ${COMPOSE_DIR:-/data/compose}:/data/compose
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  docksentry_data:
