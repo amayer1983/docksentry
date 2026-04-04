@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Toggle auto-update for a container",
   "status_containers": "Containers",
   "status_pinned": "Pinned",
-  "status_autoupdate": "Auto-Update"
+  "status_autoupdate": "Auto-Update",
+  "startup_message": "🚀 *Docksentry started* (v{version})",
+  "help_logs": "/logs — Show container logs",
+  "logs_usage": "Usage: `/logs container_name`",
+  "logs_title": "📋 *Logs for* `{name}` (last 30 lines):",
+  "logs_empty": "📋 No logs found for `{name}`.",
+  "web_nav_logs": "Logs",
+  "web_logs": "Container Logs",
+  "web_logs_lines": "Lines",
+  "web_logs_show": "Show Logs",
+  "web_update": "Update",
+  "web_pin": "Pin",
+  "web_unpin": "Unpin",
+  "web_actions": "Actions",
+  "web_pinned_badge": "pinned"
 }

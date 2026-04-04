@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Auto-Update pro Container umschalten",
   "status_containers": "Container",
   "status_pinned": "Gepinnt",
-  "status_autoupdate": "Auto-Update"
+  "status_autoupdate": "Auto-Update",
+  "startup_message": "🚀 *Docksentry gestartet* (v{version})",
+  "help_logs": "/logs — Container-Logs anzeigen",
+  "logs_usage": "Verwendung: `/logs container_name`",
+  "logs_title": "📋 *Logs für* `{name}` (letzte 30 Zeilen):",
+  "logs_empty": "📋 Keine Logs für `{name}` gefunden.",
+  "web_nav_logs": "Logs",
+  "web_logs": "Container-Logs",
+  "web_logs_lines": "Zeilen",
+  "web_logs_show": "Logs anzeigen",
+  "web_update": "Updaten",
+  "web_pin": "Pinnen",
+  "web_unpin": "Entpinnen",
+  "web_actions": "Aktionen",
+  "web_pinned_badge": "gepinnt"
 }

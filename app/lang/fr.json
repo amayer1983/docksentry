@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Activer/désactiver la mise à jour automatique",
   "status_containers": "Conteneurs",
   "status_pinned": "Épinglés",
-  "status_autoupdate": "Mise à jour auto"
+  "status_autoupdate": "Mise à jour auto",
+  "startup_message": "🚀 *Docksentry démarré* (v{version})",
+  "help_logs": "/logs — Afficher les logs du conteneur",
+  "logs_usage": "Utilisation : `/logs nom_conteneur`",
+  "logs_title": "📋 *Logs de* `{name}` (30 dernières lignes) :",
+  "logs_empty": "📋 Aucun log trouvé pour `{name}`.",
+  "web_nav_logs": "Logs",
+  "web_logs": "Logs des conteneurs",
+  "web_logs_lines": "Lignes",
+  "web_logs_show": "Afficher les logs",
+  "web_update": "Mettre à jour",
+  "web_pin": "Épingler",
+  "web_unpin": "Désépingler",
+  "web_actions": "Actions",
+  "web_pinned_badge": "épinglé"
 }

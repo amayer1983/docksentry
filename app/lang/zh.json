@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — 切换自动更新",
   "status_containers": "容器",
   "status_pinned": "已固定",
-  "status_autoupdate": "自动更新"
+  "status_autoupdate": "自动更新",
+  "startup_message": "🚀 *Docksentry 已启动* (v{version})",
+  "help_logs": "/logs — 显示容器日志",
+  "logs_usage": "用法：`/logs 容器名`",
+  "logs_title": "📋 *日志：* `{name}` (最近30行)：",
+  "logs_empty": "📋 未找到 `{name}` 的日志。",
+  "web_nav_logs": "日志",
+  "web_logs": "容器日志",
+  "web_logs_lines": "行数",
+  "web_logs_show": "显示日志",
+  "web_update": "更新",
+  "web_pin": "固定",
+  "web_unpin": "取消固定",
+  "web_actions": "操作",
+  "web_pinned_badge": "已固定"
 }

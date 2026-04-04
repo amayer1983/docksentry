@@ -60,6 +60,15 @@ def main():
     if config.webhook_url:
         print(f"Webhook: {config.webhook_url}")
 
+    # Send startup notification to all channels
+    from version import VERSION
+    from i18n import get_translator
+    t = get_translator(config.language)
+    startup_msg = t("startup_message", version=VERSION)
+    bot.send_message(startup_msg)
+    if notifier.has_channels():
+        notifier.send_message(startup_msg)
+
     # Start bot listener (blocking)
     bot.listen(checker, scheduler)
 

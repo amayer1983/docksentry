@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — 자동 업데이트 전환",
   "status_containers": "컨테이너",
   "status_pinned": "고정됨",
-  "status_autoupdate": "자동 업데이트"
+  "status_autoupdate": "자동 업데이트",
+  "startup_message": "🚀 *Docksentry 시작됨* (v{version})",
+  "help_logs": "/logs — 컨테이너 로그 표시",
+  "logs_usage": "사용법: `/logs 컨테이너_이름`",
+  "logs_title": "📋 *로그:* `{name}` (최근 30줄):",
+  "logs_empty": "📋 `{name}`에 대한 로그가 없습니다.",
+  "web_nav_logs": "로그",
+  "web_logs": "컨테이너 로그",
+  "web_logs_lines": "줄 수",
+  "web_logs_show": "로그 보기",
+  "web_update": "업데이트",
+  "web_pin": "고정",
+  "web_unpin": "고정 해제",
+  "web_actions": "작업",
+  "web_pinned_badge": "고정됨"
 }

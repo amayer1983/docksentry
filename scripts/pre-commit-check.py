@@ -55,7 +55,7 @@ for var in ["BOT_TOKEN", "CHAT_ID", "CRON_SCHEDULE", "EXCLUDE_CONTAINERS",
 
 print("\n=== README: COMMANDS ===")
 for cmd in ["/status", "/check", "/updates", "/cleanup", "/history",
-            "/pin", "/unpin", "/autoupdate", "/selfupdate", "/debug", "/lang", "/settings", "/help"]:
+            "/pin", "/unpin", "/autoupdate", "/selfupdate", "/debug", "/logs", "/lang", "/settings", "/help"]:
     check(cmd in readme, cmd)
 
 print("\n=== README: FEATURES ===")

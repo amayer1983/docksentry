@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Attiva/disattiva aggiornamento automatico",
   "status_containers": "Contenitori",
   "status_pinned": "Bloccati",
-  "status_autoupdate": "Auto-aggiornamento"
+  "status_autoupdate": "Auto-aggiornamento",
+  "startup_message": "🚀 *Docksentry avviato* (v{version})",
+  "help_logs": "/logs — Mostra i log del contenitore",
+  "logs_usage": "Uso: `/logs nome_contenitore`",
+  "logs_title": "📋 *Log di* `{name}` (ultime 30 righe):",
+  "logs_empty": "📋 Nessun log trovato per `{name}`.",
+  "web_nav_logs": "Log",
+  "web_logs": "Log dei contenitori",
+  "web_logs_lines": "Righe",
+  "web_logs_show": "Mostra log",
+  "web_update": "Aggiorna",
+  "web_pin": "Blocca",
+  "web_unpin": "Sblocca",
+  "web_actions": "Azioni",
+  "web_pinned_badge": "bloccato"
 }

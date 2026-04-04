@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — 自動更新のオン/オフ",
   "status_containers": "コンテナ",
   "status_pinned": "ピン留め",
-  "status_autoupdate": "自動更新"
+  "status_autoupdate": "自動更新",
+  "startup_message": "🚀 *Docksentry が起動しました* (v{version})",
+  "help_logs": "/logs — コンテナログを表示",
+  "logs_usage": "使い方: `/logs コンテナ名`",
+  "logs_title": "📋 *ログ:* `{name}` (最新30行):",
+  "logs_empty": "📋 `{name}` のログが見つかりません。",
+  "web_nav_logs": "ログ",
+  "web_logs": "コンテナログ",
+  "web_logs_lines": "行数",
+  "web_logs_show": "ログを表示",
+  "web_update": "更新",
+  "web_pin": "固定",
+  "web_unpin": "固定解除",
+  "web_actions": "操作",
+  "web_pinned_badge": "固定中"
 }

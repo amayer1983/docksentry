@@ -121,6 +121,7 @@ Run `docker login` on your host first, then add this volume:
 | `/unpin <name>` | Unpin a container — included in updates again |
 | `/autoupdate <name>` | Toggle auto-update for a container — updates without confirmation. Without name: show list |
 | `/cleanup` | Remove old unused Docker images |
+| `/logs <name>` | Show last 30 log lines of a container |
 
 ### Bot Management
 
@@ -230,8 +231,9 @@ docker run -d \
 
 The Web UI is **disabled by default** to keep the container minimal. When enabled, it provides:
 
-- **Status page** — live container overview with health badges and pending update count
+- **Status page** — live container overview with health badges, pending updates, pin/unpin and update buttons per container
 - **History page** — full update log with timestamps, results, and details
+- **Logs page** — view container logs directly in the browser (configurable line count)
 - **Settings page** — change language, debug mode, and auto-selfupdate via browser
 - **Update check** — trigger a check from the dashboard
 

@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Włącz/wyłącz auto-aktualizację",
   "status_containers": "Kontenery",
   "status_pinned": "Przypięte",
-  "status_autoupdate": "Auto-aktualizacja"
+  "status_autoupdate": "Auto-aktualizacja",
+  "startup_message": "🚀 *Docksentry uruchomiony* (v{version})",
+  "help_logs": "/logs — Pokaż logi kontenera",
+  "logs_usage": "Użycie: `/logs nazwa_kontenera`",
+  "logs_title": "📋 *Logi dla* `{name}` (ostatnie 30 linii):",
+  "logs_empty": "📋 Brak logów dla `{name}`.",
+  "web_nav_logs": "Logi",
+  "web_logs": "Logi kontenerów",
+  "web_logs_lines": "Linie",
+  "web_logs_show": "Pokaż logi",
+  "web_update": "Aktualizuj",
+  "web_pin": "Przypnij",
+  "web_unpin": "Odepnij",
+  "web_actions": "Akcje",
+  "web_pinned_badge": "przypięty"
 }

@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Вкл/выкл авто-обновление",
   "status_containers": "Контейнеры",
   "status_pinned": "Закреплённые",
-  "status_autoupdate": "Авто-обновление"
+  "status_autoupdate": "Авто-обновление",
+  "startup_message": "🚀 *Docksentry запущен* (v{version})",
+  "help_logs": "/logs — Показать логи контейнера",
+  "logs_usage": "Использование: `/logs имя_контейнера`",
+  "logs_title": "📋 *Логи* `{name}` (последние 30 строк):",
+  "logs_empty": "📋 Логи для `{name}` не найдены.",
+  "web_nav_logs": "Логи",
+  "web_logs": "Логи контейнеров",
+  "web_logs_lines": "Строки",
+  "web_logs_show": "Показать логи",
+  "web_update": "Обновить",
+  "web_pin": "Закрепить",
+  "web_unpin": "Открепить",
+  "web_actions": "Действия",
+  "web_pinned_badge": "закреплён"
 }

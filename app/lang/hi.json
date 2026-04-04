@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — ऑटो-अपडेट टॉगल करें",
   "status_containers": "कंटेनर",
   "status_pinned": "पिन किए गए",
-  "status_autoupdate": "ऑटो-अपडेट"
+  "status_autoupdate": "ऑटो-अपडेट",
+  "startup_message": "🚀 *Docksentry शुरू हुआ* (v{version})",
+  "help_logs": "/logs — कंटेनर लॉग दिखाएँ",
+  "logs_usage": "उपयोग: `/logs कंटेनर_नाम`",
+  "logs_title": "📋 *लॉग:* `{name}` (अंतिम 30 पंक्तियाँ):",
+  "logs_empty": "📋 `{name}` के लिए कोई लॉग नहीं मिला।",
+  "web_nav_logs": "लॉग",
+  "web_logs": "कंटेनर लॉग",
+  "web_logs_lines": "पंक्तियाँ",
+  "web_logs_show": "लॉग दिखाएँ",
+  "web_update": "अपडेट",
+  "web_pin": "पिन करें",
+  "web_unpin": "अनपिन करें",
+  "web_actions": "कार्रवाइयाँ",
+  "web_pinned_badge": "पिन किया गया"
 }

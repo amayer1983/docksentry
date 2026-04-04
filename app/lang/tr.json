@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Otomatik güncellemeyi aç/kapat",
   "status_containers": "Konteynerler",
   "status_pinned": "Sabitlenmiş",
-  "status_autoupdate": "Otomatik güncelleme"
+  "status_autoupdate": "Otomatik güncelleme",
+  "startup_message": "🚀 *Docksentry başlatıldı* (v{version})",
+  "help_logs": "/logs — Konteyner loglarını göster",
+  "logs_usage": "Kullanım: `/logs konteyner_adı`",
+  "logs_title": "📋 *Loglar:* `{name}` (son 30 satır):",
+  "logs_empty": "📋 `{name}` için log bulunamadı.",
+  "web_nav_logs": "Loglar",
+  "web_logs": "Konteyner Logları",
+  "web_logs_lines": "Satır",
+  "web_logs_show": "Logları Göster",
+  "web_update": "Güncelle",
+  "web_pin": "Sabitle",
+  "web_unpin": "Sabitlemeyi Kaldır",
+  "web_actions": "İşlemler",
+  "web_pinned_badge": "sabitlenmiş"
 }

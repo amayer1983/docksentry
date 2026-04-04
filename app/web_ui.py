@@ -90,6 +90,7 @@ def create_handler(config, checker, bot, password=None):
             nav_items = [
                 ("status", f'📊 {t("web_nav_status")}', "/"),
                 ("history", f'📋 {t("web_nav_history")}', "/history"),
+                ("logs", f'📜 {t("web_nav_logs")}', "/logs"),
                 ("settings", f'⚙️ {t("web_nav_settings")}', "/settings"),
             ]
             nav_html = ""
@@ -141,6 +142,14 @@ select {{ cursor: pointer; }}
 .stat {{ text-align: center; }}
 .stat .num {{ font-size: 32px; font-weight: bold; color: #58a6ff; }}
 .stat .label {{ font-size: 12px; color: #8b949e; }}
+.badge-red {{ background: #3a1a1a; color: #f85149; }}
+.btn-sm {{ padding: 3px 10px; border-radius: 4px; font-size: 12px; border: none; cursor: pointer; }}
+.btn-green {{ background: #238636; color: #fff; }}
+.btn-green:hover {{ background: #2ea043; }}
+.btn-outline {{ background: transparent; color: #8b949e; border: 1px solid #30363d; }}
+.btn-outline:hover {{ color: #c9d1d9; border-color: #8b949e; }}
+pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px;
+    overflow-x: auto; font-size: 13px; line-height: 1.5; color: #c9d1d9; white-space: pre-wrap; word-wrap: break-word; }}
 .footer {{ text-align: center; padding: 24px; font-size: 12px; color: #484f58; }}
 </style>
 </head>
@@ -164,6 +173,8 @@ select {{ cursor: pointer; }}
                 self._page_status()
             elif path == "/history":
                 self._page_history()
+            elif path == "/logs":
+                self._page_logs()
             elif path == "/settings":
                 self._page_settings()
             elif path == "/api/check":
@@ -196,6 +207,36 @@ select {{ cursor: pointer; }}
                 config.auto_selfupdate = "auto_selfupdate" in params
 
                 self._send_redirect("/settings?saved=1")
+            elif path == "/api/update":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0]
+                if name:
+                    threading.Thread(target=self._api_update, args=(name,)).start()
+                self._send_redirect("/")
+            elif path == "/api/pin":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0]
+                if name:
+                    pinned = bot._get_pinned()
+                    if name not in pinned:
+                        pinned.append(name)
+                        bot._save_pinned(pinned)
+                self._send_redirect("/")
+            elif path == "/api/unpin":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0]
+                if name:
+                    pinned = bot._get_pinned()
+                    if name in pinned:
+                        pinned.remove(name)
+                        bot._save_pinned(pinned)
+                self._send_redirect("/")
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -203,6 +244,10 @@ select {{ cursor: pointer; }}
             containers = self._get_containers()
             pending = self._get_pending()
             pending_names = [u["name"] for u in pending]
+            pinned = bot._get_pinned()
+
+            from i18n import get_translator
+            t = get_translator(config.language)
 
             rows = ""
             for c in containers:
@@ -216,16 +261,27 @@ select {{ cursor: pointer; }}
 
                 update_badge = ""
                 if c["name"] in pending_names:
-                    update_badge = ' <span class="badge badge-yellow">update</span>'
+                    update_badge = f' <span class="badge badge-yellow">update</span>'
+
+                pinned_badge = ""
+                if c["name"] in pinned:
+                    pinned_badge = f' <span class="badge badge-red">{t("web_pinned_badge")}</span>'
+
+                # Action buttons
+                actions = ""
+                if c["name"] in pending_names:
+                    actions += f'<form method="POST" action="/api/update" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-green">{t("web_update")}</button></form> '
+                if c["name"] in pinned:
+                    actions += f'<form method="POST" action="/api/unpin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_unpin")}</button></form>'
+                else:
+                    actions += f'<form method="POST" action="/api/pin" style="display:inline"><input type="hidden" name="name" value="{c["name"]}"><button type="submit" class="btn-sm btn-outline">{t("web_pin")}</button></form>'
 
                 rows += f"""<tr>
-<td>{c['name']}{update_badge}</td>
+<td>{c['name']}{update_badge}{pinned_badge}</td>
 <td><code>{c['image']}</code></td>
 <td>{status_badge}</td>
+<td>{actions}</td>
 </tr>"""
-
-            from i18n import get_translator
-            t = get_translator(config.language)
 
             content = f"""
 <div class="grid">
@@ -246,7 +302,7 @@ select {{ cursor: pointer; }}
 <a href="/api/check" class="btn btn-blue" style="text-decoration:none;font-size:13px">{t("web_check_updates")}</a>
 </div>
 <table>
-<tr><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th></tr>
+<tr><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
 {rows}
 </table>
 </div>"""
@@ -359,6 +415,78 @@ select {{ cursor: pointer; }}
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))
+
+        def _page_logs(self):
+            from i18n import get_translator
+            t = get_translator(config.language)
+
+            query = parse_qs(urlparse(self.path).query)
+            container = query.get("container", [""])[0]
+            lines = int(query.get("lines", ["50"])[0])
+
+            containers = self._get_containers()
+
+            # Container dropdown
+            options = ""
+            for c in containers:
+                sel = 'selected' if c["name"] == container else ''
+                options += f'<option value="{c["name"]}" {sel}>{c["name"]}</option>\n'
+
+            log_html = ""
+            if container:
+                result = subprocess.run(
+                    ["docker", "logs", "--tail", str(lines), container],
+                    capture_output=True, text=True, timeout=10
+                )
+                output = result.stdout or result.stderr
+                if output.strip():
+                    # Escape HTML
+                    import html
+                    log_html = f'<pre>{html.escape(output.strip())}</pre>'
+                else:
+                    log_html = f'<p style="color:#8b949e">No logs found.</p>'
+
+            content = f"""
+<div class="card">
+<h2>{t("web_logs")}</h2>
+<form method="GET" action="/logs" style="display:flex;gap:12px;align-items:end;margin-bottom:16px">
+<div style="flex:1">
+<label>Container</label>
+<select name="container">{options}</select>
+</div>
+<div style="width:100px">
+<label>{t("web_logs_lines")}</label>
+<input type="number" name="lines" value="{lines}" min="10" max="500">
+</div>
+<button type="submit" class="btn btn-blue" style="height:38px">{t("web_logs_show")}</button>
+</form>
+{log_html}
+</div>"""
+
+            self._send_html(self._render_page(content, "logs"))
+
+        def _api_update(self, name):
+            """Trigger update for a single container from Web UI."""
+            try:
+                if not os.path.exists(config.pending_file):
+                    return
+                with open(config.pending_file) as f:
+                    updates = json.load(f)
+                target = next((u for u in updates if u["name"] == name), None)
+                if not target:
+                    return
+                compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
+                success, msg = checker.update_container(name, target["image"], **compose_kwargs)
+                status = "✅" if success else "❌"
+                bot.send_message(f"{status} `{name}`: {msg}")
+                if bot.notifier:
+                    bot.notifier.send_update_result(name, target["image"], success, msg)
+                # Remove from pending
+                remaining = [u for u in updates if u["name"] != name]
+                with open(config.pending_file, "w") as f:
+                    json.dump(remaining, f)
+            except Exception as e:
+                print(f"Web UI update error: {e}")
 
         def _api_check(self):
             try:

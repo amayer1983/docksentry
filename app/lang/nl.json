@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Auto-update in-/uitschakelen",
   "status_containers": "Containers",
   "status_pinned": "Vastgezet",
-  "status_autoupdate": "Auto-update"
+  "status_autoupdate": "Auto-update",
+  "startup_message": "🚀 *Docksentry gestart* (v{version})",
+  "help_logs": "/logs — Containerlogs tonen",
+  "logs_usage": "Gebruik: `/logs container_naam`",
+  "logs_title": "📋 *Logs van* `{name}` (laatste 30 regels):",
+  "logs_empty": "📋 Geen logs gevonden voor `{name}`.",
+  "web_nav_logs": "Logs",
+  "web_logs": "Containerlogs",
+  "web_logs_lines": "Regels",
+  "web_logs_show": "Logs tonen",
+  "web_update": "Bijwerken",
+  "web_pin": "Vastzetten",
+  "web_unpin": "Losmaken",
+  "web_actions": "Acties",
+  "web_pinned_badge": "vastgezet"
 }

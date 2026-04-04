@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — تفعيل/تعطيل التحديث التلقائي",
   "status_containers": "حاويات",
   "status_pinned": "مثبتة",
-  "status_autoupdate": "تحديث تلقائي"
+  "status_autoupdate": "تحديث تلقائي",
+  "startup_message": "🚀 *تم تشغيل Docksentry* (v{version})",
+  "help_logs": "/logs — عرض سجلات الحاوية",
+  "logs_usage": "الاستخدام: `/logs اسم_الحاوية`",
+  "logs_title": "📋 *سجلات* `{name}` (آخر 30 سطراً):",
+  "logs_empty": "📋 لا توجد سجلات لـ `{name}`.",
+  "web_nav_logs": "السجلات",
+  "web_logs": "سجلات الحاويات",
+  "web_logs_lines": "أسطر",
+  "web_logs_show": "عرض السجلات",
+  "web_update": "تحديث",
+  "web_pin": "تثبيت",
+  "web_unpin": "إلغاء التثبيت",
+  "web_actions": "إجراءات",
+  "web_pinned_badge": "مثبت"
 }

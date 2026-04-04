@@ -101,5 +101,19 @@
   "help_autoupdate": "/autoupdate — Увімкнути/вимкнути авто-оновлення",
   "status_containers": "Контейнери",
   "status_pinned": "Закріплені",
-  "status_autoupdate": "Авто-оновлення"
+  "status_autoupdate": "Авто-оновлення",
+  "startup_message": "🚀 *Docksentry запущено* (v{version})",
+  "help_logs": "/logs — Показати логи контейнера",
+  "logs_usage": "Використання: `/logs ім'я_контейнера`",
+  "logs_title": "📋 *Логи* `{name}` (останні 30 рядків):",
+  "logs_empty": "📋 Логи для `{name}` не знайдено.",
+  "web_nav_logs": "Логи",
+  "web_logs": "Логи контейнерів",
+  "web_logs_lines": "Рядки",
+  "web_logs_show": "Показати логи",
+  "web_update": "Оновити",
+  "web_pin": "Закріпити",
+  "web_unpin": "Відкріпити",
+  "web_actions": "Дії",
+  "web_pinned_badge": "закріплено"
 }
