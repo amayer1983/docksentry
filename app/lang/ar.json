@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — التحديث التلقائي معطل.",
   "autoupdate_running": "⚡ تحديث تلقائي لـ {count} حاوية...",
   "autoupdate_done": "⚡ التحديث التلقائي مكتمل:",
-  "help_autoupdate": "/autoupdate — تفعيل/تعطيل التحديث التلقائي"
+  "help_autoupdate": "/autoupdate — تفعيل/تعطيل التحديث التلقائي",
+  "status_containers": "حاويات",
+  "status_pinned": "مثبتة",
+  "status_autoupdate": "تحديث تلقائي"
 }

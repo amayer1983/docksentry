@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — авто-оновлення вимкнено.",
   "autoupdate_running": "⚡ Авто-оновлення {count} контейнера(ів)...",
   "autoupdate_done": "⚡ Авто-оновлення завершено:",
-  "help_autoupdate": "/autoupdate — Увімкнути/вимкнути авто-оновлення"
+  "help_autoupdate": "/autoupdate — Увімкнути/вимкнути авто-оновлення",
+  "status_containers": "Контейнери",
+  "status_pinned": "Закріплені",
+  "status_autoupdate": "Авто-оновлення"
 }

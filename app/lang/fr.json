@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — mise à jour automatique désactivée.",
   "autoupdate_running": "⚡ Mise à jour automatique de {count} conteneur(s)...",
   "autoupdate_done": "⚡ Mise à jour automatique terminée :",
-  "help_autoupdate": "/autoupdate — Activer/désactiver la mise à jour automatique"
+  "help_autoupdate": "/autoupdate — Activer/désactiver la mise à jour automatique",
+  "status_containers": "Conteneurs",
+  "status_pinned": "Épinglés",
+  "status_autoupdate": "Mise à jour auto"
 }

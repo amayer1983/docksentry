@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — auto-actualización desactivada.",
   "autoupdate_running": "⚡ Auto-actualizando {count} contenedor(es)...",
   "autoupdate_done": "⚡ Auto-actualización completada:",
-  "help_autoupdate": "/autoupdate — Activar/desactivar auto-actualización"
+  "help_autoupdate": "/autoupdate — Activar/desactivar auto-actualización",
+  "status_containers": "Contenedores",
+  "status_pinned": "Fijados",
+  "status_autoupdate": "Auto-actualización"
 }

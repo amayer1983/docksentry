@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — auto-update uitgeschakeld.",
   "autoupdate_running": "⚡ Auto-update van {count} container(s)...",
   "autoupdate_done": "⚡ Auto-update voltooid:",
-  "help_autoupdate": "/autoupdate — Auto-update in-/uitschakelen"
+  "help_autoupdate": "/autoupdate — Auto-update in-/uitschakelen",
+  "status_containers": "Containers",
+  "status_pinned": "Vastgezet",
+  "status_autoupdate": "Auto-update"
 }

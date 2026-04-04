@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — 자동 업데이트 비활성화.",
   "autoupdate_running": "⚡ {count}개 컨테이너 자동 업데이트 중...",
   "autoupdate_done": "⚡ 자동 업데이트 완료:",
-  "help_autoupdate": "/autoupdate — 자동 업데이트 전환"
+  "help_autoupdate": "/autoupdate — 자동 업데이트 전환",
+  "status_containers": "컨테이너",
+  "status_pinned": "고정됨",
+  "status_autoupdate": "자동 업데이트"
 }

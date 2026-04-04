@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — auto-update disabled.",
   "autoupdate_running": "⚡ Auto-updating {count} container(s)...",
   "autoupdate_done": "⚡ Auto-update complete:",
-  "help_autoupdate": "/autoupdate — Toggle auto-update for a container"
+  "help_autoupdate": "/autoupdate — Toggle auto-update for a container",
+  "status_containers": "Containers",
+  "status_pinned": "Pinned",
+  "status_autoupdate": "Auto-Update"
 }

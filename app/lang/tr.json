@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — otomatik güncelleme kapalı.",
   "autoupdate_running": "⚡ {count} konteyner otomatik güncelleniyor...",
   "autoupdate_done": "⚡ Otomatik güncelleme tamamlandı:",
-  "help_autoupdate": "/autoupdate — Otomatik güncellemeyi aç/kapat"
+  "help_autoupdate": "/autoupdate — Otomatik güncellemeyi aç/kapat",
+  "status_containers": "Konteynerler",
+  "status_pinned": "Sabitlenmiş",
+  "status_autoupdate": "Otomatik güncelleme"
 }

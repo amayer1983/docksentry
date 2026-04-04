@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — 自動更新を無効にしました。",
   "autoupdate_running": "⚡ {count}個のコンテナを自動更新中...",
   "autoupdate_done": "⚡ 自動更新完了:",
-  "help_autoupdate": "/autoupdate — 自動更新のオン/オフ"
+  "help_autoupdate": "/autoupdate — 自動更新のオン/オフ",
+  "status_containers": "コンテナ",
+  "status_pinned": "ピン留め",
+  "status_autoupdate": "自動更新"
 }

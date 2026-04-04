@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — ऑटो-अपडेट निष्क्रिय।",
   "autoupdate_running": "⚡ {count} कंटेनर ऑटो-अपडेट हो रहे हैं...",
   "autoupdate_done": "⚡ ऑटो-अपडेट पूर्ण:",
-  "help_autoupdate": "/autoupdate — ऑटो-अपडेट टॉगल करें"
+  "help_autoupdate": "/autoupdate — ऑटो-अपडेट टॉगल करें",
+  "status_containers": "कंटेनर",
+  "status_pinned": "पिन किए गए",
+  "status_autoupdate": "ऑटो-अपडेट"
 }

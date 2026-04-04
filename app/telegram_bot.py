@@ -549,10 +549,83 @@ class TelegramBot:
 
         if text == "/status":
             ps = subprocess.run(
-                ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
+                ["docker", "ps", "--format", "{{.Names}}|{{.Status}}|{{.Image}}"],
                 capture_output=True, text=True
             )
-            self.send_message(f"{self.t('container_status')}\n```\n{ps.stdout}```")
+            lines = [l for l in ps.stdout.strip().split("\n") if l]
+            total = len(lines)
+            healthy = 0
+            unhealthy = 0
+            running = 0
+            containers = []
+
+            for line in lines:
+                parts = line.split("|", 2)
+                name = parts[0] if len(parts) > 0 else "?"
+                status_raw = parts[1] if len(parts) > 1 else "?"
+                image = parts[2] if len(parts) > 2 else "?"
+
+                # Parse uptime
+                uptime = status_raw.replace("Up ", "").strip()
+
+                # Determine health icon
+                if "(healthy)" in status_raw:
+                    icon = "🟢"
+                    healthy += 1
+                elif "(unhealthy)" in status_raw:
+                    icon = "🔴"
+                    unhealthy += 1
+                elif "(health: starting)" in status_raw:
+                    icon = "🟡"
+                    running += 1
+                else:
+                    icon = "⚪"
+                    running += 1
+
+                # Clean up uptime display
+                uptime = uptime.replace(" (healthy)", "").replace(" (unhealthy)", "").replace(" (health: starting)", "")
+
+                containers.append(f"{icon} `{name}`\n     ⏱ {uptime} · 📦 {image}")
+
+            # Summary line
+            summary = f"📊 *{total}* {self.t('status_containers')}"
+            if healthy:
+                summary += f" · 🟢 {healthy}"
+            if unhealthy:
+                summary += f" · 🔴 {unhealthy}"
+            if running:
+                summary += f" · ⚪ {running}"
+
+            # Bot uptime
+            import time as _t
+            bot_uptime_s = int(_t.time() - self.start_time)
+            days = bot_uptime_s // 86400
+            hours = (bot_uptime_s % 86400) // 3600
+            mins = (bot_uptime_s % 3600) // 60
+            if days > 0:
+                bot_uptime = f"{days}d {hours}h {mins}m"
+            elif hours > 0:
+                bot_uptime = f"{hours}h {mins}m"
+            else:
+                bot_uptime = f"{mins}m"
+
+            # Pinned & auto-update counts
+            pinned_count = len(self._get_pinned())
+            auto_count = len(self._get_autoupdate())
+
+            header = (
+                f"{self.t('container_status')}\n\n"
+                f"{summary}\n"
+                f"🤖 Bot Uptime: {bot_uptime}\n"
+            )
+            if pinned_count:
+                header += f"📌 {self.t('status_pinned')}: {pinned_count}\n"
+            if auto_count:
+                header += f"⚡ {self.t('status_autoupdate')}: {auto_count}\n"
+
+            header += f"\n{'─' * 28}\n\n"
+
+            self.send_message(header + "\n".join(containers))
 
         elif text == "/check":
             self.send_message(self.t("checking_updates"))

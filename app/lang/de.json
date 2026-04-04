@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — Auto-Update deaktiviert.",
   "autoupdate_running": "⚡ Auto-Update für {count} Container läuft...",
   "autoupdate_done": "⚡ Auto-Update abgeschlossen:",
-  "help_autoupdate": "/autoupdate — Auto-Update pro Container umschalten"
+  "help_autoupdate": "/autoupdate — Auto-Update pro Container umschalten",
+  "status_containers": "Container",
+  "status_pinned": "Gepinnt",
+  "status_autoupdate": "Auto-Update"
 }

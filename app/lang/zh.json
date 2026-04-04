@@ -98,5 +98,8 @@
   "autoupdate_off": "⚡ `{name}` — 自动更新已禁用。",
   "autoupdate_running": "⚡ 正在自动更新 {count} 个容器...",
   "autoupdate_done": "⚡ 自动更新完成：",
-  "help_autoupdate": "/autoupdate — 切换自动更新"
+  "help_autoupdate": "/autoupdate — 切换自动更新",
+  "status_containers": "容器",
+  "status_pinned": "已固定",
+  "status_autoupdate": "自动更新"
 }
