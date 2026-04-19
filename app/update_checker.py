@@ -46,10 +46,19 @@ class UpdateChecker:
             if own_name and name == own_name:
                 self._debug(f"  Skipped (self): {name}")
                 continue
-            # Skip images referenced by ID (no tag)
+            # Resolve images referenced by ID via container inspect
             if re.match(r'^[0-9a-f]{12,}$', image):
-                self._debug(f"  Skipped (image ID): {name} ({image})")
-                continue
+                resolved = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Config.Image}}", name],
+                    capture_output=True, text=True
+                )
+                if resolved.returncode == 0 and resolved.stdout.strip() and \
+                   not re.match(r'^[0-9a-f]{12,}$', resolved.stdout.strip()):
+                    image = resolved.stdout.strip()
+                    self._debug(f"  Resolved image ID: {name} → {image}")
+                else:
+                    self._debug(f"  Skipped (image ID): {name} ({image})")
+                    continue
             if name in self.config.exclude_containers:
                 self._debug(f"  Skipped (excluded): {name}")
                 continue
@@ -121,7 +130,7 @@ class UpdateChecker:
         return None
 
     def _get_remote_digest(self, registry, repository, tag, token):
-        """Get remote image digest via registry API HEAD request."""
+        """Get remote manifest-list digest via registry API HEAD request."""
         if "docker.io" in registry:
             url = f"https://registry-1.docker.io/v2/{repository}/manifests/{tag}"
         elif "ghcr.io" in registry:
@@ -147,15 +156,19 @@ class UpdateChecker:
             self._debug(f"  Registry error: {e}")
             return None
 
-    def _get_local_digest(self, image):
-        """Get local image digest from RepoDigests."""
+    def _get_local_digests(self, image):
+        """Get all local image digests from RepoDigests."""
         result = subprocess.run(
-            ["docker", "inspect", "--format", "{{index .RepoDigests 0}}", image],
+            ["docker", "inspect", "--format", "{{json .RepoDigests}}", image],
             capture_output=True, text=True
         )
-        if result.returncode == 0 and "@" in result.stdout:
-            return result.stdout.strip().split("@")[1]
-        return None
+        if result.returncode != 0:
+            return []
+        try:
+            repo_digests = json.loads(result.stdout.strip())
+            return [d.split("@")[1] for d in repo_digests if "@" in d]
+        except (json.JSONDecodeError, IndexError):
+            return []
 
     def _get_image_size(self, image):
         """Get local image size in human-readable format."""
@@ -246,10 +259,19 @@ class UpdateChecker:
         with open(self.config.history_file, "w") as f:
             json.dump(history, f, indent=2)
 
-    def _wait_healthy(self, name, attempts=6, interval=5):
-        """Wait for container to become healthy. Returns (healthy, state, health)."""
-        for i in range(attempts):
+    def _wait_healthy(self, name, max_starting=300, interval=10):
+        """Wait for container to become healthy.
+
+        Containers in 'starting' state get up to max_starting seconds (default 5 min).
+        Unhealthy or not-running containers fail immediately.
+        Returns (healthy, state, health).
+        """
+        elapsed = 0
+        check = 0
+        while elapsed < max_starting:
             time.sleep(interval)
+            elapsed += interval
+            check += 1
             sc = subprocess.run(
                 ["docker", "inspect", "--format", "{{.State.Status}}", name],
                 capture_output=True, text=True
@@ -260,7 +282,7 @@ class UpdateChecker:
                 capture_output=True, text=True
             )
             health = hc.stdout.strip() if hc.returncode == 0 else ""
-            self._debug(f"  Health check [{i+1}/{attempts}]: state={state}, health={health}")
+            self._debug(f"  Health check [{check}, {elapsed}s]: state={state}, health={health}")
             if state != "running":
                 return False, state, health
             if not health or health == "<no value>":
@@ -269,6 +291,7 @@ class UpdateChecker:
                 return True, state, health
             elif health == "unhealthy":
                 return False, state, health
+            # health == "starting" → keep waiting
         return False, state, health
 
     def check_all(self, bot=None):
@@ -286,18 +309,18 @@ class UpdateChecker:
 
             self._debug(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")
 
-            local_digest = self._get_local_digest(image)
-            if not local_digest:
+            local_digests = self._get_local_digests(image)
+            if not local_digests:
                 self._debug(f"  Skipped (no local digest): {c['name']}")
                 continue
 
             token = self._get_auth_token(registry, repository)
             remote_digest = self._get_remote_digest(registry, repository, tag, token)
 
-            self._debug(f"  Local:  {local_digest[:30]}...")
+            self._debug(f"  Local:  {', '.join(d[:30] + '...' for d in local_digests)}")
             self._debug(f"  Remote: {(remote_digest or 'FAILED')[:30]}...")
 
-            if remote_digest and local_digest != remote_digest:
+            if remote_digest and remote_digest not in local_digests:
                 size = self._get_image_size(image)
                 created = self._get_image_created(image)
                 self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
