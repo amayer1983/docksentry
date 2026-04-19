@@ -119,8 +119,11 @@ volumes:
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST) |
 | `TZ` | `Europe/Berlin` | Timezone |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
+| `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
 
 All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts.
+
+> **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 
 ## Web UI
 
