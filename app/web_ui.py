@@ -3,6 +3,7 @@
 
 import base64
 import hashlib
+import hmac
 import html
 import ipaddress
 import json
@@ -36,6 +37,44 @@ _DISCORD_HOSTS = {
     "canary.discord.com",
     "ptb.discord.com",
 }
+
+
+def _validate_cron(expr):
+    """Validate a 5-field cron expression. Returns (ok, error_message).
+
+    Mirrors the parsing logic in Scheduler._matches_cron — if any field would
+    raise ValueError there at runtime, validation fails here at save time.
+    Empty / blank expressions are rejected (cron is required).
+    """
+    if not expr or not expr.strip():
+        return False, "empty"
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return False, f"need 5 space-separated fields, got {len(parts)}"
+
+    field_names = ("minute", "hour", "day-of-month", "month", "day-of-week")
+    for name, pattern in zip(field_names, parts):
+        if pattern == "*":
+            continue
+        try:
+            if "/" in pattern and "-" in pattern.split("/")[0]:
+                range_part, step_part = pattern.split("/", 1)
+                start_s, end_s = range_part.split("-")
+                int(start_s); int(end_s); int(step_part)
+            elif pattern.startswith("*/"):
+                int(pattern[2:])
+            elif "," in pattern:
+                for v in pattern.split(","):
+                    int(v)
+            elif "-" in pattern:
+                start_s, end_s = pattern.split("-")
+                int(start_s); int(end_s)
+            else:
+                int(pattern)
+        except (ValueError, IndexError):
+            return False, f"invalid {name} field: {pattern!r}"
+
+    return True, None
 
 
 def _validate_webhook_url(url, kind="generic"):
@@ -102,7 +141,11 @@ def create_handler(config, checker, bot, password=None):
             pass  # Suppress default logging
 
         def _check_auth(self):
-            """Check Basic Auth if password is configured."""
+            """Check Basic Auth if password is configured.
+
+            Uses hmac.compare_digest for the hash comparison to avoid the
+            theoretical timing-side-channel that comes with `==` on bytes.
+            """
             if not pw_hash:
                 return True
             auth = self.headers.get("Authorization", "")
@@ -111,7 +154,8 @@ def create_handler(config, checker, bot, password=None):
             try:
                 decoded = base64.b64decode(auth[6:]).decode()
                 user, pw = decoded.split(":", 1)
-                return hashlib.sha256(pw.encode()).hexdigest() == pw_hash
+                submitted = hashlib.sha256(pw.encode()).hexdigest()
+                return hmac.compare_digest(submitted, pw_hash)
             except Exception:
                 return False
 
@@ -325,22 +369,26 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                 params = parse_qs(body)
 
                 # --- Validate before mutating any state ---
-                webhook_errors = []
+                errors = []
+                if "cron_schedule" in params and params["cron_schedule"][0].strip():
+                    ok, err = _validate_cron(params["cron_schedule"][0].strip())
+                    if not ok:
+                        errors.append(f"Cron schedule: {err}")
                 if "discord_webhook" in params:
                     ok, err = _validate_webhook_url(
                         params["discord_webhook"][0].strip(), kind="discord"
                     )
                     if not ok:
-                        webhook_errors.append(f"Discord webhook: {err}")
+                        errors.append(f"Discord webhook: {err}")
                 if "webhook_url" in params:
                     ok, err = _validate_webhook_url(
                         params["webhook_url"][0].strip(), kind="generic"
                     )
                     if not ok:
-                        webhook_errors.append(f"Webhook URL: {err}")
-                if webhook_errors:
+                        errors.append(f"Webhook URL: {err}")
+                if errors:
                     from urllib.parse import quote
-                    self._send_redirect("/settings?error=" + quote(" | ".join(webhook_errors)))
+                    self._send_redirect("/settings?error=" + quote(" | ".join(errors)))
                     return
 
                 # --- All inputs validated; apply changes ---

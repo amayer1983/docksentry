@@ -52,6 +52,9 @@ class Config:
                     setattr(self, key, saved[key])
         except (json.JSONDecodeError, IOError):
             pass
+        # Tighten permissions on existing settings file (covers upgrade case
+        # where the file was created with the umask default, typically 0644).
+        self._restrict_settings_perms()
 
     def save_persistent(self):
         """Save current settings to settings.json for persistence."""
@@ -61,8 +64,21 @@ class Config:
         try:
             with open(self.settings_file, "w") as f:
                 json.dump(data, f, indent=2)
+            self._restrict_settings_perms()
         except IOError as e:
             print(f"Failed to save settings: {e}")
+
+    def _restrict_settings_perms(self):
+        """Restrict settings.json to owner-only read/write (0600).
+
+        settings.json contains webhook URLs that may include auth tokens,
+        Telegram topic IDs, etc. — anyone who shares the data volume should
+        not be able to read it.
+        """
+        try:
+            os.chmod(self.settings_file, 0o600)
+        except OSError:
+            pass  # Best-effort; some filesystems (FAT, etc.) ignore chmod.
 
     @classmethod
     def from_env(cls):

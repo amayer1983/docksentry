@@ -68,7 +68,10 @@ def main():
     if config.discord_webhook:
         print(f"Discord: webhook configured")
     if config.webhook_url:
-        print(f"Webhook: {config.webhook_url}")
+        # Don't log the full URL — it can contain auth tokens (Ntfy, Gotify,
+        # Home Assistant) that would otherwise leak via `docker logs` or log
+        # aggregators.
+        print(f"Webhook: configured")
 
     # Send startup notification to all channels
     from version import VERSION
