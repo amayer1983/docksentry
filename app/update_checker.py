@@ -95,63 +95,139 @@ class UpdateChecker:
 
         return registry, repository, tag
 
-    def _get_auth_token(self, registry, repository):
-        """Get authentication token for registry API."""
+    # Standard Accept headers for manifest negotiation (multi-arch + single-arch,
+    # both Docker and OCI). Sent on every manifest HEAD request.
+    _MANIFEST_ACCEPT = ", ".join([
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+    ])
+
+    def _get_docker_credentials(self, registry):
+        """Read Basic-Auth credentials for a registry from docker config.json,
+        if present. Returns the base64-encoded `auth` string or None."""
+        docker_config = os.environ.get("DOCKER_CONFIG", "/.docker")
+        config_file = os.path.join(docker_config, "config.json")
+        if not os.path.isfile(config_file):
+            return None
         try:
-            # Docker Hub
-            if "docker.io" in registry:
-                docker_config = os.environ.get("DOCKER_CONFIG", "/.docker")
-                config_file = os.path.join(docker_config, "config.json")
-                auth_header = None
-                if os.path.isfile(config_file):
-                    with open(config_file) as f:
-                        cfg = json.load(f)
-                    for key in cfg.get("auths", {}):
-                        if "docker.io" in key:
-                            auth_header = cfg["auths"][key].get("auth")
-                            break
-                    self._debug(f"  Auth: {'credentials found' if auth_header else 'no credentials'}")
-
-                url = f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repository}:pull"
-                req = urllib.request.Request(url)
-                if auth_header:
-                    req.add_header("Authorization", f"Basic {auth_header}")
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return json.loads(resp.read()).get("token")
-
-            # GitHub Container Registry
-            if "ghcr.io" in registry:
-                url = f"https://ghcr.io/token?scope=repository:{repository}:pull"
-                with urllib.request.urlopen(url, timeout=15) as resp:
-                    return json.loads(resp.read()).get("token")
-
-        except Exception as e:
-            self._debug(f"  Auth error: {e}")
+            with open(config_file) as f:
+                cfg = json.load(f)
+            auths = cfg.get("auths", {}) or {}
+            # Try exact host match first, then substring matches (handles
+            # entries like "https://index.docker.io/v1/" for "registry-1.docker.io").
+            for key, val in auths.items():
+                if key == registry and val.get("auth"):
+                    return val["auth"]
+            for key, val in auths.items():
+                if (registry in key or key in registry) and val.get("auth"):
+                    return val["auth"]
+        except Exception:
+            pass
         return None
 
-    def _get_remote_digest(self, registry, repository, tag, token):
-        """Get remote manifest-list digest via registry API HEAD request."""
-        if "docker.io" in registry:
-            url = f"https://registry-1.docker.io/v2/{repository}/manifests/{tag}"
-        elif "ghcr.io" in registry:
-            url = f"https://ghcr.io/v2/{repository}/manifests/{tag}"
-        else:
-            url = f"https://{registry}/v2/{repository}/manifests/{tag}"
+    @staticmethod
+    def _parse_www_authenticate(header):
+        """Parse a `WWW-Authenticate: Bearer ...` header into a dict.
 
-        req = urllib.request.Request(url, method="HEAD")
-        req.add_header("Accept", ", ".join([
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-            "application/vnd.oci.image.index.v1+json",
-            "application/vnd.docker.distribution.manifest.v2+json",
-            "application/vnd.oci.image.manifest.v1+json",
-        ]))
-        if token:
-            req.add_header("Authorization", f"Bearer {token}")
+        Example input:
+            Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:linuxserver/plex:pull"
+        Output:
+            {"realm": "https://ghcr.io/token", "service": "ghcr.io",
+             "scope": "repository:linuxserver/plex:pull"}
+        Returns {} for non-Bearer challenges or malformed headers.
+        """
+        if not header or not header.strip().lower().startswith("bearer "):
+            return {}
+        params = {}
+        # Match key="value" pairs (the Docker spec always quotes values).
+        for key, value in re.findall(r'(\w+)="([^"]*)"', header[len("Bearer "):]):
+            params[key.lower()] = value
+        return params
+
+    def _negotiate_token(self, www_auth, registry, repository):
+        """Fetch a Bearer token from the realm advertised in WWW-Authenticate.
+
+        Falls back to building a default scope (`repository:<repo>:pull`) if
+        the server doesn't include one. Uses Basic-Auth credentials from
+        docker config.json if available (for private registries).
+        """
+        params = self._parse_www_authenticate(www_auth)
+        realm = params.get("realm")
+        if not realm:
+            return None
+
+        query = []
+        if "service" in params:
+            query.append(("service", params["service"]))
+        # Use the scope from the challenge if present; otherwise build a
+        # sensible default. Scope can repeat, so handle the list case too.
+        scope = params.get("scope") or f"repository:{repository}:pull"
+        query.append(("scope", scope))
+        token_url = realm + "?" + urllib.parse.urlencode(query)
+
+        req = urllib.request.Request(token_url)
+        auth_header = self._get_docker_credentials(registry)
+        if auth_header:
+            req.add_header("Authorization", f"Basic {auth_header}")
 
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
-                digest = resp.headers.get("Docker-Content-Digest", "")
-                return digest
+                data = json.loads(resp.read())
+                # Some registries return "token", others "access_token".
+                return data.get("token") or data.get("access_token")
+        except Exception as e:
+            self._debug(f"  Token negotiation failed: {e}")
+            return None
+
+    def _get_remote_digest(self, registry, repository, tag):
+        """Fetch the remote manifest digest for a tag.
+
+        Implements the Docker Registry V2 Bearer token flow:
+            1. anonymous HEAD on /v2/<repo>/manifests/<tag>
+            2. on 401, parse WWW-Authenticate, fetch Bearer token
+            3. retry HEAD with `Authorization: Bearer <token>`
+
+        This works generically for Docker Hub, GHCR, lscr.io, quay.io,
+        gcr.io, registry.gitlab.com and any spec-compliant registry — no
+        per-host hardcoding required.
+        """
+        if "docker.io" in registry:
+            host = "registry-1.docker.io"
+        else:
+            host = registry
+        url = f"https://{host}/v2/{repository}/manifests/{tag}"
+
+        def _attempt(token=None):
+            req = urllib.request.Request(url, method="HEAD")
+            req.add_header("Accept", self._MANIFEST_ACCEPT)
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            return urllib.request.urlopen(req, timeout=15)
+
+        try:
+            with _attempt() as resp:
+                return resp.headers.get("Docker-Content-Digest", "")
+        except urllib.error.HTTPError as e:
+            if e.code != 401:
+                self._debug(f"  Registry error: HTTP {e.code} {e.reason}")
+                return None
+            # 401 — negotiate a Bearer token from the WWW-Authenticate header
+            www_auth = e.headers.get("WWW-Authenticate", "")
+            token = self._negotiate_token(www_auth, registry, repository)
+            if not token:
+                self._debug(f"  Registry error: 401 (token negotiation failed)")
+                return None
+            try:
+                with _attempt(token) as resp:
+                    return resp.headers.get("Docker-Content-Digest", "")
+            except urllib.error.HTTPError as e2:
+                self._debug(f"  Registry error after auth: HTTP {e2.code} {e2.reason}")
+                return None
+            except Exception as e2:
+                self._debug(f"  Registry error after auth: {e2}")
+                return None
         except Exception as e:
             self._debug(f"  Registry error: {e}")
             return None
@@ -314,13 +390,18 @@ class UpdateChecker:
                 self._debug(f"  Skipped (no local digest): {c['name']}")
                 continue
 
-            token = self._get_auth_token(registry, repository)
-            remote_digest = self._get_remote_digest(registry, repository, tag, token)
+            remote_digest = self._get_remote_digest(registry, repository, tag)
 
             self._debug(f"  Local:  {', '.join(d[:30] + '...' for d in local_digests)}")
             self._debug(f"  Remote: {(remote_digest or 'FAILED')[:30]}...")
 
-            if remote_digest and remote_digest not in local_digests:
+            if remote_digest is None:
+                # Treat unknown as unknown — don't claim "up to date" when we
+                # couldn't actually reach the registry.
+                self._debug(f"  → Check FAILED (registry unreachable / unauthorized)")
+                continue
+
+            if remote_digest not in local_digests:
                 size = self._get_image_size(image)
                 created = self._get_image_created(image)
                 self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
