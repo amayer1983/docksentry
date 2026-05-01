@@ -1,0 +1,9 @@
+# GitHub will render a "Sponsor" button on the repo page based on these
+# entries. Each platform must be activated in your account before the link
+# resolves — uncomment the lines you want once the corresponding profile
+# is set up.
+
+github: amayer1983
+# buy_me_a_coffee: your-handle
+# ko_fi: your-handle
+# custom: ['https://example.com/donate']

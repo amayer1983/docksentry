@@ -12,6 +12,7 @@ Your Docker container watchdog — monitors images for updates and lets you mana
   <img src="https://img.shields.io/docker/pulls/amayer1983/docksentry" alt="Docker Pulls">
   <img src="https://img.shields.io/docker/image-size/amayer1983/docksentry" alt="Docker Image Size">
   <img src="https://img.shields.io/github/license/amayer1983/docksentry" alt="License">
+  <a href="https://github.com/sponsors/amayer1983"><img src="https://img.shields.io/github/sponsors/amayer1983?label=Sponsor&logo=GitHub" alt="Sponsor"></a>
 </p>
 
 <p align="center">
@@ -186,6 +187,14 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 - **Found a bug?** Open an [Issue](https://github.com/amayer1983/docksentry/issues) with steps to reproduce
 - **Translations?** Submit a PR for `app/lang/*.json`
 - **Vote on the roadmap:** [Community Roadmap (Issue #2)](https://github.com/amayer1983/docksentry/issues/2)
+
+## Support the project
+
+Docksentry is free and open source. If it saves you time and you'd like to support continued development, you can sponsor the project on GitHub:
+
+[![Sponsor](https://img.shields.io/github/sponsors/amayer1983?label=Sponsor%20on%20GitHub&logo=GitHub&style=for-the-badge)](https://github.com/sponsors/amayer1983)
+
+Sponsorships fund: faster bug-fixes, more registry integrations, multi-host support, and keeping the lights on. No feature is paywalled — Docksentry stays free.
 
 ## License
 

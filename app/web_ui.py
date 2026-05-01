@@ -322,6 +322,8 @@ select {{ cursor: pointer; }}
 pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px;
     overflow-x: auto; font-size: 13px; line-height: 1.5; color: #c9d1d9; white-space: pre-wrap; word-wrap: break-word; }}
 .footer {{ text-align: center; padding: 24px; font-size: 12px; color: #484f58; }}
+.footer a {{ color: #6e7681; text-decoration: none; }}
+.footer a:hover {{ color: #c9d1d9; }}
 </style>
 </head>
 <body>
@@ -332,7 +334,9 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 <div class="content">
 {content}
 </div>
-<div class="footer">Docksentry v{VERSION}</div>
+<div class="footer">
+Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target="_blank" rel="noopener noreferrer">❤ Sponsor</a>
+</div>
 </body>
 </html>"""
 
