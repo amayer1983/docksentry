@@ -2,10 +2,12 @@
 """Telegram Bot - handles messages, callbacks, and notifications."""
 
 import json
+import socket
 import subprocess
 import os
 import sys
 import threading
+import urllib.error
 import urllib.request
 import urllib.parse
 
@@ -69,7 +71,31 @@ class TelegramBot:
         else:
             return None, self.t("resolve_not_found", name=partial)
 
-    def api_call(self, method, data=None):
+    @staticmethod
+    def _is_timeout(exc):
+        """Return True if `exc` is a network timeout (vs. a real API error)."""
+        if isinstance(exc, (socket.timeout, TimeoutError)):
+            return True
+        if isinstance(exc, urllib.error.URLError):
+            reason = exc.reason
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                return True
+            if "timed out" in str(reason).lower():
+                return True
+        return False
+
+    def api_call(self, method, data=None, timeout=60, quiet_timeout=False):
+        """Call Telegram Bot API.
+
+        timeout         HTTP socket timeout in seconds.
+        quiet_timeout   If True, suppress logging when the request times out.
+                        Used by the getUpdates long-poll loop where timeouts
+                        are expected on flaky networks and don't indicate a
+                        real problem.
+        Returns the parsed JSON response, or a sentinel-aware None on error.
+        Callers can distinguish "API responded with not-ok" (dict with
+        ok=False) from "request failed entirely" (None).
+        """
         url = f"https://api.telegram.org/bot{self.config.bot_token}/{method}"
         if data:
             req = urllib.request.Request(
@@ -80,8 +106,12 @@ class TelegramBot:
         else:
             req = urllib.request.Request(url)
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+            if not (quiet_timeout and self._is_timeout(e)):
+                print(f"Telegram API error: {e}")
+            return None
         except Exception as e:
             print(f"Telegram API error: {e}")
             return None
@@ -98,8 +128,11 @@ class TelegramBot:
         if reply_markup:
             data["reply_markup"] = json.dumps(reply_markup)
         result = self.api_call("sendMessage", data)
-        if not result or not result.get("ok"):
-            # Retry without Markdown if parsing failed
+        # Only retry without Markdown when Telegram actively rejected the
+        # message (ok=False, typically a parse error). Don't retry when the
+        # request itself failed (None) — that's a network/timeout issue and
+        # retrying immediately won't help.
+        if result and not result.get("ok"):
             data.pop("parse_mode", None)
             result = self.api_call("sendMessage", data)
         return result
@@ -505,6 +538,13 @@ class TelegramBot:
         self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         self.update_running = False
 
+    # Long-polling timing for getUpdates. Telegram holds the request open
+    # for LONG_POLL_TIMEOUT seconds; the HTTP socket gets a generous extra
+    # buffer so it doesn't trip first on slow networks (TLS handshake, DNS,
+    # etc.). HTTP > Long-poll is required by Telegram's docs.
+    LONG_POLL_TIMEOUT = 25
+    LONG_POLL_HTTP_TIMEOUT = LONG_POLL_TIMEOUT + 15  # = 40s
+
     def listen(self, checker, scheduler):
         import time as _time
         self.start_time = _time.time()
@@ -521,11 +561,20 @@ class TelegramBot:
 
         while self.running:
             try:
-                result = self.api_call("getUpdates", {
-                    "offset": offset,
-                    "timeout": 30,
-                    "allowed_updates": json.dumps(["callback_query", "message"])
-                })
+                # Long-poll. Timeouts here are expected on flaky networks and
+                # are NOT real errors — they're just "no new updates arrived
+                # within the long-poll window". quiet_timeout=True suppresses
+                # the noisy log line.
+                result = self.api_call(
+                    "getUpdates",
+                    {
+                        "offset": offset,
+                        "timeout": self.LONG_POLL_TIMEOUT,
+                        "allowed_updates": json.dumps(["callback_query", "message"]),
+                    },
+                    timeout=self.LONG_POLL_HTTP_TIMEOUT,
+                    quiet_timeout=True,
+                )
 
                 if not result or not result.get("ok"):
                     import time
