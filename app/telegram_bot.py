@@ -13,42 +13,39 @@ import urllib.parse
 
 
 class TelegramBot:
-    def __init__(self, config):
+    def __init__(self, config, container_store):
         self.config = config
+        self.store = container_store
         self.running = True
         self.update_running = False
         self.notifier = None  # Set by main.py after init
         from i18n import get_translator
         self.t = get_translator(config.language)
 
+    @property
+    def enabled(self):
+        """True when both BOT_TOKEN and CHAT_ID are configured. When False,
+        send_message / api_call / listen are no-ops — Docksentry runs
+        headless (Web UI + Discord/Webhook only)."""
+        return bool(self.config.bot_token and self.config.chat_id)
+
     def stop(self):
         self.running = False
 
+    # Thin wrappers around ContainerStore — kept for backwards compatibility
+    # with internal call sites in this file. New code should use self.store
+    # directly.
     def _get_pinned(self):
-        if os.path.exists(self.config.pinned_file):
-            try:
-                with open(self.config.pinned_file) as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-        return []
+        return self.store.get_pinned()
 
     def _save_pinned(self, pinned):
-        with open(self.config.pinned_file, "w") as f:
-            json.dump(pinned, f)
+        self.store.save_pinned(pinned)
 
     def _get_autoupdate(self):
-        if os.path.exists(self.config.autoupdate_file):
-            try:
-                with open(self.config.autoupdate_file) as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-        return []
+        return self.store.get_autoupdate()
 
     def _save_autoupdate(self, containers):
-        with open(self.config.autoupdate_file, "w") as f:
-            json.dump(containers, f)
+        self.store.save_autoupdate(containers)
 
     def _resolve_container(self, partial):
         """Resolve a partial container name. Returns (full_name, error_msg)."""
@@ -95,7 +92,11 @@ class TelegramBot:
         Returns the parsed JSON response, or a sentinel-aware None on error.
         Callers can distinguish "API responded with not-ok" (dict with
         ok=False) from "request failed entirely" (None).
+
+        When the bot is disabled (no BOT_TOKEN/CHAT_ID), this is a no-op.
         """
+        if not self.enabled:
+            return None
         url = f"https://api.telegram.org/bot{self.config.bot_token}/{method}"
         if data:
             req = urllib.request.Request(
@@ -548,6 +549,14 @@ class TelegramBot:
     def listen(self, checker, scheduler):
         import time as _time
         self.start_time = _time.time()
+
+        # Headless mode: no Telegram credentials. Don't poll, just block here
+        # so the scheduler thread (and Web UI, if enabled) keep running.
+        if not self.enabled:
+            print("Telegram disabled (no BOT_TOKEN/CHAT_ID). Running headless.")
+            while self.running:
+                _time.sleep(1)
+            return
 
         # Flush old updates from queue to prevent replaying commands after restart
         flush = self.api_call("getUpdates", {"offset": -1, "timeout": 0})

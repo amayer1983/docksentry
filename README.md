@@ -5,7 +5,7 @@
 <h1 align="center">Docksentry</h1>
 
 <p align="center">
-Your Docker container watchdog — monitors images for updates and lets you manage them via <b>Telegram</b>, <b>Discord</b>, <b>Web UI</b>, and <b>Webhooks</b>, with auto-rollback and 16 languages.
+Your Docker container watchdog — monitors images for updates and lets you manage them via <b>Web UI</b>, <b>Telegram</b>, <b>Discord</b>, and <b>Webhooks</b>, with auto-rollback and 16 languages. Telegram is optional — Docksentry can run fully headless.
 </p>
 
 <p align="center">
@@ -22,10 +22,11 @@ Your Docker container watchdog — monitors images for updates and lets you mana
 ## Features
 
 - **Automatic update detection** — compares image digests on a configurable cron schedule
-- **Telegram bot** — full interactive control with inline buttons and 14 commands
+- **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update
+- **Telegram bot** *(optional)* — full interactive control with inline buttons and 14 commands
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Ntfy, Gotify, Home Assistant, or any HTTP endpoint
-- **Optional Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles
+- **Headless mode** — run without Telegram; Web UI + Discord/Webhook is enough
 - **Per-container auto-update** — selected containers update without confirmation
 - **Pin/Freeze containers** — exclude containers from updates
 - **Auto-rollback** — failed updates automatically restore the previous container
@@ -37,15 +38,26 @@ Your Docker container watchdog — monitors images for updates and lets you mana
 
 ## Quick Start
 
-### 1. Create a Telegram Bot
+You need **at least one** of: Web UI, Telegram, Discord webhook, or generic webhook. The most popular setup is Web UI + Telegram.
 
-Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
+### Option A — Web UI only (headless, no Telegram)
 
-### 2. Get your Chat ID
+```bash
+docker run -d \
+  --name docksentry \
+  --restart unless-stopped \
+  -e WEB_UI=true \
+  -e WEB_PORT=8080 \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  amayer1983/docksentry:latest
+```
 
-Send a message to your bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and find your `chat.id`.
+### Option B — Web UI + Telegram (full interactive)
 
-### 3. Run
+1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token
+2. Send a message to your bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and find your `chat.id`
+3. Run:
 
 ```bash
 docker run -d \
@@ -53,6 +65,8 @@ docker run -d \
   --restart unless-stopped \
   -e BOT_TOKEN=your-bot-token \
   -e CHAT_ID=your-chat-id \
+  -e WEB_UI=true \
+  -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   amayer1983/docksentry:latest
 ```
@@ -103,10 +117,12 @@ volumes:
 
 ## Configuration
 
+At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEBHOOK_URL` must be configured — otherwise Docksentry has no way to notify or be controlled.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BOT_TOKEN` | *required* | Telegram Bot API token |
-| `CHAT_ID` | *required* | Your Telegram chat ID |
+| `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
+| `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
 | `AUTO_SELFUPDATE` | `false` | Auto-update the bot on each check |
@@ -122,7 +138,7 @@ volumes:
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
 
-All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts.
+All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 

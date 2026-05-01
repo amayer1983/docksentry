@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.12.0] - 2026-05-01
+
+### Added
+- **Headless mode** — Telegram is now optional. Docksentry runs fine with just the Web UI, just Discord, just a generic webhook, or any combination thereof. `BOT_TOKEN` / `CHAT_ID` are no longer required (but must still be set together if Telegram is wanted). Docksentry validates at startup that at least one notification/control channel is configured.
+- **Web UI: Image Cleanup button** — runs `docker image prune` on demand from the Settings page. Was previously only reachable via Telegram `/cleanup`.
+- **Web UI: Self-Update button** — triggers a self-update from the Settings page. Was previously only reachable via Telegram `/selfupdate`.
+- **Settings page: Telegram status row** — shows whether Telegram is `enabled` or `disabled (headless)`.
+
+### Changed
+- **Pin / auto-update state extracted** into a new `container_store.py` module. The Web UI now reads/writes these lists directly instead of going through TelegramBot, so they keep working in headless mode.
+- **Startup output** now reports `Telegram: ON / OFF` so you can immediately see which mode you're in.
+
+### Migration
+- Existing setups with `BOT_TOKEN` and `CHAT_ID` continue to work unchanged.
+- To switch to headless mode: remove `BOT_TOKEN` and `CHAT_ID` from your environment, leave `WEB_UI=true` (or configure `DISCORD_WEBHOOK` / `WEBHOOK_URL`).
+
 ## [1.11.8] - 2026-05-01
 
 ### Fixed

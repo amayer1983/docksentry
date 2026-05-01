@@ -130,7 +130,7 @@ def _validate_webhook_url(url, kind="generic"):
     return True, None
 
 
-def create_handler(config, checker, bot, password=None):
+def create_handler(config, checker, bot, store, password=None):
     """Create a request handler with access to app components."""
 
     # Pre-compute password hash if set
@@ -443,10 +443,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                 params = parse_qs(body)
                 name = params.get("name", [""])[0]
                 if name:
-                    pinned = bot._get_pinned()
-                    if name not in pinned:
-                        pinned.append(name)
-                        bot._save_pinned(pinned)
+                    store.pin(name)
                 self._send_redirect("/")
             elif path == "/api/unpin":
                 length = int(self.headers.get("Content-Length", 0))
@@ -454,10 +451,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                 params = parse_qs(body)
                 name = params.get("name", [""])[0]
                 if name:
-                    pinned = bot._get_pinned()
-                    if name in pinned:
-                        pinned.remove(name)
-                        bot._save_pinned(pinned)
+                    store.unpin(name)
                 self._send_redirect("/")
             elif path == "/api/autoupdate":
                 length = int(self.headers.get("Content-Length", 0))
@@ -465,13 +459,14 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
                 params = parse_qs(body)
                 name = params.get("name", [""])[0]
                 if name:
-                    auto_list = bot._get_autoupdate()
-                    if name in auto_list:
-                        auto_list.remove(name)
-                    else:
-                        auto_list.append(name)
-                    bot._save_autoupdate(auto_list)
+                    store.toggle_auto(name)
                 self._send_redirect("/")
+            elif path == "/api/cleanup":
+                threading.Thread(target=self._api_cleanup).start()
+                self._send_redirect("/settings?saved=1")
+            elif path == "/api/selfupdate":
+                threading.Thread(target=self._api_selfupdate).start()
+                self._send_redirect("/settings?saved=1")
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -479,8 +474,8 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
             containers = self._get_containers()
             pending = self._get_pending()
             pending_names = [u["name"] for u in pending]
-            pinned = bot._get_pinned()
-            auto_list = bot._get_autoupdate()
+            pinned = store.get_pinned()
+            auto_list = store.get_autoupdate()
 
             from i18n import get_translator
             t = get_translator(config.language)
@@ -678,9 +673,23 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 </div>
 
 <div class="card">
+<h2>Maintenance</h2>
+<form method="POST" action="/api/cleanup" style="display:inline;margin-right:8px">
+<button type="submit" class="btn btn-blue">🧹 Image Cleanup</button>
+</form>
+<form method="POST" action="/api/selfupdate" style="display:inline">
+<button type="submit" class="btn">⬆️ Self-Update</button>
+</form>
+<p style="font-size:12px;color:#484f58;margin-top:12px">
+Cleanup removes unused Docker images older than 24h. Self-Update pulls the latest Docksentry image and recreates this container.
+</p>
+</div>
+
+<div class="card">
 <h2>Info</h2>
 <table>
 <tr><td>Version</td><td><code>v{_e(VERSION)}</code></td></tr>
+<tr><td>Telegram</td><td><code>{'enabled' if (config.bot_token and config.chat_id) else 'disabled (headless)'}</code></td></tr>
 <tr><td>Bot Token</td><td><code>{_e(token_masked)}</code></td></tr>
 <tr><td>Chat ID</td><td><code>{_e(chat_masked)}</code></td></tr>
 <tr><td>Data Dir</td><td><code>{_e(config.data_dir)}</code></td></tr>
@@ -769,14 +778,50 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
             except Exception as e:
                 print(f"Web UI check error: {e}")
 
+        def _api_cleanup(self):
+            """Run `docker image prune` to free disk space."""
+            try:
+                result = subprocess.run(
+                    ["docker", "image", "prune", "-a", "--force", "--filter", "until=24h"],
+                    capture_output=True, text=True, timeout=120
+                )
+                lines = result.stdout.strip().split("\n")
+                space_line = [l for l in lines if "reclaimed" in l.lower()]
+                msg = space_line[-1] if space_line else "Nothing to clean up."
+                if bot.enabled:
+                    bot.send_message(f"✅ {msg}")
+                if bot.notifier and bot.notifier.has_channels():
+                    bot.notifier.send_message(f"🧹 Cleanup: {msg}")
+                print(f"Cleanup: {msg}")
+            except Exception as e:
+                print(f"Web UI cleanup error: {e}")
+
+        def _api_selfupdate(self):
+            """Trigger a self-update of the Docksentry container."""
+            try:
+                # The TelegramBot class owns the selfupdate logic regardless
+                # of whether Telegram itself is configured — when disabled,
+                # internal send_message() calls are no-ops and the Discord/
+                # webhook channels (via notifier) carry the status messages.
+                if bot.enabled:
+                    bot._handle_selfupdate()
+                else:
+                    # Headless variant — reuse the auto-selfupdate path which
+                    # already runs without sending Telegram messages.
+                    bot.check_selfupdate_auto()
+            except Exception as e:
+                print(f"Web UI selfupdate error: {e}")
+                if bot.notifier and bot.notifier.has_channels():
+                    bot.notifier.send_message(f"❌ Selfupdate failed: {e}")
+
     return WebHandler
 
 
 class WebUI:
-    def __init__(self, config, checker, bot, port=8080, password=""):
+    def __init__(self, config, checker, bot, store, port=8080, password=""):
         self.config = config
         self.port = port
-        self.handler = create_handler(config, checker, bot, password or None)
+        self.handler = create_handler(config, checker, bot, store, password or None)
         self.server = None
         self.thread = None
 

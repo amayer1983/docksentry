@@ -18,6 +18,7 @@ if os.environ.get("DOCKSENTRY_IPV6", "false").lower() not in ("true", "1", "yes"
     socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 from config import Config
+from container_store import ContainerStore
 from telegram_bot import TelegramBot
 from update_checker import UpdateChecker
 from scheduler import Scheduler
@@ -27,11 +28,28 @@ from notifier import Notifier
 def main():
     config = Config.from_env()
 
-    if not config.bot_token or not config.chat_id:
-        print("ERROR: BOT_TOKEN and CHAT_ID environment variables are required.")
+    # Telegram is now optional. At least one notification/control channel
+    # must be configured, otherwise Docksentry has no way to talk to the
+    # operator (and no way to be talked to).
+    telegram_partial = bool(config.bot_token) ^ bool(config.chat_id)
+    if telegram_partial:
+        print("ERROR: BOT_TOKEN and CHAT_ID must be set together.")
+        sys.exit(1)
+    telegram_on = bool(config.bot_token and config.chat_id)
+    has_any_channel = (
+        telegram_on
+        or config.web_ui
+        or config.discord_webhook
+        or config.webhook_url
+    )
+    if not has_any_channel:
+        print("ERROR: configure at least one of: BOT_TOKEN+CHAT_ID, WEB_UI=true,")
+        print("       DISCORD_WEBHOOK, WEBHOOK_URL — otherwise Docksentry has")
+        print("       no way to notify or be controlled.")
         sys.exit(1)
 
-    bot = TelegramBot(config)
+    store = ContainerStore(config)
+    bot = TelegramBot(config, store)
     notifier = Notifier(config)
     bot.notifier = notifier
     checker = UpdateChecker(config)
@@ -55,7 +73,7 @@ def main():
     # Start Web UI if enabled
     if config.web_ui:
         from web_ui import WebUI
-        web = WebUI(config, checker, bot, config.web_port, config.web_password)
+        web = WebUI(config, checker, bot, store, config.web_port, config.web_password)
         web.start()
 
     print(f"Docksentry started.")
@@ -63,6 +81,7 @@ def main():
     print(f"Excluded: {config.exclude_containers or 'none'}")
     print(f"Auto selfupdate: {'ON' if config.auto_selfupdate else 'OFF'}")
     print(f"Language: {config.language}")
+    print(f"Telegram: {'ON' if telegram_on else 'OFF'}")
     if config.web_ui:
         print(f"Web UI: http://0.0.0.0:{config.web_port}")
     if config.discord_webhook:
@@ -78,11 +97,14 @@ def main():
     from i18n import get_translator
     t = get_translator(config.language)
     startup_msg = t("startup_message", version=VERSION)
-    bot.send_message(startup_msg)
+    if bot.enabled:
+        bot.send_message(startup_msg)
     if notifier.has_channels():
         notifier.send_message(startup_msg)
 
-    # Start bot listener (blocking)
+    # Start bot listener (blocking).
+    # When Telegram is off this just blocks until shutdown — scheduler/Web UI
+    # run in their own threads.
     bot.listen(checker, scheduler)
 
 
