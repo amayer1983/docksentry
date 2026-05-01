@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - README.md
+      - .github/workflows/dockerhub-description.yml
+  workflow_dispatch:
 
 jobs:
   update-description:
@@ -20,5 +22,5 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: amayer1983/docksentry
-          short-description: "Docksentry — Docker container update manager with Telegram bot, Web UI, and auto-rollback"
+          short-description: "Docker container update manager — Web UI, auto-rollback, multi-channel notifications"
           readme-filepath: ./README.md
