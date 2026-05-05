@@ -21,7 +21,25 @@ def _e(value):
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
-_LOGO_B64 = "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"
+# ── SVG icon set (Lucide-inspired strokes) ──────────────────────────
+# Inline SVG so they pick up `color` from the parent (currentColor) — we
+# want Pin to be red when active and grey when inactive, and the only way
+# to do that is *not* using a color emoji like 📌.
+_ICONS = {
+    "refresh":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9c-2.4 0-4.6-.9-6.3-2.5L3 21"/><path d="M3 12a9 9 0 0 1 9-9c2.4 0 4.6.9 6.3 2.5L21 3"/><path d="M21 3v6h-6"/><path d="M3 21v-6h6"/></svg>',
+    "pin":       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 17 .003 5"/><path d="M12 17a5 5 0 0 0 5-5V8.4l1.6-1.6a1 1 0 0 0 0-1.4l-3-3a1 1 0 0 0-1.4 0L12.6 4H7a5 5 0 0 0-5 5"/><path d="M2 22 22 2"/></svg>',
+    "settings":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2"/><circle cx="12" cy="12" r="3"/></svg>',
+    "alert":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    "checkmark": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    "x":         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+    "search":    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+    "broom":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13 4 20"/><path d="M5 19a3 3 0 0 1 0-6"/><path d="M11 13 22 2"/><path d="M22 2v6"/><path d="m11 13 6 6"/><path d="M17 19h5"/></svg>',
+    "arrow_up":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>',
+    "calendar":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
+}
+
+
+_LOGO_B64 = "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"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -300,6 +318,16 @@ hr.section-divider {
     background: rgba(248,81,73,0.08);
 }
 .btn-icon.is-pinned:hover { background: rgba(248,81,73,0.16); color: var(--danger); }
+/* SVG icons inside btn-icon use currentColor → inherit button text color */
+.btn-icon svg { width: 14px; height: 14px; display: block; }
+.icon-emoji { font-size: 14px; line-height: 1; }
+/* Buttons with text + leading icon */
+.btn-icon-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-icon-text svg { width: 12px; height: 12px; flex-shrink: 0; }
 
 /* Container name link — subtle hover */
 .container-link {
@@ -384,8 +412,10 @@ tr.is-hidden { display: none; }
 }
 .bulk-bar.is-active .bulk-count { color: var(--accent); font-weight: 500; }
 .bulk-bar button[disabled] {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
+    filter: saturate(0.3);
+    pointer-events: none;
 }
 .bulk-bar button.is-hidden { display: none; }
 .bulk-divider {
@@ -495,7 +525,11 @@ pre {
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
     transition: color 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
+.tab-btn svg { width: 14px; height: 14px; }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.is-active {
     color: var(--accent);
@@ -1272,7 +1306,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 update_btn = (
                     f'<form method="POST" action="/api/update" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon" title="{_e(t("web_update"))}">🔄</button>'
+                    f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update"))}">{_ICONS["refresh"]}</button>'
                     f'</form>'
                 ) if c["name"] in pending_names else ''
                 pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
@@ -1280,21 +1314,21 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'<form method="POST" action="{pin_form_action}" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
-                    f'title="{_e(t("web_unpin") if is_pinned_c else t("web_pin"))}">📌</button>'
+                    f'title="{_e(t("web_unpin") if is_pinned_c else t("web_pin"))}">{_ICONS["pin"]}</button>'
                     f'</form>'
                 )
                 auto_btn = (
                     f'<form method="POST" action="/api/autoupdate" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-active" if is_auto else ""}" '
-                    f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">⚙</button>'
+                    f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">{_ICONS["settings"]}</button>'
                     f'</form>'
                 )
                 ask_btn = (
                     f'<form method="POST" action="/api/ask_major" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
-                    f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">⚠</button>'
+                    f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
                     f'</form>'
                 )
                 actions = f'<div class="btn-row">{update_btn}{pin_btn}{auto_btn}{ask_btn}</div>'
@@ -1394,7 +1428,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <div class="card">
 <div class="card-header-row">
 <h2 style="margin:0">{t("web_containers")}</h2>
-<a href="/api/check" class="btn btn-blue btn-compact">{t("web_check_updates")}</a>
+<a href="/api/check" class="btn btn-blue btn-compact btn-icon-text">{_ICONS["search"]}<span>{t("web_check_updates")}</span></a>
 </div>
 <div class="toolbar-row">
 <input type="text" id="containerSearch" class="search-input" placeholder="{_e(t('web_search_placeholder'))}">
@@ -1405,11 +1439,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <input type="hidden" name="names" id="bulkNames" value="">
 <span id="bulkCount" class="bulk-count">{t("web_bulk_none_selected")}</span>
 <span class="bulk-divider"></span>
-<button type="button" class="btn-sm btn" onclick="bulkSubmit('update')" title="{_e(t('web_bulk_update_tt'))}">🔄 {t("web_bulk_update")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('pin')" title="{_e(t('web_bulk_pin_tt'))}">📌 {t("web_bulk_pin")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('unpin')" title="{_e(t('web_bulk_unpin_tt'))}">📌 {t("web_bulk_unpin")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">⚙ {t("web_bulk_auto_on")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">⚙ {t("web_bulk_auto_off")}</button>
+<button type="button" class="btn-sm btn btn-icon-text" onclick="bulkSubmit('update')" title="{_e(t('web_bulk_update_tt'))}">{_ICONS["refresh"]}<span>{t("web_bulk_update")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('pin')" title="{_e(t('web_bulk_pin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_pin")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('unpin')" title="{_e(t('web_bulk_unpin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_unpin")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
 <table>
 <tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
@@ -1604,11 +1638,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
 <form method="POST" action="/settings">
 <div class="tabs" data-tabs="settings">
-  <button type="button" class="tab-btn" data-tab-target="general">⚙ {t("web_tab_general")}</button>
-  <button type="button" class="tab-btn" data-tab-target="updates">🔄 {t("web_tab_updates")}</button>
-  <button type="button" class="tab-btn" data-tab-target="cleanup">🧹 {t("web_tab_cleanup")}</button>
-  <button type="button" class="tab-btn" data-tab-target="notifs">🔔 {t("web_tab_notifications")}</button>
-  <button type="button" class="tab-btn" data-tab-target="channels">📡 {t("web_tab_channels")}</button>
+  <button type="button" class="tab-btn" data-tab-target="general">{_ICONS["settings"]}<span>{t("web_tab_general")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="updates">{_ICONS["refresh"]}<span>{t("web_tab_updates")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="cleanup">{_ICONS["broom"]}<span>{t("web_tab_cleanup")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="notifs">{_ICONS["alert"]}<span>{t("web_tab_notifications")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="channels">{_ICONS["calendar"]}<span>{t("web_tab_channels")}</span></button>
 </div>
 
 <!-- ── Allgemein ─────────────────────────────────── -->
@@ -1727,14 +1761,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
       data-confirm="{_e(t('web_confirm_cleanup'))}"
       data-confirm-title="{_e(t('web_maintenance_cleanup'))}"
       data-confirm-label="{_e(t('web_confirm_cleanup_btn'))}">
-<button type="submit" class="btn btn-blue">🧹 {t("web_maintenance_cleanup")}</button>
+<button type="submit" class="btn btn-blue btn-icon-text">{_ICONS["broom"]}<span>{t("web_maintenance_cleanup")}</span></button>
 </form>
 <form method="POST" action="/api/selfupdate" style="display:inline"
       data-confirm="{_e(t('web_confirm_selfupdate'))}"
       data-confirm-title="{_e(t('web_maintenance_selfupdate'))}"
       data-confirm-label="{_e(t('web_confirm_selfupdate_btn'))}"
       data-confirm-danger="1">
-<button type="submit" class="btn">⬆️ {t("web_maintenance_selfupdate")}</button>
+<button type="submit" class="btn btn-icon-text">{_ICONS["arrow_up"]}<span>{t("web_maintenance_selfupdate")}</span></button>
 </form>
 <p class="form-help" style="margin-top:12px">
 {t("web_maintenance_explain", grace=_e(config.cleanup_grace_hours), days=_e(config.cleanup_backup_days), dir=_e(config.cleanup_backup_dir))}
