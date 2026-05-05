@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Очищення старих образів...",
   "cleanup_none": "✅ Невикористані образи не знайдено.",
   "selfupdate_checking": "🔄 Перевірка оновлення для `{image}`...",
-  "selfupdate_current_version": "📅 Поточна версія: {date}",
+  "selfupdate_current_version": "🗓️ Поточна версія: {date}",
   "selfupdate_image_id": "🆔 Образ: `{id}`",
   "selfupdate_up_to_date": "✅ Вже оновлено.",
   "selfupdate_found": "⏳ *Знайдено новий образ!*",
-  "selfupdate_dates": "📅 Новий: {new} | Старий: {old}",
+  "selfupdate_dates": "🗓️ Новий: {new} | Старий: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Запуск самооновлення... Бот буде тимчасово недоступний.",
   "selfupdate_failed_pull": "❌ Помилка завантаження: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Вимкнути автооновлення",
   "web_topic_id_placeholder": "Необов'язково — для груп з увімкненими темами",
   "web_auto_cleanup": "🧹 Авто-очищення",
-  "web_auto_cleanup_hint": "Після кожного успішного авто-оновлення видаляються невикористовувані образи, старші за 24 год."
+  "web_auto_cleanup_hint": "Після кожного успішного авто-оновлення видаляються невикористовувані образи, старші за 24 год.",
+  "web_cleanup_grace_hours": "Період очікування (годин)",
+  "web_cleanup_grace_hours_hint": "Видаляє лише образи, що не використовуються щонайменше стільки часу. Більше = безпечніше.",
+  "web_cleanup_backup_days": "Зберігання резервних копій (днів)",
+  "web_cleanup_backup_days_hint": "Скільки зберігати tar-архіви резервних копій.",
+  "web_cleanup_backup_local_only": "🛟 Резервне копіювання локальних образів",
+  "web_cleanup_backup_local_only_hint": "Зберігає локально зібрані образи (без digest реєстру) у tar перед видаленням."
 }

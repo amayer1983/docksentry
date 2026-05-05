@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Eski imajlar temizleniyor...",
   "cleanup_none": "✅ Kullanılmayan imaj bulunamadı.",
   "selfupdate_checking": "🔄 `{image}` için güncelleme kontrol ediliyor...",
-  "selfupdate_current_version": "📅 Mevcut sürüm: {date}",
+  "selfupdate_current_version": "🗓️ Mevcut sürüm: {date}",
   "selfupdate_image_id": "🆔 İmaj: `{id}`",
   "selfupdate_up_to_date": "✅ Zaten güncel.",
   "selfupdate_found": "⏳ *Yeni imaj bulundu!*",
-  "selfupdate_dates": "📅 Yeni: {new} | Eski: {old}",
+  "selfupdate_dates": "🗓️ Yeni: {new} | Eski: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Otomatik güncelleme başlatılıyor... Bot kısa süreliğine çevrimdışı olacak.",
   "selfupdate_failed_pull": "❌ İndirme başarısız: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Otomatik güncellemeyi devre dışı bırak",
   "web_topic_id_placeholder": "İsteğe bağlı — konu etkin gruplar için",
   "web_auto_cleanup": "🧹 Otomatik temizlik",
-  "web_auto_cleanup_hint": "Her başarılı otomatik güncellemenin ardından 24 saatten eski kullanılmayan imajlar silinir."
+  "web_auto_cleanup_hint": "Her başarılı otomatik güncellemenin ardından 24 saatten eski kullanılmayan imajlar silinir.",
+  "web_cleanup_grace_hours": "Bekleme süresi (saat)",
+  "web_cleanup_grace_hours_hint": "Yalnızca en az bu kadar süredir kullanılmayan imajları siler. Yüksek = güvenli.",
+  "web_cleanup_backup_days": "Yedek saklama (gün)",
+  "web_cleanup_backup_days_hint": "Yedek tarball'larının ne kadar süre saklanacağı.",
+  "web_cleanup_backup_local_only": "🛟 Yerel imajları yedekle",
+  "web_cleanup_backup_local_only_hint": "Yerel olarak oluşturulmuş imajları (registry digest'i olmayan) silmeden önce tarball olarak kaydeder."
 }

@@ -277,25 +277,151 @@ class UpdateChecker:
         return "?"
 
     def cleanup_images(self):
-        """Run `docker image prune` to free disk space.
+        """Run image cleanup with optional pre-prune local-image backup.
 
-        Removes unused images that are at least 24h old (the `until=24h`
-        filter prevents brand-new pulls from being accidentally deleted).
-        Returns a tuple (success: bool, message: str) — message is the
-        human-readable "Total reclaimed space: …" line on success.
+        Behaviour controlled by config:
+          cleanup_grace_hours      — `until=Xh` filter (default 24)
+          cleanup_backup_local_only — if True, save locally-built images
+                                       (no RepoDigests) as tarballs before
+                                       removing them. Tarballs older than
+                                       `cleanup_backup_days` are themselves
+                                       deleted on every cleanup run.
+          cleanup_backup_days      — retention for backup tarballs
+
+        Returns (success: bool, message: str). Message is multi-line and
+        includes the reclaim total, list of removed image tags (truncated),
+        and a note about backup activity if relevant.
         """
         try:
+            grace = int(self.config.cleanup_grace_hours or 24)
+        except (ValueError, TypeError):
+            grace = 24
+
+        backup_msg = ""
+        if self.config.cleanup_backup_local_only:
+            try:
+                backed_up = self._backup_local_unused_images()
+                if backed_up:
+                    backup_msg = f" Backed up {len(backed_up)} local image(s) → {self.config.cleanup_backup_dir}."
+                self._prune_old_backups()
+            except Exception as e:
+                self._debug(f"  Backup step failed: {e}")
+                # Continue with prune anyway — backups are nice-to-have
+
+        try:
             result = subprocess.run(
-                ["docker", "image", "prune", "-a", "--force", "--filter", "until=24h"],
-                capture_output=True, text=True, timeout=120
+                ["docker", "image", "prune", "-a", "--force", "--filter", f"until={grace}h"],
+                capture_output=True, text=True, timeout=180
             )
             if result.returncode != 0:
                 return False, f"Cleanup failed: {result.stderr.strip()[:200]}"
             lines = result.stdout.strip().split("\n")
-            space_line = [l for l in lines if "reclaimed" in l.lower()]
-            return True, space_line[-1] if space_line else "Nothing to clean up."
+            space_line = next((l for l in lines if "reclaimed" in l.lower()), "")
+            deleted_lines = [l for l in lines if l.startswith(("Deleted: sha256:", "Untagged: "))]
+            untagged = sorted({l[len("Untagged: "):].split("@")[0]
+                               for l in lines if l.startswith("Untagged: ")})
+
+            if not space_line:
+                return True, "Nothing to clean up." + backup_msg
+            msg = space_line + backup_msg
+            if untagged:
+                preview = ", ".join(untagged[:6])
+                if len(untagged) > 6:
+                    preview += f", +{len(untagged) - 6} more"
+                msg += f"\nRemoved: {preview}"
+            return True, msg
         except Exception as e:
             return False, f"Cleanup error: {str(e)[:200]}"
+
+    def _backup_local_unused_images(self):
+        """Save unused, locally-built images (no RepoDigests) as tarballs.
+
+        Returns list of (image_id, tarball_path) for what was backed up.
+        Images that would be pulled-back-from-registry instead of needing
+        local restore are skipped — they're considered "safe to delete".
+        """
+        os.makedirs(self.config.cleanup_backup_dir, exist_ok=True)
+
+        # IDs of all images currently in use (running or stopped containers)
+        ps_result = subprocess.run(
+            ["docker", "ps", "-a", "--no-trunc", "--format", "{{.ImageID}}"],
+            capture_output=True, text=True, timeout=30
+        )
+        used_ids = {l.strip() for l in ps_result.stdout.strip().split("\n") if l.strip()}
+
+        # All images, full inspect form (need RepoDigests + RepoTags)
+        ls_result = subprocess.run(
+            ["docker", "image", "ls", "-a", "--no-trunc", "--format", "{{.ID}}"],
+            capture_output=True, text=True, timeout=30
+        )
+        all_ids = [l.strip() for l in ls_result.stdout.strip().split("\n") if l.strip()]
+        # De-dup (image ls can list same ID multiple times for multiple tags)
+        all_ids = list(dict.fromkeys(all_ids))
+
+        backed_up = []
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        run_dir = os.path.join(self.config.cleanup_backup_dir, timestamp)
+
+        for img_id in all_ids:
+            if img_id in used_ids:
+                continue
+            inspect = subprocess.run(
+                ["docker", "image", "inspect", img_id],
+                capture_output=True, text=True, timeout=30
+            )
+            if inspect.returncode != 0:
+                continue
+            try:
+                meta = json.loads(inspect.stdout)[0]
+            except (json.JSONDecodeError, IndexError):
+                continue
+            repo_digests = meta.get("RepoDigests") or []
+            repo_tags = [t for t in (meta.get("RepoTags") or []) if t and t != "<none>:<none>"]
+
+            # Skip images that have a RepoDigest — they live in a registry,
+            # `docker pull` can recreate them, no need to backup.
+            if repo_digests:
+                continue
+            # Skip dangling-only images — they're build leftovers, not worth
+            # preserving.
+            if not repo_tags:
+                continue
+
+            # This is a locally-built, unused, tagged image — back it up.
+            os.makedirs(run_dir, exist_ok=True)
+            safe_name = repo_tags[0].replace("/", "_").replace(":", "_")
+            tarball = os.path.join(run_dir, f"{safe_name}.tar")
+            save = subprocess.run(
+                ["docker", "image", "save", "-o", tarball, img_id],
+                capture_output=True, text=True, timeout=600
+            )
+            if save.returncode == 0:
+                backed_up.append((img_id, tarball))
+                self._debug(f"  Backed up: {repo_tags[0]} → {tarball}")
+            else:
+                self._debug(f"  Backup failed for {img_id}: {save.stderr[:200]}")
+        return backed_up
+
+    def _prune_old_backups(self):
+        """Delete backup directories older than cleanup_backup_days."""
+        backup_dir = self.config.cleanup_backup_dir
+        if not os.path.isdir(backup_dir):
+            return
+        try:
+            days = int(self.config.cleanup_backup_days or 7)
+        except (ValueError, TypeError):
+            days = 7
+        cutoff = time.time() - days * 86400
+        for entry in os.listdir(backup_dir):
+            path = os.path.join(backup_dir, entry)
+            try:
+                if os.path.isdir(path) and os.path.getmtime(path) < cutoff:
+                    # Recursive delete: rmtree
+                    import shutil
+                    shutil.rmtree(path, ignore_errors=True)
+                    self._debug(f"  Pruned old backup: {path}")
+            except OSError:
+                pass
 
     def _get_compose_info(self, name):
         """Detect if container belongs to a Docker Compose stack."""
@@ -505,7 +631,7 @@ class UpdateChecker:
             self._save_history(name, image, False, msg)
             return False, msg
 
-        detail = f"📅 {old_created} → {new_created}, 📦 {new_size}"
+        detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
         self._save_history(name, image, True, f"compose: {detail}")
         return True, f"OK ({detail})"
 
@@ -680,7 +806,7 @@ class UpdateChecker:
             subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
-            detail = f"📅 {old_created} → {new_created}, 📦 {new_size}"
+            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
             self._save_history(name, image, True, detail)
             return True, f"OK ({detail})"
 

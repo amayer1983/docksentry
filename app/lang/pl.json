@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Czyszczenie starych obrazów...",
   "cleanup_none": "✅ Nie znaleziono nieużywanych obrazów.",
   "selfupdate_checking": "🔄 Sprawdzanie aktualizacji dla `{image}`...",
-  "selfupdate_current_version": "📅 Bieżąca wersja: {date}",
+  "selfupdate_current_version": "🗓️ Bieżąca wersja: {date}",
   "selfupdate_image_id": "🆔 Obraz: `{id}`",
   "selfupdate_up_to_date": "✅ Już zaktualizowany.",
   "selfupdate_found": "⏳ *Znaleziono nowy obraz!*",
-  "selfupdate_dates": "📅 Nowy: {new} | Stary: {old}",
+  "selfupdate_dates": "🗓️ Nowy: {new} | Stary: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Rozpoczynanie automatycznej aktualizacji... Bot będzie chwilowo niedostępny.",
   "selfupdate_failed_pull": "❌ Pobieranie nie powiodło się: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Wyłącz automatyczną aktualizację",
   "web_topic_id_placeholder": "Opcjonalnie — dla grup z włączonymi tematami",
   "web_auto_cleanup": "🧹 Auto-czyszczenie",
-  "web_auto_cleanup_hint": "Po każdej udanej automatycznej aktualizacji usuwa nieużywane obrazy starsze niż 24h."
+  "web_auto_cleanup_hint": "Po każdej udanej automatycznej aktualizacji usuwa nieużywane obrazy starsze niż 24h.",
+  "web_cleanup_grace_hours": "Okres karencji (godziny)",
+  "web_cleanup_grace_hours_hint": "Usuwa tylko obrazy nieużywane przez co najmniej ten czas. Wyższe = bezpieczniej.",
+  "web_cleanup_backup_days": "Retencja backupu (dni)",
+  "web_cleanup_backup_days_hint": "Jak długo przechowywać tarball-e backupów.",
+  "web_cleanup_backup_local_only": "🛟 Backup obrazów lokalnych",
+  "web_cleanup_backup_local_only_hint": "Zapisuje obrazy zbudowane lokalnie (bez digestu rejestru) jako tarball przed usunięciem."
 }

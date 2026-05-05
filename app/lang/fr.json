@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Nettoyage des anciennes images...",
   "cleanup_none": "✅ Aucune image inutilisée trouvée.",
   "selfupdate_checking": "🔄 Vérification de la mise à jour pour `{image}`...",
-  "selfupdate_current_version": "📅 Version actuelle : {date}",
+  "selfupdate_current_version": "🗓️ Version actuelle : {date}",
   "selfupdate_image_id": "🆔 Image : `{id}`",
   "selfupdate_up_to_date": "✅ Déjà à jour.",
   "selfupdate_found": "⏳ *Nouvelle image trouvée !*",
-  "selfupdate_dates": "📅 Nouveau : {new} | Ancien : {old}",
+  "selfupdate_dates": "🗓️ Nouveau : {new} | Ancien : {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Démarrage de la mise à jour automatique... Le bot sera brièvement hors ligne.",
   "selfupdate_failed_pull": "❌ Échec du téléchargement : {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Désactiver la mise à jour automatique",
   "web_topic_id_placeholder": "Optionnel — pour les groupes avec topics activés",
   "web_auto_cleanup": "🧹 Nettoyage auto",
-  "web_auto_cleanup_hint": "Après chaque mise à jour automatique réussie, supprime les images inutilisées de plus de 24h."
+  "web_auto_cleanup_hint": "Après chaque mise à jour automatique réussie, supprime les images inutilisées de plus de 24h.",
+  "web_cleanup_grace_hours": "Délai de grâce (heures)",
+  "web_cleanup_grace_hours_hint": "Ne supprimer que les images inutilisées depuis au moins ce temps. Plus élevé = plus sûr.",
+  "web_cleanup_backup_days": "Rétention sauvegarde (jours)",
+  "web_cleanup_backup_days_hint": "Durée de conservation des sauvegardes.",
+  "web_cleanup_backup_local_only": "🛟 Sauvegarder images locales",
+  "web_cleanup_backup_local_only_hint": "Sauvegarde les images construites localement (sans digest de registre) en tar avant suppression. Les images de registre sont ignorées."
 }

@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Räume alte Images auf...",
   "cleanup_none": "✅ Keine ungenutzten Images gefunden.",
   "selfupdate_checking": "🔄 Prüfe Update für `{image}`...",
-  "selfupdate_current_version": "📅 Aktuelle Version: {date}",
+  "selfupdate_current_version": "🗓️ Aktuelle Version: {date}",
   "selfupdate_image_id": "🆔 Image: `{id}`",
   "selfupdate_up_to_date": "✅ Bereits auf dem neuesten Stand.",
   "selfupdate_found": "⏳ *Neues Image gefunden!*",
-  "selfupdate_dates": "📅 Neu: {new} | Alt: {old}",
+  "selfupdate_dates": "🗓️ Neu: {new} | Alt: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Starte Self-Update... Bot wird kurz offline sein.",
   "selfupdate_failed_pull": "❌ Pull fehlgeschlagen: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Auto-Update deaktivieren",
   "web_topic_id_placeholder": "Optional — für Gruppen mit aktivierten Topics",
   "web_auto_cleanup": "🧹 Auto-Aufräumen",
-  "web_auto_cleanup_hint": "Nach jedem erfolgreichen Auto-Update werden ungenutzte Images älter als 24h entfernt."
+  "web_auto_cleanup_hint": "Nach jedem erfolgreichen Auto-Update werden ungenutzte Images älter als 24h entfernt.",
+  "web_cleanup_grace_hours": "Schonfrist (Stunden)",
+  "web_cleanup_grace_hours_hint": "Nur Images entfernen, die mindestens so lange ungenutzt sind. Höher = sicherer.",
+  "web_cleanup_backup_days": "Backup-Aufbewahrung (Tage)",
+  "web_cleanup_backup_days_hint": "Wie lange Backup-Tarballs behalten werden.",
+  "web_cleanup_backup_local_only": "🛟 Lokale Images sichern",
+  "web_cleanup_backup_local_only_hint": "Lokal gebaute Images (ohne Registry-Digest) werden vor dem Löschen als Tarball gesichert. Registry-Images werden übersprungen — sie sind via pull wiederherstellbar."
 }

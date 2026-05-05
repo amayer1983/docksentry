@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 古いイメージをクリーンアップ中...",
   "cleanup_none": "✅ 未使用のイメージはありません。",
   "selfupdate_checking": "🔄 `{image}` のアップデートを確認中...",
-  "selfupdate_current_version": "📅 現在のバージョン: {date}",
+  "selfupdate_current_version": "🗓️ 現在のバージョン: {date}",
   "selfupdate_image_id": "🆔 イメージ: `{id}`",
   "selfupdate_up_to_date": "✅ 既に最新です。",
   "selfupdate_found": "⏳ *新しいイメージが見つかりました！*",
-  "selfupdate_dates": "📅 新: {new} | 旧: {old}",
+  "selfupdate_dates": "🗓️ 新: {new} | 旧: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "セルフアップデートを開始... ボットは一時的にオフラインになります。",
   "selfupdate_failed_pull": "❌ プル失敗: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "自動更新を無効にする",
   "web_topic_id_placeholder": "オプション — トピック有効のグループ用",
   "web_auto_cleanup": "🧹 自動クリーンアップ",
-  "web_auto_cleanup_hint": "自動更新が成功するたびに、24時間以上経過した未使用のイメージを削除します。"
+  "web_auto_cleanup_hint": "自動更新が成功するたびに、24時間以上経過した未使用のイメージを削除します。",
+  "web_cleanup_grace_hours": "猶予期間（時間）",
+  "web_cleanup_grace_hours_hint": "この期間以上使用されていないイメージのみ削除します。大きい = 安全。",
+  "web_cleanup_backup_days": "バックアップ保持（日）",
+  "web_cleanup_backup_days_hint": "バックアップ tarball を保持する期間。",
+  "web_cleanup_backup_local_only": "🛟 ローカルイメージをバックアップ",
+  "web_cleanup_backup_local_only_hint": "レジストリのダイジェストを持たないローカルビルドイメージを削除前に tarball として保存します。"
 }

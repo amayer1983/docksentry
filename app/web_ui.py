@@ -408,6 +408,21 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 config.debug = "debug" in params
                 config.auto_selfupdate = "auto_selfupdate" in params
                 config.auto_cleanup = "auto_cleanup" in params
+                config.cleanup_backup_local_only = "cleanup_backup_local_only" in params
+
+                # Numeric cleanup settings — clamp to sane ranges
+                if "cleanup_grace_hours" in params:
+                    try:
+                        v = int(params["cleanup_grace_hours"][0].strip())
+                        config.cleanup_grace_hours = max(0, min(v, 8760))  # ≤ 1 year
+                    except (ValueError, IndexError):
+                        pass
+                if "cleanup_backup_days" in params:
+                    try:
+                        v = int(params["cleanup_backup_days"][0].strip())
+                        config.cleanup_backup_days = max(1, min(v, 365))
+                    except (ValueError, IndexError):
+                        pass
 
                 # Update cron schedule
                 if "cron_schedule" in params and params["cron_schedule"][0].strip():
@@ -617,6 +632,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             debug_checked = 'checked' if config.debug else ''
             auto_su_checked = 'checked' if config.auto_selfupdate else ''
             auto_cleanup_checked = 'checked' if config.auto_cleanup else ''
+            backup_local_checked = 'checked' if config.cleanup_backup_local_only else ''
 
             # Mask sensitive values
             token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"
@@ -656,6 +672,24 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_auto_cleanup_hint")}</p>
 </div>
 
+<div class="grid" style="margin-top:8px">
+<div>
+<label>{t("web_cleanup_grace_hours")}</label>
+<input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
+<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_cleanup_grace_hours_hint")}</p>
+</div>
+<div>
+<label>{t("web_cleanup_backup_days")}</label>
+<input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
+<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_cleanup_backup_days_hint")}</p>
+</div>
+</div>
+
+<div style="margin-top:4px">
+<label><input type="checkbox" name="cleanup_backup_local_only" {backup_local_checked} style="width:auto;margin-right:8px"> {t("web_cleanup_backup_local_only")}</label>
+<p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_cleanup_backup_local_only_hint")}</p>
+</div>
+
 <div style="margin-top:8px">
 <label>{t("web_excluded")}</label>
 <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
@@ -692,7 +726,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="submit" class="btn">⬆️ Self-Update</button>
 </form>
 <p style="font-size:12px;color:#484f58;margin-top:12px">
-<b>Image Cleanup</b> — manual trigger only. Removes unused Docker images that are at least 24h old (the age filter prevents accidentally deleting images you just pulled). Enable <b>Auto cleanup</b> above to run this automatically after every successful auto-update.
+<b>Image Cleanup</b> — removes unused Docker images older than the configured grace period (currently <b>{_e(config.cleanup_grace_hours)}h</b>). Enable <b>Auto cleanup</b> above to run automatically after every successful auto-update. With <b>Backup local-only images</b> enabled, locally-built images (those without a registry digest) are saved as tarballs in <code>{_e(config.cleanup_backup_dir)}</code> before deletion and kept for <b>{_e(config.cleanup_backup_days)}</b> day(s).
 <br><br>
 <b>Self-Update</b> — pulls the latest Docksentry image and recreates this container. Runs automatically on every scheduled check if <b>Auto Self-Update</b> is enabled.
 </p>

@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Limpiando imágenes antiguas...",
   "cleanup_none": "✅ No se encontraron imágenes sin usar.",
   "selfupdate_checking": "🔄 Verificando actualización para `{image}`...",
-  "selfupdate_current_version": "📅 Versión actual: {date}",
+  "selfupdate_current_version": "🗓️ Versión actual: {date}",
   "selfupdate_image_id": "🆔 Imagen: `{id}`",
   "selfupdate_up_to_date": "✅ Ya está actualizado.",
   "selfupdate_found": "⏳ *¡Nueva imagen encontrada!*",
-  "selfupdate_dates": "📅 Nuevo: {new} | Anterior: {old}",
+  "selfupdate_dates": "🗓️ Nuevo: {new} | Anterior: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Iniciando auto-actualización... El bot estará brevemente fuera de línea.",
   "selfupdate_failed_pull": "❌ Error de descarga: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Desactivar actualización automática",
   "web_topic_id_placeholder": "Opcional — para grupos con temas activados",
   "web_auto_cleanup": "🧹 Auto-limpieza",
-  "web_auto_cleanup_hint": "Tras cada actualización automática exitosa, elimina imágenes sin usar de más de 24h."
+  "web_auto_cleanup_hint": "Tras cada actualización automática exitosa, elimina imágenes sin usar de más de 24h.",
+  "web_cleanup_grace_hours": "Periodo de gracia (horas)",
+  "web_cleanup_grace_hours_hint": "Solo eliminar imágenes sin usar desde al menos este tiempo. Más alto = más seguro.",
+  "web_cleanup_backup_days": "Retención de respaldo (días)",
+  "web_cleanup_backup_days_hint": "Cuánto tiempo conservar los tarballs de respaldo.",
+  "web_cleanup_backup_local_only": "🛟 Respaldar imágenes locales",
+  "web_cleanup_backup_local_only_hint": "Guarda las imágenes construidas localmente (sin digest de registro) como tarball antes de eliminarlas."
 }

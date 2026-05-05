@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 पुरानी इमेज साफ़ हो रही हैं...",
   "cleanup_none": "✅ कोई अप्रयुक्त इमेज नहीं मिली।",
   "selfupdate_checking": "🔄 `{image}` के लिए अपडेट जाँच...",
-  "selfupdate_current_version": "📅 वर्तमान संस्करण: {date}",
+  "selfupdate_current_version": "🗓️ वर्तमान संस्करण: {date}",
   "selfupdate_image_id": "🆔 इमेज: `{id}`",
   "selfupdate_up_to_date": "✅ पहले से अद्यतित।",
   "selfupdate_found": "⏳ *नई इमेज मिली!*",
-  "selfupdate_dates": "📅 नया: {new} | पुराना: {old}",
+  "selfupdate_dates": "🗓️ नया: {new} | पुराना: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "स्व-अपडेट शुरू... बॉट कुछ समय ऑफ़लाइन रहेगा।",
   "selfupdate_failed_pull": "❌ पुल विफल: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "स्वतः अपडेट अक्षम करें",
   "web_topic_id_placeholder": "वैकल्पिक — विषय सक्षम समूहों के लिए",
   "web_auto_cleanup": "🧹 ऑटो क्लीनअप",
-  "web_auto_cleanup_hint": "प्रत्येक सफल स्वचालित अपडेट के बाद, 24 घंटे से अधिक पुरानी अप्रयुक्त इमेजेस हटाई जाती हैं."
+  "web_auto_cleanup_hint": "प्रत्येक सफल स्वचालित अपडेट के बाद, 24 घंटे से अधिक पुरानी अप्रयुक्त इमेजेस हटाई जाती हैं.",
+  "web_cleanup_grace_hours": "ग्रेस अवधि (घंटे)",
+  "web_cleanup_grace_hours_hint": "केवल इस अवधि से अधिक समय से अप्रयुक्त इमेजेस को हटाता है. अधिक = सुरक्षित.",
+  "web_cleanup_backup_days": "बैकअप अवधारण (दिन)",
+  "web_cleanup_backup_days_hint": "बैकअप tarball कितने दिन रखें.",
+  "web_cleanup_backup_local_only": "🛟 स्थानीय इमेजेस का बैकअप",
+  "web_cleanup_backup_local_only_hint": "स्थानीय रूप से निर्मित इमेजेस (बिना registry digest) हटाने से पहले tarball के रूप में सहेजी जाती हैं."
 }

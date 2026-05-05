@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 جارٍ تنظيف الصور القديمة...",
   "cleanup_none": "✅ لم يتم العثور على صور غير مستخدمة.",
   "selfupdate_checking": "🔄 جارٍ التحقق من تحديث `{image}`...",
-  "selfupdate_current_version": "📅 الإصدار الحالي: {date}",
+  "selfupdate_current_version": "🗓️ الإصدار الحالي: {date}",
   "selfupdate_image_id": "🆔 الصورة: `{id}`",
   "selfupdate_up_to_date": "✅ محدّث بالفعل.",
   "selfupdate_found": "⏳ *تم العثور على صورة جديدة!*",
-  "selfupdate_dates": "📅 جديد: {new} | قديم: {old}",
+  "selfupdate_dates": "🗓️ جديد: {new} | قديم: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "جارٍ بدء التحديث الذاتي... سيكون البوت غير متصل لفترة قصيرة.",
   "selfupdate_failed_pull": "❌ فشل التنزيل: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "تعطيل التحديث التلقائي",
   "web_topic_id_placeholder": "اختياري — للمجموعات ذات المواضيع المفعلة",
   "web_auto_cleanup": "🧹 تنظيف تلقائي",
-  "web_auto_cleanup_hint": "بعد كل تحديث تلقائي ناجح، يتم إزالة الصور غير المستخدمة الأقدم من 24 ساعة."
+  "web_auto_cleanup_hint": "بعد كل تحديث تلقائي ناجح، يتم إزالة الصور غير المستخدمة الأقدم من 24 ساعة.",
+  "web_cleanup_grace_hours": "فترة السماح (ساعات)",
+  "web_cleanup_grace_hours_hint": "إزالة الصور غير المستخدمة لهذه المدة على الأقل فقط. أعلى = أكثر أمانًا.",
+  "web_cleanup_backup_days": "الاحتفاظ بالنسخ الاحتياطية (أيام)",
+  "web_cleanup_backup_days_hint": "مدة الاحتفاظ بأرشيفات tar للنسخ الاحتياطية.",
+  "web_cleanup_backup_local_only": "🛟 نسخ الصور المحلية احتياطيًا",
+  "web_cleanup_backup_local_only_hint": "يحفظ الصور المبنية محليًا (بدون digest من السجل) كأرشيف tar قبل الحذف."
 }

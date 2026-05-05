@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 正在清理旧镜像...",
   "cleanup_none": "✅ 未发现未使用的镜像。",
   "selfupdate_checking": "🔄 正在检查 `{image}` 的更新...",
-  "selfupdate_current_version": "📅 当前版本：{date}",
+  "selfupdate_current_version": "🗓️ 当前版本：{date}",
   "selfupdate_image_id": "🆔 镜像：`{id}`",
   "selfupdate_up_to_date": "✅ 已是最新版本。",
   "selfupdate_found": "⏳ *发现新镜像！*",
-  "selfupdate_dates": "📅 新：{new} | 旧：{old}",
+  "selfupdate_dates": "🗓️ 新：{new} | 旧：{old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "正在启动自我更新... 机器人将短暂离线。",
   "selfupdate_failed_pull": "❌ 拉取失败：{error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "禁用自动更新",
   "web_topic_id_placeholder": "可选 — 适用于启用了话题的群组",
   "web_auto_cleanup": "🧹 自动清理",
-  "web_auto_cleanup_hint": "每次自动更新成功后，删除超过 24 小时未使用的镜像。"
+  "web_auto_cleanup_hint": "每次自动更新成功后，删除超过 24 小时未使用的镜像。",
+  "web_cleanup_grace_hours": "宽限期（小时）",
+  "web_cleanup_grace_hours_hint": "只删除至少此时长未使用的镜像。越高越安全。",
+  "web_cleanup_backup_days": "备份保留（天）",
+  "web_cleanup_backup_days_hint": "保留备份 tarball 的天数。",
+  "web_cleanup_backup_local_only": "🛟 备份本地镜像",
+  "web_cleanup_backup_local_only_hint": "在删除之前将本地构建的镜像（没有 registry digest 的）保存为 tarball。"
 }

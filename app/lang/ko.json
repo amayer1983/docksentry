@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 이전 이미지 정리 중...",
   "cleanup_none": "✅ 사용하지 않는 이미지가 없습니다.",
   "selfupdate_checking": "🔄 `{image}` 업데이트 확인 중...",
-  "selfupdate_current_version": "📅 현재 버전: {date}",
+  "selfupdate_current_version": "🗓️ 현재 버전: {date}",
   "selfupdate_image_id": "🆔 이미지: `{id}`",
   "selfupdate_up_to_date": "✅ 이미 최신입니다.",
   "selfupdate_found": "⏳ *새 이미지 발견!*",
-  "selfupdate_dates": "📅 새: {new} | 이전: {old}",
+  "selfupdate_dates": "🗓️ 새: {new} | 이전: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "자동 업데이트 시작... 봇이 잠시 오프라인됩니다.",
   "selfupdate_failed_pull": "❌ 다운로드 실패: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "자동 업데이트 비활성화",
   "web_topic_id_placeholder": "선택 사항 — 토픽이 활성화된 그룹용",
   "web_auto_cleanup": "🧹 자동 정리",
-  "web_auto_cleanup_hint": "자동 업데이트가 성공할 때마다 24시간 이상 사용되지 않은 이미지를 삭제합니다."
+  "web_auto_cleanup_hint": "자동 업데이트가 성공할 때마다 24시간 이상 사용되지 않은 이미지를 삭제합니다.",
+  "web_cleanup_grace_hours": "유예 기간 (시간)",
+  "web_cleanup_grace_hours_hint": "이 기간 이상 사용되지 않은 이미지만 제거합니다. 클수록 안전.",
+  "web_cleanup_backup_days": "백업 보관 (일)",
+  "web_cleanup_backup_days_hint": "백업 tarball을 보관하는 기간.",
+  "web_cleanup_backup_local_only": "🛟 로컬 이미지 백업",
+  "web_cleanup_backup_local_only_hint": "레지스트리 digest가 없는 로컬 빌드 이미지를 삭제 전에 tarball로 저장합니다."
 }

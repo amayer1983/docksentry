@@ -127,7 +127,10 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
 | `AUTO_SELFUPDATE` | `false` | Auto-update the bot on each check |
-| `AUTO_CLEANUP` | `false` | Run `docker image prune` after every successful auto-update (24h age filter) |
+| `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
+| `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
+| `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
+| `CLEANUP_BACKUP_DAYS` | `7` | How long backup tarballs are kept (1–365 days) |
 | `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
 | `WEB_UI` | `false` | Enable web dashboard |
 | `WEB_PORT` | `8080` | Web UI port |

@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Oude images opruimen...",
   "cleanup_none": "✅ Geen ongebruikte images gevonden.",
   "selfupdate_checking": "🔄 Update controleren voor `{image}`...",
-  "selfupdate_current_version": "📅 Huidige versie: {date}",
+  "selfupdate_current_version": "🗓️ Huidige versie: {date}",
   "selfupdate_image_id": "🆔 Image: `{id}`",
   "selfupdate_up_to_date": "✅ Al up-to-date.",
   "selfupdate_found": "⏳ *Nieuw image gevonden!*",
-  "selfupdate_dates": "📅 Nieuw: {new} | Oud: {old}",
+  "selfupdate_dates": "🗓️ Nieuw: {new} | Oud: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Zelfupdate starten... Bot is even offline.",
   "selfupdate_failed_pull": "❌ Download mislukt: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Automatisch bijwerken uitschakelen",
   "web_topic_id_placeholder": "Optioneel — voor groepen met topics ingeschakeld",
   "web_auto_cleanup": "🧹 Auto-opschonen",
-  "web_auto_cleanup_hint": "Na elke geslaagde automatische update worden ongebruikte images ouder dan 24 uur verwijderd."
+  "web_auto_cleanup_hint": "Na elke geslaagde automatische update worden ongebruikte images ouder dan 24 uur verwijderd.",
+  "web_cleanup_grace_hours": "Wachtperiode (uren)",
+  "web_cleanup_grace_hours_hint": "Alleen images verwijderen die minstens zo lang ongebruikt zijn. Hoger = veiliger.",
+  "web_cleanup_backup_days": "Backup bewaarduur (dagen)",
+  "web_cleanup_backup_days_hint": "Hoe lang backup-tarballs worden bewaard.",
+  "web_cleanup_backup_local_only": "🛟 Lokale images backuppen",
+  "web_cleanup_backup_local_only_hint": "Lokaal gebouwde images (zonder registry-digest) worden voor verwijdering als tarball opgeslagen."
 }

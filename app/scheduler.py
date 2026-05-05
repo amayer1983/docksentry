@@ -99,9 +99,11 @@ class Scheduler:
                     except Exception as e:
                         print(f"Auto selfupdate error: {e}")
 
-                # Auto cleanup after successful auto-updates. The 24h filter
-                # in cleanup_images() prevents removing images we just
-                # pulled (the rollback safety-net stays intact).
+                # Auto cleanup after successful auto-updates. The grace-hours
+                # filter (default 24h) in cleanup_images() prevents removing
+                # images we just pulled — the rollback safety-net stays
+                # intact. With cleanup_backup_local_only enabled, locally-
+                # built images are saved as tarballs first.
                 if self.config.auto_cleanup and auto_updated > 0:
                     try:
                         ok, msg = self.checker.cleanup_images()

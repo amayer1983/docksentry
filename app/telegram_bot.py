@@ -271,7 +271,7 @@ class TelegramBot:
             size = u.get('size', '?')
             created = u.get('created', '?')
             compose_tag = " 🐳" if u.get("compose_project") else ""
-            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 📅 {self.t('current')}: {created}")
+            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom

@@ -21,11 +21,11 @@
   "cleanup_starting": "🧹 Очистка старых образов...",
   "cleanup_none": "✅ Неиспользуемые образы не найдены.",
   "selfupdate_checking": "🔄 Проверка обновления для `{image}`...",
-  "selfupdate_current_version": "📅 Текущая версия: {date}",
+  "selfupdate_current_version": "🗓️ Текущая версия: {date}",
   "selfupdate_image_id": "🆔 Образ: `{id}`",
   "selfupdate_up_to_date": "✅ Уже обновлено.",
   "selfupdate_found": "⏳ *Найден новый образ!*",
-  "selfupdate_dates": "📅 Новый: {new} | Старый: {old}",
+  "selfupdate_dates": "🗓️ Новый: {new} | Старый: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Запуск самообновления... Бот будет кратковременно недоступен.",
   "selfupdate_failed_pull": "❌ Ошибка загрузки: {error}",
@@ -121,5 +121,11 @@
   "web_autoupdate_disable": "Отключить автообновление",
   "web_topic_id_placeholder": "Необязательно — для групп с включёнными темами",
   "web_auto_cleanup": "🧹 Авто-очистка",
-  "web_auto_cleanup_hint": "После каждого успешного авто-обновления удаляются неиспользуемые образы старше 24 часов."
+  "web_auto_cleanup_hint": "После каждого успешного авто-обновления удаляются неиспользуемые образы старше 24 часов.",
+  "web_cleanup_grace_hours": "Период ожидания (часов)",
+  "web_cleanup_grace_hours_hint": "Удалять только образы, не используемые не менее указанного времени. Больше = безопаснее.",
+  "web_cleanup_backup_days": "Хранение бэкапов (дней)",
+  "web_cleanup_backup_days_hint": "Сколько дней хранить tar-архивы бэкапов.",
+  "web_cleanup_backup_local_only": "🛟 Бэкап локальных образов",
+  "web_cleanup_backup_local_only_hint": "Сохраняет локально собранные образы (без digest реестра) в tar перед удалением."
 }
