@@ -2,6 +2,37 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.14.0] - 2026-05-06
+
+### Added
+
+#### Container detail page
+- The `/container/<name>` route is now a real page (was a v1.13.1 stub).
+- **Overview tab** — image, size, created/started timestamps, status badge, compose project/service, configured update window, all per-container badges in one place.
+- **History tab** — update-history filtered to this single container (last 50 entries).
+- **Logs tab** — `docker logs` for this specific container with adjustable line count.
+- **Settings tab** — toggle auto-update, ⚠ major-confirm, pin/unpin, plus a per-container update-window editor (HH:MM range + weekdays). Same window store as the global Update Windows section, just scoped.
+- Container names on the Status page link directly to the detail view; tab state persists via localStorage.
+
+#### Theme toggle (Light / Dark)
+- New theme-toggle button in the header (sun/moon icon).
+- Three states: `auto` (follows OS via `prefers-color-scheme`), `light`, `dark`. User choice persists via localStorage and is applied **before paint** to avoid the dark-to-light flash.
+- Light theme uses GitHub-inspired tokens — every existing component picks it up because everything goes through CSS Custom Properties.
+
+#### Weekly summary report
+- `WEEKLY_REPORT_ENABLED=true` ships a once-a-week digest to all configured channels (Telegram, Discord embed, generic webhook).
+- Configurable day of week (`WEEKLY_REPORT_WEEKDAY` 0=Mon..6=Sun) and hour (`WEEKLY_REPORT_HOUR`, default 9). Editable via Web UI under Settings → Notifications.
+- Report contains: count of successful / failed / rolled-back updates over the last 7 days, current disk usage, top 5 most-updated containers.
+- Idempotent: state file (`/data/weekly_report_state.json`) records the last send date; firing twice on the same day is impossible even if the scheduler restarts.
+
+### Internal
+- New module `weekly_report.py` (~150 lines) — pure aggregation + format functions, easy to test in isolation.
+- Scheduler now runs a per-hour weekly-report check parallel to the cron-update tick.
+- ContainerStore exposes `get_update_window(name)` and `is_ask_before_major(name)` for the detail page.
+
+### i18n
+40 new keys × 16 language files. EN + DE translated; other languages get the English fallback.
+
 ## [1.13.1] - 2026-05-05
 
 ### Web UI refresh

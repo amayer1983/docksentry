@@ -11,6 +11,7 @@ PERSISTENT_KEYS = [
     "cleanup_grace_hours", "cleanup_backup_local_only", "cleanup_backup_days",
     "disk_warn_percent", "disk_warn_auto_cleanup",
     "quiet_hours_start", "quiet_hours_end",
+    "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id",
 ]
@@ -22,6 +23,7 @@ class Config:
                  cleanup_backup_local_only, cleanup_backup_days,
                  disk_warn_percent, disk_warn_auto_cleanup,
                  quiet_hours_start, quiet_hours_end,
+                 weekly_report_enabled, weekly_report_weekday, weekly_report_hour,
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id):
         self.bot_token = bot_token
@@ -47,6 +49,11 @@ class Config:
         # Quiet hours (HH:MM strings, empty = feature off)
         self.quiet_hours_start = quiet_hours_start
         self.quiet_hours_end = quiet_hours_end
+        # Weekly report
+        self.weekly_report_enabled = weekly_report_enabled
+        self.weekly_report_weekday = weekly_report_weekday  # 0=Mon..6=Sun
+        self.weekly_report_hour = weekly_report_hour        # 0..23
+        self.weekly_report_state_file = os.path.join(data_dir, "weekly_report_state.json")
         # Per-container update windows (loaded by ContainerStore at runtime)
         self.update_windows_file = os.path.join(data_dir, "update_windows.json")
         # Per-container "ask before major update" flag
@@ -126,6 +133,9 @@ class Config:
             disk_warn_auto_cleanup=os.environ.get("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             quiet_hours_start=os.environ.get("QUIET_HOURS_START", ""),
             quiet_hours_end=os.environ.get("QUIET_HOURS_END", ""),
+            weekly_report_enabled=os.environ.get("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
+            weekly_report_weekday=int(os.environ.get("WEEKLY_REPORT_WEEKDAY", "0")),
+            weekly_report_hour=int(os.environ.get("WEEKLY_REPORT_HOUR", "9")),
             language=os.environ.get("LANGUAGE", "en"),
             web_ui=os.environ.get("WEB_UI", "false").lower() in ("true", "1", "yes"),
             web_port=int(os.environ.get("WEB_PORT", "8080")),

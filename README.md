@@ -135,6 +135,9 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `DISK_WARN_AUTO_CLEANUP` | `false` | Automatically run cleanup when disk warning fires |
 | `QUIET_HOURS_START` | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
 | `QUIET_HOURS_END` | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
+| `WEEKLY_REPORT_ENABLED` | `false` | Send a once-a-week summary report to all configured channels |
+| `WEEKLY_REPORT_WEEKDAY` | `0` | Day of week for the report (0=Mon, 6=Sun) |
+| `WEEKLY_REPORT_HOUR` | `9` | Hour of day for the report (0-23, local time) |
 | `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
 | `WEB_UI` | `false` | Enable web dashboard |
 | `WEB_PORT` | `8080` | Web UI port |

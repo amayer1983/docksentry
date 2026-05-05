@@ -11,7 +11,7 @@ import os
 import secrets
 import subprocess
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 
@@ -86,6 +86,37 @@ _BASE_CSS = """
     --shadow:       0 1px 0 rgba(0,0,0,0.04);
     --tt-bg:        #1f2937;
     --tt-fg:        #c9d1d9;
+}
+
+/* Light theme — applied via <html data-theme="light"> */
+html[data-theme="light"] {
+    --bg:           #f6f8fa;
+    --bg-elev:      #ffffff;
+    --bg-elev-2:    #eef1f4;
+    --bg-input:    #ffffff;
+    --border:       #d0d7de;
+    --border-soft:  #e1e4e8;
+    --text:         #1f2328;
+    --text-muted:   #59636e;
+    --text-faint:   #818b98;
+    --accent:       #0969da;
+    --accent-bg:    #ddf4ff;
+    --success:      #1a7f37;
+    --success-bg:   #dafbe1;
+    --warn:         #9a6700;
+    --warn-bg:      #fff8c5;
+    --danger:       #cf222e;
+    --danger-bg:    #ffebe9;
+    --info:         #0969da;
+    --info-bg:      #ddf4ff;
+    --special:      #8250df;
+    --special-bg:   #fbefff;
+    --btn-green:    #1f883d;
+    --btn-green-h:  #1a7f37;
+    --btn-blue:     #0969da;
+    --btn-blue-h:   #0860c5;
+    --tt-bg:        #24292f;
+    --tt-fg:        #f6f8fa;
 }
 
 /* ── Reset & base ───────────────────────────────────────────── */
@@ -318,6 +349,13 @@ hr.section-divider {
     background: rgba(248,81,73,0.08);
 }
 .btn-icon.is-pinned:hover { background: rgba(248,81,73,0.16); color: var(--danger); }
+/* Light theme: search input icon needs darker stroke */
+html[data-theme="light"] .search-input {
+    background: var(--bg-input) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2359636e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 10px center;
+}
+html[data-theme="light"] .toast {
+    box-shadow: 0 4px 12px rgba(140,140,140,0.25);
+}
 /* SVG icons inside btn-icon use currentColor → inherit button text color */
 .btn-icon svg { width: 14px; height: 14px; display: block; }
 .icon-emoji { font-size: 14px; line-height: 1; }
@@ -336,6 +374,12 @@ hr.section-divider {
     transition: color 0.15s;
 }
 .container-link:hover { color: var(--accent); }
+.btn-back {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+}
+.btn-back:hover { color: var(--accent); }
 .btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .inline-form { display: inline; }
 .btn-compact {
@@ -745,6 +789,28 @@ _BASE_JS = """
         pendingHandler = onYes;
         modal.classList.add('is-open');
     };
+    // ── Theme toggle ──────────────────────────────────────────
+    var themeBtn = document.getElementById('ds-theme-toggle');
+    var iconDark = document.getElementById('ds-theme-icon-dark');
+    var iconLight = document.getElementById('ds-theme-icon-light');
+    function applyThemeIcon() {
+        var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        // Show the icon for the theme you'd switch *to*
+        if (iconDark)  iconDark.style.display  = isLight ? 'block' : 'none';
+        if (iconLight) iconLight.style.display = isLight ? 'none'  : 'block';
+    }
+    applyThemeIcon();
+    if (themeBtn) {
+        themeBtn.addEventListener('click', function() {
+            var current = document.documentElement.getAttribute('data-theme') || 'dark';
+            var next = current === 'light' ? 'dark' : 'light';
+            if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            else document.documentElement.removeAttribute('data-theme');
+            try { localStorage.setItem('ds-theme', next); } catch(e) {}
+            applyThemeIcon();
+        });
+    }
+
     // Auto-wire forms with data-confirm
     document.querySelectorAll('form[data-confirm]').forEach(function(form) {
         form.addEventListener('submit', function(e) {
@@ -1009,6 +1075,17 @@ def create_handler(config, checker, bot, store, password=None):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docksentry</title>
+<script>
+// Apply theme before paint to avoid flash. Reads localStorage; falls back
+// to OS preference (prefers-color-scheme) when nothing is stored.
+(function() {{
+    try {{
+        var saved = localStorage.getItem('ds-theme');
+        var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    }} catch(e) {{}}
+}})();
+</script>
 <style>{_BASE_CSS}</style>
 </head>
 <body>
@@ -1019,6 +1096,10 @@ def create_handler(config, checker, bot, store, password=None):
 <h1>Docksentry</h1>
 </div>
 <div class="header-host-slot"><!-- v2.0: host selector slot --></div>
+<button type="button" id="ds-theme-toggle" class="btn-icon" title="Toggle theme" style="margin-left:auto">
+<svg id="ds-theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+<svg id="ds-theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+</button>
 </div>
 <div class="nav-wrap"><nav>{nav_html}</nav></div>
 </div>
@@ -1142,6 +1223,19 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     config.quiet_hours_start = _valid_hhmm(params["quiet_hours_start"][0].strip())
                 if "quiet_hours_end" in params:
                     config.quiet_hours_end = _valid_hhmm(params["quiet_hours_end"][0].strip())
+
+                # Weekly report
+                config.weekly_report_enabled = "weekly_report_enabled" in params
+                if "weekly_report_weekday" in params:
+                    try:
+                        config.weekly_report_weekday = max(0, min(int(params["weekly_report_weekday"][0]), 6))
+                    except (ValueError, IndexError):
+                        pass
+                if "weekly_report_hour" in params:
+                    try:
+                        config.weekly_report_hour = max(0, min(int(params["weekly_report_hour"][0]), 23))
+                    except (ValueError, IndexError):
+                        pass
 
                 # Update cron schedule
                 if "cron_schedule" in params and params["cron_schedule"][0].strip():
@@ -1536,12 +1630,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             self._send_html(self._render_page(content, "status"))
 
         def _page_container(self, name):
-            """Stub page for the future per-container detail view (v1.14+).
+            """Per-container detail view: Overview / History / Logs / Settings.
 
-            For now: shows the container name + which sub-systems will live
-            here later (history, logs, per-container settings). Routing is
-            wired so links from the Status page already work — we just
-            haven't filled in the body yet.
+            Tabs persist in localStorage so reloading keeps the user on the
+            same view. URL is stable: /container/<name>.
             """
             from i18n import get_translator
             t = get_translator(config.language)
@@ -1549,18 +1641,308 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             if not name:
                 self._send_redirect("/")
                 return
-            content = f"""
-<div class="card">
+
+            # Resolve container info — must exist in `docker ps -a`
+            inspect = subprocess.run(
+                ["docker", "inspect", name],
+                capture_output=True, text=True
+            )
+            if inspect.returncode != 0:
+                content = f"""<div class="card">
 <h2>{_e(name)}</h2>
-<p class="card-intro">{t("web_container_detail_intro")}</p>
 <div class="empty">
-<div class="empty-icon">🏗️</div>
-<div class="empty-title">{t("web_container_detail_soon")}</div>
-<div class="empty-hint">{t("web_container_detail_hint")}</div>
+<div class="empty-icon">❌</div>
+<div class="empty-title">{t("web_container_not_found")}</div>
+<div class="empty-hint">{t("web_container_not_found_hint")}</div>
 </div>
 <a href="/" class="btn btn-outline" style="margin-top:8px;display:inline-block">← {t("web_back_to_status")}</a>
 </div>"""
+                self._send_html(self._render_page(content, "status"))
+                return
+
+            try:
+                meta = json.loads(inspect.stdout)[0]
+            except (json.JSONDecodeError, IndexError):
+                self._send_redirect("/")
+                return
+
+            image = meta.get("Config", {}).get("Image", "?")
+            state = meta.get("State", {})
+            status_state = state.get("Status", "?")
+            health = state.get("Health", {}).get("Status", "")
+            started_at = state.get("StartedAt", "")[:19].replace("T", " ")
+            created = meta.get("Created", "")[:10]
+
+            # Image size
+            size_bytes = 0
+            try:
+                size_inspect = subprocess.run(
+                    ["docker", "image", "inspect", "--format", "{{.Size}}", image],
+                    capture_output=True, text=True
+                )
+                if size_inspect.returncode == 0:
+                    size_bytes = int(size_inspect.stdout.strip() or 0)
+            except (ValueError, subprocess.SubprocessError):
+                pass
+            if size_bytes >= 1073741824:
+                size_str = f"{size_bytes/1073741824:.1f} GB"
+            elif size_bytes >= 1048576:
+                size_str = f"{size_bytes/1048576:.0f} MB"
+            else:
+                size_str = f"{size_bytes/1024:.0f} KB" if size_bytes else "?"
+
+            # Status badge
+            if "healthy" in (health or "").lower():
+                status_badge = '<span class="badge badge-green">healthy</span>'
+            elif "starting" in (health or "").lower():
+                status_badge = '<span class="badge badge-yellow">starting</span>'
+            elif status_state == "running":
+                status_badge = '<span class="badge badge-blue">running</span>'
+            elif status_state == "exited":
+                status_badge = '<span class="badge badge-red">exited</span>'
+            else:
+                status_badge = f'<span class="badge badge-blue">{_e(status_state)}</span>'
+
+            # Per-container flags
+            is_pinned_c = store.is_pinned(name)
+            is_auto = store.is_auto(name)
+            is_askm = store.is_ask_before_major(name)
+            window = store.get_update_window(name)
+
+            # Pending update for this container?
+            pending = self._get_pending()
+            pending_for_self = next((u for u in pending if u["name"] == name), None)
+
+            # Update history filtered to this container
+            history = []
+            if os.path.exists(config.history_file):
+                try:
+                    with open(config.history_file) as f:
+                        all_h = json.load(f)
+                    history = [h for h in all_h if h.get("container") == name]
+                except (json.JSONDecodeError, IOError):
+                    pass
+
+            # Compose info if part of a stack
+            compose_info = self._compose_info_for(meta)
+
+            # ── Action bar ────────────────────────────────────────
+            action_buttons = []
+            if pending_for_self:
+                action_buttons.append(
+                    f'<form method="POST" action="/api/update" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{_e(name)}">'
+                    f'<button type="submit" class="btn btn-icon-text">{_ICONS["refresh"]}<span>{t("web_update")}</span></button>'
+                    f'</form>'
+                )
+            pin_action = "/api/unpin" if is_pinned_c else "/api/pin"
+            pin_label = t("web_unpin") if is_pinned_c else t("web_pin")
+            action_buttons.append(
+                f'<form method="POST" action="{pin_action}" class="inline-form">'
+                f'<input type="hidden" name="name" value="{_e(name)}">'
+                f'<button type="submit" class="btn btn-outline btn-icon-text">{_ICONS["pin"]}<span>{_e(pin_label)}</span></button>'
+                f'</form>'
+            )
+            actions_html = "".join(action_buttons)
+
+            # ── Overview tab ──────────────────────────────────────
+            badges = []
+            if is_pinned_c:
+                badges.append(f'<span class="badge badge-red">{t("web_pinned_badge")}</span>')
+            if is_auto:
+                badges.append(f'<span class="badge badge-purple">{t("web_autoupdate_badge")}</span>')
+            if is_askm:
+                badges.append(f'<span class="badge badge-blue">⚠ major-confirm</span>')
+            if pending_for_self:
+                badges.append(f'<span class="badge badge-yellow">{t("web_badge_update")}</span>')
+            badges_html = " ".join(badges)
+
+            compose_row = ""
+            if compose_info:
+                compose_row = (
+                    f'<tr><td>{t("web_detail_compose")}</td>'
+                    f'<td><code>{_e(compose_info.get("compose_project",""))} / {_e(compose_info.get("compose_service",""))}</code></td></tr>'
+                )
+
+            window_row = ""
+            if window:
+                wd_short = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+                wd_set = set(window.get("weekdays") or [])
+                wd_text = ", ".join(wd_short[i] for i in sorted(wd_set)) if wd_set else t("web_window_all_days")
+                window_row = (
+                    f'<tr><td>{t("web_window")}</td>'
+                    f'<td><code>{_e(window.get("start",""))}–{_e(window.get("end",""))}</code> · {_e(wd_text)}</td></tr>'
+                )
+
+            overview_html = f"""<table>
+<tr><td style="width:30%">{t("web_detail_image")}</td><td><code>{_e(image)}</code></td></tr>
+<tr><td>{t("web_detail_status")}</td><td>{status_badge} {badges_html}</td></tr>
+<tr><td>{t("web_detail_size")}</td><td>{_e(size_str)}</td></tr>
+<tr><td>{t("web_detail_created")}</td><td>{_e(created)}</td></tr>
+<tr><td>{t("web_detail_started")}</td><td>{_e(started_at)}</td></tr>
+{compose_row}
+{window_row}
+</table>"""
+
+            # ── History tab ──────────────────────────────────────
+            if history:
+                hist_rows = ""
+                for h in reversed(history[-50:]):
+                    icon = '✅' if h.get("success") else '❌'
+                    hist_rows += (
+                        f'<tr><td>{_e(h.get("timestamp",""))}</td>'
+                        f'<td>{icon}</td>'
+                        f'<td style="font-size:12px">{_e(h.get("detail",""))}</td></tr>'
+                    )
+                history_html = f"""<table>
+<tr><th>{t("web_date")}</th><th>{t("web_result")}</th><th>{t("web_detail")}</th></tr>
+{hist_rows}
+</table>"""
+            else:
+                history_html = f"""<div class="empty">
+<div class="empty-icon">📋</div>
+<div class="empty-title">{t("web_container_history_empty")}</div>
+<div class="empty-hint">{t("web_container_history_empty_hint")}</div>
+</div>"""
+
+            # ── Logs tab — fetched on demand, not pre-rendered ────
+            logs_html = f"""<form method="GET" action="/container/{_e(name)}" style="display:flex;gap:12px;align-items:end;margin-bottom:16px">
+<input type="hidden" name="tab" value="logs">
+<div style="flex:1">
+<label>{t("web_logs_lines")}</label>
+<input type="number" name="lines" value="100" min="10" max="500">
+</div>
+<button type="submit" class="btn btn-blue">{t("web_logs_show")}</button>
+</form>"""
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("tab", [""])[0] == "logs":
+                lines = max(10, min(int(query.get("lines", ["100"])[0]), 500))
+                logs_result = subprocess.run(
+                    ["docker", "logs", "--tail", str(lines), name],
+                    capture_output=True, text=True, timeout=10
+                )
+                output = logs_result.stdout or logs_result.stderr
+                if output.strip():
+                    logs_html += f'<pre>{html.escape(output.strip())}</pre>'
+                else:
+                    logs_html += f'<p style="color:var(--text-muted)">No logs found.</p>'
+
+            # ── Settings tab — per-container toggles ─────────────
+            window_form = self._container_window_form(t, name, window)
+            settings_html = f"""<div class="form-checkbox-row">
+  <input type="checkbox" id="cb-detail-auto" {'checked' if is_auto else ''} onchange="document.getElementById('frm-detail-auto').submit()">
+  <label for="cb-detail-auto">{t("web_autoupdate_enable")}</label>
+</div>
+<form id="frm-detail-auto" method="POST" action="/api/autoupdate" class="inline-form">
+<input type="hidden" name="name" value="{_e(name)}">
+</form>
+<p class="form-help">{t("web_detail_auto_hint")}</p>
+
+<div class="form-checkbox-row">
+  <input type="checkbox" id="cb-detail-major" {'checked' if is_askm else ''} onchange="document.getElementById('frm-detail-major').submit()">
+  <label for="cb-detail-major">{t("web_ask_major_on")}</label>
+</div>
+<form id="frm-detail-major" method="POST" action="/api/ask_major" class="inline-form">
+<input type="hidden" name="name" value="{_e(name)}">
+</form>
+<p class="form-help">{t("web_detail_major_hint")}</p>
+
+<div class="form-checkbox-row">
+  <input type="checkbox" id="cb-detail-pinned" {'checked' if is_pinned_c else ''} onchange="document.getElementById('frm-detail-pin').submit()">
+  <label for="cb-detail-pinned">{t("web_pin")}</label>
+</div>
+<form id="frm-detail-pin" method="POST" action="{pin_action}" class="inline-form">
+<input type="hidden" name="name" value="{_e(name)}">
+</form>
+<p class="form-help">{t("web_detail_pin_hint")}</p>
+
+<hr class="section-divider">
+
+<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_window")}</h3>
+<p class="form-help" style="margin-bottom:12px">{t("web_detail_window_intro")}</p>
+{window_form}"""
+
+            # ── Page assembly ─────────────────────────────────────
+            content = f"""
+<div class="card">
+<div class="card-header-row">
+<div>
+<a href="/" class="btn-back">← {t("web_back_to_status")}</a>
+<h2 style="margin-top:8px;display:flex;align-items:center;gap:10px">{_e(name)} {badges_html}</h2>
+</div>
+<div class="btn-row">{actions_html}</div>
+</div>
+
+<div class="tabs" data-tabs="container">
+  <button type="button" class="tab-btn" data-tab-target="overview">{_ICONS["search"]}<span>{t("web_tab_overview")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="history">{_ICONS["calendar"]}<span>{t("web_tab_history")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="logs">{_ICONS["search"]}<span>{t("web_tab_logs")}</span></button>
+  <button type="button" class="tab-btn" data-tab-target="cset">{_ICONS["settings"]}<span>{t("web_tab_settings")}</span></button>
+</div>
+
+<div class="tab-pane" data-tab-pane="container" data-tab-name="overview">
+{overview_html}
+</div>
+<div class="tab-pane" data-tab-pane="container" data-tab-name="history">
+{history_html}
+</div>
+<div class="tab-pane" data-tab-pane="container" data-tab-name="logs">
+{logs_html}
+</div>
+<div class="tab-pane" data-tab-pane="container" data-tab-name="cset">
+{settings_html}
+</div>
+</div>"""
+
             self._send_html(self._render_page(content, "status"))
+
+        def _compose_info_for(self, meta):
+            """Extract compose project/service/file from a docker-inspect result."""
+            labels = meta.get("Config", {}).get("Labels", {}) or {}
+            project = labels.get("com.docker.compose.project", "")
+            service = labels.get("com.docker.compose.service", "")
+            if not project:
+                return {}
+            return {
+                "compose_project": project,
+                "compose_service": service,
+                "compose_file": labels.get("com.docker.compose.project.config_files", ""),
+            }
+
+        def _container_window_form(self, t, name, window):
+            """Render the per-container update-window editor (subset of the
+            global Update-Windows section, scoped to one container)."""
+            wd_full = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            wd_set = set((window or {}).get("weekdays") or [])
+            wd_html = ""
+            for i, label in enumerate(wd_full):
+                checked = "checked" if i in wd_set else ""
+                wd_html += (f'<label style="display:inline-block;margin-right:10px;font-size:13px">'
+                            f'<input type="checkbox" name="weekdays" value="{i}" {checked} '
+                            f'style="width:auto;margin-right:4px">{label}</label>')
+            current_start = (window or {}).get("start", "")
+            current_end = (window or {}).get("end", "")
+            return f"""<form method="POST" action="/api/window">
+<input type="hidden" name="name" value="{_e(name)}">
+<input type="hidden" name="action" value="save">
+<div class="grid">
+<div>
+<label>{t("web_windows_range")}</label>
+<div style="display:flex;gap:8px">
+<input type="text" name="start" placeholder="02:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$" value="{_e(current_start)}">
+<input type="text" name="end" placeholder="04:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$" value="{_e(current_end)}">
+</div>
+</div>
+<div>
+<label>{t("web_windows_days")}</label>
+<div>{wd_html}</div>
+</div>
+</div>
+<div style="display:flex;gap:6px;margin-top:8px">
+<button type="submit" class="btn btn-sm">{t("web_windows_save")}</button>
+<button type="submit" formaction="/api/window" class="btn btn-sm btn-outline" name="action" value="delete">{t("web_delete")}</button>
+</div>
+</form>"""
 
         def _page_history(self):
             from i18n import get_translator
@@ -1728,6 +2110,27 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     </div>
   </div>
   <p class="form-help">{t("web_quiet_hours_hint")}</p>
+
+  <hr class="section-divider">
+
+  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_weekly_title")}</h3>
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="weekly_report_enabled" id="cb-weekly" {cb(config.weekly_report_enabled)}>
+    <label for="cb-weekly">{t("web_weekly_enable")}</label>
+  </div>
+  <p class="form-help">{t("web_weekly_hint")}</p>
+  <div class="grid">
+    <div>
+      <label>{t("web_weekly_day")}</label>
+      <select name="weekly_report_weekday">
+        {''.join(f'<option value="{i}" {"selected" if int(config.weekly_report_weekday or 0)==i else ""}>{name}</option>' for i, name in enumerate([t("web_weekday_mon"), t("web_weekday_tue"), t("web_weekday_wed"), t("web_weekday_thu"), t("web_weekday_fri"), t("web_weekday_sat"), t("web_weekday_sun")]))}
+      </select>
+    </div>
+    <div>
+      <label>{t("web_weekly_hour")}</label>
+      <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23">
+    </div>
+  </div>
 </div>
 
 <!-- ── Kanäle ────────────────────────────────────── -->
@@ -2028,7 +2431,7 @@ class WebUI:
         self.thread = None
 
     def start(self):
-        self.server = HTTPServer(("0.0.0.0", self.port), self.handler)
+        self.server = ThreadingHTTPServer(("0.0.0.0", self.port), self.handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         print(f"Web UI started on port {self.port}")

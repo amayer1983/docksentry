@@ -74,11 +74,25 @@ class Scheduler:
 
     def _run(self):
         last_check = None
+        last_weekly = None
         print(f"Scheduler started with schedule: {self.config.cron_schedule}")
 
         while self.running:
             now = datetime.now()
             current_minute = now.strftime("%Y-%m-%d %H:%M")
+
+            # Weekly report: independent of the cron schedule. Fires at the
+            # configured weekday + hour, at most once per day.
+            current_hour = now.strftime("%Y-%m-%d %H")
+            if current_hour != last_weekly:
+                last_weekly = current_hour
+                try:
+                    from weekly_report import maybe_send_weekly_report
+                    from i18n import get_translator
+                    t = get_translator(self.config.language)
+                    maybe_send_weekly_report(self.config, self.bot, t)
+                except Exception as e:
+                    print(f"Weekly report check error: {e}")
 
             if current_minute != last_check and self._matches_cron(now):
                 last_check = current_minute
