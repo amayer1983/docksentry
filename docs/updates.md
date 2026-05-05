@@ -32,6 +32,29 @@ When updates are found, you receive a Telegram message with image sizes, dates, 
 
 Containers set to auto-update (`/autoupdate nginx` or via Web UI toggle) are updated automatically during scheduled checks — no confirmation needed. The bot sends a summary after completion. All other containers still show the usual notification with buttons.
 
+## Update Windows (per container)
+
+You can restrict auto-updates for specific containers to a time-of-day range and selected weekdays via the **Update Windows** section on the Settings page. Format: `HH:MM`–`HH:MM` plus a list of weekdays (Mon–Sun).
+
+- Containers without a window entry are unrestricted (default).
+- Time windows can wrap midnight (e.g. `23:00`–`02:00` on Sunday continues into Monday morning).
+- If the cron tick falls outside a container's window, that container is skipped silently and the update remains pending — it'll trigger the next time the cron and the window line up.
+
+Use case: keep Plex from auto-restarting at 19:00 family time; let database containers only update during a 02:00–04:00 maintenance slot.
+
+## Major-Update Confirmation
+
+For containers using SemVer-pinned tags (e.g. `redis:7.0.5`), you can opt in via the `⚠ on` button on the Status table. Once enabled:
+
+- **Patch / minor bumps** (e.g. `7.0.5` → `7.0.6` or `7.1.0`) update normally.
+- **Major bumps** (e.g. `7.x` → `8.0.0`) are held back. You'll see:
+  - Telegram: an inline message with **Confirm** / **Skip** buttons
+  - Web UI: a yellow banner on the Status page with the same actions
+
+Confirm runs the update; Skip drops the request and you'll be asked again next cron tick if the version is still available.
+
+> **Note:** detection requires a SemVer-parseable tag (`1.2.3`, `v1.2.3`, `redis-7.0.5`, …). Containers using `:latest` or non-numeric tags fall back to the existing digest-based update flow without major-confirm.
+
 ## Pinned Containers
 
 Pinned containers (`/pin nginx` or via Web UI) are completely excluded from update checks. Use this for containers you want to keep on a specific version.

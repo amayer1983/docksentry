@@ -16,6 +16,41 @@ Docksentry sends notifications via **Telegram** (primary, with interactive comma
 
 When Docksentry starts, it sends a startup message to all configured channels. This is useful to detect server reboots or container restarts.
 
+## Quiet Hours
+
+Set `QUIET_HOURS_START` and `QUIET_HOURS_END` (both `HH:MM`) to silence **auto-notifications** during a window — for example overnight:
+
+```yaml
+environment:
+  - QUIET_HOURS_START=22:00
+  - QUIET_HOURS_END=07:00
+```
+
+What's affected:
+
+- **Suppressed during the window:** scheduled update notifications, auto-update results, cleanup results, disk warnings — across Telegram, Discord, and generic webhook
+- **Always sent (regardless of the clock):** replies to manual commands you trigger yourself (`/status`, `/check`, Web UI button clicks). You're actively asking, you get an answer.
+
+Notes:
+
+- The window can wrap midnight — `22:00`–`07:00` works as expected
+- Drops are silent — Docksentry doesn't queue and replay them later. The user explicitly opted into "leave me alone during these hours"
+- Both empty = feature off
+
+## Disk Space Warning
+
+`DISK_WARN_PERCENT` (default `85`, range `50..100`) — when the data directory's filesystem usage exceeds this percentage, Docksentry sends a warning across all configured channels. Rate-limited to **one notification per 23-hour window** to prevent log floods.
+
+```yaml
+environment:
+  - DISK_WARN_PERCENT=85
+  - DISK_WARN_AUTO_CLEANUP=false   # set true to also trigger image cleanup
+```
+
+When `DISK_WARN_AUTO_CLEANUP=true`, crossing the threshold also runs `docker image prune` (using the configured `CLEANUP_GRACE_HOURS` and `CLEANUP_BACKUP_LOCAL_ONLY` settings). The cleanup result is sent as a follow-up notification.
+
+> **Note:** the warning is based on the filesystem hosting `/data`. In typical setups this shares the same disk as `/var/lib/docker`. If you're running with a separate Docker storage driver mount, the percentage may not reflect Docker's actual disk usage.
+
 ## Discord
 
 Add a webhook URL to receive notifications as rich embeds in a Discord channel:

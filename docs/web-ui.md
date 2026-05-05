@@ -30,7 +30,10 @@ Live overview of all running containers with:
 - Auto-update toggle switches per container
 - Pin/Unpin buttons per container
 - Update buttons for containers with available updates
+- `⚠ on/off` toggle to require confirmation for SemVer **major** bumps (per container)
 - "Check Updates" button to trigger a manual scan
+- **Bulk actions bar** — multi-select containers via checkboxes, then apply one of: Update / Pin / Unpin / Auto-update on / Auto-update off in a single click
+- **Major-update banner** — when a major bump is held back by `⚠ on`, a yellow banner at the top lists pending containers with **Confirm** / **Skip** buttons
 
 ### Logs
 
@@ -48,19 +51,29 @@ Full update log showing:
 
 ### Settings
 
-All settings are editable and **persist across restarts** (saved to `/data/settings.json`):
+All settings are editable and **persist across restarts** (saved to `/data/settings.json`).
 
 | Setting | Editable in Web UI |
 |---------|--------------------|
 | Language | Yes |
 | Cron Schedule | Yes |
 | Debug Mode | Yes |
-| Auto Self-Update (Bot) | Yes |
+| Auto Self-Update | Yes |
+| Auto Cleanup + grace hours + backup-local-only + backup retention | Yes |
+| Disk warning threshold + auto-cleanup-on-warning | Yes |
+| Quiet hours (HH:MM start/end) | Yes |
+| Update Windows per container (HH:MM range + weekdays) | Yes (own section) |
 | Exclude Containers | Yes |
+| Telegram Topic ID | Yes |
 | Discord Webhook | Yes |
 | Webhook URL | Yes |
 | Bot Token | No (ENV only, masked) |
 | Chat ID | No (ENV only, masked) |
+| `WEB_PORT`, `WEB_PASSWORD` | No (ENV only — would lock you out) |
+
+The **Update Windows** section lets you pick a container, set a `HH:MM`–`HH:MM` range, and tick which weekdays the window applies to. Containers without an entry update without restriction.
+
+The **Maintenance** section provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly.
 
 ## Security
 
