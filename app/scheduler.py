@@ -112,8 +112,40 @@ class Scheduler:
                         if ok and notifier and notifier.has_channels():
                             notifier.send_message(f"🧹 Auto cleanup: {msg}")
                         if ok and self.bot.enabled:
-                            self.bot.send_message(f"🧹 {msg}")
+                            self.bot.send_message(f"🧹 {msg}", auto=True)
                     except Exception as e:
                         print(f"Auto cleanup error: {e}")
 
+                # Disk space monitoring. Threshold notification once per day
+                # at most. With disk_warn_auto_cleanup enabled, also trigger
+                # an immediate cleanup pass (independent of auto_cleanup).
+                try:
+                    self._check_disk_space()
+                except Exception as e:
+                    print(f"Disk space check error: {e}")
+
             time.sleep(30)
+
+    def _check_disk_space(self):
+        action, percent, free_gb = self.checker.check_disk_usage()
+        if action == "ok":
+            return
+        if action == "silent":
+            return  # already warned today
+        # action == "warn"
+        msg = f"⚠️ Disk usage at {percent}% — {free_gb:.1f} GB free."
+        notifier = getattr(self.bot, "notifier", None)
+        if notifier and notifier.has_channels():
+            notifier.send_message(msg)
+        if self.bot.enabled:
+            self.bot.send_message(msg, auto=True)
+        print(msg)
+
+        if self.config.disk_warn_auto_cleanup:
+            print("Disk warning + auto-cleanup enabled — running cleanup")
+            ok, cmsg = self.checker.cleanup_images()
+            full = f"🧹 Auto cleanup (disk): {cmsg}"
+            if notifier and notifier.has_channels():
+                notifier.send_message(full)
+            if self.bot.enabled:
+                self.bot.send_message(full, auto=True)

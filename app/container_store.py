@@ -14,6 +14,9 @@ class ContainerStore:
     def __init__(self, config):
         self.pinned_file = config.pinned_file
         self.autoupdate_file = config.autoupdate_file
+        self.update_windows_file = config.update_windows_file
+        self.ask_before_major_file = config.ask_before_major_file
+        self.major_pending_file = config.major_pending_file
 
     # ── Pinned ────────────────────────────────────────────────
 
@@ -65,6 +68,70 @@ class ContainerStore:
             self.save_autoupdate(current)
             return True
 
+    # ── Update windows ────────────────────────────────────────
+    # Stored as a dict { container_name: {"start": "HH:MM", "end": "HH:MM",
+    # "weekdays": [0..6] } } where weekday 0 = Monday (Python convention).
+
+    def get_update_windows(self):
+        return self._load_dict(self.update_windows_file)
+
+    def get_update_window(self, name):
+        return self.get_update_windows().get(name)
+
+    def set_update_window(self, name, start, end, weekdays):
+        windows = self.get_update_windows()
+        windows[name] = {
+            "start": start,
+            "end": end,
+            "weekdays": sorted({int(d) for d in weekdays if 0 <= int(d) <= 6}),
+        }
+        self._save_dict(self.update_windows_file, windows)
+
+    def clear_update_window(self, name):
+        windows = self.get_update_windows()
+        if name in windows:
+            del windows[name]
+            self._save_dict(self.update_windows_file, windows)
+
+    # ── Ask-before-major ──────────────────────────────────────
+    # List of container names that require confirmation for major
+    # version bumps (semantic-version major component changes).
+
+    def get_ask_before_major(self):
+        return self._load(self.ask_before_major_file)
+
+    def is_ask_before_major(self, name):
+        return name in self.get_ask_before_major()
+
+    def toggle_ask_before_major(self, name):
+        names = self.get_ask_before_major()
+        if name in names:
+            names.remove(name)
+        else:
+            names.append(name)
+        self._save(self.ask_before_major_file, names)
+        return name in names
+
+    # ── Pending major-version confirmations ───────────────────
+    # Persisted across restarts — entries hold enough metadata for the
+    # confirmation flow to resume the update on user click.
+
+    def get_pending_major(self):
+        return self._load_dict(self.major_pending_file)
+
+    def add_pending_major(self, name, payload):
+        pending = self.get_pending_major()
+        pending[name] = payload
+        self._save_dict(self.major_pending_file, pending)
+
+    def remove_pending_major(self, name):
+        pending = self.get_pending_major()
+        if name in pending:
+            del pending[name]
+            self._save_dict(self.major_pending_file, pending)
+            return True
+        return False
+
     # ── helpers ───────────────────────────────────────────────
 
     @staticmethod
@@ -83,5 +150,24 @@ class ContainerStore:
         try:
             with open(path, "w") as f:
                 json.dump(names, f)
+        except IOError as e:
+            print(f"Failed to save {path}: {e}")
+
+    @staticmethod
+    def _load_dict(path):
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, IOError):
+            return {}
+
+    @staticmethod
+    def _save_dict(path, data):
+        try:
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
         except IOError as e:
             print(f"Failed to save {path}: {e}")

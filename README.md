@@ -131,6 +131,10 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
 | `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
 | `CLEANUP_BACKUP_DAYS` | `7` | How long backup tarballs are kept (1–365 days) |
+| `DISK_WARN_PERCENT` | `85` | Notify when disk usage exceeds this percentage (50–100) |
+| `DISK_WARN_AUTO_CLEANUP` | `false` | Automatically run cleanup when disk warning fires |
+| `QUIET_HOURS_START` | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
+| `QUIET_HOURS_END` | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
 | `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
 | `WEB_UI` | `false` | Enable web dashboard |
 | `WEB_PORT` | `8080` | Web UI port |

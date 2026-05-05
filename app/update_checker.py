@@ -3,12 +3,13 @@
 
 import json
 import os
+import shutil
 import subprocess
 import time
 import urllib.request
 import urllib.parse
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class UpdateChecker:
@@ -232,6 +233,98 @@ class UpdateChecker:
             self._debug(f"  Registry error: {e}")
             return None
 
+    # Pattern that captures SemVer in a tag: "1.2.3", "v1.2.3", "1.2.3-rc1",
+    # "redis-7.0.5", "alpine-3.19.0" all match. Suffixes after the version
+    # (like "-rc1") are kept in `pre`, used for ordering / filtering.
+    _SEMVER_RE = re.compile(
+        r"^(?:.*?-)?v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<pre>[-+][\w.\-+]*)?$"
+    )
+
+    @classmethod
+    def _parse_semver(cls, tag):
+        """Parse tag into (major, minor, patch, pre) tuple or None.
+        `pre` is the pre-release/build suffix as a string (or "")."""
+        if not tag:
+            return None
+        m = cls._SEMVER_RE.match(tag.strip())
+        if not m:
+            return None
+        return (int(m.group("major")), int(m.group("minor")), int(m.group("patch")),
+                m.group("pre") or "")
+
+    def _list_remote_tags(self, registry, repository):
+        """GET /v2/<repo>/tags/list with Bearer token negotiation. Returns
+        a list of tag strings, or [] on failure. No pagination support yet —
+        most registries return at least the first ~100 tags inline, which is
+        enough for SemVer Major-detection in practice."""
+        host = "registry-1.docker.io" if "docker.io" in registry else registry
+        url = f"https://{host}/v2/{repository}/tags/list"
+
+        def _attempt(token=None):
+            req = urllib.request.Request(url)
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            return urllib.request.urlopen(req, timeout=15)
+
+        try:
+            with _attempt() as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code != 401:
+                self._debug(f"  Tag list error: HTTP {e.code} {e.reason}")
+                return []
+            www_auth = e.headers.get("WWW-Authenticate", "")
+            token = self._negotiate_token(www_auth, registry, repository)
+            if not token:
+                return []
+            try:
+                with _attempt(token) as resp:
+                    data = json.loads(resp.read())
+            except Exception as e2:
+                self._debug(f"  Tag list error after auth: {e2}")
+                return []
+        except Exception as e:
+            self._debug(f"  Tag list error: {e}")
+            return []
+        return data.get("tags") or []
+
+    def get_highest_semver_tag(self, registry, repository, current_tag):
+        """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
+        version available on the registry that uses the same naming scheme
+        as `current_tag`. Returns (None, None) if no comparable version is
+        found.
+
+        "Same scheme" = same prefix (everything before the first digit) and
+        no pre-release suffix. So `redis:7.0.5` matches `7.0.6` but not
+        `7.0.6-alpine` or `next-7.0.6`.
+        """
+        cur = self._parse_semver(current_tag)
+        if cur is None:
+            return None, None
+        # Determine the prefix of current_tag (e.g. "v" or "redis-")
+        m = self._SEMVER_RE.match(current_tag.strip())
+        prefix = current_tag.strip()[:m.start("major")] if m else ""
+
+        tags = self._list_remote_tags(registry, repository)
+        candidates = []
+        for t in tags:
+            ts = t.strip()
+            # Must share the same prefix
+            if prefix and not ts.startswith(prefix):
+                continue
+            parsed = self._parse_semver(ts)
+            if parsed is None:
+                continue
+            # Skip pre-release / build-metadata variants
+            if parsed[3]:
+                continue
+            candidates.append((parsed, ts))
+        if not candidates:
+            return None, None
+        candidates.sort(reverse=True)
+        best_parsed, best_tag = candidates[0]
+        return best_tag, best_parsed
+
     def _get_local_digests(self, image):
         """Get all local image digests from RepoDigests."""
         result = subprocess.run(
@@ -422,6 +515,64 @@ class UpdateChecker:
                     self._debug(f"  Pruned old backup: {path}")
             except OSError:
                 pass
+
+    def get_disk_usage(self):
+        """Return (used_percent, free_bytes, total_bytes) for the data dir's
+        underlying filesystem. Used as a proxy for the Docker storage volume
+        — in most setups they share the same disk."""
+        try:
+            usage = shutil.disk_usage(self.config.data_dir)
+            percent = round(usage.used * 100 / usage.total, 1) if usage.total else 0
+            return percent, usage.free, usage.total
+        except OSError:
+            return 0, 0, 0
+
+    def check_disk_usage(self):
+        """Check disk usage and decide if a warning should be emitted now.
+
+        Rate-limited to one warning per day per threshold. State is stored
+        in disk_warn_state.json. Returns (action, percent, free_gb) where
+        action is one of:
+          "ok"     — below threshold, no notification
+          "warn"   — above warn threshold, notify
+          "silent" — above threshold but already warned today
+        """
+        try:
+            threshold = int(self.config.disk_warn_percent or 85)
+        except (ValueError, TypeError):
+            threshold = 85
+
+        percent, free, total = self.get_disk_usage()
+        if percent < threshold:
+            return "ok", percent, free / 1024**3
+
+        # Throttle: only one warn per day for the same threshold-bucket
+        state = {}
+        try:
+            if os.path.exists(self.config.disk_warn_state_file):
+                with open(self.config.disk_warn_state_file) as f:
+                    state = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        last_warn_iso = state.get("last_warn", "")
+        try:
+            last_warn = datetime.fromisoformat(last_warn_iso) if last_warn_iso else None
+        except ValueError:
+            last_warn = None
+
+        if last_warn and (datetime.now() - last_warn) < timedelta(hours=23):
+            return "silent", percent, free / 1024**3
+
+        # Update state
+        try:
+            with open(self.config.disk_warn_state_file, "w") as f:
+                json.dump({"last_warn": datetime.now().isoformat(timespec="seconds"),
+                           "percent": percent}, f)
+            os.chmod(self.config.disk_warn_state_file, 0o600)
+        except OSError:
+            pass
+        return "warn", percent, free / 1024**3
 
     def _get_compose_info(self, name):
         """Detect if container belongs to a Docker Compose stack."""

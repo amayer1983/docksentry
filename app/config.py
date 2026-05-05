@@ -9,6 +9,8 @@ import os
 PERSISTENT_KEYS = [
     "cron_schedule", "exclude_containers", "auto_selfupdate", "auto_cleanup",
     "cleanup_grace_hours", "cleanup_backup_local_only", "cleanup_backup_days",
+    "disk_warn_percent", "disk_warn_auto_cleanup",
+    "quiet_hours_start", "quiet_hours_end",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id",
 ]
@@ -18,6 +20,8 @@ class Config:
     def __init__(self, bot_token, chat_id, cron_schedule, exclude_containers, data_dir,
                  auto_selfupdate, auto_cleanup, cleanup_grace_hours,
                  cleanup_backup_local_only, cleanup_backup_days,
+                 disk_warn_percent, disk_warn_auto_cleanup,
+                 quiet_hours_start, quiet_hours_end,
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id):
         self.bot_token = bot_token
@@ -37,6 +41,20 @@ class Config:
         self.cleanup_backup_local_only = cleanup_backup_local_only
         self.cleanup_backup_days = cleanup_backup_days
         self.cleanup_backup_dir = os.path.join(data_dir, "cleanup-backups")
+        # Disk space warning
+        self.disk_warn_percent = disk_warn_percent
+        self.disk_warn_auto_cleanup = disk_warn_auto_cleanup
+        # Quiet hours (HH:MM strings, empty = feature off)
+        self.quiet_hours_start = quiet_hours_start
+        self.quiet_hours_end = quiet_hours_end
+        # Per-container update windows (loaded by ContainerStore at runtime)
+        self.update_windows_file = os.path.join(data_dir, "update_windows.json")
+        # Per-container "ask before major update" flag
+        self.ask_before_major_file = os.path.join(data_dir, "ask_before_major.json")
+        # Pending major-confirmation queue (key: container_name → metadata)
+        self.major_pending_file = os.path.join(data_dir, "major_confirmations.json")
+        # Last disk warning timestamp (rate-limit warnings to 1/day)
+        self.disk_warn_state_file = os.path.join(data_dir, "disk_warn_state.json")
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port
@@ -104,6 +122,10 @@ class Config:
             cleanup_grace_hours=int(os.environ.get("CLEANUP_GRACE_HOURS", "24")),
             cleanup_backup_local_only=os.environ.get("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
             cleanup_backup_days=int(os.environ.get("CLEANUP_BACKUP_DAYS", "7")),
+            disk_warn_percent=int(os.environ.get("DISK_WARN_PERCENT", "85")),
+            disk_warn_auto_cleanup=os.environ.get("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
+            quiet_hours_start=os.environ.get("QUIET_HOURS_START", ""),
+            quiet_hours_end=os.environ.get("QUIET_HOURS_END", ""),
             language=os.environ.get("LANGUAGE", "en"),
             web_ui=os.environ.get("WEB_UI", "false").lower() in ("true", "1", "yes"),
             web_port=int(os.environ.get("WEB_PORT", "8080")),

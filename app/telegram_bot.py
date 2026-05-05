@@ -117,7 +117,19 @@ class TelegramBot:
             print(f"Telegram API error: {e}")
             return None
 
-    def send_message(self, text, reply_markup=None):
+    def send_message(self, text, reply_markup=None, auto=False):
+        """Send a Telegram message.
+
+        auto=False (default) — treats this as a direct response to the user
+                  (e.g. answer to a /command, status output). Always sent.
+        auto=True            — auto-notification (cron-triggered: updates,
+                  cleanup, disk warning). Suppressed during quiet hours.
+        """
+        if auto:
+            from quiet_hours import is_quiet_now
+            if is_quiet_now(self.config):
+                return None
+
         data = {
             "chat_id": self.config.chat_id,
             "text": text,
@@ -221,22 +233,95 @@ class TelegramBot:
         if not remaining:
             self.send_message(self.t("update_all_done"))
 
+    def _is_major_bump(self, update, checker):
+        """Detect whether the available update for `update` is a SemVer major
+        bump.
+
+        Strategy: parse the container's current image tag as SemVer; if that
+        succeeds, query the registry for the highest matching SemVer tag and
+        compare majors. Containers using `:latest` or non-SemVer tags can't
+        be majored-detected reliably without pulling — the gate transparently
+        becomes a no-op for those (returns (False, None, None)).
+
+        Returns (is_major, current_tag, candidate_tag).
+        """
+        image = update.get("image", "")
+        try:
+            registry, repo, tag = checker._parse_image(image)
+        except Exception:
+            return False, None, None
+        if not registry or not tag:
+            return False, None, None
+        cur = checker._parse_semver(tag)
+        if cur is None:
+            return False, None, None
+        best_tag, best_parsed = checker.get_highest_semver_tag(registry, repo, tag)
+        if not best_parsed:
+            return False, None, None
+        return best_parsed[0] > cur[0], tag, best_tag
+
+    def _confirm_major_update(self, checker, name):
+        """Resume an update that was held back by the major-confirmation gate.
+        Reads metadata from the pending-major store, runs update_container,
+        clears the pending entry on success."""
+        pending = self.store.get_pending_major().get(name)
+        if not pending:
+            self.send_message(f"⚠️ No pending major update for `{name}`.")
+            return
+        image = pending.get("image", "")
+        compose = pending.get("compose", {}) or {}
+        try:
+            success, msg = checker.update_container(name, image, **compose)
+        except Exception as e:
+            success, msg = False, str(e)[:200]
+        status = "✅" if success else "❌"
+        self.send_message(f"{status} `{name}`: {msg}")
+        if self.notifier:
+            self.notifier.send_update_result(name, image, success, msg)
+        if success:
+            self.store.remove_pending_major(name)
+
     def handle_autoupdates(self, updates, checker):
         """Split updates into auto-update and manual, handle accordingly.
 
         Returns the number of containers that were successfully auto-updated
         (used by the scheduler to decide whether to follow up with cleanup).
         """
+        from update_window import is_window_open
+
         auto_list = self._get_autoupdate()
-        auto_updates = [u for u in updates if u["name"] in auto_list]
+        ask_major_list = self.store.get_ask_before_major()
+        windows = self.store.get_update_windows()
+
+        auto_candidates = [u for u in updates if u["name"] in auto_list]
+        # Filter out containers whose maintenance window is closed right now
+        skipped_window = [u for u in auto_candidates
+                          if not is_window_open(windows.get(u["name"]))]
+        auto_updates = [u for u in auto_candidates if u not in skipped_window]
         manual_updates = [u for u in updates if u["name"] not in auto_list]
         success_count = 0
+        major_pending_now = []
 
         # Auto-update containers silently
         if auto_updates:
-            self.send_message(self.t("autoupdate_running", count=len(auto_updates)))
+            self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
             results = []
             for u in auto_updates:
+                # Major-version confirmation gate (per-container opt-in)
+                if u["name"] in ask_major_list:
+                    is_major, old_ver, new_ver = self._is_major_bump(u, checker)
+                    if is_major:
+                        self.store.add_pending_major(u["name"], {
+                            "image": u["image"],
+                            "old_version": old_ver,
+                            "new_version": new_ver,
+                            "compose": {k: u[k] for k in u if k.startswith("compose_")},
+                        })
+                        major_pending_now.append((u["name"], old_ver, new_ver))
+                        results.append(
+                            f"⏸ `{u['name']}`: major bump {old_ver} → {new_ver} — confirmation required"
+                        )
+                        continue
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
                     success, msg = checker.update_container(u["name"], u["image"], **compose_kwargs)
@@ -250,20 +335,47 @@ class TelegramBot:
                     results.append(f"❌ `{u['name']}`: {str(e)[:200]}")
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200])
-            self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results))
+            self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
 
-            # Remove auto-updated from pending
-            remaining = [u for u in updates if u["name"] not in [a["name"] for a in auto_updates]]
+            # Remove fully-processed auto-updated from pending. Major-pending
+            # entries stay in pending so the user can also act on them via the
+            # Web UI Update buttons; the dedicated confirm flow uses the
+            # major-pending store independently.
+            processed = {a["name"] for a in auto_updates if a["name"] not in {p[0] for p in major_pending_now}}
+            remaining = [u for u in updates if u["name"] not in processed]
             with open(self.config.pending_file, "w") as f:
                 json.dump(remaining, f)
 
-        # Notify about remaining manual updates
+        # Window-skipped: tell the user once so they're not surprised
+        if skipped_window:
+            names = ", ".join(f"`{u['name']}`" for u in skipped_window)
+            self.send_message(
+                f"⏰ Outside maintenance window — auto-update skipped for: {names}",
+                auto=True,
+            )
+
+        # Major-confirm queue: send confirmation prompt(s)
+        for name, old_ver, new_ver in major_pending_now:
+            keyboard = {"inline_keyboard": [[
+                {"text": "✅ Confirm", "callback_data": f"confirm_major:{name}"},
+                {"text": "❌ Skip", "callback_data": f"reject_major:{name}"},
+            ]]}
+            self.send_message(
+                f"⚠️ *Major update for* `{name}`\n"
+                f"  {old_ver} → *{new_ver}*\n\n"
+                f"Major version bumps can break configs. Confirm to proceed.",
+                reply_markup=keyboard,
+                auto=True,
+            )
+
+        # Notify about remaining manual updates (this is auto-triggered from
+        # scheduler — respect quiet hours)
         if manual_updates:
-            self.notify_updates(manual_updates)
+            self.notify_updates(manual_updates, auto=True)
 
         return success_count
 
-    def notify_updates(self, updates):
+    def notify_updates(self, updates, auto=False):
         if not updates:
             return
         names = []
@@ -287,9 +399,9 @@ class TelegramBot:
         ])
 
         reply_markup = {"inline_keyboard": keyboard}
-        self.send_message(text, reply_markup)
+        self.send_message(text, reply_markup, auto=auto)
 
-        # Also notify external channels
+        # Also notify external channels (notifier itself respects quiet hours)
         if self.notifier:
             self.notifier.send_updates_available(updates)
 
@@ -652,6 +764,21 @@ class TelegramBot:
                 self._remove_single_button(chat_id, msg_id, data)
             t = threading.Thread(target=self._run_single_update, args=(checker, container_name))
             t.start()
+        elif data.startswith("confirm_major:"):
+            name = data.split(":", 1)[1]
+            self.answer_callback(callback["id"], f"Confirming major update for {name}...")
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            t = threading.Thread(target=self._confirm_major_update,
+                                 args=(checker, name))
+            t.start()
+        elif data.startswith("reject_major:"):
+            name = data.split(":", 1)[1]
+            self.answer_callback(callback["id"], f"Skipped major update for {name}.")
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            self.store.remove_pending_major(name)
+            self.send_message(f"⏭ Major update for `{name}` skipped.")
 
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")

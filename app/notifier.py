@@ -4,6 +4,8 @@
 import json
 import urllib.request
 
+from quiet_hours import is_quiet_now
+
 
 class Notifier:
     """Sends notifications to Discord and/or generic webhooks."""
@@ -15,8 +17,14 @@ class Notifier:
         """Check if any notification channels are configured."""
         return bool(self.config.discord_webhook or self.config.webhook_url)
 
+    def _suppressed(self):
+        """True if quiet-hours is active right now — skip auto-notifications."""
+        return is_quiet_now(self.config)
+
     def send_updates_available(self, updates):
         """Notify about available updates."""
+        if self._suppressed():
+            return
         if self.config.discord_webhook:
             self._discord_updates(updates)
         if self.config.webhook_url:
@@ -32,6 +40,8 @@ class Notifier:
 
     def send_update_result(self, name, image, success, detail=""):
         """Notify about a completed update (success or failure)."""
+        if self._suppressed():
+            return
         if self.config.discord_webhook:
             self._discord_update_result(name, image, success, detail)
         if self.config.webhook_url:
@@ -43,7 +53,9 @@ class Notifier:
             })
 
     def send_message(self, text):
-        """Send a plain text notification."""
+        """Send a plain text notification (subject to quiet hours)."""
+        if self._suppressed():
+            return
         if self.config.discord_webhook:
             self._discord_message(text)
         if self.config.webhook_url:

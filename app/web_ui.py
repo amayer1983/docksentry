@@ -424,6 +424,31 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     except (ValueError, IndexError):
                         pass
 
+                # Disk-warning settings
+                if "disk_warn_percent" in params:
+                    try:
+                        v = int(params["disk_warn_percent"][0].strip())
+                        config.disk_warn_percent = max(50, min(v, 100))
+                    except (ValueError, IndexError):
+                        pass
+                config.disk_warn_auto_cleanup = "disk_warn_auto_cleanup" in params
+
+                # Quiet hours — accept HH:MM or empty
+                def _valid_hhmm(s):
+                    if not s:
+                        return ""
+                    try:
+                        h, m = s.split(":")
+                        if 0 <= int(h) < 24 and 0 <= int(m) < 60:
+                            return f"{int(h):02d}:{int(m):02d}"
+                    except (ValueError, AttributeError):
+                        pass
+                    return ""
+                if "quiet_hours_start" in params:
+                    config.quiet_hours_start = _valid_hhmm(params["quiet_hours_start"][0].strip())
+                if "quiet_hours_end" in params:
+                    config.quiet_hours_end = _valid_hhmm(params["quiet_hours_end"][0].strip())
+
                 # Update cron schedule
                 if "cron_schedule" in params and params["cron_schedule"][0].strip():
                     config.cron_schedule = params["cron_schedule"][0].strip()
@@ -487,6 +512,61 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             elif path == "/api/selfupdate":
                 threading.Thread(target=self._api_selfupdate).start()
                 self._send_redirect("/settings?saved=1")
+            elif path == "/api/window":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                action = params.get("action", ["save"])[0]
+                if name and action == "delete":
+                    store.clear_update_window(name)
+                elif name and action == "save":
+                    start = params.get("start", [""])[0].strip()
+                    end = params.get("end", [""])[0].strip()
+                    weekdays = [int(d) for d in params.get("weekdays", [])
+                                if d.strip().isdigit()]
+                    # Basic validation: HH:MM
+                    import re as _re
+                    if (_re.match(r"^([01][0-9]|2[0-3]):[0-5][0-9]$", start)
+                            and _re.match(r"^([01][0-9]|2[0-3]):[0-5][0-9]$", end)):
+                        store.set_update_window(name, start, end, weekdays)
+                self._send_redirect("/settings#windows")
+            elif path == "/api/ask_major":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                if name:
+                    store.toggle_ask_before_major(name)
+                self._send_redirect("/")
+            elif path == "/api/major_confirm":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                action = params.get("action", [""])[0]
+                if name and action == "confirm":
+                    threading.Thread(target=bot._confirm_major_update,
+                                     args=(checker, name)).start()
+                elif name and action == "reject":
+                    store.remove_pending_major(name)
+                self._send_redirect("/")
+            elif path == "/api/bulk":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                action = params.get("action", [""])[0]
+                names = params.get("names", [])
+                # Form sends a single comma-separated value (from JS join);
+                # fall back to multi-value POST if browser sends repeated key.
+                if len(names) == 1 and "," in names[0]:
+                    names = [n.strip() for n in names[0].split(",") if n.strip()]
+                names = [n for n in names if n.strip()]
+                if action and names:
+                    threading.Thread(
+                        target=self._api_bulk, args=(action, names)
+                    ).start()
+                self._send_redirect("/")
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -496,6 +576,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             pending_names = [u["name"] for u in pending]
             pinned = store.get_pinned()
             auto_list = store.get_autoupdate()
+            ask_major = store.get_ask_before_major()
+            major_pending = store.get_pending_major() or {}
 
             from i18n import get_translator
             t = get_translator(config.language)
@@ -518,6 +600,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     badges += f' <span class="badge badge-red">{t("web_pinned_badge")}</span>'
                 if c["name"] in auto_list:
                     badges += f' <span class="badge badge-purple">{t("web_autoupdate_badge")}</span>'
+                if c["name"] in ask_major:
+                    badges += f' <span class="badge badge-blue">⚠ major-confirm</span>'
 
                 # Action buttons (container name is escaped for safe use in HTML attributes)
                 name_attr = _e(c["name"])
@@ -532,16 +616,49 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 is_auto = c["name"] in auto_list
                 checked = "checked" if is_auto else ""
                 auto_title = _e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))
-                actions += f'<form method="POST" action="/api/autoupdate" style="display:inline" title="{auto_title}"><input type="hidden" name="name" value="{name_attr}"><label class="toggle"><input type="checkbox" {checked} onchange="this.form.submit()"><span class="slider"></span></label></form>'
+                actions += f'<form method="POST" action="/api/autoupdate" style="display:inline" title="{auto_title}"><input type="hidden" name="name" value="{name_attr}"><label class="toggle"><input type="checkbox" {checked} onchange="this.form.submit()"><span class="slider"></span></label></form> '
+                # Ask-before-major toggle
+                is_askm = c["name"] in ask_major
+                askm_btn_label = "⚠ off" if is_askm else "⚠ on"
+                askm_title = _e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))
+                actions += f'<form method="POST" action="/api/ask_major" style="display:inline" title="{askm_title}"><input type="hidden" name="name" value="{name_attr}"><button type="submit" class="btn-sm btn-outline">{askm_btn_label}</button></form>'
 
                 rows += f"""<tr>
+<td><input type="checkbox" class="bulk-cb" value="{name_attr}" style="width:auto"></td>
 <td>{_e(c['name'])}{badges}</td>
 <td><code>{_e(c['image'])}</code></td>
 <td>{status_badge}</td>
 <td>{actions}</td>
 </tr>"""
 
+            major_banner = ""
+            if major_pending:
+                rows_mp = ""
+                for n, info in major_pending.items():
+                    rows_mp += f"""<tr>
+<td>⚠ <code>{_e(n)}</code></td>
+<td><code>{_e(info.get('old_version',''))} → {_e(info.get('new_version',''))}</code></td>
+<td>
+<form method="POST" action="/api/major_confirm" style="display:inline">
+<input type="hidden" name="name" value="{_e(n)}">
+<input type="hidden" name="action" value="confirm">
+<button type="submit" class="btn-sm btn-green">{t("web_major_confirm")}</button>
+</form>
+<form method="POST" action="/api/major_confirm" style="display:inline;margin-left:6px">
+<input type="hidden" name="name" value="{_e(n)}">
+<input type="hidden" name="action" value="reject">
+<button type="submit" class="btn-sm btn-outline">{t("web_major_reject")}</button>
+</form>
+</td>
+</tr>"""
+                major_banner = f"""<div class="card" style="border-color:#d29922">
+<h2 style="color:#d29922">⚠ {t("web_major_pending_title")}</h2>
+<p style="font-size:12px;color:#8b949e;margin-bottom:8px">{t("web_major_pending_intro")}</p>
+<table>{rows_mp}</table>
+</div>"""
+
             content = f"""
+{major_banner}
 <div class="grid">
 <div class="card stat">
     <div class="num">{len(containers)}</div>
@@ -551,7 +668,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     <div class="num">{len(pending)}</div>
     <div class="label">{t("web_updates_available")}</div>
 </div>
-</div>
+</div>"""
+            content += f"""
 
 <div class="card">
 <h2>{t("web_containers")}</h2>
@@ -559,11 +677,51 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <span style="font-size:12px;color:#8b949e">{t("web_containers_running", count=len(containers))}</span>
 <a href="/api/check" class="btn btn-blue" style="text-decoration:none;font-size:13px">{t("web_check_updates")}</a>
 </div>
+<form id="bulkForm" method="POST" action="/api/bulk" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+<input type="hidden" name="action" id="bulkAction" value="">
+<input type="hidden" name="names" id="bulkNames" value="">
+<span id="bulkCount" style="font-size:12px;color:#8b949e;margin-right:8px">{t("web_bulk_none_selected")}</span>
+<button type="button" class="btn-sm btn-green" onclick="bulkSubmit('update')">{t("web_bulk_update")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('pin')">{t("web_bulk_pin")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('unpin')">{t("web_bulk_unpin")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_on')">{t("web_bulk_auto_on")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_off')">{t("web_bulk_auto_off")}</button>
+</form>
 <table>
-<tr><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
+<tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
 {rows}
 </table>
-</div>"""
+</div>
+<script>
+(function() {{
+    const cbAll = document.getElementById('bulkSelectAll');
+    const cbs = document.querySelectorAll('.bulk-cb');
+    const countEl = document.getElementById('bulkCount');
+
+    function selected() {{
+        return Array.from(cbs).filter(c => c.checked).map(c => c.value);
+    }}
+    function refresh() {{
+        const n = selected().length;
+        countEl.textContent = n === 0 ? '{t("web_bulk_none_selected")}'
+                                       : n + ' {t("web_bulk_selected_suffix")}';
+    }}
+    cbAll.addEventListener('change', () => {{
+        cbs.forEach(c => c.checked = cbAll.checked);
+        refresh();
+    }});
+    cbs.forEach(c => c.addEventListener('change', refresh));
+
+    window.bulkSubmit = function(action) {{
+        const names = selected();
+        if (names.length === 0) return;
+        document.getElementById('bulkAction').value = action;
+        document.getElementById('bulkNames').value = names.join(',');
+        document.getElementById('bulkForm').submit();
+    }};
+    refresh();
+}})();
+</script>"""
 
             self._send_html(self._render_page(content, "status"))
 
@@ -633,6 +791,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             auto_su_checked = 'checked' if config.auto_selfupdate else ''
             auto_cleanup_checked = 'checked' if config.auto_cleanup else ''
             backup_local_checked = 'checked' if config.cleanup_backup_local_only else ''
+            disk_auto_cleanup_checked = 'checked' if config.disk_warn_auto_cleanup else ''
 
             # Mask sensitive values
             token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"
@@ -690,6 +849,34 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_cleanup_backup_local_only_hint")}</p>
 </div>
 
+<hr style="border:none;border-top:1px solid #30363d;margin:16px 0">
+
+<div class="grid">
+<div>
+<label>{t("web_disk_warn_percent")}</label>
+<input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
+<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_disk_warn_percent_hint")}</p>
+</div>
+<div style="padding-top:24px">
+<label><input type="checkbox" name="disk_warn_auto_cleanup" {disk_auto_cleanup_checked} style="width:auto;margin-right:8px"> {t("web_disk_warn_auto_cleanup")}</label>
+<p style="font-size:11px;color:#484f58;margin:4px 0 0 24px">{t("web_disk_warn_auto_cleanup_hint")}</p>
+</div>
+</div>
+
+<hr style="border:none;border-top:1px solid #30363d;margin:16px 0">
+
+<div class="grid">
+<div>
+<label>{t("web_quiet_hours_start")}</label>
+<input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
+</div>
+<div>
+<label>{t("web_quiet_hours_end")}</label>
+<input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
+</div>
+</div>
+<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_quiet_hours_hint")}</p>
+
 <div style="margin-top:8px">
 <label>{t("web_excluded")}</label>
 <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
@@ -715,6 +902,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </div>
 
 </form>
+</div>
+
+<div class="card" id="windows">
+<h2>{t("web_windows_title")}</h2>
+<p style="font-size:12px;color:#484f58;margin-bottom:12px">{t("web_windows_intro")}</p>
+{self._windows_html(t)}
 </div>
 
 <div class="card">
@@ -745,6 +938,73 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))
+
+        def _windows_html(self, t):
+            """Render the Update Windows table + add-form for the Settings page."""
+            try:
+                containers = self._get_containers()
+            except Exception:
+                containers = []
+            container_names = sorted({c["name"] for c in containers})
+            current = store.get_update_windows() or {}
+
+            wd_short = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+            rows_html = ""
+            for name in sorted(current.keys()):
+                w = current[name]
+                days_set = set(w.get("weekdays") or [])
+                days = "·".join(wd_short[i] if i in days_set else " " for i in range(7))
+                rows_html += f"""<tr>
+<td><code>{_e(name)}</code></td>
+<td><code>{_e(w.get('start',''))}–{_e(w.get('end',''))}</code></td>
+<td><code>{_e(days if days_set else 'all days')}</code></td>
+<td>
+<form method="POST" action="/api/window" style="display:inline">
+<input type="hidden" name="name" value="{_e(name)}">
+<input type="hidden" name="action" value="delete">
+<button type="submit" class="btn-sm btn-outline">{t("web_delete")}</button>
+</form>
+</td>
+</tr>"""
+            if not rows_html:
+                rows_html = (f"<tr><td colspan=\"4\" style=\"color:#8b949e;font-size:12px\">"
+                             f"{t('web_windows_empty')}</td></tr>")
+
+            options = "".join(f'<option value="{_e(n)}">{_e(n)}</option>'
+                              for n in container_names)
+            wd_full = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            wd_html = ""
+            for i, label in enumerate(wd_full):
+                wd_html += (f'<label style="display:inline-block;margin-right:10px;font-size:13px">'
+                            f'<input type="checkbox" name="weekdays" value="{i}" '
+                            f'style="width:auto;margin-right:4px">{label}</label>')
+
+            return f"""<table style="margin-bottom:14px">
+<tr><th>{t("web_name")}</th><th>{t("web_windows_range")}</th><th>{t("web_windows_days")}</th><th>{t("web_actions")}</th></tr>
+{rows_html}
+</table>
+<form method="POST" action="/api/window">
+<input type="hidden" name="action" value="save">
+<div class="grid">
+<div>
+<label>{t("web_windows_container")}</label>
+<select name="name">{options}</select>
+</div>
+<div>
+<label>{t("web_windows_range")}</label>
+<div style="display:flex;gap:8px">
+<input type="text" name="start" placeholder="02:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$" required>
+<input type="text" name="end" placeholder="04:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$" required>
+</div>
+</div>
+</div>
+<div style="margin-top:8px">
+<label>{t("web_windows_days")}</label>
+{wd_html}
+<p style="font-size:11px;color:#484f58;margin:4px 0 0 0">{t("web_windows_days_hint")}</p>
+</div>
+<button type="submit" class="btn" style="margin-top:8px">{t("web_windows_save")}</button>
+</form>"""
 
         def _page_logs(self):
             from i18n import get_translator
@@ -854,6 +1114,57 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 print(f"Web UI selfupdate error: {e}")
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(f"❌ Selfupdate failed: {e}")
+
+        def _api_bulk(self, action, names):
+            """Apply a bulk action to a list of containers.
+
+            Supported actions: pin, unpin, autoupdate_on, autoupdate_off,
+            update. Update walks through the pending-updates list and runs
+            each matching update sequentially.
+            """
+            try:
+                if action == "pin":
+                    for n in names:
+                        store.pin(n)
+                elif action == "unpin":
+                    for n in names:
+                        store.unpin(n)
+                elif action == "autoupdate_on":
+                    auto = store.get_autoupdate()
+                    for n in names:
+                        if n not in auto:
+                            auto.append(n)
+                    store.save_autoupdate(auto)
+                elif action == "autoupdate_off":
+                    auto = store.get_autoupdate()
+                    auto = [a for a in auto if a not in names]
+                    store.save_autoupdate(auto)
+                elif action == "update":
+                    if not os.path.exists(config.pending_file):
+                        return
+                    with open(config.pending_file) as f:
+                        updates = json.load(f)
+                    targets = [u for u in updates if u["name"] in names]
+                    for target in targets:
+                        compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
+                        success, msg = checker.update_container(
+                            target["name"], target["image"], **compose_kwargs
+                        )
+                        status = "✅" if success else "❌"
+                        if bot.enabled:
+                            bot.send_message(f"{status} `{target['name']}`: {msg}")
+                        if bot.notifier:
+                            bot.notifier.send_update_result(
+                                target["name"], target["image"], success, msg
+                            )
+                    # Drop processed entries from pending
+                    remaining = [u for u in updates if u["name"] not in [t["name"] for t in targets]]
+                    with open(config.pending_file, "w") as f:
+                        json.dump(remaining, f)
+                else:
+                    print(f"Web UI bulk: unknown action {action!r}")
+            except Exception as e:
+                print(f"Web UI bulk error: {e}")
 
     return WebHandler
 
