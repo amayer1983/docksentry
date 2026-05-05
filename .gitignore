@@ -4,3 +4,6 @@ __pycache__/
 *.log
 pending_updates.json
 docker-compose.dev.yml
+
+# Local notes — private, never pushed
+IDEAS.md
