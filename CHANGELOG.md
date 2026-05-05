@@ -2,6 +2,35 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.13.1] - 2026-05-05
+
+### Web UI refresh
+
+A structured polish pass that **also lays the foundation** for upcoming features (theme toggle, multi-host, per-container detail page).
+
+#### Changed
+- **CSS rewritten with Custom Properties** — all colors via `var(--*)` tokens. A future light-mode toggle is now a one-class swap on `<html>`, not a search-and-replace.
+- **Settings page split into 5 tabs** — General / Updates / Cleanup / Notifications / Channels. Active tab persists via localStorage, so reloading the page keeps you where you were.
+- **Status page action buttons → icon-only with tooltips** — `🔄 📌 ⚙ ⚠` instead of word buttons. Active state visualised via colored borders (active = accent, ⚠ enabled = warning).
+- **Major-update banner uses the new `card-warn` style** — a subtle yellow accent gradient plus border, no inline styles.
+- **Bulk-action bar polished** — selection count + visual divider + icon labels, contained in its own subtle panel.
+- **Inline styles migrated to component classes** (`.btn-icon`, `.bulk-bar`, `.form-checkbox-row`, `.form-help`, `.section-divider`, `.empty`, `.help`, `.tabs`, `.toast`).
+
+#### Added
+- **Toast notifications** — saved/error feedback now slides in as a top-right toast and fades after 4s. Cross-page persistence via localStorage.
+- **Confirm dialog** — destructive actions (Self-Update, Image Cleanup) now prompt for explicit confirmation via a modal. Wired via `data-confirm` attributes on forms — easy to add to more actions.
+- **Help icons (`?`) with tooltips** — next to every non-obvious setting label. Hover reveals a multi-line explanation.
+- **Empty states** — History page no longer shows an empty card with one line of text; gets a centered icon + title + hint pattern. Reusable for future pages.
+- **Per-container detail route stub** — `/container/<name>` (linked from container names on Status). Page is a placeholder pointing at v1.14, but routing + URL is stable, so external links and bookmarks already work.
+
+#### Foundation for upcoming features
+- **Header has a `header-host-slot`** — empty for now, reserved for the multi-host selector planned for v2.0.
+- **Tab system is reusable** — same JS component will power the per-container detail tabs in v1.14 (Overview / History / Logs / Settings).
+- **Toast system is reusable** — first-run-wizard and long-running self-update notifications can hook into it.
+
+### i18n
+58 new keys added across all 16 language files. EN and DE are translated; other languages get the English fallback for the new keys (translation contributions welcome).
+
 ## [1.13.0] - 2026-05-05
 
 ### Added — Quality of Life Release

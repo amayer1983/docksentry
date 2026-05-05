@@ -21,6 +21,590 @@ def _e(value):
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+# ═══════════════════════════════════════════════════════════════════
+# CSS — themed via custom properties so a future light-mode toggle is
+# a one-class swap on <html>. All component classes live here; new
+# pages should compose existing classes rather than inline styles.
+# ═══════════════════════════════════════════════════════════════════
+_BASE_CSS = """
+:root {
+    /* Backgrounds */
+    --bg:           #0d1117;
+    --bg-elev:      #161b22;
+    --bg-elev-2:    #1c2128;
+    --bg-input:     #0d1117;
+    /* Borders */
+    --border:       #30363d;
+    --border-soft:  #21262d;
+    /* Text */
+    --text:         #c9d1d9;
+    --text-muted:   #8b949e;
+    --text-faint:   #484f58;
+    /* Accents */
+    --accent:       #58a6ff;
+    --accent-bg:    #1f2937;
+    --success:      #3fb950;
+    --success-bg:   #1a3a2a;
+    --warn:         #d29922;
+    --warn-bg:      #3a2f1a;
+    --danger:       #f85149;
+    --danger-bg:    #3a1a1a;
+    --info:         #58a6ff;
+    --info-bg:      #1a2a3a;
+    --special:      #bc8cff;
+    --special-bg:   #2a1a3a;
+    /* Buttons */
+    --btn-green:    #238636;
+    --btn-green-h:  #2ea043;
+    --btn-blue:     #1f6feb;
+    --btn-blue-h:   #388bfd;
+    /* Misc */
+    --radius:       8px;
+    --radius-sm:    6px;
+    --radius-pill: 12px;
+    --shadow:       0 1px 0 rgba(0,0,0,0.04);
+    --tt-bg:        #1f2937;
+    --tt-fg:        #c9d1d9;
+}
+
+/* ── Reset & base ───────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+}
+
+/* ── Header & nav ───────────────────────────────────────────── */
+.header {
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+}
+.header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.header h1 { font-size: 18px; display: inline; flex: 1; }
+.header h1 span { color: var(--accent); }
+.header-host-slot { font-size: 13px; color: var(--text-muted); }
+nav { margin-top: 12px; }
+nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+}
+nav a:hover { color: var(--text); background: var(--bg-elev-2); }
+nav a.active { color: var(--accent); background: var(--accent-bg); }
+
+.content { max-width: 900px; margin: 24px auto; padding: 0 24px; }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+}
+.card h2 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+.card-intro {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+.card-warn {
+    border-color: var(--warn);
+    background: linear-gradient(180deg, rgba(210,153,34,0.08) 0%, var(--bg-elev) 60%);
+}
+.card-warn h2 { color: var(--warn); }
+
+/* ── Tables ─────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+}
+td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+tr:hover { background: var(--bg-elev-2); }
+
+/* ── Forms ──────────────────────────────────────────────────── */
+form { margin-top: 8px; }
+label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--text-muted); }
+input, select, textarea {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    width: 100%;
+    margin-bottom: 12px;
+    font-family: inherit;
+}
+select { cursor: pointer; }
+.form-help {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin: -8px 0 12px 0;
+}
+.form-row-inline {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+.form-row-inline > * { margin-bottom: 0; }
+.form-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+.form-checkbox-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+.form-checkbox-row label {
+    margin: 0;
+    color: var(--text);
+    font-weight: 500;
+    cursor: pointer;
+}
+hr.section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn {
+    background: var(--btn-green);
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+.btn:hover { background: var(--btn-green-h); }
+.btn-blue { background: var(--btn-blue); }
+.btn-blue:hover { background: var(--btn-blue-h); }
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: #ff6b62; }
+.btn-outline {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+.btn-outline:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+}
+.btn-sm {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+/* Icon-only button — square-ish, just an emoji/glyph inside */
+.btn-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+.btn-icon:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+    background: var(--bg-elev-2);
+}
+.btn-icon.is-active {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+.btn-icon.is-warn {
+    color: var(--warn);
+    border-color: var(--warn);
+}
+.btn-icon.is-danger { color: var(--danger); border-color: var(--danger); }
+.btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.inline-form { display: inline; }
+.bulk-cb { width: auto; margin: 0; }
+.bulk-bar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+}
+.bulk-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-right: 4px;
+    min-width: 110px;
+}
+.bulk-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 6px;
+}
+@media (max-width: 600px) { .bulk-divider { display: none; } }
+
+/* ── Layout helpers ─────────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+.stat { text-align: center; }
+.stat .num { font-size: 32px; font-weight: bold; color: var(--accent); }
+.stat .label { font-size: 12px; color: var(--text-muted); }
+
+/* ── Badges ─────────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+}
+.badge-green  { background: var(--success-bg); color: var(--success); }
+.badge-yellow { background: var(--warn-bg); color: var(--warn); }
+.badge-blue   { background: var(--info-bg); color: var(--info); }
+.badge-red    { background: var(--danger-bg); color: var(--danger); }
+.badge-purple { background: var(--special-bg); color: var(--special); }
+.healthy { color: var(--success); }
+
+/* ── Toggle (slider) ────────────────────────────────────────── */
+.toggle {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    vertical-align: middle;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle .slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--border);
+    border-radius: 20px;
+    transition: 0.2s;
+}
+.toggle .slider:before {
+    content: "";
+    position: absolute;
+    height: 14px; width: 14px;
+    left: 3px; bottom: 3px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: 0.2s;
+}
+.toggle input:checked + .slider { background: var(--btn-green); }
+.toggle input:checked + .slider:before { transform: translateX(16px); background: #fff; }
+
+/* ── Pre / code ─────────────────────────────────────────────── */
+pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 12px;
+    color: var(--text-faint);
+}
+.footer a { color: #6e7681; text-decoration: none; }
+.footer a:hover { color: var(--text); }
+
+/* ── Tabs ───────────────────────────────────────────────────── */
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.is-active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.tab-btn[disabled] {
+    color: var(--text-faint);
+    cursor: not-allowed;
+}
+.tab-pane { display: none; }
+.tab-pane.is-active { display: block; }
+
+/* ── Toasts ─────────────────────────────────────────────────── */
+.toast-container {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 420px;
+}
+.toast {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    animation: toastIn 0.2s ease-out;
+}
+.toast.is-success { border-left-color: var(--success); }
+.toast.is-warn    { border-left-color: var(--warn); }
+.toast.is-danger  { border-left-color: var(--danger); }
+.toast.is-leaving { opacity: 0; transition: opacity 0.3s; }
+@keyframes toastIn {
+    from { opacity: 0; transform: translateX(8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Empty states ───────────────────────────────────────────── */
+.empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted);
+}
+.empty-icon { font-size: 32px; opacity: 0.5; margin-bottom: 8px; }
+.empty-title { font-size: 14px; color: var(--text); margin-bottom: 4px; }
+.empty-hint { font-size: 12px; color: var(--text-faint); }
+
+/* ── Help icon (tooltip) ────────────────────────────────────── */
+.help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px; height: 14px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: var(--bg-elev-2);
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: help;
+    position: relative;
+}
+.help:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+}
+.help[data-tt]:hover::after {
+    content: attr(data-tt);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--tt-bg);
+    color: var(--tt-fg);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 280px;
+    text-align: left;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 100;
+    pointer-events: none;
+}
+
+/* ── Confirm dialog (modal) ─────────────────────────────────── */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 900;
+}
+.modal-backdrop.is-open { display: flex; }
+.modal {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    max-width: 480px;
+    width: 90%;
+}
+.modal h3 { color: var(--accent); margin-bottom: 12px; }
+.modal-body { margin-bottom: 20px; color: var(--text); font-size: 14px; line-height: 1.5; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+"""
+
+
+# Vanilla JS shipped on every page — provides:
+#   - Tabs (data-tabs / data-tab-target)
+#   - Toasts (window.dsToast(msg, kind))
+#   - Cross-page toast carryover via localStorage
+#   - Confirm dialog (window.dsConfirm(message, onYes))
+_BASE_JS = """
+(function() {
+    // ── Tabs ──────────────────────────────────────────────────
+    document.querySelectorAll('[data-tabs]').forEach(function(group) {
+        var buttons = group.querySelectorAll('.tab-btn');
+        var panes = document.querySelectorAll('[data-tab-pane="' + group.dataset.tabs + '"]');
+        function activate(name) {
+            buttons.forEach(function(b) { b.classList.toggle('is-active', b.dataset.tabTarget === name); });
+            panes.forEach(function(p) { p.classList.toggle('is-active', p.dataset.tabName === name); });
+            try { localStorage.setItem('ds-tab-' + group.dataset.tabs, name); } catch(e) {}
+        }
+        buttons.forEach(function(b) {
+            b.addEventListener('click', function() { activate(b.dataset.tabTarget); });
+        });
+        // Restore from localStorage or default to first tab
+        var stored = null;
+        try { stored = localStorage.getItem('ds-tab-' + group.dataset.tabs); } catch(e) {}
+        var initial = stored && Array.from(buttons).some(function(b){return b.dataset.tabTarget===stored;})
+            ? stored
+            : (buttons[0] && buttons[0].dataset.tabTarget);
+        if (initial) activate(initial);
+    });
+
+    // ── Toasts ────────────────────────────────────────────────
+    var container = document.getElementById('ds-toasts');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'ds-toasts';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    window.dsToast = function(msg, kind) {
+        var t = document.createElement('div');
+        t.className = 'toast' + (kind ? ' is-' + kind : '');
+        t.textContent = msg;
+        container.appendChild(t);
+        setTimeout(function() {
+            t.classList.add('is-leaving');
+            setTimeout(function() { t.remove(); }, 300);
+        }, 4000);
+    };
+    // Pick up toasts queued from the previous page
+    try {
+        var queued = JSON.parse(localStorage.getItem('ds-toast-queue') || '[]');
+        if (queued.length) {
+            queued.forEach(function(item) { window.dsToast(item.msg, item.kind); });
+            localStorage.removeItem('ds-toast-queue');
+        }
+    } catch(e) {}
+    // URL-param-driven toast (from server-side redirects)
+    var qs = new URLSearchParams(window.location.search);
+    if (qs.get('saved') === '1') window.dsToast('Settings saved.', 'success');
+    if (qs.get('error'))         window.dsToast(qs.get('error'),    'danger');
+
+    // ── Confirm dialog ────────────────────────────────────────
+    var modal = document.getElementById('ds-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'ds-modal';
+        modal.className = 'modal-backdrop';
+        modal.innerHTML = '<div class="modal" role="dialog" aria-modal="true">' +
+            '<h3 id="ds-modal-title">Confirm</h3>' +
+            '<div id="ds-modal-body" class="modal-body"></div>' +
+            '<div class="modal-actions">' +
+            '<button type="button" class="btn-sm btn-outline" id="ds-modal-cancel">Cancel</button>' +
+            '<button type="button" class="btn-sm btn" id="ds-modal-ok">Confirm</button>' +
+            '</div></div>';
+        document.body.appendChild(modal);
+    }
+    var modalCancel = document.getElementById('ds-modal-cancel');
+    var modalOk = document.getElementById('ds-modal-ok');
+    var pendingHandler = null;
+    function closeModal() {
+        modal.classList.remove('is-open');
+        pendingHandler = null;
+    }
+    modalCancel.addEventListener('click', closeModal);
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) closeModal();
+    });
+    modalOk.addEventListener('click', function() {
+        var h = pendingHandler;
+        closeModal();
+        if (h) h();
+    });
+    window.dsConfirm = function(message, onYes, opts) {
+        opts = opts || {};
+        document.getElementById('ds-modal-title').textContent = opts.title || 'Confirm';
+        document.getElementById('ds-modal-body').textContent = message;
+        modalOk.textContent = opts.confirmLabel || 'Confirm';
+        modalOk.className = 'btn-sm ' + (opts.danger ? 'btn-danger' : 'btn');
+        pendingHandler = onYes;
+        modal.classList.add('is-open');
+    };
+    // Auto-wire forms with data-confirm
+    document.querySelectorAll('form[data-confirm]').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            if (form.dataset.dsConfirmed === '1') return;
+            e.preventDefault();
+            window.dsConfirm(form.dataset.confirm, function() {
+                form.dataset.dsConfirmed = '1';
+                form.submit();
+            }, {
+                title: form.dataset.confirmTitle || 'Confirm',
+                confirmLabel: form.dataset.confirmLabel || 'Confirm',
+                danger: form.dataset.confirmDanger === '1',
+            });
+        });
+    });
+})();
+"""
+
+
 # Cloud metadata endpoints — credential theft targets, hard-blocked
 _CLOUD_METADATA_HOSTS = {
     "169.254.169.254",          # AWS, Azure, OpenStack, DigitalOcean (IPv4 link-local)
@@ -266,69 +850,14 @@ def create_handler(config, checker, bot, store, password=None):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docksentry</title>
-<style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: #0d1117; color: #c9d1d9; line-height: 1.6; }}
-.header {{ background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; }}
-.header h1 {{ font-size: 18px; display: inline; }}
-.header h1 span {{ color: #58a6ff; }}
-nav {{ margin-top: 12px; }}
-nav a {{ color: #8b949e; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; }}
-nav a:hover {{ color: #c9d1d9; background: #21262d; }}
-nav a.active {{ color: #58a6ff; background: #1f2937; }}
-.content {{ max-width: 900px; margin: 24px auto; padding: 0 24px; }}
-.card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }}
-.card h2 {{ font-size: 16px; margin-bottom: 12px; color: #58a6ff; }}
-table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-th {{ text-align: left; padding: 8px 12px; color: #8b949e; border-bottom: 1px solid #30363d; font-weight: 500; }}
-td {{ padding: 8px 12px; border-bottom: 1px solid #21262d; }}
-tr:hover {{ background: #1c2128; }}
-.healthy {{ color: #3fb950; }}
-.badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; }}
-.badge-green {{ background: #1a3a2a; color: #3fb950; }}
-.badge-yellow {{ background: #3a2f1a; color: #d29922; }}
-.badge-blue {{ background: #1a2a3a; color: #58a6ff; }}
-form {{ margin-top: 8px; }}
-label {{ display: block; margin-bottom: 4px; font-size: 14px; color: #8b949e; }}
-input, select {{ background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px;
-    border-radius: 6px; font-size: 14px; width: 100%; margin-bottom: 12px; }}
-select {{ cursor: pointer; }}
-.btn {{ background: #238636; color: #fff; border: none; padding: 8px 20px; border-radius: 6px;
-    cursor: pointer; font-size: 14px; }}
-.btn:hover {{ background: #2ea043; }}
-.btn-blue {{ background: #1f6feb; }}
-.btn-blue:hover {{ background: #388bfd; }}
-.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
-@media (max-width: 600px) {{ .grid {{ grid-template-columns: 1fr; }} }}
-.stat {{ text-align: center; }}
-.stat .num {{ font-size: 32px; font-weight: bold; color: #58a6ff; }}
-.stat .label {{ font-size: 12px; color: #8b949e; }}
-.badge-red {{ background: #3a1a1a; color: #f85149; }}
-.badge-purple {{ background: #2a1a3a; color: #bc8cff; }}
-.btn-sm {{ padding: 3px 10px; border-radius: 4px; font-size: 12px; border: none; cursor: pointer; }}
-.toggle {{ position: relative; display: inline-block; width: 36px; height: 20px; vertical-align: middle; }}
-.toggle input {{ opacity: 0; width: 0; height: 0; }}
-.toggle .slider {{ position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-    background: #30363d; border-radius: 20px; transition: 0.2s; }}
-.toggle .slider:before {{ content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
-    background: #8b949e; border-radius: 50%; transition: 0.2s; }}
-.toggle input:checked + .slider {{ background: #238636; }}
-.toggle input:checked + .slider:before {{ transform: translateX(16px); background: #fff; }}
-.btn-green {{ background: #238636; color: #fff; }}
-.btn-green:hover {{ background: #2ea043; }}
-.btn-outline {{ background: transparent; color: #8b949e; border: 1px solid #30363d; }}
-.btn-outline:hover {{ color: #c9d1d9; border-color: #8b949e; }}
-pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px;
-    overflow-x: auto; font-size: 13px; line-height: 1.5; color: #c9d1d9; white-space: pre-wrap; word-wrap: break-word; }}
-.footer {{ text-align: center; padding: 24px; font-size: 12px; color: #484f58; }}
-.footer a {{ color: #6e7681; text-decoration: none; }}
-.footer a:hover {{ color: #c9d1d9; }}
-</style>
+<style>{_BASE_CSS}</style>
 </head>
 <body>
 <div class="header">
-<h1><img src="data:image/png;base64,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" alt="Logo" style="height:32px;vertical-align:middle;margin-right:8px"> <span>Docksentry</span></h1>
+<div class="header-row">
+<h1 style="flex:1;"><img src="data:image/png;base64,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" alt="Logo" style="height:32px;vertical-align:middle;margin-right:8px"> <span>Docksentry</span></h1>
+<div class="header-host-slot"><!-- v2.0: host selector slot --></div>
+</div>
 <nav>{nav_html}</nav>
 </div>
 <div class="content">
@@ -337,6 +866,7 @@ pre {{ background: #0d1117; border: 1px solid #30363d; border-radius: 6px; paddi
 <div class="footer">
 Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target="_blank" rel="noopener noreferrer">❤ Sponsor</a>
 </div>
+<script>{_BASE_JS}</script>
 </body>
 </html>"""
 
@@ -355,6 +885,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             elif path == "/api/check":
                 threading.Thread(target=self._api_check).start()
                 self._send_redirect("/")
+            elif path.startswith("/container/"):
+                self._page_container(path[len("/container/"):])
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -592,40 +1124,56 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 else:
                     status_badge = f'<span class="badge badge-blue">running</span>'
 
-                # Badges
+                # Badges (compact, only show what's "different" from default)
                 badges = ""
                 if c["name"] in pending_names:
-                    badges += f' <span class="badge badge-yellow">update</span>'
+                    badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
                 if c["name"] in pinned:
-                    badges += f' <span class="badge badge-red">{t("web_pinned_badge")}</span>'
+                    badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
                 if c["name"] in auto_list:
-                    badges += f' <span class="badge badge-purple">{t("web_autoupdate_badge")}</span>'
+                    badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
                 if c["name"] in ask_major:
-                    badges += f' <span class="badge badge-blue">⚠ major-confirm</span>'
+                    badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">⚠</span>'
 
-                # Action buttons (container name is escaped for safe use in HTML attributes)
+                # Action buttons — icon-only with tooltips. Container name is
+                # escaped for safe use in HTML attributes.
                 name_attr = _e(c["name"])
-                actions = ""
-                if c["name"] in pending_names:
-                    actions += f'<form method="POST" action="/api/update" style="display:inline"><input type="hidden" name="name" value="{name_attr}"><button type="submit" class="btn-sm btn-green">{t("web_update")}</button></form> '
-                if c["name"] in pinned:
-                    actions += f'<form method="POST" action="/api/unpin" style="display:inline"><input type="hidden" name="name" value="{name_attr}"><button type="submit" class="btn-sm btn-outline">{t("web_unpin")}</button></form> '
-                else:
-                    actions += f'<form method="POST" action="/api/pin" style="display:inline"><input type="hidden" name="name" value="{name_attr}"><button type="submit" class="btn-sm btn-outline">{t("web_pin")}</button></form> '
-                # Autoupdate toggle
                 is_auto = c["name"] in auto_list
-                checked = "checked" if is_auto else ""
-                auto_title = _e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))
-                actions += f'<form method="POST" action="/api/autoupdate" style="display:inline" title="{auto_title}"><input type="hidden" name="name" value="{name_attr}"><label class="toggle"><input type="checkbox" {checked} onchange="this.form.submit()"><span class="slider"></span></label></form> '
-                # Ask-before-major toggle
                 is_askm = c["name"] in ask_major
-                askm_btn_label = "⚠ off" if is_askm else "⚠ on"
-                askm_title = _e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))
-                actions += f'<form method="POST" action="/api/ask_major" style="display:inline" title="{askm_title}"><input type="hidden" name="name" value="{name_attr}"><button type="submit" class="btn-sm btn-outline">{askm_btn_label}</button></form>'
+                is_pinned_c = c["name"] in pinned
+                update_btn = (
+                    f'<form method="POST" action="/api/update" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{name_attr}">'
+                    f'<button type="submit" class="btn-icon" title="{_e(t("web_update"))}">🔄</button>'
+                    f'</form>'
+                ) if c["name"] in pending_names else ''
+                pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
+                pin_btn = (
+                    f'<form method="POST" action="{pin_form_action}" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{name_attr}">'
+                    f'<button type="submit" class="btn-icon{" is-active" if is_pinned_c else ""}" '
+                    f'title="{_e(t("web_unpin") if is_pinned_c else t("web_pin"))}">📌</button>'
+                    f'</form>'
+                )
+                auto_btn = (
+                    f'<form method="POST" action="/api/autoupdate" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{name_attr}">'
+                    f'<button type="submit" class="btn-icon{" is-active" if is_auto else ""}" '
+                    f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">⚙</button>'
+                    f'</form>'
+                )
+                ask_btn = (
+                    f'<form method="POST" action="/api/ask_major" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{name_attr}">'
+                    f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
+                    f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">⚠</button>'
+                    f'</form>'
+                )
+                actions = f'<div class="btn-row">{update_btn}{pin_btn}{auto_btn}{ask_btn}</div>'
 
                 rows += f"""<tr>
-<td><input type="checkbox" class="bulk-cb" value="{name_attr}" style="width:auto"></td>
-<td>{_e(c['name'])}{badges}</td>
+<td><input type="checkbox" class="bulk-cb" value="{name_attr}"></td>
+<td><a href="/container/{name_attr}" style="color:var(--text);text-decoration:none">{_e(c['name'])}</a>{badges}</td>
 <td><code>{_e(c['image'])}</code></td>
 <td>{status_badge}</td>
 <td>{actions}</td>
@@ -639,21 +1187,21 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <td>⚠ <code>{_e(n)}</code></td>
 <td><code>{_e(info.get('old_version',''))} → {_e(info.get('new_version',''))}</code></td>
 <td>
-<form method="POST" action="/api/major_confirm" style="display:inline">
+<form method="POST" action="/api/major_confirm" class="inline-form">
 <input type="hidden" name="name" value="{_e(n)}">
 <input type="hidden" name="action" value="confirm">
-<button type="submit" class="btn-sm btn-green">{t("web_major_confirm")}</button>
+<button type="submit" class="btn-sm btn">{t("web_major_confirm")}</button>
 </form>
-<form method="POST" action="/api/major_confirm" style="display:inline;margin-left:6px">
+<form method="POST" action="/api/major_confirm" class="inline-form" style="margin-left:6px">
 <input type="hidden" name="name" value="{_e(n)}">
 <input type="hidden" name="action" value="reject">
 <button type="submit" class="btn-sm btn-outline">{t("web_major_reject")}</button>
 </form>
 </td>
 </tr>"""
-                major_banner = f"""<div class="card" style="border-color:#d29922">
-<h2 style="color:#d29922">⚠ {t("web_major_pending_title")}</h2>
-<p style="font-size:12px;color:#8b949e;margin-bottom:8px">{t("web_major_pending_intro")}</p>
+                major_banner = f"""<div class="card card-warn">
+<h2>⚠ {t("web_major_pending_title")}</h2>
+<p class="card-intro">{t("web_major_pending_intro")}</p>
 <table>{rows_mp}</table>
 </div>"""
 
@@ -677,15 +1225,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <span style="font-size:12px;color:#8b949e">{t("web_containers_running", count=len(containers))}</span>
 <a href="/api/check" class="btn btn-blue" style="text-decoration:none;font-size:13px">{t("web_check_updates")}</a>
 </div>
-<form id="bulkForm" method="POST" action="/api/bulk" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+<form id="bulkForm" method="POST" action="/api/bulk" class="bulk-bar">
 <input type="hidden" name="action" id="bulkAction" value="">
 <input type="hidden" name="names" id="bulkNames" value="">
-<span id="bulkCount" style="font-size:12px;color:#8b949e;margin-right:8px">{t("web_bulk_none_selected")}</span>
-<button type="button" class="btn-sm btn-green" onclick="bulkSubmit('update')">{t("web_bulk_update")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('pin')">{t("web_bulk_pin")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('unpin')">{t("web_bulk_unpin")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_on')">{t("web_bulk_auto_on")}</button>
-<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_off')">{t("web_bulk_auto_off")}</button>
+<span id="bulkCount" class="bulk-count">{t("web_bulk_none_selected")}</span>
+<span class="bulk-divider"></span>
+<button type="button" class="btn-sm btn" onclick="bulkSubmit('update')" title="{_e(t('web_bulk_update_tt'))}">🔄 {t("web_bulk_update")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('pin')" title="{_e(t('web_bulk_pin_tt'))}">📌 {t("web_bulk_pin")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('unpin')" title="{_e(t('web_bulk_unpin_tt'))}">📌 {t("web_bulk_unpin")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">⚙ {t("web_bulk_auto_on")}</button>
+<button type="button" class="btn-sm btn-outline" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">⚙ {t("web_bulk_auto_off")}</button>
 </form>
 <table>
 <tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
@@ -725,6 +1274,33 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
             self._send_html(self._render_page(content, "status"))
 
+        def _page_container(self, name):
+            """Stub page for the future per-container detail view (v1.14+).
+
+            For now: shows the container name + which sub-systems will live
+            here later (history, logs, per-container settings). Routing is
+            wired so links from the Status page already work — we just
+            haven't filled in the body yet.
+            """
+            from i18n import get_translator
+            t = get_translator(config.language)
+            name = name.strip("/")
+            if not name:
+                self._send_redirect("/")
+                return
+            content = f"""
+<div class="card">
+<h2>{_e(name)}</h2>
+<p class="card-intro">{t("web_container_detail_intro")}</p>
+<div class="empty">
+<div class="empty-icon">🏗️</div>
+<div class="empty-title">{t("web_container_detail_soon")}</div>
+<div class="empty-hint">{t("web_container_detail_hint")}</div>
+</div>
+<a href="/" class="btn btn-outline" style="margin-top:8px;display:inline-block">← {t("web_back_to_status")}</a>
+</div>"""
+            self._send_html(self._render_page(content, "status"))
+
         def _page_history(self):
             from i18n import get_translator
             t = get_translator(config.language)
@@ -740,7 +1316,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             if not history:
                 content = f"""<div class="card">
 <h2>{t("web_history")}</h2>
-<p style="color:#8b949e">{t("web_history_empty")}</p>
+<div class="empty">
+  <div class="empty-icon">📋</div>
+  <div class="empty-title">{t("web_history_empty")}</div>
+  <div class="empty-hint">{t("web_history_empty_hint")}</div>
+</div>
 </div>"""
             else:
                 rows = ""
@@ -768,160 +1348,169 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             from version import VERSION
             t = get_translator(config.language)
 
-            query = parse_qs(urlparse(self.path).query)
-            saved = "saved" in query
-            saved_html = f'<div style="background:#1a3a2a;color:#3fb950;padding:10px;border-radius:6px;margin-bottom:16px">{t("web_saved")}</div>' if saved else ""
-
-            error_msg = query.get("error", [""])[0]
-            error_html = (
-                f'<div style="background:#3a1a1a;color:#f85149;padding:10px;border-radius:6px;margin-bottom:16px">'
-                f'⚠️ {_e(error_msg)}</div>'
-                if error_msg else ""
-            )
-
             langs = available_languages()
-            lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español", "it": "Italiano", "nl": "Nederlands", "pt": "Português", "pl": "Polski", "tr": "Türkçe", "ru": "Русский", "uk": "Українська", "ar": "العربية", "hi": "हिन्दी", "ja": "日本語", "ko": "한국어", "zh": "中文"}
+            lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español",
+                          "it": "Italiano", "nl": "Nederlands", "pt": "Português", "pl": "Polski",
+                          "tr": "Türkçe", "ru": "Русский", "uk": "Українська", "ar": "العربية",
+                          "hi": "हिन्दी", "ja": "日本語", "ko": "한국어", "zh": "中文"}
             lang_options = ""
             for l in langs:
                 sel = 'selected' if l == config.language else ''
                 name = lang_names.get(l, l.upper())
                 lang_options += f'<option value="{_e(l)}" {sel}>{_e(name)}</option>\n'
 
-            debug_checked = 'checked' if config.debug else ''
-            auto_su_checked = 'checked' if config.auto_selfupdate else ''
-            auto_cleanup_checked = 'checked' if config.auto_cleanup else ''
-            backup_local_checked = 'checked' if config.cleanup_backup_local_only else ''
-            disk_auto_cleanup_checked = 'checked' if config.disk_warn_auto_cleanup else ''
+            cb = lambda v: 'checked' if v else ''  # checkbox helper
 
             # Mask sensitive values
             token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"
             chat_masked = f"{config.chat_id[:3]}...{config.chat_id[-3:]}" if len(config.chat_id) > 6 else "***"
 
+            telegram_status = 'enabled' if (config.bot_token and config.chat_id) else 'disabled (headless)'
+
+            def help_(text):
+                return f'<span class="help" data-tt="{_e(text)}">?</span>'
+
             content = f"""
-{saved_html}
-{error_html}
 <div class="card">
 <h2>{t("web_settings")}</h2>
+<p class="card-intro">{t("web_settings_intro")}</p>
+
 <form method="POST" action="/settings">
-
-<div class="grid">
-<div>
-<label>{t("web_language")}</label>
-<select name="language">
-{lang_options}
-</select>
-</div>
-<div>
-<label>{t("web_cron_schedule")}</label>
-<input type="text" name="cron_schedule" value="{_e(config.cron_schedule)}">
-</div>
+<div class="tabs" data-tabs="settings">
+  <button type="button" class="tab-btn" data-tab-target="general">{t("web_tab_general")}</button>
+  <button type="button" class="tab-btn" data-tab-target="updates">{t("web_tab_updates")}</button>
+  <button type="button" class="tab-btn" data-tab-target="cleanup">{t("web_tab_cleanup")}</button>
+  <button type="button" class="tab-btn" data-tab-target="notifs">{t("web_tab_notifications")}</button>
+  <button type="button" class="tab-btn" data-tab-target="channels">{t("web_tab_channels")}</button>
 </div>
 
-<div class="grid">
-<div>
-<label><input type="checkbox" name="debug" {debug_checked} style="width:auto;margin-right:8px"> {t("web_debug_mode")}</label>
-</div>
-<div>
-<label><input type="checkbox" name="auto_selfupdate" {auto_su_checked} style="width:auto;margin-right:8px"> {t("web_auto_selfupdate")}</label>
-</div>
-</div>
-
-<div style="margin-top:8px">
-<label><input type="checkbox" name="auto_cleanup" {auto_cleanup_checked} style="width:auto;margin-right:8px"> {t("web_auto_cleanup")}</label>
-<p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_auto_cleanup_hint")}</p>
-</div>
-
-<div class="grid" style="margin-top:8px">
-<div>
-<label>{t("web_cleanup_grace_hours")}</label>
-<input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
-<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_cleanup_grace_hours_hint")}</p>
-</div>
-<div>
-<label>{t("web_cleanup_backup_days")}</label>
-<input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
-<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_cleanup_backup_days_hint")}</p>
-</div>
+<!-- ── Allgemein ─────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="general">
+  <div class="grid">
+    <div>
+      <label>{t("web_language")}</label>
+      <select name="language">{lang_options}</select>
+    </div>
+    <div>
+      <label>{t("web_cron_schedule")} {help_(t("web_cron_help"))}</label>
+      <input type="text" name="cron_schedule" value="{_e(config.cron_schedule)}">
+    </div>
+  </div>
+  <label>{t("web_excluded")} {help_(t("web_excluded_help"))}</label>
+  <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="debug" id="cb-debug" {cb(config.debug)}>
+    <label for="cb-debug">{t("web_debug_mode")} {help_(t("web_debug_help"))}</label>
+  </div>
 </div>
 
-<div style="margin-top:4px">
-<label><input type="checkbox" name="cleanup_backup_local_only" {backup_local_checked} style="width:auto;margin-right:8px"> {t("web_cleanup_backup_local_only")}</label>
-<p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_cleanup_backup_local_only_hint")}</p>
+<!-- ── Updates ────────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="updates">
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="auto_selfupdate" id="cb-auto-su" {cb(config.auto_selfupdate)}>
+    <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}</label>
+  </div>
+  <p class="form-help">{t("web_updates_tab_hint")}</p>
 </div>
 
-<hr style="border:none;border-top:1px solid #30363d;margin:16px 0">
+<!-- ── Aufräumen ─────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="cleanup">
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="auto_cleanup" id="cb-auto-cl" {cb(config.auto_cleanup)}>
+    <label for="cb-auto-cl">{t("web_auto_cleanup")}</label>
+  </div>
+  <p class="form-help">{t("web_auto_cleanup_hint")}</p>
 
-<div class="grid">
-<div>
-<label>{t("web_disk_warn_percent")}</label>
-<input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
-<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_disk_warn_percent_hint")}</p>
-</div>
-<div style="padding-top:24px">
-<label><input type="checkbox" name="disk_warn_auto_cleanup" {disk_auto_cleanup_checked} style="width:auto;margin-right:8px"> {t("web_disk_warn_auto_cleanup")}</label>
-<p style="font-size:11px;color:#484f58;margin:4px 0 0 24px">{t("web_disk_warn_auto_cleanup_hint")}</p>
-</div>
-</div>
-
-<hr style="border:none;border-top:1px solid #30363d;margin:16px 0">
-
-<div class="grid">
-<div>
-<label>{t("web_quiet_hours_start")}</label>
-<input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
-</div>
-<div>
-<label>{t("web_quiet_hours_end")}</label>
-<input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
-</div>
-</div>
-<p style="font-size:11px;color:#484f58;margin:0 0 4px 0">{t("web_quiet_hours_hint")}</p>
-
-<div style="margin-top:8px">
-<label>{t("web_excluded")}</label>
-<input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
+  <div class="grid">
+    <div>
+      <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}</label>
+      <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
+    </div>
+    <div>
+      <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}</label>
+      <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
+    </div>
+  </div>
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="cleanup_backup_local_only" id="cb-bak-local" {cb(config.cleanup_backup_local_only)}>
+    <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}</label>
+  </div>
+  <p class="form-help">{t("web_cleanup_backup_local_only_hint")}</p>
 </div>
 
-<div style="margin-top:8px">
-<label>Telegram Topic ID</label>
-<input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
+<!-- ── Benachrichtigungen ────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="notifs">
+  <div class="grid">
+    <div>
+      <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}</label>
+      <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
+    </div>
+    <div>
+      <div class="form-checkbox-row" style="margin-top:24px">
+        <input type="checkbox" name="disk_warn_auto_cleanup" id="cb-disk-acl" {cb(config.disk_warn_auto_cleanup)}>
+        <label for="cb-disk-acl">{t("web_disk_warn_auto_cleanup")}</label>
+      </div>
+      <p class="form-help">{t("web_disk_warn_auto_cleanup_hint")}</p>
+    </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <div class="grid">
+    <div>
+      <label>{t("web_quiet_hours_start")}</label>
+      <input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
+    </div>
+    <div>
+      <label>{t("web_quiet_hours_end")}</label>
+      <input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
+    </div>
+  </div>
+  <p class="form-help">{t("web_quiet_hours_hint")}</p>
 </div>
 
-<div style="margin-top:8px">
-<label>Discord Webhook</label>
-<input type="text" name="discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/...">
-</div>
+<!-- ── Kanäle ────────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
+  <label>Telegram Topic ID {help_(t("web_topic_id_help"))}</label>
+  <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
 
-<div style="margin-top:8px">
-<label>Webhook URL</label>
-<input type="text" name="webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook">
+  <label>Discord Webhook {help_(t("web_discord_help"))}</label>
+  <input type="text" name="discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/...">
+
+  <label>Webhook URL {help_(t("web_webhook_help"))}</label>
+  <input type="text" name="webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook">
 </div>
 
 <div style="margin-top:16px">
-<button type="submit" class="btn">{t("web_save")}</button>
+  <button type="submit" class="btn">{t("web_save")}</button>
 </div>
-
 </form>
 </div>
 
 <div class="card" id="windows">
 <h2>{t("web_windows_title")}</h2>
-<p style="font-size:12px;color:#484f58;margin-bottom:12px">{t("web_windows_intro")}</p>
+<p class="card-intro">{t("web_windows_intro")}</p>
 {self._windows_html(t)}
 </div>
 
 <div class="card">
-<h2>Maintenance</h2>
-<form method="POST" action="/api/cleanup" style="display:inline;margin-right:8px">
-<button type="submit" class="btn btn-blue">🧹 Image Cleanup</button>
+<h2>{t("web_maintenance_title")}</h2>
+<p class="card-intro">{t("web_maintenance_intro")}</p>
+<form method="POST" action="/api/cleanup" style="display:inline;margin-right:8px"
+      data-confirm="{_e(t('web_confirm_cleanup'))}"
+      data-confirm-title="{_e(t('web_maintenance_cleanup'))}"
+      data-confirm-label="{_e(t('web_confirm_cleanup_btn'))}">
+<button type="submit" class="btn btn-blue">🧹 {t("web_maintenance_cleanup")}</button>
 </form>
-<form method="POST" action="/api/selfupdate" style="display:inline">
-<button type="submit" class="btn">⬆️ Self-Update</button>
+<form method="POST" action="/api/selfupdate" style="display:inline"
+      data-confirm="{_e(t('web_confirm_selfupdate'))}"
+      data-confirm-title="{_e(t('web_maintenance_selfupdate'))}"
+      data-confirm-label="{_e(t('web_confirm_selfupdate_btn'))}"
+      data-confirm-danger="1">
+<button type="submit" class="btn">⬆️ {t("web_maintenance_selfupdate")}</button>
 </form>
-<p style="font-size:12px;color:#484f58;margin-top:12px">
-<b>Image Cleanup</b> — removes unused Docker images older than the configured grace period (currently <b>{_e(config.cleanup_grace_hours)}h</b>). Enable <b>Auto cleanup</b> above to run automatically after every successful auto-update. With <b>Backup local-only images</b> enabled, locally-built images (those without a registry digest) are saved as tarballs in <code>{_e(config.cleanup_backup_dir)}</code> before deletion and kept for <b>{_e(config.cleanup_backup_days)}</b> day(s).
-<br><br>
-<b>Self-Update</b> — pulls the latest Docksentry image and recreates this container. Runs automatically on every scheduled check if <b>Auto Self-Update</b> is enabled.
+<p class="form-help" style="margin-top:12px">
+{t("web_maintenance_explain", grace=_e(config.cleanup_grace_hours), days=_e(config.cleanup_backup_days), dir=_e(config.cleanup_backup_dir))}
 </p>
 </div>
 
@@ -929,12 +1518,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <h2>Info</h2>
 <table>
 <tr><td>Version</td><td><code>v{_e(VERSION)}</code></td></tr>
-<tr><td>Telegram</td><td><code>{'enabled' if (config.bot_token and config.chat_id) else 'disabled (headless)'}</code></td></tr>
+<tr><td>Telegram</td><td><code>{telegram_status}</code></td></tr>
 <tr><td>Bot Token</td><td><code>{_e(token_masked)}</code></td></tr>
 <tr><td>Chat ID</td><td><code>{_e(chat_masked)}</code></td></tr>
 <tr><td>Data Dir</td><td><code>{_e(config.data_dir)}</code></td></tr>
 </table>
-<p style="font-size:12px;color:#484f58;margin-top:8px">Bot Token and Chat ID can only be changed via environment variables.</p>
+<p class="form-help" style="margin-top:8px">{t("web_info_credentials_hint")}</p>
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))

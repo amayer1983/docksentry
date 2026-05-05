@@ -51,7 +51,24 @@ Full update log showing:
 
 ### Settings
 
-All settings are editable and **persist across restarts** (saved to `/data/settings.json`).
+The Settings page is grouped into **five tabs**:
+
+| Tab | Contents |
+|-----|----------|
+| **General** | Language, cron schedule, excluded containers, debug mode |
+| **Updates** | Auto self-update toggle, hint about per-container settings on the Status page |
+| **Cleanup** | Auto cleanup, grace hours, backup retention, local-only-images backup |
+| **Notifications** | Disk warning threshold + auto-cleanup-on-warning, quiet hours start/end |
+| **Channels** | Telegram topic ID, Discord webhook, generic webhook |
+
+Plus two cards always visible below the tabs:
+- **Update Windows** (per-container HH:MM ranges + weekdays)
+- **Maintenance** (one-shot Image Cleanup / Self-Update buttons, both with confirmation dialogs)
+- **Info** (version, Telegram status, masked credentials)
+
+Hover a `?` icon next to any setting label for an inline explanation. Save feedback appears as a brief toast at the top-right.
+
+All settings **persist across restarts** (saved to `/data/settings.json`).
 
 | Setting | Editable in Web UI |
 |---------|--------------------|
