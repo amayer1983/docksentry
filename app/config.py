@@ -7,7 +7,7 @@ import os
 
 # Settings that can be changed via Web UI and persist across restarts
 PERSISTENT_KEYS = [
-    "cron_schedule", "exclude_containers", "auto_selfupdate",
+    "cron_schedule", "exclude_containers", "auto_selfupdate", "auto_cleanup",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id",
 ]
@@ -15,7 +15,7 @@ PERSISTENT_KEYS = [
 
 class Config:
     def __init__(self, bot_token, chat_id, cron_schedule, exclude_containers, data_dir,
-                 auto_selfupdate, language, web_ui, web_port, web_password,
+                 auto_selfupdate, auto_cleanup, language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id):
         self.bot_token = bot_token
         self.chat_id = chat_id
@@ -29,6 +29,7 @@ class Config:
         self.settings_file = os.path.join(data_dir, "settings.json")
         self.debug = False
         self.auto_selfupdate = auto_selfupdate
+        self.auto_cleanup = auto_cleanup
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port
@@ -92,6 +93,7 @@ class Config:
             ],
             data_dir=os.environ.get("DATA_DIR", "/data"),
             auto_selfupdate=os.environ.get("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
+            auto_cleanup=os.environ.get("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             language=os.environ.get("LANGUAGE", "en"),
             web_ui=os.environ.get("WEB_UI", "false").lower() in ("true", "1", "yes"),
             web_port=int(os.environ.get("WEB_PORT", "8080")),

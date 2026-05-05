@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "Włącz automatyczną aktualizację",
   "web_autoupdate_disable": "Wyłącz automatyczną aktualizację",
-  "web_topic_id_placeholder": "Opcjonalnie — dla grup z włączonymi tematami"
+  "web_topic_id_placeholder": "Opcjonalnie — dla grup z włączonymi tematami",
+  "web_auto_cleanup": "🧹 Auto-czyszczenie",
+  "web_auto_cleanup_hint": "Po każdej udanej automatycznej aktualizacji usuwa nieużywane obrazy starsze niż 24h."
 }

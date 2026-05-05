@@ -127,6 +127,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
 | `AUTO_SELFUPDATE` | `false` | Auto-update the bot on each check |
+| `AUTO_CLEANUP` | `false` | Run `docker image prune` after every successful auto-update (24h age filter) |
 | `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
 | `WEB_UI` | `false` | Enable web dashboard |
 | `WEB_PORT` | `8080` | Web UI port |

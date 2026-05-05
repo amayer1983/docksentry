@@ -83,10 +83,11 @@ class Scheduler:
             if current_minute != last_check and self._matches_cron(now):
                 last_check = current_minute
                 print(f"Scheduled check triggered at {current_minute}")
+                auto_updated = 0
                 try:
                     updates = self.checker.check_all()
                     if updates:
-                        self.bot.handle_autoupdates(updates, self.checker)
+                        auto_updated = self.bot.handle_autoupdates(updates, self.checker) or 0
                     # If no updates, stay quiet (--quiet behavior)
                 except Exception as e:
                     print(f"Scheduled check error: {e}")
@@ -97,5 +98,20 @@ class Scheduler:
                         self.bot.check_selfupdate_auto()
                     except Exception as e:
                         print(f"Auto selfupdate error: {e}")
+
+                # Auto cleanup after successful auto-updates. The 24h filter
+                # in cleanup_images() prevents removing images we just
+                # pulled (the rollback safety-net stays intact).
+                if self.config.auto_cleanup and auto_updated > 0:
+                    try:
+                        ok, msg = self.checker.cleanup_images()
+                        print(f"Auto cleanup: {msg}")
+                        notifier = getattr(self.bot, "notifier", None)
+                        if ok and notifier and notifier.has_channels():
+                            notifier.send_message(f"🧹 Auto cleanup: {msg}")
+                        if ok and self.bot.enabled:
+                            self.bot.send_message(f"🧹 {msg}")
+                    except Exception as e:
+                        print(f"Auto cleanup error: {e}")
 
             time.sleep(30)

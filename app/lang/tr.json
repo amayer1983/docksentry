@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "Otomatik güncellemeyi etkinleştir",
   "web_autoupdate_disable": "Otomatik güncellemeyi devre dışı bırak",
-  "web_topic_id_placeholder": "İsteğe bağlı — konu etkin gruplar için"
+  "web_topic_id_placeholder": "İsteğe bağlı — konu etkin gruplar için",
+  "web_auto_cleanup": "🧹 Otomatik temizlik",
+  "web_auto_cleanup_hint": "Her başarılı otomatik güncellemenin ardından 24 saatten eski kullanılmayan imajlar silinir."
 }

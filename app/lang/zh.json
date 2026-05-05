@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "启用自动更新",
   "web_autoupdate_disable": "禁用自动更新",
-  "web_topic_id_placeholder": "可选 — 适用于启用了话题的群组"
+  "web_topic_id_placeholder": "可选 — 适用于启用了话题的群组",
+  "web_auto_cleanup": "🧹 自动清理",
+  "web_auto_cleanup_hint": "每次自动更新成功后，删除超过 24 小时未使用的镜像。"
 }

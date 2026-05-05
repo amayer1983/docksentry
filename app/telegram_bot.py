@@ -222,10 +222,15 @@ class TelegramBot:
             self.send_message(self.t("update_all_done"))
 
     def handle_autoupdates(self, updates, checker):
-        """Split updates into auto-update and manual, handle accordingly."""
+        """Split updates into auto-update and manual, handle accordingly.
+
+        Returns the number of containers that were successfully auto-updated
+        (used by the scheduler to decide whether to follow up with cleanup).
+        """
         auto_list = self._get_autoupdate()
         auto_updates = [u for u in updates if u["name"] in auto_list]
         manual_updates = [u for u in updates if u["name"] not in auto_list]
+        success_count = 0
 
         # Auto-update containers silently
         if auto_updates:
@@ -237,6 +242,8 @@ class TelegramBot:
                     success, msg = checker.update_container(u["name"], u["image"], **compose_kwargs)
                     status = "✅" if success else "❌"
                     results.append(f"{status} `{u['name']}`: {msg}")
+                    if success:
+                        success_count += 1
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], success, msg)
                 except Exception as e:
@@ -253,6 +260,8 @@ class TelegramBot:
         # Notify about remaining manual updates
         if manual_updates:
             self.notify_updates(manual_updates)
+
+        return success_count
 
     def notify_updates(self, updates):
         if not updates:
@@ -771,17 +780,13 @@ class TelegramBot:
 
         elif text == "/cleanup":
             self.send_message(self.t("cleanup_starting"))
-            result = subprocess.run(
-                ["docker", "image", "prune", "-a", "--force", "--filter", "until=24h"],
-                capture_output=True, text=True, timeout=120
-            )
-            # Extract reclaimed space from output
-            lines = result.stdout.strip().split("\n")
-            space_line = [l for l in lines if "reclaimed" in l.lower()]
-            if space_line:
-                self.send_message(f"✅ {space_line[-1]}")
-            else:
+            ok, msg = checker.cleanup_images()
+            if ok and "Nothing" in msg:
                 self.send_message(self.t("cleanup_none"))
+            elif ok:
+                self.send_message(f"✅ {msg}")
+            else:
+                self.send_message(f"❌ {msg}")
 
         elif text == "/selfupdate":
             self._handle_selfupdate()

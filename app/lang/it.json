@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "Attiva aggiornamento automatico",
   "web_autoupdate_disable": "Disattiva aggiornamento automatico",
-  "web_topic_id_placeholder": "Opzionale — per gruppi con argomenti attivati"
+  "web_topic_id_placeholder": "Opzionale — per gruppi con argomenti attivati",
+  "web_auto_cleanup": "🧹 Pulizia automatica",
+  "web_auto_cleanup_hint": "Dopo ogni aggiornamento automatico riuscito, rimuove le immagini inutilizzate più vecchie di 24h."
 }

@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "Увімкнути автооновлення",
   "web_autoupdate_disable": "Вимкнути автооновлення",
-  "web_topic_id_placeholder": "Необов'язково — для груп з увімкненими темами"
+  "web_topic_id_placeholder": "Необов'язково — для груп з увімкненими темами",
+  "web_auto_cleanup": "🧹 Авто-очищення",
+  "web_auto_cleanup_hint": "Після кожного успішного авто-оновлення видаляються невикористовувані образи, старші за 24 год."
 }

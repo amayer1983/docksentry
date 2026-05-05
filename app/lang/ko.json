@@ -119,5 +119,7 @@
   "web_autoupdate_badge": "auto",
   "web_autoupdate_enable": "자동 업데이트 활성화",
   "web_autoupdate_disable": "자동 업데이트 비활성화",
-  "web_topic_id_placeholder": "선택 사항 — 토픽이 활성화된 그룹용"
+  "web_topic_id_placeholder": "선택 사항 — 토픽이 활성화된 그룹용",
+  "web_auto_cleanup": "🧹 자동 정리",
+  "web_auto_cleanup_hint": "자동 업데이트가 성공할 때마다 24시간 이상 사용되지 않은 이미지를 삭제합니다."
 }

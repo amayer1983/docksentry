@@ -276,6 +276,27 @@ class UpdateChecker:
             return created
         return "?"
 
+    def cleanup_images(self):
+        """Run `docker image prune` to free disk space.
+
+        Removes unused images that are at least 24h old (the `until=24h`
+        filter prevents brand-new pulls from being accidentally deleted).
+        Returns a tuple (success: bool, message: str) — message is the
+        human-readable "Total reclaimed space: …" line on success.
+        """
+        try:
+            result = subprocess.run(
+                ["docker", "image", "prune", "-a", "--force", "--filter", "until=24h"],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode != 0:
+                return False, f"Cleanup failed: {result.stderr.strip()[:200]}"
+            lines = result.stdout.strip().split("\n")
+            space_line = [l for l in lines if "reclaimed" in l.lower()]
+            return True, space_line[-1] if space_line else "Nothing to clean up."
+        except Exception as e:
+            return False, f"Cleanup error: {str(e)[:200]}"
+
     def _get_compose_info(self, name):
         """Detect if container belongs to a Docker Compose stack."""
         result = subprocess.run(

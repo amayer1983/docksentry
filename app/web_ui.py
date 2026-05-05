@@ -404,9 +404,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                         config.language = new_lang
                         bot.t = get_translator(new_lang)
 
-                # Update debug & auto_selfupdate (checkboxes)
+                # Update debug & auto_selfupdate / auto_cleanup (checkboxes)
                 config.debug = "debug" in params
                 config.auto_selfupdate = "auto_selfupdate" in params
+                config.auto_cleanup = "auto_cleanup" in params
 
                 # Update cron schedule
                 if "cron_schedule" in params and params["cron_schedule"][0].strip():
@@ -615,6 +616,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
             debug_checked = 'checked' if config.debug else ''
             auto_su_checked = 'checked' if config.auto_selfupdate else ''
+            auto_cleanup_checked = 'checked' if config.auto_cleanup else ''
 
             # Mask sensitive values
             token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"
@@ -647,6 +649,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <div>
 <label><input type="checkbox" name="auto_selfupdate" {auto_su_checked} style="width:auto;margin-right:8px"> {t("web_auto_selfupdate")}</label>
 </div>
+</div>
+
+<div style="margin-top:8px">
+<label><input type="checkbox" name="auto_cleanup" {auto_cleanup_checked} style="width:auto;margin-right:8px"> {t("web_auto_cleanup")}</label>
+<p style="font-size:12px;color:#484f58;margin:4px 0 0 24px">{t("web_auto_cleanup_hint")}</p>
 </div>
 
 <div style="margin-top:8px">
@@ -685,7 +692,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="submit" class="btn">⬆️ Self-Update</button>
 </form>
 <p style="font-size:12px;color:#484f58;margin-top:12px">
-Cleanup removes unused Docker images older than 24h. Self-Update pulls the latest Docksentry image and recreates this container.
+<b>Image Cleanup</b> — manual trigger only. Removes unused Docker images that are at least 24h old (the age filter prevents accidentally deleting images you just pulled). Enable <b>Auto cleanup</b> above to run this automatically after every successful auto-update.
+<br><br>
+<b>Self-Update</b> — pulls the latest Docksentry image and recreates this container. Runs automatically on every scheduled check if <b>Auto Self-Update</b> is enabled.
 </p>
 </div>
 
@@ -783,17 +792,11 @@ Cleanup removes unused Docker images older than 24h. Self-Update pulls the lates
                 print(f"Web UI check error: {e}")
 
         def _api_cleanup(self):
-            """Run `docker image prune` to free disk space."""
+            """Run `docker image prune` to free disk space (manual trigger)."""
             try:
-                result = subprocess.run(
-                    ["docker", "image", "prune", "-a", "--force", "--filter", "until=24h"],
-                    capture_output=True, text=True, timeout=120
-                )
-                lines = result.stdout.strip().split("\n")
-                space_line = [l for l in lines if "reclaimed" in l.lower()]
-                msg = space_line[-1] if space_line else "Nothing to clean up."
+                ok, msg = checker.cleanup_images()
                 if bot.enabled:
-                    bot.send_message(f"✅ {msg}")
+                    bot.send_message(f"{'✅' if ok else '❌'} {msg}")
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(f"🧹 Cleanup: {msg}")
                 print(f"Cleanup: {msg}")
