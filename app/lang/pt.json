@@ -196,5 +196,15 @@
   "web_container_detail_soon": "Coming in v1.14",
   "web_container_detail_hint": "This page will host per-container history, logs, and per-container update settings (window, major-confirm, auto-update). For now use the Status page actions.",
   "web_back_to_status": "Back to Status",
-  "web_history_empty_hint": "Updates will be recorded here once they happen."
+  "web_history_empty_hint": "Updates will be recorded here once they happen.",
+  "web_search_placeholder": "Search containers…",
+  "web_containers_match": "match",
+  "web_containers_running_short": "{count} running",
+  "web_stat_last_update": "Last activity",
+  "web_stat_last_check_never": "—",
+  "web_stat_just_now": "just now",
+  "web_stat_minutes_ago": "{n} min ago",
+  "web_stat_hours_ago": "{n}h ago",
+  "web_stat_days_ago": "{n}d ago",
+  "web_stat_disk_usage": "Disk used ({free} free)"
 }

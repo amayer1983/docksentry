@@ -21,6 +21,9 @@ def _e(value):
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+_LOGO_B64 = "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"
+
+
 # ═══════════════════════════════════════════════════════════════════
 # CSS — themed via custom properties so a future light-mode toggle is
 # a one-class swap on <html>. All component classes live here; new
@@ -80,18 +83,39 @@ body {
 .header {
     background: var(--bg-elev);
     border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+    padding: 14px 24px;
 }
 .header-row {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+    max-width: 900px;
+    margin: 0 auto;
 }
-.header h1 { font-size: 18px; display: inline; flex: 1; }
-.header h1 span { color: var(--accent); }
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+.header-brand img {
+    height: 36px;
+    width: 36px;
+    flex-shrink: 0;
+    border-radius: 6px;
+}
+.header-brand h1 {
+    font-size: 18px;
+    margin: 0;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
 .header-host-slot { font-size: 13px; color: var(--text-muted); }
-nav { margin-top: 12px; }
+.nav-wrap { max-width: 900px; margin: 12px auto 0 auto; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
 nav a {
     color: var(--text-muted);
     text-decoration: none;
@@ -133,8 +157,9 @@ th {
     border-bottom: 1px solid var(--border);
     font-weight: 500;
 }
-td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
-tr:hover { background: var(--bg-elev-2); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+tbody tr, table tr { transition: background 0.12s; }
+table tr:not(:first-child):hover { background: var(--bg-elev-2); }
 
 /* ── Forms ──────────────────────────────────────────────────── */
 form { margin-top: 8px; }
@@ -223,8 +248,8 @@ hr.section-divider {
     background: transparent;
     border: 1px solid var(--border);
     color: var(--text-muted);
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 14px;
@@ -239,19 +264,102 @@ hr.section-divider {
     color: var(--text);
     border-color: var(--text-muted);
     background: var(--bg-elev-2);
+    transform: translateY(-1px);
 }
+.btn-icon:active { transform: translateY(0); }
 .btn-icon.is-active {
-    color: var(--accent);
+    color: #fff;
+    background: var(--accent);
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(88,166,255,0.15);
+}
+.btn-icon.is-active:hover {
+    background: #4a8fdc;
+    border-color: #4a8fdc;
+    color: #fff;
 }
 .btn-icon.is-warn {
-    color: var(--warn);
+    color: var(--bg);
+    background: var(--warn);
     border-color: var(--warn);
+    box-shadow: 0 0 0 2px rgba(210,153,34,0.15);
 }
-.btn-icon.is-danger { color: var(--danger); border-color: var(--danger); }
+.btn-icon.is-warn:hover {
+    background: #b88018;
+    border-color: #b88018;
+    color: var(--bg);
+}
+.btn-icon.is-danger {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+}
+.btn-icon.is-pinned {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: rgba(248,81,73,0.08);
+}
+.btn-icon.is-pinned:hover { background: rgba(248,81,73,0.16); color: var(--danger); }
+
+/* Container name link — subtle hover */
+.container-link {
+    color: var(--text);
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.container-link:hover { color: var(--accent); }
 .btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .inline-form { display: inline; }
-.bulk-cb { width: auto; margin: 0; }
+.btn-compact {
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 14px;
+}
+.card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.toolbar-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.search-input {
+    flex: 1;
+    min-width: 200px;
+    margin: 0;
+    padding: 6px 12px 6px 32px;
+    font-size: 13px;
+    background: var(--bg) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 10px center;
+}
+.row-info { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+tr.is-hidden { display: none; }
+
+/* ── Mobile responsive ──────────────────────────────────────── */
+@media (max-width: 700px) {
+    .content { padding: 0 12px; margin: 16px auto; }
+    .header { padding: 12px 16px; }
+    .card { padding: 16px; }
+    .header-brand h1 { font-size: 16px; }
+    /* Smaller table cells on mobile to keep more on screen */
+    th, td { padding: 8px 6px; font-size: 13px; }
+    /* Image column gets clipped on very narrow screens to keep columns aligned */
+    .image-cell { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Bulk bar wraps tighter */
+    .bulk-bar { padding: 8px; gap: 4px; }
+    .bulk-bar .btn-sm { font-size: 11px; padding: 4px 8px; }
+    .bulk-count { min-width: 0; }
+    /* Tabs scroll horizontally if too wide */
+    .tabs { overflow-x: auto; flex-wrap: nowrap; }
+    .tab-btn { white-space: nowrap; }
+}
+.bulk-cb { width: auto; margin: 0; cursor: pointer; }
 .bulk-bar {
     display: flex;
     gap: 6px;
@@ -262,6 +370,11 @@ hr.section-divider {
     background: var(--bg);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-sm);
+    transition: border-color 0.15s, background 0.15s;
+}
+.bulk-bar.is-active {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(88,166,255,0.04) 0%, var(--bg) 100%);
 }
 .bulk-count {
     font-size: 12px;
@@ -269,6 +382,12 @@ hr.section-divider {
     margin-right: 4px;
     min-width: 110px;
 }
+.bulk-bar.is-active .bulk-count { color: var(--accent); font-weight: 500; }
+.bulk-bar button[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.bulk-bar button.is-hidden { display: none; }
 .bulk-divider {
     width: 1px;
     height: 18px;
@@ -280,9 +399,15 @@ hr.section-divider {
 /* ── Layout helpers ─────────────────────────────────────────── */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
-.stat { text-align: center; }
-.stat .num { font-size: 32px; font-weight: bold; color: var(--accent); }
-.stat .label { font-size: 12px; color: var(--text-muted); }
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.stat { text-align: center; padding: 16px; }
+.stat .num { font-size: 32px; font-weight: bold; color: var(--accent); line-height: 1.1; }
+.stat .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
 /* ── Badges ─────────────────────────────────────────────────── */
 .badge {
@@ -855,10 +980,13 @@ def create_handler(config, checker, bot, store, password=None):
 <body>
 <div class="header">
 <div class="header-row">
-<h1 style="flex:1;"><img src="data:image/png;base64,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" alt="Logo" style="height:32px;vertical-align:middle;margin-right:8px"> <span>Docksentry</span></h1>
+<div class="header-brand">
+<img src="data:image/png;base64,{_LOGO_B64}" alt="Docksentry">
+<h1>Docksentry</h1>
+</div>
 <div class="header-host-slot"><!-- v2.0: host selector slot --></div>
 </div>
-<nav>{nav_html}</nav>
+<div class="nav-wrap"><nav>{nav_html}</nav></div>
 </div>
 <div class="content">
 {content}
@@ -1151,7 +1279,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 pin_btn = (
                     f'<form method="POST" action="{pin_form_action}" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon{" is-active" if is_pinned_c else ""}" '
+                    f'<button type="submit" class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
                     f'title="{_e(t("web_unpin") if is_pinned_c else t("web_pin"))}">📌</button>'
                     f'</form>'
                 )
@@ -1172,9 +1300,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 actions = f'<div class="btn-row">{update_btn}{pin_btn}{auto_btn}{ask_btn}</div>'
 
                 rows += f"""<tr>
-<td><input type="checkbox" class="bulk-cb" value="{name_attr}"></td>
-<td><a href="/container/{name_attr}" style="color:var(--text);text-decoration:none">{_e(c['name'])}</a>{badges}</td>
-<td><code>{_e(c['image'])}</code></td>
+<td><input type="checkbox" class="bulk-cb" value="{name_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
+<td><a href="/container/{name_attr}" class="container-link">{_e(c['name'])}</a>{badges}</td>
+<td class="image-cell"><code>{_e(c['image'])}</code></td>
 <td>{status_badge}</td>
 <td>{actions}</td>
 </tr>"""
@@ -1205,25 +1333,72 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <table>{rows_mp}</table>
 </div>"""
 
+            # Last-check timestamp from update_history.json
+            last_check_text = t("web_stat_last_check_never")
+            try:
+                if os.path.exists(config.history_file):
+                    with open(config.history_file) as f:
+                        hist = json.load(f)
+                    if hist:
+                        last_ts_raw = hist[-1].get("timestamp", "")
+                        if last_ts_raw:
+                            from datetime import datetime as _dt
+                            try:
+                                last_ts = _dt.strptime(last_ts_raw, "%Y-%m-%d %H:%M:%S")
+                                delta = _dt.now() - last_ts
+                                if delta.total_seconds() < 60:
+                                    last_check_text = t("web_stat_just_now")
+                                elif delta.total_seconds() < 3600:
+                                    last_check_text = t("web_stat_minutes_ago", n=int(delta.total_seconds() // 60))
+                                elif delta.total_seconds() < 86400:
+                                    last_check_text = t("web_stat_hours_ago", n=int(delta.total_seconds() // 3600))
+                                else:
+                                    last_check_text = t("web_stat_days_ago", n=int(delta.total_seconds() // 86400))
+                            except ValueError:
+                                pass
+            except (json.JSONDecodeError, IOError):
+                pass
+
+            # Disk usage stat
+            try:
+                disk_pct, disk_free, disk_total = checker.get_disk_usage()
+                disk_free_gb = disk_free / 1024**3
+                disk_color = "var(--danger)" if disk_pct >= 90 else (
+                    "var(--warn)" if disk_pct >= (config.disk_warn_percent or 85) else "var(--accent)")
+                disk_stat = f"""<div class="card stat">
+    <div class="num" style="color:{disk_color}">{disk_pct:.0f}%</div>
+    <div class="label">{t("web_stat_disk_usage", free=f"{disk_free_gb:.0f}G")}</div>
+</div>"""
+            except Exception:
+                disk_stat = ""
+
             content = f"""
 {major_banner}
-<div class="grid">
+<div class="stat-grid">
 <div class="card stat">
     <div class="num">{len(containers)}</div>
     <div class="label">{t("web_containers")}</div>
 </div>
 <div class="card stat">
-    <div class="num">{len(pending)}</div>
+    <div class="num"{' style="color:var(--warn)"' if pending else ''}>{len(pending)}</div>
     <div class="label">{t("web_updates_available")}</div>
 </div>
+<div class="card stat">
+    <div class="num" style="font-size:18px;line-height:1.5;padding-top:6px">{last_check_text}</div>
+    <div class="label">{t("web_stat_last_update")}</div>
+</div>
+{disk_stat}
 </div>"""
             content += f"""
 
 <div class="card">
-<h2>{t("web_containers")}</h2>
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-<span style="font-size:12px;color:#8b949e">{t("web_containers_running", count=len(containers))}</span>
-<a href="/api/check" class="btn btn-blue" style="text-decoration:none;font-size:13px">{t("web_check_updates")}</a>
+<div class="card-header-row">
+<h2 style="margin:0">{t("web_containers")}</h2>
+<a href="/api/check" class="btn btn-blue btn-compact">{t("web_check_updates")}</a>
+</div>
+<div class="toolbar-row">
+<input type="text" id="containerSearch" class="search-input" placeholder="{_e(t('web_search_placeholder'))}">
+<span class="row-info" id="containerCount">{t("web_containers_running", count=len(containers))}</span>
 </div>
 <form id="bulkForm" method="POST" action="/api/bulk" class="bulk-bar">
 <input type="hidden" name="action" id="bulkAction" value="">
@@ -1246,14 +1421,42 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     const cbAll = document.getElementById('bulkSelectAll');
     const cbs = document.querySelectorAll('.bulk-cb');
     const countEl = document.getElementById('bulkCount');
+    const bar = document.getElementById('bulkForm');
+    const btns = bar.querySelectorAll('button[onclick]');
 
-    function selected() {{
-        return Array.from(cbs).filter(c => c.checked).map(c => c.value);
+    function selectedCbs() {{
+        return Array.from(cbs).filter(c => c.checked);
+    }}
+    function selectedNames() {{
+        return selectedCbs().map(c => c.value);
     }}
     function refresh() {{
-        const n = selected().length;
+        const sel = selectedCbs();
+        const n = sel.length;
         countEl.textContent = n === 0 ? '{t("web_bulk_none_selected")}'
                                        : n + ' {t("web_bulk_selected_suffix")}';
+        bar.classList.toggle('is-active', n > 0);
+
+        // Smart-disable: every button knows what action it triggers from
+        // its onclick. Disable buttons that wouldn't change anything for
+        // the current selection.
+        const allPending  = n > 0 && sel.every(c => c.dataset.pending === '1');
+        const allPinned   = n > 0 && sel.every(c => c.dataset.pinned  === '1');
+        const nonePinned  = n > 0 && sel.every(c => c.dataset.pinned  === '0');
+        const allAuto     = n > 0 && sel.every(c => c.dataset.auto    === '1');
+        const noneAuto    = n > 0 && sel.every(c => c.dataset.auto    === '0');
+
+        btns.forEach(b => {{
+            const m = (b.getAttribute('onclick') || '').match(/bulkSubmit\\('([^']+)'\\)/);
+            const action = m ? m[1] : null;
+            let disabled = (n === 0);
+            if (n > 0 && action === 'update'         && !allPending) disabled = true;
+            if (n > 0 && action === 'pin'            && allPinned)   disabled = true;
+            if (n > 0 && action === 'unpin'          && nonePinned)  disabled = true;
+            if (n > 0 && action === 'autoupdate_on'  && allAuto)     disabled = true;
+            if (n > 0 && action === 'autoupdate_off' && noneAuto)    disabled = true;
+            b.disabled = disabled;
+        }});
     }}
     cbAll.addEventListener('change', () => {{
         cbs.forEach(c => c.checked = cbAll.checked);
@@ -1261,12 +1464,36 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     }});
     cbs.forEach(c => c.addEventListener('change', refresh));
 
+    // Live search/filter on the container table
+    const searchEl = document.getElementById('containerSearch');
+    const countInfo = document.getElementById('containerCount');
+    const allRows = Array.from(document.querySelectorAll('table tr')).slice(1); // skip header
+    function applyFilter() {{
+        const q = (searchEl.value || '').toLowerCase().trim();
+        let visible = 0;
+        allRows.forEach(r => {{
+            const text = r.textContent.toLowerCase();
+            const match = !q || text.includes(q);
+            r.classList.toggle('is-hidden', !match);
+            if (match) visible++;
+        }});
+        if (countInfo) {{
+            const total = allRows.length;
+            countInfo.textContent = q
+                ? visible + ' / ' + total + ' {t("web_containers_match")}'
+                : '{t("web_containers_running_short", count=len(containers))}';
+        }}
+    }}
+    if (searchEl) {{
+        searchEl.addEventListener('input', applyFilter);
+    }}
+
     window.bulkSubmit = function(action) {{
-        const names = selected();
+        const names = selectedNames();
         if (names.length === 0) return;
         document.getElementById('bulkAction').value = action;
         document.getElementById('bulkNames').value = names.join(',');
-        document.getElementById('bulkForm').submit();
+        bar.submit();
     }};
     refresh();
 }})();
@@ -1377,11 +1604,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
 <form method="POST" action="/settings">
 <div class="tabs" data-tabs="settings">
-  <button type="button" class="tab-btn" data-tab-target="general">{t("web_tab_general")}</button>
-  <button type="button" class="tab-btn" data-tab-target="updates">{t("web_tab_updates")}</button>
-  <button type="button" class="tab-btn" data-tab-target="cleanup">{t("web_tab_cleanup")}</button>
-  <button type="button" class="tab-btn" data-tab-target="notifs">{t("web_tab_notifications")}</button>
-  <button type="button" class="tab-btn" data-tab-target="channels">{t("web_tab_channels")}</button>
+  <button type="button" class="tab-btn" data-tab-target="general">⚙ {t("web_tab_general")}</button>
+  <button type="button" class="tab-btn" data-tab-target="updates">🔄 {t("web_tab_updates")}</button>
+  <button type="button" class="tab-btn" data-tab-target="cleanup">🧹 {t("web_tab_cleanup")}</button>
+  <button type="button" class="tab-btn" data-tab-target="notifs">🔔 {t("web_tab_notifications")}</button>
+  <button type="button" class="tab-btn" data-tab-target="channels">📡 {t("web_tab_channels")}</button>
 </div>
 
 <!-- ── Allgemein ─────────────────────────────────── -->

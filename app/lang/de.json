@@ -196,5 +196,15 @@
   "web_container_detail_soon": "Kommt in v1.14",
   "web_container_detail_hint": "Diese Seite wird Container-spezifische History, Logs und Einstellungen (Fenster, Major-Bestätigung, Auto-Update) enthalten. Vorerst die Aktionen auf der Status-Seite nutzen.",
   "web_back_to_status": "Zurück zur Status-Seite",
-  "web_history_empty_hint": "Hier werden Updates festgehalten, sobald sie ausgeführt wurden."
+  "web_history_empty_hint": "Hier werden Updates festgehalten, sobald sie ausgeführt wurden.",
+  "web_search_placeholder": "Container suchen…",
+  "web_containers_match": "passend",
+  "web_containers_running_short": "{count} aktiv",
+  "web_stat_last_update": "Letzte Aktivität",
+  "web_stat_last_check_never": "—",
+  "web_stat_just_now": "gerade eben",
+  "web_stat_minutes_ago": "vor {n} Min",
+  "web_stat_hours_ago": "vor {n}h",
+  "web_stat_days_ago": "vor {n}T",
+  "web_stat_disk_usage": "Speicher belegt ({free} frei)"
 }
