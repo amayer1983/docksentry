@@ -2,6 +2,42 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.16.0] - 2026-05-06
+
+### Added
+
+#### Maintenance Mode
+- **Pause scheduled checks and notifications during host maintenance** — turn it on before pulling cables, rebooting the host, swapping disks, etc. Manual updates from Web UI / Telegram still work; only the cron-driven scheduler tick and auto-notifications (Telegram, Discord, generic webhook) are suppressed.
+- **Web UI quick-buttons** on the Settings page: `1 hour`, `4 hours`, `1 day`, `Forever`. While active, every page shows a yellow **banner** at the top with the remaining time and a one-click "Disable" button so you never forget that maintenance is on.
+- **Telegram `/maintenance` command** — toggle from chat with the same expressivity: `/maintenance` shows current state; `/maintenance 2h` (or `30m`, `1d`, `forever`) enables; `/maintenance off` disables. Listed in `/help`.
+- State is persisted to `/data/maintenance.json` — survives restarts, expires automatically when the timer is up.
+
+#### Container Notes
+- Per-container **free-text memo** (max 2000 chars) — explain why this container is pinned, the reason it was excluded, what to check before updating, etc.
+- Visible as a 📝 icon next to the container name in the Status table (full text in the tooltip on hover) and in a highlighted box on the container Detail page Overview tab.
+- Edit on the container Detail Settings tab.
+- Stored in `/data/container_notes.json`.
+
+#### Simple / Advanced UI Mode
+- New mode toggle in the Web UI header (👤 / 🛠 button next to the theme switcher).
+- **Simple** hides the rarely-used controls — Debug toggle, Cleanup grace-hours / backup-days, Disk-warn percent, Weekly report, Telegram Topic ID, Container Groups, Update Windows, per-container Auto-update / Ask-before-major buttons. The basics (Update, Pin, Cleanup checkbox, Discord/Webhook, Quiet hours, Maintenance) stay visible.
+- **Advanced** shows everything (the historical default).
+- New installs default to *simple* via the wizard; existing installs keep *advanced* on upgrade.
+- Persisted as `ui_mode` in `settings.json`.
+
+### i18n
+~30 new keys × 16 language files. EN + DE translated; other languages get the English fallback.
+
+### Internal
+- New module `app/maintenance.py` with `is_active`, `enable`, `disable`, `parse_duration`, `format_remaining` helpers. State file is the single source of truth, no in-memory cache.
+- New persistent files: `/data/maintenance.json`, `/data/container_notes.json`.
+- `notifier.Notifier._suppressed()` now checks maintenance in addition to quiet hours.
+- `scheduler.Scheduler` skips the cron tick while maintenance is active.
+- `telegram_bot.TelegramBot.send_message(auto=True)` honours maintenance for auto-notifications.
+- `ContainerStore` gains `get_notes`, `get_note`, `set_note`.
+- New POST endpoints: `/api/maintenance`, `/api/note`, `/api/ui_mode`.
+- `Config.ui_mode` added to `PERSISTENT_KEYS`.
+
 ## [1.15.1] - 2026-05-06
 
 ### Changed

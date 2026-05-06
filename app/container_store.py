@@ -18,6 +18,7 @@ class ContainerStore:
         self.ask_before_major_file = config.ask_before_major_file
         self.major_pending_file = config.major_pending_file
         self.groups_file = config.groups_file
+        self.notes_file = config.notes_file
 
     # ── Pinned ────────────────────────────────────────────────
 
@@ -209,6 +210,25 @@ class ContainerStore:
         groups[group_id] = g
         self._save_dict(self.groups_file, groups)
         return True
+
+    # ── Container notes ───────────────────────────────────────
+    # { container_name: "free-text note" }
+
+    def get_notes(self):
+        return self._load_dict(self.notes_file)
+
+    def get_note(self, name):
+        return self.get_notes().get(name, "")
+
+    def set_note(self, name, text):
+        notes = self.get_notes()
+        text = (text or "").strip()
+        if text:
+            # Cap length so the file stays reasonable
+            notes[name] = text[:2000]
+        else:
+            notes.pop(name, None)
+        self._save_dict(self.notes_file, notes)
 
     # ── helpers ───────────────────────────────────────────────
 

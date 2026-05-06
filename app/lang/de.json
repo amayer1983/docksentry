@@ -297,5 +297,38 @@
   "web_setup_back": "Zurück",
   "web_setup_next": "Weiter",
   "web_setup_finish": "Fertig & starten",
-  "web_setup_skip": "Überspringen — kenne mich aus"
+  "web_setup_skip": "Überspringen — kenne mich aus",
+
+  "web_maint_active": "Wartungsmodus aktiv",
+  "web_maint_until": "endet in {remaining}",
+  "web_maint_forever": "bis manuell deaktiviert",
+  "web_maint_disable": "Deaktivieren",
+  "web_maint_mode_title": "Wartungsmodus",
+  "web_maint_mode_intro": "Pausiert geplante Checks und Benachrichtigungen während Host-Wartung. Manuelle Updates funktionieren weiter.",
+  "web_maint_btn_1h": "1 Stunde",
+  "web_maint_btn_4h": "4 Stunden",
+  "web_maint_btn_1d": "1 Tag",
+  "web_maint_btn_forever": "Dauerhaft",
+  "web_maint_status_inactive": "Wartungsmodus ist aus — geplante Checks laufen normal.",
+  "web_maint_status_active": "Aktiv bis {until}",
+  "web_maint_status_active_forever": "Aktiv bis zur manuellen Deaktivierung",
+
+  "maintenance_active_forever": "🛠 Wartungsmodus *aktiv* (bis zur manuellen Deaktivierung).",
+  "maintenance_active_until": "🛠 Wartungsmodus *aktiv* — endet in {remaining}.",
+  "maintenance_inactive": "✅ Wartungsmodus ist *aus*.",
+  "maintenance_usage": "Verwendung: `/maintenance` zeigt Status, `/maintenance 2h` (oder `30m`, `1d`, `forever`) aktiviert, `/maintenance off` deaktiviert.",
+  "maintenance_disabled": "✅ Wartungsmodus deaktiviert.",
+  "maintenance_enabled_forever": "🛠 Wartungsmodus aktiviert — bis zur manuellen Deaktivierung.",
+  "maintenance_enabled": "🛠 Wartungsmodus aktiviert — endet um {until}.",
+  "help_maintenance": "/maintenance [Dauer|off] - Pausiert geplante Checks (z. B. 2h, 30m, 1d, forever)",
+
+  "web_note_title": "Notiz",
+  "web_note_intro": "Freitext-Memo für diesen Container, sichtbar im Tooltip der Statusliste.",
+  "web_note_placeholder": "z. B. „läuft im Host-Netzwerk — Ports vorsichtig ändern\"",
+  "web_note_save": "Notiz speichern",
+
+  "web_ui_mode_simple": "Einfach",
+  "web_ui_mode_advanced": "Erweitert",
+  "web_ui_mode_show_advanced": "In erweiterten Modus wechseln",
+  "web_ui_mode_show_simple": "In einfachen Modus wechseln"
 }

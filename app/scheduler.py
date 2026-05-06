@@ -96,6 +96,14 @@ class Scheduler:
 
             if current_minute != last_check and self._matches_cron(now):
                 last_check = current_minute
+                # Maintenance-mode short-circuit: skip the entire tick.
+                # Disk-warning, weekly-report etc. all get skipped too —
+                # the whole point of maintenance is "nothing autonomous".
+                from maintenance import is_active as _maint_active
+                if _maint_active(self.config):
+                    print(f"Scheduled check at {current_minute} skipped — maintenance mode active")
+                    time.sleep(30)
+                    continue
                 print(f"Scheduled check triggered at {current_minute}")
                 auto_updated = 0
                 try:

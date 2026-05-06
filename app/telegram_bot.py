@@ -129,6 +129,12 @@ class TelegramBot:
             from quiet_hours import is_quiet_now
             if is_quiet_now(self.config):
                 return None
+            try:
+                from maintenance import is_active as _maint_active
+                if _maint_active(self.config):
+                    return None
+            except Exception:
+                pass
 
         data = {
             "chat_id": self.config.chat_id,
@@ -947,6 +953,44 @@ class TelegramBot:
             status = self.t("debug_on") if self.config.debug else self.t("debug_off")
             self.send_message(self.t("debug_mode", status=status))
 
+        elif text.startswith("/maintenance"):
+            from maintenance import (
+                enable as _maint_enable,
+                disable as _maint_disable,
+                parse_duration,
+                get_state as _maint_state,
+                format_remaining as _maint_remaining,
+            )
+            parts = text.split(maxsplit=1)
+            if len(parts) == 1:
+                # No arg → show current state
+                st = _maint_state(self.config)
+                if st.get("active"):
+                    if st.get("until_iso") == "forever":
+                        self.send_message(self.t("maintenance_active_forever"))
+                    else:
+                        self.send_message(self.t("maintenance_active_until",
+                                                  remaining=_maint_remaining(st)))
+                else:
+                    self.send_message(self.t("maintenance_inactive"))
+            else:
+                arg = parts[1].strip()
+                try:
+                    parsed = parse_duration(arg)
+                except (ValueError, AttributeError):
+                    self.send_message(self.t("maintenance_usage"))
+                    return
+                if parsed is False:
+                    _maint_disable(self.config)
+                    self.send_message(self.t("maintenance_disabled"))
+                elif parsed is None:
+                    _maint_enable(self.config, hours=None)
+                    self.send_message(self.t("maintenance_enabled_forever"))
+                else:
+                    until = _maint_enable(self.config, hours=parsed)
+                    self.send_message(self.t("maintenance_enabled",
+                                              until=until.strftime("%H:%M")))
+
         elif text == "/cleanup":
             self.send_message(self.t("cleanup_starting"))
             ok, msg = checker.cleanup_images()
@@ -1101,6 +1145,7 @@ class TelegramBot:
                 + self.t("help_check") + "\n"
                 + self.t("help_updates") + "\n"
                 + self.t("help_cleanup") + "\n"
+                + self.t("help_maintenance") + "\n"
                 + self.t("help_history") + "\n"
                 + self.t("help_pin") + "\n"
                 + self.t("help_unpin") + "\n"

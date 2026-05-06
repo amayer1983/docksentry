@@ -18,8 +18,18 @@ class Notifier:
         return bool(self.config.discord_webhook or self.config.webhook_url)
 
     def _suppressed(self):
-        """True if quiet-hours is active right now — skip auto-notifications."""
-        return is_quiet_now(self.config)
+        """True if quiet-hours OR maintenance is active right now — skip
+        auto-notifications. Manual sends still go through (the caller would
+        use a different code path for those)."""
+        if is_quiet_now(self.config):
+            return True
+        try:
+            from maintenance import is_active as _maint_active
+            if _maint_active(self.config):
+                return True
+        except Exception:
+            pass
+        return False
 
     def send_updates_available(self, updates):
         """Notify about available updates."""

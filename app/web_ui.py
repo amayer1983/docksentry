@@ -384,6 +384,15 @@ html[data-theme="light"] .toast {
 /* Headings that lead with an icon */
 h2 svg, h3 svg { vertical-align: middle; width: 16px; height: 16px; }
 
+/* Container note pencil — discreet inline marker */
+.note-icon {
+    cursor: help;
+    opacity: 0.6;
+    margin-left: 4px;
+    font-size: 12px;
+}
+.note-icon:hover { opacity: 1; }
+
 /* Container name link — subtle hover */
 .container-link {
     color: var(--text);
@@ -397,6 +406,39 @@ h2 svg, h3 svg { vertical-align: middle; width: 16px; height: 16px; }
     font-size: 13px;
 }
 .btn-back:hover { color: var(--accent); }
+
+/* ── Maintenance banner ────────────────────────────────────── */
+.maint-banner {
+    max-width: 900px;
+    margin: 12px auto -4px auto;
+    padding: 10px 16px;
+    background: linear-gradient(180deg, rgba(210,153,34,0.12) 0%, rgba(210,153,34,0.04) 100%);
+    border: 1px solid var(--warn);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.maint-banner strong { color: var(--warn); }
+.maint-banner-icon { font-size: 18px; }
+
+/* ── Simple/Advanced UI mode ───────────────────────────────── */
+/* Elements marked .adv-only are hidden when body is in simple mode.
+   Cards (.card.adv-only) collapse cleanly because display:none removes
+   them from layout flow entirely. */
+body.mode-simple .adv-only { display: none !important; }
+.simple-hint {
+    margin: 8px 0 16px 0;
+    padding: 10px 14px;
+    background: rgba(56,139,253,0.08);
+    border: 1px solid rgba(56,139,253,0.4);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+body.mode-advanced .simple-hint { display: none; }
 
 /* ── First-run wizard ──────────────────────────────────────── */
 .wizard-head { margin-bottom: 18px; }
@@ -1155,6 +1197,7 @@ def create_handler(config, checker, bot, store, password=None):
         def _render_page(self, content, active="status"):
             from i18n import get_translator
             from version import VERSION
+            from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
             t = get_translator(config.language)
 
             nav_items = [
@@ -1167,6 +1210,40 @@ def create_handler(config, checker, bot, store, password=None):
             for key, label, href in nav_items:
                 cls = ' class="active"' if key == active else ""
                 nav_html += f'<a href="{href}"{cls}>{label}</a> '
+
+            # Maintenance banner (visible on every page when active)
+            mstate = _maint_state(config)
+            maint_banner = ""
+            if mstate.get("active"):
+                if mstate.get("until_iso") == "forever":
+                    until_text = t("web_maint_forever")
+                else:
+                    remaining = _maint_remaining(mstate)
+                    until_text = t("web_maint_until", remaining=remaining)
+                maint_banner = f"""<div class="maint-banner">
+<span class="maint-banner-icon">🛠</span>
+<span><strong>{t("web_maint_active")}</strong> — {until_text}</span>
+<form method="POST" action="/api/maintenance" style="margin-left:auto">
+<input type="hidden" name="action" value="off">
+<button type="submit" class="btn-sm btn-outline">{t("web_maint_disable")}</button>
+</form>
+</div>"""
+
+            # Simple/Advanced UI mode — toggles a body class that hides
+            # `.adv-only` elements via CSS.
+            ui_mode = getattr(config, "ui_mode", "advanced")
+            if ui_mode not in ("simple", "advanced"):
+                ui_mode = "advanced"
+            body_class = "mode-simple" if ui_mode == "simple" else "mode-advanced"
+            ui_mode_other = "advanced" if ui_mode == "simple" else "simple"
+            if ui_mode == "simple":
+                ui_mode_toggle_title = t("web_ui_mode_show_advanced")
+                # Wrench icon — switch to advanced
+                ui_mode_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>'
+            else:
+                ui_mode_toggle_title = t("web_ui_mode_show_simple")
+                # User icon — switch to simple
+                ui_mode_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
 
             return f"""<!DOCTYPE html>
 <html lang="{_e(config.language)}">
@@ -1187,7 +1264,7 @@ def create_handler(config, checker, bot, store, password=None):
 </script>
 <style>{_BASE_CSS}</style>
 </head>
-<body>
+<body class="{body_class}">
 <div class="header">
 <div class="header-row">
 <div class="header-brand">
@@ -1195,14 +1272,18 @@ def create_handler(config, checker, bot, store, password=None):
 <h1>Docksentry</h1>
 </div>
 <div class="header-host-slot"><!-- v2.0: host selector slot --></div>
-<button type="button" id="ds-theme-toggle" class="btn-icon" title="Toggle theme" style="margin-left:auto">
+<form method="POST" action="/api/ui_mode" style="display:inline;margin-left:auto">
+<input type="hidden" name="mode" value="{ui_mode_other}">
+<button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
+</form>
+<button type="button" id="ds-theme-toggle" class="btn-icon" title="Toggle theme">
 <svg id="ds-theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
 <svg id="ds-theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 </button>
 </div>
 <div class="nav-wrap"><nav>{nav_html}</nav></div>
 </div>
-<div class="content">
+{maint_banner}<div class="content">
 {content}
 </div>
 <div class="footer">
@@ -1415,6 +1496,53 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             elif path == "/api/selfupdate":
                 threading.Thread(target=self._api_selfupdate).start()
                 self._send_redirect("/settings?saved=1")
+            elif path == "/api/note":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                note = params.get("note", [""])[0]
+                if name:
+                    store.set_note(name, note)
+                ref = self.headers.get("Referer", "/")
+                ref_path = urlparse(ref).path or "/"
+                self._send_redirect(ref_path)
+            elif path == "/api/maintenance":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                action = params.get("action", [""])[0].strip().lower()
+                from maintenance import enable as _maint_enable, disable as _maint_disable
+                if action == "off":
+                    _maint_disable(config)
+                elif action == "forever":
+                    _maint_enable(config, hours=None)
+                else:
+                    # Hours value: 1, 4, 24, or custom
+                    try:
+                        hours = float(params.get("hours", ["1"])[0])
+                        hours = max(0.0, min(hours, 720.0))  # ≤ 30 days
+                        if hours > 0:
+                            _maint_enable(config, hours=hours)
+                    except (ValueError, IndexError):
+                        pass
+                # Redirect back where the user came from (relative path only,
+                # we don't want to redirect to an external URL even if the
+                # Referer says so).
+                ref = self.headers.get("Referer", "/")
+                ref_path = urlparse(ref).path or "/"
+                self._send_redirect(ref_path)
+            elif path == "/api/ui_mode":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                mode = params.get("mode", [""])[0].strip().lower()
+                if mode in ("simple", "advanced"):
+                    config.ui_mode = mode
+                    config.save_persistent()
+                ref = self.headers.get("Referer", "/")
+                ref_path = urlparse(ref).path or "/"
+                self._send_redirect(ref_path)
             elif path == "/api/wizard":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -1456,6 +1584,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                         pass
                 # "manual" / "picky" → leave the auto list as-is
 
+                # New installs running through the wizard default to the
+                # simple UI mode. Existing installs (which never see the
+                # wizard because web_setup_done is already true) keep the
+                # advanced default.
+                config.ui_mode = "simple"
                 config.web_setup_done = True
                 config.save_persistent()
                 self._send_redirect("/?saved=1")
@@ -1728,6 +1861,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 gname = g.get("name", gid)
                 for cname in g.get("containers") or []:
                     groups_lookup[cname] = (gid, gname)
+            notes_lookup = store.get_notes()
             major_pending = store.get_pending_major() or {}
 
             from i18n import get_translator
@@ -1756,6 +1890,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if c["name"] in groups_lookup:
                     gid, gname = groups_lookup[c["name"]]
                     badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">{_icon_label("package", _e(gname))}</span>'
+                if c["name"] in notes_lookup:
+                    note_text = notes_lookup[c["name"]]
+                    badges += f' <span class="note-icon" title="{_e(note_text)}">📝</span>'
 
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
@@ -1778,14 +1915,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'</form>'
                 )
                 auto_btn = (
-                    f'<form method="POST" action="/api/autoupdate" class="inline-form">'
+                    f'<form method="POST" action="/api/autoupdate" class="inline-form adv-only">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-active" if is_auto else ""}" '
                     f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">{_ICONS["settings"]}</button>'
                     f'</form>'
                 )
                 ask_btn = (
-                    f'<form method="POST" action="/api/ask_major" class="inline-form">'
+                    f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
                     f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
@@ -1902,8 +2039,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="button" class="btn-sm btn btn-icon-text" onclick="bulkSubmit('update')" title="{_e(t('web_bulk_update_tt'))}">{_ICONS["refresh"]}<span>{t("web_bulk_update")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('pin')" title="{_e(t('web_bulk_pin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_pin")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('unpin')" title="{_e(t('web_bulk_unpin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_unpin")}</span></button>
-<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
-<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text adv-only" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text adv-only" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
 <table>
 <tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
@@ -2152,6 +2289,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'<span style="color:var(--text-muted);font-size:12px">({t("web_detail_group_pos", pos=pos, total=len(cnames))})</span></td></tr>'
                 )
 
+            note_text = store.get_note(name)
+            note_html = ""
+            if note_text:
+                note_html = f"""<div style="margin-top:14px;padding:12px;background:var(--bg);border-left:3px solid var(--warn);border-radius:var(--radius-sm)">
+<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">📝 {t("web_note_title")}</div>
+<div style="font-size:13px;white-space:pre-wrap">{_e(note_text)}</div>
+</div>"""
+
             overview_html = f"""<table>
 <tr><td style="width:30%">{t("web_detail_image")}</td><td><code>{_e(image)}</code></td></tr>
 <tr><td>{t("web_detail_status")}</td><td>{status_badge} {badges_html}</td></tr>
@@ -2161,7 +2306,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 {compose_row}
 {window_row}
 {group_row}
-</table>"""
+</table>
+{note_html}"""
 
             # ── History tab ──────────────────────────────────────
             if history:
@@ -2234,6 +2380,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <input type="hidden" name="name" value="{_e(name)}">
 </form>
 <p class="form-help">{t("web_detail_pin_hint")}</p>
+
+<hr class="section-divider">
+
+<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_note_title")}</h3>
+<p class="form-help" style="margin-bottom:8px">{t("web_note_intro")}</p>
+<form method="POST" action="/api/note">
+<input type="hidden" name="name" value="{_e(name)}">
+<textarea name="note" rows="3" placeholder="{_e(t('web_note_placeholder'))}" maxlength="2000" style="width:100%;font-family:inherit;resize:vertical">{_e(store.get_note(name))}</textarea>
+<button type="submit" class="btn btn-sm" style="margin-top:6px">{t("web_note_save")}</button>
+</form>
 
 <hr class="section-divider">
 
@@ -2420,7 +2576,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   </div>
   <label>{t("web_excluded")} {help_(t("web_excluded_help"))}</label>
   <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
-  <div class="form-checkbox-row">
+  <div class="form-checkbox-row adv-only">
     <input type="checkbox" name="debug" id="cb-debug" {cb(config.debug)}>
     <label for="cb-debug">{t("web_debug_mode")} {help_(t("web_debug_help"))}</label>
   </div>
@@ -2443,7 +2599,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   </div>
   <p class="form-help">{t("web_auto_cleanup_hint")}</p>
 
-  <div class="grid">
+  <div class="grid adv-only">
     <div>
       <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}</label>
       <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
@@ -2453,16 +2609,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
       <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
     </div>
   </div>
-  <div class="form-checkbox-row">
+  <div class="form-checkbox-row adv-only">
     <input type="checkbox" name="cleanup_backup_local_only" id="cb-bak-local" {cb(config.cleanup_backup_local_only)}>
     <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}</label>
   </div>
-  <p class="form-help">{t("web_cleanup_backup_local_only_hint")}</p>
+  <p class="form-help adv-only">{t("web_cleanup_backup_local_only_hint")}</p>
 </div>
 
 <!-- ── Benachrichtigungen ────────────────────────── -->
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="notifs">
-  <div class="grid">
+  <div class="grid adv-only">
     <div>
       <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}</label>
       <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
@@ -2476,7 +2632,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     </div>
   </div>
 
-  <hr class="section-divider">
+  <hr class="section-divider adv-only">
 
   <div class="grid">
     <div>
@@ -2490,8 +2646,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   </div>
   <p class="form-help">{t("web_quiet_hours_hint")}</p>
 
-  <hr class="section-divider">
+  <hr class="section-divider adv-only">
 
+  <div class="adv-only">
   <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_weekly_title")}</h3>
   <div class="form-checkbox-row">
     <input type="checkbox" name="weekly_report_enabled" id="cb-weekly" {cb(config.weekly_report_enabled)}>
@@ -2510,12 +2667,15 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
       <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23">
     </div>
   </div>
+  </div>
 </div>
 
 <!-- ── Kanäle ────────────────────────────────────── -->
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
-  <label>Telegram Topic ID {help_(t("web_topic_id_help"))}</label>
-  <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
+  <div class="adv-only">
+    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}</label>
+    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
+  </div>
 
   <label>Discord Webhook {help_(t("web_discord_help"))}</label>
   <input type="text" name="discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/...">
@@ -2530,16 +2690,22 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </form>
 </div>
 
-<div class="card" id="groups">
+<div class="card adv-only" id="groups">
 <h2>{t("web_groups_title")}</h2>
 <p class="card-intro">{t("web_groups_intro")}</p>
 {self._groups_html(t)}
 </div>
 
-<div class="card" id="windows">
+<div class="card adv-only" id="windows">
 <h2>{t("web_windows_title")}</h2>
 <p class="card-intro">{t("web_windows_intro")}</p>
 {self._windows_html(t)}
+</div>
+
+<div class="card">
+<h2>{t("web_maint_mode_title")}</h2>
+<p class="card-intro">{t("web_maint_mode_intro")}</p>
+{self._maint_mode_html(t)}
 </div>
 
 <div class="card">
@@ -2576,6 +2742,45 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))
+
+        def _maint_mode_html(self, t):
+            """Render the Maintenance-Mode quick-buttons + status."""
+            from maintenance import get_state as _ms, format_remaining as _mr
+            state = _ms(config)
+            if state.get("active"):
+                if state.get("until_iso") == "forever":
+                    until_text = t("web_maint_forever")
+                else:
+                    until_text = t("web_maint_until", remaining=_mr(state))
+                return f"""<div style="margin-bottom:12px;color:var(--warn)">
+<strong>{t("web_maint_active")}</strong> — {until_text}
+</div>
+<form method="POST" action="/api/maintenance" style="display:inline">
+<input type="hidden" name="action" value="off">
+<button type="submit" class="btn btn-icon-text">{_ICONS["x"]}<span>{t("web_maint_disable")}</span></button>
+</form>"""
+
+            return f"""<div style="display:flex;gap:6px;flex-wrap:wrap">
+<form method="POST" action="/api/maintenance" class="inline-form">
+<input type="hidden" name="action" value="on">
+<input type="hidden" name="hours" value="1">
+<button type="submit" class="btn btn-outline btn-sm">{t("web_maint_btn_1h")}</button>
+</form>
+<form method="POST" action="/api/maintenance" class="inline-form">
+<input type="hidden" name="action" value="on">
+<input type="hidden" name="hours" value="4">
+<button type="submit" class="btn btn-outline btn-sm">{t("web_maint_btn_4h")}</button>
+</form>
+<form method="POST" action="/api/maintenance" class="inline-form">
+<input type="hidden" name="action" value="on">
+<input type="hidden" name="hours" value="24">
+<button type="submit" class="btn btn-outline btn-sm">{t("web_maint_btn_1d")}</button>
+</form>
+<form method="POST" action="/api/maintenance" class="inline-form">
+<input type="hidden" name="action" value="forever">
+<button type="submit" class="btn btn-outline btn-sm">{t("web_maint_btn_forever")}</button>
+</form>
+</div>"""
 
         def _groups_html(self, t):
             """Render the Container Groups section: list of groups + add form."""
