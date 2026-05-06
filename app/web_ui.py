@@ -36,7 +36,15 @@ _ICONS = {
     "broom":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13 4 20"/><path d="M5 19a3 3 0 0 1 0-6"/><path d="M11 13 22 2"/><path d="M22 2v6"/><path d="m11 13 6 6"/><path d="M17 19h5"/></svg>',
     "arrow_up":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>',
     "calendar":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
+    "package":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
 }
+
+# Inline-flex helper that pairs an SVG icon with text — used in badges
+# where we want a small icon glued to a label.
+def _icon_label(icon_key, label):
+    """Return an inline SVG icon followed by a label, both inside a span."""
+    return (f'<span class="icon-label">'
+            f'{_ICONS.get(icon_key, "")}{label}</span>')
 
 
 _LOGO_B64 = "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"
@@ -366,6 +374,15 @@ html[data-theme="light"] .toast {
     gap: 6px;
 }
 .btn-icon-text svg { width: 12px; height: 12px; flex-shrink: 0; }
+/* Badge with inline icon — used for "package + group name" etc. */
+.badge .icon-label, .icon-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.badge svg { width: 11px; height: 11px; }
+/* Headings that lead with an icon */
+h2 svg, h3 svg { vertical-align: middle; width: 16px; height: 16px; }
 
 /* Container name link — subtle hover */
 .container-link {
@@ -1735,10 +1752,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if c["name"] in auto_list:
                     badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
                 if c["name"] in ask_major:
-                    badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">⚠</span>'
+                    badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["alert"]}</span>'
                 if c["name"] in groups_lookup:
                     gid, gname = groups_lookup[c["name"]]
-                    badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">📦 {_e(gname)}</span>'
+                    badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">{_icon_label("package", _e(gname))}</span>'
 
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
@@ -1789,7 +1806,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 rows_mp = ""
                 for n, info in major_pending.items():
                     rows_mp += f"""<tr>
-<td>⚠ <code>{_e(n)}</code></td>
+<td><span style="color:var(--warn);vertical-align:middle">{_ICONS["alert"]}</span> <code>{_e(n)}</code></td>
 <td><code>{_e(info.get('old_version',''))} → {_e(info.get('new_version',''))}</code></td>
 <td>
 <form method="POST" action="/api/major_confirm" class="inline-form">
@@ -1805,7 +1822,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </td>
 </tr>"""
                 major_banner = f"""<div class="card card-warn">
-<h2>⚠ {t("web_major_pending_title")}</h2>
+<h2>{_ICONS["alert"]} {t("web_major_pending_title")}</h2>
 <p class="card-intro">{t("web_major_pending_intro")}</p>
 <table>{rows_mp}</table>
 </div>"""
@@ -2131,7 +2148,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 pos = cnames.index(name) + 1 if name in cnames else "?"
                 group_row = (
                     f'<tr><td>{t("web_detail_group")}</td>'
-                    f'<td>📦 <a href="/settings#groups" style="color:var(--accent);text-decoration:none">{_e(gdata.get("name", gid))}</a> '
+                    f'<td><span style="color:var(--accent);vertical-align:middle">{_ICONS["package"]}</span> <a href="/settings#groups" style="color:var(--accent);text-decoration:none">{_e(gdata.get("name", gid))}</a> '
                     f'<span style="color:var(--text-muted);font-size:12px">({t("web_detail_group_pos", pos=pos, total=len(cnames))})</span></td></tr>'
                 )
 
@@ -2605,7 +2622,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     wait_s = int(g.get("wait_seconds", 30) or 30)
                     groups_html += f"""<div class="card" style="background:var(--bg);margin-bottom:12px">
 <div class="card-header-row">
-<h3 style="font-size:14px;color:var(--accent);margin:0">📦 {_e(g.get("name", gid))}
+<h3 style="font-size:14px;color:var(--accent);margin:0">{_ICONS["package"]} {_e(g.get("name", gid))}
 <span style="color:var(--text-muted);font-size:11px;font-weight:400">·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}</span>
 </h3>
 <form method="POST" action="/api/group_delete" class="inline-form" data-confirm="{_e(t('web_groups_delete_confirm', name=g.get('name', gid)))}" data-confirm-label="{_e(t('web_delete'))}" data-confirm-danger="1">
