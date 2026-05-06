@@ -380,6 +380,88 @@ html[data-theme="light"] .toast {
     font-size: 13px;
 }
 .btn-back:hover { color: var(--accent); }
+
+/* ── First-run wizard ──────────────────────────────────────── */
+.wizard-head { margin-bottom: 18px; }
+.wizard-stepper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 12px 0 24px 0;
+}
+.wstep {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.wstep.is-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 0 4px rgba(88,166,255,0.15);
+}
+.wstep.is-done {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+}
+.wstep-bar {
+    flex: 0 0 36px;
+    height: 2px;
+    background: var(--border);
+    margin: 0 2px;
+}
+.wstep-pane { display: none; min-height: 200px; }
+.wstep-pane.is-active { display: block; }
+.wizard-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+.wizard-preset.is-active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.wizard-radio { display: flex; flex-direction: column; gap: 8px; }
+.wizard-radio-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.wizard-radio-row:hover { border-color: var(--text-muted); }
+.wizard-radio-row input[type="radio"] {
+    width: auto;
+    margin: 4px 0 0 0;
+    flex-shrink: 0;
+}
+.wizard-radio-row input[type="radio"]:checked ~ span {
+    color: var(--accent);
+}
+.wizard-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
 .btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .inline-form { display: inline; }
 .btn-compact {
@@ -1117,6 +1199,15 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             if not self._check_auth():
                 return self._send_auth_required()
             path = self._get_path()
+            # First-run gate: redirect everywhere to /setup until done.
+            # /setup itself + /api/* must remain reachable (otherwise the
+            # wizard couldn't submit, and the user couldn't escape).
+            if (not getattr(config, "web_setup_done", False)
+                    and path != "/setup"
+                    and not path.startswith("/api/")):
+                self._send_redirect("/setup")
+                return
+
             if path == "/" or path == "/status":
                 self._page_status()
             elif path == "/history":
@@ -1125,8 +1216,15 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 self._page_logs()
             elif path == "/settings":
                 self._page_settings()
+            elif path == "/setup":
+                self._page_setup()
             elif path == "/api/check":
                 threading.Thread(target=self._api_check).start()
+                self._send_redirect("/")
+            elif path == "/api/wizard_skip":
+                # Power-user escape hatch: just set the flag and move on.
+                config.web_setup_done = True
+                config.save_persistent()
                 self._send_redirect("/")
             elif path.startswith("/container/"):
                 self._page_container(path[len("/container/"):])
@@ -1300,6 +1398,88 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             elif path == "/api/selfupdate":
                 threading.Thread(target=self._api_selfupdate).start()
                 self._send_redirect("/settings?saved=1")
+            elif path == "/api/wizard":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+
+                # Language
+                if "language" in params:
+                    from i18n import available_languages, get_translator
+                    new_lang = params["language"][0]
+                    if new_lang in available_languages():
+                        config.language = new_lang
+                        if bot.enabled:
+                            bot.t = get_translator(new_lang)
+
+                # Cron schedule
+                if "cron_schedule" in params and params["cron_schedule"][0].strip():
+                    config.cron_schedule = params["cron_schedule"][0].strip()
+
+                # Channels
+                if "discord_webhook" in params:
+                    cand = params["discord_webhook"][0].strip()
+                    ok, _ = _validate_webhook_url(cand, kind="discord")
+                    if ok:
+                        config.discord_webhook = cand
+                if "webhook_url" in params:
+                    cand = params["webhook_url"][0].strip()
+                    ok, _ = _validate_webhook_url(cand, kind="generic")
+                    if ok:
+                        config.webhook_url = cand
+
+                # Auto-update mode
+                mode = params.get("auto_mode", ["manual"])[0]
+                if mode == "all":
+                    # Enable auto-update for every running container
+                    try:
+                        names = [c["name"] for c in self._get_containers()]
+                        store.save_autoupdate(names)
+                    except Exception:
+                        pass
+                # "manual" / "picky" → leave the auto list as-is
+
+                config.web_setup_done = True
+                config.save_persistent()
+                self._send_redirect("/?saved=1")
+            elif path == "/api/group_save":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                # Multi-select: containers come as repeated key in form-encoded
+                containers = params.get("containers", [])
+                wait_s = params.get("wait_seconds", ["30"])[0]
+                if name and containers:
+                    # Generate a slug from the name (simple, ascii-safe)
+                    import re as _re
+                    slug = _re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-") or "group"
+                    # If a group with this slug already exists, append -2, -3, ...
+                    existing = store.get_groups()
+                    base, n = slug, 2
+                    while slug in existing:
+                        slug = f"{base}-{n}"
+                        n += 1
+                    store.save_group(slug, name, containers, wait_s)
+                self._send_redirect("/settings#groups")
+            elif path == "/api/group_delete":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                gid = params.get("group_id", [""])[0].strip()
+                if gid:
+                    store.delete_group(gid)
+                self._send_redirect("/settings#groups")
+            elif path == "/api/group_reorder":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                gid = params.get("group_id", [""])[0].strip()
+                cname = params.get("container", [""])[0].strip()
+                direction = params.get("direction", [""])[0].strip()
+                if gid and cname and direction in ("up", "down"):
+                    store.reorder_group_container(gid, cname, direction)
+                self._send_redirect("/settings#groups")
             elif path == "/api/window":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -1358,6 +1538,166 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             else:
                 self._send_html("<h1>404</h1>", 404)
 
+        def _page_setup(self):
+            """First-run wizard. Single-page multi-step form, JS-driven.
+
+            Persists `web_setup_done=true` (plus the chosen values) on
+            submit, after which the redirect-gate releases the rest of
+            the UI.
+            """
+            from i18n import available_languages, get_translator
+            t = get_translator(config.language)
+
+            langs = available_languages()
+            lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español",
+                          "it": "Italiano", "nl": "Nederlands", "pt": "Português", "pl": "Polski",
+                          "tr": "Türkçe", "ru": "Русский", "uk": "Українська", "ar": "العربية",
+                          "hi": "हिन्दी", "ja": "日本語", "ko": "한국어", "zh": "中文"}
+            lang_options = ""
+            for l in langs:
+                sel = 'selected' if l == config.language else ''
+                name = lang_names.get(l, l.upper())
+                lang_options += f'<option value="{_e(l)}" {sel}>{_e(name)}</option>\n'
+
+            telegram_on = bool(config.bot_token and config.chat_id)
+            telegram_status = ('<span class="badge badge-green">enabled</span>' if telegram_on
+                               else '<span class="badge badge-yellow">env-only</span>')
+            tele_help = (t("web_setup_telegram_on")
+                         if telegram_on else t("web_setup_telegram_off"))
+
+            content = f"""
+<div class="card" id="wizard-card" style="max-width:640px;margin:32px auto">
+
+<div class="wizard-head">
+<h2 style="margin:0">🚀 {t("web_setup_title")}</h2>
+<p class="card-intro" style="margin:6px 0 0 0">{t("web_setup_intro")}</p>
+</div>
+
+<div class="wizard-stepper">
+<span class="wstep is-active" data-step="1">1</span>
+<span class="wstep-bar"></span>
+<span class="wstep" data-step="2">2</span>
+<span class="wstep-bar"></span>
+<span class="wstep" data-step="3">3</span>
+<span class="wstep-bar"></span>
+<span class="wstep" data-step="4">4</span>
+</div>
+
+<form method="POST" action="/api/wizard">
+
+<!-- ── Step 1: Language ──────────────────────────────────── -->
+<div class="wstep-pane is-active" data-step-pane="1">
+<h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🌐 {t("web_setup_lang_title")}</h3>
+<p class="form-help" style="margin:0 0 12px 0">{t("web_setup_lang_intro")}</p>
+<select name="language">{lang_options}</select>
+</div>
+
+<!-- ── Step 2: Schedule ──────────────────────────────────── -->
+<div class="wstep-pane" data-step-pane="2">
+<h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">⏰ {t("web_setup_schedule_title")}</h3>
+<p class="form-help" style="margin:0 0 12px 0">{t("web_setup_schedule_intro")}</p>
+<div class="wizard-presets">
+<button type="button" class="btn btn-outline btn-sm wizard-preset" data-cron="0 18 * * *">{t("web_setup_preset_daily_evening")}</button>
+<button type="button" class="btn btn-outline btn-sm wizard-preset" data-cron="0 9 * * 1">{t("web_setup_preset_weekly_mon")}</button>
+<button type="button" class="btn btn-outline btn-sm wizard-preset" data-cron="0 * * * *">{t("web_setup_preset_hourly")}</button>
+<button type="button" class="btn btn-outline btn-sm wizard-preset" data-cron="0 6 * * *">{t("web_setup_preset_daily_morning")}</button>
+</div>
+<label style="margin-top:12px">{t("web_setup_cron_label")}</label>
+<input type="text" name="cron_schedule" id="wizard-cron" value="{_e(config.cron_schedule)}" placeholder="0 18 * * *">
+<p class="form-help">{t("web_setup_cron_help")}</p>
+</div>
+
+<!-- ── Step 3: Channels ──────────────────────────────────── -->
+<div class="wstep-pane" data-step-pane="3">
+<h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🔔 {t("web_setup_channels_title")}</h3>
+<p class="form-help" style="margin:0 0 12px 0">{t("web_setup_channels_intro")}</p>
+
+<div style="background:var(--bg);border:1px solid var(--border-soft);border-radius:6px;padding:10px 12px;margin-bottom:12px">
+<strong>Telegram</strong> {telegram_status}
+<p class="form-help" style="margin:4px 0 0 0">{tele_help}</p>
+</div>
+
+<label>Discord Webhook ({t("web_setup_optional")})</label>
+<input type="text" name="discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/...">
+
+<label>Generic Webhook ({t("web_setup_optional")})</label>
+<input type="text" name="webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook">
+</div>
+
+<!-- ── Step 4: Auto-update behavior ──────────────────────── -->
+<div class="wstep-pane" data-step-pane="4">
+<h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🔄 {t("web_setup_auto_title")}</h3>
+<p class="form-help" style="margin:0 0 12px 0">{t("web_setup_auto_intro")}</p>
+
+<div class="wizard-radio">
+<label class="wizard-radio-row">
+  <input type="radio" name="auto_mode" value="manual" checked>
+  <span><strong>{t("web_setup_auto_manual")}</strong><br>
+  <span class="form-help" style="margin:0">{t("web_setup_auto_manual_hint")}</span></span>
+</label>
+<label class="wizard-radio-row">
+  <input type="radio" name="auto_mode" value="all">
+  <span><strong>{t("web_setup_auto_all")}</strong><br>
+  <span class="form-help" style="margin:0">{t("web_setup_auto_all_hint")}</span></span>
+</label>
+<label class="wizard-radio-row">
+  <input type="radio" name="auto_mode" value="picky">
+  <span><strong>{t("web_setup_auto_picky")}</strong><br>
+  <span class="form-help" style="margin:0">{t("web_setup_auto_picky_hint")}</span></span>
+</label>
+</div>
+</div>
+
+<div class="wizard-nav">
+<button type="button" class="btn btn-outline" id="wizard-back" disabled>← {t("web_setup_back")}</button>
+<a href="/api/wizard_skip" class="btn-back" style="align-self:center;font-size:13px">{t("web_setup_skip")}</a>
+<button type="button" class="btn" id="wizard-next">{t("web_setup_next")} →</button>
+<button type="submit" class="btn" id="wizard-finish" style="display:none">✓ {t("web_setup_finish")}</button>
+</div>
+</form>
+</div>
+
+<script>
+(function() {{
+    const TOTAL = 4;
+    let cur = 1;
+    const steps = document.querySelectorAll('.wstep');
+    const panes = document.querySelectorAll('.wstep-pane');
+    const back = document.getElementById('wizard-back');
+    const next = document.getElementById('wizard-next');
+    const finish = document.getElementById('wizard-finish');
+
+    function render() {{
+        steps.forEach(s => {{
+            const n = parseInt(s.dataset.step);
+            s.classList.toggle('is-active', n === cur);
+            s.classList.toggle('is-done',   n <  cur);
+        }});
+        panes.forEach(p => {{
+            p.classList.toggle('is-active', parseInt(p.dataset.stepPane) === cur);
+        }});
+        back.disabled = (cur === 1);
+        next.style.display   = (cur === TOTAL) ? 'none' : '';
+        finish.style.display = (cur === TOTAL) ? '' : 'none';
+    }}
+    back.addEventListener('click', () => {{ if (cur > 1)     {{ cur--; render(); }} }});
+    next.addEventListener('click', () => {{ if (cur < TOTAL) {{ cur++; render(); }} }});
+
+    // Cron preset buttons
+    const cronInput = document.getElementById('wizard-cron');
+    document.querySelectorAll('.wizard-preset').forEach(b => {{
+        b.addEventListener('click', () => {{
+            cronInput.value = b.dataset.cron;
+            document.querySelectorAll('.wizard-preset').forEach(x => x.classList.remove('is-active'));
+            b.classList.add('is-active');
+        }});
+    }});
+
+    render();
+}})();
+</script>"""
+            self._send_html(self._render_page(content, "status"))
+
         def _page_status(self):
             containers = self._get_containers()
             pending = self._get_pending()
@@ -1365,6 +1705,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             pinned = store.get_pinned()
             auto_list = store.get_autoupdate()
             ask_major = store.get_ask_before_major()
+            # Build a quick lookup container_name → (group_id, group_name)
+            groups_lookup = {}
+            for gid, g in store.get_groups().items():
+                gname = g.get("name", gid)
+                for cname in g.get("containers") or []:
+                    groups_lookup[cname] = (gid, gname)
             major_pending = store.get_pending_major() or {}
 
             from i18n import get_translator
@@ -1390,6 +1736,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
                 if c["name"] in ask_major:
                     badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">⚠</span>'
+                if c["name"] in groups_lookup:
+                    gid, gname = groups_lookup[c["name"]]
+                    badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">📦 {_e(gname)}</span>'
 
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
@@ -1774,6 +2123,18 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'<td><code>{_e(window.get("start",""))}–{_e(window.get("end",""))}</code> · {_e(wd_text)}</td></tr>'
                 )
 
+            # Group membership
+            group_row = ""
+            gid, gdata = store.get_group_for_container(name)
+            if gid and gdata:
+                cnames = gdata.get("containers") or []
+                pos = cnames.index(name) + 1 if name in cnames else "?"
+                group_row = (
+                    f'<tr><td>{t("web_detail_group")}</td>'
+                    f'<td>📦 <a href="/settings#groups" style="color:var(--accent);text-decoration:none">{_e(gdata.get("name", gid))}</a> '
+                    f'<span style="color:var(--text-muted);font-size:12px">({t("web_detail_group_pos", pos=pos, total=len(cnames))})</span></td></tr>'
+                )
+
             overview_html = f"""<table>
 <tr><td style="width:30%">{t("web_detail_image")}</td><td><code>{_e(image)}</code></td></tr>
 <tr><td>{t("web_detail_status")}</td><td>{status_badge} {badges_html}</td></tr>
@@ -1782,6 +2143,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <tr><td>{t("web_detail_started")}</td><td>{_e(started_at)}</td></tr>
 {compose_row}
 {window_row}
+{group_row}
 </table>"""
 
             # ── History tab ──────────────────────────────────────
@@ -2151,6 +2513,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </form>
 </div>
 
+<div class="card" id="groups">
+<h2>{t("web_groups_title")}</h2>
+<p class="card-intro">{t("web_groups_intro")}</p>
+{self._groups_html(t)}
+</div>
+
 <div class="card" id="windows">
 <h2>{t("web_windows_title")}</h2>
 <p class="card-intro">{t("web_windows_intro")}</p>
@@ -2191,6 +2559,88 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </div>"""
 
             self._send_html(self._render_page(content, "settings"))
+
+        def _groups_html(self, t):
+            """Render the Container Groups section: list of groups + add form."""
+            try:
+                containers = self._get_containers()
+            except Exception:
+                containers = []
+            container_names = sorted({c["name"] for c in containers})
+            groups = store.get_groups()
+
+            # ── Existing groups ──
+            groups_html = ""
+            if not groups:
+                groups_html = (f'<div class="empty">'
+                               f'<div class="empty-icon">📦</div>'
+                               f'<div class="empty-title">{t("web_groups_empty")}</div>'
+                               f'<div class="empty-hint">{t("web_groups_empty_hint")}</div>'
+                               f'</div>')
+            else:
+                for gid, g in groups.items():
+                    rows = ""
+                    cnames = g.get("containers") or []
+                    for idx, cname in enumerate(cnames):
+                        up_disabled = " disabled" if idx == 0 else ""
+                        down_disabled = " disabled" if idx == len(cnames) - 1 else ""
+                        rows += f"""<tr>
+<td><span style="color:var(--text-muted);font-size:11px">#{idx + 1}</span></td>
+<td><code>{_e(cname)}</code></td>
+<td>
+<form method="POST" action="/api/group_reorder" class="inline-form">
+<input type="hidden" name="group_id" value="{_e(gid)}">
+<input type="hidden" name="container" value="{_e(cname)}">
+<input type="hidden" name="direction" value="up">
+<button type="submit" class="btn-icon"{up_disabled} title="{_e(t('web_groups_move_up'))}">↑</button>
+</form>
+<form method="POST" action="/api/group_reorder" class="inline-form" style="margin-left:4px">
+<input type="hidden" name="group_id" value="{_e(gid)}">
+<input type="hidden" name="container" value="{_e(cname)}">
+<input type="hidden" name="direction" value="down">
+<button type="submit" class="btn-icon"{down_disabled} title="{_e(t('web_groups_move_down'))}">↓</button>
+</form>
+</td>
+</tr>"""
+                    wait_s = int(g.get("wait_seconds", 30) or 30)
+                    groups_html += f"""<div class="card" style="background:var(--bg);margin-bottom:12px">
+<div class="card-header-row">
+<h3 style="font-size:14px;color:var(--accent);margin:0">📦 {_e(g.get("name", gid))}
+<span style="color:var(--text-muted);font-size:11px;font-weight:400">·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}</span>
+</h3>
+<form method="POST" action="/api/group_delete" class="inline-form" data-confirm="{_e(t('web_groups_delete_confirm', name=g.get('name', gid)))}" data-confirm-label="{_e(t('web_delete'))}" data-confirm-danger="1">
+<input type="hidden" name="group_id" value="{_e(gid)}">
+<button type="submit" class="btn-sm btn-outline">{t("web_delete")}</button>
+</form>
+</div>
+<table>{rows}</table>
+</div>"""
+
+            # ── Add-new-group form ──
+            options = "".join(f'<option value="{_e(n)}">{_e(n)}</option>' for n in container_names)
+            return f"""{groups_html}
+
+<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">+ {t("web_groups_new")}</h3>
+<form method="POST" action="/api/group_save">
+<div class="grid">
+<div>
+<label>{t("web_groups_name")}</label>
+<input type="text" name="name" placeholder="{_e(t('web_groups_name_placeholder'))}" required>
+</div>
+<div>
+<label>{t("web_groups_wait_label")}</label>
+<input type="number" name="wait_seconds" value="30" min="0" max="600">
+</div>
+</div>
+<label>{t("web_groups_containers_label")}</label>
+<p class="form-help">{t("web_groups_containers_hint")}</p>
+<select name="containers" multiple size="6" style="height:auto">
+{options}
+</select>
+<button type="submit" class="btn" style="margin-top:8px">{t("web_groups_save")}</button>
+</form>
+</div>"""
 
         def _windows_html(self, t):
             """Render the Update Windows table + add-form for the Settings page."""

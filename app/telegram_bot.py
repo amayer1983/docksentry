@@ -287,11 +287,13 @@ class TelegramBot:
         Returns the number of containers that were successfully auto-updated
         (used by the scheduler to decide whether to follow up with cleanup).
         """
+        import time as _time
         from update_window import is_window_open
 
         auto_list = self._get_autoupdate()
         ask_major_list = self.store.get_ask_before_major()
         windows = self.store.get_update_windows()
+        groups = self.store.get_groups()
 
         auto_candidates = [u for u in updates if u["name"] in auto_list]
         # Filter out containers whose maintenance window is closed right now
@@ -301,12 +303,45 @@ class TelegramBot:
         manual_updates = [u for u in updates if u["name"] not in auto_list]
         success_count = 0
         major_pending_now = []
+        group_aborted = set()  # group_ids whose remaining members must be skipped
 
-        # Auto-update containers silently
+        # ── Sort auto_updates by group order ────────────────────
+        # Containers in a group are ordered as listed in the group; orphans
+        # (containers in no group) keep their original order at the end.
+        group_position = {}  # container_name → (group_id, position)
+        for gid, g in groups.items():
+            for pos, cname in enumerate(g.get("containers") or []):
+                group_position[cname] = (gid, pos)
+
+        def _sort_key(u):
+            gp = group_position.get(u["name"])
+            if gp is None:
+                return (1, "", 0)  # orphans last
+            return (0, gp[0], gp[1])
+        auto_updates.sort(key=_sort_key)
+
+        # Auto-update containers silently, respecting group order + wait
         if auto_updates:
             self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
             results = []
+            prev_group = None
             for u in auto_updates:
+                gp = group_position.get(u["name"])
+                cur_group = gp[0] if gp else None
+
+                # If a previous container in this group failed, skip remaining
+                if cur_group and cur_group in group_aborted:
+                    results.append(
+                        f"⏭ `{u['name']}`: skipped (group `{cur_group}` aborted earlier)"
+                    )
+                    continue
+
+                # Inter-container wait when staying inside the same group
+                if cur_group and cur_group == prev_group:
+                    wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
+                    if wait_s > 0:
+                        _time.sleep(wait_s)
+
                 # Major-version confirmation gate (per-container opt-in)
                 if u["name"] in ask_major_list:
                     is_major, old_ver, new_ver = self._is_major_bump(u, checker)
@@ -321,6 +356,7 @@ class TelegramBot:
                         results.append(
                             f"⏸ `{u['name']}`: major bump {old_ver} → {new_ver} — confirmation required"
                         )
+                        prev_group = cur_group
                         continue
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
@@ -329,12 +365,18 @@ class TelegramBot:
                     results.append(f"{status} `{u['name']}`: {msg}")
                     if success:
                         success_count += 1
+                    elif cur_group:
+                        # Failure aborts the remainder of this group
+                        group_aborted.add(cur_group)
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], success, msg)
                 except Exception as e:
                     results.append(f"❌ `{u['name']}`: {str(e)[:200]}")
+                    if cur_group:
+                        group_aborted.add(cur_group)
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200])
+                prev_group = cur_group
             self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
 
             # Remove fully-processed auto-updated from pending. Major-pending

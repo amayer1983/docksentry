@@ -32,6 +32,21 @@ When updates are found, you receive a Telegram message with image sizes, dates, 
 
 Containers set to auto-update (`/autoupdate nginx` or via Web UI toggle) are updated automatically during scheduled checks — no confirmation needed. The bot sends a summary after completion. All other containers still show the usual notification with buttons.
 
+## Container Groups (ordered updates)
+
+For stacks where update order matters (e.g. **database before app**, **plex before sonarr/radarr**), define a **container group** under Settings → Container Groups:
+
+- Pick a name and the containers in update order (drag-style reorder via ↑/↓ after creation)
+- Optional **wait time** between containers (default 30s) — gives the first one time to come up
+- A container can only be in **one** group; saving the group moves listed containers from other groups automatically
+
+Behaviour:
+- **Auto-updates respect the order.** Container 1 updates → wait → container 2 updates → wait → container 3 …
+- **Failure aborts the rest.** If container 2 fails its health check, container 3 is *not* updated. (Avoids an updated app talking to a still-old database that just got rolled back.)
+- **Manual updates ignore groups** — clicking "Update" on container 2 alone updates only container 2.
+
+The Status table shows a `📦 GroupName` badge for grouped containers; the per-container detail page shows the group + position.
+
 ## Update Windows (per container)
 
 You can restrict auto-updates for specific containers to a time-of-day range and selected weekdays via the **Update Windows** section on the Settings page. Format: `HH:MM`–`HH:MM` plus a list of weekdays (Mon–Sun).

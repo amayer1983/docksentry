@@ -12,6 +12,7 @@ PERSISTENT_KEYS = [
     "disk_warn_percent", "disk_warn_auto_cleanup",
     "quiet_hours_start", "quiet_hours_end",
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
+    "web_setup_done",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id",
 ]
@@ -54,12 +55,16 @@ class Config:
         self.weekly_report_weekday = weekly_report_weekday  # 0=Mon..6=Sun
         self.weekly_report_hour = weekly_report_hour        # 0..23
         self.weekly_report_state_file = os.path.join(data_dir, "weekly_report_state.json")
+        # First-run wizard flag — auto-true if env vars look configured
+        self.web_setup_done = False
         # Per-container update windows (loaded by ContainerStore at runtime)
         self.update_windows_file = os.path.join(data_dir, "update_windows.json")
         # Per-container "ask before major update" flag
         self.ask_before_major_file = os.path.join(data_dir, "ask_before_major.json")
         # Pending major-confirmation queue (key: container_name → metadata)
         self.major_pending_file = os.path.join(data_dir, "major_confirmations.json")
+        # Container groups (ordered update sequences)
+        self.groups_file = os.path.join(data_dir, "groups.json")
         # Last disk warning timestamp (rate-limit warnings to 1/day)
         self.disk_warn_state_file = os.path.join(data_dir, "disk_warn_state.json")
         self.language = language

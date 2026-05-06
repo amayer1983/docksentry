@@ -17,6 +17,7 @@ class ContainerStore:
         self.update_windows_file = config.update_windows_file
         self.ask_before_major_file = config.ask_before_major_file
         self.major_pending_file = config.major_pending_file
+        self.groups_file = config.groups_file
 
     # ── Pinned ────────────────────────────────────────────────
 
@@ -131,6 +132,83 @@ class ContainerStore:
             self._save_dict(self.major_pending_file, pending)
             return True
         return False
+
+    # ── Container groups ──────────────────────────────────────
+    # Stored as a dict keyed by an opaque slug:
+    #   { "media-stack": {
+    #       "name": "Media Stack",
+    #       "containers": ["plex", "sonarr", "radarr"],
+    #       "wait_seconds": 30,
+    #     }, ... }
+    # A container can be in at most ONE group — set_group() removes it from
+    # any other group automatically.
+
+    def get_groups(self):
+        return self._load_dict(self.groups_file)
+
+    def get_group(self, group_id):
+        return self.get_groups().get(group_id)
+
+    def get_group_for_container(self, container_name):
+        """Return (group_id, group_dict) for the container, or (None, None)."""
+        for gid, g in self.get_groups().items():
+            if container_name in (g.get("containers") or []):
+                return gid, g
+        return None, None
+
+    def save_group(self, group_id, name, containers, wait_seconds=30):
+        """Create or update a group. Removes the listed containers from any
+        other group (one-group-per-container invariant)."""
+        groups = self.get_groups()
+        cleaned = [c.strip() for c in containers if c and c.strip()]
+        # Remove these containers from every other group
+        for other_id, other in list(groups.items()):
+            if other_id == group_id:
+                continue
+            other["containers"] = [c for c in (other.get("containers") or []) if c not in cleaned]
+            if not other["containers"]:
+                del groups[other_id]
+        try:
+            wait = max(0, min(int(wait_seconds), 600))
+        except (ValueError, TypeError):
+            wait = 30
+        groups[group_id] = {
+            "name": name.strip() or group_id,
+            "containers": cleaned,
+            "wait_seconds": wait,
+        }
+        self._save_dict(self.groups_file, groups)
+
+    def delete_group(self, group_id):
+        groups = self.get_groups()
+        if group_id in groups:
+            del groups[group_id]
+            self._save_dict(self.groups_file, groups)
+            return True
+        return False
+
+    def reorder_group_container(self, group_id, container_name, direction):
+        """Move a container up (direction='up') or down ('down') one slot
+        within its group. No-op when already at the edge."""
+        groups = self.get_groups()
+        g = groups.get(group_id)
+        if not g:
+            return False
+        names = list(g.get("containers") or [])
+        try:
+            idx = names.index(container_name)
+        except ValueError:
+            return False
+        if direction == "up" and idx > 0:
+            names[idx - 1], names[idx] = names[idx], names[idx - 1]
+        elif direction == "down" and idx < len(names) - 1:
+            names[idx], names[idx + 1] = names[idx + 1], names[idx]
+        else:
+            return False
+        g["containers"] = names
+        groups[group_id] = g
+        self._save_dict(self.groups_file, groups)
+        return True
 
     # ── helpers ───────────────────────────────────────────────
 

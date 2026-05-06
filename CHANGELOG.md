@@ -2,6 +2,39 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.15.0] - 2026-05-06
+
+### Added
+
+#### Container Groups (ordered update sequences)
+- **Group containers** that need to update in a specific order — e.g. **database first, then app**, or **media stack: plex → sonarr → radarr**.
+- Each group has a configurable **wait time** (default 30s) between containers, so the first one can fully come up before the next starts updating.
+- **Failure aborts the group** — if container N in the group fails, the remaining members are skipped to avoid running a new app against an old (failed) database.
+- A container can be in **at most one group** — saving the group automatically removes the listed containers from any other group (one-group-per-container invariant).
+- New section on the Settings page: list of groups with `↑/↓` buttons to reorder containers within a group, plus an add-form below.
+- Status table shows a `📦 GroupName` badge for grouped containers.
+- Container-Detail Overview tab shows the group + position ("position 2 of 3").
+- Group rules apply only to **auto-updates**. Manual single-container updates from the Web UI still work without triggering the group.
+
+#### First-Run Wizard
+- On the very first visit to the Web UI (when `web_setup_done` isn't set in `settings.json`), Docksentry **redirects you to `/setup`** for a 4-step onboarding:
+  1. **Language** — pick from 16
+  2. **Schedule** — quick presets (daily 6 PM / 6 AM / weekly / hourly) or custom cron
+  3. **Channels** — Discord webhook / generic webhook URL plus a Telegram-status hint (env-only)
+  4. **Auto-update mode** — *Notify only* / *Auto-update all* / *Pick later*
+- Selecting "Auto-update all" turns on auto-update for every currently running container at once. *Pick later* / *Notify only* leaves the auto-update list empty and you toggle each container yourself afterwards.
+- A discrete `Skip — I know what I'm doing` link sets the flag and lands you straight on the Status page (no settings touched).
+- The flag is `web_setup_done` in `settings.json` — flip it back to `false` and restart to re-trigger the wizard for testing or onboarding a new admin.
+
+### Internal
+- ContainerStore exposes group CRUD: `get_groups`, `save_group`, `delete_group`, `reorder_group_container`, `get_group_for_container`.
+- New persistent file: `/data/groups.json`.
+- `handle_autoupdates()` sorts auto-update candidates by group + position, applies inter-container `wait_seconds`, and tracks an `aborted_groups` set on failure.
+- New POST endpoints: `/api/group_save`, `/api/group_delete`, `/api/group_reorder`, `/api/wizard`, `/api/wizard_skip`.
+
+### i18n
+48 new keys × 16 language files. EN + DE translated; other languages get the English fallback.
+
 ## [1.14.0] - 2026-05-06
 
 ### Added
