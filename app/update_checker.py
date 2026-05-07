@@ -782,7 +782,7 @@ class UpdateChecker:
             self._save_history(name, image, False, msg)
             return False, msg
 
-        detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+        detail = f"📅 {old_created} → {new_created}, 📦 {new_size}"
         self._save_history(name, image, True, f"compose: {detail}")
         return True, f"OK ({detail})"
 
@@ -957,7 +957,7 @@ class UpdateChecker:
             subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
-            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+            detail = f"📅 {old_created} → {new_created}, 📦 {new_size}"
             self._save_history(name, image, True, detail)
             return True, f"OK ({detail})"
 

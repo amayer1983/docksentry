@@ -431,7 +431,7 @@ class TelegramBot:
             size = u.get('size', '?')
             created = u.get('created', '?')
             compose_tag = " 🐳" if u.get("compose_project") else ""
-            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
+            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 📅 {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom
@@ -1105,7 +1105,7 @@ class TelegramBot:
             auto_su = "ON ✅" if self.config.auto_selfupdate else "OFF"
             self.send_message(
                 self.t("settings_title") + "\n\n"
-                + f"🗓 Schedule: `{self.config.cron_schedule}`\n"
+                + f"📅 Schedule: `{self.config.cron_schedule}`\n"
                 + f"🌍 {self.t('settings_language')}: `{self.config.language}`\n"
                 + f"🔄 Auto-Selfupdate: {auto_su}\n"
                 + f"🔍 Debug: {debug_status}\n"

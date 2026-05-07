@@ -99,7 +99,7 @@ class Notifier:
             compose_tag = " 🐳" if u.get("compose_project") else ""
             fields.append({
                 "name": f"📦 {u['name']}{compose_tag}",
-                "value": f"`{u['image']}`\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}",
+                "value": f"`{u['image']}`\n📦 {u.get('size', '?')} · 📅 {u.get('created', '?')}",
                 "inline": True,
             })
 
