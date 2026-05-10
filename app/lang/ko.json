@@ -326,5 +326,7 @@
   "web_ui_mode_simple": "Simple",
   "web_ui_mode_advanced": "Advanced",
   "web_ui_mode_show_advanced": "Switch to Advanced mode",
-  "web_ui_mode_show_simple": "Switch to Simple mode"
+  "web_ui_mode_show_simple": "Switch to Simple mode",
+  "selfupdate_restarting_then_check": "Starting self-update — your container update check will resume right after restart.",
+  "selfupdate_resumed_check": "✅ Restarted on the new version. Now checking your containers..."
 }

@@ -616,18 +616,36 @@ class TelegramBot:
         import time
         time.sleep(30)
 
-    def check_selfupdate_auto(self):
-        """Automatic selfupdate check - triggered by scheduler when AUTO_SELFUPDATE=true."""
+    def check_selfupdate_auto(self, defer_check=False):
+        """Automatic selfupdate check — triggered by the scheduler when
+        AUTO_SELFUPDATE=true.
+
+        When `defer_check` is True (called from a cron tick that is about
+        to also run a container-update check), we write a deferred-check
+        marker before triggering the restart. The freshly-booted process
+        picks up that marker and runs the container-update check
+        immediately, so the user gets a single linear story:
+            "self-updating…" → restart → "checking your containers…"
+        instead of running the check on the *old* code first and then
+        killing the bot mid-conversation with a self-update.
+
+        Returns:
+            True  — a self-update was applied; this process is about to
+                    be replaced by the helper container. Caller should
+                    return out of the current cron tick.
+            False — no update available, or the inspect/pull failed.
+                    Caller continues with the rest of the tick.
+        """
         hostname = os.environ.get("HOSTNAME", "")
         if not hostname:
-            return
+            return False
 
         result = subprocess.run(
             ["docker", "inspect", hostname],
             capture_output=True, text=True
         )
         if result.returncode != 0:
-            return
+            return False
 
         config = json.loads(result.stdout)[0]
         own_image = config["Config"]["Image"]
@@ -640,7 +658,7 @@ class TelegramBot:
             capture_output=True, text=True, timeout=300
         )
         if pull.returncode != 0:
-            return
+            return False
 
         # Check if image changed
         new_inspect = subprocess.run(
@@ -653,18 +671,46 @@ class TelegramBot:
 
         if new_id == old_id:
             print("Auto selfupdate: already up to date.")
-            return
+            return False
 
         # Notify and update
         own_name = config["Name"].lstrip("/")
-        self.send_message(
-            self.t("selfupdate_auto") + "\n"
-            + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
-            + self.t("selfupdate_restarting")
-        )
 
-        # Reuse the selfupdate logic
+        # Write deferred-check marker BEFORE triggering the restart so the
+        # freshly-booted process can pick up where we left off. Best-effort
+        # — if writing fails the worst case is the user has to wait until
+        # the next cron tick for the container-update check.
+        if defer_check:
+            try:
+                from datetime import datetime
+                with open(self.config.deferred_check_file, "w") as f:
+                    json.dump({
+                        "trigger_time": datetime.now().isoformat(timespec="seconds"),
+                        "reason": "post-selfupdate",
+                    }, f)
+            except OSError as e:
+                print(f"Failed to write deferred-check marker: {e}")
+
+        # Send a single combined notification when defer_check is on, so
+        # the user sees one story instead of two unrelated messages.
+        if defer_check:
+            self.send_message(
+                self.t("selfupdate_auto") + "\n"
+                + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
+                + self.t("selfupdate_restarting_then_check")
+            )
+        else:
+            self.send_message(
+                self.t("selfupdate_auto") + "\n"
+                + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
+                + self.t("selfupdate_restarting")
+            )
+
+        # Reuse the selfupdate logic — this blocks for ~30s while the
+        # helper container stops us. Caller should treat this as a
+        # one-way call.
         self._do_selfupdate(config, own_name, own_image)
+        return True
 
     def run_updates(self, updater):
         if self.update_running:

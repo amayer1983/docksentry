@@ -75,6 +75,13 @@ class Config:
         self.notes_file = os.path.join(data_dir, "container_notes.json")
         # Last disk warning timestamp (rate-limit warnings to 1/day)
         self.disk_warn_state_file = os.path.join(data_dir, "disk_warn_state.json")
+        # Deferred-check marker — written when AUTO_SELFUPDATE is about to
+        # restart the container during a cron tick. The freshly-booted
+        # process sees the marker and runs the container-update check
+        # immediately instead of waiting for the next tick. Stale markers
+        # (> 1h) are ignored so a failed self-update doesn't trigger a
+        # phantom check on the next manual restart.
+        self.deferred_check_file = os.path.join(data_dir, "deferred_check.json")
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port

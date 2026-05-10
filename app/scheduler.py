@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Cron-like scheduler for periodic update checks."""
 
+import json
+import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+
+
+# Markers older than this are considered stale (a previous self-update
+# crashed before the new container could pick up the deferred check) and
+# get silently discarded.
+_DEFERRED_CHECK_TTL = timedelta(hours=1)
 
 
 class Scheduler:
@@ -16,8 +24,65 @@ class Scheduler:
 
     def start(self):
         self.running = True
+        # Pick up any pending deferred-check marker from a self-update we
+        # were in the middle of when the process restarted. Triggers a
+        # one-shot check in the background so the regular scheduler loop
+        # starts unblocked. Belt-and-suspenders: even though the method
+        # itself is wrapped in try/except, an unexpected failure here must
+        # not block the main scheduler thread from starting.
+        try:
+            self._resume_deferred_check()
+        except Exception as e:
+            print(f"Deferred-check resume failed (non-fatal): {e}")
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
+
+    def _resume_deferred_check(self):
+        """If a deferred-check marker exists and is fresh, run check_all
+        immediately on a background thread. Always remove the marker
+        afterwards so a failed run doesn't loop forever.
+
+        Wrapped in a broad try/except — a malformed marker must never
+        prevent the bot from starting up. Worst case the user waits for
+        the next cron tick."""
+        path = self.config.deferred_check_file
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            os.remove(path)
+            ts = datetime.fromisoformat(data.get("trigger_time", ""))
+            # Strip tz so we can subtract — datetime.now() is naive.
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            age = datetime.now() - ts
+            if age > _DEFERRED_CHECK_TTL:
+                print(f"Deferred check marker is stale ({age}), discarding")
+                return
+            print(f"Resuming deferred check after self-update (marker age: {age})")
+        except Exception as e:
+            print(f"Deferred-check marker unreadable, ignoring: {e}")
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return
+
+        def _run_deferred():
+            # Tiny delay so the bot listener / Web UI are fully up before
+            # we send the "now checking your containers" message.
+            time.sleep(3)
+            try:
+                if self.bot.enabled:
+                    self.bot.send_message(self.bot.t("selfupdate_resumed_check"), auto=True)
+                updates = self.checker.check_all()
+                if updates:
+                    self.bot.handle_autoupdates(updates, self.checker)
+            except Exception as e:
+                print(f"Deferred check error: {e}")
+
+        threading.Thread(target=_run_deferred, daemon=True).start()
 
     def stop(self):
         self.running = False
@@ -105,6 +170,28 @@ class Scheduler:
                     time.sleep(30)
                     continue
                 print(f"Scheduled check triggered at {current_minute}")
+
+                # Auto self-update FIRST. If a new image is available we
+                # restart this process before running the container-update
+                # check — that way the check itself runs on the new code
+                # and the user gets one linear notification story rather
+                # than "5 updates found" → bot dies mid-conversation →
+                # silent restart. The deferred-check marker (handled in
+                # _resume_deferred_check on next boot) carries the intent
+                # across the restart.
+                if self.config.auto_selfupdate:
+                    try:
+                        applied = self.bot.check_selfupdate_auto(defer_check=True)
+                        if applied:
+                            # Helper container is about to stop us.
+                            # check_selfupdate_auto already wrote the
+                            # deferred-check marker, so the freshly-booted
+                            # process will run check_all() in our place.
+                            print("Self-update applied, exiting tick — check will resume after restart")
+                            return
+                    except Exception as e:
+                        print(f"Auto selfupdate error: {e}")
+
                 auto_updated = 0
                 try:
                     updates = self.checker.check_all()
@@ -113,13 +200,6 @@ class Scheduler:
                     # If no updates, stay quiet (--quiet behavior)
                 except Exception as e:
                     print(f"Scheduled check error: {e}")
-
-                # Auto selfupdate after regular check
-                if self.config.auto_selfupdate:
-                    try:
-                        self.bot.check_selfupdate_auto()
-                    except Exception as e:
-                        print(f"Auto selfupdate error: {e}")
 
                 # Auto cleanup after successful auto-updates. The grace-hours
                 # filter (default 24h) in cleanup_images() prevents removing

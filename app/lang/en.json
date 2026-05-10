@@ -28,6 +28,8 @@
   "selfupdate_dates": "🗓️ New: {new} | Old: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Starting self-update... Bot will be briefly offline.",
+  "selfupdate_restarting_then_check": "Starting self-update — your container update check will resume right after restart.",
+  "selfupdate_resumed_check": "✅ Restarted on the new version. Now checking your containers...",
   "selfupdate_failed_pull": "❌ Pull failed: {error}",
   "selfupdate_failed_id": "❌ Self-update failed: Container ID not found.",
   "selfupdate_failed_container": "❌ Self-update failed: Container not found.",
