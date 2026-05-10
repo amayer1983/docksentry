@@ -431,7 +431,7 @@ class TelegramBot:
             size = u.get('size', '?')
             created = u.get('created', '?')
             compose_tag = " 🐳" if u.get("compose_project") else ""
-            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 📅 {self.t('current')}: {created}")
+            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom
@@ -1026,7 +1026,10 @@ class TelegramBot:
                     lines = []
                     for h in reversed(history[-10:]):
                         icon = "✅" if h["success"] else "❌"
-                        lines.append(f"{icon} `{h['container']}` — {h['timestamp']}\n    {h.get('detail', '')}")
+                        # Normalize legacy v1.16.1 calendar glyph in stored
+                        # detail strings — see CHANGELOG v1.16.2.
+                        detail = h.get("detail", "").replace("📅", "🗓️")
+                        lines.append(f"{icon} `{h['container']}` — {h['timestamp']}\n    {detail}")
                     self.send_message(self.t("history_title") + "\n\n" + "\n".join(lines))
                     return
             self.send_message(self.t("history_empty"))
@@ -1105,7 +1108,7 @@ class TelegramBot:
             auto_su = "ON ✅" if self.config.auto_selfupdate else "OFF"
             self.send_message(
                 self.t("settings_title") + "\n\n"
-                + f"📅 Schedule: `{self.config.cron_schedule}`\n"
+                + f"🗓️ Schedule: `{self.config.cron_schedule}`\n"
                 + f"🌍 {self.t('settings_language')}: `{self.config.language}`\n"
                 + f"🔄 Auto-Selfupdate: {auto_su}\n"
                 + f"🔍 Debug: {debug_status}\n"

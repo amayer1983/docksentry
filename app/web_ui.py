@@ -2314,10 +2314,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 hist_rows = ""
                 for h in reversed(history[-50:]):
                     icon = '✅' if h.get("success") else '❌'
+                    # Normalize legacy v1.16.1 calendar glyph (see CHANGELOG v1.16.2)
+                    detail = h.get("detail", "").replace("📅", "🗓️")
                     hist_rows += (
                         f'<tr><td>{_e(h.get("timestamp",""))}</td>'
                         f'<td>{icon}</td>'
-                        f'<td style="font-size:12px">{_e(h.get("detail",""))}</td></tr>'
+                        f'<td style="font-size:12px">{_e(detail)}</td></tr>'
                     )
                 history_html = f"""<table>
 <tr><th>{t("web_date")}</th><th>{t("web_result")}</th><th>{t("web_detail")}</th></tr>
@@ -2504,11 +2506,13 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 rows = ""
                 for h in reversed(history):
                     icon = '<span class="badge badge-green">✅</span>' if h["success"] else '<span class="badge badge-yellow">❌</span>'
+                    # Normalize legacy v1.16.1 calendar glyph (see CHANGELOG v1.16.2)
+                    detail = h.get('detail', '').replace('📅', '🗓️')
                     rows += f"""<tr>
 <td>{_e(h.get('timestamp', ''))}</td>
 <td>{_e(h.get('container', ''))}</td>
 <td>{icon}</td>
-<td style="font-size:12px">{_e(h.get('detail', ''))}</td>
+<td style="font-size:12px">{_e(detail)}</td>
 </tr>"""
 
                 content = f"""<div class="card">
