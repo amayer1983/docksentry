@@ -14,7 +14,7 @@ PERSISTENT_KEYS = [
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
     "web_setup_done", "ui_mode",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
-    "telegram_topic_id",
+    "telegram_topic_id", "telegram_allowed_users",
 ]
 
 
@@ -26,7 +26,8 @@ class Config:
                  quiet_hours_start, quiet_hours_end,
                  weekly_report_enabled, weekly_report_weekday, weekly_report_hour,
                  language, web_ui, web_port, web_password,
-                 discord_webhook, webhook_url, telegram_topic_id):
+                 discord_webhook, webhook_url, telegram_topic_id,
+                 telegram_allowed_users):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -89,6 +90,12 @@ class Config:
         self.discord_webhook = discord_webhook
         self.webhook_url = webhook_url
         self.telegram_topic_id = telegram_topic_id
+        # Optional whitelist of Telegram user IDs (in addition to the
+        # chat-origin check). Empty list means "any user in the
+        # configured chat is allowed" — fine for 1:1 chats; useful in
+        # groups where you don't want every member to be able to
+        # trigger updates. Stored as a list of stringified IDs.
+        self.telegram_allowed_users = telegram_allowed_users
 
         # Load persistent overrides from settings.json
         self._load_persistent()
@@ -163,4 +170,8 @@ class Config:
             discord_webhook=os.environ.get("DISCORD_WEBHOOK", ""),
             webhook_url=os.environ.get("WEBHOOK_URL", ""),
             telegram_topic_id=os.environ.get("TELEGRAM_TOPIC_ID", ""),
+            telegram_allowed_users=[
+                u.strip() for u in os.environ.get("TELEGRAM_ALLOWED_USERS", "").split(",")
+                if u.strip()
+            ],
         )

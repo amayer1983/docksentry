@@ -32,6 +32,48 @@ class TelegramBot:
     def stop(self):
         self.running = False
 
+    def _check_auth(self, chat_id, user_id, kind="message"):
+        """Authorize an incoming Telegram message or callback.
+
+        Two layers, in order:
+
+        1. **Chat-origin match.** The incoming `chat.id` must equal the
+           configured `CHAT_ID`. This is the right field to compare —
+           in a 1:1 chat `chat.id == user.id`, in a group `chat.id` is
+           the (negative) group ID. Comparing `from.id` (the previous
+           behaviour) silently broke every group / topic setup because
+           `from.id` is the *clicker's* personal user ID, never the
+           group ID. Reported by @jayjay3108 in #2.
+
+        2. **Optional user whitelist.** If `TELEGRAM_ALLOWED_USERS` is
+           set, the sender's `from.id` must be in that list. Lets you
+           use a group chat while restricting control to a handful of
+           members.
+
+        Returns True on success. On failure, logs the reason when
+        debug mode is on (so users can self-diagnose) and returns
+        False — silent in non-debug to avoid log spam from drive-by
+        messages in shared groups.
+        """
+        chat_id = str(chat_id) if chat_id is not None else ""
+        user_id = str(user_id) if user_id is not None else ""
+
+        if chat_id != str(self.config.chat_id):
+            if self.config.debug:
+                print(f"Auth fail ({kind}): chat.id={chat_id} ≠ CHAT_ID={self.config.chat_id} (from user {user_id})")
+            return False
+
+        allowed = self.config.telegram_allowed_users or []
+        # Normalize: env may give us a list, persistent storage may also
+        # give us a list of strings or numbers depending on JSON-roundtrip.
+        allowed_strs = [str(u).strip() for u in allowed if str(u).strip()]
+        if allowed_strs and user_id not in allowed_strs:
+            if self.config.debug:
+                print(f"Auth fail ({kind}): user {user_id} not in TELEGRAM_ALLOWED_USERS={allowed_strs}")
+            return False
+
+        return True
+
     # Thin wrappers around ContainerStore — kept for backwards compatibility
     # with internal call sites in this file. New code should use self.store
     # directly.
@@ -831,7 +873,7 @@ class TelegramBot:
         msg_id = callback.get("message", {}).get("message_id")
         chat_id = callback.get("message", {}).get("chat", {}).get("id")
 
-        if user_id != self.config.chat_id:
+        if not self._check_auth(chat_id, user_id, kind="callback"):
             self.answer_callback(callback["id"], self.t("not_authorized"))
             return
 
@@ -877,8 +919,9 @@ class TelegramBot:
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
         user_id = str(message.get("from", {}).get("id", ""))
+        chat_id = message.get("chat", {}).get("id")
 
-        if user_id != self.config.chat_id:
+        if not self._check_auth(chat_id, user_id, kind="message"):
             return
 
         if text == "/status":

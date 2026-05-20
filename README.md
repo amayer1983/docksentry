@@ -143,6 +143,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `WEB_PORT` | `8080` | Web UI port |
 | `WEB_PASSWORD` | | Web UI password (Basic Auth) |
 | `TELEGRAM_TOPIC_ID` | | Telegram topic/thread ID (for groups with topics) |
+| `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST) |
 | `TZ` | `Europe/Berlin` | Timezone |
@@ -153,6 +154,23 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
+
+### Group / Topic setup
+
+If you want to use Docksentry in a Telegram **group** (so multiple people see the notifications) instead of a private chat:
+
+1. **CHAT_ID is the group ID**, not your personal user ID. For supergroups it starts with `-100…`. Find it by sending a message in the group and visiting `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+2. **Add the bot to the group** with permission to post and read messages. Disable group privacy in [@BotFather](https://t.me/BotFather) → `/setprivacy` → `Disable`, otherwise the bot only sees messages that mention it directly — so commands like `/status` won't trigger.
+3. **Topics (Forum groups):** if the group has topics enabled, set `TELEGRAM_TOPIC_ID` to the topic where the bot should post. The ID is the integer after the last slash in a topic URL (right-click a topic → Copy link).
+4. **Restrict who can control the bot** (optional but recommended for shared groups): set `TELEGRAM_ALLOWED_USERS` to a comma-separated list of personal user IDs. Without it, *any* group member can click "Update all". Find user IDs the same way as the chat ID — `from.id` in the `getUpdates` response.
+
+```yaml
+environment:
+  - BOT_TOKEN=123456:abc...
+  - CHAT_ID=-1001234567890           # the group ID
+  - TELEGRAM_TOPIC_ID=42             # only needed for Forum groups
+  - TELEGRAM_ALLOWED_USERS=11111111,22222222   # only these users can issue commands
+```
 
 ## Web UI
 

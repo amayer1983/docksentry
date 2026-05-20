@@ -82,6 +82,9 @@ def main():
     print(f"Auto selfupdate: {'ON' if config.auto_selfupdate else 'OFF'}")
     print(f"Language: {config.language}")
     print(f"Telegram: {'ON' if telegram_on else 'OFF'}")
+    if telegram_on and config.telegram_allowed_users:
+        # Print count, not the IDs themselves — those are personal data.
+        print(f"Telegram allowed-users whitelist: {len(config.telegram_allowed_users)} user(s)")
     if config.web_ui:
         print(f"Web UI: http://0.0.0.0:{config.web_port}")
     if config.discord_webhook:

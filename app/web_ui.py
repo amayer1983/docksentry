@@ -1454,6 +1454,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if "telegram_topic_id" in params:
                     config.telegram_topic_id = params["telegram_topic_id"][0].strip()
 
+                # Update Telegram allowed-users whitelist. Empty input
+                # clears the list (= "any user in the configured chat").
+                if "telegram_allowed_users" in params:
+                    raw = params["telegram_allowed_users"][0]
+                    config.telegram_allowed_users = [
+                        u.strip() for u in raw.split(",") if u.strip()
+                    ]
+
                 # Persist all changes
                 config.save_persistent()
 
@@ -2679,6 +2687,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   <div class="adv-only">
     <label>Telegram Topic ID {help_(t("web_topic_id_help"))}</label>
     <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
+
+    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}</label>
+    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}">
   </div>
 
   <label>Discord Webhook {help_(t("web_discord_help"))}</label>
