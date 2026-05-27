@@ -29,7 +29,7 @@
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
   "selfupdate_restarting": "Starte Self-Update... Bot wird kurz offline sein.",
   "selfupdate_restarting_then_check": "Starte Self-Update — die Container-Update-Prüfung läuft direkt nach dem Neustart weiter.",
-  "selfupdate_resumed_check": "✅ Mit neuer Version gestartet. Prüfe jetzt deine Container...",
+  "selfupdate_resumed_check": "✅ Mit v{version} neu gestartet — prüfe jetzt deine Container...",
   "selfupdate_failed_pull": "❌ Pull fehlgeschlagen: {error}",
   "selfupdate_failed_id": "❌ Self-Update fehlgeschlagen: Container-ID nicht gefunden.",
   "selfupdate_failed_container": "❌ Self-Update fehlgeschlagen: Container nicht gefunden.",

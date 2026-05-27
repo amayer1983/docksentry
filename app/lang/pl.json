@@ -328,7 +328,7 @@
   "web_ui_mode_show_advanced": "Switch to Advanced mode",
   "web_ui_mode_show_simple": "Switch to Simple mode",
   "selfupdate_restarting_then_check": "Starting self-update — your container update check will resume right after restart.",
-  "selfupdate_resumed_check": "✅ Restarted on the new version. Now checking your containers...",
+  "selfupdate_resumed_check": "✅ Restarted on v{version} — checking your containers...",
   "web_allowed_users": "Allowed user IDs",
   "web_allowed_users_help": "Optional — comma-separated list of Telegram user IDs allowed to control the bot. Useful in groups where you don't want every member to trigger updates. Leave empty to allow anyone in the configured chat.",
   "web_allowed_users_placeholder": "e.g. 123456789, 987654321",

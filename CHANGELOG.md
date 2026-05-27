@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.1] - 2026-05-27
+
+### Fixed
+- **Duplicate "Updates Available" notification after an auto-self-update.** When the scheduler restarted via the v1.16.3 self-update-first flow, both the deferred check (running on the freshly-booted process) AND the regular cron-tick of the same minute would fire `check_all()` — the user got two identical "Updates Available" messages, roughly a minute apart. The deferred-check resume now claims the current minute via `self._resumed_minute`, and the main scheduler loop initialises `last_check` from it, so the cron-tick for the already-handled minute is skipped.
+- **Three near-identical restart messages.** A self-update produced `Starting self-update — your container update check will resume right after restart.` → generic `🚀 Docksentry started (v…)` → `✅ Restarted on the new version. Now checking your containers…` in quick succession. The generic startup message is now suppressed when a deferred-check marker is present at boot, leaving a cleaner sequence of three distinct steps (pre-restart notice → resume notice → updates report).
+- The resume notice now includes the new version: `✅ Restarted on v1.17.1 — checking your containers...` (was: vague "on the new version").
+
+Both reported from a real-world v1.17.0 deployment.
+
 ## [1.17.0] - 2026-05-26
 
 ### Fixed

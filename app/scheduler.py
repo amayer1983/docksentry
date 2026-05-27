@@ -42,6 +42,14 @@ class Scheduler:
         immediately on a background thread. Always remove the marker
         afterwards so a failed run doesn't loop forever.
 
+        ALSO claims the current minute via `self._resumed_minute` so the
+        main scheduler loop in _run() skips its cron-tick for the same
+        minute. Without this, after a self-update restart the deferred
+        check AND the regular cron tick would both fire for e.g. 18:00
+        and the user gets "Updates Available" twice (one minute apart
+        in Telegram because of timing offsets). Reported by the user
+        from a real-world v1.17.0 deployment.
+
         Wrapped in a broad try/except — a malformed marker must never
         prevent the bot from starting up. Worst case the user waits for
         the next cron tick."""
@@ -69,13 +77,22 @@ class Scheduler:
                 pass
             return
 
+        # Claim the current minute so the main loop doesn't double-fire.
+        # The deferred check IS this minute's cron tick — just resumed
+        # across a process boundary.
+        self._resumed_minute = datetime.now().strftime("%Y-%m-%d %H:%M")
+
         def _run_deferred():
             # Tiny delay so the bot listener / Web UI are fully up before
             # we send the "now checking your containers" message.
             time.sleep(3)
             try:
                 if self.bot.enabled:
-                    self.bot.send_message(self.bot.t("selfupdate_resumed_check"), auto=True)
+                    from version import VERSION
+                    self.bot.send_message(
+                        self.bot.t("selfupdate_resumed_check", version=VERSION),
+                        auto=True,
+                    )
                 updates = self.checker.check_all()
                 if updates:
                     self.bot.handle_autoupdates(updates, self.checker)
@@ -138,9 +155,14 @@ class Scheduler:
         return True
 
     def _run(self):
-        last_check = None
+        # Pre-claim the resumed minute if we just came back from a
+        # self-update. Prevents the cron tick from firing a second time
+        # for the same minute the deferred-check is already handling.
+        last_check = getattr(self, "_resumed_minute", None)
         last_weekly = None
         print(f"Scheduler started with schedule: {self.config.cron_schedule}")
+        if last_check:
+            print(f"Initial cron tick for {last_check} claimed by deferred-check (post-selfupdate)")
 
         while self.running:
             now = datetime.now()

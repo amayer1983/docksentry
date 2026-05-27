@@ -67,6 +67,16 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
+    # Detect whether we're a fresh start or a post-selfupdate restart.
+    # The scheduler consumes the deferred-check marker inside start(),
+    # so we have to check (and remember) BEFORE that. The scheduler's
+    # deferred-resume sends a more informative "Restarted on vX —
+    # checking your containers..." message, so we skip the generic
+    # "Docksentry started" notification to avoid two near-identical
+    # restart messages back-to-back. Reported by the user from a
+    # real-world v1.17.0 deployment.
+    post_selfupdate_restart = os.path.exists(config.deferred_check_file)
+
     # Start scheduler in background
     scheduler.start()
 
@@ -95,15 +105,19 @@ def main():
         # aggregators.
         print(f"Webhook: configured")
 
-    # Send startup notification to all channels
+    # Send startup notification to all channels — unless we're resuming
+    # from a self-update, in which case the scheduler's deferred-check
+    # resume will send a more specific message (with version + "checking
+    # your containers now").
     from version import VERSION
     from i18n import get_translator
     t = get_translator(config.language)
-    startup_msg = t("startup_message", version=VERSION)
-    if bot.enabled:
-        bot.send_message(startup_msg)
-    if notifier.has_channels():
-        notifier.send_message(startup_msg)
+    if not post_selfupdate_restart:
+        startup_msg = t("startup_message", version=VERSION)
+        if bot.enabled:
+            bot.send_message(startup_msg)
+        if notifier.has_channels():
+            notifier.send_message(startup_msg)
 
     # Start bot listener (blocking).
     # When Telegram is off this just blocks until shutdown — scheduler/Web UI
