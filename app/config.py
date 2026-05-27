@@ -15,6 +15,7 @@ PERSISTENT_KEYS = [
     "web_setup_done", "ui_mode",
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
+    "healthcheck_max_starting",
 ]
 
 
@@ -27,7 +28,7 @@ class Config:
                  weekly_report_enabled, weekly_report_weekday, weekly_report_hour,
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id,
-                 telegram_allowed_users):
+                 telegram_allowed_users, healthcheck_max_starting):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -96,6 +97,12 @@ class Config:
         # groups where you don't want every member to be able to
         # trigger updates. Stored as a list of stringified IDs.
         self.telegram_allowed_users = telegram_allowed_users
+        # Max seconds we wait for a freshly-updated container to leave
+        # "starting" health-state and report "healthy". Slow apps like
+        # GitLab / Nextcloud / Mastodon can need 10+ minutes. We also
+        # respect the image's own Healthcheck.StartPeriod and use the
+        # larger of (this default, start_period × 1.5) at runtime.
+        self.healthcheck_max_starting = healthcheck_max_starting
 
         # Load persistent overrides from settings.json
         self._load_persistent()
@@ -174,4 +181,5 @@ class Config:
                 u.strip() for u in os.environ.get("TELEGRAM_ALLOWED_USERS", "").split(",")
                 if u.strip()
             ],
+            healthcheck_max_starting=int(os.environ.get("HEALTHCHECK_MAX_STARTING", "600")),
         )

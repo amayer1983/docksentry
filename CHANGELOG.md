@@ -2,6 +2,23 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.2] - 2026-05-27
+
+### Fixed
+- **Slow-startup apps (GitLab, Nextcloud, Mastodon, …) auto-rolled-back every cron tick.** The health-check timeout was 5 minutes, and a container still in `state=running, health=starting` after that was treated as a failure → automatic rollback. GitLab routinely needs 8–15 minutes for first-boot migrations / Rails warm-up. Result: the user got a "Health check failed — rolled back" notification every evening and GitLab never actually updated.
+
+  Three changes:
+  1. **Default wait raised from 300s → 600s** (`HEALTHCHECK_MAX_STARTING` env, configurable).
+  2. **Respect the image's own `Healthcheck.StartPeriod`** — the effective wait is now `max(default, start_period × 1.5)`. An image declaring `start_period: 5m` no longer gets cut off after our 5-minute default.
+  3. **`state=running AND health=starting` after the wait → no rollback.** The container is alive but slow; Docker's own healthcheck keeps running and will eventually flip the bit. Reported as a soft success ("⚠ updated but still 'starting' — left running") so the rest of the update batch / group continues.
+  Active `unhealthy` or `not-running` still rolls back as before (standalone path) — only the previously over-eager "starting → failure" verdict is gone.
+
+- **Compose-path "rolled back" messages were misleading** — for compose containers the "rollback" was effectively a no-op (the same compose file produces the same container). The message now says `container left in place (compose)` honestly instead of claiming a rollback that didn't happen.
+
+### Added
+- **Last 10 log lines attached to health-check warnings and failures.** When a container is rolled back or reports as "still starting", the notification now includes a code-fenced tail of its logs — so you can see in chat what was happening without SSH-ing to the host.
+- **`HEALTHCHECK_MAX_STARTING` env var** (default 600s) for users with super-slow apps that need an even longer ceiling. Persisted via `settings.json` (advanced setting).
+
 ## [1.17.1] - 2026-05-27
 
 ### Fixed

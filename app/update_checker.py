@@ -633,16 +633,90 @@ class UpdateChecker:
         with open(self.config.history_file, "w") as f:
             json.dump(history, f, indent=2)
 
-    def _wait_healthy(self, name, max_starting=300, interval=10):
+    def _get_start_period_seconds(self, name):
+        """Read the image's own Healthcheck.StartPeriod from `docker
+        inspect` (nanoseconds), return as float seconds. Returns 0 if
+        no healthcheck is defined or the field is unset — Docker's
+        default is also 0s. Used to bound our max_starting wait so we
+        respect what the image author declared."""
+        try:
+            r = subprocess.run(
+                ["docker", "inspect",
+                 "--format", "{{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod}}{{end}}",
+                 name],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode != 0:
+                return 0.0
+            raw = r.stdout.strip()
+            if not raw or raw == "0":
+                return 0.0
+            return float(int(raw)) / 1e9
+        except (subprocess.SubprocessError, ValueError):
+            return 0.0
+
+    def _tail_logs(self, name, lines=10):
+        """Return the last N log lines as a single string, trimmed for
+        Telegram. Best-effort — failures return empty string. Used to
+        attach diagnostic context to health-check warnings so the user
+        can see in chat what the container was last doing instead of
+        having to SSH to the host."""
+        try:
+            r = subprocess.run(
+                ["docker", "logs", "--tail", str(lines), name],
+                capture_output=True, text=True, timeout=10,
+            )
+            # docker logs interleaves stdout+stderr — combine both
+            text = (r.stdout or "") + (r.stderr or "")
+            text = text.strip()
+            if not text:
+                return ""
+            # Hard cap: ~1500 chars so the Telegram message stays under
+            # the 4096-char limit even with other fields stuffed in.
+            if len(text) > 1500:
+                text = "…" + text[-1500:]
+            return text
+        except subprocess.SubprocessError:
+            return ""
+
+    def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 
-        Containers in 'starting' state get up to max_starting seconds (default 5 min).
-        Unhealthy or not-running containers fail immediately.
-        Returns (healthy, state, health).
+        `max_starting` defaults to `config.healthcheck_max_starting`
+        (600s = 10 min). We also read the image's own
+        `Healthcheck.StartPeriod` and use the larger of:
+            (configured default, start_period × 1.5)
+        so an image declaring `start_period: 5m` doesn't get cut off
+        at our default if our default is shorter than what the image
+        author thought reasonable.
+
+        Three return outcomes (instead of the old two-value boolean):
+            "healthy"  → container reported healthy (or has no
+                         healthcheck and is running)
+            "unhealthy"→ healthcheck reported unhealthy, OR container
+                         is not running. Caller should roll back.
+            "starting" → still in `starting` after our wait. The
+                         container is alive but slow. Caller should
+                         NOT roll back — leave it in place and warn
+                         the user so Docker's own start_period can
+                         eventually decide.
+
+        Returns (outcome, state, health).
         """
+        if max_starting is None:
+            max_starting = getattr(self.config, "healthcheck_max_starting", 600)
+        # Respect the image's own start_period (×1.5 so we give Docker's
+        # health system a chance to flip the bit before we step in)
+        image_start = self._get_start_period_seconds(name)
+        effective = max(int(max_starting), int(image_start * 1.5))
+        if effective != max_starting:
+            self._debug(f"  Effective health timeout: {effective}s (default {max_starting}s, image start_period {image_start:.0f}s)")
+
         elapsed = 0
         check = 0
-        while elapsed < max_starting:
+        state = ""
+        health = ""
+        while elapsed < effective:
             time.sleep(interval)
             elapsed += interval
             check += 1
@@ -656,17 +730,19 @@ class UpdateChecker:
                 capture_output=True, text=True
             )
             health = hc.stdout.strip() if hc.returncode == 0 else ""
-            self._debug(f"  Health check [{check}, {elapsed}s]: state={state}, health={health}")
+            self._debug(f"  Health check [{check}, {elapsed}s/{effective}s]: state={state}, health={health}")
             if state != "running":
-                return False, state, health
+                return "unhealthy", state, health
             if not health or health == "<no value>":
-                return True, state, health
-            elif health == "healthy":
-                return True, state, health
-            elif health == "unhealthy":
-                return False, state, health
+                return "healthy", state, health
+            if health == "healthy":
+                return "healthy", state, health
+            if health == "unhealthy":
+                return "unhealthy", state, health
             # health == "starting" → keep waiting
-        return False, state, health
+        # Timed out with status still "starting" — container is alive
+        # but slow. Don't roll back; let the caller report a warning.
+        return "starting", state, health
 
     def check_all(self, bot=None):
         self.debug_log = []
@@ -770,17 +846,36 @@ class UpdateChecker:
 
         # Health check
         self._debug(f"  Health check: waiting for {name}...")
-        healthy, state, health = self._wait_healthy(name)
+        outcome, state, health = self._wait_healthy(name)
 
-        if not healthy:
-            # Rollback: recreate with old image
-            self._debug(f"  Health check FAILED — rolling back via compose")
-            subprocess.run(["docker", "compose", "-f", config_file, "-p", project,
-                            "up", "-d", "--no-deps", service],
-                           capture_output=True, text=True, timeout=120)
-            msg = f"Health check failed (state={state}, health={health}) — rolled back"
+        if outcome == "unhealthy":
+            # Container actively unhealthy or no longer running — for
+            # the compose path, "rollback" via `compose up` is mostly a
+            # no-op (the same compose file produces the same container),
+            # so we honestly report "failed in place" instead of
+            # claiming a rollback that didn't happen.
+            self._debug(f"  Health check FAILED (compose) — container left in place")
+            tail = self._tail_logs(name, lines=10)
+            msg = f"Health check failed (state={state}, health={health}) — container left in place (compose)"
+            if tail:
+                msg += f"\nLast logs:\n```\n{tail}\n```"
             self._save_history(name, image, False, msg)
             return False, msg
+
+        if outcome == "starting":
+            # Container is alive but still in 'starting' after our
+            # timeout. Don't roll back — let Docker's own start_period
+            # decide. Report as a warning so the user knows to keep an
+            # eye on it, but treat as a soft success so the group-abort
+            # logic doesn't skip the rest of the group.
+            tail = self._tail_logs(name, lines=10)
+            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+            msg = (f"⚠ Updated but still 'starting' after our wait — left in place, "
+                   f"Docker will keep checking. ({detail})")
+            if tail:
+                msg += f"\nLast logs:\n```\n{tail}\n```"
+            self._save_history(name, image, True, f"compose: {detail} (slow start)")
+            return True, msg
 
         detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
         self._save_history(name, image, True, f"compose: {detail}")
@@ -951,20 +1046,47 @@ class UpdateChecker:
                 self._save_history(name, image, False, msg)
                 return False, msg
 
-            # Health check: wait up to 30s for container to be running
+            # Health check: wait for the new container to come up. Up
+            # to `config.healthcheck_max_starting` (default 600s), with
+            # the image's own start_period × 1.5 as a floor.
             self._debug(f"  Health check: waiting for {name}...")
-            healthy, state, health = self._wait_healthy(name)
+            outcome, state, health = self._wait_healthy(name)
 
-            if not healthy:
+            if outcome == "unhealthy":
+                # Active failure — container died, or healthcheck went
+                # unhealthy after Docker's start_period elapsed. Roll
+                # back to the old container so the user isn't left with
+                # a broken service.
                 self._debug(f"  Health check FAILED for {name} — rolling back")
-                # Stop failed container, restore old one
+                tail = self._tail_logs(name, lines=10)
                 subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
                 subprocess.run(["docker", "rm", name], capture_output=True, timeout=10)
                 subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
                 subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
                 msg = f"Health check failed (state={state}, health={health}) — rolled back"
+                if tail:
+                    msg += f"\nLast logs:\n```\n{tail}\n```"
                 self._save_history(name, image, False, msg)
                 return False, msg
+
+            if outcome == "starting":
+                # Container is alive but still in 'starting' after our
+                # wait. Don't roll back — slow-startup apps like GitLab
+                # / Nextcloud / Mastodon legitimately need 10-15 minutes
+                # for first-boot migrations etc. We leave the new
+                # container running, drop the old one (it would never
+                # come back anyway since the rolled-forward state is
+                # what the user wants), and report as a warning so the
+                # user knows to keep an eye on it.
+                tail = self._tail_logs(name, lines=10)
+                subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
+                detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+                msg = (f"⚠ Updated but still 'starting' after our wait — left running. "
+                       f"Docker's own healthcheck will keep checking. ({detail})")
+                if tail:
+                    msg += f"\nLast logs:\n```\n{tail}\n```"
+                self._save_history(name, image, True, f"{detail} (slow start)")
+                return True, msg
 
             # Remove old container
             subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)

@@ -149,6 +149,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `TZ` | `Europe/Berlin` | Timezone |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
+| `HEALTHCHECK_MAX_STARTING` | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
 
 All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
