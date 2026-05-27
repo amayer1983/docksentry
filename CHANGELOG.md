@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.0] - 2026-05-26
+
+### Fixed
+- **Recreate crash on Gluetun-style stacks** — containers with `network_mode: "container:gluetun"` (or `"service:..."`) failed to update with `docker: Error response from daemon: conflicting options: hostname and the network mode`, then rolled back. Cause: Docksentry's recreate logic added `--hostname` and `-p` port flags from the inspect data, but Docker forbids those when a container inherits another's network namespace — they belong to the namespace owner, not the dependent. Fixed by detecting `NetworkMode` prefix `container:` / `service:` and skipping those flags. Reported by @famewolf in #2.
+
+### Added
+- **Container Groups: restart-dependents flag.** Extension of the v1.15 Container Groups feature: a group can now be flagged "restart dependents". When the FIRST container in the group (the "head", e.g. Gluetun) is updated, all other members are restarted after the head reports healthy. Covers the VPN-sidecar workflow where dependents share the head's network namespace and lose connectivity when the namespace owner restarts. New checkbox on the group edit form (Advanced UI mode), persisted as `restart_dependents: true` in `groups.json`. Includes a health-wait poll (up to `wait_seconds`) so we don't kick dependents while the VPN handshake is still in progress. If the head never reports healthy, dependents are restarted anyway with a log warning — a slightly-too-early restart is usually less bad than dependents stuck on a defunct namespace.
+
+### i18n
+3 new keys (`web_groups_restart_dependents`, `_hint`, `_badge`) × 16 language files. EN + DE translated; others get the EN fallback.
+
+### Roadmap notes
+- **Multi-host support is on the way** as a v2.0 item (one Docksentry instance managing several Docker hosts, with per-host pending/history and hostname-prefixed notifications). Big enough to need its own release window — happy to take any wishlist input via #2.
+
 ## [1.16.4] - 2026-05-20
 
 ### Fixed

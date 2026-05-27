@@ -331,5 +331,8 @@
   "selfupdate_resumed_check": "✅ Restarted on the new version. Now checking your containers...",
   "web_allowed_users": "Allowed user IDs",
   "web_allowed_users_help": "Optional — comma-separated list of Telegram user IDs allowed to control the bot. Useful in groups where you don't want every member to trigger updates. Leave empty to allow anyone in the configured chat.",
-  "web_allowed_users_placeholder": "e.g. 123456789, 987654321"
+  "web_allowed_users_placeholder": "e.g. 123456789, 987654321",
+  "web_groups_restart_dependents": "Restart dependents when the head container updates",
+  "web_groups_restart_dependents_hint": "When the FIRST container in the list (the \"head\", e.g. Gluetun) gets updated, all other group members are restarted after the head reports healthy. Use for VPN-sidecar / shared-network-namespace setups where dependents lose connectivity when the namespace owner restarts.",
+  "web_groups_restart_dependents_badge": "restart dependents"
 }

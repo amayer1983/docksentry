@@ -1608,6 +1608,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 # Multi-select: containers come as repeated key in form-encoded
                 containers = params.get("containers", [])
                 wait_s = params.get("wait_seconds", ["30"])[0]
+                restart_dep = "restart_dependents" in params
                 if name and containers:
                     # Generate a slug from the name (simple, ascii-safe)
                     import re as _re
@@ -1618,7 +1619,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     while slug in existing:
                         slug = f"{base}-{n}"
                         n += 1
-                    store.save_group(slug, name, containers, wait_s)
+                    store.save_group(slug, name, containers, wait_s,
+                                     restart_dependents=restart_dep)
                 self._send_redirect("/settings#groups")
             elif path == "/api/group_delete":
                 length = int(self.headers.get("Content-Length", 0))
@@ -2840,10 +2842,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </td>
 </tr>"""
                     wait_s = int(g.get("wait_seconds", 30) or 30)
+                    rd_badge = f' · 🔁 {t("web_groups_restart_dependents_badge")}' if g.get("restart_dependents") else ''
                     groups_html += f"""<div class="card" style="background:var(--bg);margin-bottom:12px">
 <div class="card-header-row">
 <h3 style="font-size:14px;color:var(--accent);margin:0">{_ICONS["package"]} {_e(g.get("name", gid))}
-<span style="color:var(--text-muted);font-size:11px;font-weight:400">·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}</span>
+<span style="color:var(--text-muted);font-size:11px;font-weight:400">·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}{rd_badge}</span>
 </h3>
 <form method="POST" action="/api/group_delete" class="inline-form" data-confirm="{_e(t('web_groups_delete_confirm', name=g.get('name', gid)))}" data-confirm-label="{_e(t('web_delete'))}" data-confirm-danger="1">
 <input type="hidden" name="group_id" value="{_e(gid)}">
@@ -2875,6 +2878,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <select name="containers" multiple size="6" style="height:auto">
 {options}
 </select>
+<div class="form-checkbox-row" style="margin-top:8px">
+<input type="checkbox" name="restart_dependents" id="cb-group-restart-dep">
+<label for="cb-group-restart-dep">{t("web_groups_restart_dependents")}</label>
+</div>
+<p class="form-help">{t("web_groups_restart_dependents_hint")}</p>
 <button type="submit" class="btn" style="margin-top:8px">{t("web_groups_save")}</button>
 </form>
 </div>"""

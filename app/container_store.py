@@ -157,9 +157,19 @@ class ContainerStore:
                 return gid, g
         return None, None
 
-    def save_group(self, group_id, name, containers, wait_seconds=30):
+    def save_group(self, group_id, name, containers, wait_seconds=30,
+                   restart_dependents=False):
         """Create or update a group. Removes the listed containers from any
-        other group (one-group-per-container invariant)."""
+        other group (one-group-per-container invariant).
+
+        Args:
+            restart_dependents: When True, updating the FIRST container in
+                the list (= the "head", e.g. Gluetun) triggers a restart
+                of all other group members AFTER the head reports healthy.
+                Use for VPN-sidecar / shared-network-namespace setups
+                where dependents lose connectivity when the namespace
+                owner restarts.
+        """
         groups = self.get_groups()
         cleaned = [c.strip() for c in containers if c and c.strip()]
         # Remove these containers from every other group
@@ -177,6 +187,7 @@ class ContainerStore:
             "name": name.strip() or group_id,
             "containers": cleaned,
             "wait_seconds": wait,
+            "restart_dependents": bool(restart_dependents),
         }
         self._save_dict(self.groups_file, groups)
 

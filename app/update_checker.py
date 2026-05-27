@@ -874,6 +874,16 @@ class UpdateChecker:
             if network_mode and network_mode != "default":
                 cmd.extend(["--network", network_mode])
 
+            # When a container inherits another container's network namespace
+            # (Gluetun / VPN-sidecar pattern: `network_mode: "container:gluetun"`
+            # or `service:gluetun`), Docker REJECTS per-container network
+            # options because they all belong to the namespace owner. The
+            # rejected list includes --hostname, -p/--publish, --add-host,
+            # --mac-address, --dns. Trying to set them yields:
+            #   "conflicting options: hostname and the network mode"
+            # Reported by @famewolf in #2.
+            shares_netns = network_mode.startswith(("container:", "service:"))
+
             # Environment variables
             for env in config.get("Config", {}).get("Env", []):
                 cmd.extend(["-e", env])
@@ -891,26 +901,29 @@ class UpdateChecker:
                         bind += ":ro"
                     cmd.extend(["-v", bind])
 
-            # Port mappings
-            ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
-            for container_port, bindings in ports.items():
-                if bindings:
-                    for b in bindings:
-                        host_ip = b.get("HostIp", "")
-                        host_port = b.get("HostPort", "")
-                        if host_ip:
-                            cmd.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
-                        else:
-                            cmd.extend(["-p", f"{host_port}:{container_port}"])
+            # Port mappings (skipped when sharing another container's netns —
+            # those ports belong to the namespace owner, not us)
+            if not shares_netns:
+                ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
+                for container_port, bindings in ports.items():
+                    if bindings:
+                        for b in bindings:
+                            host_ip = b.get("HostIp", "")
+                            host_port = b.get("HostPort", "")
+                            if host_ip:
+                                cmd.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
+                            else:
+                                cmd.extend(["-p", f"{host_port}:{container_port}"])
 
             # Labels (preserve all)
             for key, value in config.get("Config", {}).get("Labels", {}).items():
                 cmd.extend(["--label", f"{key}={value}"])
 
-            # Hostname
-            hostname = config.get("Config", {}).get("Hostname", "")
-            if hostname and hostname != config.get("Id", "")[:12]:
-                cmd.extend(["--hostname", hostname])
+            # Hostname (skipped when sharing another container's netns)
+            if not shares_netns:
+                hostname = config.get("Config", {}).get("Hostname", "")
+                if hostname and hostname != config.get("Id", "")[:12]:
+                    cmd.extend(["--hostname", hostname])
 
             # Security options
             for opt in config.get("HostConfig", {}).get("SecurityOpt", []) or []:

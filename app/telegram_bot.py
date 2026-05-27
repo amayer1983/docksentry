@@ -329,6 +329,71 @@ class TelegramBot:
         if success:
             self.store.remove_pending_major(name)
 
+    def _wait_healthy(self, name, max_seconds):
+        """Poll `docker inspect` until the container is running (and, if it
+        has a healthcheck, reports healthy). Returns True on success,
+        False on timeout. Polls every second. Used by the restart-
+        dependents cascade so we don't kick VPN-dependent containers
+        before the VPN sidecar is actually up."""
+        import time as _time
+        for _ in range(max(1, int(max_seconds))):
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", name],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    data = json.loads(r.stdout)[0]
+                    state = data.get("State", {}) or {}
+                    if state.get("Running"):
+                        health = state.get("Health") or {}
+                        if not health:
+                            # No healthcheck configured — Running=true is
+                            # the best signal we have.
+                            return True
+                        if health.get("Status") == "healthy":
+                            return True
+            except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, KeyError):
+                pass
+            _time.sleep(1)
+        return False
+
+    def _restart_group_dependents(self, head_name, dependents, max_wait=30):
+        """After updating a group's head container, restart its
+        dependents. Waits up to `max_wait` seconds for the head to be
+        healthy first — if it never gets there, restart the dependents
+        anyway (with a log warning), because not restarting them leaves
+        them stuck on a defunct network namespace which is usually worse
+        than a slightly-too-early restart.
+
+        Returns a one-line user-facing result string for the update
+        report."""
+        healthy = self._wait_healthy(head_name, max_wait)
+        if not healthy:
+            print(f"⚠ {head_name} not healthy after {max_wait}s — restarting dependents anyway")
+
+        restarted = []
+        failed = []
+        for dep in dependents:
+            try:
+                r = subprocess.run(
+                    ["docker", "restart", dep],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    restarted.append(dep)
+                else:
+                    failed.append(dep)
+                    print(f"Failed to restart dependent {dep}: {r.stderr.strip()[:200]}")
+            except subprocess.SubprocessError as e:
+                failed.append(dep)
+                print(f"Restart of dependent {dep} crashed: {e}")
+
+        if failed:
+            return (f"🔁 `{head_name}` dependents: restarted {len(restarted)}, "
+                    f"failed {len(failed)} ({', '.join(failed)})")
+        return (f"🔁 `{head_name}` dependents restarted: {', '.join(f'`{d}`' for d in restarted)}")
+
     def handle_autoupdates(self, updates, checker):
         """Split updates into auto-update and manual, handle accordingly.
 
@@ -413,6 +478,25 @@ class TelegramBot:
                     results.append(f"{status} `{u['name']}`: {msg}")
                     if success:
                         success_count += 1
+                        # Restart-dependents cascade: if this container is
+                        # the first ("head") member of a group flagged
+                        # restart_dependents, wait for it to be healthy,
+                        # then restart every other group member. Covers
+                        # Gluetun-style "VPN sidecar restarts → all
+                        # dependents lose connectivity" workflows.
+                        if cur_group:
+                            grp = groups.get(cur_group) or {}
+                            members = grp.get("containers") or []
+                            if (grp.get("restart_dependents")
+                                    and members
+                                    and u["name"] == members[0]
+                                    and len(members) > 1):
+                                deps = members[1:]
+                                wait_s = int(grp.get("wait_seconds", 30) or 30)
+                                restart_msg = self._restart_group_dependents(
+                                    u["name"], deps, max_wait=max(wait_s, 30)
+                                )
+                                results.append(restart_msg)
                     elif cur_group:
                         # Failure aborts the remainder of this group
                         group_aborted.add(cur_group)
@@ -585,6 +669,14 @@ class TelegramBot:
         if network_mode and network_mode != "default":
             run_args.extend(["--network", network_mode])
 
+        # If the container inherits another container's network namespace
+        # (Gluetun-style network_mode: "container:gluetun"), Docker rejects
+        # per-container network options like -p / --hostname / --add-host.
+        # See update_checker.py for the longer explanation. Unlikely to hit
+        # here (Docksentry itself rarely sits behind a VPN sidecar), but
+        # mirror the logic for consistency.
+        shares_netns = network_mode.startswith(("container:", "service:"))
+
         # Env vars
         for env in config.get("Config", {}).get("Env", []):
             run_args.extend(["-e", env])
@@ -602,17 +694,18 @@ class TelegramBot:
                     bind += ":ro"
                 run_args.extend(["-v", bind])
 
-        # Ports
-        ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
-        for container_port, bindings in ports.items():
-            if bindings:
-                for b in bindings:
-                    host_ip = b.get("HostIp", "")
-                    host_port = b.get("HostPort", "")
-                    if host_ip:
-                        run_args.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
-                    else:
-                        run_args.extend(["-p", f"{host_port}:{container_port}"])
+        # Ports (skipped on shared netns — see comment above)
+        if not shares_netns:
+            ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
+            for container_port, bindings in ports.items():
+                if bindings:
+                    for b in bindings:
+                        host_ip = b.get("HostIp", "")
+                        host_port = b.get("HostPort", "")
+                        if host_ip:
+                            run_args.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
+                        else:
+                            run_args.extend(["-p", f"{host_port}:{container_port}"])
 
         # Labels
         for key, value in config.get("Config", {}).get("Labels", {}).items():
