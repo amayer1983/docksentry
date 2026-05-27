@@ -210,6 +210,21 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 | Security & Socket Proxy | [docs/security.md](docs/security.md) |
 | Multi-Language | [docs/languages.md](docs/languages.md) |
 
+## Roadmap
+
+Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what shipped in each release.
+
+**v1.x — ongoing.** Continued bug fixes and smaller features driven by user feedback in [#2](https://github.com/amayer1983/docksentry/issues/2). Recent: container groups, maintenance mode, container notes, group/topic auth, restart-dependents for VPN-sidecar stacks.
+
+**v2.0 — bigger release, ahead.** Two large items planned to land together rather than trickled out:
+
+- **Multi-host management** — one Docksentry instance managing several Docker hosts, with per-host pending queues, hostname-prefixed notifications, and a host selector in the Web UI.
+- **Interactive Discord bot** — slash-commands, buttons and the same control surface the Telegram bot offers today.
+
+Both need a real release window rather than a weekend hack, so v2.0 will wait until there's enough user feedback and momentum to justify the refactor. If multi-host or the Discord bot is something you'd actually use, the most useful thing you can do is ⭐ the repo or mention Docksentry to someone who'd benefit — that's the signal I'm watching to decide when to start.
+
+Wishlist input and "+1"s welcome on [#2](https://github.com/amayer1983/docksentry/issues/2).
+
 ## Contributing
 
 - **Feature ideas?** Open an [Issue](https://github.com/amayer1983/docksentry/issues) with the label `enhancement`
