@@ -95,6 +95,8 @@ def main():
     if telegram_on and config.telegram_allowed_users:
         # Print count, not the IDs themselves — those are personal data.
         print(f"Telegram allowed-users whitelist: {len(config.telegram_allowed_users)} user(s)")
+    if config.bot_label:
+        print(f"Bot label: {config.bot_label}")
     if config.web_ui:
         print(f"Web UI: http://0.0.0.0:{config.web_port}")
     if config.discord_webhook:

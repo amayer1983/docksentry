@@ -144,6 +144,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `WEB_PASSWORD` | | Web UI password (Basic Auth) |
 | `TELEGRAM_TOPIC_ID` | | Telegram topic/thread ID (for groups with topics) |
 | `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
+| `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST) |
 | `TZ` | `Europe/Berlin` | Timezone |
@@ -172,6 +173,54 @@ environment:
   - TELEGRAM_TOPIC_ID=42             # only needed for Forum groups
   - TELEGRAM_ALLOWED_USERS=11111111,22222222   # only these users can issue commands
 ```
+
+### Multi-bot setup (one group, multiple hosts)
+
+If you have several Docker hosts (different boxes, VMs, Proxmox LXCs, …), v2.0's real multi-host support is on the roadmap — but until then you can already control multiple instances from a **single Telegram group** by running one Docksentry per host and labelling each instance with `BOT_LABEL`:
+
+```yaml
+# Host pve1
+environment:
+  - BOT_TOKEN=...token-for-bot-1...
+  - CHAT_ID=-1001234567890                  # shared group ID, same for all hosts
+  - TELEGRAM_ALLOWED_USERS=11111111         # your own user ID — lock down control
+  - BOT_LABEL=🖥 pve1                       # prefixes every notification
+```
+
+```yaml
+# Host pve2
+environment:
+  - BOT_TOKEN=...token-for-bot-2...
+  - CHAT_ID=-1001234567890                  # same group
+  - TELEGRAM_ALLOWED_USERS=11111111
+  - BOT_LABEL=🖥 pve2
+```
+
+Issue `/status` in the shared group and each bot replies with its label prefix:
+
+```
+🖥 pve1 · *Container Status:* …
+🖥 pve2 · *Container Status:* …
+🖥 pve3 · *Container Status:* …
+```
+
+The label also flows into Discord embeds (added to title + footer) and the generic webhook payload (`bot_label` field), so downstream automations can route per-host.
+
+**Setup checklist:**
+
+1. Create a private Telegram group, add yourself and **all bots** (one per host).
+2. For **each** bot, in [@BotFather](https://t.me/BotFather) → `/setprivacy` → **Disable**, so bots see `/commands` in groups (groups have privacy mode on by default, which restricts bots to messages that mention them directly).
+3. Find the group ID (send a message in the group, visit `https://api.telegram.org/bot<TOKEN>/getUpdates`, look for `chat.id`).
+4. Configure each Docksentry instance with the **same** `CHAT_ID` (the group ID) and a **distinct** `BOT_LABEL`.
+
+**Security note — please read:**
+
+- **Set `TELEGRAM_ALLOWED_USERS` to your own user ID.** Without it, any group member can trigger `/cleanup`, `/selfupdate`, "Update all", etc. against every host — accidentally adding a colleague to the group would hand them control over everything.
+- **Keep the group private.** Disable invite links or rotate them, and audit membership occasionally. The group is now a single point of trust.
+- **Be aware: privacy-mode off means each bot sees every human message in the group.** Don't use the same group for casual chat — keep it ops-only.
+- Telegram's own Bot API filters out bot-to-bot communication, so bots can't accidentally trigger each other's commands.
+
+This is a stepping stone, not a replacement for v2.0 multi-host: you still maintain N bot tokens, N Docksentry containers, N updates. But it makes "single chat, all hosts" usable today.
 
 ## Web UI
 

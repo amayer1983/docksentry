@@ -334,5 +334,8 @@
   "web_allowed_users_placeholder": "e.g. 123456789, 987654321",
   "web_groups_restart_dependents": "Restart dependents when the head container updates",
   "web_groups_restart_dependents_hint": "When the FIRST container in the list (the \"head\", e.g. Gluetun) gets updated, all other group members are restarted after the head reports healthy. Use for VPN-sidecar / shared-network-namespace setups where dependents lose connectivity when the namespace owner restarts.",
-  "web_groups_restart_dependents_badge": "restart dependents"
+  "web_groups_restart_dependents_badge": "restart dependents",
+  "web_bot_label": "Bot label",
+  "web_bot_label_help": "Optional prefix prepended to every notification — useful when multiple Docksentry instances post into the same Telegram group, Discord channel, or webhook so you can tell which host a message is from. Max 32 chars.",
+  "web_bot_label_placeholder": "e.g. 🖥 pve1"
 }

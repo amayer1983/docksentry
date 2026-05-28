@@ -92,6 +92,13 @@ class Notifier:
             print(f"Discord webhook error: {e}")
             return None
 
+    def _footer_text(self):
+        """Discord-embed footer text. Includes BOT_LABEL when set so
+        multiple Docksentry instances posting into the same Discord
+        channel can be told apart (e.g. 'Docksentry · pve1')."""
+        label = (self.config.bot_label or "").strip()
+        return f"Docksentry · {label}" if label else "Docksentry"
+
     def _discord_updates(self, updates):
         """Send update notification as Discord embed."""
         fields = []
@@ -103,29 +110,33 @@ class Notifier:
                 "inline": True,
             })
 
+        label = (self.config.bot_label or "").strip()
+        title_prefix = f"{label} · " if label else ""
         embed = {
-            "title": f"🔄 Docker Updates Available ({len(updates)})",
+            "title": f"{title_prefix}🔄 Docker Updates Available ({len(updates)})",
             "color": 0x58a6ff,  # Blue
             "fields": fields,
-            "footer": {"text": "Docksentry"},
+            "footer": {"text": self._footer_text()},
         }
         self._discord_post({"embeds": [embed]})
 
     def _discord_update_result(self, name, image, success, detail):
         """Send update result as Discord embed."""
+        label = (self.config.bot_label or "").strip()
+        title_prefix = f"{label} · " if label else ""
         if success:
             embed = {
-                "title": f"✅ Update Successful",
+                "title": f"{title_prefix}✅ Update Successful",
                 "description": f"**{name}** (`{image}`)\n{detail}",
                 "color": 0x3fb950,  # Green
-                "footer": {"text": "Docksentry"},
+                "footer": {"text": self._footer_text()},
             }
         else:
             embed = {
-                "title": f"❌ Update Failed",
+                "title": f"{title_prefix}❌ Update Failed",
                 "description": f"**{name}** (`{image}`)\n{detail}",
                 "color": 0xf85149,  # Red
-                "footer": {"text": "Docksentry"},
+                "footer": {"text": self._footer_text()},
             }
         self._discord_post({"embeds": [embed]})
 
@@ -133,6 +144,9 @@ class Notifier:
         """Send plain text to Discord."""
         # Strip Markdown bold (*text*) for Discord
         clean = text.replace("*", "**")
+        label = (self.config.bot_label or "").strip()
+        if label:
+            clean = f"**{label}** · {clean}"
         self._discord_post({"content": clean})
 
     # ── Generic Webhook ──────────────────────────────────────
@@ -144,6 +158,11 @@ class Notifier:
             "source": "docksentry",
             **data,
         }
+        # Add bot label to the payload when set so downstream automations
+        # (Home Assistant, Ntfy, custom scripts) can route per-host.
+        label = (self.config.bot_label or "").strip()
+        if label:
+            payload["bot_label"] = label
         try:
             body = json.dumps(payload).encode()
             req = urllib.request.Request(

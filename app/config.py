@@ -16,6 +16,7 @@ PERSISTENT_KEYS = [
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
     "healthcheck_max_starting",
+    "bot_label",
 ]
 
 
@@ -28,7 +29,8 @@ class Config:
                  weekly_report_enabled, weekly_report_weekday, weekly_report_hour,
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id,
-                 telegram_allowed_users, healthcheck_max_starting):
+                 telegram_allowed_users, healthcheck_max_starting,
+                 bot_label):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -103,6 +105,13 @@ class Config:
         # respect the image's own Healthcheck.StartPeriod and use the
         # larger of (this default, start_period × 1.5) at runtime.
         self.healthcheck_max_starting = healthcheck_max_starting
+        # Optional label prepended to every outgoing notification —
+        # useful when multiple Docksentry instances post into the same
+        # Telegram group / Discord channel so the user can tell which
+        # host a message is from. Empty = no prefix (default, suitable
+        # for single-host or single-DM setups). Stepping stone toward
+        # the v2.0 multi-host refactor.
+        self.bot_label = bot_label
 
         # Load persistent overrides from settings.json
         self._load_persistent()
@@ -182,4 +191,5 @@ class Config:
                 if u.strip()
             ],
             healthcheck_max_starting=int(os.environ.get("HEALTHCHECK_MAX_STARTING", "600")),
+            bot_label=os.environ.get("BOT_LABEL", "").strip(),
         )

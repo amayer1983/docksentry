@@ -178,6 +178,13 @@ class TelegramBot:
             except Exception:
                 pass
 
+        # Prepend optional bot label (e.g. "🖥 pve1") to distinguish
+        # multiple Docksentry instances posting into a shared Telegram
+        # group. Empty by default — no-op on single-host setups.
+        label = (self.config.bot_label or "").strip()
+        if label:
+            text = f"{label} · {text}"
+
         data = {
             "chat_id": self.config.chat_id,
             "text": text,

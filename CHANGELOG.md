@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.3] - 2026-05-27
+
+### Added
+- **`BOT_LABEL` — multi-bot-friendly notification prefix.** Optional env var / Web UI field (max 32 chars). When set, every outgoing notification gets the label prepended so multiple Docksentry instances sharing a chat/channel can be told apart:
+  - **Telegram:** `🖥 pve1 · 🔄 Auto Self-Update / …`
+  - **Discord:** label added to embed title + footer (`Docksentry · pve1`)
+  - **Generic webhook:** new top-level `bot_label` field in the JSON payload so downstream automations can route per-host
+  - Empty (default) keeps the previous single-host behaviour.
+- **README: "Multi-bot setup (one group, multiple hosts)" section** — step-by-step for running one Docksentry per Docker host into a single Telegram group, with `BOT_LABEL` for identification. Includes a security checklist: lock down with `TELEGRAM_ALLOWED_USERS`, keep the group private, privacy-mode implications. Bridging pattern until v2.0 ships real multi-host support.
+- New i18n keys `web_bot_label`, `_help`, `_placeholder` (EN + DE; 14 langs fallback to EN).
+
 ## [1.17.2] - 2026-05-27
 
 ### Fixed

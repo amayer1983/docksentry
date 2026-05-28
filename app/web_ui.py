@@ -1462,6 +1462,13 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                         u.strip() for u in raw.split(",") if u.strip()
                     ]
 
+                # Optional BOT_LABEL prefix for multi-bot setups
+                if "bot_label" in params:
+                    # Cap at 32 chars — Telegram message length isn't a
+                    # concern at that size but a runaway label would be
+                    # cosmetic noise on every notification.
+                    config.bot_label = params["bot_label"][0].strip()[:32]
+
                 # Persist all changes
                 config.save_persistent()
 
@@ -2692,6 +2699,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
     <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}</label>
     <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}">
+
+    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}</label>
+    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}">
   </div>
 
   <label>Discord Webhook {help_(t("web_discord_help"))}</label>
