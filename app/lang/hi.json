@@ -337,5 +337,12 @@
   "web_groups_restart_dependents_badge": "restart dependents",
   "web_bot_label": "Bot label",
   "web_bot_label_help": "Optional prefix prepended to every notification — useful when multiple Docksentry instances post into the same Telegram group, Discord channel, or webhook so you can tell which host a message is from. Max 32 chars.",
-  "web_bot_label_placeholder": "e.g. 🖥 pve1"
+  "web_bot_label_placeholder": "e.g. 🖥 pve1",
+  "help_changelog": "/changelog — Show what's new in versions ahead of yours",
+  "docksentry_update_hint": "🚀 *Docksentry update available* — run /selfupdate to apply, or /changelog to preview what's new.",
+  "changelog_fetching": "🔍 Fetching changelog from GitHub...",
+  "changelog_fetch_failed": "❌ Couldn't fetch the changelog: {error}",
+  "changelog_up_to_date": "✅ You're on *v{version}* — no newer versions in the changelog.",
+  "changelog_title": "📋 *{count} new version(s) since v{current}:*",
+  "changelog_truncated": "... (truncated — full changelog at {url})"
 }

@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.4] - 2026-05-29
+
+### Added
+- **`/check` now flags Docksentry self-updates separately.** When a manual `/check` includes Docksentry itself among the updates, the bot follows up with `🚀 Docksentry update available — run /selfupdate to apply, or /changelog to preview what's new.` Previously the self-update was listed alongside container updates without any hint that it needs a different command, so users could miss bot releases entirely. Requested by @famewolf in #2.
+- **`/changelog` command.** Fetches `CHANGELOG.md` from the GitHub raw URL and shows every version newer than yours — versions, dates, and the full release notes. Great for deciding whether to defer a `/selfupdate` after the new "Docksentry update available" hint surfaces one. Falls back gracefully when the network is unreachable.
+
+### Fixed
+- **Telegram API parse-error responses (HTTP 4xx) are now retried without Markdown** instead of being treated as network failures. Lets `send_message` recover from edge cases where a body legitimately can't be parsed as Markdown (long quoted bodies, stray brackets, mismatched asterisks). Previously the request silently dropped on the floor.
+
+### Internal
+- New helpers in `telegram_bot.py`: `_own_container_meta()` (caches the running Docksentry container's name + image, used for self-update detection), `_fetch_changelog()` + `_parse_changelog_entries()` (GitHub-raw fetch + version-block parsing), `_github_md_to_telegram()` (rewrites GitHub-flavoured Markdown to Telegram's classic variant so `**bold**` and `#` headings don't break the renderer).
+- `/changelog` builds its message entry-by-entry and stops at the cap so truncation never lands mid-`*bold*` (which would leave an unpaired asterisk and force the Markdown-fallback retry path).
+
+### i18n
+7 new keys × 16 language files (EN + DE translated, others fall back to EN).
+
 ## [1.17.3] - 2026-05-27
 
 ### Added

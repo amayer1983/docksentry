@@ -32,6 +32,81 @@ class TelegramBot:
     def stop(self):
         self.running = False
 
+    def _own_container_meta(self):
+        """Return (own_name, own_image) for the running Docksentry
+        container, or (None, None) when we can't figure it out (HOSTNAME
+        env unset, docker inspect fails, …). Cached after first call —
+        the answer doesn't change at runtime."""
+        if hasattr(self, "_cached_own_meta"):
+            return self._cached_own_meta
+        hostname = os.environ.get("HOSTNAME", "")
+        if not hostname:
+            self._cached_own_meta = (None, None)
+            return self._cached_own_meta
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", hostname],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode != 0:
+                self._cached_own_meta = (None, None)
+                return self._cached_own_meta
+            cfg = json.loads(r.stdout)[0]
+            name = (cfg.get("Name", "") or "").lstrip("/")
+            image = cfg.get("Config", {}).get("Image", "") or ""
+            self._cached_own_meta = (name, image)
+            return self._cached_own_meta
+        except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, KeyError):
+            self._cached_own_meta = (None, None)
+            return self._cached_own_meta
+
+    def _fetch_changelog(self):
+        """Fetch CHANGELOG.md from GitHub raw. Returns (ok, text_or_error)."""
+        url = "https://raw.githubusercontent.com/amayer1983/docksentry/main/CHANGELOG.md"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Docksentry/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return True, r.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            return False, str(e)[:200]
+
+    def _github_md_to_telegram(self, text):
+        """Adapt GitHub-flavored Markdown for Telegram's classic Markdown
+        parser. Mostly: GitHub `**bold**` collides with Telegram's
+        `*bold*` (Telegram chokes on `**`), and Markdown headings aren't
+        a Telegram concept. We also strip image-style `![alt](url)`
+        embeds since Telegram won't inline them anyway."""
+        import re
+        # Heading levels → just bold (Telegram has no heading concept)
+        text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
+        # GitHub bold → Telegram bold
+        text = re.sub(r"\*\*([^*\n]+)\*\*", r"*\1*", text)
+        # Strip stray "![alt](url)" image embeds
+        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
+        return text
+
+    def _parse_changelog_entries(self, text, after_version):
+        """Parse CHANGELOG.md, return entries with version > after_version
+        as list of (version, date, body) tuples in newest-first order."""
+        import re
+        pat = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\] - (\d{4}-\d{2}-\d{2})$", re.MULTILINE)
+        entries = []
+        matches = list(pat.finditer(text))
+        for i, m in enumerate(matches):
+            major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            date = m.group(4)
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            body = text[start:end].strip()
+            entries.append(((major, minor, patch), date, body))
+        # Filter newer than current
+        try:
+            cur = tuple(int(x) for x in after_version.split(".")[:3])
+        except ValueError:
+            cur = (0, 0, 0)
+        newer = [(f"{v[0]}.{v[1]}.{v[2]}", d, b) for v, d, b in entries if v > cur]
+        return newer
+
     def _check_auth(self, chat_id, user_id, kind="message"):
         """Authorize an incoming Telegram message or callback.
 
@@ -151,6 +226,19 @@ class TelegramBot:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            # Telegram returns 4xx with a JSON body for parse errors,
+            # rate-limit hints etc. Pass the parsed body to the caller so
+            # the markdown-retry path in send_message can act on it
+            # instead of treating it as a network failure.
+            try:
+                body = json.loads(e.read())
+                if not (quiet_timeout and self._is_timeout(e)):
+                    print(f"Telegram API {e.code}: {body.get('description', body)}")
+                return body
+            except Exception:
+                print(f"Telegram API error: {e}")
+                return None
         except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
             if not (quiet_timeout and self._is_timeout(e)):
                 print(f"Telegram API error: {e}")
@@ -1125,6 +1213,50 @@ class TelegramBot:
                 self.notify_updates(updates)
             else:
                 self.notify_no_updates()
+            # If Docksentry itself is in the updates list, point the user
+            # to /selfupdate (which is the right command — auto-updating
+            # ourselves via the regular update flow doesn't work because
+            # PID 1 can't replace its own container). Also hint at the
+            # new /changelog so they can preview what's changed before
+            # deciding. Requested by @famewolf in #2.
+            own_name, _ = self._own_container_meta()
+            if own_name and any(u.get("name") == own_name for u in updates):
+                self.send_message(self.t("docksentry_update_hint"))
+
+        elif text == "/changelog":
+            from version import VERSION
+            self.send_message(self.t("changelog_fetching"))
+            ok, content = self._fetch_changelog()
+            if not ok:
+                self.send_message(self.t("changelog_fetch_failed", error=content))
+                return
+            new_entries = self._parse_changelog_entries(content, VERSION)
+            if not new_entries:
+                self.send_message(self.t("changelog_up_to_date", version=VERSION))
+                return
+            # Build the message entry-by-entry and stop at the cap so we
+            # never truncate mid-`*bold*` (which would leave an unpaired
+            # asterisk and force the Markdown-fallback retry path).
+            header = self.t("changelog_title", count=len(new_entries), current=VERSION)
+            parts = [header]
+            total_len = len(header)
+            truncated = False
+            cap = 3800  # leaves headroom for truncation footer + BOT_LABEL
+            for version, date, body in new_entries:
+                tg_body = self._github_md_to_telegram(body)
+                chunk = f"\n*v{version}* — {date}\n{tg_body}"
+                if total_len + len(chunk) > cap:
+                    truncated = True
+                    break
+                parts.append(chunk)
+                total_len += len(chunk)
+            msg = "\n".join(parts)
+            if truncated:
+                msg += "\n\n" + self.t(
+                    "changelog_truncated",
+                    url="https://github.com/amayer1983/docksentry/blob/main/CHANGELOG.md",
+                )
+            self.send_message(msg)
 
         elif text == "/updates":
             if os.path.exists(self.config.pending_file):
@@ -1343,6 +1475,7 @@ class TelegramBot:
                 + self.t("help_unpin") + "\n"
                 + self.t("help_autoupdate") + "\n"
                 + self.t("help_selfupdate") + "\n"
+                + self.t("help_changelog") + "\n"
                 + self.t("help_debug") + "\n"
                 + self.t("help_logs") + "\n"
                 + self.t("help_lang") + "\n"

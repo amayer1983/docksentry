@@ -109,6 +109,7 @@ volumes:
 | `/history` | Show update history |
 | `/cleanup` | Remove old unused images |
 | `/selfupdate` | Update the bot itself |
+| `/changelog` | Show what's new in versions ahead of yours (fetched from GitHub) |
 | `/debug` | Toggle debug mode |
 | `/lang <code>` | Switch language |
 | `/settings` | Show current configuration |
