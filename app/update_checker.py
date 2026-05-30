@@ -633,6 +633,81 @@ class UpdateChecker:
         with open(self.config.history_file, "w") as f:
             json.dump(history, f, indent=2)
 
+    def _stop_container(self, name, inspect_config=None):
+        """Stop a container, respecting its own `Config.StopTimeout`.
+
+        Reads StopTimeout from the inspect data (already-fetched config
+        dict if available, otherwise via a fresh inspect call), passes
+        `--time` to `docker stop` so Docker's grace aligns with what we
+        expect, and bounds our subprocess wait at `stop_timeout + 30s`
+        (or `DOCKER_STOP_TIMEOUT` from config, whichever is larger).
+
+        On `TimeoutExpired` we fall back to `docker kill -s SIGKILL` so
+        the container ends up actually stopped — leaving it hanging
+        because we gave up too early was the previous failure mode
+        (homarr-style slow shutdowns, reported in #11).
+
+        Returns (ok: bool, detail: str).
+        """
+        # Per-container stop timeout in seconds. Default to Docker's own
+        # default (10s) when the field is missing.
+        stop_timeout = 10
+        if inspect_config:
+            t = inspect_config.get("Config", {}).get("StopTimeout")
+            if isinstance(t, (int, float)) and t > 0:
+                stop_timeout = int(t)
+        else:
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Config.StopTimeout}}", name],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    raw = r.stdout.strip()
+                    if raw and raw != "<no value>":
+                        try:
+                            stop_timeout = max(1, int(raw))
+                        except ValueError:
+                            pass
+            except subprocess.SubprocessError:
+                pass
+
+        # Configurable global floor (default 60s in config.py). Ensures
+        # a sensible minimum even when StopTimeout is unset/tiny.
+        floor = int(getattr(self.config, "docker_stop_timeout", 60) or 60)
+        effective_stop = max(stop_timeout, floor)
+        # Subprocess outer timeout = give Docker its grace + headroom
+        # for the SIGKILL phase + log flush.
+        subprocess_timeout = effective_stop + 30
+
+        self._debug(f"  Stop {name}: effective_stop={effective_stop}s, subprocess={subprocess_timeout}s")
+        try:
+            r = subprocess.run(
+                ["docker", "stop", "--time", str(effective_stop), name],
+                capture_output=True, text=True, timeout=subprocess_timeout,
+            )
+            if r.returncode == 0:
+                return True, "stopped"
+            err = (r.stderr or "").strip()[:200]
+            # Fall through to kill if the stop reported failure but the
+            # container is still running.
+            self._debug(f"  Stop failed (rc={r.returncode}): {err}")
+        except subprocess.TimeoutExpired:
+            self._debug(f"  Stop timed out after {subprocess_timeout}s — escalating to kill")
+
+        # Fallback: force-kill so we don't leave the recreate flow
+        # half-finished.
+        try:
+            kill = subprocess.run(
+                ["docker", "kill", name],
+                capture_output=True, text=True, timeout=15,
+            )
+            if kill.returncode == 0:
+                return True, "killed after stop timeout"
+            return False, f"stop+kill both failed: {(kill.stderr or '').strip()[:120]}"
+        except subprocess.SubprocessError as e:
+            return False, f"kill failed: {e}"
+
     def _get_start_period_seconds(self, name):
         """Read the image's own Healthcheck.StartPeriod from `docker
         inspect` (nanoseconds), return as float seconds. Returns 0 if
@@ -944,9 +1019,12 @@ class UpdateChecker:
             config = json.loads(inspect_raw.stdout)[0]
             self._debug(f"  Recreating container: {name}")
 
-            # Stop container
-            subprocess.run(["docker", "stop", name], capture_output=True, timeout=60)
-            self._debug(f"  Stopped: {name}")
+            # Stop container, respecting its own Config.StopTimeout —
+            # see _stop_container() and #11 for the slow-shutdown rationale.
+            stop_ok, stop_detail = self._stop_container(name, inspect_config=config)
+            self._debug(f"  Stop {name}: {stop_detail}")
+            if not stop_ok:
+                return False, f"Couldn't stop container: {stop_detail}"
 
             # Rename old container
             old_name = f"{name}_old"
@@ -1059,7 +1137,10 @@ class UpdateChecker:
                 # a broken service.
                 self._debug(f"  Health check FAILED for {name} — rolling back")
                 tail = self._tail_logs(name, lines=10)
-                subprocess.run(["docker", "stop", name], capture_output=True, timeout=30)
+                # Stop with the same generous timeout logic as the
+                # initial stop, so a slow-shutdown app doesn't leave
+                # the rollback half-finished.
+                self._stop_container(name)
                 subprocess.run(["docker", "rm", name], capture_output=True, timeout=10)
                 subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
                 subprocess.run(["docker", "start", name], capture_output=True, timeout=60)

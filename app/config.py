@@ -16,7 +16,7 @@ PERSISTENT_KEYS = [
     "language", "web_password", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
     "healthcheck_max_starting",
-    "bot_label",
+    "bot_label", "docker_stop_timeout",
 ]
 
 
@@ -30,7 +30,7 @@ class Config:
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id,
                  telegram_allowed_users, healthcheck_max_starting,
-                 bot_label):
+                 bot_label, docker_stop_timeout):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -112,6 +112,13 @@ class Config:
         # for single-host or single-DM setups). Stepping stone toward
         # the v2.0 multi-host refactor.
         self.bot_label = bot_label
+        # Minimum seconds we allow `docker stop` to take before falling
+        # back to `docker kill`. Acts as a floor: the actual wait is
+        # max(this, the container's own Config.StopTimeout). Default 60s
+        # works for almost everything; raise for stacks with apps that
+        # legitimately flush state for longer on shutdown (some DBs,
+        # log aggregators). See #11.
+        self.docker_stop_timeout = docker_stop_timeout
 
         # Load persistent overrides from settings.json
         self._load_persistent()
@@ -192,4 +199,5 @@ class Config:
             ],
             healthcheck_max_starting=int(os.environ.get("HEALTHCHECK_MAX_STARTING", "600")),
             bot_label=os.environ.get("BOT_LABEL", "").strip(),
+            docker_stop_timeout=int(os.environ.get("DOCKER_STOP_TIMEOUT", "60")),
         )

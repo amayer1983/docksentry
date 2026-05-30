@@ -2,6 +2,21 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.5] - 2026-05-30
+
+### Fixed
+- **`docker stop` 60s hardcoded — containers with longer StopTimeout failed.** Reported by @famewolf in [#11](../../issues/11). Updating a slow-stopping container (homarr was the example — DBs, log aggregators, anything with a tuned `--stop-timeout` similar story) would fail with `Command 'docker stop X' timed out after 60 seconds`. Worse: Docker kept stopping in the background and eventually finished, so the container ended up stopped on the new image but never got recreated — the user found it offline next morning.
+
+  The stop logic now:
+  1. **Reads `Config.StopTimeout` from `docker inspect`** (per-container)
+  2. **Passes `--time N` to `docker stop`** so Docker's grace aligns with what we expect
+  3. **Subprocess wait is `max(default, StopTimeout) + 30s`** for headroom around the SIGKILL phase
+  4. **Falls back to `docker kill`** if even that's exceeded — so we never leave the recreate flow half-finished
+  5. Same logic applied to the rollback `docker stop` path
+
+### Added
+- **`DOCKER_STOP_TIMEOUT` env var** (default `60`, also Web UI / persistent). Minimum subprocess timeout for `docker stop`; effective wait is `max(this, container.Config.StopTimeout)`. Raise globally for stacks with slow-shutdown apps.
+
 ## [1.17.4] - 2026-05-29
 
 ### Added
