@@ -344,5 +344,6 @@
   "changelog_fetch_failed": "❌ Couldn't fetch the changelog: {error}",
   "changelog_up_to_date": "✅ You're on *v{version}* — no newer versions in the changelog.",
   "changelog_title": "📋 *{count} new version(s) since v{current}:*",
-  "changelog_truncated": "... (truncated — full changelog at {url})"
+  "changelog_truncated": "... (truncated — full changelog at {url})",
+  "migration_self_autoupdate_removed": "🛡 *Heads up:* this Docksentry container was on its own auto-update list. Auto-updating ourselves through the regular flow killed the process before recreate could happen (see #16). Removed from the list. Use `/selfupdate` (manual) or `AUTO_SELFUPDATE=true` (env) for self-updates instead."
 }

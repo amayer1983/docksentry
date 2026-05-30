@@ -2,6 +2,21 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.7] - 2026-05-30
+
+### Fixed
+- **Critical: self-kill when DockSentry is in its own auto-update list.** Closes [#16](../../issues/16). Reported by @NotRetarded. If users added DockSentry to their `/autoupdate` list (or hit "Update all" / Web UI "Update" on DockSentry's row), the regular update flow called `docker stop` on the running container — which kills PID 1 immediately, so the rename + `docker run` recreate steps never executed. The container ended up stopped on the new image and never came back up. DockSentry can only safely update itself via the dedicated helper-container path (`/selfupdate` or `AUTO_SELFUPDATE=true`).
+
+  Defense in depth, three layers:
+  1. **More robust self-detection.** The old `HOSTNAME` env var lookup silently missed in some compose / orchestrator setups (the storage-driver overlay path in `/proc/self/mountinfo` and the cgroups v2 unified hierarchy at `/proc/self/cgroup` aren't reliable here — they carry different identifiers). New `_own_container_id()` uses `HOSTNAME` then `/etc/hostname` to resolve via `docker inspect`, caches the full container ID, and uses *that ID* (not name) for self-comparison.
+  2. **`update_container()` bottleneck.** Every code path that issues `docker stop` now goes through this method, and it refuses (with a clear message pointing to `/selfupdate`) when the target container ID matches our own. Even if a future feature or third-party caller bypasses the check_all filter, the bottleneck catches it.
+  3. **Boot-time migration.** If a previous version saved DockSentry into `autoupdate_containers.json`, the entry is stripped on next start and a one-shot Telegram / Discord / webhook notification explains what happened and what to use instead (`/selfupdate` manually or `AUTO_SELFUPDATE=true` env var).
+
+  Sneaky secondary bug found while testing the guard: the original implementation used `target_id.lstrip("sha256:")` to strip the prefix on image-style IDs — but `str.lstrip` strips any leading character in the set `{s, h, a, 2, 5, 6, :}`, so a hex ID starting with `2`, `5`, `6`, or `a` got silently corrupted (leading char chewed off). Now uses an explicit `startswith` + slice.
+
+### i18n
+1 new key (`migration_self_autoupdate_removed`) × 16 language files. EN + DE translated.
+
 ## [1.17.6] - 2026-05-30
 
 ### Fixed

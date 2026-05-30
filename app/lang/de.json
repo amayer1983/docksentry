@@ -50,6 +50,7 @@
   "help_selfupdate": "/selfupdate — Bot selbst aktualisieren",
   "help_changelog": "/changelog — Neuigkeiten in den Versionen über deiner anzeigen",
   "docksentry_update_hint": "🚀 *Docksentry-Update verfügbar* — mit /selfupdate anwenden, oder /changelog für die Vorschau.",
+  "migration_self_autoupdate_removed": "🛡 *Hinweis:* dieser Docksentry-Container war in seiner eigenen Auto-Update-Liste. Wenn wir uns selbst über den regulären Update-Pfad updaten, killt das den Prozess bevor der Recreate-Schritt läuft (siehe #16). Wurde aus der Liste entfernt. Für Self-Updates bitte `/selfupdate` (manuell) oder `AUTO_SELFUPDATE=true` (Env) nutzen.",
   "changelog_fetching": "🔍 Lade Changelog von GitHub...",
   "changelog_fetch_failed": "❌ Changelog konnte nicht geladen werden: {error}",
   "changelog_up_to_date": "✅ Du bist auf *v{version}* — keine neueren Versionen im Changelog.",

@@ -77,6 +77,25 @@ def main():
     # real-world v1.17.0 deployment.
     post_selfupdate_restart = os.path.exists(config.deferred_check_file)
 
+    # One-shot migration: if a previous Docksentry version saved its own
+    # container into the auto-update list (which routes through the
+    # regular `docker stop` flow and kills PID 1 — #16), strip it and
+    # notify so the user knows what happened and where to look. Use
+    # cgroup-based detection so HOSTNAME-override compose setups don't
+    # slip through.
+    self_in_autoupdate = False
+    try:
+        own_name = checker._own_container_name()
+        if own_name:
+            auto_list = store.get_autoupdate()
+            if own_name in auto_list:
+                auto_list = [n for n in auto_list if n != own_name]
+                store.save_autoupdate(auto_list)
+                self_in_autoupdate = True
+                print(f"Migration: removed {own_name!r} from auto-update list (use /selfupdate instead — see #16)")
+    except Exception as e:
+        print(f"Self-autoupdate migration check failed (non-fatal): {e}")
+
     # Start scheduler in background
     scheduler.start()
 
@@ -118,6 +137,14 @@ def main():
         startup_msg = t("startup_message", version=VERSION)
         if bot.enabled:
             bot.send_message(startup_msg)
+
+    # One-shot migration notice if we just stripped self from auto-update.
+    if self_in_autoupdate:
+        notice = t("migration_self_autoupdate_removed")
+        if bot.enabled:
+            bot.send_message(notice)
+        if notifier.has_channels():
+            notifier.send_message(notice)
         if notifier.has_channels():
             notifier.send_message(startup_msg)
 

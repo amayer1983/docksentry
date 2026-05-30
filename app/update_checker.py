@@ -27,16 +27,13 @@ class UpdateChecker:
             ["docker", "ps", "--format", "{{.Names}}|{{.Image}}"],
             capture_output=True, text=True
         )
-        # Get own container name to exclude self
-        hostname = os.environ.get("HOSTNAME", "")
-        own_name = None
-        if hostname:
-            own_result = subprocess.run(
-                ["docker", "inspect", "--format", "{{.Name}}", hostname],
-                capture_output=True, text=True
-            )
-            if own_result.returncode == 0:
-                own_name = own_result.stdout.strip().lstrip("/")
+        # Get own container name to exclude self. Robust detection: tries
+        # HOSTNAME env first, falls back to /proc/self/cgroup if that's
+        # missing or doesn't resolve. The old HOSTNAME-only path silently
+        # missed self-detection in some compose / orchestrator setups,
+        # leading to the bot updating itself via the regular flow and
+        # killing PID 1 (#16).
+        own_name = self._own_container_name()
 
         containers = []
         for line in result.stdout.strip().split("\n"):
@@ -633,6 +630,118 @@ class UpdateChecker:
         with open(self.config.history_file, "w") as f:
             json.dump(history, f, indent=2)
 
+    def _own_container_id(self):
+        """Return our full 64-char container ID, or "" if we can't
+        determine it. Used as the source-of-truth for self-detection —
+        any container that resolves to this ID is "us", regardless of
+        the docker `Name` it currently carries (which could be renamed
+        between checks).
+
+        Strategy: ask Docker to resolve us by hostname (Docker's default
+        is to set HOSTNAME = short container ID; even if compose
+        overrides hostname:, the actual /etc/hostname is still set
+        to that value, so inspect-by-name finds the right container).
+
+        Cgroup parsing isn't reliable on cgroups v2 (the unified
+        hierarchy often shows just `0::/` with no docker substring) and
+        the mountinfo overlay path is the *storage-driver* ID, not the
+        container ID — different identifiers. So we stick to the
+        conventional hostname-inspect route and don't pretend we can
+        be cleverer."""
+        if hasattr(self, "_own_id_cache"):
+            return self._own_id_cache
+        own_id = ""
+        candidates = []
+        h = os.environ.get("HOSTNAME", "").strip()
+        if h:
+            candidates.append(h)
+        try:
+            with open("/etc/hostname") as f:
+                hf = f.read().strip()
+                if hf and hf not in candidates:
+                    candidates.append(hf)
+        except (OSError, IOError):
+            pass
+        for c in candidates:
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Id}}", c],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    full_id = r.stdout.strip()
+                    if full_id.startswith("sha256:"):
+                        full_id = full_id[len("sha256:"):]
+                    if len(full_id) == 64:
+                        own_id = full_id
+                        break
+            except subprocess.SubprocessError:
+                continue
+        self._own_id_cache = own_id
+        return own_id
+
+    def _own_container_name(self):
+        """Return the running Docksentry container's docker name (without
+        the leading slash), or empty if we can't figure it out.
+
+        Tries HOSTNAME env first (cheapest), falls back to the
+        cgroup-based container ID. Cached after first call."""
+        if hasattr(self, "_own_name_cache"):
+            return self._own_name_cache
+        name = ""
+        candidates = []
+        h = os.environ.get("HOSTNAME", "").strip()
+        if h:
+            candidates.append(h)
+        cid = self._own_container_id()
+        if cid:
+            candidates.append(cid)
+        for c in candidates:
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Name}}", c],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    n = r.stdout.strip().lstrip("/")
+                    if n:
+                        name = n
+                        break
+            except subprocess.SubprocessError:
+                continue
+        self._own_name_cache = name
+        return name
+
+    def _would_kill_self(self, target_name):
+        """Final-line-of-defense check before issuing `docker stop` on a
+        container: would the target be us?
+
+        Compares full container IDs rather than names so a user-set
+        DOCKSENTRY_CONTAINER_NAME mismatch doesn't bypass the guard.
+        Returns False (= safe, proceed) when we can't determine our own
+        ID — don't false-positive into refusing every update."""
+        own_id = self._own_container_id()
+        if not own_id:
+            return False
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", "--format", "{{.Id}}", target_name],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode != 0:
+                return False
+            # docker inspect on a CONTAINER returns "HEX" with no prefix;
+            # on an IMAGE it returns "sha256:HEX". Handle both safely —
+            # str.lstrip("sha256:") would chew through any leading char
+            # in {s,h,a,2,5,6,:} which silently corrupts a hex ID that
+            # happens to start with 2/5/6/a.
+            target_id = r.stdout.strip()
+            if target_id.startswith("sha256:"):
+                target_id = target_id[len("sha256:"):]
+            return target_id == own_id
+        except subprocess.SubprocessError:
+            return False
+
     def _stop_container(self, name, inspect_config=None):
         """Stop a container, respecting its own `Config.StopTimeout`.
 
@@ -878,6 +987,20 @@ class UpdateChecker:
 
     def update_container(self, name, image, compose_project=None, compose_service=None,
                          compose_file=None, compose_dir=None, **kwargs):
+        # FINAL BACKSTOP against self-kill (#16). `get_running_containers`
+        # already filters self out of `check_all`, but third-party callers
+        # — Web UI single-update button, callback handlers, anything new
+        # we add later — could route around that filter. Comparing full
+        # container IDs (via /proc/self/cgroup) catches "we're about to
+        # docker-stop ourselves" even when the name-based detection up
+        # the stack missed it. Self-updates must go through the dedicated
+        # `_do_selfupdate()` helper-container path instead.
+        if self._would_kill_self(name):
+            self._debug(f"  REFUSED: {name} is this Docksentry container — use /selfupdate")
+            msg = "Refused: this is the running Docksentry container — use /selfupdate (or set AUTO_SELFUPDATE=true)"
+            self._save_history(name, image, False, msg)
+            return False, msg
+
         # Try Compose update if container belongs to a stack
         if compose_project and compose_service and compose_file:
             return self._update_compose(name, image, compose_project, compose_service,
