@@ -163,8 +163,11 @@ All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and
 
 If you want to use Docksentry in a Telegram **group** (so multiple people see the notifications) instead of a private chat:
 
-1. **CHAT_ID is the group ID**, not your personal user ID. For supergroups it starts with `-100…`. Find it by sending a message in the group and visiting `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+> ⚠️ **Make sure it's a Group, not a Channel.** Telegram's "New Channel" creates a broadcast-only chat — admins post, members read, nobody can send `/commands`. The bot will happily post its startup message there but `getUpdates` always returns empty because there are no incoming messages. Use **New Group** in the Telegram app (not New Channel). A working group ID is negative — typically `-100…` for supergroups or shorter negatives (`-52…` etc.) for basic groups; both work.
+
+1. **CHAT_ID is the group ID**, not your personal user ID. Find it by sending a message in the group and visiting `https://api.telegram.org/bot<TOKEN>/getUpdates`.
 2. **Add the bot to the group** with permission to post and read messages. Disable group privacy in [@BotFather](https://t.me/BotFather) → `/setprivacy` → `Disable`, otherwise the bot only sees messages that mention it directly — so commands like `/status` won't trigger.
+   > 💡 **`/setprivacy` is per-chat-membership cached.** If you toggle it in BotFather *after* the bot is already in the group, the new setting doesn't apply to that existing membership — `docker compose down/up` of Docksentry **does not** clear it. You have to **kick the bot from the group and add it again**. This trips most people up on first setup.
 3. **Topics (Forum groups):** if the group has topics enabled, set `TELEGRAM_TOPIC_ID` to the topic where the bot should post. The ID is the integer after the last slash in a topic URL (right-click a topic → Copy link).
 4. **Restrict who can control the bot** (optional but recommended for shared groups): set `TELEGRAM_ALLOWED_USERS` to a comma-separated list of personal user IDs. Without it, *any* group member can click "Update all". Find user IDs the same way as the chat ID — `from.id` in the `getUpdates` response.
 

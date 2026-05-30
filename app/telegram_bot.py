@@ -32,6 +32,41 @@ class TelegramBot:
     def stop(self):
         self.running = False
 
+    def _save_selfupdate_history(self, container_name, image, old_created, new_created):
+        """Record a Docksentry self-update in update_history.json so it
+        shows up in /history and the Web UI history page alongside
+        regular container updates. Reported missing by @famewolf in #13.
+
+        Written BEFORE the helper container restarts us (since we won't
+        be alive to write after). Detail uses the same date-arrow format
+        as regular container updates so the Web UI doesn't need special
+        rendering. success=True is assumed — if the helper fails, the
+        next manual /selfupdate will create a follow-up entry with the
+        new outcome."""
+        import json as _json
+        from datetime import datetime as _dt
+        entry = {
+            "timestamp": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "container": container_name,
+            "image": image,
+            "success": True,
+            "detail": f"🗓️ {old_created} → {new_created} (selfupdate)",
+        }
+        try:
+            history = []
+            if os.path.exists(self.config.history_file):
+                try:
+                    with open(self.config.history_file) as f:
+                        history = _json.load(f)
+                except (_json.JSONDecodeError, IOError):
+                    history = []
+            history.append(entry)
+            history = history[-100:]
+            with open(self.config.history_file, "w") as f:
+                _json.dump(history, f, indent=2)
+        except IOError as e:
+            print(f"Failed to record selfupdate history: {e}")
+
     def _own_container_meta(self):
         """Return (own_name, own_image) for the running Docksentry
         container, or (None, None) when we can't figure it out (HOSTNAME
@@ -738,6 +773,9 @@ class TelegramBot:
             + self.t("selfupdate_restarting")
         )
 
+        # Record in history BEFORE _do_selfupdate kills us — otherwise the
+        # entry never gets written (#13).
+        self._save_selfupdate_history(own_name, own_image, old_created, new_created)
         self._do_selfupdate(config, own_name, own_image)
 
     def _do_selfupdate(self, config, own_name, own_image):
@@ -935,6 +973,11 @@ class TelegramBot:
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
                 + self.t("selfupdate_restarting")
             )
+
+        # Record in history BEFORE _do_selfupdate kills us — otherwise the
+        # entry never gets written (#13). Same data path as the manual
+        # /selfupdate handler.
+        self._save_selfupdate_history(own_name, own_image, old_created, new_created)
 
         # Reuse the selfupdate logic — this blocks for ~30s while the
         # helper container stops us. Caller should treat this as a

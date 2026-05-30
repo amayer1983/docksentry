@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.17.6] - 2026-05-30
+
+### Fixed
+- **`/history` and the Web UI history page now record Docksentry's own self-updates.** Closes [#13](../../issues/13). Previously only container updates appeared — `_save_history` was wired from `update_checker.update_container()` but never from the self-update path. New `TelegramBot._save_selfupdate_history()` helper writes an entry just before the helper container restarts the bot, so the event isn't lost in the process death. Detail uses the same date-arrow format as regular updates with a trailing `(selfupdate)` marker so the Web UI doesn't need special rendering. Reported by @famewolf in #2.
+
+### Docs
+- **README "Group / Topic setup" section** now starts with a prominent warning that **Group ≠ Channel** in Telegram — channels are broadcast-only and have no incoming messages for the bot to receive (the most common cause of "bot posts but doesn't respond" reports). Also added the `/setprivacy` cache caveat: toggling it in BotFather after the bot has joined the group doesn't apply retroactively — `docker compose down/up` of Docksentry won't help, the bot has to be kicked and re-added. Both based on @famewolf's first-time-setup feedback.
+
 ## [1.17.5] - 2026-05-30
 
 ### Fixed
