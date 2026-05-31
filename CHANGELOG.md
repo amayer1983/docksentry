@@ -2,6 +2,30 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.1] - 2026-05-30
+
+### Added
+- **`/selfupdate <version>` — pin to a specific release or roll back.** Closes [#12](../../issues/12). Three forms:
+  - **`/selfupdate`** — current behaviour, pulls whatever tag the container is on (usually `:latest`)
+  - **`/selfupdate 1.17.4`** — pin to a specific semver tag. Useful when a release broke something and you want to stay on a known-good version, or when you need to test against an older build
+  - **`/selfupdate previous`** — auto-detects the version older than the running one by reading the upstream CHANGELOG, no need to remember which version came before. Suggested by @famewolf
+
+  Input validation refuses non-semver targets (`v1.17.4`, `latest`, `1.2`, etc.) with a clear example before triggering the helper container — saves the user from a mid-restart `docker pull` failure on a malformed tag.
+
+- **Docker registry authentication** (`DOCKER_USERNAME` / `DOCKER_PASSWORD` / `DOCKER_AUTH_CONFIG`). Closes [#18](../../issues/18). Bypasses Docker Hub's anonymous 100-pull-per-6h-per-IP rate limit. Three input modes:
+  1. **`DOCKER_AUTH_CONFIG`** — path to an existing Docker `config.json`. Best for users who already manage credentials outside Docksentry (mount your host's `~/.docker/config.json` read-only).
+  2. **`DOCKER_USERNAME` + `DOCKER_PASSWORD`** — we run `docker login` once at startup. Simpler if you don't already have a config file. Set `DOCKER_REGISTRY` for non-Docker-Hub registries (ghcr.io, quay.io, internal Harbor, …).
+  3. Neither set — anonymous pulls (existing default).
+  
+  Login failures are non-blocking: a clear warning is printed and the bot continues with anonymous pulls. Credentials are env-only — never persisted to `settings.json` so they don't end up on the data volume.
+
+### Polish
+- **README "What's different" section** between the hero screenshots and Features. Positions vs Watchtower (set-and-forget) and Diun (notify-only), then lists the six things that actually distinguish Docksentry: tap-to-update, container groups, lifecycle commands, auto-rollback, maintenance mode, multi-bot setup.
+- **Docker Hub short-description** updated to match — now mentions Telegram + Web UI + Discord + webhooks + lifecycle commands (96 chars, Hub limit is 100). Auto-syncs on every README push via the existing GitHub Actions workflow.
+
+### i18n
+3 new keys × 16 language files. EN + DE translated; 14 others fall back to EN.
+
 ## [1.18.0] - 2026-05-30
 
 ### Added

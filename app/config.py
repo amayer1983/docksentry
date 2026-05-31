@@ -30,7 +30,9 @@ class Config:
                  language, web_ui, web_port, web_password,
                  discord_webhook, webhook_url, telegram_topic_id,
                  telegram_allowed_users, healthcheck_max_starting,
-                 bot_label, docker_stop_timeout):
+                 bot_label, docker_stop_timeout,
+                 docker_username, docker_password,
+                 docker_auth_config, docker_registry):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -119,6 +121,24 @@ class Config:
         # legitimately flush state for longer on shutdown (some DBs,
         # log aggregators). See #11.
         self.docker_stop_timeout = docker_stop_timeout
+        # Docker registry authentication (#18). Three ways to supply
+        # credentials, checked in priority order at startup:
+        #   1. DOCKER_AUTH_CONFIG — path to an existing `config.json`
+        #      (we set DOCKER_CONFIG to its parent dir; docker CLI picks
+        #      the file up automatically). Best for users who already
+        #      manage docker creds outside of Docksentry.
+        #   2. DOCKER_USERNAME + DOCKER_PASSWORD — we run `docker login`
+        #      once at startup. Simpler for users who don't already have
+        #      a config.json.
+        #   3. Neither — anonymous pulls (default).
+        # DOCKER_REGISTRY lets the login point at a non-Docker-Hub
+        # registry (ghcr.io, quay.io, internal Harbor, …). Empty = Hub.
+        # Credentials are env-only on purpose: never persisted to
+        # settings.json so they don't end up on the data volume.
+        self.docker_username = docker_username
+        self.docker_password = docker_password
+        self.docker_auth_config = docker_auth_config
+        self.docker_registry = docker_registry
 
         # Load persistent overrides from settings.json
         self._load_persistent()
@@ -200,4 +220,8 @@ class Config:
             healthcheck_max_starting=int(os.environ.get("HEALTHCHECK_MAX_STARTING", "600")),
             bot_label=os.environ.get("BOT_LABEL", "").strip(),
             docker_stop_timeout=int(os.environ.get("DOCKER_STOP_TIMEOUT", "60")),
+            docker_username=os.environ.get("DOCKER_USERNAME", "").strip(),
+            docker_password=os.environ.get("DOCKER_PASSWORD", ""),  # NO .strip() — leading/trailing whitespace can be valid
+            docker_auth_config=os.environ.get("DOCKER_AUTH_CONFIG", "").strip(),
+            docker_registry=os.environ.get("DOCKER_REGISTRY", "").strip(),
         )

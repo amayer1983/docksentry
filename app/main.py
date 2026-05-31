@@ -4,6 +4,7 @@
 import os
 import signal
 import socket
+import subprocess
 import threading
 import time
 import sys
@@ -25,8 +26,59 @@ from scheduler import Scheduler
 from notifier import Notifier
 
 
+def _setup_docker_auth(config):
+    """Configure docker-CLI authentication if the user supplied
+    credentials. Three modes, checked in priority order:
+
+      1. DOCKER_AUTH_CONFIG path → point DOCKER_CONFIG at its parent
+         dir. Docker CLI then reads the file automatically.
+      2. DOCKER_USERNAME + DOCKER_PASSWORD → run `docker login` once.
+         Falls back to anonymous on failure (with a printed warning)
+         rather than blocking startup.
+      3. Neither → anonymous pulls (existing behaviour).
+
+    Bypasses Docker Hub's anonymous rate limit (100 / 6h / IP) for
+    setups with many containers or NATted multi-host installs. See #18.
+    """
+    if config.docker_auth_config:
+        path = config.docker_auth_config
+        if os.path.isfile(path):
+            os.environ["DOCKER_CONFIG"] = os.path.dirname(path) or "."
+            print(f"Docker auth: using DOCKER_AUTH_CONFIG={path}")
+        else:
+            print(f"Docker auth: DOCKER_AUTH_CONFIG={path} not found, skipping")
+        return
+
+    if config.docker_username and config.docker_password:
+        registry = config.docker_registry or "docker.io"
+        try:
+            r = subprocess.run(
+                ["docker", "login", "-u", config.docker_username,
+                 "--password-stdin", registry],
+                input=config.docker_password.encode(),
+                capture_output=True,
+                timeout=30,
+            )
+            if r.returncode == 0:
+                # Don't print the password — it's somewhere in stderr otherwise
+                print(f"Docker auth: logged in to {registry} as {config.docker_username}")
+            else:
+                err = (r.stderr or b"").decode(errors="replace").strip()[:200]
+                print(f"Docker auth: docker login failed ({registry}): {err}")
+                print(f"Docker auth: continuing with anonymous pulls")
+        except (subprocess.SubprocessError, OSError) as e:
+            print(f"Docker auth: docker login error: {e}")
+            print(f"Docker auth: continuing with anonymous pulls")
+
+
 def main():
     config = Config.from_env()
+    # Wire up Docker registry auth before any subprocess that calls
+    # `docker pull` — registry / scheduler / etc. all rely on it.
+    try:
+        _setup_docker_auth(config)
+    except Exception as e:
+        print(f"Docker auth setup failed (non-fatal): {e}")
 
     # Telegram is now optional. At least one notification/control channel
     # must be configured, otherwise Docksentry has no way to talk to the

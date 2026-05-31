@@ -125,7 +125,9 @@ volumes:
 | `/autoupdate <name>` | Toggle auto-update per container |
 | `/history` | Show update history |
 | `/cleanup` | Remove old unused images |
-| `/selfupdate` | Update the bot itself |
+| `/selfupdate` | Update the bot itself (latest) |
+| `/selfupdate <version>` | Pin to a specific version (e.g. `/selfupdate 1.17.4`) |
+| `/selfupdate previous` | Roll back to the previous release |
 | `/changelog` | Show what's new in versions ahead of yours (fetched from GitHub) |
 | `/debug` | Toggle debug mode |
 | `/lang <code>` | Switch language |
@@ -169,6 +171,9 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
 | `DOCKER_STOP_TIMEOUT` | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators). |
+| `DOCKER_USERNAME` / `DOCKER_PASSWORD` | | Docker Hub (or other registry) credentials. Bypasses the anonymous pull rate limit (100 / 6h / IP). We run `docker login` once at startup. |
+| `DOCKER_AUTH_CONFIG` | | Path to an existing `config.json` with stored credentials (alternative to USERNAME/PASSWORD). Mount your host's `~/.docker/config.json` read-only and point at it. |
+| `DOCKER_REGISTRY` | `docker.io` | Registry to log into. Set to `ghcr.io`, `quay.io`, an internal Harbor, etc. when using `DOCKER_USERNAME`/`PASSWORD`. |
 | `HEALTHCHECK_MAX_STARTING` | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
 

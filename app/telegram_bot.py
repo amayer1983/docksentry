@@ -832,8 +832,61 @@ class TelegramBot:
     def notify_no_updates(self):
         self.send_message(self.t("all_up_to_date"))
 
-    def _handle_selfupdate(self):
-        """Pull latest image and recreate own container."""
+    def _resolve_selfupdate_target(self, current_image, target):
+        """Resolve `target` ('previous' / 'X.Y.Z' / None) into a fully-
+        qualified image ref to pull. Returns (image_ref, error_msg).
+
+        On success, error_msg is None.
+        """
+        if not target:
+            return current_image, None
+
+        # Extract base ("registry/owner/repo") from current_image
+        if ":" in current_image:
+            base = current_image.rsplit(":", 1)[0]
+        else:
+            base = current_image
+
+        if target.lower() == "previous":
+            # Walk the upstream CHANGELOG for the latest version older
+            # than what's currently running — gives the user a one-step
+            # rollback target without having to look up version numbers.
+            from version import VERSION
+            ok, content = self._fetch_changelog()
+            if not ok:
+                return None, self.t("selfupdate_previous_fetch_failed", error=content)
+            import re
+            pat = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]", re.MULTILINE)
+            try:
+                cur = tuple(int(x) for x in VERSION.split(".")[:3])
+            except ValueError:
+                cur = (0, 0, 0)
+            best = None
+            for m in pat.finditer(content):
+                v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                if v < cur and (best is None or v > best):
+                    best = v
+            if not best:
+                return None, self.t("selfupdate_previous_none", current=VERSION)
+            target = f"{best[0]}.{best[1]}.{best[2]}"
+
+        # Validate the resolved target is a clean semver — refuses
+        # weird input ("latest", "1.2", "1.2.3-rc1") to avoid pulling a
+        # tag that the helper container can't actually find.
+        import re as _re
+        if not _re.match(r"^\d+\.\d+\.\d+$", target):
+            return None, self.t("selfupdate_invalid_version", version=target)
+        return f"{base}:{target}", None
+
+    def _handle_selfupdate(self, target=None):
+        """Pull a target image and recreate own container.
+
+        Args:
+            target: optional version override:
+                None       → whatever tag the container currently runs (usually :latest)
+                "previous" → last released version older than the running one
+                "X.Y.Z"    → a specific semver tag
+        """
         hostname = os.environ.get("HOSTNAME", "")
         if not hostname:
             self.send_message(self.t("selfupdate_failed_id"))
@@ -850,7 +903,11 @@ class TelegramBot:
 
         config = json.loads(result.stdout)[0]
         own_name = config["Name"].lstrip("/")
-        own_image = config["Config"]["Image"]
+        current_image = config["Config"]["Image"]
+        own_image, err = self._resolve_selfupdate_target(current_image, target)
+        if err:
+            self.send_message(err)
+            return
 
         # Get current image info
         old_created = config.get("Created", "")[:10]
@@ -1573,6 +1630,15 @@ class TelegramBot:
 
         elif text == "/selfupdate":
             self._handle_selfupdate()
+
+        elif text.startswith("/selfupdate "):
+            # /selfupdate <version> — pin to a specific release.
+            # /selfupdate previous — last released version older than current.
+            # See #12. The handler validates the target and refuses
+            # malformed input before triggering the helper container.
+            parts = text.split(maxsplit=1)
+            target = parts[1].strip() if len(parts) > 1 else None
+            self._handle_selfupdate(target=target)
 
         elif text.startswith("/lang"):
             from i18n import available_languages, get_translator
