@@ -79,6 +79,10 @@ class Config:
         self.maintenance_file = os.path.join(data_dir, "maintenance.json")
         # Per-container free-text notes
         self.notes_file = os.path.join(data_dir, "container_notes.json")
+        # Per-container source/repo links (#20) — manual override of the
+        # OCI `image.source` label auto-detection. Wraps the container
+        # name in update notifications as a markdown link.
+        self.links_file = os.path.join(data_dir, "container_links.json")
         # Last disk warning timestamp (rate-limit warnings to 1/day)
         self.disk_warn_state_file = os.path.join(data_dir, "disk_warn_state.json")
         # Deferred-check marker — written when AUTO_SELFUPDATE is about to

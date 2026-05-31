@@ -43,7 +43,11 @@ class Notifier:
                 "containers": [
                     {"name": u["name"], "image": u["image"],
                      "size": u.get("size", "?"), "created": u.get("created", "?"),
-                     "compose": bool(u.get("compose_project"))}
+                     "compose": bool(u.get("compose_project")),
+                     # Repo / changelog URL — auto-detected from OCI
+                     # labels or manually overridden in the Web UI
+                     # (#20). Empty string when no link is available.
+                     "source_url": u.get("source_url", "")}
                     for u in updates
                 ],
             })
@@ -104,9 +108,15 @@ class Notifier:
         fields = []
         for u in updates:
             compose_tag = " 🐳" if u.get("compose_project") else ""
+            # Discord embed fields don't render links in `name`, but
+            # `value` is full markdown — append a clickable
+            # "[Source ↗](url)" line when we have a source URL (#20).
+            link_line = ""
+            if u.get("source_url"):
+                link_line = f"\n[Source ↗]({u['source_url']})"
             fields.append({
                 "name": f"📦 {u['name']}{compose_tag}",
-                "value": f"`{u['image']}`\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}",
+                "value": f"`{u['image']}`\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}{link_line}",
                 "inline": True,
             })
 

@@ -19,6 +19,7 @@ class ContainerStore:
         self.major_pending_file = config.major_pending_file
         self.groups_file = config.groups_file
         self.notes_file = config.notes_file
+        self.links_file = config.links_file
 
     # ── Pinned ────────────────────────────────────────────────
 
@@ -240,6 +241,32 @@ class ContainerStore:
         else:
             notes.pop(name, None)
         self._save_dict(self.notes_file, notes)
+
+    # ── Container links (#20) ─────────────────────────────────
+    # { container_name: "https://..." } — manual override of the
+    # repo/changelog URL that appears as a markdown link wrapping
+    # the container name in update notifications. Falls back to the
+    # OCI `image.source` label auto-detection when not set.
+
+    def get_links(self):
+        return self._load_dict(self.links_file)
+
+    def get_link(self, name):
+        return self.get_links().get(name, "")
+
+    def set_link(self, name, url):
+        links = self.get_links()
+        url = (url or "").strip()
+        # Minimal validation: must start with http(s):// to render as
+        # a clickable link in Telegram / Discord. Empty clears.
+        if url and not (url.startswith("http://") or url.startswith("https://")):
+            return False
+        if url:
+            links[name] = url[:500]  # cap to keep payload reasonable
+        else:
+            links.pop(name, None)
+        self._save_dict(self.links_file, links)
+        return True
 
     # ── helpers ───────────────────────────────────────────────
 

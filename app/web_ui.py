@@ -1546,6 +1546,22 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)
+            elif path == "/api/link":
+                # Per-container repo / changelog URL override (#20).
+                # Empty input clears. set_link validates http(s):// prefix
+                # and returns False on bad input — we silently drop bad
+                # URLs rather than surfacing an error toast (the field
+                # is power-user territory; UI shows a hint).
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                url = params.get("url", [""])[0].strip()
+                if name:
+                    store.set_link(name, url)
+                ref = self.headers.get("Referer", "/")
+                ref_path = urlparse(ref).path or "/"
+                self._send_redirect(ref_path)
             elif path == "/api/maintenance":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -2467,6 +2483,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <input type="hidden" name="name" value="{_e(name)}">
 <textarea name="note" rows="3" placeholder="{_e(t('web_note_placeholder'))}" maxlength="2000" style="width:100%;font-family:inherit;resize:vertical">{_e(store.get_note(name))}</textarea>
 <button type="submit" class="btn btn-sm" style="margin-top:6px">{t("web_note_save")}</button>
+</form>
+
+<hr class="section-divider">
+
+<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_link_title")}</h3>
+<p class="form-help" style="margin-bottom:8px">{t("web_link_intro")}</p>
+<form method="POST" action="/api/link">
+<input type="hidden" name="name" value="{_e(name)}">
+<input type="url" name="url" placeholder="{_e(t('web_link_placeholder'))}" value="{_e(store.get_link(name))}" style="width:100%">
+<button type="submit" class="btn btn-sm" style="margin-top:6px">{t("web_link_save")}</button>
 </form>
 
 <hr class="section-divider">

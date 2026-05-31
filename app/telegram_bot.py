@@ -137,6 +137,37 @@ class TelegramBot:
             self._cached_own_meta = (None, None)
             return self._cached_own_meta
 
+    def _resolve_container_link(self, name, image=""):
+        """Return the URL that should wrap `name` in update
+        notifications, or empty string when no link is available.
+
+        Priority order:
+          1. Manual override stored via Web UI (`container_links.json`).
+             Lets users point at the actual changelog of containers
+             whose images don't ship OCI labels (redis, postgres,
+             nginx-proxy-manager, …).
+          2. `org.opencontainers.image.source` OCI label (gold standard).
+          3. `org.opencontainers.image.url` OCI label (fallback).
+          4. Registry overview heuristic (Hub / ghcr.io / quay.io /
+             lscr.io → fleet.linuxserver.io) from the image reference.
+
+        Reuses the v1.18.3 `/changelog <container>` helpers so the
+        notification-link feature gets the same coverage as that
+        command (~67 % auto-detection rate without any user setup).
+        """
+        # 1. Manual override
+        manual = self.store.get_link(name)
+        if manual:
+            return manual
+        # 2 + 3. OCI labels
+        url, kind = self._container_source_url(name)
+        if url and kind in ("source", "url"):
+            return url
+        # 4. Registry-overview heuristic — only when we have an image ref
+        if image:
+            return self._guess_registry_overview_url(image)
+        return ""
+
     def _container_source_url(self, name):
         """Look up the upstream source URL for a container from its OCI
         labels. Returns (url, kind) where kind is:
@@ -899,12 +930,26 @@ class TelegramBot:
     def notify_updates(self, updates, auto=False):
         if not updates:
             return
+        # Enrich each update with a `source_url` once so all downstream
+        # surfaces (Telegram markdown link, Discord embed, notifier
+        # webhook payload) share the same value. Resolved in priority
+        # order: manual override → OCI source label → image.url label →
+        # registry overview heuristic (#20).
+        for u in updates:
+            u["source_url"] = self._resolve_container_link(u["name"], u.get("image", ""))
+
         names = []
         for u in updates:
             size = u.get('size', '?')
             created = u.get('created', '?')
             compose_tag = " 🐳" if u.get("compose_project") else ""
-            names.append(f"• `{u['name']}` ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
+            # Container name becomes a markdown link when we have a
+            # source URL — Telegram's parse_mode=Markdown renders
+            # [text](url) as a tap-to-open hyperlink. Falls back to
+            # plain `name` when no URL is available.
+            display_name = (f"[{u['name']}]({u['source_url']})"
+                            if u.get("source_url") else f"`{u['name']}`")
+            names.append(f"• {display_name} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom
@@ -1040,12 +1085,18 @@ class TelegramBot:
             return
 
         new_id_short = new_id[:19]
-        self.send_message(
+        msg = (
             self.t("selfupdate_found") + "\n"
             + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
             + self.t("selfupdate_ids", old=old_id_short, new=new_id_short) + "\n\n"
             + self.t("selfupdate_restarting")
         )
+        self.send_message(msg)
+        # Also fan out to Discord / generic webhook so non-Telegram
+        # users actually see self-update events (#19). Same pattern as
+        # main.py's startup-message handling.
+        if self.notifier and self.notifier.has_channels():
+            self.notifier.send_message(msg)
 
         # Record in history BEFORE _do_selfupdate kills us — otherwise the
         # entry never gets written (#13).
@@ -1236,17 +1287,22 @@ class TelegramBot:
         # Send a single combined notification when defer_check is on, so
         # the user sees one story instead of two unrelated messages.
         if defer_check:
-            self.send_message(
+            msg = (
                 self.t("selfupdate_auto") + "\n"
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
                 + self.t("selfupdate_restarting_then_check")
             )
         else:
-            self.send_message(
+            msg = (
                 self.t("selfupdate_auto") + "\n"
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
                 + self.t("selfupdate_restarting")
             )
+        self.send_message(msg)
+        # Fan out to Discord / generic webhook so non-Telegram users
+        # see self-update events too (#19).
+        if self.notifier and self.notifier.has_channels():
+            self.notifier.send_message(msg)
 
         # Record in history BEFORE _do_selfupdate kills us — otherwise the
         # entry never gets written (#13). Same data path as the manual

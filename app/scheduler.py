@@ -87,12 +87,15 @@ class Scheduler:
             # we send the "now checking your containers" message.
             time.sleep(3)
             try:
+                from version import VERSION
+                resumed_msg = self.bot.t("selfupdate_resumed_check", version=VERSION)
                 if self.bot.enabled:
-                    from version import VERSION
-                    self.bot.send_message(
-                        self.bot.t("selfupdate_resumed_check", version=VERSION),
-                        auto=True,
-                    )
+                    self.bot.send_message(resumed_msg, auto=True)
+                # Also fan out to Discord / webhook so non-Telegram users
+                # see the post-restart confirmation too (#19).
+                notifier = getattr(self.bot, "notifier", None)
+                if notifier and notifier.has_channels():
+                    notifier.send_message(resumed_msg)
                 updates = self.checker.check_all()
                 if updates:
                     self.bot.handle_autoupdates(updates, self.checker)

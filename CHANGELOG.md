@@ -2,6 +2,30 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.4] - 2026-05-31
+
+### Fixed
+- **Self-update notifications now reach Discord and webhook channels.** Closes [#19](../../issues/19). Reported by @NotRetarded. All four selfupdate notification sites (manual `/selfupdate`, auto with `defer_check=True`, auto with `defer_check=False`, post-restart "checking your containers" message) previously called only `bot.send_message()` — which is Telegram-only — without a parallel `notifier.send_message()` call. Headless users (Web UI + Discord/webhook, no Telegram) got no visibility into self-updates at all. Same pattern as `main.py`'s startup-message handling.
+
+### Added
+- **Container names in update notifications are now clickable links.** Closes [#20](../../issues/20). Requested by @NotRetarded, à la WhatsUpDocker. When an update is reported, each container name is wrapped in a markdown link pointing at the source repo / changelog / registry page so you can preview release notes before deciding to apply.
+
+  Resolution chain (first match wins):
+  1. **Manual override** stored via Web UI (per-container "Repo / changelog link" text field on the Container Detail page)
+  2. **`org.opencontainers.image.source`** OCI label
+  3. **`org.opencontainers.image.url`** OCI label
+  4. **Registry-overview heuristic** (Docker Hub `_/<image>`, ghcr.io / quay.io / lscr.io → fleet.linuxserver.io)
+
+  Coverage across surfaces:
+  - **Telegram:** `[name](url)` markdown link inline with the container row
+  - **Discord:** appends a `[Source ↗](url)` line to each embed field's value (field names don't render links in Discord, but field values do)
+  - **Generic webhook:** new `source_url` field per container in the JSON payload — downstream automations (Home Assistant, Ntfy, custom scripts) can route on it
+
+  Auto-detection re-uses the v1.18.3 `/changelog <container>` helpers, so existing OCI-labelled images get the feature for free. Manual override on `/data/container_links.json` lets users fill in the gaps for popular labelless images (redis, postgres, nginx-proxy-manager, …).
+
+### i18n
+4 new keys (`web_link_title` + `_intro` + `_placeholder` + `_save`) × 16 language files. EN + DE translated; 14 others fall back to EN.
+
 ## [1.18.3] - 2026-05-30
 
 ### Added

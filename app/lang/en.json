@@ -368,6 +368,10 @@
   "web_note_intro": "Free-text memo for this container, visible in the status table tooltip.",
   "web_note_placeholder": "e.g. \"runs on host network — careful with port changes\"",
   "web_note_save": "Save note",
+  "web_link_title": "Repo / changelog link",
+  "web_link_intro": "Optional URL wrapped around this container's name in update notifications — typically the source repo, releases page, or upstream changelog. Overrides the auto-detection from OCI labels. Leave empty to fall back to auto-detection.",
+  "web_link_placeholder": "https://github.com/owner/repo or https://example.com/changelog",
+  "web_link_save": "Save link",
 
   "web_ui_mode_simple": "Simple",
   "web_ui_mode_advanced": "Advanced",

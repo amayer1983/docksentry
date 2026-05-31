@@ -368,6 +368,10 @@
   "web_note_intro": "Freitext-Memo für diesen Container, sichtbar im Tooltip der Statusliste.",
   "web_note_placeholder": "z. B. „läuft im Host-Netzwerk — Ports vorsichtig ändern\"",
   "web_note_save": "Notiz speichern",
+  "web_link_title": "Repo- / Changelog-Link",
+  "web_link_intro": "Optionale URL, die in Update-Benachrichtigungen um den Container-Namen gelegt wird — typischerweise das Source-Repo, die Releases-Seite oder der Upstream-Changelog. Überschreibt die Auto-Erkennung aus OCI-Labels. Leer lassen für Auto-Erkennung.",
+  "web_link_placeholder": "https://github.com/owner/repo oder https://example.com/changelog",
+  "web_link_save": "Link speichern",
 
   "web_ui_mode_simple": "Einfach",
   "web_ui_mode_advanced": "Erweitert",
