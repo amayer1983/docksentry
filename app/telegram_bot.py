@@ -199,6 +199,126 @@ class TelegramBot:
     def _save_autoupdate(self, containers):
         self.store.save_autoupdate(containers)
 
+    def _container_state(self, name):
+        """Return a dict with current state of `name` for the per-container
+        status output. Keys: state, health, uptime, image, ports, volumes,
+        restart_policy. All values are strings (already formatted for
+        display). Returns None if inspect fails."""
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode != 0:
+                return None
+            cfg = json.loads(r.stdout)[0]
+        except (subprocess.SubprocessError, json.JSONDecodeError, IndexError):
+            return None
+
+        state = cfg.get("State", {}) or {}
+        host = cfg.get("HostConfig", {}) or {}
+        config = cfg.get("Config", {}) or {}
+
+        status = state.get("Status", "?")
+        health = (state.get("Health") or {}).get("Status", "")
+
+        # Uptime from StartedAt
+        started_at = state.get("StartedAt", "")
+        uptime = "?"
+        if state.get("Running") and started_at:
+            try:
+                from datetime import datetime as _dt, timezone as _tz
+                s = _dt.fromisoformat(started_at.replace("Z", "+00:00"))
+                delta = _dt.now(_tz.utc) - s
+                total = int(delta.total_seconds())
+                if total < 60:
+                    uptime = f"{total}s"
+                elif total < 3600:
+                    uptime = f"{total // 60}m {total % 60}s"
+                elif total < 86400:
+                    uptime = f"{total // 3600}h {(total % 3600) // 60}m"
+                else:
+                    days = total // 86400
+                    hrs = (total % 86400) // 3600
+                    uptime = f"{days}d {hrs}h"
+            except (ValueError, AttributeError):
+                pass
+
+        # Ports — only host-mapped ones
+        port_lines = []
+        for cport, bindings in (host.get("PortBindings") or {}).items():
+            if bindings:
+                for b in bindings:
+                    hp = b.get("HostPort", "")
+                    if hp:
+                        port_lines.append(f"{hp}→{cport.split('/')[0]}")
+        ports = ", ".join(port_lines) if port_lines else "—"
+
+        # Volumes count
+        mounts = cfg.get("Mounts", []) or []
+        volumes = f"{len(mounts)}"
+
+        restart = (host.get("RestartPolicy") or {}).get("Name", "no")
+
+        return {
+            "name": cfg.get("Name", "").lstrip("/"),
+            "state": status,
+            "health": health,
+            "uptime": uptime,
+            "image": config.get("Image", "?"),
+            "ports": ports,
+            "volumes": volumes,
+            "restart_policy": restart or "no",
+            "running": bool(state.get("Running")),
+        }
+
+    def _lifecycle_action(self, action, name, checker):
+        """Execute a lifecycle action (stop/start/restart) on a resolved
+        container. Returns (ok: bool, message: str — already i18n'd).
+
+        Reuses the v1.17.7 _would_kill_self guard for stop/restart so
+        the bot can't stop / restart itself by accident (PID 1 would
+        die before the recreate, same class of bug as #16).
+        """
+        if action in ("stop", "restart") and checker._would_kill_self(name):
+            return False, self.t("lifecycle_refused_self", action=action, name=name)
+
+        if action == "stop":
+            ok, detail = checker._stop_container(name)
+            if ok:
+                return True, self.t("lifecycle_stopped", name=name)
+            return False, self.t("lifecycle_stop_failed", name=name, error=detail)
+
+        if action == "start":
+            try:
+                r = subprocess.run(
+                    ["docker", "start", name],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    return True, self.t("lifecycle_started", name=name)
+                return False, self.t("lifecycle_start_failed", name=name,
+                                      error=(r.stderr or "").strip()[:200])
+            except subprocess.SubprocessError as e:
+                return False, self.t("lifecycle_start_failed", name=name, error=str(e)[:200])
+
+        if action == "restart":
+            # docker restart is graceful stop + start; use generous
+            # timeout because some apps (gitlab, gluetun) take a while.
+            try:
+                r = subprocess.run(
+                    ["docker", "restart", "--time", "30", name],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if r.returncode == 0:
+                    return True, self.t("lifecycle_restarted", name=name)
+                return False, self.t("lifecycle_restart_failed", name=name,
+                                      error=(r.stderr or "").strip()[:200])
+            except subprocess.SubprocessError as e:
+                return False, self.t("lifecycle_restart_failed", name=name, error=str(e)[:200])
+
+        return False, f"unknown action: {action}"
+
     def _resolve_container(self, partial):
         """Resolve a partial container name. Returns (full_name, error_msg)."""
         result = subprocess.run(
@@ -1147,12 +1267,81 @@ class TelegramBot:
             self.store.remove_pending_major(name)
             self.send_message(f"⏭ Major update for `{name}` skipped.")
 
+        elif data.startswith("lifecycle:"):
+            # Inline-button action under /status <name>. Format:
+            # "lifecycle:<action>:<container_name>". Auth already
+            # passed at the top of _handle_callback.
+            try:
+                _, action, target = data.split(":", 2)
+            except ValueError:
+                self.answer_callback(callback["id"], "Bad action")
+                return
+            if action not in ("start", "stop", "restart"):
+                self.answer_callback(callback["id"], "Unknown action")
+                return
+            # Drop the buttons so the user can't double-fire while the
+            # action runs.
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            self.answer_callback(callback["id"], self.t("lifecycle_running", action=action))
+            ok, msg = self._lifecycle_action(action, target, checker)
+            self.send_message(msg)
+
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
         user_id = str(message.get("from", {}).get("id", ""))
         chat_id = message.get("chat", {}).get("id")
 
         if not self._check_auth(chat_id, user_id, kind="message"):
+            return
+
+        # `/status <name>` — per-container detail with inline action
+        # buttons. The arg-less `/status` keeps the overview behaviour.
+        if text.startswith("/status ") and len(text.split(maxsplit=1)) > 1:
+            partial = text.split(maxsplit=1)[1].strip()
+            resolved, err = self._resolve_container(partial)
+            if not resolved:
+                self.send_message(err)
+                return
+            info = self._container_state(resolved)
+            if not info:
+                self.send_message(self.t("resolve_not_found", name=resolved))
+                return
+            # State / health label with color icon
+            state_icon = "✅" if info["running"] else ("⏸" if info["state"] == "paused" else "⏹")
+            state_text = info["state"]
+            if info["health"]:
+                state_text += f" ({info['health']})"
+            uptime_line = f"⏱ *Uptime:* {info['uptime']}" if info["running"] else ""
+
+            lines = [
+                f"📊 *{info['name']}*  {state_icon}",
+                f"*State:* `{state_text}`",
+            ]
+            if uptime_line:
+                lines.append(uptime_line)
+            lines.extend([
+                f"*Image:* `{info['image']}`",
+                f"*Ports:* {info['ports']}",
+                f"*Volumes:* {info['volumes']}",
+                f"*Restart policy:* `{info['restart_policy']}`",
+            ])
+
+            # Build inline keyboard based on current state.
+            buttons = []
+            if info["running"]:
+                buttons.append({"text": self.t("lifecycle_btn_restart"),
+                                "callback_data": f"lifecycle:restart:{resolved}"})
+                buttons.append({"text": self.t("lifecycle_btn_stop"),
+                                "callback_data": f"lifecycle:stop:{resolved}"})
+            else:
+                buttons.append({"text": self.t("lifecycle_btn_start"),
+                                "callback_data": f"lifecycle:start:{resolved}"})
+
+            self.send_message(
+                "\n".join(lines),
+                reply_markup={"inline_keyboard": [buttons]},
+            )
             return
 
         if text == "/status":
@@ -1365,6 +1554,23 @@ class TelegramBot:
             else:
                 self.send_message(f"❌ {msg}")
 
+        # Container lifecycle commands — start / stop / restart.
+        # Same partial-name matching as /pin / /logs. Stop and restart
+        # refuse on the Docksentry container itself (#16 / #17). Code
+        # path is shared with the inline buttons in /status <name>.
+        elif text.startswith("/stop ") or text.startswith("/start ") or text.startswith("/restart "):
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                self.send_message(self.t("lifecycle_usage"))
+                return
+            action = parts[0][1:]  # strip leading "/"
+            resolved, err = self._resolve_container(parts[1].strip())
+            if not resolved:
+                self.send_message(err)
+                return
+            ok, msg = self._lifecycle_action(action, resolved, checker)
+            self.send_message(msg)
+
         elif text == "/selfupdate":
             self._handle_selfupdate()
 
@@ -1512,6 +1718,7 @@ class TelegramBot:
                 + self.t("help_check") + "\n"
                 + self.t("help_updates") + "\n"
                 + self.t("help_cleanup") + "\n"
+                + self.t("help_lifecycle") + "\n"
                 + self.t("help_maintenance") + "\n"
                 + self.t("help_history") + "\n"
                 + self.t("help_pin") + "\n"

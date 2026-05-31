@@ -2,6 +2,33 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.0] - 2026-05-30
+
+### Added
+- **Container lifecycle commands.** Closes [#17](../../issues/17). Three new Telegram commands plus per-container detail view, all with partial-name matching like `/pin`:
+  - **`/start <name>`** — start a stopped container
+  - **`/stop <name>`** — graceful stop, reuses the v1.17.5 timeout logic (respects each container's own `Config.StopTimeout`)
+  - **`/restart <name>`** — stop + start in one shot with a 30s grace
+  - **`/status <name>`** — per-container detail: state, health, uptime, image, host port mappings, volumes count, restart policy. Includes **inline action buttons** (`▶️ Start` / `🟥 Stop` / `🔁 Restart`) that adapt to the container's current state, so the common case is a single tap.
+
+- **Web UI: Stop / Restart buttons** on the Status page rows. Restart is shown in both UI modes (reversible, low-risk); Stop is advanced-only with a confirm dialog because it leaves the container offline.
+
+- **Catch-all for hung containers.** Requested by @famewolf (the homarr-stuck-after-timeout case from [#11](../../issues/11)): when a container is left in a weird state, you can now `/start`, `/stop`, or `/restart` it directly from Telegram without leaving the chat to open Portainer.
+
+### Safety
+- **Self-kill guard reused from v1.17.7.** `/stop docksentry`, `/restart docksentry`, the equivalent inline buttons, and the Web UI Stop/Restart buttons on Docksentry's own row are all refused with a clear message pointing to `/selfupdate` — same `_would_kill_self()` check that catches the regular update flow in #16. The lifecycle commands cannot kill the bot by accident.
+
+### Scope
+Deliberately **not** added: `/remove`, `/prune`, `/inspect`, `/exec`, `/stats`, bulk `/restart unhealthy`. The goal is "lifecycle control for containers that already exist", not "Portainer via chat" — those features are out of scope for this release and discussed individually in their own issues if interest emerges.
+
+### i18n
+14 new keys × 16 language files. EN + DE translated; 14 others fall back to EN.
+
+### Internal
+- New `TelegramBot._container_state()` helper builds the per-container detail dict from `docker inspect`.
+- New `TelegramBot._lifecycle_action()` is the single entry point for start/stop/restart — used by both Telegram commands AND the inline-button callbacks AND the Web UI POST handler, so behaviour is identical across surfaces.
+- New `/api/lifecycle` POST endpoint.
+
 ## [1.17.7] - 2026-05-30
 
 ### Fixed

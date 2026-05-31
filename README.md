@@ -100,8 +100,12 @@ volumes:
 | Command | Description |
 |---------|-------------|
 | `/status` | Container overview with health, uptime, images |
+| `/status <name>` | Per-container detail with inline Stop/Restart/Start buttons |
 | `/check` | Manually trigger an update check |
 | `/updates` | Show pending updates |
+| `/start <name>` | Start a stopped container |
+| `/stop <name>` | Stop a running container |
+| `/restart <name>` | Restart a container |
 | `/logs <name>` | Show last 30 log lines of a container |
 | `/pin <name>` | Pin container — excluded from updates |
 | `/unpin <name>` | Unpin container |

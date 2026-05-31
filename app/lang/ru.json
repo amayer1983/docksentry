@@ -345,5 +345,19 @@
   "changelog_up_to_date": "✅ You're on *v{version}* — no newer versions in the changelog.",
   "changelog_title": "📋 *{count} new version(s) since v{current}:*",
   "changelog_truncated": "... (truncated — full changelog at {url})",
-  "migration_self_autoupdate_removed": "🛡 *Heads up:* this Docksentry container was on its own auto-update list. Auto-updating ourselves through the regular flow killed the process before recreate could happen (see #16). Removed from the list. Use `/selfupdate` (manual) or `AUTO_SELFUPDATE=true` (env) for self-updates instead."
+  "migration_self_autoupdate_removed": "🛡 *Heads up:* this Docksentry container was on its own auto-update list. Auto-updating ourselves through the regular flow killed the process before recreate could happen (see #16). Removed from the list. Use `/selfupdate` (manual) or `AUTO_SELFUPDATE=true` (env) for self-updates instead.",
+  "help_lifecycle": "/start /stop /restart <name> — Lifecycle control for a single container",
+  "lifecycle_usage": "Usage: `/start <name>`, `/stop <name>`, or `/restart <name>`. Partial name matching works the same as `/pin`.",
+  "lifecycle_stopped": "🟥 `{name}` stopped.",
+  "lifecycle_started": "▶️ `{name}` started.",
+  "lifecycle_restarted": "🔁 `{name}` restarted.",
+  "lifecycle_stop_failed": "❌ Couldn't stop `{name}`: {error}",
+  "lifecycle_start_failed": "❌ Couldn't start `{name}`: {error}",
+  "lifecycle_restart_failed": "❌ Couldn't restart `{name}`: {error}",
+  "lifecycle_refused_self": "🛡 Refused to {action} `{name}` — that's me. Use /selfupdate for self-updates.",
+  "lifecycle_running": "Running {action}…",
+  "lifecycle_btn_start": "▶️ Start",
+  "lifecycle_btn_stop": "🟥 Stop",
+  "lifecycle_btn_restart": "🔁 Restart",
+  "web_lifecycle_confirm_stop": "Stop {name}? The container will go offline until it's started again."
 }

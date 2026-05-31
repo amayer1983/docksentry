@@ -1505,6 +1505,30 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if name:
                     store.toggle_auto(name)
                 self._send_redirect("/")
+            elif path == "/api/lifecycle":
+                # Container start / stop / restart from the Status page
+                # buttons. Same self-kill guard as the Telegram path —
+                # refusing to stop/restart ourselves.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0]
+                action = params.get("action", [""])[0]
+                if name and action in ("start", "stop", "restart"):
+                    if action in ("stop", "restart") and checker._would_kill_self(name):
+                        # Silently no-op — the Web UI shouldn't have shown
+                        # the button in the first place, but defense in depth.
+                        pass
+                    else:
+                        # Reuse the bot's lifecycle helper for consistent
+                        # behaviour (graceful timeout, error reporting).
+                        try:
+                            bot._lifecycle_action(action, name, checker)
+                        except Exception as e:
+                            print(f"Lifecycle action failed: {e}")
+                ref = self.headers.get("Referer", "/")
+                ref_path = urlparse(ref).path or "/"
+                self._send_redirect(ref_path)
             elif path == "/api/cleanup":
                 threading.Thread(target=self._api_cleanup).start()
                 self._send_redirect("/settings?saved=1")
@@ -1872,6 +1896,13 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             pinned = store.get_pinned()
             auto_list = store.get_autoupdate()
             ask_major = store.get_ask_before_major()
+            # Resolve our own container name once per render so we can
+            # suppress the Stop/Restart buttons on the row representing
+            # ourselves (clicking them would kill the bot — #16).
+            try:
+                own_name = checker._own_container_name()
+            except Exception:
+                own_name = ""
             # Build a quick lookup container_name → (group_id, group_name)
             groups_lookup = {}
             for gid, g in store.get_groups().items():
@@ -1945,7 +1976,35 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
                     f'</form>'
                 )
-                actions = f'<div class="btn-row">{update_btn}{pin_btn}{auto_btn}{ask_btn}</div>'
+                # Lifecycle buttons (#17). Hidden for our own container —
+                # stopping ourselves would kill PID 1 (#16 territory).
+                # Restart is shown in both UI modes (low-risk, reversible);
+                # Stop is advanced-only because it leaves the container
+                # offline until someone starts it back up.
+                is_self = (c["name"] == own_name)
+                if is_self:
+                    restart_btn = ""
+                    stop_btn = ""
+                else:
+                    restart_btn = (
+                        f'<form method="POST" action="/api/lifecycle" class="inline-form">'
+                        f'<input type="hidden" name="name" value="{name_attr}">'
+                        f'<input type="hidden" name="action" value="restart">'
+                        f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["refresh"]}</button>'
+                        f'</form>'
+                    )
+                    stop_btn = (
+                        f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
+                        f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
+                        f'data-confirm-title="{_e(t("lifecycle_btn_stop"))}" '
+                        f'data-confirm-label="{_e(t("lifecycle_btn_stop"))}" '
+                        f'data-confirm-danger="1">'
+                        f'<input type="hidden" name="name" value="{name_attr}">'
+                        f'<input type="hidden" name="action" value="stop">'
+                        f'<button type="submit" class="btn-icon is-danger" title="{_e(t("lifecycle_btn_stop"))}">{_ICONS["x"]}</button>'
+                        f'</form>'
+                    )
+                actions = f'<div class="btn-row">{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
 
                 rows += f"""<tr>
 <td><input type="checkbox" class="bulk-cb" value="{name_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
