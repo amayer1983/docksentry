@@ -1211,6 +1211,56 @@ class TelegramBot:
     LONG_POLL_TIMEOUT = 25
     LONG_POLL_HTTP_TIMEOUT = LONG_POLL_TIMEOUT + 15  # = 40s
 
+    def _register_commands_with_telegram(self):
+        """Push the bot's command list to Telegram via `setMyCommands`.
+
+        Result: typing `/` in any chat with this bot pops up a native
+        Telegram autocomplete picker, with the per-command descriptions
+        below. This is the canonical Telegram command-discovery UX and
+        removes the need for users to remember command names.
+
+        Descriptions are short (≤ ~80 chars each) because Telegram only
+        shows them in a single line in the picker. We use English for
+        the picker entries — Telegram's autocomplete is based on the
+        user's Telegram client language, not the bot's configured
+        language, so EN reaches everyone. Per-language picker entries
+        are possible via the `language_code` parameter but it'd be a
+        big i18n maintenance burden for marginal benefit; skipped.
+
+        Idempotent and safe to call on every boot."""
+        if not self.enabled:
+            return
+        commands = [
+            {"command": "status",      "description": "Container overview (add a name for details + action buttons)"},
+            {"command": "check",       "description": "Check for updates now"},
+            {"command": "updates",     "description": "Show pending updates"},
+            {"command": "start",       "description": "Start a stopped container — /start <name>"},
+            {"command": "stop",        "description": "Stop a running container — /stop <name>"},
+            {"command": "restart",     "description": "Restart a container — /restart <name>"},
+            {"command": "logs",        "description": "Last 30 log lines — /logs <name>"},
+            {"command": "pin",         "description": "Skip updates for a container — /pin <name>"},
+            {"command": "unpin",       "description": "Re-enable updates — /unpin <name>"},
+            {"command": "autoupdate",  "description": "Toggle auto-update — /autoupdate <name>"},
+            {"command": "history",     "description": "Recent update history"},
+            {"command": "cleanup",     "description": "Remove unused images"},
+            {"command": "selfupdate",  "description": "Update the bot itself (add a version to pin)"},
+            {"command": "changelog",   "description": "What's new in versions ahead of yours"},
+            {"command": "maintenance", "description": "Pause auto-updates — /maintenance 2h or /maintenance off"},
+            {"command": "debug",       "description": "Toggle debug mode"},
+            {"command": "lang",        "description": "Switch bot language — /lang en or /lang de"},
+            {"command": "settings",    "description": "Show current settings"},
+            {"command": "help",        "description": "Show all commands"},
+        ]
+        try:
+            r = self.api_call("setMyCommands", {"commands": json.dumps(commands)})
+            if r and r.get("ok"):
+                print(f"Telegram command picker registered ({len(commands)} commands)")
+            elif r:
+                print(f"Telegram command picker: setMyCommands returned not-ok: {r.get('description', r)}")
+        except Exception as e:
+            # Non-fatal — bot keeps working without the picker.
+            print(f"Telegram command picker registration failed (non-fatal): {e}")
+
     def listen(self, checker, scheduler):
         import time as _time
         self.start_time = _time.time()
@@ -1222,6 +1272,13 @@ class TelegramBot:
             while self.running:
                 _time.sleep(1)
             return
+
+        # Register our command list with Telegram so users get the
+        # native `/` autocomplete picker (with one-line descriptions per
+        # command). Idempotent — Telegram just stores the latest set —
+        # so calling on every boot is fine and means newly-added commands
+        # surface without any setup step on the user's side.
+        self._register_commands_with_telegram()
 
         # Flush old updates from queue to prevent replaying commands after restart
         flush = self.api_call("getUpdates", {"offset": -1, "timeout": 0})
@@ -1779,6 +1836,7 @@ class TelegramBot:
             from version import VERSION
             self.send_message(
                 self.t("help_title", version=VERSION) + "\n\n"
+                + self.t("help_autocomplete_hint") + "\n\n"
                 + self.t("help_commands") + "\n"
                 + self.t("help_status") + "\n"
                 + self.t("help_check") + "\n"
@@ -1796,5 +1854,6 @@ class TelegramBot:
                 + self.t("help_logs") + "\n"
                 + self.t("help_lang") + "\n"
                 + self.t("help_settings") + "\n"
-                + self.t("help_help")
+                + self.t("help_help") + "\n\n"
+                + self.t("help_docs_footer")
             )

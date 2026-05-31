@@ -42,6 +42,8 @@
   "debug_on": "AN 🔍",
   "debug_off": "AUS",
   "help_title": "*Docksentry v{version}* 🐳",
+  "help_autocomplete_hint": "💡 *Tipp:* tippe `/` in diesem Chat — Telegram zeigt eine Autocomplete-Auswahl mit allen Befehlen und Beschreibungen.",
+  "help_docs_footer": "📖 Vollständige Doku: github.com/amayer1983/docksentry",
   "help_commands": "*Befehle:*",
   "help_status": "/status — Container-Status anzeigen",
   "help_check": "/check — Jetzt auf Updates prüfen",

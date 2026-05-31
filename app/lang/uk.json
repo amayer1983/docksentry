@@ -362,5 +362,7 @@
   "web_lifecycle_confirm_stop": "Stop {name}? The container will go offline until it's started again.",
   "selfupdate_invalid_version": "❌ `{version}` doesn't look like a semver tag (`X.Y.Z`). Examples: `/selfupdate 1.17.4`, `/selfupdate previous`.",
   "selfupdate_previous_fetch_failed": "❌ Couldn't fetch the changelog to resolve `previous`: {error}",
-  "selfupdate_previous_none": "❌ No version older than v{current} found in the changelog."
+  "selfupdate_previous_none": "❌ No version older than v{current} found in the changelog.",
+  "help_autocomplete_hint": "💡 *Tip:* type `/` in this chat — Telegram shows an autocomplete picker with all commands and their descriptions.",
+  "help_docs_footer": "📖 Full docs: github.com/amayer1983/docksentry"
 }

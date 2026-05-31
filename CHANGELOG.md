@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.2] - 2026-05-30
+
+### Added
+- **Telegram command picker via `setMyCommands`.** All 19 bot commands are now registered with Telegram on startup. Users get the native autocomplete popup when they type `/` in the chat — one-line description per command. The industry-standard Telegram bot UX that should have been here from day one. Idempotent on every boot, so new commands surface without any setup step on the user's side.
+- **`/help` discovery hint.** A one-line tip at the top of `/help` points users at the `/` autocomplete picker, and a docs-link footer points at the README. Together they cover the spectrum from "I forgot the command name" (picker) to "I need details" (README) without adding 14 inline buttons or 16 × 19 i18n strings for per-command detailed help.
+
+### Why no `/help <command>` (re #15)
+While shipping this I realised the native command picker plus the README link covers the practical use cases for command discovery. `/help <command>` is left tracked in [#15](../../issues/15) but not built — if it turns out users actually want it after they have the picker, we'll revisit. Comment with your experience.
+
+### i18n
+2 new keys (`help_autocomplete_hint`, `help_docs_footer`) × 16 language files. EN + DE translated; 14 others fall back to EN.
+
 ## [1.18.1] - 2026-05-30
 
 ### Added
