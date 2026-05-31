@@ -5,7 +5,7 @@
 <h1 align="center">Docksentry</h1>
 
 <p align="center">
-Your Docker container watchdog — monitors images for updates and lets you manage them via <b>Web UI</b>, <b>Telegram</b>, <b>Discord</b>, and <b>Webhooks</b>, with auto-rollback and 16 languages. Telegram is optional — Docksentry can run fully headless.
+Auto-update Docker containers and manage their lifecycle via interactive <b>Telegram bot</b>, <b>Web UI</b>, <b>Discord</b>, or <b>webhooks</b>. Auto-rollback on failed updates. 16 languages. Telegram is optional — runs fully headless.
 </p>
 
 <p align="center">
@@ -19,6 +19,19 @@ Your Docker container watchdog — monitors images for updates and lets you mana
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-notification.jpg" alt="Update Notification" width="350">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-result.jpg" alt="Update Result" width="350">
 </p>
+
+## What's different
+
+Most Docker auto-update tools either set-and-forget like Watchtower (no human in the loop, no veto) or notify-only like Diun (heads-up but you SSH in to apply it). Docksentry does **both, plus interactive control from your phone or browser**:
+
+- **Tap "Update all"** in Telegram or "Bulk update" in the Web UI — updates apply, results stream back
+- **Container groups** — update Gluetun first, restart the Sonarr / Radarr / qBittorrent stack after it's healthy
+- **Lifecycle commands** — `/status nginx` shows state + inline `[🔁 Restart] [🟥 Stop]` buttons. One tap to fix a hung container without leaving the chat
+- **Auto-rollback** if the new container fails its healthcheck (respecting the image's own `start_period`)
+- **Maintenance mode** to pause everything while you tinker with the host (`/maintenance 2h`)
+- **Multi-bot setup** for several Docker hosts in one Telegram group, each labelled so you can tell them apart
+
+Telegram is optional — Web UI alone is plenty for a single-host setup. Discord and generic webhook channels work in parallel.
 
 ## Features
 
