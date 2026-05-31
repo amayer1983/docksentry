@@ -12,6 +12,48 @@ import urllib.request
 import urllib.parse
 
 
+# ── Single source of truth for all bot commands ────────────────────────
+# Every command Docksentry exposes is described here ONCE. The two
+# downstream consumers — Telegram's `setMyCommands` (the `/`-autocomplete
+# picker) and the `/help` output — both derive from this list. Adding a
+# new command is a one-line edit; the picker and /help update in lockstep.
+#
+# Fields:
+#   name        — the slash command without the leading `/`
+#   picker_desc — short single-line description for the Telegram picker
+#                 (Telegram's UI only shows one line, ≤ ~80 chars works
+#                 best on mobile). Plain English — Telegram's picker is
+#                 keyed to the *user's Telegram client* language, not
+#                 the bot's `config.language`, so EN reaches everyone.
+#   help_key    — i18n key for the `/help` output line. Multiple
+#                 commands can share the same key when the help text
+#                 covers them as a group (start/stop/restart all share
+#                 `help_lifecycle`). Set to None to omit from `/help`.
+#
+# The order here is the order both surfaces render in.
+_BOT_COMMANDS = [
+    ("status",      "Container overview (add a name for details + action buttons)", "help_status"),
+    ("check",       "Check for updates now",                                          "help_check"),
+    ("updates",     "Show pending updates",                                           "help_updates"),
+    ("cleanup",     "Remove unused images",                                           "help_cleanup"),
+    ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle"),
+    ("stop",        "Stop a running container — /stop <name>",                        "help_lifecycle"),
+    ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle"),
+    ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance"),
+    ("history",     "Recent update history",                                          "help_history"),
+    ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin"),
+    ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin"),
+    ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate"),
+    ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate"),
+    ("changelog",   "What's new in versions ahead of yours",                          "help_changelog"),
+    ("debug",       "Toggle debug mode",                                              "help_debug"),
+    ("logs",        "Last 30 log lines — /logs <name>",                               "help_logs"),
+    ("lang",        "Switch bot language — /lang en or /lang de",                     "help_lang"),
+    ("settings",    "Show current settings",                                          "help_settings"),
+    ("help",        "Show all commands",                                              "help_help"),
+]
+
+
 class TelegramBot:
     def __init__(self, config, container_store):
         self.config = config
@@ -94,6 +136,61 @@ class TelegramBot:
         except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, KeyError):
             self._cached_own_meta = (None, None)
             return self._cached_own_meta
+
+    def _container_source_url(self, name):
+        """Look up the upstream source URL for a container from its OCI
+        labels. Returns (url, kind) where kind is:
+          - "source": from `org.opencontainers.image.source` (the gold
+                      standard — points at a real source repo)
+          - "url":    fallback to `org.opencontainers.image.url`
+                      (usually the product/landing page, less useful)
+          - "none":   no usable label found
+
+        Used by /changelog <container> to give the user a link to the
+        upstream repo instead of trying (and frequently failing) to
+        fetch + parse an arbitrary container's CHANGELOG file."""
+        for label in ("org.opencontainers.image.source",
+                      "org.opencontainers.image.url"):
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", "--format",
+                     "{{index .Config.Labels \"" + label + "\"}}", name],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    url = r.stdout.strip()
+                    if url and url not in ("<no value>", "no value"):
+                        kind = "source" if "source" in label else "url"
+                        return url, kind
+            except subprocess.SubprocessError:
+                continue
+        return "", "none"
+
+    def _guess_registry_overview_url(self, image):
+        """Heuristic for "where can the user look this up?" when the
+        image has no OCI source label. Maps the image reference to its
+        registry's overview page URL. Best-effort — at worst we say
+        'check the registry's own page'."""
+        # Strip tag
+        ref = image.rsplit(":", 1)[0] if ":" in image else image
+        # Docker Hub library/official ("redis" → docker.io/library/redis)
+        if "/" not in ref:
+            return f"https://hub.docker.com/_/{ref}"
+        # GHCR
+        if ref.startswith("ghcr.io/"):
+            rest = ref[len("ghcr.io/"):]
+            return f"https://github.com/{rest}/pkgs/container/{rest.split('/')[-1]}"
+        # Quay
+        if ref.startswith("quay.io/"):
+            return f"https://quay.io/repository/{ref[len('quay.io/'):]}"
+        # GitLab Container Registry (registry.gitlab.com / *.gitlab.io)
+        if ref.startswith("registry.gitlab.com/"):
+            return f"https://gitlab.com/{ref[len('registry.gitlab.com/'):]}"
+        # LinuxServer (lscr.io) → fleet page
+        if ref.startswith("lscr.io/"):
+            return f"https://fleet.linuxserver.io/image?name={ref[len('lscr.io/'):]}"
+        # Default: Docker Hub repo page (works for `user/image`)
+        return f"https://hub.docker.com/r/{ref}"
 
     def _fetch_changelog(self):
         """Fetch CHANGELOG.md from GitHub raw. Returns (ok, text_or_error)."""
@@ -1230,26 +1327,11 @@ class TelegramBot:
         Idempotent and safe to call on every boot."""
         if not self.enabled:
             return
+        # Single source of truth at module top — _BOT_COMMANDS — drives
+        # both the picker registration here and the /help output below.
         commands = [
-            {"command": "status",      "description": "Container overview (add a name for details + action buttons)"},
-            {"command": "check",       "description": "Check for updates now"},
-            {"command": "updates",     "description": "Show pending updates"},
-            {"command": "start",       "description": "Start a stopped container — /start <name>"},
-            {"command": "stop",        "description": "Stop a running container — /stop <name>"},
-            {"command": "restart",     "description": "Restart a container — /restart <name>"},
-            {"command": "logs",        "description": "Last 30 log lines — /logs <name>"},
-            {"command": "pin",         "description": "Skip updates for a container — /pin <name>"},
-            {"command": "unpin",       "description": "Re-enable updates — /unpin <name>"},
-            {"command": "autoupdate",  "description": "Toggle auto-update — /autoupdate <name>"},
-            {"command": "history",     "description": "Recent update history"},
-            {"command": "cleanup",     "description": "Remove unused images"},
-            {"command": "selfupdate",  "description": "Update the bot itself (add a version to pin)"},
-            {"command": "changelog",   "description": "What's new in versions ahead of yours"},
-            {"command": "maintenance", "description": "Pause auto-updates — /maintenance 2h or /maintenance off"},
-            {"command": "debug",       "description": "Toggle debug mode"},
-            {"command": "lang",        "description": "Switch bot language — /lang en or /lang de"},
-            {"command": "settings",    "description": "Show current settings"},
-            {"command": "help",        "description": "Show all commands"},
+            {"command": name, "description": picker_desc}
+            for (name, picker_desc, _help_key) in _BOT_COMMANDS
         ]
         try:
             r = self.api_call("setMyCommands", {"commands": json.dumps(commands)})
@@ -1604,6 +1686,53 @@ class TelegramBot:
                 )
             self.send_message(msg)
 
+        elif text.startswith("/changelog "):
+            # /changelog <container> — link-only (#14). We don't try to
+            # fetch + parse arbitrary container changelogs because
+            # projects use too many different formats (Keep-a-Changelog,
+            # GitHub Releases, plain HISTORY.md, none at all) for the
+            # result to be reliable. Instead, point the user at the
+            # upstream source repo via OCI labels, or at the registry
+            # overview page as a fallback. Honest > half-broken.
+            parts = text.split(maxsplit=1)
+            partial = parts[1].strip() if len(parts) > 1 else ""
+            resolved, err = self._resolve_container(partial)
+            if not resolved:
+                self.send_message(err)
+                return
+            # Get the image ref for the registry fallback
+            try:
+                ir = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Config.Image}}", resolved],
+                    capture_output=True, text=True, timeout=5,
+                )
+                image_ref = ir.stdout.strip() if ir.returncode == 0 else ""
+            except subprocess.SubprocessError:
+                image_ref = ""
+            source_url, kind = self._container_source_url(resolved)
+            if kind == "source":
+                self.send_message(self.t(
+                    "changelog_container_source",
+                    name=resolved, url=source_url,
+                ))
+            elif kind == "url":
+                self.send_message(self.t(
+                    "changelog_container_url_only",
+                    name=resolved, url=source_url,
+                ))
+            else:
+                fallback = self._guess_registry_overview_url(image_ref) if image_ref else ""
+                if fallback:
+                    self.send_message(self.t(
+                        "changelog_container_registry_fallback",
+                        name=resolved, url=fallback,
+                    ))
+                else:
+                    self.send_message(self.t(
+                        "changelog_container_none",
+                        name=resolved,
+                    ))
+
         elif text == "/updates":
             if os.path.exists(self.config.pending_file):
                 with open(self.config.pending_file) as f:
@@ -1834,26 +1963,21 @@ class TelegramBot:
 
         elif text == "/help" or text == "/start":
             from version import VERSION
+            # /help iterates the same _BOT_COMMANDS table that the
+            # Telegram picker derives from — dedup'd by help_key so
+            # commands that share a help line (start/stop/restart all
+            # land under help_lifecycle) only show once.
+            seen = set()
+            command_lines = []
+            for (_name, _picker_desc, help_key) in _BOT_COMMANDS:
+                if help_key is None or help_key in seen:
+                    continue
+                seen.add(help_key)
+                command_lines.append(self.t(help_key))
             self.send_message(
                 self.t("help_title", version=VERSION) + "\n\n"
                 + self.t("help_autocomplete_hint") + "\n\n"
                 + self.t("help_commands") + "\n"
-                + self.t("help_status") + "\n"
-                + self.t("help_check") + "\n"
-                + self.t("help_updates") + "\n"
-                + self.t("help_cleanup") + "\n"
-                + self.t("help_lifecycle") + "\n"
-                + self.t("help_maintenance") + "\n"
-                + self.t("help_history") + "\n"
-                + self.t("help_pin") + "\n"
-                + self.t("help_unpin") + "\n"
-                + self.t("help_autoupdate") + "\n"
-                + self.t("help_selfupdate") + "\n"
-                + self.t("help_changelog") + "\n"
-                + self.t("help_debug") + "\n"
-                + self.t("help_logs") + "\n"
-                + self.t("help_lang") + "\n"
-                + self.t("help_settings") + "\n"
-                + self.t("help_help") + "\n\n"
+                + "\n".join(command_lines) + "\n\n"
                 + self.t("help_docs_footer")
             )

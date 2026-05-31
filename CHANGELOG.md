@@ -2,6 +2,23 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.3] - 2026-05-30
+
+### Added
+- **`/changelog <container>`** — link-only. Closes [#14](../../issues/14). Looks up the container's `org.opencontainers.image.source` OCI label and sends the upstream repo URL. Three fallback tiers:
+  1. **Source label present** → "here's the upstream source repo, releases at `/releases`, changelog at `/blob/main/CHANGELOG.md`"
+  2. **Only `image.url` label** → "here's the product page, look for a Changelog section"
+  3. **No label** → registry overview page heuristic (Docker Hub, ghcr.io, quay.io, lscr.io / fleet.linuxserver.io)
+
+  **Deliberately no parsing.** Tried it empirically against 15 real containers: hit rate for fetchable + parseable upstream CHANGELOG was ~33 %. The remaining 67 % would produce "no changelog available" responses — a confusing UX worse than no feature. Honest link to the source repo is what we ship; users decide where to go from there.
+
+### Internal
+- **Single source of truth for commands** — module-level `_BOT_COMMANDS` table at the top of `telegram_bot.py` now drives both `setMyCommands` (the Telegram picker) AND the `/help` output. Adding a new command is one line; both consumers update in lockstep. Eliminates the previous three-place drift risk (handler + manual `/help` list + manual picker list).
+- `/help` output is now derived: it iterates `_BOT_COMMANDS` and dedup's by shared i18n key (start/stop/restart all share `help_lifecycle`, so it shows once). The visible result is identical to v1.18.2, but the code is now ~30 lines shorter.
+
+### i18n
+4 new keys for the `/changelog <container>` response paths × 16 language files. EN + DE translated; 14 others fall back to EN.
+
 ## [1.18.2] - 2026-05-30
 
 ### Added
