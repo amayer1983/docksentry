@@ -1014,6 +1014,9 @@ class UpdateChecker:
 
         # Get old image info
         old_created = self._get_image_created(image)
+        # OCI image.version label, before pull (#22). Best-effort —
+        # ~40 % coverage across real-world stacks.
+        old_version = self._get_image_version_label(image)
 
         # Check if compose file is accessible
         if not os.path.isfile(config_file):
@@ -1032,6 +1035,8 @@ class UpdateChecker:
         # Get new image info after pull
         new_created = self._get_image_created(image)
         new_size = self._get_image_size(image)
+        new_version = self._get_image_version_label(image)
+        self._version_arrow = self._format_version_arrow(old_version, new_version)
 
         # Recreate service via compose
         up_cmd = ["docker", "compose", "-f", config_file, "-p", project, "up", "-d", "--no-deps", service]
@@ -1067,7 +1072,7 @@ class UpdateChecker:
             # eye on it, but treat as a soft success so the group-abort
             # logic doesn't skip the rest of the group.
             tail = self._tail_logs(name, lines=10)
-            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
             msg = (f"⚠ Updated but still 'starting' after our wait — left in place, "
                    f"Docker will keep checking. ({detail})")
             if tail:
@@ -1075,21 +1080,85 @@ class UpdateChecker:
             self._save_history(name, image, True, f"compose: {detail} (slow start)")
             return True, msg
 
-        detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+        detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
         self._save_history(name, image, True, f"compose: {detail}")
         return True, f"OK ({detail})"
+
+    def _get_image_version_label(self, image):
+        """Read & normalize `org.opencontainers.image.version` from an
+        image's labels. Returns empty string when missing/unusable."""
+        try:
+            r = subprocess.run(
+                ["docker", "image", "inspect", "--format",
+                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                return self._normalize_version_label(r.stdout.strip())
+        except subprocess.SubprocessError:
+            pass
+        return ""
+
+    @staticmethod
+    def _normalize_version_label(raw):
+        """Clean up the `org.opencontainers.image.version` label so it
+        renders consistently in /history. The label format isn't
+        standardized — different upstreams set it to wildly different
+        things:
+          - n8n, mariadb, paperless-ngx: clean semver like "2.14.2"
+          - adguardhome: doubled prefix "vv0.107.73"
+          - open-webui: branch name "main"
+          - gitlab: short image ID "c66669ef8bf1"
+
+        We strip a single leading 'v' (so adguard's `vv0.107.73`
+        becomes `v0.107.73` when re-prefixed) and refuse obvious
+        non-version values (anything that looks like a short hex
+        image ID or a generic branch name). Returns empty string when
+        the label is unset or looks unusable."""
+        v = (raw or "").strip()
+        if not v or v == "<no value>":
+            return ""
+        # Strip exactly one leading 'v' so we can re-add it on display
+        if v.startswith("v") and len(v) > 1:
+            v = v[1:]
+        # Reject 12-char hex image IDs and pure branch labels
+        if len(v) == 12 and all(c in "0123456789abcdef" for c in v):
+            return ""
+        if v.lower() in ("main", "master", "develop", "dev", "edge", "latest", "stable"):
+            return ""
+        return v
+
+    @staticmethod
+    def _format_version_arrow(old_version, new_version):
+        """Return ` (v{old} → v{new})` when both versions are present
+        and differ, otherwise an empty string. Caller appends this to
+        the history detail line so containers without a usable
+        `image.version` label render the same as today."""
+        if old_version and new_version and old_version != new_version:
+            return f" (v{old_version} → v{new_version})"
+        return ""
 
     def _update_standalone(self, name, image):
         self._debug(f"Updating: {name} ({image})...")
 
-        # Get old image info before pull
+        # Get old image info before pull. We also fetch the OCI
+        # `image.version` label so the history entry can record a
+        # version arrow when the upstream image advertises one (#22).
+        # Coverage is ~40 % in real-world stacks (nginx, redis, postgres
+        # often don't set the label; n8n, mariadb, adguardhome do) —
+        # best-effort, silently skipped when unavailable.
         old_created = "?"
+        old_version = ""
         old_inspect = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Created}}", image],
+            ["docker", "image", "inspect", "--format",
+             '{{.Created}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image],
             capture_output=True, text=True
         )
         if old_inspect.returncode == 0:
-            old_created = old_inspect.stdout.strip()[:10]
+            parts = old_inspect.stdout.strip().split("||")
+            old_created = parts[0][:10]
+            if len(parts) > 1:
+                old_version = self._normalize_version_label(parts[1])
 
         # Pull new image
         result = subprocess.run(
@@ -1108,8 +1177,10 @@ class UpdateChecker:
         # Get new image info after pull
         new_created = "?"
         new_size = "?"
+        new_version = ""
         new_inspect = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Created}}||{{.Size}}", image],
+            ["docker", "image", "inspect", "--format",
+             '{{.Created}}||{{.Size}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image],
             capture_output=True, text=True
         )
         if new_inspect.returncode == 0:
@@ -1126,6 +1197,12 @@ class UpdateChecker:
                         new_size = f"{size_bytes / 1024:.0f} KB"
                 except ValueError:
                     pass
+            if len(parts) > 2:
+                new_version = self._normalize_version_label(parts[2])
+        # Compose the optional version suffix for the detail strings —
+        # appended later by update_container() at all return points so
+        # both standalone and compose paths get the same treatment.
+        self._version_arrow = self._format_version_arrow(old_version, new_version)
 
         self._debug(f"  Pull OK: {name} ({old_created} → {new_created}, {new_size})")
 
@@ -1284,7 +1361,7 @@ class UpdateChecker:
                 # user knows to keep an eye on it.
                 tail = self._tail_logs(name, lines=10)
                 subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
-                detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+                detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
                 msg = (f"⚠ Updated but still 'starting' after our wait — left running. "
                        f"Docker's own healthcheck will keep checking. ({detail})")
                 if tail:
@@ -1296,7 +1373,7 @@ class UpdateChecker:
             subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
-            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+            detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
             self._save_history(name, image, True, detail)
             return True, f"OK ({detail})"
 

@@ -84,15 +84,23 @@ class TelegramBot:
         as regular container updates so the Web UI doesn't need special
         rendering. success=True is assumed — if the helper fails, the
         next manual /selfupdate will create a follow-up entry with the
-        new outcome."""
+        new outcome.
+
+        We know the OLD version (from `version.VERSION`) at this point
+        but NOT the NEW version (the new image is pulled but our
+        process hasn't restarted yet). Write `v{old} → ?` as a
+        placeholder; main.py's post-boot fixup patches the `?` with
+        the freshly-booted process's VERSION as part of resuming the
+        deferred check (#22)."""
         import json as _json
         from datetime import datetime as _dt
+        from version import VERSION as _CUR_VERSION
         entry = {
             "timestamp": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
             "container": container_name,
             "image": image,
             "success": True,
-            "detail": f"🗓️ {old_created} → {new_created} (selfupdate)",
+            "detail": f"🗓️ {old_created} → {new_created} (selfupdate v{_CUR_VERSION} → ?)",
         }
         try:
             history = []

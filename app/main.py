@@ -129,6 +129,31 @@ def main():
     # real-world v1.17.0 deployment.
     post_selfupdate_restart = os.path.exists(config.deferred_check_file)
 
+    # Post-selfupdate fixup: when _save_selfupdate_history wrote the
+    # entry before the swap, the new version wasn't known yet — it's
+    # stored as `v{old} → ?`. We're the freshly-booted process and
+    # know our own VERSION now, so patch the placeholder. Only touches
+    # the last entry, only when it ends with "→ ?)" — leaves anything
+    # already complete (manual edits, old entries, regular container
+    # updates) untouched. Reported by @famewolf in #22.
+    if post_selfupdate_restart:
+        try:
+            import json as _json
+            from version import VERSION as _NEW_VERSION
+            if os.path.exists(config.history_file):
+                with open(config.history_file) as f:
+                    _hist = _json.load(f)
+                if _hist:
+                    last = _hist[-1]
+                    detail = last.get("detail", "")
+                    if detail.endswith("→ ?)"):
+                        last["detail"] = detail[:-len("?)")] + f"v{_NEW_VERSION})"
+                        with open(config.history_file, "w") as f:
+                            _json.dump(_hist, f, indent=2)
+                        print(f"History: patched selfupdate entry with new version v{_NEW_VERSION}")
+        except Exception as e:
+            print(f"History fixup failed (non-fatal): {e}")
+
     # One-shot migration: if a previous Docksentry version saved its own
     # container into the auto-update list (which routes through the
     # regular `docker stop` flow and kills PID 1 — #16), strip it and

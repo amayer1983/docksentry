@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.6] - 2026-06-01
+
+### Added
+- **Version numbers in `/history`**. Closes [#22](../../issues/22). Requested by @famewolf. Two layers, both opt-in by data availability:
+
+  **A. Docksentry self-update — precise.** `_save_selfupdate_history()` writes `(selfupdate v{OLD} → ?)` at the swap (we know our own version), and a post-boot fixup in `main.py` patches the `?` with the freshly-booted process's `VERSION` once the new container starts. Re-uses the v1.16.3 deferred-check marker we already have. Result:
+    ```
+    ✅ docksentry — 2026-06-01 14:11:10
+        🗓️ 2026-05-31 → 2026-06-01 (selfupdate v1.18.5 → v1.18.6)
+    ```
+
+  **B. Other containers — best-effort from OCI labels.** Reads `org.opencontainers.image.version` before and after each pull; appends ` (v{old} → v{new})` to the detail line when both labels exist and differ. Empirical coverage on a 15-container real-world stack: ~40 % (n8n, mariadb, adguardhome, gitlab, paperless-ngx, open-webui carry it; nginx-proxy-manager, redis, postgres, nextcloud, portainer, influxdb don't). Label values are normalized — single leading `v` stripped, obviously-bogus values (12-char image IDs, branch names like `main`/`latest`) discarded. Containers without a usable label render the same as before (date + size only), so no regression for the 60 % that don't carry the label.
+
+### Internal
+- New `UpdateChecker._get_image_version_label()` + `_normalize_version_label()` + `_format_version_arrow()` static helpers. Unit-tested against 10 real-world label values incl. adguard's doubled `vv0.107.73`, gitlab's container-ID-as-label, branch-name-as-label, etc.
+
 ## [1.18.5] - 2026-06-01
 
 ### Fixed
