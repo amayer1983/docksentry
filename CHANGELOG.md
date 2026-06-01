@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.5] - 2026-06-01
+
+### Fixed
+- **Commands silently dropped in multi-bot groups.** Closes [#21](../../issues/21). Reported by @famewolf. A v1.18.2 regression: registering all commands via `setMyCommands` triggered Telegram's standard group-multi-bot-disambiguation, so tapping `/check` in a group with ≥ 2 bots actually sent `/check@dockmox-bot`. Our `_handle_message` matches by `text == "/check"` everywhere — the `@botname` form fell through and got silently dropped.
+
+  Affected every BOT_LABEL multi-host setup on every command. 1:1 chats were unaffected.
+
+  Fix: strip the `@<botname>` suffix from the first token at the top of `_handle_message`, then the existing per-command matchers route normally. All 19 commands inherit the fix automatically with no per-command changes. User mentions later in the message (e.g. `/notify @someone hello`) are preserved — the strip only touches the first token. 10-case unit test in commit `45...`.
+
 ## [1.18.4] - 2026-05-31
 
 ### Fixed

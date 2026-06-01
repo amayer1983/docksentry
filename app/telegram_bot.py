@@ -1547,6 +1547,19 @@ class TelegramBot:
         if not self._check_auth(chat_id, user_id, kind="message"):
             return
 
+        # Strip Telegram's group-multi-bot-disambiguation suffix. In a
+        # group with ≥ 2 bots, tapping a registered command in the
+        # autocomplete picker results in `/check@dockmox-bot` being
+        # sent rather than `/check`. We match commands by `text ==
+        # "/check"` or `text.startswith("/check ")` everywhere — the
+        # `@botname` form falls through silently. Normalize once here
+        # so all 19 commands inherit the fix. Only touches the command
+        # token; user mentions later in the message ("/notify
+        # @someone") are preserved. Reported by @famewolf in #21.
+        if text.startswith("/") and "@" in text.split(" ", 1)[0]:
+            cmd, sep, rest = text.partition(" ")
+            text = cmd.split("@", 1)[0] + sep + rest
+
         # `/status <name>` — per-container detail with inline action
         # buttons. The arg-less `/status` keeps the overview behaviour.
         if text.startswith("/status ") and len(text.split(maxsplit=1)) > 1:
