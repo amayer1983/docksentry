@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.7] - 2026-06-04
+
+### Fixed
+- **`/start <stopped-container>` failed with "Container not found"** even on exact name match. Closes [#24](../../issues/24). Surfaced by @famewolf's question in #2. The partial-name resolver behind all lifecycle commands was hardcoded to `docker ps` (running only), so stopped containers were invisible — defeating the main use case of `/start`. Added `include_stopped=False` parameter to `_resolve_container()`; lifecycle commands (`/start`, `/stop`, `/restart`) pass `True` so they see `docker ps -a`. Everything else (`/pin`, `/logs`, `/unpin`, `/autoupdate`, `/notes`, etc.) keeps the running-only default so their pickers don't surface stopped containers where it would be confusing.
+
+  Empirically verified before commit:
+  - Default (`include_stopped=False`) on stopped container → still returns "not found" (existing behaviour preserved for the picker-style callsites)
+  - `include_stopped=True` on stopped container → resolves correctly (exact + partial match)
+
 ## [1.18.6] - 2026-06-01
 
 ### Added

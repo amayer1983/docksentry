@@ -455,12 +455,24 @@ class TelegramBot:
 
         return False, f"unknown action: {action}"
 
-    def _resolve_container(self, partial):
-        """Resolve a partial container name. Returns (full_name, error_msg)."""
-        result = subprocess.run(
-            ["docker", "ps", "--format", "{{.Names}}"],
-            capture_output=True, text=True
-        )
+    def _resolve_container(self, partial, include_stopped=False):
+        """Resolve a partial container name. Returns (full_name, error_msg).
+
+        By default looks at running containers only (`docker ps`) — that's
+        the right behaviour for `/pin`, `/logs`, `/unpin`, `/autoupdate`
+        etc. where surfacing dead containers in the picker would be
+        confusing.
+
+        Lifecycle commands (`/start`, `/stop`, `/restart`) pass
+        `include_stopped=True` so they can resolve names of stopped
+        containers — without that, `/start <stopped>` failed with
+        "Container not found" even on exact name match, defeating the
+        main use case of `/start` (#24, reported by @famewolf in #2).
+        """
+        cmd = ["docker", "ps", "--format", "{{.Names}}"]
+        if include_stopped:
+            cmd.insert(2, "-a")
+        result = subprocess.run(cmd, capture_output=True, text=True)
         all_names = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
 
         # Exact match first
@@ -1884,7 +1896,9 @@ class TelegramBot:
                 self.send_message(self.t("lifecycle_usage"))
                 return
             action = parts[0][1:]  # strip leading "/"
-            resolved, err = self._resolve_container(parts[1].strip())
+            # Include stopped containers — /start <stopped> is the main
+            # use case and the partial-name picker has to see them (#24).
+            resolved, err = self._resolve_container(parts[1].strip(), include_stopped=True)
             if not resolved:
                 self.send_message(err)
                 return
