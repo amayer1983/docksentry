@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.8] - 2026-06-04
+
+### Fixed
+- **Partial-name resolver no longer hides stopped containers by default.** Closes [#25](../../issues/25). Confirmed by @famewolf: in his 3-bot setup most containers are stopped (not absent) on the duplicate hosts, so `/status jellyfin` was getting `not found` from those bots instead of the correct `stopped` state. `/logs <stopped>` was unusable for the same reason — and stopped is exactly when you want logs (to see *why* it died). The v1.18.7 call to keep running-only as default for non-lifecycle commands was the wrong instinct. Flipped: `_resolve_container()` now defaults to `include_stopped=True`. Filters out `_old`-suffix containers (our internal rollback leftovers from failed updates) so they don't pollute the picker. Callers that genuinely need running-only can opt out via `include_stopped=False`.
+
+- **Multi-bot `@botname` targeting now actually targets.** Closes [#25](../../issues/25). v1.18.5's normalize block stripped `@<anything>` unconditionally, so in a 3-bot group `/status@dockmox-bot jellyfin` made *all three* bots respond — defeating the point of targeted addressing. Bot now queries `getMe` at startup to learn its own username and respects targeting: `@<own-username>` strips and handles, `@<other-bot>` silently ignores. Commands without `@` still broadcast to all bots (the common case for `/selfupdate` across all hosts).
+
+### Docs
+- **README "Multi-bot setup" section** now documents the broadcast vs. targeted-`@bot` behaviour with a worked example.
+
 ## [1.18.7] - 2026-06-04
 
 ### Fixed

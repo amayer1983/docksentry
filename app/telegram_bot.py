@@ -455,25 +455,33 @@ class TelegramBot:
 
         return False, f"unknown action: {action}"
 
-    def _resolve_container(self, partial, include_stopped=False):
+    def _resolve_container(self, partial, include_stopped=True):
         """Resolve a partial container name. Returns (full_name, error_msg).
 
-        By default looks at running containers only (`docker ps`) — that's
-        the right behaviour for `/pin`, `/logs`, `/unpin`, `/autoupdate`
-        etc. where surfacing dead containers in the picker would be
-        confusing.
+        Looks at `docker ps -a` by default (running + stopped) — almost
+        every partial-name lookup in the bot wants this. `/logs` of a
+        stopped container shows you why it died; `/status` of a stopped
+        container shows you its state; `/start` only makes sense for
+        stopped ones. Originally we defaulted to running-only on the
+        theory that surfacing dead containers in pickers would confuse
+        users — but @famewolf's #25 made it clear that the opposite
+        was true: confining the resolver to running containers was the
+        thing that confused users, since "not found" doesn't
+        distinguish absent from stopped.
 
-        Lifecycle commands (`/start`, `/stop`, `/restart`) pass
-        `include_stopped=True` so they can resolve names of stopped
-        containers — without that, `/start <stopped>` failed with
-        "Container not found" even on exact name match, defeating the
-        main use case of `/start` (#24, reported by @famewolf in #2).
+        Filters out `_old`-suffix containers (our internal rollback
+        leftovers from failed updates) so they never surface in the
+        picker. Specific callers that genuinely need running-only can
+        opt out via `include_stopped=False`.
         """
         cmd = ["docker", "ps", "--format", "{{.Names}}"]
         if include_stopped:
             cmd.insert(2, "-a")
         result = subprocess.run(cmd, capture_output=True, text=True)
-        all_names = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
+        all_names = [
+            n.strip() for n in result.stdout.strip().split("\n")
+            if n.strip() and not n.strip().endswith("_old")
+        ]
 
         # Exact match first
         if partial in all_names:
@@ -1438,6 +1446,21 @@ class TelegramBot:
         # surface without any setup step on the user's side.
         self._register_commands_with_telegram()
 
+        # Query our own username via getMe and cache it. Needed for
+        # `@botname` targeting in multi-bot groups (#25): if the user
+        # writes `/check@dockmox-bot`, only the bot whose username is
+        # `dockmox-bot` should respond — the v1.18.5 strip was too
+        # aggressive and made *every* bot respond regardless.
+        self.bot_username = ""
+        try:
+            r = self.api_call("getMe")
+            if r and r.get("ok"):
+                self.bot_username = (r.get("result") or {}).get("username", "") or ""
+                if self.bot_username:
+                    print(f"Bot identified as @{self.bot_username}")
+        except Exception as e:
+            print(f"getMe failed (non-fatal, @botname targeting disabled): {e}")
+
         # Flush old updates from queue to prevent replaying commands after restart
         flush = self.api_call("getUpdates", {"offset": -1, "timeout": 0})
         if flush and flush.get("ok") and flush.get("result"):
@@ -1567,17 +1590,26 @@ class TelegramBot:
         if not self._check_auth(chat_id, user_id, kind="message"):
             return
 
-        # Strip Telegram's group-multi-bot-disambiguation suffix. In a
-        # group with ≥ 2 bots, tapping a registered command in the
-        # autocomplete picker results in `/check@dockmox-bot` being
-        # sent rather than `/check`. We match commands by `text ==
-        # "/check"` or `text.startswith("/check ")` everywhere — the
-        # `@botname` form falls through silently. Normalize once here
-        # so all 19 commands inherit the fix. Only touches the command
-        # token; user mentions later in the message ("/notify
-        # @someone") are preserved. Reported by @famewolf in #21.
+        # Telegram's group-multi-bot-disambiguation: in a group with
+        # ≥ 2 bots, tapping a registered command in the picker sends
+        # `/check@dockmox-bot` rather than `/check`. Three cases to
+        # handle correctly (#21 + #25):
+        #   1. No `@` in the command token → handle as usual.
+        #   2. `@<our-username>` → strip and handle (we're the target).
+        #   3. `@<some-other-bot>` → silent ignore (not for us).
+        # The old v1.18.5 implementation stripped any `@` blindly,
+        # which made every bot in the group respond regardless of who
+        # was being addressed — defeating the point of targeted
+        # addressing. User mentions later in the payload (e.g.
+        # `/notify @someone hello`) are still preserved because we
+        # only touch the first token.
         if text.startswith("/") and "@" in text.split(" ", 1)[0]:
             cmd, sep, rest = text.partition(" ")
+            target = cmd.split("@", 1)[1]
+            own = (self.bot_username or "").lower()
+            if own and target.lower() != own:
+                # Addressed to a different bot — stay silent.
+                return
             text = cmd.split("@", 1)[0] + sep + rest
 
         # `/status <name>` — per-container detail with inline action
@@ -1896,9 +1928,9 @@ class TelegramBot:
                 self.send_message(self.t("lifecycle_usage"))
                 return
             action = parts[0][1:]  # strip leading "/"
-            # Include stopped containers — /start <stopped> is the main
-            # use case and the partial-name picker has to see them (#24).
-            resolved, err = self._resolve_container(parts[1].strip(), include_stopped=True)
+            # include_stopped is now the default — see _resolve_container
+            # docstring for rationale (#25).
+            resolved, err = self._resolve_container(parts[1].strip())
             if not resolved:
                 self.send_message(err)
                 return

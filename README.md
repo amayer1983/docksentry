@@ -233,6 +233,17 @@ Issue `/status` in the shared group and each bot replies with its label prefix:
 
 The label also flows into Discord embeds (added to title + footer) and the generic webhook payload (`bot_label` field), so downstream automations can route per-host.
 
+**Targeting one bot vs. broadcasting to all:**
+
+In the same group you can choose whether a command hits *all* bots or just *one* by including or omitting the bot's Telegram `@username`:
+
+| Form | Behaviour |
+|---|---|
+| `/check` | All bots respond (broadcast) |
+| `/check@pve1-bot` | Only the bot whose Telegram username is `pve1-bot` responds; the others silently ignore |
+
+Common pattern: broadcast `/selfupdate` so all hosts update together; target `/status@pve2-bot jellyfin` when you want a quick check on just one host without three bots' worth of "not found" noise. The bot's `@username` is what you set in BotFather when you created it (separate from `BOT_LABEL`, which is purely the visual prefix in messages).
+
 **Setup checklist:**
 
 1. Create a private Telegram group, add yourself and **all bots** (one per host).
