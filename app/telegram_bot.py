@@ -1756,6 +1756,17 @@ class TelegramBot:
                     self.send_message(chunk)
 
         elif text == "/check":
+            # Don't run a check while a manual update is in progress —
+            # `check_all` would still see in-flight containers as
+            # "available" (they're on the pre-pull digest until the
+            # recreate lands), producing a misleading second "Updates
+            # Available" notification a few seconds after the user
+            # already tapped "Update all". `run_updates` itself is
+            # single-instance protected so no data harm, but the UX
+            # confusion was real. Reported by @famewolf in #26.
+            if self.update_running:
+                self.send_message(self.t("update_already_running"))
+                return
             self.send_message(self.t("checking_updates"))
             updates = checker.check_all(bot=self)
             if updates:

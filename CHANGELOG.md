@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.9] - 2026-06-04
+
+### Fixed
+- **`/check` during an ongoing update no longer reports in-flight containers as "Updates Available".** Closes [#26](../../issues/26). Reported by @famewolf. While `run_updates()` was processing 3 containers, hitting `/check` again would re-run `check_all()` — which still saw the two not-yet-recreated containers as on their old digest, so they'd appear in a second "Updates Available" notification ~30s after the user already tapped "Update all". `run_updates()` was already single-instance protected (taps on the duplicate notification just returned "update already in progress" — no data harm), but the cosmetic confusion was real. `/check` now honours the same `update_running` flag and refuses with "Update already in progress…" instead. Reuses the existing `update_already_running` i18n key, no new translations.
+
 ## [1.18.8] - 2026-06-04
 
 ### Fixed
