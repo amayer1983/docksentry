@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.11] - 2026-06-05
+
+### Docs
+- **README: "Experimental Podman support" section** (#23, requested by @LeeNX). No code changes — Podman implements the Docker REST API, so mounting a Podman socket at the path Docksentry expects the Docker socket is enough for most operations. The new section documents:
+  - Rootful setup (`/run/podman/podman.sock`)
+  - Rootless setup (`/run/user/$UID/podman/podman.sock`)
+  - What's expected to work (read-only inspection, pulls, lifecycle commands, container groups, the v1.18.10 17-field HostConfig recreate — all hit the Docker REST API endpoints Podman implements natively)
+  - Known limitations: rootless UID-mapping edge cases for the [#16](../../issues/16) PID-1 self-protection, Quadlets out of scope, podman-compose label format variations, multi-arch availability
+  - How to file targeted bug reports (Podman version + rootful/rootless + architecture + exact failure mode) so we can add specific fixes
+- Auto-syncs to Docker Hub description via the existing GitHub Actions workflow.
+
 ## [1.18.10] - 2026-06-05
 
 ### Fixed

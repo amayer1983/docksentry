@@ -129,6 +129,74 @@ The standalone fallback is comprehensive — it covers almost everything `docker
 
 The log line `Compose file not found: <path> — falling back to standalone` is the marker that the fallback is being taken. Not an error per se, just informational. If you see it on every update and want the compose path instead, mount the relevant host directory read-only into Docksentry.
 
+### Experimental: Podman support
+
+Docksentry has **no Podman-specific code**, but Podman implements the Docker REST API — so for many setups, pointing Docksentry at a Podman socket Just Works™. This is **experimental**: we don't test against Podman in CI and we don't have a Podman test bed. Surfaced by [@LeeNX in #23](https://github.com/amayer1983/docksentry/issues/23).
+
+The trick: mount the Podman socket at the path Docksentry expects the Docker socket. No env var changes, no different image.
+
+#### Rootful Podman
+
+```bash
+sudo systemctl enable --now podman.socket
+# creates /run/podman/podman.sock
+```
+
+```yaml
+services:
+  docksentry:
+    image: amayer1983/docksentry:latest
+    volumes:
+      - /run/podman/podman.sock:/var/run/docker.sock:ro
+      - docksentry_data:/data
+    environment:
+      - WEB_UI=true
+      # ... rest of your config
+```
+
+#### Rootless Podman
+
+```bash
+systemctl --user enable --now podman.socket
+# creates /run/user/$UID/podman/podman.sock
+```
+
+```yaml
+services:
+  docksentry:
+    image: amayer1983/docksentry:latest
+    volumes:
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock:ro
+      - docksentry_data:/data
+    environment:
+      - WEB_UI=true
+```
+
+#### What's expected to work
+
+- `/status`, `/check`, `/updates`, `/history` — read-only inspection via the Docker REST API
+- `docker pull` of registry images, `docker stop`, `docker rm`, `docker rename`, `docker start`, `docker run`
+- Container groups, the `restart_dependents` cascade
+- The v1.18.10 17-field HostConfig recreate (Podman's inspect carries the same `HostConfig.CapAdd`, `Devices`, `Sysctls` structure — see [release notes](https://github.com/amayer1983/docksentry/releases/tag/v1.18.10))
+
+#### Known limitations
+
+- **Rootless Podman with complex UID mappings.** Docksentry's [#16](https://github.com/amayer1983/docksentry/issues/16) PID-1 self-protection reads container IDs from cgroup paths, which behave differently rootless. May misidentify the running container.
+- **Quadlets / systemd-managed Podman containers.** Completely different paradigm — containers are managed by systemd, the update cycle is a `.container` file edit + `systemctl restart`, not `docker stop` + `docker run`. Out of scope for the v1.x line.
+- **`podman-compose`-specific labels.** Podman Compose uses some compose-project labels with slightly different formats. Compose-detection might miss them and fall back to the standalone recreate (which is comprehensive after v1.18.10 but loses compose-project orchestration).
+- **Multi-arch.** Docksentry's image is published as `amd64` and `arm64`. Raspberry Pi 4/5 and most other ARM SBCs work. Pi 3 (armv7) is not currently built.
+
+#### Reporting issues
+
+If you try this and something breaks, open a new issue with:
+
+- Your Podman version (`podman --version`)
+- Rootful or rootless
+- Architecture (`uname -m`)
+- The exact failure mode (Telegram message, log line, web UI screenshot)
+
+Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't work" can't be acted on.
+
 ## Commands
 
 | Command | Description |
