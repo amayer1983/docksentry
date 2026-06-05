@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.10] - 2026-06-05
+
+### Fixed
+- **Standalone recreate silently dropped 17 HostConfig fields — broke Gluetun and every other VPN / firewall / capability-using container.** Closes [#27](../../issues/27). Reported by @famewolf. The reconstruct-from-inspect logic in `_update_standalone()` and `_do_selfupdate()` only emitted RestartPolicy, NetworkMode, PortBindings, SecurityOpt, Mounts, Env, Hostname and Labels. CapAdd, CapDrop, Devices, Privileged, Sysctls, Tmpfs, ExtraHosts, Dns/Search/Options, Init, ShmSize, ReadonlyRootfs, LogConfig, Runtime, Ipc/Pid/UTS modes and User were all silently discarded on every recreate.
+
+  For Gluetun specifically: `cap_add: NET_ADMIN` + `devices: /dev/net/tun` were lost → iptables init failed inside the new container → health-check rolled the update back → dependent containers (sonarr, radarr, qbittorrent, sabnzbd, …) left without their network namespace until a manual `rebuild_all`.
+
+  Single source of truth `UpdateChecker._build_run_args(config, image, name)` now covers **17 HostConfig fields**, used by both the standalone update path and the selfupdate helper. Empirically verified end-to-end: built run args from a Gluetun-flavoured test container, executed `docker run`, confirmed identical HostConfig on the recreated container.
+
+- **`restart_dependents` cascade now fires on head-container update *failure* too.** Same #27. The v1.17.0 cascade only kicked dependents on success — but the failure-and-rollback path is exactly when dependents need a kick most: their network namespace is torn down when the head container is stopped, and the rollback brings the head back but doesn't tell the dependents to re-attach. They sit on a stale namespace until something restarts them. Now we kick them on failure too, with a `🔁 head rollback — dependents kicked` marker in the result message so the user can tell why the cascade fired.
+
+### Docs
+- **README: "Compose-managed containers" section** explains why "Compose file not found: … — falling back to standalone" appears in logs (Docksentry's own container can't see the host path docker inspect records) and how to mount compose dirs read-only into Docksentry to use the compose path instead.
+
 ## [1.18.9] - 2026-06-04
 
 ### Fixed

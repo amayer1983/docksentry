@@ -101,12 +101,33 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - docksentry_data:/data
+      # Optional: mount your compose project directories so Docksentry
+      # can call `docker compose up` for compose-managed containers.
+      # When not mounted (or path doesn't match), Docksentry falls back
+      # to a standalone `docker run` recreate from the container's
+      # inspect data — works for almost everything but loses some
+      # compose-only metadata. See "Compose-managed containers" below.
+      # - /opt/stacks:/opt/stacks:ro
+      # - /mnt/dockerdata:/mnt/dockerdata:ro
     security_opt:
       - no-new-privileges:true
 
 volumes:
   docksentry_data:
 ```
+
+### Compose-managed containers
+
+When a container was started by `docker compose`, its inspect data records the **host-side path** of the compose file (e.g. `/opt/stacks/myapp/docker-compose.yml`). Docksentry runs inside its own container and can't see that path unless you mount it.
+
+| Mount setup | Update path |
+|---|---|
+| Compose dirs mounted at the same paths inside Docksentry | `docker compose pull` + `docker compose up -d --no-deps <service>` (preserves all compose semantics) |
+| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, etc. |
+
+The standalone fallback is comprehensive — it covers almost everything `docker run` accepts — but it works at the container layer, not the compose layer. If you have compose-specific orchestration (depends_on chains, project-level networks beyond default), mounting your compose dirs is the way to keep those intact.
+
+The log line `Compose file not found: <path> — falling back to standalone` is the marker that the fallback is being taken. Not an error per se, just informational. If you see it on every update and want the compose path instead, mount the relevant host directory read-only into Docksentry.
 
 ## Commands
 

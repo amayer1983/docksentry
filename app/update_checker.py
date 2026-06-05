@@ -1084,6 +1084,218 @@ class UpdateChecker:
         self._save_history(name, image, True, f"compose: {detail}")
         return True, f"OK ({detail})"
 
+    @staticmethod
+    def _build_run_args(config, image, name):
+        """Reconstruct the full `docker run` argument list from a
+        container's inspect dump. Single source of truth for both the
+        standalone update path here and the self-update helper in
+        telegram_bot.py.
+
+        The list of fields we copy was incomplete in v1.18.9 and earlier:
+        CapAdd, Devices, Sysctls, Tmpfs, ExtraHosts, Dns*, Privileged,
+        Init, ShmSize, ReadonlyRootfs, LogConfig, Runtime, Ipc/Pid/UTS
+        modes and User were all silently dropped on recreate. Gluetun-
+        style stacks broke because `cap_add: NET_ADMIN` + `devices:
+        /dev/net/tun` were lost — iptables init failed inside the new
+        container and the health-check rolled the update back, leaving
+        all dependent containers offline. Reported by @famewolf in #27.
+
+        The OCI inspect fields we honour here are taken from a live
+        empirical survey (`docker inspect` of a Gluetun-flavoured test
+        container). Defaults that match Docker's own defaults (e.g.
+        `LogConfig.Type = "json-file"`, `Runtime = "runc"`, `IpcMode =
+        "private"`, `ShmSize = 64 MiB`) are skipped — emitting them
+        works but adds noise to the `docker run` command in logs.
+        """
+        host = config.get("HostConfig", {}) or {}
+        cfg = config.get("Config", {}) or {}
+
+        args = ["docker", "run", "-d", "--name", name]
+
+        # ── Restart policy ─────────────────────────────────────
+        restart = host.get("RestartPolicy") or {}
+        if restart.get("Name"):
+            policy = restart["Name"]
+            if restart.get("MaximumRetryCount", 0) > 0:
+                policy += f":{restart['MaximumRetryCount']}"
+            args.extend(["--restart", policy])
+
+        # ── Network mode ───────────────────────────────────────
+        network_mode = host.get("NetworkMode") or ""
+        if network_mode and network_mode != "default":
+            args.extend(["--network", network_mode])
+        # When inheriting another container's network namespace, Docker
+        # forbids the per-container network knobs (--hostname, -p,
+        # --add-host, --mac-address, --dns, ...). See #11 for the long
+        # explanation. We skip those flags downstream when shares_netns
+        # is True.
+        shares_netns = network_mode.startswith(("container:", "service:"))
+
+        # ── Privileged mode ────────────────────────────────────
+        # If privileged, all the capability/device fields are implied
+        # — emitting them alongside `--privileged` works but is noise.
+        privileged = bool(host.get("Privileged"))
+        if privileged:
+            args.append("--privileged")
+
+        # ── Capabilities (Gluetun cares about this) ────────────
+        if not privileged:
+            for cap in (host.get("CapAdd") or []):
+                # docker inspect stores "CAP_NET_ADMIN", CLI accepts
+                # either form — pass the stored value as-is.
+                args.extend(["--cap-add", cap])
+            for cap in (host.get("CapDrop") or []):
+                args.extend(["--cap-drop", cap])
+
+        # ── Devices (Gluetun: /dev/net/tun) ────────────────────
+        if not privileged:
+            for dev in (host.get("Devices") or []):
+                host_path = dev.get("PathOnHost", "")
+                cont_path = dev.get("PathInContainer", "")
+                perms = dev.get("CgroupPermissions", "rwm")
+                if not host_path:
+                    continue
+                spec = host_path
+                if cont_path and cont_path != host_path:
+                    spec += f":{cont_path}"
+                if perms and perms != "rwm":
+                    spec += f":{perms}"
+                args.extend(["--device", spec])
+
+        # ── Sysctls ────────────────────────────────────────────
+        for key, value in (host.get("Sysctls") or {}).items():
+            args.extend(["--sysctl", f"{key}={value}"])
+
+        # ── Tmpfs mounts ───────────────────────────────────────
+        for path, opts in (host.get("Tmpfs") or {}).items():
+            spec = path
+            if opts:
+                spec += f":{opts}"
+            args.extend(["--tmpfs", spec])
+
+        # ── Environment variables ──────────────────────────────
+        for env in (cfg.get("Env") or []):
+            args.extend(["-e", env])
+
+        # ── Volumes / Mounts ───────────────────────────────────
+        for mount in (config.get("Mounts") or []):
+            mtype = mount.get("Type", "")
+            if mtype == "bind":
+                src = mount.get("Source", "")
+                dst = mount.get("Destination", "")
+                if not (src and dst):
+                    continue
+                bind = f"{src}:{dst}"
+                if not mount.get("RW", True):
+                    bind += ":ro"
+                args.extend(["-v", bind])
+            elif mtype == "volume":
+                vol = mount.get("Name") or ""
+                dst = mount.get("Destination", "")
+                if not (vol and dst):
+                    continue
+                bind = f"{vol}:{dst}"
+                if not mount.get("RW", True):
+                    bind += ":ro"
+                args.extend(["-v", bind])
+
+        # ── Port mappings ──────────────────────────────────────
+        # Skipped when sharing another container's netns — those ports
+        # belong to the namespace owner, not us.
+        if not shares_netns:
+            for container_port, bindings in (host.get("PortBindings") or {}).items():
+                if not bindings:
+                    continue
+                for b in bindings:
+                    host_ip = b.get("HostIp", "")
+                    host_port = b.get("HostPort", "")
+                    if host_ip:
+                        args.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
+                    else:
+                        args.extend(["-p", f"{host_port}:{container_port}"])
+
+        # ── Extra /etc/hosts entries ───────────────────────────
+        if not shares_netns:
+            for entry in (host.get("ExtraHosts") or []):
+                args.extend(["--add-host", entry])
+
+        # ── DNS overrides ──────────────────────────────────────
+        if not shares_netns:
+            for d in (host.get("Dns") or []):
+                args.extend(["--dns", d])
+            for d in (host.get("DnsSearch") or []):
+                args.extend(["--dns-search", d])
+            for d in (host.get("DnsOptions") or []):
+                args.extend(["--dns-option", d])
+
+        # ── Labels (preserve all) ──────────────────────────────
+        for key, value in (cfg.get("Labels") or {}).items():
+            args.extend(["--label", f"{key}={value}"])
+
+        # ── Hostname (skipped when sharing netns) ──────────────
+        if not shares_netns:
+            hostname = cfg.get("Hostname", "")
+            # Docker auto-generates a 12-char short ID when no
+            # hostname is set — skip emitting that since we'll get a
+            # fresh one for the new container anyway.
+            if hostname and hostname != config.get("Id", "")[:12]:
+                args.extend(["--hostname", hostname])
+
+        # ── User (uid[:gid]) ───────────────────────────────────
+        user = cfg.get("User", "")
+        if user:
+            args.extend(["--user", user])
+
+        # ── Security options (AppArmor / seccomp / no-new-privileges) ─
+        for opt in (host.get("SecurityOpt") or []):
+            args.extend(["--security-opt", opt])
+
+        # ── Read-only rootfs ───────────────────────────────────
+        if host.get("ReadonlyRootfs"):
+            args.append("--read-only")
+
+        # ── Init (pid 1 reaper) ────────────────────────────────
+        if host.get("Init"):
+            args.append("--init")
+
+        # ── Shared memory size (skip Docker default 64MiB) ─────
+        shm = host.get("ShmSize", 0) or 0
+        if shm and shm != 67108864:
+            args.extend(["--shm-size", str(shm)])
+
+        # ── Namespace modes (skip Docker defaults) ─────────────
+        for flag, key, default in (
+            ("--ipc", "IpcMode",  ("", "private", "shareable")),
+            ("--pid", "PidMode",  ("",)),
+            ("--uts", "UTSMode",  ("",)),
+        ):
+            v = host.get(key, "") or ""
+            if v and v not in default:
+                args.extend([flag, v])
+
+        # ── Runtime (skip Docker default `runc`) ───────────────
+        runtime = host.get("Runtime", "") or ""
+        if runtime and runtime != "runc":
+            args.extend(["--runtime", runtime])
+
+        # ── Logging driver (skip Docker default json-file/empty) ─
+        log = host.get("LogConfig") or {}
+        log_type = log.get("Type", "")
+        if log_type and log_type not in ("json-file", ""):
+            args.extend(["--log-driver", log_type])
+        for k, v in (log.get("Config") or {}).items():
+            args.extend(["--log-opt", f"{k}={v}"])
+
+        # ── Image (must come before command tokens) ────────────
+        args.append(image)
+
+        # ── Original command (if any) ──────────────────────────
+        original_cmd = cfg.get("Cmd")
+        if original_cmd:
+            args.extend(original_cmd)
+
+        return args
+
     def _get_image_version_label(self, image):
         """Read & normalize `org.opencontainers.image.version` from an
         image's labels. Returns empty string when missing/unusable."""
@@ -1231,85 +1443,12 @@ class UpdateChecker:
             subprocess.run(["docker", "rename", name, old_name], capture_output=True, timeout=10)
             self._debug(f"  Renamed to: {old_name}")
 
-            # Build docker run command from inspect config
-            cmd = ["docker", "run", "-d", "--name", name]
-
-            # Restart policy
-            restart = config.get("HostConfig", {}).get("RestartPolicy", {})
-            if restart.get("Name"):
-                policy = restart["Name"]
-                if restart.get("MaximumRetryCount", 0) > 0:
-                    policy += f":{restart['MaximumRetryCount']}"
-                cmd.extend(["--restart", policy])
-
-            # Network mode
-            network_mode = config.get("HostConfig", {}).get("NetworkMode", "")
-            if network_mode and network_mode != "default":
-                cmd.extend(["--network", network_mode])
-
-            # When a container inherits another container's network namespace
-            # (Gluetun / VPN-sidecar pattern: `network_mode: "container:gluetun"`
-            # or `service:gluetun`), Docker REJECTS per-container network
-            # options because they all belong to the namespace owner. The
-            # rejected list includes --hostname, -p/--publish, --add-host,
-            # --mac-address, --dns. Trying to set them yields:
-            #   "conflicting options: hostname and the network mode"
-            # Reported by @famewolf in #2.
-            shares_netns = network_mode.startswith(("container:", "service:"))
-
-            # Environment variables
-            for env in config.get("Config", {}).get("Env", []):
-                cmd.extend(["-e", env])
-
-            # Volumes/Mounts
-            for mount in config.get("Mounts", []):
-                if mount["Type"] == "bind":
-                    bind = f"{mount['Source']}:{mount['Destination']}"
-                    if not mount.get("RW", True):
-                        bind += ":ro"
-                    cmd.extend(["-v", bind])
-                elif mount["Type"] == "volume":
-                    bind = f"{mount['Name']}:{mount['Destination']}"
-                    if not mount.get("RW", True):
-                        bind += ":ro"
-                    cmd.extend(["-v", bind])
-
-            # Port mappings (skipped when sharing another container's netns —
-            # those ports belong to the namespace owner, not us)
-            if not shares_netns:
-                ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
-                for container_port, bindings in ports.items():
-                    if bindings:
-                        for b in bindings:
-                            host_ip = b.get("HostIp", "")
-                            host_port = b.get("HostPort", "")
-                            if host_ip:
-                                cmd.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
-                            else:
-                                cmd.extend(["-p", f"{host_port}:{container_port}"])
-
-            # Labels (preserve all)
-            for key, value in config.get("Config", {}).get("Labels", {}).items():
-                cmd.extend(["--label", f"{key}={value}"])
-
-            # Hostname (skipped when sharing another container's netns)
-            if not shares_netns:
-                hostname = config.get("Config", {}).get("Hostname", "")
-                if hostname and hostname != config.get("Id", "")[:12]:
-                    cmd.extend(["--hostname", hostname])
-
-            # Security options
-            for opt in config.get("HostConfig", {}).get("SecurityOpt", []) or []:
-                cmd.extend(["--security-opt", opt])
-
-            # Image
-            cmd.append(image)
-
-            # Original command (if not entrypoint-only)
-            original_cmd = config.get("Config", {}).get("Cmd")
-            if original_cmd:
-                cmd.extend(original_cmd)
-
+            # Build docker run command from inspect config — single
+            # source of truth in `_build_run_args` so capabilities,
+            # devices, sysctls, tmpfs, extra hosts, DNS, init, shm,
+            # log config, ipc/pid/uts modes, runtime, read-only rootfs
+            # and user are all preserved (#27).
+            cmd = self._build_run_args(config, image, name)
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container

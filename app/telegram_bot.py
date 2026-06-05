@@ -906,6 +906,30 @@ class TelegramBot:
                     elif cur_group:
                         # Failure aborts the remainder of this group
                         group_aborted.add(cur_group)
+                        # If the failed container is the head of a
+                        # restart_dependents group, the dependents are
+                        # already in a half-broken state — their
+                        # network namespace was torn down when the
+                        # head was stopped, and the rollback brought
+                        # the head back but the dependents kept
+                        # pointing at the now-stale namespace. Kick
+                        # them so they re-attach to the rolled-back
+                        # head. Same code path as the success cascade
+                        # but with a clear "rolled back" message so
+                        # the user knows why the cascade is firing.
+                        # Reported by @famewolf in #27.
+                        grp = groups.get(cur_group) or {}
+                        members = grp.get("containers") or []
+                        if (grp.get("restart_dependents")
+                                and members
+                                and u["name"] == members[0]
+                                and len(members) > 1):
+                            deps = members[1:]
+                            wait_s = int(grp.get("wait_seconds", 30) or 30)
+                            restart_msg = self._restart_group_dependents(
+                                u["name"], deps, max_wait=max(wait_s, 30)
+                            )
+                            results.append(f"🔁 head rollback — dependents kicked: {restart_msg}")
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], success, msg)
                 except Exception as e:
@@ -1139,67 +1163,27 @@ class TelegramBot:
         short-lived helper container that runs on the host and performs the
         stop/rename/run/cleanup sequence from outside.
         """
-        # Rebuild run command from inspect
-        run_args = ["--name", own_name]
-
-        # Restart policy
-        restart = config.get("HostConfig", {}).get("RestartPolicy", {})
-        if restart.get("Name"):
-            policy = restart["Name"]
-            if restart.get("MaximumRetryCount", 0) > 0:
-                policy += f":{restart['MaximumRetryCount']}"
-            run_args.extend(["--restart", policy])
-
-        # Network
-        network_mode = config.get("HostConfig", {}).get("NetworkMode", "")
-        if network_mode and network_mode != "default":
-            run_args.extend(["--network", network_mode])
-
-        # If the container inherits another container's network namespace
-        # (Gluetun-style network_mode: "container:gluetun"), Docker rejects
-        # per-container network options like -p / --hostname / --add-host.
-        # See update_checker.py for the longer explanation. Unlikely to hit
-        # here (Docksentry itself rarely sits behind a VPN sidecar), but
-        # mirror the logic for consistency.
-        shares_netns = network_mode.startswith(("container:", "service:"))
-
-        # Env vars
-        for env in config.get("Config", {}).get("Env", []):
-            run_args.extend(["-e", env])
-
-        # Mounts
-        for mount in config.get("Mounts", []):
-            if mount["Type"] == "bind":
-                bind = f"{mount['Source']}:{mount['Destination']}"
-                if not mount.get("RW", True):
-                    bind += ":ro"
-                run_args.extend(["-v", bind])
-            elif mount["Type"] == "volume":
-                bind = f"{mount['Name']}:{mount['Destination']}"
-                if not mount.get("RW", True):
-                    bind += ":ro"
-                run_args.extend(["-v", bind])
-
-        # Ports (skipped on shared netns — see comment above)
-        if not shares_netns:
-            ports = config.get("HostConfig", {}).get("PortBindings", {}) or {}
-            for container_port, bindings in ports.items():
-                if bindings:
-                    for b in bindings:
-                        host_ip = b.get("HostIp", "")
-                        host_port = b.get("HostPort", "")
-                        if host_ip:
-                            run_args.extend(["-p", f"{host_ip}:{host_port}:{container_port}"])
-                        else:
-                            run_args.extend(["-p", f"{host_port}:{container_port}"])
-
-        # Labels
-        for key, value in config.get("Config", {}).get("Labels", {}).items():
-            run_args.extend(["--label", f"{key}={value}"])
-
-        # Security opts
-        for opt in config.get("HostConfig", {}).get("SecurityOpt", []) or []:
-            run_args.extend(["--security-opt", opt])
+        # Rebuild run command from inspect. Single source of truth via
+        # UpdateChecker._build_run_args so the self-update path stays
+        # in sync with the regular container-update path (#27): same
+        # HostConfig coverage (capabilities, devices, sysctls, tmpfs,
+        # extra hosts, DNS, init, shm, log config, ipc/pid/uts modes,
+        # runtime, read-only rootfs, user) is preserved on recreate.
+        # `_build_run_args` returns the FULL docker run argv including
+        # `["docker", "run", "-d", "--name", own_name, ...]` and the
+        # image at the end. We slice off the leading `docker run -d`
+        # and the trailing image+cmd because the helper-container
+        # update_script formats those separately.
+        from update_checker import UpdateChecker as _UC
+        full = _UC._build_run_args(config, own_image, own_name)
+        # full = ["docker", "run", "-d", "--name", own_name, ...flags..., own_image, ...cmd...]
+        # We need just the flags between "-d" and own_image:
+        try:
+            img_idx = full.index(own_image)
+            run_args = full[3:img_idx]  # drop ["docker","run","-d"] and image+cmd
+        except ValueError:
+            # Defensive — should never happen since we passed own_image
+            run_args = full[3:-1]
 
         # Build the full recreation command
         run_parts = " ".join(f'"{a}"' if " " in a or "=" in a else a for a in run_args)
