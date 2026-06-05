@@ -292,7 +292,9 @@ environment:
 
 ### Multi-bot setup (one group, multiple hosts)
 
-If you have several Docker hosts (different boxes, VMs, Proxmox LXCs, …), v2.0's real multi-host support is on the roadmap — but until then you can already control multiple instances from a **single Telegram group** by running one Docksentry per host and labelling each instance with `BOT_LABEL`:
+If you have several Docker hosts (different boxes, VMs, Proxmox LXCs, …), v2.0's real multi-host support is on the roadmap — but until then you can already control multiple instances from a **single Telegram group** by running one Docksentry per host, **each with its own bot token from [@BotFather](https://t.me/BotFather)**, labelling each instance with `BOT_LABEL`:
+
+> **Why a separate token per host?** Telegram allows exactly **one polling consumer per bot token** — two instances sharing the same token fight over `getUpdates` and one of them gets evicted with a 409 Conflict every poll. `BOT_LABEL` is only a visual prefix in messages; it doesn't change the underlying bot identity (the token is the identity). Create one bot per host with `/newbot` in @BotFather and use a distinct token per instance.
 
 ```yaml
 # Host pve1
@@ -335,10 +337,11 @@ Common pattern: broadcast `/selfupdate` so all hosts update together; target `/s
 
 **Setup checklist:**
 
-1. Create a private Telegram group, add yourself and **all bots** (one per host).
-2. For **each** bot, in [@BotFather](https://t.me/BotFather) → `/setprivacy` → **Disable**, so bots see `/commands` in groups (groups have privacy mode on by default, which restricts bots to messages that mention them directly).
-3. Find the group ID (send a message in the group, visit `https://api.telegram.org/bot<TOKEN>/getUpdates`, look for `chat.id`).
-4. Configure each Docksentry instance with the **same** `CHAT_ID` (the group ID) and a **distinct** `BOT_LABEL`.
+1. In [@BotFather](https://t.me/BotFather), run `/newbot` **once per host** — each Docksentry instance needs its **own bot token**. `BOT_LABEL` alone is not enough; sharing one token across instances causes a Telegram 409 Conflict.
+2. Create a private Telegram group, add yourself and **all bots** (one per host).
+3. For **each** bot, in @BotFather → `/setprivacy` → **Disable**, so bots see `/commands` in groups (groups have privacy mode on by default, which restricts bots to messages that mention them directly).
+4. Find the group ID (send a message in the group, visit `https://api.telegram.org/bot<TOKEN>/getUpdates`, look for `chat.id`).
+5. Configure each Docksentry instance with: a **distinct** `BOT_TOKEN` (from step 1), the **same** `CHAT_ID` (the group ID), and a **distinct** `BOT_LABEL`.
 
 **Security note — please read:**
 

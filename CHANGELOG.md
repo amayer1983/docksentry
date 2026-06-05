@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.13] - 2026-06-05
+
+### Docs
+- **README "Multi-bot setup" section now explicit that each host needs its own bot token.** Surfaced by @LeeNX in [#23](../../issues/23): he read the section as "I just need a unique `BOT_LABEL` per host" and ran two instances with the same `BOT_TOKEN`, which produced a Telegram 409 Conflict (one bot token = exactly one polling consumer). The YAML examples already showed distinct tokens, but the checklist only highlighted distinct `BOT_LABEL`. Now:
+  - A new explanatory note up front explains *why* a separate token per host is required (`BOT_LABEL` is only a visual prefix; token is the identity).
+  - The setup checklist now leads with "create one bot per host with `/newbot` in @BotFather" as step 1 and spells out distinct `BOT_TOKEN` + distinct `BOT_LABEL` + same `CHAT_ID` in the final configure step.
+
 ## [1.18.12] - 2026-06-05
 
 ### Fixed
