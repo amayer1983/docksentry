@@ -1171,21 +1171,50 @@ def create_handler(config, checker, bot, store, password=None):
             return urlparse(self.path).path
 
         def _get_containers(self):
-            result = subprocess.run(
-                ["docker", "ps", "--format", "{{.Names}}|{{.Image}}|{{.Status}}"],
+            # Use docker inspect (not docker ps Status-string parsing) so health
+            # detection works on both Docker and Podman. Podman's REST API does
+            # not append `(healthy)` to the Status field — that's a Docker CLI
+            # cosmetic — but State.Health.Status is consistently provided by
+            # both. Reported by LeeNX in #28 for podman-compose containers.
+            ids_p = subprocess.run(
+                ["docker", "ps", "-q"],
                 capture_output=True, text=True
             )
+            ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+            if not ids:
+                return []
+            ins_p = subprocess.run(
+                ["docker", "inspect", *ids],
+                capture_output=True, text=True
+            )
+            try:
+                inspected = json.loads(ins_p.stdout) or []
+            except (json.JSONDecodeError, ValueError):
+                return []
             containers = []
-            for line in result.stdout.strip().split("\n"):
-                if not line:
-                    continue
-                parts = line.split("|", 2)
-                if len(parts) == 3:
-                    containers.append({
-                        "name": parts[0],
-                        "image": parts[1],
-                        "status": parts[2],
-                    })
+            for cfg in inspected:
+                name = (cfg.get("Name") or "?").lstrip("/")
+                image = (cfg.get("Config") or {}).get("Image", "?")
+                state = cfg.get("State") or {}
+                health = (state.get("Health") or {}).get("Status", "")
+                # Synthesize a Docker-compatible status string so the rest of
+                # the rendering pipeline (which greps for "healthy"/"starting")
+                # keeps working unchanged.
+                base = "Up"
+                if health == "healthy":
+                    status_str = f"{base} (healthy)"
+                elif health == "unhealthy":
+                    status_str = f"{base} (unhealthy)"
+                elif health == "starting":
+                    status_str = f"{base} (health: starting)"
+                else:
+                    status_str = base
+                containers.append({
+                    "name": name,
+                    "image": image,
+                    "status": status_str,
+                    "health": health,
+                })
             return containers
 
         def _get_pending(self):
@@ -1933,10 +1962,12 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
             rows = ""
             for c in containers:
-                status_text = c["status"]
-                if "healthy" in status_text.lower():
+                health = c.get("health", "")
+                if health == "healthy":
                     status_badge = '<span class="badge badge-green">healthy</span>'
-                elif "starting" in status_text.lower():
+                elif health == "unhealthy":
+                    status_badge = '<span class="badge badge-red">unhealthy</span>'
+                elif health == "starting":
                     status_badge = '<span class="badge badge-yellow">starting</span>'
                 else:
                     status_badge = f'<span class="badge badge-blue">running</span>'

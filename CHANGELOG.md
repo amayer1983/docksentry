@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.18.12] - 2026-06-05
+
+### Fixed
+- **Container health status no longer shows as just "running" under Podman.** Closes [#28](../../issues/28). Reported by @LeeNX. `/status` and the Web UI's container list both derived health (`🟢 healthy` / `🔴 unhealthy` / `🟡 starting`) by grepping `(healthy)` / `(unhealthy)` / `(health: starting)` substrings out of `docker ps`'s human-readable Status column. That worked on Docker because the CLI appends those markers cosmetically — but Podman's REST API returns the Status field *without* those suffixes (Docker CLI-only cosmetic, not part of the OCI/Docker REST API contract), so every healthy container under Podman fell through to the default ⚪ running icon.
+
+  Both `/status` (Telegram) and `_get_containers()` (Web UI) now batch-inspect running containers and read `State.Health.Status` directly — consistently provided by both Docker and Podman APIs. Side benefit: uptime in `/status` is now computed from `State.StartedAt` instead of parsed from a string, so the format matches the per-container `/status <name>` detail view.
+
 ## [1.18.11] - 2026-06-05
 
 ### Docs

@@ -1646,42 +1646,74 @@ class TelegramBot:
             return
 
         if text == "/status":
-            ps = subprocess.run(
-                ["docker", "ps", "--format", "{{.Names}}|{{.Status}}|{{.Image}}"],
+            # Use docker inspect (not docker ps Status-string parsing) so health
+            # detection works on both Docker and Podman. Podman's REST API does
+            # not append `(healthy)` to the Status field — that's a Docker CLI
+            # cosmetic — but State.Health.Status is consistently provided by
+            # both. Reported by LeeNX in #28 for podman-compose containers.
+            ids_p = subprocess.run(
+                ["docker", "ps", "-q"],
                 capture_output=True, text=True
             )
-            lines = [l for l in ps.stdout.strip().split("\n") if l]
-            total = len(lines)
+            ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+            inspected = []
+            if ids:
+                ins_p = subprocess.run(
+                    ["docker", "inspect", *ids],
+                    capture_output=True, text=True
+                )
+                try:
+                    inspected = json.loads(ins_p.stdout) or []
+                except (json.JSONDecodeError, ValueError):
+                    inspected = []
+            total = len(inspected)
             healthy = 0
             unhealthy = 0
             running = 0
             containers = []
 
-            for line in lines:
-                parts = line.split("|", 2)
-                name = parts[0] if len(parts) > 0 else "?"
-                status_raw = parts[1] if len(parts) > 1 else "?"
-                image = parts[2] if len(parts) > 2 else "?"
+            from datetime import datetime as _dt, timezone as _tz
 
-                # Parse uptime
-                uptime = status_raw.replace("Up ", "").strip()
+            for cfg in inspected:
+                name = (cfg.get("Name") or "?").lstrip("/")
+                image = (cfg.get("Config") or {}).get("Image", "?")
+                state = cfg.get("State") or {}
+                health = (state.get("Health") or {}).get("Status", "")
 
-                # Determine health icon
-                if "(healthy)" in status_raw:
+                # Uptime from StartedAt — same logic as _container_state
+                started_at = state.get("StartedAt", "")
+                uptime = "?"
+                if state.get("Running") and started_at:
+                    try:
+                        s = _dt.fromisoformat(started_at.replace("Z", "+00:00"))
+                        delta = _dt.now(_tz.utc) - s
+                        secs = int(delta.total_seconds())
+                        if secs < 60:
+                            uptime = f"{secs}s"
+                        elif secs < 3600:
+                            uptime = f"{secs // 60}m {secs % 60}s"
+                        elif secs < 86400:
+                            uptime = f"{secs // 3600}h {(secs % 3600) // 60}m"
+                        else:
+                            d = secs // 86400
+                            h = (secs % 86400) // 3600
+                            uptime = f"{d}d {h}h"
+                    except (ValueError, AttributeError):
+                        pass
+
+                # Determine health icon from State.Health.Status (Docker+Podman)
+                if health == "healthy":
                     icon = "🟢"
                     healthy += 1
-                elif "(unhealthy)" in status_raw:
+                elif health == "unhealthy":
                     icon = "🔴"
                     unhealthy += 1
-                elif "(health: starting)" in status_raw:
+                elif health == "starting":
                     icon = "🟡"
                     running += 1
                 else:
                     icon = "⚪"
                     running += 1
-
-                # Clean up uptime display
-                uptime = uptime.replace(" (healthy)", "").replace(" (unhealthy)", "").replace(" (health: starting)", "")
 
                 containers.append(f"{icon} `{name}`\n     ⏱ {uptime} · 📦 `{image}`")
 
