@@ -123,11 +123,22 @@ When a container was started by `docker compose`, its inspect data records the *
 | Mount setup | Update path |
 |---|---|
 | Compose dirs mounted at the same paths inside Docksentry | `docker compose pull` + `docker compose up -d --no-deps <service>` (preserves all compose semantics) |
-| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, etc. |
+| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, network aliases, fixed IPs, MAC, resource limits, healthcheck overrides, etc. |
 
-The standalone fallback is comprehensive — it covers almost everything `docker run` accepts — but it works at the container layer, not the compose layer. If you have compose-specific orchestration (depends_on chains, project-level networks beyond default), mounting your compose dirs is the way to keep those intact.
+The standalone fallback is comprehensive. As of v1.19.0 it covers everything `_build_run_args()` knows to read from `docker inspect`:
+
+- **Network state**: `--network` (primary), `--network-alias` (compose service hostnames like `db`, `redis`, `broker`), `--ip` / `--ip6` (fixed IPs), `--mac-address`, `--link`. Additional networks (containers attached to >1 network) get `docker network connect` after run, preserving aliases/IPs per network.
+- **Capabilities / devices / sysctls / tmpfs / extra-hosts / DNS / security-opts** (Gluetun-style stacks).
+- **Resource limits**: memory, CPU, pids, oom, blkio, ulimits, group-add.
+- **Lifecycle**: stop-signal, stop-timeout, auto-remove (when no restart policy).
+- **Process config**: working-dir, domainname, tty, stdin, healthcheck override.
+- **Image-default-aware Cmd / Entrypoint** — only restores container-level Cmd/Entrypoint when they actually differ from the new image's defaults, so image updates that change CMD aren't locked to the old value.
+
+If you have **compose-specific orchestration** (depends_on chains, profiles, multiple compose files merged via `-f`, project-level network options beyond defaults), mounting your compose dirs is still the cleanest path to keep those intact.
 
 The log line `Compose file not found: <path> — falling back to standalone` is the marker that the fallback is being taken. Not an error per se, just informational. If you see it on every update and want the compose path instead, mount the relevant host directory read-only into Docksentry.
+
+**Audit mode (debug):** run with `DEBUG=true` and Docksentry logs `[audit] HostConfig.<key>` / `[audit] Config.<key>` for any inspect field that's non-default but not restored on recreate. Future Docker versions adding new keys surface here — please report any sightings as an issue so we can extend coverage.
 
 ### Experimental: Podman support
 

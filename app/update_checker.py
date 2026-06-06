@@ -1085,27 +1085,47 @@ class UpdateChecker:
         return True, f"OK ({detail})"
 
     @staticmethod
-    def _build_run_args(config, image, name):
+    def _build_run_args(config, image, name, image_defaults=None):
         """Reconstruct the full `docker run` argument list from a
         container's inspect dump. Single source of truth for both the
         standalone update path here and the self-update helper in
         telegram_bot.py.
 
-        The list of fields we copy was incomplete in v1.18.9 and earlier:
-        CapAdd, Devices, Sysctls, Tmpfs, ExtraHosts, Dns*, Privileged,
-        Init, ShmSize, ReadonlyRootfs, LogConfig, Runtime, Ipc/Pid/UTS
-        modes and User were all silently dropped on recreate. Gluetun-
-        style stacks broke because `cap_add: NET_ADMIN` + `devices:
-        /dev/net/tun` were lost — iptables init failed inside the new
-        container and the health-check rolled the update back, leaving
-        all dependent containers offline. Reported by @famewolf in #27.
+        v1.19.0 adds network aliases / fixed IPs / MAC / links for the
+        primary network (fixes compose-stack restart-loops where
+        recreated containers lost their service alias and other stack
+        members hit NXDOMAIN). Also: memory, CPU, pids, oom, blkio,
+        ulimits, group_add, auto-remove, stop_signal, stop_timeout,
+        working_dir, domainname, tty, stdin, healthcheck override,
+        and Entrypoint+Cmd image-diff comparison.
 
-        The OCI inspect fields we honour here are taken from a live
-        empirical survey (`docker inspect` of a Gluetun-flavoured test
-        container). Defaults that match Docker's own defaults (e.g.
-        `LogConfig.Type = "json-file"`, `Runtime = "runc"`, `IpcMode =
-        "private"`, `ShmSize = 64 MiB`) are skipped — emitting them
-        works but adds noise to the `docker run` command in logs.
+        ``image_defaults`` is an optional dict ``{Entrypoint, Cmd}``
+        holding the image's own default Entrypoint and Cmd (as read
+        from ``docker image inspect``). When provided, Container-level
+        Cmd / Entrypoint are restored only when they DIFFER from the
+        image's defaults — otherwise we'd lock in the OLD image's
+        Cmd/Entrypoint on every update and break image releases that
+        change either. When ``image_defaults`` is None, we fall back
+        to pre-v1.19.0 behaviour for backward compatibility: restore
+        Container.Config.Cmd blindly, never emit --entrypoint. Pass
+        ``image_defaults`` from callers that have already inspected
+        the image (the typical update path) — _update_standalone()
+        does this automatically.
+
+        Historical field-coverage gaps closed:
+          - v1.18.10 (#27 / @famewolf): CapAdd, Devices, Sysctls,
+            Tmpfs, ExtraHosts, Dns*, Privileged, Init, ShmSize,
+            ReadonlyRootfs, LogConfig, Runtime, Ipc/Pid/UTS, User.
+          - v1.19.0 (internal): network aliases/IPs/MAC/links,
+            memory/CPU/pids/oom/blkio/ulimits limits, group_add,
+            auto-remove, stop_signal/timeout, working_dir, domainname,
+            tty/stdin, healthcheck override, image-diff Cmd/Entrypoint.
+
+        Defaults that match Docker's own defaults (e.g.
+        ``LogConfig.Type = "json-file"``, ``Runtime = "runc"``,
+        ``IpcMode = "private"``, ``ShmSize = 64 MiB``) are skipped —
+        emitting them works but adds noise to the `docker run`
+        command in logs.
         """
         host = config.get("HostConfig", {}) or {}
         cfg = config.get("Config", {}) or {}
@@ -1130,6 +1150,41 @@ class UpdateChecker:
         # explanation. We skip those flags downstream when shares_netns
         # is True.
         shares_netns = network_mode.startswith(("container:", "service:"))
+
+        # ── Primary network aliases, IP, MAC, links ────────────────
+        # Compose containers get a service alias (`db`, `app`, `redis`)
+        # in their project network. Without --network-alias on recreate
+        # the alias is dropped → other services in the same stack hit
+        # NXDOMAIN. Paperless-NGX / Nextcloud restart-loops after auto-
+        # update were caused by exactly this. Reported (internal).
+        # Skip for shared-netns (forbidden by Docker) and "default"/host/
+        # bridge/none modes (no per-container aliases anyway).
+        if (not shares_netns and network_mode
+                and network_mode not in ("default", "host", "bridge", "none")):
+            networks = (config.get("NetworkSettings") or {}).get("Networks") or {}
+            primary = networks.get(network_mode) or {}
+            short_id = (config.get("Id") or "")[:12]
+            for alias in (primary.get("Aliases") or []):
+                # Docker re-adds the auto-generated short-id alias and
+                # the container name automatically — emitting them
+                # explicitly is harmless but noisy.
+                if not alias or alias == short_id or alias == name:
+                    continue
+                args.extend(["--network-alias", alias])
+            ipam = primary.get("IPAMConfig") or {}
+            if ipam.get("IPv4Address"):
+                args.extend(["--ip", ipam["IPv4Address"]])
+            if ipam.get("IPv6Address"):
+                args.extend(["--ip6", ipam["IPv6Address"]])
+            # MAC: Config.MacAddress is the user-set value; the
+            # per-network entry holds whatever Docker assigned (may be
+            # auto-generated). Prefer Config.MacAddress.
+            user_mac = cfg.get("MacAddress") or ""
+            if user_mac:
+                args.extend(["--mac-address", user_mac])
+            # Legacy links (deprecated but still used by some stacks)
+            for link in (primary.get("Links") or []):
+                args.extend(["--link", link])
 
         # ── Privileged mode ────────────────────────────────────
         # If privileged, all the capability/device fields are implied
@@ -1286,13 +1341,195 @@ class UpdateChecker:
         for k, v in (log.get("Config") or {}).items():
             args.extend(["--log-opt", f"{k}={v}"])
 
+        # ── Memory limits ──────────────────────────────────────
+        # Compose `mem_limit`, `memswap_limit`, `mem_reservation`.
+        # Stored as bytes; emit as bytes (docker accepts "1073741824").
+        for key, flag in (
+            ("Memory", "--memory"),
+            ("MemorySwap", "--memory-swap"),
+            ("MemoryReservation", "--memory-reservation"),
+            ("KernelMemory", "--kernel-memory"),
+            ("KernelMemoryTCP", "--kernel-memory-tcp"),
+        ):
+            v = host.get(key, 0) or 0
+            # MemorySwap == -1 means "unlimited swap" (intentional); 0
+            # means "use the kernel default" — skip both.
+            if v and v > 0:
+                args.extend([flag, str(v)])
+        msrl = host.get("MemorySwappiness")
+        if msrl is not None and msrl >= 0:
+            args.extend(["--memory-swappiness", str(msrl)])
+
+        # ── CPU limits ─────────────────────────────────────────
+        # Compose `cpus` is NanoCpus in inspect; --cpus is float.
+        nano_cpus = host.get("NanoCpus", 0) or 0
+        if nano_cpus > 0:
+            args.extend(["--cpus", f"{nano_cpus / 1_000_000_000:g}"])
+        for key, flag in (
+            ("CpuShares", "--cpu-shares"),
+            ("CpuPeriod", "--cpu-period"),
+            ("CpuQuota", "--cpu-quota"),
+            ("CpuRtPeriod", "--cpu-rt-period"),
+            ("CpuRtRuntime", "--cpu-rt-runtime"),
+        ):
+            v = host.get(key, 0) or 0
+            if v > 0:
+                args.extend([flag, str(v)])
+        for key, flag in (
+            ("CpusetCpus", "--cpuset-cpus"),
+            ("CpusetMems", "--cpuset-mems"),
+        ):
+            v = host.get(key, "") or ""
+            if v:
+                args.extend([flag, v])
+
+        # ── Pids limit ─────────────────────────────────────────
+        # Compose `pids_limit`. -1 = unlimited (default), 0 also means
+        # default; only emit when positive.
+        pids = host.get("PidsLimit", 0) or 0
+        if pids and pids > 0:
+            args.extend(["--pids-limit", str(pids)])
+
+        # ── OOM controls ───────────────────────────────────────
+        oom_adj = host.get("OomScoreAdj", 0) or 0
+        if oom_adj:
+            args.extend(["--oom-score-adj", str(oom_adj)])
+        if host.get("OomKillDisable"):
+            args.append("--oom-kill-disable")
+
+        # ── BlkIO weight ───────────────────────────────────────
+        blkio = host.get("BlkioWeight", 0) or 0
+        if blkio:
+            args.extend(["--blkio-weight", str(blkio)])
+
+        # ── Ulimits ────────────────────────────────────────────
+        # Compose `ulimits:`; stored as [{Name, Soft, Hard}].
+        for ulimit in (host.get("Ulimits") or []):
+            uname = ulimit.get("Name", "")
+            soft = ulimit.get("Soft", 0)
+            hard = ulimit.get("Hard", 0)
+            if not uname:
+                continue
+            if soft == hard:
+                spec = f"{uname}={soft}"
+            else:
+                spec = f"{uname}={soft}:{hard}"
+            args.extend(["--ulimit", spec])
+
+        # ── Supplementary groups ───────────────────────────────
+        # Compose `group_add:`.
+        for grp in (host.get("GroupAdd") or []):
+            args.extend(["--group-add", grp])
+
+        # ── Auto-remove ────────────────────────────────────────
+        # --rm is incompatible with --restart; Docker rejects both.
+        # Only emit when no restart policy or policy is "no".
+        if (host.get("AutoRemove")
+                and (not restart.get("Name") or restart.get("Name") == "no")):
+            args.append("--rm")
+
+        # ── Stop signal (compose `stop_signal:`) ───────────────
+        stop_signal = cfg.get("StopSignal", "")
+        if stop_signal:
+            args.extend(["--stop-signal", stop_signal])
+
+        # ── Stop timeout (compose `stop_grace_period:`) ────────
+        stop_timeout = cfg.get("StopTimeout")
+        if stop_timeout is not None and stop_timeout > 0:
+            args.extend(["--stop-timeout", str(stop_timeout)])
+
+        # ── Working directory (compose `working_dir:`) ─────────
+        workdir = cfg.get("WorkingDir", "")
+        if workdir:
+            args.extend(["--workdir", workdir])
+
+        # ── Domainname ─────────────────────────────────────────
+        if not shares_netns:
+            domainname = cfg.get("Domainname", "")
+            if domainname:
+                args.extend(["--domainname", domainname])
+
+        # ── TTY / stdin (compose `tty:` / `stdin_open:`) ───────
+        if cfg.get("Tty"):
+            args.append("-t")
+        if cfg.get("OpenStdin"):
+            args.append("-i")
+
+        # ── Healthcheck override ───────────────────────────────
+        # Compose `healthcheck:` overrides the image's HEALTHCHECK.
+        # inspect.Config.Healthcheck is set only when explicitly
+        # overridden — image-default HEALTHCHECKs don't end up here,
+        # so we can safely restore whatever's present without locking
+        # in an image-default that future image versions might change.
+        hc = cfg.get("Healthcheck") or {}
+        hc_test = hc.get("Test") or []
+        if hc_test:
+            head = hc_test[0]
+            if head == "NONE":
+                args.append("--no-healthcheck")
+            elif head == "CMD" and len(hc_test) > 1:
+                # CMD form: docker stores ["CMD", "binary", "arg1", ...].
+                # --health-cmd needs a single shell-quoted string.
+                import shlex
+                args.extend(["--health-cmd",
+                             shlex.join(hc_test[1:])])
+            elif head == "CMD-SHELL" and len(hc_test) > 1:
+                args.extend(["--health-cmd", hc_test[1]])
+            # Intervals are nanoseconds in inspect output.
+            for key, flag in (
+                ("Interval", "--health-interval"),
+                ("Timeout", "--health-timeout"),
+                ("StartPeriod", "--health-start-period"),
+                ("StartInterval", "--health-start-interval"),
+            ):
+                v = hc.get(key, 0) or 0
+                if v > 0:
+                    args.extend([flag, f"{v // 1_000_000_000}s"])
+            retries = hc.get("Retries", 0) or 0
+            if retries > 0:
+                args.extend(["--health-retries", str(retries)])
+
+        # ── Entrypoint override ────────────────────────────────
+        # Same logic as Cmd below: only restore when the container's
+        # entrypoint differs from the image's default (otherwise we'd
+        # lock in the OLD image's entrypoint and break image updates
+        # that change ENTRYPOINT). When image_defaults is None we
+        # preserve historical behaviour: assume user didn't override
+        # entrypoint and skip emitting --entrypoint.
+        container_entrypoint = cfg.get("Entrypoint") or []
+        image_entrypoint = (image_defaults or {}).get("Entrypoint") or []
+        if (container_entrypoint
+                and image_defaults is not None
+                and container_entrypoint != image_entrypoint):
+            # --entrypoint takes a single binary; remaining tokens
+            # become positional args after the image.
+            args.extend(["--entrypoint", container_entrypoint[0]])
+
         # ── Image (must come before command tokens) ────────────
         args.append(image)
 
-        # ── Original command (if any) ──────────────────────────
-        original_cmd = cfg.get("Cmd")
-        if original_cmd:
-            args.extend(original_cmd)
+        # ── Entrypoint remaining tokens (if user overrode entrypoint
+        #    AND it has multiple tokens, the tail goes here as args).
+        if (container_entrypoint
+                and image_defaults is not None
+                and container_entrypoint != image_entrypoint
+                and len(container_entrypoint) > 1):
+            args.extend(container_entrypoint[1:])
+
+        # ── Command (only restore when user-overridden) ────────
+        # Container.Config.Cmd is set both for user-overridden Cmd AND
+        # as an echo of the image's default CMD. Without image_defaults
+        # we'd lock in the OLD image's CMD on every update. With
+        # image_defaults present, only emit when the container's Cmd
+        # actually differs from the image's default.
+        container_cmd = cfg.get("Cmd")
+        image_cmd = (image_defaults or {}).get("Cmd")
+        if container_cmd:
+            if image_defaults is None:
+                # Pre-v1.19.0 behaviour: blindly restore Cmd.
+                args.extend(container_cmd)
+            elif container_cmd != image_cmd:
+                args.extend(container_cmd)
 
         return args
 
@@ -1349,6 +1586,186 @@ class UpdateChecker:
         if old_version and new_version and old_version != new_version:
             return f" (v{old_version} → v{new_version})"
         return ""
+
+    def _get_image_defaults(self, image):
+        """Read the image's own default Entrypoint and Cmd from
+        ``docker image inspect``. Used by _build_run_args to detect
+        whether a container's Cmd/Entrypoint differ from the image's
+        defaults (so we don't lock in the OLD image's tokens when the
+        image update changes them).
+
+        Returns ``{"Entrypoint": [...]|None, "Cmd": [...]|None}`` or
+        ``None`` if inspect fails. Callers passing ``None`` to
+        _build_run_args get pre-v1.19.0 behaviour (blind Cmd restore).
+        """
+        try:
+            r = subprocess.run(
+                ["docker", "image", "inspect", image],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode != 0:
+                return None
+            data = json.loads(r.stdout)
+            if not data:
+                return None
+            cfg = (data[0].get("Config") or {})
+            return {
+                "Entrypoint": cfg.get("Entrypoint"),
+                "Cmd": cfg.get("Cmd"),
+            }
+        except (subprocess.SubprocessError, json.JSONDecodeError,
+                IndexError, ValueError):
+            return None
+
+    def _attach_extra_networks(self, container_name, config):
+        """Connect a container to its additional (non-primary) networks
+        after ``docker run``. The primary network (HostConfig.NetworkMode)
+        is handled by --network on `docker run`; anything else in
+        NetworkSettings.Networks needs an explicit
+        ``docker network connect`` call to re-attach with the correct
+        aliases / IPs / links.
+
+        This closes a long-standing silent gap: containers attached to
+        more than one network only got their primary network back on
+        recreate. Common pattern: app on `frontend` + `backend` nets,
+        update would leave it on only `frontend`.
+        """
+        host = config.get("HostConfig", {}) or {}
+        primary = host.get("NetworkMode", "") or ""
+        networks = (config.get("NetworkSettings") or {}).get("Networks") or {}
+        if len(networks) <= 1:
+            return
+        short_id = (config.get("Id") or "")[:12]
+        for net_name, net_info in networks.items():
+            if net_name == primary:
+                continue
+            cmd = ["docker", "network", "connect"]
+            for alias in (net_info.get("Aliases") or []):
+                if not alias or alias == short_id or alias == container_name:
+                    continue
+                cmd.extend(["--alias", alias])
+            ipam = net_info.get("IPAMConfig") or {}
+            if ipam.get("IPv4Address"):
+                cmd.extend(["--ip", ipam["IPv4Address"]])
+            if ipam.get("IPv6Address"):
+                cmd.extend(["--ip6", ipam["IPv6Address"]])
+            for link in (net_info.get("Links") or []):
+                cmd.extend(["--link", link])
+            cmd.extend([net_name, container_name])
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                if r.returncode != 0:
+                    self._debug(f"  Network connect to {net_name} failed: "
+                                f"{r.stderr[:200]}")
+                else:
+                    self._debug(f"  Attached {container_name} to {net_name}")
+            except subprocess.SubprocessError as e:
+                self._debug(f"  Network connect to {net_name} errored: {e}")
+
+    # Static allow-lists for the inspect-coverage auditor. Keep in sync
+    # with _build_run_args. Anything outside both sets fires a debug
+    # warning so future Docker versions adding new HostConfig keys
+    # surface instead of silently lost.
+    _HONORED_HOSTCONFIG = frozenset({
+        # Network / netns (handled in _build_run_args + _attach_extra_networks)
+        "NetworkMode",
+        # Capabilities / devices / sysctls / tmpfs / extra-hosts / DNS
+        "CapAdd", "CapDrop", "Devices", "Sysctls", "Tmpfs",
+        "ExtraHosts", "Dns", "DnsSearch", "DnsOptions", "SecurityOpt",
+        # Ports / volumes (Mounts is read off the top-level config)
+        "PortBindings", "Binds",
+        # Restart / privileged / read-only / init / shm
+        "RestartPolicy", "Privileged", "ReadonlyRootfs", "Init", "ShmSize",
+        # Namespaces / runtime / logging
+        "IpcMode", "PidMode", "UTSMode", "Runtime", "LogConfig",
+        # Resource limits
+        "Memory", "MemorySwap", "MemoryReservation", "KernelMemory",
+        "KernelMemoryTCP", "MemorySwappiness",
+        "NanoCpus", "CpuShares", "CpuPeriod", "CpuQuota",
+        "CpuRtPeriod", "CpuRtRuntime", "CpusetCpus", "CpusetMems",
+        "PidsLimit", "OomScoreAdj", "OomKillDisable", "BlkioWeight",
+        "Ulimits", "GroupAdd", "AutoRemove",
+    })
+    # HostConfig keys we read elsewhere or intentionally don't restore
+    # (Docker auto-manages them, or they're system-set metadata).
+    _SKIPPED_HOSTCONFIG = frozenset({
+        # Internal Docker accounting / runtime state
+        "ContainerIDFile", "CgroupParent", "CgroupnsMode", "Cgroup",
+        "ConsoleSize", "Isolation", "MaskedPaths", "ReadonlyPaths",
+        # Block-IO leaf fields we don't expose; rare in real-world use
+        "BlkioWeightDevice", "BlkioDeviceReadBps", "BlkioDeviceWriteBps",
+        "BlkioDeviceReadIOps", "BlkioDeviceWriteIOps",
+        # Device-cgroup-rules / DeviceRequests (GPU): out of scope here,
+        # may add in a future release if requested.
+        "DeviceCgroupRules", "DeviceRequests",
+        # Storage opts (rare, driver-specific)
+        "StorageOpt",
+        # User-facing duplicates we already handle via top-level Mounts
+        "VolumeDriver", "VolumesFrom",
+        # PublishAllPorts: covered by PortBindings — Docker doesn't
+        # round-trip `-P` separately, the inspect output is concrete
+        # bindings either way.
+        "PublishAllPorts",
+        # PortBindings already in HONORED above — listed there
+    })
+    _HONORED_CONFIG = frozenset({
+        "Env", "Labels", "Hostname", "User", "Cmd", "Entrypoint",
+        "WorkingDir", "StopSignal", "StopTimeout", "Domainname",
+        "Tty", "OpenStdin", "Healthcheck", "MacAddress",
+    })
+    _SKIPPED_CONFIG = frozenset({
+        # Docker-managed metadata / state
+        "AttachStdin", "AttachStdout", "AttachStderr", "StdinOnce",
+        "ExposedPorts",          # informational — PortBindings is the real binding
+        "Image",                 # the new image is passed in explicitly
+        "Volumes",               # legacy anonymous volumes — Mounts covers it
+        "OnBuild",               # build-only metadata
+        "ArgsEscaped",           # Windows-only
+        "NetworkDisabled",       # we handle via NetworkMode
+        "Shell",                 # used by image build, not run-time
+    })
+
+    def _audit_inspect_coverage(self, config):
+        """Walk the inspect dict and log a debug warning for any
+        HostConfig or Config key with a non-default value that is
+        NEITHER honoured by _build_run_args NOR explicitly skipped.
+
+        This is the audit-mode safety net: when Docker adds new keys
+        in future versions, they'll show up here instead of being
+        silently dropped on recreate. Users running with DEBUG
+        logging can grep for "[audit]" and report findings so we
+        can extend coverage.
+        """
+        host = config.get("HostConfig", {}) or {}
+        cfg = config.get("Config", {}) or {}
+
+        def _is_non_default(value):
+            # Truthy in the Python sense, plus also flag negative ints
+            # (some HostConfig fields like OomScoreAdj are signed).
+            if value in (None, "", 0, False, [], {}, ()):
+                return False
+            return True
+
+        unknown_host = sorted(
+            k for k, v in host.items()
+            if _is_non_default(v)
+            and k not in self._HONORED_HOSTCONFIG
+            and k not in self._SKIPPED_HOSTCONFIG
+        )
+        unknown_cfg = sorted(
+            k for k, v in cfg.items()
+            if _is_non_default(v)
+            and k not in self._HONORED_CONFIG
+            and k not in self._SKIPPED_CONFIG
+        )
+        for k in unknown_host:
+            self._debug(f"  [audit] HostConfig.{k} is non-default but not "
+                        f"restored on recreate — please report at "
+                        f"https://github.com/amayer1983/docksentry/issues")
+        for k in unknown_cfg:
+            self._debug(f"  [audit] Config.{k} is non-default but not "
+                        f"restored on recreate — please report at "
+                        f"https://github.com/amayer1983/docksentry/issues")
 
     def _update_standalone(self, name, image):
         self._debug(f"Updating: {name} ({image})...")
@@ -1431,6 +1848,11 @@ class UpdateChecker:
             config = json.loads(inspect_raw.stdout)[0]
             self._debug(f"  Recreating container: {name}")
 
+            # v1.19.0: surface any inspect keys we don't restore so
+            # future Docker versions adding new HostConfig/Config keys
+            # show up in debug logs instead of being silently dropped.
+            self._audit_inspect_coverage(config)
+
             # Stop container, respecting its own Config.StopTimeout —
             # see _stop_container() and #11 for the slow-shutdown rationale.
             stop_ok, stop_detail = self._stop_container(name, inspect_config=config)
@@ -1444,11 +1866,14 @@ class UpdateChecker:
             self._debug(f"  Renamed to: {old_name}")
 
             # Build docker run command from inspect config — single
-            # source of truth in `_build_run_args` so capabilities,
-            # devices, sysctls, tmpfs, extra hosts, DNS, init, shm,
-            # log config, ipc/pid/uts modes, runtime, read-only rootfs
-            # and user are all preserved (#27).
-            cmd = self._build_run_args(config, image, name)
+            # source of truth in `_build_run_args` covers HostConfig +
+            # Config + NetworkSettings.Networks. v1.19.0 adds network
+            # aliases (compose service hostnames), fixed IPs, MAC,
+            # resource limits, healthcheck override and image-diff
+            # Cmd/Entrypoint. Image defaults let us avoid locking in
+            # the OLD image's Cmd/Entrypoint on update.
+            image_defaults = self._get_image_defaults(image)
+            cmd = self._build_run_args(config, image, name, image_defaults)
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container
@@ -1462,6 +1887,13 @@ class UpdateChecker:
                 msg = f"Recreate failed: {result.stderr[:200]}"
                 self._save_history(name, image, False, msg)
                 return False, msg
+
+            # Connect to additional networks (compose stacks often put
+            # services on >1 network: app on `frontend` + `backend`).
+            # The primary network is handled by --network on docker run;
+            # extras need explicit `docker network connect` with their
+            # aliases / IPs / links preserved.
+            self._attach_extra_networks(name, config)
 
             # Health check: wait for the new container to come up. Up
             # to `config.healthcheck_max_starting` (default 600s), with

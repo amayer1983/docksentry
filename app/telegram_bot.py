@@ -1175,7 +1175,27 @@ class TelegramBot:
         # and the trailing image+cmd because the helper-container
         # update_script formats those separately.
         from update_checker import UpdateChecker as _UC
-        full = _UC._build_run_args(config, own_image, own_name)
+        # Fetch image's default Entrypoint/Cmd so _build_run_args can
+        # avoid locking in the OLD image's tokens on update. Best-effort:
+        # on failure we pass None which preserves pre-v1.19.0 behaviour.
+        image_defaults = None
+        try:
+            ii = subprocess.run(
+                ["docker", "image", "inspect", own_image],
+                capture_output=True, text=True, timeout=10,
+            )
+            if ii.returncode == 0:
+                data = json.loads(ii.stdout)
+                if data:
+                    icfg = data[0].get("Config") or {}
+                    image_defaults = {
+                        "Entrypoint": icfg.get("Entrypoint"),
+                        "Cmd": icfg.get("Cmd"),
+                    }
+        except (subprocess.SubprocessError, json.JSONDecodeError,
+                IndexError, ValueError):
+            pass
+        full = _UC._build_run_args(config, own_image, own_name, image_defaults)
         # full = ["docker", "run", "-d", "--name", own_name, ...flags..., own_image, ...cmd...]
         # We need just the flags between "-d" and own_image:
         try:

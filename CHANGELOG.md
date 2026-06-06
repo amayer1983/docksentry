@@ -2,6 +2,42 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.19.0] - 2026-06-05
+
+### Fixed
+- **Compose-stack containers no longer go into restart-loops after auto-update.** Internal report. When Docksentry's `_update_compose()` path can't see the host compose file (Docksentry's container without the host compose dirs mounted — the common deployment), it falls back to `_update_standalone()`. Until now the standalone path read only `HostConfig.NetworkMode` and emitted a single `--network <name>` — it did **not** restore `NetworkSettings.Networks[<net>].Aliases`. Compose-service hostnames (`db`, `redis`, `broker`, `app`, …) were silently dropped on recreate. After a Paperless-NGX or Nextcloud auto-update the recreated container could no longer resolve its companion services (`Error -5 connecting to broker:6379`, `db:5432 - no response`) and the stack entered a restart-loop until a manual `docker compose down && up -d` rebuilt the aliases.
+
+  Standalone recreate now restores from `NetworkSettings.Networks[<primary>]`:
+  - **Aliases** → `--network-alias <a>` for each (auto-id and container name filtered out — Docker re-adds them)
+  - **Fixed IPs** → `--ip` / `--ip6` from `IPAMConfig`
+  - **MAC address** → `--mac-address` (from `Config.MacAddress`, the user-set field)
+  - **Legacy links** → `--link`
+
+  Plus a new `_attach_extra_networks()` helper runs after `docker run` to `docker network connect` containers attached to **more than one network** (compose pattern: app on `frontend` + `backend`). The primary network is still set via `--network` on the run command; extras get their own connect call with aliases/IPs/links preserved.
+
+### Added
+- **Full HostConfig + Config coverage in standalone recreate.** Closing the same field-coverage gap class as v1.18.10 (#27, CapAdd/Devices) once and for all. New fields restored on recreate:
+  - **Memory limits**: `Memory`, `MemorySwap`, `MemoryReservation`, `KernelMemory`, `KernelMemoryTCP`, `MemorySwappiness` (compose `mem_limit`, `memswap_limit`, `mem_reservation`).
+  - **CPU limits**: `NanoCpus` → `--cpus`, `CpuShares`, `CpuPeriod`, `CpuQuota`, `CpuRtPeriod`, `CpuRtRuntime`, `CpusetCpus`, `CpusetMems` (compose `cpus:`, `cpu_*`).
+  - **Process / OOM**: `PidsLimit` (compose `pids_limit`), `OomScoreAdj`, `OomKillDisable`.
+  - **Block-IO**: `BlkioWeight`.
+  - **Ulimits**: `Ulimits` array → `--ulimit name=soft:hard` (compose `ulimits:`).
+  - **Groups**: `GroupAdd` → `--group-add` (compose `group_add:`).
+  - **Lifecycle**: `AutoRemove` (only when no restart policy), `StopSignal` (compose `stop_signal:`), `StopTimeout` (compose `stop_grace_period:`).
+  - **Process config**: `WorkingDir` (compose `working_dir:`), `Domainname`, `Tty` (compose `tty:`), `OpenStdin` (compose `stdin_open:`).
+  - **Healthcheck override**: full `Config.Healthcheck` restored as `--health-cmd`, `--health-interval`, `--health-timeout`, `--health-start-period`, `--health-start-interval`, `--health-retries`, or `--no-healthcheck` (compose `healthcheck:` overrides the image's HEALTHCHECK).
+
+- **Image-default-aware Cmd / Entrypoint restoration.** Previously the standalone recreate blindly restored `Container.Config.Cmd` on every update, which would **lock in the OLD image's CMD** when the new image release changed it. Now we read `docker image inspect` for the image's own Entrypoint+Cmd defaults and only restore the container-level value when it actually differs (i.e. user explicitly overrode). When the image inspect fails or the caller hasn't fetched defaults, we fall back to pre-v1.19.0 behaviour so nothing regresses.
+
+- **Inspect-coverage audit logger.** Debug-only. Walks each container's inspect dict before recreate and logs `[audit] HostConfig.<key>` / `[audit] Config.<key>` for any non-default value in a field we *don't* restore *and* don't intentionally skip. Future Docker versions adding new keys will surface here instead of being silently dropped on recreate — turning the next "lost on recreate" bug from user-discovered into self-discovered. Enable with `DEBUG=true` in env.
+
+### Changed
+- `_build_run_args(config, image, name)` gained an optional `image_defaults={Entrypoint,Cmd}` parameter. Backward-compatible: passing `None` (the historical default) keeps the pre-v1.19.0 Cmd-restore behaviour. The standalone update path and the self-update helper in `telegram_bot.py` both now fetch + pass it.
+
+### Why this is v1.19.0 not v1.18.14
+- Multiple behavioural changes for compose-container recreate (network aliases now preserved, resource limits now preserved, healthcheck overrides now preserved). All changes are in the "restore more state than before" direction — no field that worked before is dropped — but the recreated container surface area is meaningfully larger, so a minor bump is more honest than a patch bump.
+- No user-facing API or config changes. Existing setups need no migration. The next `docker pull` + `docker compose up -d` is enough.
+
 ## [1.18.13] - 2026-06-05
 
 ### Docs
