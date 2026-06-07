@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.19.2] - 2026-06-07
+
+### Changed
+- **Container names in post-update result messages now render as clickable links**, matching the pre-update "Updates Available" notification. Surfaced by @NotRetarded in [#2](../../issues/2): the "🔄 Updates Available" message used `[name](url)` markdown links since v1.18.4, but the "⚡ Auto-update complete" / "Update Result" follow-ups still emitted plain `` `name` `` code-formatting — so the same container would appear linked in one message and unlinked in the next. Inconsistency, not a bug, but worth fixing.
+
+  New `_display_name(u)` helper centralises the choice (link when `source_url` is set, code otherwise). All six result-line builders in `handle_autoupdates()` and `run_updates()` now route through it, and both callsites enrich the update list via the existing `_enrich_with_source_url()` helper at the top of the flow so the URL is always available. Same `container_store.get_link()` → OCI label → registry fallback chain as the pre-update message — one source of truth.
+
 ## [1.19.1] - 2026-06-07
 
 ### Added

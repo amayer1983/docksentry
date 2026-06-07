@@ -842,6 +842,12 @@ class TelegramBot:
 
         # Auto-update containers silently, respecting group order + wait
         if auto_updates:
+            # Enrich source_url so result lines render the container name
+            # as a tap-to-open link (same as the pre-update "Updates
+            # Available" notification). Without this the post-update
+            # message was the only place users saw the bare `name`
+            # without the link, surfaced as a UX inconsistency report.
+            self._enrich_with_source_url(auto_updates)
             self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
             results = []
             prev_group = None
@@ -852,7 +858,7 @@ class TelegramBot:
                 # If a previous container in this group failed, skip remaining
                 if cur_group and cur_group in group_aborted:
                     results.append(
-                        f"⏭ `{u['name']}`: skipped (group `{cur_group}` aborted earlier)"
+                        f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)"
                     )
                     continue
 
@@ -874,7 +880,7 @@ class TelegramBot:
                         })
                         major_pending_now.append((u["name"], old_ver, new_ver))
                         results.append(
-                            f"⏸ `{u['name']}`: major bump {old_ver} → {new_ver} — confirmation required"
+                            f"⏸ {self._display_name(u)}: major bump {old_ver} → {new_ver} — confirmation required"
                         )
                         prev_group = cur_group
                         continue
@@ -882,7 +888,7 @@ class TelegramBot:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
                     success, msg = checker.update_container(u["name"], u["image"], **compose_kwargs)
                     status = "✅" if success else "❌"
-                    results.append(f"{status} `{u['name']}`: {msg}")
+                    results.append(f"{status} {self._display_name(u)}: {msg}")
                     if success:
                         success_count += 1
                         # Restart-dependents cascade: if this container is
@@ -934,7 +940,7 @@ class TelegramBot:
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], success, msg)
                 except Exception as e:
-                    results.append(f"❌ `{u['name']}`: {str(e)[:200]}")
+                    results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                     if cur_group:
                         group_aborted.add(cur_group)
                     if self.notifier:
@@ -980,6 +986,28 @@ class TelegramBot:
 
         return success_count
 
+    def _enrich_with_source_url(self, updates):
+        """Set u['source_url'] on each update from the link store + OCI
+        labels + registry fallback. Idempotent — safe to call multiple
+        times (it overwrites). Used by every notification path so the
+        Telegram markdown link, Discord embed and webhook payload all
+        share the same resolved URL.
+        """
+        for u in updates:
+            u["source_url"] = self._resolve_container_link(u["name"], u.get("image", ""))
+
+    def _display_name(self, u):
+        """Format a container name for Telegram messages: `[name](url)`
+        when we have a source_url, plain ``code`` otherwise. Used by
+        every results-line and notification builder so the same
+        container renders consistently across "Updates Available",
+        "Auto-update complete", "Update Result", history etc.
+        """
+        url = u.get("source_url") if isinstance(u, dict) else None
+        if url:
+            return f"[{u['name']}]({url})"
+        return f"`{u['name']}`"
+
     def notify_updates(self, updates, auto=False):
         if not updates:
             return
@@ -988,8 +1016,7 @@ class TelegramBot:
         # webhook payload) share the same value. Resolved in priority
         # order: manual override → OCI source label → image.url label →
         # registry overview heuristic (#20).
-        for u in updates:
-            u["source_url"] = self._resolve_container_link(u["name"], u.get("image", ""))
+        self._enrich_with_source_url(updates)
 
         names = []
         for u in updates:
@@ -999,10 +1026,9 @@ class TelegramBot:
             # Container name becomes a markdown link when we have a
             # source URL — Telegram's parse_mode=Markdown renders
             # [text](url) as a tap-to-open hyperlink. Falls back to
-            # plain `name` when no URL is available.
-            display_name = (f"[{u['name']}]({u['source_url']})"
-                            if u.get("source_url") else f"`{u['name']}`")
-            names.append(f"• {display_name} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
+            # plain `name` when no URL is available. Shared with the
+            # result-message paths via _display_name().
+            names.append(f"• {self._display_name(u)} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom
@@ -1366,6 +1392,10 @@ class TelegramBot:
             return
 
         self.update_running = True
+        # Enrich for result-message links (same rationale as the
+        # auto-update path — keep the post-update results visually
+        # consistent with the pre-update "Updates Available" message).
+        self._enrich_with_source_url(updates)
         self.send_message(self.t("update_starting", count=len(updates)))
 
         results = []
@@ -1374,11 +1404,11 @@ class TelegramBot:
                 compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
                 success, msg = updater.update_container(u["name"], u["image"], **compose_kwargs)
                 status = "✅" if success else "❌"
-                results.append(f"{status} `{u['name']}`: {msg}")
+                results.append(f"{status} {self._display_name(u)}: {msg}")
                 if self.notifier:
                     self.notifier.send_update_result(u["name"], u["image"], success, msg)
             except Exception as e:
-                results.append(f"❌ `{u['name']}`: {str(e)[:200]}")
+                results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                 if self.notifier:
                     self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200])
 
