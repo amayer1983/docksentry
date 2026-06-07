@@ -372,5 +372,10 @@
   "web_link_title": "Repo / changelog link",
   "web_link_intro": "Optional URL wrapped around this container's name in update notifications — typically the source repo, releases page, or upstream changelog. Overrides the auto-detection from OCI labels. Leave empty to fall back to auto-detection.",
   "web_link_placeholder": "https://github.com/owner/repo or https://example.com/changelog",
-  "web_link_save": "Save link"
+  "web_link_save": "Save link",
+  "help_setlink": "/setlink <name> <url> — Set the changelog / repo link shown in /changelog and update notifications. Omit URL to clear.",
+  "setlink_usage": "Usage: `/setlink container_name https://github.com/...` — or `/setlink container_name` to clear.",
+  "setlink_set": "🔗 `{name}` link set to {url}",
+  "setlink_cleared": "🔗 `{name}` link cleared — OCI labels will be used again.",
+  "setlink_invalid": "🔗 URL must start with `http://` or `https://`."
 }
