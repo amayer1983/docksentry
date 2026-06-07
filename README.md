@@ -240,6 +240,8 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 
 At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEBHOOK_URL` must be configured — otherwise Docksentry has no way to notify or be controlled.
 
+> **Quoting env values in `docker-compose.yml`**: Docker Compose passes env values literally, so `BOT_TOKEN="abc123"` lands as the string `"abc123"` (quotes included) in Docksentry — which breaks Telegram API calls, `int()` parsing on `WEB_PORT`, etc. Since v1.19.1 Docksentry strips matching outer `"…"` and `'…'` quote pairs automatically, but the cleanest fix is to leave the quotes off entirely: `BOT_TOKEN=abc123`.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
@@ -375,6 +377,24 @@ Enable with `WEB_UI=true`. Provides status dashboard, container logs, update his
 </p>
 
 See [Web UI Documentation](docs/web-ui.md) for details.
+
+## Healthcheck
+
+Docksentry ships with its own `HEALTHCHECK` baked into the image since v1.16.1. It runs every 60 seconds and checks **whichever surface(s) you have configured**, in priority order:
+
+1. **Web UI socket** — when `WEB_UI=true`, a successful TCP connect to `127.0.0.1:<WEB_PORT>` is sufficient (the listener being up implies the scheduler thread is alive). This is the cheapest and most deterministic check.
+2. **Telegram Bot API** — when `BOT_TOKEN` + `CHAT_ID` are set but Web UI is off, the healthcheck calls `getMe` against `api.telegram.org` to confirm the bot can still reach upstream.
+3. **Webhook-only / headless** — when only `DISCORD_WEBHOOK` or `WEBHOOK_URL` is set, there's nothing local to probe; the healthcheck exits 0 (Docker's normal process supervision is the actual signal).
+4. **Misconfigured** — no surface configured → exit 1 (matches `main.py`'s startup refusal).
+
+Verify on your host:
+
+```bash
+docker inspect docksentry | jq '.[0].State.Health'
+docker ps        # should show "(healthy)" after ~3 minutes of uptime
+```
+
+> **Podman caveat (#31):** some Podman versions don't auto-execute image-defined HEALTHCHECK directives. If `podman ps` doesn't show `(healthy)` for Docksentry but does for other containers, your Podman is one of them. Workaround: add `--health-cmd "python3 /app/healthcheck.py"` to your `podman run` / compose-equivalent. The script is bundled inside the image at that path.
 
 ## Notification Channels
 

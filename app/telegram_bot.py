@@ -44,6 +44,7 @@ _BOT_COMMANDS = [
     ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin"),
     ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin"),
     ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate"),
+    ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug"),
@@ -2094,6 +2095,39 @@ class TelegramBot:
                 auto_list.append(name)
                 self._save_autoupdate(auto_list)
                 self.send_message(self.t("autoupdate_on", name=name))
+
+        elif text.startswith("/setlink"):
+            # Telegram-side affordance for the per-container link store —
+            # mirror of the Web UI Status page link icon. Without this
+            # users had to leave Telegram to set a custom changelog /
+            # repo URL. Requested by @famewolf + @NotRetarded in #2 for
+            # CGNAT-hosted setups where the Web UI isn't easily reachable.
+            #
+            # Usage:
+            #   /setlink <container> <url>    → save (validates http(s)://)
+            #   /setlink <container>          → clear (back to OCI labels)
+            #
+            # The URL replaces the auto-resolved OCI source URL in both
+            # the update-notification repo link AND /changelog output —
+            # they share `container_store.get_link()`.
+            parts = text.split(maxsplit=2)
+            if len(parts) < 2:
+                self.send_message(self.t("setlink_usage"))
+                return
+            partial = parts[1].strip()
+            url = parts[2].strip() if len(parts) > 2 else ""
+            name, err = self._resolve_container(partial)
+            if err:
+                self.send_message(err)
+                return
+            ok = self.store.set_link(name, url)
+            if not ok:
+                self.send_message(self.t("setlink_invalid"))
+                return
+            if url:
+                self.send_message(self.t("setlink_set", name=name, url=url))
+            else:
+                self.send_message(self.t("setlink_cleared", name=name))
 
         elif text == "/settings":
             debug_status = self.t("debug_on") if self.config.debug else self.t("debug_off")

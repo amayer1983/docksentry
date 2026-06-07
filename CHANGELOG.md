@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.19.1] - 2026-06-07
+
+### Added
+- **`/setlink <container> <url>` Telegram command** ([#2](../../issues/2)). Two-vote community feedback — @famewolf (CGNAT-hosted, prefers Telegram-first management) and @NotRetarded (uses Telegram for most operations) both asked for a Telegram-side affordance to set the per-container repo/changelog URL. The Web UI's Status-page link icon already does this; now you can do it from chat too: `/setlink homarr https://github.com/homarr-labs/homarr`. Omitting the URL clears the override and falls back to OCI labels. Saves to the same `container_store.get_link()` used by both `/changelog` and update-notification repo links.
+- **Web UI: version / hash badge per container** ([#32](../../issues/32), @LeeNX). Container rows now show `org.opencontainers.image.version` (when the upstream image sets the OCI label — ~40% coverage in real-world stacks) as a small badge after the image ref. When the label is absent, falls back to the 12-char short image ID so you can tell two containers running `latest` apart at a glance. Implementation batches `docker image inspect` of all unique images per `_get_containers()` call — one extra subprocess regardless of container count.
+
+### Fixed
+- **Outer quotes in env values are now stripped** ([#30](../../issues/30), @LeeNX). Docker Compose passes env values literally, so writing `BOT_TOKEN="abc123"` in a compose file lands in the runtime env as the string `"abc123"` (quotes included). Downstream that broke the Telegram API call (wrong token), `int()` conversion on `WEB_PORT="8080"`, the `.lower() in ("true",...)` check on `AUTO_SELFUPDATE="false"`, etc. All `Config.from_env()` reads now go through a `_strip_quotes()` helper that strips matching `"…"` / `'…'` pairs. Mismatched or single quote chars are left alone so legitimately-quoted passwords/tokens are preserved.
+
+### Docs
+- **README: Healthcheck section** ([#31](../../issues/31), @LeeNX). Docksentry's image has shipped with a HEALTHCHECK since v1.16.1 (probes Web UI socket → Telegram `getMe` → webhook-only exit-0) but it wasn't documented anywhere, so users couldn't tell it existed. New section explains what each surface gets checked, how to verify on the host, and a Podman caveat: some Podman versions don't auto-run image-defined HEALTHCHECK and need explicit `--health-cmd` on the run command.
+- **README: Quoting env values** — explicit callout in the Configuration section pointing at the quote-stripping behaviour and recommending users leave quotes off entirely.
+
+### Verified
+- **[#33](../../issues/33)** (@LeeNX not seeing v1.19.0 updates) — Docker Hub `:latest` digest was updated to v1.19.0 on 2026-06-06 15:53 UTC. No detection bug on our side. Most likely his local cron just hadn't fired between the push and his check; a manual `/check` would surface the update immediately. Followed up in the issue comment.
+
 ## [1.19.0] - 2026-06-05
 
 ### Fixed

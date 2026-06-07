@@ -1191,6 +1191,39 @@ def create_handler(config, checker, bot, store, password=None):
                 inspected = json.loads(ins_p.stdout) or []
             except (json.JSONDecodeError, ValueError):
                 return []
+
+            # Batch image-inspect to read OCI version labels + short image
+            # IDs. Requested by @LeeNX in #32 — knowing whether a container
+            # is on v30.0.1 vs v30.0.2 of an upstream image is impossible
+            # from the bare tag (often `latest`). Pulling
+            # `org.opencontainers.image.version` is the cheap honest answer
+            # when the upstream image sets it (~40% coverage in the wild).
+            unique_images = list({
+                (c.get("Config") or {}).get("Image", "") for c in inspected
+                if (c.get("Config") or {}).get("Image")
+            })
+            image_info = {}  # image_ref -> {"version": "...", "short_id": "abcd1234"}
+            if unique_images:
+                img_p = subprocess.run(
+                    ["docker", "image", "inspect", *unique_images],
+                    capture_output=True, text=True
+                )
+                try:
+                    img_data = json.loads(img_p.stdout) or []
+                except (json.JSONDecodeError, ValueError):
+                    img_data = []
+                # Build a lookup by every name that maps to each image.
+                for entry in img_data:
+                    labels = (entry.get("Config") or {}).get("Labels") or {}
+                    version = (labels.get("org.opencontainers.image.version") or "").strip()
+                    image_id = entry.get("Id", "")
+                    short_id = image_id[7:19] if image_id.startswith("sha256:") else image_id[:12]
+                    info = {"version": version, "short_id": short_id}
+                    for tag in (entry.get("RepoTags") or []):
+                        image_info[tag] = info
+                    for digest in (entry.get("RepoDigests") or []):
+                        image_info[digest] = info
+
             containers = []
             for cfg in inspected:
                 name = (cfg.get("Name") or "?").lstrip("/")
@@ -1209,11 +1242,16 @@ def create_handler(config, checker, bot, store, password=None):
                     status_str = f"{base} (health: starting)"
                 else:
                     status_str = base
+                # Version / hash from image_info lookup (may be empty if
+                # the image doesn't carry the OCI label).
+                info = image_info.get(image) or {}
                 containers.append({
                     "name": name,
                     "image": image,
                     "status": status_str,
                     "health": health,
+                    "version": info.get("version", ""),
+                    "short_id": info.get("short_id", ""),
                 })
             return containers
 
@@ -2053,10 +2091,31 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     )
                 actions = f'<div class="btn-row">{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
 
+                # Version / hash badge after image — requested in #32 by
+                # @LeeNX so you can tell at a glance whether a container
+                # is on `v30.0.1` vs `v30.0.2` of an upstream image, when
+                # the tag itself (often `latest`) is uninformative. Read
+                # from `org.opencontainers.image.version`; falls back to
+                # short image ID (12 hex) when the label is absent.
+                version_label = c.get("version", "")
+                short_id = c.get("short_id", "")
+                if version_label:
+                    version_html = (
+                        f'<span class="badge badge-blue" title="OCI image.version label">'
+                        f'v{_e(version_label.lstrip("v"))}</span>'
+                    )
+                elif short_id:
+                    version_html = (
+                        f'<span class="badge badge-blue" title="Image short ID (no OCI version label)">'
+                        f'<code style="font-size:11px">{_e(short_id)}</code></span>'
+                    )
+                else:
+                    version_html = ""
+
                 rows += f"""<tr>
 <td><input type="checkbox" class="bulk-cb" value="{name_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
 <td><a href="/container/{name_attr}" class="container-link">{_e(c['name'])}</a>{badges}</td>
-<td class="image-cell"><code>{_e(c['image'])}</code></td>
+<td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
 <td>{status_badge}</td>
 <td>{actions}</td>
 </tr>"""

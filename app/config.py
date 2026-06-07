@@ -5,6 +5,33 @@ import json
 import os
 
 
+def _strip_quotes(value):
+    """Strip matching outer single/double quotes from an env-var value.
+
+    Docker Compose passes env values literally — writing
+    ``BOT_TOKEN="abc123"`` in a compose file lands in the runtime env as
+    the string ``"abc123"`` (quotes included). Downstream parsing then
+    fails: the Telegram API call uses the wrong token (with quotes in
+    it), ``int()`` conversion on a quoted number raises ValueError, etc.
+    Reported by @LeeNX in #30 against ``BOT_TOKEN`` quoting.
+
+    Only strip when the FIRST and LAST chars are the same quote type
+    (``"…"`` or ``'…'``). Anything else (mismatched, single quote,
+    trailing whitespace) is left alone so we don't accidentally strip
+    a legitimately-quoted password / token. Empty strings pass through.
+    """
+    if not value or len(value) < 2:
+        return value
+    if value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
+def _env(key, default=""):
+    """Read an env var and strip matching outer quotes. See _strip_quotes."""
+    return _strip_quotes(os.environ.get(key, default))
+
+
 # Settings that can be changed via Web UI and persist across restarts
 PERSISTENT_KEYS = [
     "cron_schedule", "exclude_containers", "auto_selfupdate", "auto_cleanup",
@@ -189,43 +216,53 @@ class Config:
 
     @classmethod
     def from_env(cls):
+        # All reads go through _env() which strips matching outer quote
+        # pairs — Docker Compose passes `BOT_TOKEN="abc"` literally with
+        # quotes (#30, @LeeNX). _env() is a thin wrapper around
+        # os.environ.get with the strip. Boolean / int reads benefit too:
+        # quoted `"true"` and `"5"` would otherwise miss the bool match
+        # / break int() respectively.
         return cls(
-            bot_token=os.environ.get("BOT_TOKEN", ""),
-            chat_id=os.environ.get("CHAT_ID", ""),
-            cron_schedule=os.environ.get("CRON_SCHEDULE", "0 18 * * *"),
+            bot_token=_env("BOT_TOKEN"),
+            chat_id=_env("CHAT_ID"),
+            cron_schedule=_env("CRON_SCHEDULE", "0 18 * * *"),
             exclude_containers=[
-                c.strip() for c in os.environ.get("EXCLUDE_CONTAINERS", "").split(",")
+                c.strip() for c in _env("EXCLUDE_CONTAINERS").split(",")
                 if c.strip()
             ],
-            data_dir=os.environ.get("DATA_DIR", "/data"),
-            auto_selfupdate=os.environ.get("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
-            auto_cleanup=os.environ.get("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
-            cleanup_grace_hours=int(os.environ.get("CLEANUP_GRACE_HOURS", "24")),
-            cleanup_backup_local_only=os.environ.get("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
-            cleanup_backup_days=int(os.environ.get("CLEANUP_BACKUP_DAYS", "7")),
-            disk_warn_percent=int(os.environ.get("DISK_WARN_PERCENT", "85")),
-            disk_warn_auto_cleanup=os.environ.get("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
-            quiet_hours_start=os.environ.get("QUIET_HOURS_START", ""),
-            quiet_hours_end=os.environ.get("QUIET_HOURS_END", ""),
-            weekly_report_enabled=os.environ.get("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
-            weekly_report_weekday=int(os.environ.get("WEEKLY_REPORT_WEEKDAY", "0")),
-            weekly_report_hour=int(os.environ.get("WEEKLY_REPORT_HOUR", "9")),
-            language=os.environ.get("LANGUAGE", "en"),
-            web_ui=os.environ.get("WEB_UI", "false").lower() in ("true", "1", "yes"),
-            web_port=int(os.environ.get("WEB_PORT", "8080")),
-            web_password=os.environ.get("WEB_PASSWORD", ""),
-            discord_webhook=os.environ.get("DISCORD_WEBHOOK", ""),
-            webhook_url=os.environ.get("WEBHOOK_URL", ""),
-            telegram_topic_id=os.environ.get("TELEGRAM_TOPIC_ID", ""),
+            data_dir=_env("DATA_DIR", "/data"),
+            auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
+            auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
+            cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),
+            cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
+            cleanup_backup_days=int(_env("CLEANUP_BACKUP_DAYS", "7")),
+            disk_warn_percent=int(_env("DISK_WARN_PERCENT", "85")),
+            disk_warn_auto_cleanup=_env("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
+            quiet_hours_start=_env("QUIET_HOURS_START"),
+            quiet_hours_end=_env("QUIET_HOURS_END"),
+            weekly_report_enabled=_env("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
+            weekly_report_weekday=int(_env("WEEKLY_REPORT_WEEKDAY", "0")),
+            weekly_report_hour=int(_env("WEEKLY_REPORT_HOUR", "9")),
+            language=_env("LANGUAGE", "en"),
+            web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
+            web_port=int(_env("WEB_PORT", "8080")),
+            web_password=_env("WEB_PASSWORD"),
+            discord_webhook=_env("DISCORD_WEBHOOK"),
+            webhook_url=_env("WEBHOOK_URL"),
+            telegram_topic_id=_env("TELEGRAM_TOPIC_ID"),
             telegram_allowed_users=[
-                u.strip() for u in os.environ.get("TELEGRAM_ALLOWED_USERS", "").split(",")
+                u.strip() for u in _env("TELEGRAM_ALLOWED_USERS").split(",")
                 if u.strip()
             ],
-            healthcheck_max_starting=int(os.environ.get("HEALTHCHECK_MAX_STARTING", "600")),
-            bot_label=os.environ.get("BOT_LABEL", "").strip(),
-            docker_stop_timeout=int(os.environ.get("DOCKER_STOP_TIMEOUT", "60")),
-            docker_username=os.environ.get("DOCKER_USERNAME", "").strip(),
-            docker_password=os.environ.get("DOCKER_PASSWORD", ""),  # NO .strip() — leading/trailing whitespace can be valid
-            docker_auth_config=os.environ.get("DOCKER_AUTH_CONFIG", "").strip(),
-            docker_registry=os.environ.get("DOCKER_REGISTRY", "").strip(),
+            healthcheck_max_starting=int(_env("HEALTHCHECK_MAX_STARTING", "600")),
+            bot_label=_env("BOT_LABEL").strip(),
+            docker_stop_timeout=int(_env("DOCKER_STOP_TIMEOUT", "60")),
+            docker_username=_env("DOCKER_USERNAME").strip(),
+            # DOCKER_PASSWORD: NO .strip() — leading/trailing whitespace
+            # can be a legitimate part of a password. We still strip
+            # matching outer quote pairs via _env() since those are an
+            # unambiguous Compose-quoting artefact.
+            docker_password=_env("DOCKER_PASSWORD"),
+            docker_auth_config=_env("DOCKER_AUTH_CONFIG").strip(),
+            docker_registry=_env("DOCKER_REGISTRY").strip(),
         )
