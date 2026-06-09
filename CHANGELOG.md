@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.19.3] - 2026-06-07
+
+### Changed
+- **Discord update-result embed now wraps the container name as a clickable link** when a `source_url` is available — same parity fix as v1.19.2 did for Telegram. Surfaced by @NotRetarded in [#2](../../issues/2): the "Updates Available" Discord embed already linked container names since v1.18.4, but the "Update Successful" / "Update Failed" embeds emitted plain `**name**` bold without a link, so the link disappeared between the pre- and post-update messages. `Notifier.send_update_result()` now takes an optional `source_url` arg; all five callsites in `telegram_bot.py` pass the value resolved from `_enrich_with_source_url()` / `_resolve_container_link()`.
+
+  Generic webhook payload (`/api/webhook` consumers) also gains a `source_url` field on the `update_result` event so downstream automations (Home Assistant, n8n, Ntfy templates) can render the link without re-resolving it.
+
+### Added
+- **WebUI favicon** — inline SVG data URL embedded in the HTML head ([#2](../../issues/2) request from @NotRetarded). Shows a small blue shield with a centred dot in browser tabs, bookmarks bar, and PWA installs. No file IO, no extra HTTP request, theme-independent.
+
 ## [1.19.2] - 2026-06-07
 
 ### Changed

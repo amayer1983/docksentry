@@ -666,19 +666,26 @@ class TelegramBot:
             self.send_message(self.t("container_not_in_list", name=container_name))
             return
 
+        # Enrich source_url so both the inline send_message line and
+        # the Discord/webhook send_update_result carry the link
+        # (parity with the auto-update + bulk-update flows, fixed in
+        # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
+        self._enrich_with_source_url([target])
         self.send_message(self.t("update_single_starting", name=container_name))
 
         try:
             compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
             success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
             status = "✅" if success else "❌"
-            self.send_message(f"{status} `{container_name}`: {msg}")
+            self.send_message(f"{status} {self._display_name(target)}: {msg}")
             if self.notifier:
-                self.notifier.send_update_result(container_name, target["image"], success, msg)
+                self.notifier.send_update_result(container_name, target["image"], success, msg,
+                                                 source_url=target.get("source_url", ""))
         except Exception as e:
-            self.send_message(f"❌ `{container_name}`: {str(e)[:200]}")
+            self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
             if self.notifier:
-                self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200])
+                self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
+                                                 source_url=target.get("source_url", ""))
 
         # Remove from pending list
         remaining = [u for u in updates if u["name"] != container_name]
@@ -725,14 +732,17 @@ class TelegramBot:
             return
         image = pending.get("image", "")
         compose = pending.get("compose", {}) or {}
+        # Resolve link once for both Telegram + Discord/webhook surfaces
+        source_url = self._resolve_container_link(name, image)
         try:
             success, msg = checker.update_container(name, image, **compose)
         except Exception as e:
             success, msg = False, str(e)[:200]
         status = "✅" if success else "❌"
-        self.send_message(f"{status} `{name}`: {msg}")
+        display = f"[{name}]({source_url})" if source_url else f"`{name}`"
+        self.send_message(f"{status} {display}: {msg}")
         if self.notifier:
-            self.notifier.send_update_result(name, image, success, msg)
+            self.notifier.send_update_result(name, image, success, msg, source_url=source_url)
         if success:
             self.store.remove_pending_major(name)
 
@@ -938,13 +948,15 @@ class TelegramBot:
                             )
                             results.append(f"🔁 head rollback — dependents kicked: {restart_msg}")
                     if self.notifier:
-                        self.notifier.send_update_result(u["name"], u["image"], success, msg)
+                        self.notifier.send_update_result(u["name"], u["image"], success, msg,
+                                                         source_url=u.get("source_url", ""))
                 except Exception as e:
                     results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                     if cur_group:
                         group_aborted.add(cur_group)
                     if self.notifier:
-                        self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200])
+                        self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200],
+                                                         source_url=u.get("source_url", ""))
                 prev_group = cur_group
             self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
 
@@ -1406,11 +1418,13 @@ class TelegramBot:
                 status = "✅" if success else "❌"
                 results.append(f"{status} {self._display_name(u)}: {msg}")
                 if self.notifier:
-                    self.notifier.send_update_result(u["name"], u["image"], success, msg)
+                    self.notifier.send_update_result(u["name"], u["image"], success, msg,
+                                                     source_url=u.get("source_url", ""))
             except Exception as e:
                 results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                 if self.notifier:
-                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200])
+                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
+                                                     source_url=u.get("source_url", ""))
 
         try:
             os.remove(pending_file)

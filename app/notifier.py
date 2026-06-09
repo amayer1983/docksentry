@@ -52,18 +52,30 @@ class Notifier:
                 ],
             })
 
-    def send_update_result(self, name, image, success, detail=""):
-        """Notify about a completed update (success or failure)."""
+    def send_update_result(self, name, image, success, detail="", source_url=""):
+        """Notify about a completed update (success or failure).
+
+        ``source_url`` is the resolved repo / changelog link for the
+        container (manual override → OCI label → registry fallback,
+        resolved once by the caller via
+        ``TelegramBot._enrich_with_source_url``). When present, the
+        Discord embed wraps the container name as a clickable link
+        and the generic webhook payload carries the URL alongside
+        the other fields. Closes a parity gap reported by @NotRetarded
+        in #2 — v1.19.2 fixed the Telegram side, this fixes Discord
+        and the webhook payload.
+        """
         if self._suppressed():
             return
         if self.config.discord_webhook:
-            self._discord_update_result(name, image, success, detail)
+            self._discord_update_result(name, image, success, detail, source_url)
         if self.config.webhook_url:
             self._webhook_send("update_result", {
                 "container": name,
                 "image": image,
                 "success": success,
                 "detail": detail,
+                "source_url": source_url,
             })
 
     def send_message(self, text):
@@ -130,21 +142,27 @@ class Notifier:
         }
         self._discord_post({"embeds": [embed]})
 
-    def _discord_update_result(self, name, image, success, detail):
+    def _discord_update_result(self, name, image, success, detail, source_url=""):
         """Send update result as Discord embed."""
         label = (self.config.bot_label or "").strip()
         title_prefix = f"{label} · " if label else ""
+        # Discord embed `description` is full markdown — render the
+        # container name as a clickable [name](url) when we have a
+        # source URL (matches the "Updates Available" embed already
+        # does this for fields, and the Telegram side does it for
+        # both pre/post-update message types since v1.19.2).
+        name_md = f"[**{name}**]({source_url})" if source_url else f"**{name}**"
         if success:
             embed = {
                 "title": f"{title_prefix}✅ Update Successful",
-                "description": f"**{name}** (`{image}`)\n{detail}",
+                "description": f"{name_md} (`{image}`)\n{detail}",
                 "color": 0x3fb950,  # Green
                 "footer": {"text": self._footer_text()},
             }
         else:
             embed = {
                 "title": f"{title_prefix}❌ Update Failed",
-                "description": f"**{name}** (`{image}`)\n{detail}",
+                "description": f"{name_md} (`{image}`)\n{detail}",
                 "color": 0xf85149,  # Red
                 "footer": {"text": self._footer_text()},
             }

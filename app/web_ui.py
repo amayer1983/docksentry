@@ -1318,6 +1318,7 @@ def create_handler(config, checker, bot, store, password=None):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docksentry</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23161b22'/><path d='M16 5 L26 9 V17 C26 22 21 26 16 28 C11 26 6 22 6 17 V9 Z' fill='%2358a6ff' stroke='%23ffffff' stroke-width='1.2'/><circle cx='16' cy='17' r='4.5' fill='%23161b22' stroke='%23ffffff' stroke-width='1.6'/><circle cx='16' cy='17' r='1.8' fill='%23ffffff'/></svg>">
 <script>
 // Apply theme before paint to avoid flash. Reads localStorage; falls back
 // to OS preference (prefers-color-scheme) when nothing is stored.
