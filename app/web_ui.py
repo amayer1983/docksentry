@@ -862,6 +862,23 @@ pre {
 }
 .group-edit summary { user-select: none; }
 .group-edit summary:hover { text-decoration: underline; }
+
+/* Auto-detect modal — per-stack member rows (v1.21.1) */
+.ad-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: grab;
+    user-select: none;
+}
+.ad-member:active { cursor: grabbing; }
+.ad-member.dragging { opacity: 0.4; transform: scale(0.98); }
+.ad-member .drag-handle { color: var(--text-muted); font-size: 14px; }
 """
 
 
@@ -1152,6 +1169,164 @@ function dsPersistGroupOrder(list) {
     }).catch(function(e) {
         dsToast('Network error: ' + e.message, 'error');
     });
+}
+
+// ── Container Groups: auto-detect from Compose/Portainer (Groups page) ──
+// Click "🔍 Auto-detect" → fetch /api/groups_detect → render a modal with
+// per-stack cards. User checks which stacks to import + optionally tweaks
+// order (drag-drop) and restart_dependents per card, then "Import selected"
+// POSTs to /api/groups_import_batch and reloads.
+function dsAutoDetectGroups() {
+    var modal = document.getElementById('autodetect-modal');
+    var body = document.getElementById('autodetect-body');
+    if (!modal || !body) return;
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px">Scanning containers…</div>';
+    modal.classList.add('is-open');
+    fetch('/api/groups_detect')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { dsAutoDetectRender(data); })
+        .catch(function(e) {
+            body.innerHTML = '<div style="color:var(--warn,#d29922);text-align:center;padding:24px">⚠ ' + e.message + '</div>';
+        });
+}
+function dsAutoDetectClose() {
+    var modal = document.getElementById('autodetect-modal');
+    if (modal) modal.classList.remove('is-open');
+}
+function dsAutoDetectRender(data) {
+    var body = document.getElementById('autodetect-body');
+    if (!body) return;
+    if (!data.ok || !data.stacks || !data.stacks.length) {
+        body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px">📦<br>No Compose / Portainer / Swarm stacks detected.<br><span style="font-size:11px">Stacks need com.docker.compose.project or com.docker.stack.namespace labels.</span></div>';
+        return;
+    }
+    var html = '';
+    data.stacks.forEach(function(stack, sIdx) {
+        var disabled = stack.exists ? ' disabled' : '';
+        var existsBadge = stack.exists ? ' <span class="badge badge-yellow" title="Same-named group already exists — re-importing will update it in place.">already imported</span>' : '';
+        var sourceBadge = '<span class="badge badge-blue">' + (stack.source || 'unknown') + '</span>';
+        var memberRows = '';
+        stack.containers.forEach(function(c, idx) {
+            var conflict = stack.conflicts && stack.conflicts[c.name];
+            var conflictBadge = conflict ? ' <span class="badge badge-yellow" title="Already in another Docksentry group — will be moved on import.">↻ ' + conflict + '</span>' : '';
+            var netnsBadge = c.netns_hint ? ' <span class="badge badge-purple" title="' + c.netns_hint + '">netns</span>' : '';
+            var headBadge = idx === 0 ? ' <span class="badge badge-purple">HEAD</span>' : '';
+            memberRows +=
+                '<li class="ad-member" draggable="true" data-container="' + dsEscape(c.name) + '" data-stack="' + sIdx + '">' +
+                    '<span class="drag-handle">⠿</span>' +
+                    '<label style="flex:1;cursor:pointer">' +
+                        '<input type="checkbox" class="ad-include" checked> ' +
+                        '<code>' + dsEscape(c.name) + '</code>' +
+                        (c.service ? ' <span style="color:var(--text-muted);font-size:11px">→ ' + dsEscape(c.service) + '</span>' : '') +
+                        headBadge + netnsBadge + conflictBadge +
+                    '</label>' +
+                '</li>';
+        });
+        html +=
+            '<div class="ad-stack" data-stack-idx="' + sIdx + '" data-stack-name="' + dsEscape(stack.name) + '" style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;' + (stack.exists ? 'opacity:0.55' : '') + '">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+                    '<input type="checkbox" class="ad-stack-import"' + (stack.exists ? '' : ' checked') + disabled + '>' +
+                    '<strong>' + dsEscape(stack.name) + '</strong> ' + sourceBadge + existsBadge +
+                    '<span style="margin-left:auto;color:var(--text-muted);font-size:11px">' + stack.containers.length + ' container(s)</span>' +
+                '</div>' +
+                '<ul class="ad-members" style="list-style:none;padding:0;margin:6px 0">' + memberRows + '</ul>' +
+                '<label style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:6px">' +
+                    '<input type="checkbox" class="ad-rd">' +
+                    '🔁 Enable <code style="font-size:11px">restart_dependents</code> for this group' +
+                '</label>' +
+            '</div>';
+    });
+    body.innerHTML = html;
+    dsAutoDetectBindDrag();
+}
+function dsAutoDetectBindDrag() {
+    document.querySelectorAll('#autodetect-body .ad-members').forEach(function(list) {
+        var dragged = null;
+        list.querySelectorAll('.ad-member').forEach(function(item) {
+            item.addEventListener('dragstart', function() {
+                dragged = item; item.classList.add('dragging');
+            });
+            item.addEventListener('dragend', function() {
+                item.classList.remove('dragging'); dragged = null;
+                dsAutoDetectRefreshHeadBadges(list);
+            });
+            item.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                if (!dragged || dragged === item) return;
+                var rect = item.getBoundingClientRect();
+                var after = (e.clientY - rect.top) > rect.height / 2;
+                if (after) item.parentNode.insertBefore(dragged, item.nextSibling);
+                else item.parentNode.insertBefore(dragged, item);
+            });
+        });
+    });
+}
+function dsAutoDetectRefreshHeadBadges(list) {
+    list.querySelectorAll('.ad-member').forEach(function(li, idx) {
+        var label = li.querySelector('label');
+        // Strip existing head badge, re-add to first.
+        var existingHead = li.querySelector('.badge.badge-purple');
+        if (existingHead && existingHead.textContent === 'HEAD') existingHead.remove();
+        if (idx === 0) {
+            var b = document.createElement('span');
+            b.className = 'badge badge-purple';
+            b.textContent = 'HEAD';
+            label.appendChild(document.createTextNode(' '));
+            label.appendChild(b);
+        }
+    });
+}
+function dsAutoDetectImport() {
+    var btn = document.getElementById('autodetect-import');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    var stacks = [];
+    document.querySelectorAll('#autodetect-body .ad-stack').forEach(function(card) {
+        var importCb = card.querySelector('.ad-stack-import');
+        if (!importCb || !importCb.checked || importCb.disabled) return;
+        var sname = card.dataset.stackName;
+        var containers = [];
+        card.querySelectorAll('.ad-member').forEach(function(li) {
+            var inc = li.querySelector('.ad-include');
+            if (inc && inc.checked) containers.push(li.dataset.container);
+        });
+        if (!containers.length) return;
+        var rd = card.querySelector('.ad-rd').checked;
+        stacks.push({
+            name: sname,
+            containers: containers,
+            restart_dependents: rd,
+            wait_seconds: 30,
+        });
+    });
+    if (!stacks.length) {
+        dsToast('Nothing selected', 'warn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Import selected'; }
+        return;
+    }
+    var body = '';
+    stacks.forEach(function(s) {
+        body += (body ? '&' : '') + 'stacks=' + encodeURIComponent(JSON.stringify(s));
+    });
+    fetch('/api/groups_import_batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body,
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.ok) {
+            dsToast(data.created + ' stack(s) imported ✓', 'success');
+            setTimeout(function() { location.reload(); }, 700);
+        } else {
+            dsToast('Import failed', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Import selected'; }
+        }
+    }).catch(function(e) {
+        dsToast('Network error: ' + e.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Import selected'; }
+    });
+}
+function dsEscape(s) {
+    var d = document.createElement('div');
+    d.textContent = s; return d.innerHTML;
 }
 
 function dsToast(msg, kind) {
@@ -1588,6 +1763,122 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 self._page_settings()
             elif path == "/setup":
                 self._page_setup()
+            elif path == "/api/groups_detect":
+                # Auto-detect stacks from container labels (v1.21.1).
+                # Sources we recognise (in priority order, first match wins):
+                #   1. com.docker.compose.project — Compose / Portainer /
+                #      Dockge / podman-compose / anything wrapping Compose
+                #   2. com.docker.stack.namespace — Docker Swarm stacks
+                # Returns JSON: {"ok": true, "stacks": [{"name": ..., "source": ...,
+                #   "containers": [{"name": ..., "service": ..., "shares_netns_with": ...}],
+                #   "conflicts": {"<container>": "<existing-group-name>"}, "exists": bool}]}
+                # Conservative — restart_dependents stays user-choice in the modal.
+                try:
+                    r = subprocess.run(
+                        ["docker", "ps", "-a", "--format",
+                         "{{.Names}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}|"
+                         "{{.Label \"com.docker.compose.service\"}}|"
+                         "{{.Label \"com.docker.stack.namespace\"}}"],
+                        capture_output=True, text=True, timeout=20
+                    )
+                    lines = [l for l in r.stdout.strip().split("\n") if l]
+                except subprocess.SubprocessError:
+                    lines = []
+
+                # Also need NetworkMode per container to detect VPN-sidecar
+                # hints (container:<head>) — informs the modal's default
+                # head ordering.
+                netns_hints = {}  # container_name → head_name (if shares netns)
+                if lines:
+                    try:
+                        names_only = [l.split("|", 1)[0] for l in lines]
+                        ins = subprocess.run(
+                            ["docker", "inspect", "--format",
+                             "{{.Name}}|{{.HostConfig.NetworkMode}}", *names_only],
+                            capture_output=True, text=True, timeout=20
+                        )
+                        for ln in ins.stdout.strip().split("\n"):
+                            if not ln or "|" not in ln:
+                                continue
+                            nm, mode = ln.split("|", 1)
+                            nm = nm.lstrip("/")
+                            if mode.startswith("container:"):
+                                # Resolve container:<id> → name via second inspect
+                                # — but that's an extra call per VPN-sidecar.
+                                # Cheap shortcut: most users name the sidecar's
+                                # head with a recognisable prefix; we just
+                                # surface the mode and let the modal handle it.
+                                netns_hints[nm] = mode
+                    except subprocess.SubprocessError:
+                        pass
+
+                # Group by stack name
+                by_stack = {}  # stack_name → {"source": "compose"|"swarm", "containers": [...]}
+                for line in lines:
+                    parts = line.split("|", 4)
+                    if len(parts) < 5:
+                        continue
+                    cname, image, compose_proj, compose_svc, swarm_ns = [p.strip() for p in parts]
+                    stack_name = compose_proj or swarm_ns
+                    if not stack_name:
+                        continue  # No stack label — skip
+                    source = "compose" if compose_proj else "swarm"
+                    entry = by_stack.setdefault(stack_name, {
+                        "source": source, "containers": []
+                    })
+                    entry["containers"].append({
+                        "name": cname,
+                        "image": image,
+                        "service": compose_svc or "",
+                        "netns_hint": netns_hints.get(cname, ""),
+                    })
+
+                # Annotate with conflicts (containers already in a Docksentry
+                # group) and existing-stack flag (same-named group already
+                # exists, so this stack was probably already imported).
+                existing_groups = store.get_groups()
+                container_to_group = {}  # cname → group_name
+                for gid, g in existing_groups.items():
+                    for cn in (g.get("containers") or []):
+                        container_to_group[cn] = g.get("name", gid)
+
+                stacks = []
+                for stack_name, data in sorted(by_stack.items()):
+                    members = data["containers"]
+                    # Default head order: alphabetical by service (then name).
+                    # VPN-sidecar heuristic: if any member has
+                    # netns_hint=container:* the OWNER (= head) should be
+                    # first. Without resolving the container: target by id
+                    # we can't reliably name the head, so we leave ordering
+                    # to the user in the modal.
+                    members.sort(key=lambda m: (m["service"] or m["name"]))
+                    conflicts = {}
+                    for m in members:
+                        existing = container_to_group.get(m["name"])
+                        if existing and existing != stack_name:
+                            conflicts[m["name"]] = existing
+                    # "exists" = a Docksentry group with the same display
+                    # name already exists. UI shows a "skip — already
+                    # imported" badge in that case.
+                    exists = any(
+                        (g.get("name") or "").strip().lower() == stack_name.lower()
+                        for g in existing_groups.values()
+                    )
+                    stacks.append({
+                        "name": stack_name,
+                        "source": data["source"],
+                        "containers": members,
+                        "conflicts": conflicts,
+                        "exists": exists,
+                    })
+
+                payload = json.dumps({"ok": True, "stacks": stacks}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             elif path == "/api/cron_preview":
                 # Settings page schedule-editor live preview. Returns
                 # the next 3 cron ticks for the `?expr=<cron>` value as
@@ -2078,6 +2369,57 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 ref = self.headers.get("Referer", "")
                 target = "/settings#groups" if "/settings" in ref else "/groups"
                 self._send_redirect(target)
+            elif path == "/api/groups_import_batch":
+                # Bulk-create Docksentry groups from auto-detected stacks
+                # (v1.21.1). Modal sends multiple `stacks[]=<json>` entries,
+                # each carrying {name, containers (ordered), restart_dependents,
+                # wait_seconds}. Each gets a fresh slug (or merges into an
+                # existing group with the same display name). save_group's
+                # one-group-per-container invariant handles re-assignment
+                # automatically.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                raw_stacks = params.get("stacks", [])
+                created = 0
+                import re as _re
+                existing = store.get_groups()
+                # Build name → existing_group_id lookup for in-place updates.
+                name_to_gid = {
+                    (g.get("name") or gid).strip().lower(): gid
+                    for gid, g in existing.items()
+                }
+                for raw in raw_stacks:
+                    try:
+                        spec = json.loads(raw)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    sname = (spec.get("name") or "").strip()
+                    members = [m for m in (spec.get("containers") or []) if m]
+                    if not sname or not members:
+                        continue
+                    wait_s = int(spec.get("wait_seconds", 30) or 30)
+                    rd = bool(spec.get("restart_dependents"))
+                    # Same-name → update in place. Different name → fresh slug.
+                    existing_gid = name_to_gid.get(sname.lower())
+                    if existing_gid:
+                        gid = existing_gid
+                    else:
+                        slug = _re.sub(r"[^a-z0-9-]+", "-", sname.lower()).strip("-") or "stack"
+                        base, n = slug, 2
+                        while slug in existing:
+                            slug = f"{base}-{n}"
+                            n += 1
+                        gid = slug
+                        existing[gid] = {}  # placeholder so the next loop iteration sees it
+                    store.save_group(gid, sname, members, wait_s, restart_dependents=rd)
+                    created += 1
+                payload = json.dumps({"ok": True, "created": created}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path == "/api/group_reorder_batch":
                 # Drag-and-drop reorder. Receives the full container
                 # order in one POST (`containers[]=a&containers[]=b&...`).
@@ -3207,11 +3549,37 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 
             content = f"""
 <div class="card">
-  <h2>{t("web_groups_title")}</h2>
-  <p class="card-intro">{t("web_groups_page_intro")}</p>
+  <div class="card-header-row" style="align-items:flex-start">
+    <div>
+      <h2 style="margin:0">{t("web_groups_title")}</h2>
+      <p class="card-intro" style="margin-top:6px">{t("web_groups_page_intro")}</p>
+    </div>
+    <button type="button" class="btn btn-outline" onclick="dsAutoDetectGroups()">
+      {t("web_groups_autodetect_button")}
+    </button>
+  </div>
 </div>
 {cards_html}
 {new_form}
+
+<!-- Auto-detect modal — hidden until dsAutoDetectGroups() opens it -->
+<div id="autodetect-modal" class="modal-backdrop" onclick="if(event.target===this)dsAutoDetectClose()">
+  <div class="modal" style="max-width:760px;width:92%" onclick="event.stopPropagation()">
+    <h3>{t("web_groups_autodetect_title")}</h3>
+    <p class="card-intro">{t("web_groups_autodetect_intro")}</p>
+    <div id="autodetect-body" style="margin:12px 0;max-height:55vh;overflow-y:auto">
+      <div style="text-align:center;color:var(--text-muted);padding:24px">
+        {t("web_groups_autodetect_loading")}
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-sm btn-outline" onclick="dsAutoDetectClose()">{t("web_cancel")}</button>
+      <button type="button" class="btn-sm btn" id="autodetect-import" onclick="dsAutoDetectImport()">
+        {t("web_groups_autodetect_import_btn")}
+      </button>
+    </div>
+  </div>
+</div>
 """
             self._send_html(self._render_page(content, "groups"))
 
@@ -3495,10 +3863,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </form>
 </div>
 
-<div class="card adv-only" id="groups">
+<div class="card" id="groups">
 <h2>{t("web_groups_title")}</h2>
-<p class="card-intro">{t("web_groups_intro")}</p>
-{self._groups_html(t)}
+<p class="card-intro">{t("web_groups_moved_intro")}</p>
+<p style="margin-top:8px"><a href="/groups" class="btn">📦 {t("web_groups_moved_button")}</a></p>
 </div>
 
 <div class="card adv-only" id="windows">

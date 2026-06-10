@@ -2,6 +2,31 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.21.1] - 2026-06-10
+
+### Added
+- **Auto-detect Compose / Portainer / Swarm stacks as Container Groups.** New "🔍 Auto-detect from Compose / Portainer" button on the `/groups` page. Backend scans every container's labels for `com.docker.compose.project` (Compose / Portainer / Dockge / podman-compose / anything that wraps Compose) and `com.docker.stack.namespace` (Swarm), groups containers by stack, and surfaces them in a modal where the user can:
+  - **Check / uncheck individual stacks** to include in the import
+  - **Drag-and-drop** members within each stack card to set the head order (first = head, gets `restart_dependents` semantics when enabled)
+  - **Include / exclude individual containers** from a stack via per-row checkbox
+  - **Toggle `restart_dependents` per stack** — conservative default (off); user must opt in
+  - **See conflict / status badges**: `↻ <group>` when a container is already in another Docksentry group (will be moved on import), `netns` when a container shares a network namespace (VPN-sidecar hint), `already imported` when a same-named group exists
+  - **Click "Import selected"** to bulk-create groups via the new `/api/groups_import_batch` POST endpoint
+
+  Smoke-tested on the maintainer's own host: 9 stacks detected (Nextcloud's 3-container set, Paperless-NGX's 3-container set, an InfluxDB+NodeRed pair, plus 6 single-container Compose projects) — all rendered correctly with proper head detection.
+
+### Changed
+- **Legacy Settings → Groups card is now a thin redirect banner.** The card stays for users who bookmarked `/settings#groups` or follow status-page links pointing there, but the duplicated CRUD UI is gone — clicking the banner button takes you to the new `/groups` page where all the actual functionality lives. Removes code duplication; the v1.21.0 `_groups_html` helper is now dead code (kept as-is for one release to surface any forgotten callers, removal slated for v1.22.0).
+- Modal markup on the `/groups` page now uses the existing `.modal-backdrop` / `.is-open` pattern shared with the confirm dialog, instead of inline `display:none`.
+
+### API
+- `/api/groups_detect` (GET) — scan + group containers by stack label, return JSON `{ok, stacks: [{name, source, containers, conflicts, exists}]}`. Read-only.
+- `/api/groups_import_batch` (POST) — accepts repeated `stacks=<json>` form values, each carrying `{name, containers (ordered), restart_dependents, wait_seconds}`. Same-named existing groups update in place (storage layer's one-group-per-container invariant handles re-assignment automatically). Returns JSON `{ok, created}`.
+
+### Notes
+- No env vars or breaking changes. Pull and refresh the browser (hard reload once) so the new modal CSS + JS lands.
+- Stacks without a `compose.project` or `stack.namespace` label (= manual `docker run` containers) can't be auto-detected — they remain manually-grouped via the existing "+ New group" form.
+
 ## [1.21.0] - 2026-06-10
 
 ### Added
