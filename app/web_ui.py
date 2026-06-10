@@ -968,6 +968,96 @@ _BASE_JS = """
         });
     });
 })();
+
+// ── Webhook test (Settings page) ──────────────────────────────
+// Sends a one-off test message via the current value in the input
+// field — uses whatever the user typed even before clicking Save.
+// Reports success/failure via a small floating toast.
+function dsTestWebhook(kind) {
+    var inputId = kind === 'discord' ? 'f-discord_webhook' : 'f-webhook_url';
+    var input = document.getElementById(inputId);
+    var url = (input && input.value || '').trim();
+    if (!url) {
+        dsToast('Enter a URL first', 'warn');
+        return;
+    }
+    var btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.dataset.origText = btn.textContent; btn.textContent = '…'; }
+    fetch('/api/test_webhook', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'kind=' + encodeURIComponent(kind) + '&url=' + encodeURIComponent(url),
+    }).then(function(r) {
+        return r.json().catch(function() { return {ok: false, error: 'HTTP ' + r.status}; });
+    }).then(function(data) {
+        if (data.ok) {
+            dsToast('Test message sent ✓', 'success');
+        } else {
+            dsToast('Failed: ' + (data.error || 'unknown'), 'error');
+        }
+    }).catch(function(e) {
+        dsToast('Network error: ' + e.message, 'error');
+    }).finally(function() {
+        if (btn) { btn.disabled = false; btn.textContent = btn.dataset.origText || 'Send test'; }
+    });
+}
+
+// ── Cron schedule live preview (Settings page) ────────────────
+// Debounced (300ms) so we don't spam /api/cron_preview while the
+// user is mid-typing. Backend returns next 3 ticks for the
+// expression — see scheduler.cron_next_ticks.
+var _dsCronTimer = null;
+function dsCronPreview() {
+    var input = document.getElementById('f-cron_schedule');
+    var preview = document.getElementById('cron-preview');
+    if (!input || !preview) return;
+    var expr = input.value.trim();
+    clearTimeout(_dsCronTimer);
+    _dsCronTimer = setTimeout(function() {
+        fetch('/api/cron_preview?expr=' + encodeURIComponent(expr))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    if (data.ticks && data.ticks.length) {
+                        preview.innerHTML = '⏰ ' + data.ticks.join(' · ');
+                        preview.style.color = 'var(--muted)';
+                    } else {
+                        preview.textContent = '⚠ No tick in the next year';
+                        preview.style.color = 'var(--warn, #d29922)';
+                    }
+                } else {
+                    preview.textContent = '⚠ ' + (data.error || 'Invalid cron expression');
+                    preview.style.color = 'var(--warn, #d29922)';
+                }
+            })
+            .catch(function(e) {
+                preview.textContent = '⚠ ' + e.message;
+                preview.style.color = 'var(--warn, #d29922)';
+            });
+    }, 300);
+}
+// Trigger initial preview on page load if the field exists.
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('f-cron_schedule')) {
+        dsCronPreview();
+    }
+});
+
+function dsToast(msg, kind) {
+    var div = document.createElement('div');
+    div.textContent = msg;
+    var bg = kind === 'success' ? '#3fb950'
+           : kind === 'warn' ? '#d29922'
+           : kind === 'error' ? '#f85149'
+           : '#58a6ff';
+    div.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 18px;background:' + bg + ';color:#fff;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;font-weight:500;max-width:400px';
+    document.body.appendChild(div);
+    setTimeout(function() {
+        div.style.transition = 'opacity 0.3s';
+        div.style.opacity = '0';
+        setTimeout(function() { div.remove(); }, 300);
+    }, 3500);
+}
 """
 
 
@@ -1384,6 +1474,55 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 self._page_settings()
             elif path == "/setup":
                 self._page_setup()
+            elif path == "/api/cron_preview":
+                # Settings page schedule-editor live preview. Returns
+                # the next 3 cron ticks for the `?expr=<cron>` value as
+                # short HH:MM strings (today/tomorrow rendered as the
+                # weekday name when ≥ 2h away). Pure read — no
+                # state changes — and bounded look-ahead.
+                from scheduler import cron_next_ticks, cron_matches
+                from datetime import datetime as _dt
+                query = parse_qs(urlparse(self.path).query)
+                expr = (query.get("expr", [""])[0] or "").strip()
+                response = {"ok": False, "error": "empty"}
+                if expr:
+                    parts = expr.split()
+                    if len(parts) != 5:
+                        response = {"ok": False, "error": "expression needs exactly 5 fields"}
+                    else:
+                        # Quick validation: try matching now() — if it
+                        # raises internally cron_matches returns False;
+                        # the next-ticks call below will return empty,
+                        # which we surface as a usable error.
+                        try:
+                            ticks = cron_next_ticks(expr, count=3)
+                        except Exception as e:
+                            ticks = []
+                            response = {"ok": False, "error": str(e)[:120]}
+                        else:
+                            now = _dt.now()
+                            formatted = []
+                            for t_dt in ticks:
+                                delta = t_dt - now
+                                if delta.total_seconds() < 2 * 3600:
+                                    # Less than 2 hours away: HH:MM only
+                                    formatted.append(t_dt.strftime("%H:%M"))
+                                elif t_dt.date() == now.date():
+                                    formatted.append("today " + t_dt.strftime("%H:%M"))
+                                elif (t_dt.date() - now.date()).days == 1:
+                                    formatted.append("tomorrow " + t_dt.strftime("%H:%M"))
+                                elif (t_dt.date() - now.date()).days < 7:
+                                    formatted.append(t_dt.strftime("%a %H:%M"))
+                                else:
+                                    formatted.append(t_dt.strftime("%Y-%m-%d %H:%M"))
+                            response = {"ok": True, "ticks": formatted}
+                payload = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             elif path == "/api/check":
                 threading.Thread(target=self._api_check).start()
                 self._send_redirect("/")
@@ -1614,6 +1753,56 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)
+            elif path == "/api/test_webhook":
+                # Settings page "Send test" buttons — verify a webhook
+                # URL is reachable before saving (#2 feedback). Uses the
+                # URL the user just typed (not the saved one) so they
+                # can debug a new value without committing it first.
+                # Returns JSON for the dsTestWebhook() JS helper.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                kind = params.get("kind", [""])[0].strip().lower()
+                url = params.get("url", [""])[0].strip()
+
+                response = {"ok": False, "error": "unknown"}
+                if kind not in ("discord", "webhook"):
+                    response = {"ok": False, "error": "invalid kind"}
+                elif not url:
+                    response = {"ok": False, "error": "empty URL"}
+                else:
+                    # Build a one-off Notifier with the user-typed URL
+                    # injected, leaving the rest of config untouched —
+                    # we don't want to mutate the live config or
+                    # trigger quiet-hours suppression.
+                    from copy import copy as _copy
+                    from notifier import Notifier
+                    test_config = _copy(config)
+                    test_config.discord_webhook = url if kind == "discord" else ""
+                    test_config.webhook_url = url if kind == "webhook" else ""
+                    # Disable quiet hours for the test so the user
+                    # actually sees the result.
+                    test_config.quiet_hours_start = ""
+                    test_config.quiet_hours_end = ""
+                    test_notifier = Notifier(test_config)
+                    try:
+                        # send_message returns None — surface failures
+                        # via stderr-style print; we don't currently
+                        # have a structured return. Wrap in try and
+                        # consider any exception a failure.
+                        test_notifier.send_message(
+                            f"🧪 Docksentry test message from Web UI ({kind})"
+                        )
+                        response = {"ok": True}
+                    except Exception as e:
+                        response = {"ok": False, "error": str(e)[:200]}
+
+                payload = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path == "/api/link":
                 # Per-container repo / changelog URL override (#20).
                 # Empty input clears. set_link validates http(s):// prefix
@@ -2686,6 +2875,44 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 except (json.JSONDecodeError, IOError):
                     pass
 
+            # ?container=<name> filter (Bundle 2 / v1.20.0). Lets users
+            # zoom into one container's update history without
+            # scrolling through the global feed. Empty / "all" shows
+            # everything. Mirrors the partial-name resolver semantics
+            # used in Telegram: case-insensitive substring match.
+            query = parse_qs(urlparse(self.path).query)
+            filter_raw = (query.get("container", [""])[0] or "").strip()
+            filter_name = filter_raw.lower() if filter_raw and filter_raw.lower() != "all" else ""
+
+            # Build the unique-container dropdown from history data
+            # (sorted; case-preserving). Disambiguates self-updates
+            # which have container == "docksentry" — only show it once.
+            unique_names = sorted(
+                {h.get("container", "") for h in history if h.get("container")},
+                key=lambda n: n.lower()
+            )
+
+            filtered = history
+            if filter_name:
+                filtered = [
+                    h for h in history
+                    if filter_name in (h.get("container") or "").lower()
+                ]
+
+            # Build the filter form — Status-page link icons in v1.18.0
+            # set ?container=<name> via this same URL pattern, so the
+            # filter has both UI (dropdown) and deep-link (URL) drivers.
+            filter_options = '<option value="all">' + _e(t("web_history_filter_all")) + '</option>\n'
+            for n in unique_names:
+                sel = 'selected' if n.lower() == filter_name else ''
+                filter_options += f'<option value="{_e(n)}" {sel}>{_e(n)}</option>\n'
+            filter_form = f"""<form method="GET" action="/history" class="inline-form" style="margin-bottom:12px">
+<label style="display:inline-block;margin-right:8px">{t("web_history_filter_label")}:</label>
+<select name="container" onchange="this.form.submit()" style="min-width:180px">
+{filter_options}
+</select>
+</form>"""
+
             if not history:
                 content = f"""<div class="card">
 <h2>{t("web_history")}</h2>
@@ -2695,9 +2922,19 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   <div class="empty-hint">{t("web_history_empty_hint")}</div>
 </div>
 </div>"""
+            elif not filtered:
+                content = f"""<div class="card">
+<h2>{t("web_history")}</h2>
+{filter_form}
+<div class="empty">
+  <div class="empty-icon">🔍</div>
+  <div class="empty-title">{t("web_history_filter_empty", name=_e(filter_raw))}</div>
+  <div class="empty-hint"><a href="/history">{t("web_history_filter_clear")}</a></div>
+</div>
+</div>"""
             else:
                 rows = ""
-                for h in reversed(history):
+                for h in reversed(filtered):
                     icon = '<span class="badge badge-green">✅</span>' if h["success"] else '<span class="badge badge-yellow">❌</span>'
                     # Normalize legacy v1.16.1 calendar glyph (see CHANGELOG v1.16.2)
                     detail = h.get('detail', '').replace('📅', '🗓️')
@@ -2708,8 +2945,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <td style="font-size:12px">{_e(detail)}</td>
 </tr>"""
 
+                count_hint = ""
+                if filter_name:
+                    count_hint = f'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">{t("web_history_filter_count", shown=len(filtered), total=len(history))}</div>'
+
                 content = f"""<div class="card">
 <h2>{t("web_history")}</h2>
+{filter_form}
+{count_hint}
 <table>
 <tr><th>{t("web_date")}</th><th>{t("web_name")}</th><th>{t("web_result")}</th><th>{t("web_detail")}</th></tr>
 {rows}
@@ -2768,7 +3011,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
     </div>
     <div>
       <label>{t("web_cron_schedule")} {help_(t("web_cron_help"))}</label>
-      <input type="text" name="cron_schedule" value="{_e(config.cron_schedule)}">
+      <input type="text" name="cron_schedule" id="f-cron_schedule" value="{_e(config.cron_schedule)}" oninput="dsCronPreview()">
+      <div id="cron-preview" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px">⏳ {_e(t("web_cron_preview_loading"))}</div>
     </div>
   </div>
   <label>{t("web_excluded")} {help_(t("web_excluded_help"))}</label>
@@ -2881,10 +3125,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
   </div>
 
   <label>Discord Webhook {help_(t("web_discord_help"))}</label>
-  <input type="text" name="discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/...">
+  <div style="display:flex;gap:8px">
+    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
 
   <label>Webhook URL {help_(t("web_webhook_help"))}</label>
-  <input type="text" name="webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook">
+  <div style="display:flex;gap:8px">
+    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
 </div>
 
 <div style="margin-top:16px">

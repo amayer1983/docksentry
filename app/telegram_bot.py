@@ -32,26 +32,31 @@ import urllib.parse
 #
 # The order here is the order both surfaces render in.
 _BOT_COMMANDS = [
-    ("status",      "Container overview (add a name for details + action buttons)", "help_status"),
-    ("check",       "Check for updates now",                                          "help_check"),
-    ("updates",     "Show pending updates",                                           "help_updates"),
-    ("cleanup",     "Remove unused images",                                           "help_cleanup"),
-    ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle"),
-    ("stop",        "Stop a running container — /stop <name>",                        "help_lifecycle"),
-    ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle"),
-    ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance"),
-    ("history",     "Recent update history",                                          "help_history"),
-    ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin"),
-    ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin"),
-    ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate"),
-    ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink"),
-    ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate"),
-    ("changelog",   "What's new in versions ahead of yours",                          "help_changelog"),
-    ("debug",       "Toggle debug mode",                                              "help_debug"),
-    ("logs",        "Last 30 log lines — /logs <name>",                               "help_logs"),
-    ("lang",        "Switch bot language — /lang en or /lang de",                     "help_lang"),
-    ("settings",    "Show current settings",                                          "help_settings"),
-    ("help",        "Show all commands",                                              "help_help"),
+    # (cmd-name, picker-description, summary-help-key, detail-help-key)
+    # detail-help-key drives `/help <cmd>` (#15) — a deeper per-command
+    # help block with synopsis, parameters, examples, side effects.
+    # Multiple commands can share a detail key (lifecycle, pin/unpin).
+    ("status",      "Container overview (add a name for details + action buttons)", "help_status",      "help_detail_status"),
+    ("check",       "Check for updates now",                                          "help_check",       "help_detail_check"),
+    ("updates",     "Show pending updates",                                           "help_updates",     "help_detail_updates"),
+    ("cleanup",     "Remove unused images",                                           "help_cleanup",     "help_detail_cleanup"),
+    ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle",   "help_detail_lifecycle"),
+    ("stop",        "Stop a running container — /stop <name>",                        "help_lifecycle",   "help_detail_lifecycle"),
+    ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle",   "help_detail_lifecycle"),
+    ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance", "help_detail_maintenance"),
+    ("history",     "Recent update history",                                          "help_history",     "help_detail_history"),
+    ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin",         "help_detail_pin"),
+    ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin",       "help_detail_pin"),
+    ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate",  "help_detail_autoupdate"),
+    ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
+    ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
+    ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
+    ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
+    ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),
+    ("logs",        "Last 30 log lines — /logs <name>",                               "help_logs",        "help_detail_logs"),
+    ("lang",        "Switch bot language — /lang en or /lang de",                     "help_lang",        "help_detail_lang"),
+    ("settings",    "Show current settings",                                          "help_settings",    "help_detail_settings"),
+    ("help",        "Show all commands (or /help <cmd> for details)",                 "help_help",        "help_detail_help"),
 ]
 
 
@@ -1464,7 +1469,7 @@ class TelegramBot:
         # both the picker registration here and the /help output below.
         commands = [
             {"command": name, "description": picker_desc}
-            for (name, picker_desc, _help_key) in _BOT_COMMANDS
+            for (name, picker_desc, _help_key, _detail_key) in _BOT_COMMANDS
         ]
         try:
             r = self.api_call("setMyCommands", {"commands": json.dumps(commands)})
@@ -2140,6 +2145,49 @@ class TelegramBot:
                 self._save_autoupdate(auto_list)
                 self.send_message(self.t("autoupdate_on", name=name))
 
+        elif text.startswith("/audit"):
+            # /audit <container> — run UpdateChecker._audit_inspect_coverage
+            # against the target's docker inspect and report any non-
+            # default HostConfig / Config fields we don't restore on
+            # recreate. Mirror of the DEBUG-mode logging in v1.19.0 but
+            # actionable from chat (#2 + audit story closure).
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                self.send_message(self.t("audit_usage"))
+                return
+            name, err = self._resolve_container(parts[1])
+            if err:
+                self.send_message(err)
+                return
+            try:
+                r = subprocess.run(
+                    ["docker", "inspect", name],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if r.returncode != 0:
+                    self.send_message(self.t("audit_inspect_failed", name=name))
+                    return
+                inspect = json.loads(r.stdout)[0]
+            except (subprocess.SubprocessError, json.JSONDecodeError, IndexError):
+                self.send_message(self.t("audit_inspect_failed", name=name))
+                return
+            from update_checker import UpdateChecker as _UC
+            findings = _UC._audit_inspect_coverage(checker, inspect)
+            host_keys = findings.get("host_unknown") or []
+            cfg_keys = findings.get("config_unknown") or []
+            if not host_keys and not cfg_keys:
+                self.send_message(self.t("audit_clean", name=name))
+                return
+            lines = [self.t("audit_findings_header", name=name)]
+            if host_keys:
+                lines.append(self.t("audit_section_host"))
+                lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
+            if cfg_keys:
+                lines.append(self.t("audit_section_config"))
+                lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
+            lines.append(self.t("audit_footer"))
+            self.send_message("\n".join(lines))
+
         elif text.startswith("/setlink"):
             # Telegram-side affordance for the per-container link store —
             # mirror of the Web UI Status page link icon. Without this
@@ -2209,6 +2257,31 @@ class TelegramBot:
             else:
                 self.send_message(self.t("logs_empty", name=name))
 
+        elif text.startswith("/help ") or text.startswith("/start "):
+            # /help <command> — per-command detailed help (#15, @famewolf).
+            # Looks up the command in _BOT_COMMANDS and sends the
+            # `detail_key`-translated block. Strips a leading `/` from
+            # the arg so both `/help pin` and `/help /pin` work.
+            parts = text.split(maxsplit=1)
+            requested = parts[1].strip().lstrip("/").lower() if len(parts) > 1 else ""
+            if not requested:
+                # Falls through to the generic /help below — shouldn't
+                # happen due to the startswith check but defensive.
+                requested = None
+            match = None
+            for cmd in _BOT_COMMANDS:
+                if cmd[0] == requested:
+                    match = cmd
+                    break
+            if match is None:
+                # Unknown command — list valid ones briefly so the user
+                # can recover without scrolling /help.
+                valid = ", ".join(f"`/{c[0]}`" for c in _BOT_COMMANDS)
+                self.send_message(self.t("help_detail_unknown",
+                                         cmd=requested, valid=valid))
+                return
+            self.send_message(self.t(match[3]))
+
         elif text == "/help" or text == "/start":
             from version import VERSION
             # /help iterates the same _BOT_COMMANDS table that the
@@ -2217,7 +2290,7 @@ class TelegramBot:
             # land under help_lifecycle) only show once.
             seen = set()
             command_lines = []
-            for (_name, _picker_desc, help_key) in _BOT_COMMANDS:
+            for (_name, _picker_desc, help_key, _detail_key) in _BOT_COMMANDS:
                 if help_key is None or help_key in seen:
                     continue
                 seen.add(help_key)
@@ -2227,5 +2300,6 @@ class TelegramBot:
                 + self.t("help_autocomplete_hint") + "\n\n"
                 + self.t("help_commands") + "\n"
                 + "\n".join(command_lines) + "\n\n"
+                + self.t("help_per_command_hint") + "\n\n"
                 + self.t("help_docs_footer")
             )

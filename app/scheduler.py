@@ -14,6 +14,82 @@ from datetime import datetime, timedelta
 _DEFERRED_CHECK_TTL = timedelta(hours=1)
 
 
+def cron_matches(expr, now):
+    """Return True if the 5-field cron `expr` would fire at the datetime
+    `now` (minute-precision). Supports `*`, `*/n`, exact values, ranges
+    `a-b`, range+step `a-b/n`, and comma lists `a,b,c`.
+
+    Extracted from Scheduler._matches_cron in v1.20.0 so the Web UI
+    settings page can preview "next 3 ticks" for a freshly-typed
+    schedule without instantiating a Scheduler.
+    """
+    parts = (expr or "").split()
+    if len(parts) != 5:
+        return False
+    fields = [
+        (parts[0], now.minute),
+        (parts[1], now.hour),
+        (parts[2], now.day),
+        (parts[3], now.month),
+        (parts[4], now.weekday()),
+    ]
+    for pattern, value in fields:
+        if pattern == "*":
+            continue
+        try:
+            if "/" in pattern and "-" in pattern.split("/")[0]:
+                range_part, step_part = pattern.split("/", 1)
+                start, end = range_part.split("-")
+                step = int(step_part)
+                if not (int(start) <= value <= int(end)):
+                    return False
+                if (value - int(start)) % step != 0:
+                    return False
+                continue
+            if pattern.startswith("*/"):
+                step = int(pattern[2:])
+                if value % step != 0:
+                    return False
+                continue
+            if "," in pattern:
+                if str(value) not in pattern.split(","):
+                    return False
+                continue
+            if "-" in pattern:
+                start, end = pattern.split("-")
+                if not (int(start) <= value <= int(end)):
+                    return False
+                continue
+            if int(pattern) != value:
+                return False
+        except (ValueError, IndexError):
+            return False
+    return True
+
+
+def cron_next_ticks(expr, count=3, after=None, max_minutes=60 * 24 * 366):
+    """Return the next `count` datetime ticks that match the cron
+    expression starting from `after` (default: now), capped at
+    `max_minutes` of look-ahead. Returns fewer results than `count` if
+    the cap is hit. Returns an empty list when the expression is
+    malformed.
+
+    Used by the Settings page schedule-editor preview (Bundle 2).
+    """
+    if after is None:
+        after = datetime.now()
+    # Round up to the next whole minute and start there
+    cursor = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    out = []
+    steps = 0
+    while len(out) < count and steps < max_minutes:
+        if cron_matches(expr, cursor):
+            out.append(cursor)
+        cursor += timedelta(minutes=1)
+        steps += 1
+    return out
+
+
 class Scheduler:
     def __init__(self, config, checker, bot):
         self.config = config
@@ -109,53 +185,7 @@ class Scheduler:
 
     def _matches_cron(self, now):
         """Simple cron matching: minute hour day month weekday."""
-        parts = self.config.cron_schedule.split()
-        if len(parts) != 5:
-            return False
-
-        fields = [
-            (parts[0], now.minute),
-            (parts[1], now.hour),
-            (parts[2], now.day),
-            (parts[3], now.month),
-            (parts[4], now.weekday()),  # 0=Monday in Python, but cron uses 0=Sunday
-        ]
-
-        for pattern, value in fields:
-            if pattern == "*":
-                continue
-            # Handle range with step: "start-end/step" (e.g. "0-20/3")
-            if "/" in pattern and "-" in pattern.split("/")[0]:
-                range_part, step_part = pattern.split("/", 1)
-                start, end = range_part.split("-")
-                step = int(step_part)
-                if not (int(start) <= value <= int(end)):
-                    return False
-                if (value - int(start)) % step != 0:
-                    return False
-                continue
-            # Handle */n step values
-            if pattern.startswith("*/"):
-                step = int(pattern[2:])
-                if value % step != 0:
-                    return False
-                continue
-            # Handle comma-separated values
-            if "," in pattern:
-                if str(value) not in pattern.split(","):
-                    return False
-                continue
-            # Handle ranges
-            if "-" in pattern:
-                start, end = pattern.split("-")
-                if not (int(start) <= value <= int(end)):
-                    return False
-                continue
-            # Exact match
-            if int(pattern) != value:
-                return False
-
-        return True
+        return cron_matches(self.config.cron_schedule, now)
 
     def _run(self):
         # Pre-claim the resumed minute if we just came back from a

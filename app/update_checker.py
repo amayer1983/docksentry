@@ -1766,6 +1766,13 @@ class UpdateChecker:
             self._debug(f"  [audit] Config.{k} is non-default but not "
                         f"restored on recreate — please report at "
                         f"https://github.com/amayer1983/docksentry/issues")
+        # Return structured findings so callers (e.g. the /audit Telegram
+        # command added in v1.20.0) can render the same data without
+        # relying on DEBUG-only log lines.
+        return {
+            "host_unknown": unknown_host,
+            "config_unknown": unknown_cfg,
+        }
 
     def _update_standalone(self, name, image):
         self._debug(f"Updating: {name} ({image})...")

@@ -2,6 +2,35 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.20.0] - 2026-06-07
+
+### Added
+- **`/help <command>` — per-command detailed help** ([#15](../../issues/15), @famewolf). The general `/help` lists all commands; the new variant returns a deeper block for one command — synopsis, parameter list, examples, and side effects. Driven by a new `detail_help_key` field on the `_BOT_COMMANDS` table (single source of truth). All 20 commands have a detail block; English and German translated, the other 14 languages fall back to English via the existing i18n layer. Examples:
+  ```
+  /help cleanup     → grace-hours behaviour, backup flag, side effects
+  /help selfupdate  → :latest vs <version> vs previous, helper-container model
+  /help setlink     → URL store, OCI label fallback, cross-message effect
+  ```
+
+- **`/audit <container>` — surface the v1.19.0 inspect-coverage auditor from chat.** The audit logger added in v1.19.0 only wrote to DEBUG logs, so users had to enable `DEBUG=true` and grep `docker logs docksentry` to find non-restored fields. The new command runs the same check on demand and reports findings directly in Telegram. Empty findings = `✅ clean` confirmation; non-empty findings come as a list of `HostConfig.<key>` / `Config.<key>` entries with an "open issue" link in the footer. `UpdateChecker._audit_inspect_coverage()` now returns its findings dict in addition to logging (callers that don't care can ignore the return).
+
+- **Webhook test buttons in Web UI Settings** ([#2](../../issues/2)). Next to the `DISCORD_WEBHOOK` and `WEBHOOK_URL` inputs you now have a "Send test" button that POSTs to a one-off `/api/test_webhook` endpoint and sends a `🧪 Docksentry test message` via a temporary `Notifier` instance using whatever URL is currently in the input — so you can debug a new value *before* saving it. Result surfaces as a floating toast (success / failure with error text). Quiet-hours suppression is bypassed for the test so the user actually sees the message.
+
+- **Per-container history filter** in Web UI. The `/history` page gained a dropdown listing every container that has at least one entry in `update_history.json`. Selecting one filters to just that container's events; the URL carries `?container=<name>` so the view is also deep-linkable from anywhere (Status-page link icons could wire into this in a later release). Empty-state for "no history for X yet" gives a "clear filter" link back to the full view, plus a "showing N of M entries" hint above the table when the filter is active.
+
+- **Live cron preview in Settings page schedule editor**. As you type a CRON expression the field now shows `⏰ tomorrow 18:00 · Fri 18:00 · Sat 18:00` below it — the next 3 ticks the scheduler would actually fire at. Driven by a 300ms-debounced fetch to a new `/api/cron_preview` endpoint that runs the existing `Scheduler._matches_cron` logic (extracted to module-level `scheduler.cron_matches` / `cron_next_ticks` helpers) against minute-by-minute look-ahead, capped at 1 year. Malformed expressions surface as `⚠ expression needs exactly 5 fields` immediately — no more "save and pray it fires when you expect".
+
+### Changed
+- `_BOT_COMMANDS` grew a 4-th tuple element `detail_key` driving `/help <cmd>`. Backward-compatible only if all callers unpack the full 4-element tuple — the two existing call sites (`_register_commands_with_telegram` and the `/help` builder) were updated.
+
+- `UpdateChecker._audit_inspect_coverage()` now returns `{"host_unknown": [...], "config_unknown": [...]}` instead of just logging — same DEBUG output as before, but `/audit` can render the same data in chat. Pre-v1.20.0 callers that ignored the return value continue to work unchanged.
+
+- `Scheduler._matches_cron(now)` is now a one-line wrapper over the module-level `scheduler.cron_matches(expr, now)` helper. Behaviour identical; the extraction is purely so `/api/cron_preview` can preview a fresh-typed expression without instantiating a Scheduler.
+
+### Notes
+- 21 Telegram commands registered with `setMyCommands` now (was 20 — `/audit` is new).
+- No new env vars or breaking config changes. Existing setups need no migration — pull and restart.
+
 ## [1.19.3] - 2026-06-07
 
 ### Changed
