@@ -828,6 +828,40 @@ pre {
 .modal h3 { color: var(--accent); margin-bottom: 12px; }
 .modal-body { margin-bottom: 20px; color: var(--text); font-size: 14px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Container Groups — drag-drop members list (v1.21.0) */
+.group-members-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0 0;
+}
+.group-members-list .group-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: grab;
+    transition: background 0.15s, transform 0.1s;
+    user-select: none;
+}
+.group-members-list .group-member:hover { background: var(--card-bg, var(--bg)); }
+.group-members-list .group-member:active { cursor: grabbing; }
+.group-members-list .group-member.dragging {
+    opacity: 0.4;
+    transform: scale(0.98);
+}
+.group-members-list .drag-handle {
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: grab;
+    line-height: 1;
+}
+.group-edit summary { user-select: none; }
+.group-edit summary:hover { text-decoration: underline; }
 """
 
 
@@ -1042,6 +1076,83 @@ document.addEventListener('DOMContentLoaded', function() {
         dsCronPreview();
     }
 });
+
+// ── Container Groups drag-and-drop (Groups page) ─────────────
+// HTML5 native drag-drop on .group-member elements. On drop, post
+// the new order to /api/group_reorder_batch and toast the result.
+// Falls back gracefully — if JS is off the existing ↑/↓ form buttons
+// on the legacy Settings tab still work (kept for users who haven't
+// migrated to the dedicated page).
+(function dsInitGroupDrag() {
+    document.querySelectorAll('.group-members-list').forEach(function(list) {
+        var dragged = null;
+        list.querySelectorAll('.group-member').forEach(function(item) {
+            item.addEventListener('dragstart', function(e) {
+                dragged = item;
+                item.classList.add('dragging');
+                try { e.dataTransfer.effectAllowed = 'move'; } catch (err) {}
+            });
+            item.addEventListener('dragend', function() {
+                item.classList.remove('dragging');
+                dragged = null;
+            });
+            item.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                if (!dragged || dragged === item) return;
+                var rect = item.getBoundingClientRect();
+                var after = (e.clientY - rect.top) > rect.height / 2;
+                if (after) {
+                    item.parentNode.insertBefore(dragged, item.nextSibling);
+                } else {
+                    item.parentNode.insertBefore(dragged, item);
+                }
+            });
+            item.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dsPersistGroupOrder(list);
+            });
+        });
+    });
+})();
+
+function dsPersistGroupOrder(list) {
+    var gid = list.dataset.groupId;
+    var order = Array.from(list.querySelectorAll('.group-member'))
+                     .map(function(li) { return li.dataset.container; })
+                     .filter(Boolean);
+    if (!gid || !order.length) return;
+    var body = 'group_id=' + encodeURIComponent(gid);
+    order.forEach(function(c) { body += '&containers=' + encodeURIComponent(c); });
+    fetch('/api/group_reorder_batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body,
+    }).then(function(r) {
+        return r.json().catch(function() { return {ok: false}; });
+    }).then(function(data) {
+        if (data.ok) {
+            dsToast('Order saved ✓', 'success');
+            // Refresh head badge: only the first member should carry it.
+            list.querySelectorAll('.group-member').forEach(function(li, idx) {
+                var badges = li.querySelectorAll('.badge.badge-purple');
+                badges.forEach(function(b) { b.remove(); });
+            });
+            var first = list.querySelector('.group-member');
+            if (first && first.querySelector('code')) {
+                var b = document.createElement('span');
+                b.className = 'badge badge-purple';
+                b.textContent = 'HEAD';
+                first.querySelector('code').after(document.createTextNode(' '));
+                first.querySelector('code').after(b);
+            }
+        } else {
+            dsToast('Reorder failed — refreshing', 'error');
+            setTimeout(function() { location.reload(); }, 1500);
+        }
+    }).catch(function(e) {
+        dsToast('Network error: ' + e.message, 'error');
+    });
+}
 
 function dsToast(msg, kind) {
     var div = document.createElement('div');
@@ -1359,6 +1470,7 @@ def create_handler(config, checker, bot, store, password=None):
 
             nav_items = [
                 ("status", f'📊 {t("web_nav_status")}', "/"),
+                ("groups", f'📦 {t("web_nav_groups")}', "/groups"),
                 ("history", f'📋 {t("web_nav_history")}', "/history"),
                 ("logs", f'📜 {t("web_nav_logs")}', "/logs"),
                 ("settings", f'⚙️ {t("web_nav_settings")}', "/settings"),
@@ -1468,6 +1580,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 self._page_status()
             elif path == "/history":
                 self._page_history()
+            elif path == "/groups":
+                self._page_groups()
             elif path == "/logs":
                 self._page_logs()
             elif path == "/settings":
@@ -1905,27 +2019,43 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 config.save_persistent()
                 self._send_redirect("/?saved=1")
             elif path == "/api/group_save":
+                # Create OR update a group. When `group_id` is present
+                # in the form, the existing group is updated in place
+                # (rename, change member list, change flags). When it's
+                # absent we generate a slug from `name` for a new group.
+                # Source of truth for both flows is store.save_group()
+                # which already handles the one-group-per-container
+                # invariant. Redirect target is /groups (the dedicated
+                # page added in v1.21.0) when the request came from
+                # there; the legacy /settings#groups Referer is honoured
+                # for backward compatibility with the old layout.
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
                 name = params.get("name", [""])[0].strip()
-                # Multi-select: containers come as repeated key in form-encoded
                 containers = params.get("containers", [])
                 wait_s = params.get("wait_seconds", ["30"])[0]
                 restart_dep = "restart_dependents" in params
+                edit_gid = params.get("group_id", [""])[0].strip()
                 if name and containers:
-                    # Generate a slug from the name (simple, ascii-safe)
-                    import re as _re
-                    slug = _re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-") or "group"
-                    # If a group with this slug already exists, append -2, -3, ...
-                    existing = store.get_groups()
-                    base, n = slug, 2
-                    while slug in existing:
-                        slug = f"{base}-{n}"
-                        n += 1
-                    store.save_group(slug, name, containers, wait_s,
-                                     restart_dependents=restart_dep)
-                self._send_redirect("/settings#groups")
+                    if edit_gid and edit_gid in store.get_groups():
+                        # Update existing group — keep the slug stable.
+                        store.save_group(edit_gid, name, containers, wait_s,
+                                         restart_dependents=restart_dep)
+                    else:
+                        # New group — generate a slug.
+                        import re as _re
+                        slug = _re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-") or "group"
+                        existing = store.get_groups()
+                        base, n = slug, 2
+                        while slug in existing:
+                            slug = f"{base}-{n}"
+                            n += 1
+                        store.save_group(slug, name, containers, wait_s,
+                                         restart_dependents=restart_dep)
+                ref = self.headers.get("Referer", "")
+                target = "/settings#groups" if "/settings" in ref else "/groups"
+                self._send_redirect(target)
             elif path == "/api/group_delete":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -1933,7 +2063,9 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 gid = params.get("group_id", [""])[0].strip()
                 if gid:
                     store.delete_group(gid)
-                self._send_redirect("/settings#groups")
+                ref = self.headers.get("Referer", "")
+                target = "/settings#groups" if "/settings" in ref else "/groups"
+                self._send_redirect(target)
             elif path == "/api/group_reorder":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -1943,7 +2075,48 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 direction = params.get("direction", [""])[0].strip()
                 if gid and cname and direction in ("up", "down"):
                     store.reorder_group_container(gid, cname, direction)
-                self._send_redirect("/settings#groups")
+                ref = self.headers.get("Referer", "")
+                target = "/settings#groups" if "/settings" in ref else "/groups"
+                self._send_redirect(target)
+            elif path == "/api/group_reorder_batch":
+                # Drag-and-drop reorder. Receives the full container
+                # order in one POST (`containers[]=a&containers[]=b&...`).
+                # Replaces the member list of the named group atomically.
+                # Falls back to silently no-op for unknown group ids so
+                # the JS handler can stay simple.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                gid = params.get("group_id", [""])[0].strip()
+                new_order = params.get("containers", [])
+                groups = store.get_groups()
+                g = groups.get(gid)
+                if g and new_order:
+                    # Preserve members that weren't in the drag payload
+                    # (defensive: in case the DOM dropped one). Keep
+                    # the rest at their original positions.
+                    existing_members = list(g.get("containers") or [])
+                    payload_set = set(new_order)
+                    # Honour drag order for the payload, then append any
+                    # missing ones in their original order.
+                    final_order = [c for c in new_order if c in existing_members]
+                    for c in existing_members:
+                        if c not in payload_set:
+                            final_order.append(c)
+                    store.save_group(
+                        gid,
+                        g.get("name", gid),
+                        final_order,
+                        g.get("wait_seconds", 30),
+                        restart_dependents=bool(g.get("restart_dependents")),
+                    )
+                # Return JSON so the JS fetch can show a toast
+                payload = json.dumps({"ok": bool(g)}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path == "/api/window":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -2862,6 +3035,185 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="submit" formaction="/api/window" class="btn btn-sm btn-outline" name="action" value="delete">{t("web_delete")}</button>
 </div>
 </form>"""
+
+        def _page_groups(self):
+            """Dedicated Container Groups page (v1.21.0). Promotes
+            Container Groups from a hidden tab in Settings to a
+            first-class section in the main nav with edit-in-place,
+            drag-and-drop reorder, head-container visualisation, and
+            stale-member warnings (a member that no longer exists as
+            a running or stopped container).
+
+            Storage is unchanged — same store.save_group / .get_groups
+            / .delete_group / .reorder_group_container helpers as the
+            legacy Settings tab. The legacy tab still works (some users
+            have bookmarks) but is now a thin wrapper that links here.
+            """
+            from i18n import get_translator
+            t = get_translator(config.language)
+
+            try:
+                live = self._get_containers()
+            except Exception:
+                live = []
+            # Include stopped + running so users can group stopped helpers.
+            try:
+                all_ids = subprocess.run(
+                    ["docker", "ps", "-a", "--format", "{{.Names}}"],
+                    capture_output=True, text=True
+                )
+                all_names = sorted(set(
+                    n for n in all_ids.stdout.strip().split("\n") if n
+                ))
+            except subprocess.SubprocessError:
+                all_names = sorted({c["name"] for c in live})
+            live_set = {c["name"] for c in live}
+            groups = store.get_groups()
+
+            # Build per-group cards with edit-in-place forms.
+            cards_html = ""
+            for gid, g in groups.items():
+                gname = g.get("name", gid)
+                cnames = g.get("containers") or []
+                wait_s = int(g.get("wait_seconds", 30) or 30)
+                is_rd = bool(g.get("restart_dependents"))
+
+                # Members list with head marker + drag handles + stale warning
+                member_rows = ""
+                for idx, cname in enumerate(cnames):
+                    stale = cname not in (live_set | set(all_names))
+                    head_badge = ""
+                    if idx == 0:
+                        head_badge = (f'<span class="badge badge-purple" '
+                                      f'title="{_e(t("web_groups_head_tt"))}">'
+                                      f'{t("web_groups_head_badge")}</span>')
+                    stale_badge = ""
+                    if stale:
+                        stale_badge = (f'<span class="badge badge-yellow" '
+                                       f'title="{_e(t("web_groups_stale_tt"))}">'
+                                       f'{t("web_groups_stale_badge")}</span>')
+                    member_rows += (
+                        f'<li class="group-member" draggable="true" '
+                        f'data-container="{_e(cname)}">'
+                        f'<span class="drag-handle" title="{_e(t("web_groups_drag_tt"))}">⠿</span>'
+                        f'<code>{_e(cname)}</code> {head_badge}{stale_badge}'
+                        f'</li>'
+                    )
+                if not member_rows:
+                    member_rows = (f'<li style="color:var(--text-muted);font-size:12px">'
+                                   f'{t("web_groups_no_members")}</li>')
+
+                # Edit form — populated with the current values, posts
+                # back with the group_id so the save endpoint updates
+                # in place. Container multi-select is pre-selected.
+                options_html = ""
+                for n in all_names:
+                    sel = ' selected' if n in cnames else ''
+                    options_html += f'<option value="{_e(n)}"{sel}>{_e(n)}</option>'
+
+                rd_checked = ' checked' if is_rd else ''
+
+                cards_html += f"""
+<div class="card" data-group-id="{_e(gid)}" style="margin-bottom:16px">
+  <div class="card-header-row">
+    <h3 style="font-size:14px;color:var(--accent);margin:0">
+      {_ICONS["package"]} {_e(gname)}
+      <span style="color:var(--text-muted);font-size:11px;font-weight:400">
+        ·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}
+        {' · 🔁 ' + t("web_groups_restart_dependents_badge") if is_rd else ''}
+      </span>
+    </h3>
+    <form method="POST" action="/api/group_delete" class="inline-form"
+          data-confirm="{_e(t('web_groups_delete_confirm', name=gname))}"
+          data-confirm-label="{_e(t('web_delete'))}" data-confirm-danger="1">
+      <input type="hidden" name="group_id" value="{_e(gid)}">
+      <button type="submit" class="btn-sm btn-outline">{t("web_delete")}</button>
+    </form>
+  </div>
+
+  <ul class="group-members-list" data-group-id="{_e(gid)}">
+    {member_rows}
+  </ul>
+
+  <details class="group-edit" style="margin-top:12px">
+    <summary style="cursor:pointer;color:var(--accent);font-size:13px">
+      {t("web_groups_edit_toggle")}
+    </summary>
+    <form method="POST" action="/api/group_save" style="margin-top:8px">
+      <input type="hidden" name="group_id" value="{_e(gid)}">
+      <div class="grid">
+        <div>
+          <label>{t("web_groups_name")}</label>
+          <input type="text" name="name" value="{_e(gname)}" required>
+        </div>
+        <div>
+          <label>{t("web_groups_wait_label")}</label>
+          <input type="number" name="wait_seconds" value="{wait_s}" min="0" max="600">
+        </div>
+      </div>
+      <label>{t("web_groups_containers_label")}</label>
+      <p class="form-help">{t("web_groups_containers_hint")}</p>
+      <select name="containers" multiple size="6" style="height:auto">
+        {options_html}
+      </select>
+      <div class="form-checkbox-row" style="margin-top:8px">
+        <input type="checkbox" name="restart_dependents" id="cb-rd-{_e(gid)}"{rd_checked}>
+        <label for="cb-rd-{_e(gid)}">{t("web_groups_restart_dependents")}</label>
+      </div>
+      <p class="form-help">{t("web_groups_restart_dependents_hint")}</p>
+      <button type="submit" class="btn" style="margin-top:8px">{t("web_groups_save_changes")}</button>
+    </form>
+  </details>
+</div>"""
+
+            if not groups:
+                cards_html = (f'<div class="empty">'
+                              f'<div class="empty-icon">📦</div>'
+                              f'<div class="empty-title">{t("web_groups_empty")}</div>'
+                              f'<div class="empty-hint">{t("web_groups_empty_hint")}</div>'
+                              f'</div>')
+
+            # Add-new-group form — same as before but redirects to /groups.
+            new_options = "".join(
+                f'<option value="{_e(n)}">{_e(n)}</option>' for n in all_names
+            )
+            new_form = f"""
+<div class="card" style="margin-top:24px">
+  <h3 style="font-size:14px;color:var(--accent);margin:0 0 12px 0">+ {t("web_groups_new")}</h3>
+  <form method="POST" action="/api/group_save">
+    <div class="grid">
+      <div>
+        <label>{t("web_groups_name")}</label>
+        <input type="text" name="name" placeholder="{_e(t('web_groups_name_placeholder'))}" required>
+      </div>
+      <div>
+        <label>{t("web_groups_wait_label")}</label>
+        <input type="number" name="wait_seconds" value="30" min="0" max="600">
+      </div>
+    </div>
+    <label>{t("web_groups_containers_label")}</label>
+    <p class="form-help">{t("web_groups_containers_hint")}</p>
+    <select name="containers" multiple size="6" style="height:auto">
+      {new_options}
+    </select>
+    <div class="form-checkbox-row" style="margin-top:8px">
+      <input type="checkbox" name="restart_dependents" id="cb-new-rd">
+      <label for="cb-new-rd">{t("web_groups_restart_dependents")}</label>
+    </div>
+    <p class="form-help">{t("web_groups_restart_dependents_hint")}</p>
+    <button type="submit" class="btn" style="margin-top:8px">{t("web_groups_save")}</button>
+  </form>
+</div>"""
+
+            content = f"""
+<div class="card">
+  <h2>{t("web_groups_title")}</h2>
+  <p class="card-intro">{t("web_groups_page_intro")}</p>
+</div>
+{cards_html}
+{new_form}
+"""
+            self._send_html(self._render_page(content, "groups"))
 
         def _page_history(self):
             from i18n import get_translator

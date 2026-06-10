@@ -412,5 +412,15 @@
   "web_history_filter_empty": "No history for `{name}` yet.",
   "web_history_filter_clear": "Clear filter",
   "web_history_filter_count": "Showing {shown} of {total} entries",
-  "web_cron_preview_loading": "Calculating next ticks…"
+  "web_cron_preview_loading": "Calculating next ticks…",
+  "web_nav_groups": "Groups",
+  "web_groups_save_changes": "Save changes",
+  "web_groups_page_intro": "Manage VPN-sidecar / shared-namespace stacks here. The first container in a group is the *head* — when it's updated, dependents are restarted (if you enable `restart_dependents`). Drag rows to reorder.",
+  "web_groups_edit_toggle": "✏️ Edit group",
+  "web_groups_head_badge": "HEAD",
+  "web_groups_head_tt": "The head container — when it's updated, the rest of the group reacts (restart, recreate, etc).",
+  "web_groups_stale_badge": "stale",
+  "web_groups_stale_tt": "This container no longer exists on the host. Edit the group to remove it.",
+  "web_groups_drag_tt": "Drag to reorder. The first one is the head.",
+  "web_groups_no_members": "No containers in this group yet."
 }

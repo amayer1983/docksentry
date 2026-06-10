@@ -2,6 +2,28 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.21.0] - 2026-06-10
+
+### Added
+- **Dedicated `/groups` Web UI page for Container Groups.** Promoted from a hidden tab under Settings (advanced-mode-only) to a first-class section in the main navigation. The legacy Settings → Groups tab still works (existing bookmarks survive) but the new page is the primary surface.
+
+  The dedicated page brings four upgrades the legacy tab didn't have:
+  - **Edit existing groups in place.** Each group card has an `✏️ Edit group` `<details>` block — rename, change member list, toggle `restart_dependents`, change `wait_seconds`, save. Previously the only way to "edit" a group was to delete and re-create it from scratch (and pray you'd remembered all the original settings).
+  - **HEAD badge** on the first container of every group. The `restart_dependents` semantics depend on which container is the head — making it visually explicit removes the "which one was first again?" guesswork that the legacy table didn't address.
+  - **Drag-and-drop reorder.** HTML5 native DnD on `.group-member` list items, persisted via a new `/api/group_reorder_batch` endpoint (atomically replaces the member list of the named group, defensively preserves any members not in the drag payload). The legacy ↑/↓ form buttons still work on the Settings tab for users who prefer them or have JS disabled.
+  - **Stale-member warning** badge on members whose container name no longer matches any running or stopped container on the host. Surfaces the "I deleted that container but forgot to remove it from the group" case before the group's update flow hits a "container not found" error.
+
+- **`/api/group_save` now updates in place when called with a `group_id`.** Previously it always generated a new slug from `name`, so renaming a group via the form would create a duplicate. The new path: form passes the existing `group_id`, save endpoint detects it, calls `store.save_group(existing_id, ...)`. Backward-compatible — calls without `group_id` continue to act as create-with-generated-slug.
+
+### Changed
+- `_BASE_CSS` gained `.group-members-list` + `.group-member.dragging` styles for the DnD UI.
+- `_BASE_JS` gained two new helpers: `dsInitGroupDrag` (binds DnD handlers to every `.group-members-list` on page load) and `dsPersistGroupOrder` (POSTs the new order, refreshes the HEAD badge client-side, toasts the result). Both `dsToast`-based — uses the v1.19.3 toast helper.
+- `_groups_html` (the legacy Settings tab renderer) is unchanged; the dedicated page has its own `_page_groups` builder so the two surfaces can diverge without coupling.
+
+### Notes
+- Storage layer (`container_store.save_group` / `delete_group` / `get_groups` / `reorder_group_container`) is unchanged — the one-group-per-container invariant and wait_seconds clamp [0, 600] are preserved.
+- Pull is a no-op for users who don't use Container Groups. For users who do: the new page works immediately, no migration needed.
+
 ## [1.20.0] - 2026-06-07
 
 ### Added
