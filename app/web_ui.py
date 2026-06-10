@@ -1202,15 +1202,40 @@ function dsAutoDetectRender(data) {
     }
     var html = '';
     data.stacks.forEach(function(stack, sIdx) {
-        var disabled = stack.exists ? ' disabled' : '';
+        var memberCount = stack.containers.length;
+        var isMulti = memberCount > 1;
+        var hasNetns = stack.containers.some(function(c) { return !!c.netns_hint; });
+
+        // Default-check policy (v1.21.1 → v1.21.2 UX fix):
+        //   - Single-container stacks: UNCHECKED — making them a group
+        //     does nothing useful (no dependents to coordinate). User
+        //     can manually check if they're planning to add members later.
+        //   - Multi-container stacks: CHECKED — these are the real
+        //     import targets.
+        //   - Already-imported stacks: ALWAYS unchecked + disabled.
+        var importChecked = !stack.exists && isMulti ? ' checked' : '';
+        var importDisabled = stack.exists ? ' disabled' : '';
+
+        // restart_dependents control (group-level, moved to header in v1.21.2):
+        //   - Disabled + grayed out for single-container stacks (no effect)
+        //   - Pre-checked when we detected netns sharing (VPN-sidecar pattern)
+        //   - Hint badge appears when recommended
+        var rdDisabled = !isMulti ? ' disabled' : '';
+        var rdChecked = (isMulti && hasNetns) ? ' checked' : '';
+        var rdHint = hasNetns
+            ? '<span class="badge badge-purple" title="At least one container shares a network namespace (container:*) — recommended for VPN-sidecar stacks.">netns recommended</span>'
+            : '';
+
         var existsBadge = stack.exists ? ' <span class="badge badge-yellow" title="Same-named group already exists — re-importing will update it in place.">already imported</span>' : '';
         var sourceBadge = '<span class="badge badge-blue">' + (stack.source || 'unknown') + '</span>';
+        var singleHint = isMulti ? '' : ' <span class="badge badge-yellow" title="Single-container stack — making it a group has no effect because there are no dependents to coordinate.">single</span>';
+
         var memberRows = '';
         stack.containers.forEach(function(c, idx) {
             var conflict = stack.conflicts && stack.conflicts[c.name];
-            var conflictBadge = conflict ? ' <span class="badge badge-yellow" title="Already in another Docksentry group — will be moved on import.">↻ ' + conflict + '</span>' : '';
-            var netnsBadge = c.netns_hint ? ' <span class="badge badge-purple" title="' + c.netns_hint + '">netns</span>' : '';
-            var headBadge = idx === 0 ? ' <span class="badge badge-purple">HEAD</span>' : '';
+            var conflictBadge = conflict ? ' <span class="badge badge-yellow" title="Already in another Docksentry group — will be moved on import.">↻ ' + dsEscape(conflict) + '</span>' : '';
+            var netnsBadge = c.netns_hint ? ' <span class="badge badge-purple" title="NetworkMode=' + dsEscape(c.netns_hint) + '">netns</span>' : '';
+            var headBadge = idx === 0 && isMulti ? ' <span class="badge badge-purple">HEAD</span>' : '';
             memberRows +=
                 '<li class="ad-member" draggable="true" data-container="' + dsEscape(c.name) + '" data-stack="' + sIdx + '">' +
                     '<span class="drag-handle">⠿</span>' +
@@ -1222,18 +1247,24 @@ function dsAutoDetectRender(data) {
                     '</label>' +
                 '</li>';
         });
+
         html +=
             '<div class="ad-stack" data-stack-idx="' + sIdx + '" data-stack-name="' + dsEscape(stack.name) + '" style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;' + (stack.exists ? 'opacity:0.55' : '') + '">' +
-                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-                    '<input type="checkbox" class="ad-stack-import"' + (stack.exists ? '' : ' checked') + disabled + '>' +
-                    '<strong>' + dsEscape(stack.name) + '</strong> ' + sourceBadge + existsBadge +
-                    '<span style="margin-left:auto;color:var(--text-muted);font-size:11px">' + stack.containers.length + ' container(s)</span>' +
+                // ── Header: include-stack checkbox + name + badges + RD toggle ──
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">' +
+                    '<input type="checkbox" class="ad-stack-import"' + importChecked + importDisabled + '>' +
+                    '<strong>' + dsEscape(stack.name) + '</strong> ' + sourceBadge + singleHint + existsBadge +
+                    '<span style="margin-left:auto;color:var(--text-muted);font-size:11px">' + memberCount + ' container' + (memberCount === 1 ? '' : 's') + '</span>' +
                 '</div>' +
-                '<ul class="ad-members" style="list-style:none;padding:0;margin:6px 0">' + memberRows + '</ul>' +
-                '<label style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:6px">' +
-                    '<input type="checkbox" class="ad-rd">' +
-                    '🔁 Enable <code style="font-size:11px">restart_dependents</code> for this group' +
+                // ── RD toggle inline under the header (group-level option) ──
+                '<label class="ad-rd-label" style="display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0 8px 0;color:' + (isMulti ? 'var(--text)' : 'var(--text-muted)') + '">' +
+                    '<input type="checkbox" class="ad-rd"' + rdChecked + rdDisabled + '>' +
+                    '🔁 <code style="font-size:11px">restart_dependents</code>' +
+                    (rdHint ? ' ' + rdHint : '') +
+                    (!isMulti ? ' <span style="color:var(--text-muted);font-size:11px">(no effect — single container)</span>' : '') +
                 '</label>' +
+                // ── Members list with drag-drop reorder ──
+                '<ul class="ad-members" style="list-style:none;padding:0;margin:6px 0 0 0">' + memberRows + '</ul>' +
             '</div>';
     });
     body.innerHTML = html;

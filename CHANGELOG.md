@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.21.2] - 2026-06-10
+
+### Changed
+- **Auto-detect modal default-checking is now smart.** Two UX issues from v1.21.1 first-touch feedback:
+  - All stacks were auto-checked, including single-container Compose projects (6 of 9 stacks on a typical home setup). Making them Docksentry groups has no effect — `restart_dependents` needs ≥2 members to do anything. Now: multi-container stacks default checked, single-container stacks default unchecked (with a `single` warning badge). User can still manually check single-container stacks if they're planning to add members later.
+  - The `restart_dependents` checkbox sat as a separate footer row visually adjacent to the member list — looked like another member row but was a totally different concept (group-level option). Moved it directly under the stack header as an inline labelled control. Disabled + grayed out for single-container stacks (no effect with 1 member).
+
+- **`restart_dependents` recommendation when netns sharing is detected.** When at least one container in a stack runs with `NetworkMode=container:<head>` (the VPN-sidecar pattern: Sonarr / Radarr / qBittorrent on `network_mode: service:gluetun`), the `restart_dependents` checkbox is now **pre-checked** and labelled with a `netns recommended` hint badge. That's the case where restart_dependents matters most — the sidecar loses connectivity when the VPN head restarts, and our v1.17.0 cascade is the fix.
+
+### Notes
+- Storage layer and backend API unchanged — pure modal UX refinement.
+- Hard-reload the Web UI (`Ctrl+Shift+R`) once after pulling so the updated JS lands.
+
 ## [1.21.1] - 2026-06-10
 
 ### Added
