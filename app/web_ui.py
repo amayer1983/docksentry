@@ -14,6 +14,8 @@ import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+from config import PERSISTENT_KEYS
+
 
 def _e(value):
     """HTML-escape a value (including quotes) for safe insertion into HTML
@@ -1171,6 +1173,38 @@ function dsPersistGroupOrder(list) {
     });
 }
 
+// ── Backup import (Settings page) ───────────────────────────
+// POSTs the selected file (a JSON bundle from /api/backup_export)
+// to /api/backup_import. Confirms with the user first since this
+// overwrites live state. Reloads on success so the new state
+// renders in every view.
+function dsBackupImport(input) {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    if (!confirm('Restore from "' + file.name + '"?\nThis will overwrite groups, notes, links, pins, autoupdate flags, update windows, and persisted settings.')) {
+        input.value = '';
+        return;
+    }
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/backup_import', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.ok) {
+                var keys = (data.restored || []).join(', ') || 'nothing';
+                dsToast('Restored: ' + keys, 'success');
+                setTimeout(function() { location.reload(); }, 1200);
+            } else {
+                dsToast('Import failed: ' + (data.error || 'unknown'), 'error');
+                input.value = '';
+            }
+        })
+        .catch(function(e) {
+            dsToast('Network error: ' + e.message, 'error');
+            input.value = '';
+        });
+}
+
 // ── Container Groups: auto-detect from Compose/Portainer (Groups page) ──
 // Click "🔍 Auto-detect" → fetch /api/groups_detect → render a modal with
 // per-stack cards. User checks which stacks to import + optionally tweaks
@@ -1910,6 +1944,55 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 self.end_headers()
                 self.wfile.write(payload)
                 return
+            elif path == "/api/backup_export":
+                # Backup all persistent state into one JSON file the user
+                # can save to their local machine (v1.22.0, @famewolf in
+                # #2 after the config-loss incident). The bundle is
+                # restored by /api/backup_import — symmetric format.
+                # Keys: schema_version + a per-file dict + a sentinel
+                # generated_at + version. We don't include
+                # update_history.json (large, regenerates) or
+                # pending_updates.json (transient).
+                from version import VERSION
+                from datetime import datetime as _dt
+                bundle = {
+                    "schema_version": 1,
+                    "generated_at": _dt.now().isoformat(timespec="seconds"),
+                    "docksentry_version": VERSION,
+                    "settings": {},
+                    "pinned": [],
+                    "autoupdate": [],
+                    "ask_major": [],
+                    "groups": {},
+                    "notes": {},
+                    "links": {},
+                    "update_windows": {},
+                }
+                # Settings — only the user-set keys, not env defaults.
+                # save_persistent uses the same key list, so reading the
+                # file directly mirrors what we'd save.
+                if os.path.exists(config.settings_file):
+                    try:
+                        with open(config.settings_file) as f:
+                            bundle["settings"] = json.load(f)
+                    except (IOError, json.JSONDecodeError):
+                        pass
+                bundle["pinned"] = store.get_pinned()
+                bundle["autoupdate"] = store.get_autoupdate()
+                bundle["ask_major"] = store.get_ask_before_major()
+                bundle["groups"] = store.get_groups()
+                bundle["notes"] = store.get_notes()
+                bundle["links"] = store.get_links()
+                bundle["update_windows"] = store.get_update_windows()
+                payload = json.dumps(bundle, indent=2, ensure_ascii=False).encode("utf-8")
+                fname = f"docksentry-backup-{_dt.now().strftime('%Y%m%d-%H%M%S')}.json"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             elif path == "/api/cron_preview":
                 # Settings page schedule-editor live preview. Returns
                 # the next 3 cron ticks for the `?expr=<cron>` value as
@@ -2340,6 +2423,96 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 config.web_setup_done = True
                 config.save_persistent()
                 self._send_redirect("/?saved=1")
+            elif path == "/api/backup_import":
+                # Restore a backup bundle created by /api/backup_export.
+                # Accepts multipart/form-data with a `file` field. Each
+                # known section overwrites the live state via the same
+                # save_* methods that handle normal writes (so the
+                # atomic-write fix from v1.22.0 applies to the import
+                # path too). Unknown / missing sections are silently
+                # skipped — forward-compatible if a future schema adds
+                # new keys.
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                content_type = self.headers.get("Content-Type", "")
+                # Strip multipart boundary to find the JSON payload.
+                # Simple parser — we only ever expect one file field.
+                body = raw
+                if "multipart/form-data" in content_type and b"\r\n\r\n" in raw:
+                    # Find the first blank line after the part headers
+                    parts = raw.split(b"\r\n\r\n", 1)
+                    if len(parts) == 2:
+                        # Strip trailing boundary marker
+                        body = parts[1]
+                        # Last boundary is preceded by --
+                        last_boundary = body.rfind(b"\r\n--")
+                        if last_boundary > 0:
+                            body = body[:last_boundary]
+                try:
+                    bundle = json.loads(body.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    payload = json.dumps({"ok": False, "error": f"Invalid JSON: {str(e)[:100]}"}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                restored = []
+                errors = []
+                # Settings — apply via the PERSISTENT_KEYS allowlist so
+                # we don't accept arbitrary attribute injection.
+                if isinstance(bundle.get("settings"), dict):
+                    try:
+                        for key, value in bundle["settings"].items():
+                            if key in PERSISTENT_KEYS:
+                                setattr(config, key, value)
+                        config.save_persistent()
+                        restored.append("settings")
+                    except Exception as e:
+                        errors.append(f"settings: {str(e)[:100]}")
+                # Lists — pinned, autoupdate, ask_major
+                if isinstance(bundle.get("pinned"), list):
+                    store.save_pinned([str(x) for x in bundle["pinned"] if isinstance(x, str)])
+                    restored.append("pinned")
+                if isinstance(bundle.get("autoupdate"), list):
+                    store.save_autoupdate([str(x) for x in bundle["autoupdate"] if isinstance(x, str)])
+                    restored.append("autoupdate")
+                if isinstance(bundle.get("ask_major"), list):
+                    # No public save_ask_before_major — write through
+                    # the same _save the toggle uses. Coerce to str just
+                    # to be paranoid about malformed bundles.
+                    store._save(store.ask_before_major_file,
+                                [str(x) for x in bundle["ask_major"] if isinstance(x, str)])
+                    restored.append("ask_major")
+                # Dicts — groups, notes, links, update_windows. Just
+                # write them through the existing _save_dict so the
+                # atomic-write path applies.
+                if isinstance(bundle.get("groups"), dict):
+                    store._save_dict(store.groups_file, bundle["groups"])
+                    restored.append("groups")
+                if isinstance(bundle.get("notes"), dict):
+                    store._save_dict(store.notes_file, bundle["notes"])
+                    restored.append("notes")
+                if isinstance(bundle.get("links"), dict):
+                    store._save_dict(store.links_file, bundle["links"])
+                    restored.append("links")
+                if isinstance(bundle.get("update_windows"), dict):
+                    store._save_dict(store.update_windows_file, bundle["update_windows"])
+                    restored.append("update_windows")
+                payload = json.dumps({
+                    "ok": True,
+                    "restored": restored,
+                    "errors": errors,
+                    "schema_version": bundle.get("schema_version"),
+                    "from_version": bundle.get("docksentry_version"),
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             elif path == "/api/group_save":
                 # Create OR update a group. When `group_id` is present
                 # in the form, the existing group is updated in place
@@ -3900,6 +4073,17 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <p style="margin-top:8px"><a href="/groups" class="btn">📦 {t("web_groups_moved_button")}</a></p>
 </div>
 
+<div class="card" id="backup">
+<h2>{t("web_backup_title")}</h2>
+<p class="card-intro">{t("web_backup_intro")}</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+  <a href="/api/backup_export" class="btn">⬇ {t("web_backup_export")}</a>
+  <button type="button" class="btn btn-outline" onclick="document.getElementById('backup-import-file').click()">⬆ {t("web_backup_import")}</button>
+  <input type="file" id="backup-import-file" accept=".json,application/json" style="display:none" onchange="dsBackupImport(this)">
+</div>
+<p class="form-help" style="margin-top:12px">{t("web_backup_hint")}</p>
+</div>
+
 <div class="card adv-only" id="windows">
 <h2>{t("web_windows_title")}</h2>
 <p class="card-intro">{t("web_windows_intro")}</p>
@@ -3986,93 +4170,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 </form>
 </div>"""
 
-        def _groups_html(self, t):
-            """Render the Container Groups section: list of groups + add form."""
-            try:
-                containers = self._get_containers()
-            except Exception:
-                containers = []
-            container_names = sorted({c["name"] for c in containers})
-            groups = store.get_groups()
-
-            # ── Existing groups ──
-            groups_html = ""
-            if not groups:
-                groups_html = (f'<div class="empty">'
-                               f'<div class="empty-icon">📦</div>'
-                               f'<div class="empty-title">{t("web_groups_empty")}</div>'
-                               f'<div class="empty-hint">{t("web_groups_empty_hint")}</div>'
-                               f'</div>')
-            else:
-                for gid, g in groups.items():
-                    rows = ""
-                    cnames = g.get("containers") or []
-                    for idx, cname in enumerate(cnames):
-                        up_disabled = " disabled" if idx == 0 else ""
-                        down_disabled = " disabled" if idx == len(cnames) - 1 else ""
-                        rows += f"""<tr>
-<td><span style="color:var(--text-muted);font-size:11px">#{idx + 1}</span></td>
-<td><code>{_e(cname)}</code></td>
-<td>
-<form method="POST" action="/api/group_reorder" class="inline-form">
-<input type="hidden" name="group_id" value="{_e(gid)}">
-<input type="hidden" name="container" value="{_e(cname)}">
-<input type="hidden" name="direction" value="up">
-<button type="submit" class="btn-icon"{up_disabled} title="{_e(t('web_groups_move_up'))}">↑</button>
-</form>
-<form method="POST" action="/api/group_reorder" class="inline-form" style="margin-left:4px">
-<input type="hidden" name="group_id" value="{_e(gid)}">
-<input type="hidden" name="container" value="{_e(cname)}">
-<input type="hidden" name="direction" value="down">
-<button type="submit" class="btn-icon"{down_disabled} title="{_e(t('web_groups_move_down'))}">↓</button>
-</form>
-</td>
-</tr>"""
-                    wait_s = int(g.get("wait_seconds", 30) or 30)
-                    rd_badge = f' · 🔁 {t("web_groups_restart_dependents_badge")}' if g.get("restart_dependents") else ''
-                    groups_html += f"""<div class="card" style="background:var(--bg);margin-bottom:12px">
-<div class="card-header-row">
-<h3 style="font-size:14px;color:var(--accent);margin:0">{_ICONS["package"]} {_e(g.get("name", gid))}
-<span style="color:var(--text-muted);font-size:11px;font-weight:400">·  {len(cnames)} {t('web_groups_containers')} · {wait_s}s {t('web_groups_wait')}{rd_badge}</span>
-</h3>
-<form method="POST" action="/api/group_delete" class="inline-form" data-confirm="{_e(t('web_groups_delete_confirm', name=g.get('name', gid)))}" data-confirm-label="{_e(t('web_delete'))}" data-confirm-danger="1">
-<input type="hidden" name="group_id" value="{_e(gid)}">
-<button type="submit" class="btn-sm btn-outline">{t("web_delete")}</button>
-</form>
-</div>
-<table>{rows}</table>
-</div>"""
-
-            # ── Add-new-group form ──
-            options = "".join(f'<option value="{_e(n)}">{_e(n)}</option>' for n in container_names)
-            return f"""{groups_html}
-
-<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">+ {t("web_groups_new")}</h3>
-<form method="POST" action="/api/group_save">
-<div class="grid">
-<div>
-<label>{t("web_groups_name")}</label>
-<input type="text" name="name" placeholder="{_e(t('web_groups_name_placeholder'))}" required>
-</div>
-<div>
-<label>{t("web_groups_wait_label")}</label>
-<input type="number" name="wait_seconds" value="30" min="0" max="600">
-</div>
-</div>
-<label>{t("web_groups_containers_label")}</label>
-<p class="form-help">{t("web_groups_containers_hint")}</p>
-<select name="containers" multiple size="6" style="height:auto">
-{options}
-</select>
-<div class="form-checkbox-row" style="margin-top:8px">
-<input type="checkbox" name="restart_dependents" id="cb-group-restart-dep">
-<label for="cb-group-restart-dep">{t("web_groups_restart_dependents")}</label>
-</div>
-<p class="form-help">{t("web_groups_restart_dependents_hint")}</p>
-<button type="submit" class="btn" style="margin-top:8px">{t("web_groups_save")}</button>
-</form>
-</div>"""
+        # _groups_html removed in v1.22.0 — dead code since v1.21.1 when
+        # the legacy Settings → Groups card was replaced by a redirect
+        # banner pointing at /groups. All Container Groups functionality
+        # lives in _page_groups now.
 
         def _windows_html(self, t):
             """Render the Update Windows table + add-form for the Settings page."""

@@ -191,16 +191,32 @@ class Config:
         self._restrict_settings_perms()
 
     def save_persistent(self):
-        """Save current settings to settings.json for persistence."""
+        """Save current settings to settings.json for persistence.
+
+        Atomic write — see container_store._save_dict for the rationale.
+        @famewolf in #2 lost the entire config (all PERSISTENT_KEYS
+        defaulted, web_setup_done flipped to false → setup wizard
+        re-appeared) on all 3 of his hosts after a simultaneous reboot
+        wave, caused by the old non-atomic write being interrupted
+        mid-flight.
+        """
         data = {}
         for key in PERSISTENT_KEYS:
             data[key] = getattr(self, key)
+        tmp = self.settings_file + ".tmp"
         try:
-            with open(self.settings_file, "w") as f:
+            with open(tmp, "w") as f:
                 json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.settings_file)
             self._restrict_settings_perms()
-        except IOError as e:
+        except OSError as e:
             print(f"Failed to save settings: {e}")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
     def _restrict_settings_perms(self):
         """Restrict settings.json to owner-only read/write (0600).

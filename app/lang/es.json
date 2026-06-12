@@ -434,5 +434,11 @@
   "web_groups_autodetect_loading": "Scanning containers…",
   "web_groups_autodetect_imported": "{count} stack(s) imported as groups ✓",
   "web_groups_autodetect_skip_existing": "Stack already imported (group exists with same name)",
-  "web_cancel": "Cancel"
+  "web_cancel": "Cancel",
+  "data_loss_alert": "⚠️ *No persisted settings found* — possible data loss.\n\nYour Telegram config came from env vars, but `/data/settings.json` is missing. Container groups, pin / autoupdate / link / window state may have been lost too. Common causes: host reboot mid-write (fixed in v1.22.0 with atomic writes — won't happen again), volume mount missing at start, fresh `/data/` volume.\n\nIf you have a backup, restore via Web UI → Settings → Import. Otherwise re-configure and check the Web UI's Status page for any groups / pins you'd set up.",
+  "web_backup_title": "Backup & Restore",
+  "web_backup_intro": "Export every persisted setting (groups, notes, links, pins, autoupdate flags, update windows, webhook URLs, etc.) into a single JSON file. Restore it later — useful before host migrations, or just as defense-in-depth against data loss.",
+  "web_backup_export": "Export backup",
+  "web_backup_import": "Restore backup…",
+  "web_backup_hint": "Backups contain webhook URLs and bot tokens — treat the file like a password. The import path skips unknown keys, so forward-compatible if a future Docksentry adds new settings."
 }

@@ -1035,17 +1035,45 @@ class TelegramBot:
         # registry overview heuristic (#20).
         self._enrich_with_source_url(updates)
 
+        # v1.22.0: sort by Container Group position so the HEAD of each
+        # group appears first, followed by its members in order, then
+        # orphan containers (= not in any group) at the end. Reported by
+        # @famewolf in #2: with a Gluetun+dependents stack, gluetun was
+        # showing up LAST in the notification, making cascade-debugging
+        # harder. Mirrors the existing sort in handle_autoupdates.
+        groups = self.store.get_groups() or {}
+        group_position = {}  # container_name → (group_id, position)
+        for gid, g in groups.items():
+            for pos, cname in enumerate(g.get("containers") or []):
+                group_position[cname] = (gid, pos)
+        def _sort_key(u):
+            gp = group_position.get(u["name"])
+            if gp is None:
+                return (1, "", 0)  # orphans after groups
+            return (0, gp[0], gp[1])
+        updates = sorted(updates, key=_sort_key)
+
         names = []
         for u in updates:
             size = u.get('size', '?')
             created = u.get('created', '?')
             compose_tag = " 🐳" if u.get("compose_project") else ""
+            # HEAD badge for the first member of a group (matches the
+            # Web UI Groups page badge added in v1.21.0). Only emitted
+            # when the user has at least two members in the group —
+            # single-container groups have no HEAD semantics.
+            head_badge = ""
+            gp = group_position.get(u["name"])
+            if gp and gp[1] == 0:
+                gid = gp[0]
+                if len(((groups.get(gid) or {}).get("containers") or [])) > 1:
+                    head_badge = " 👑"
             # Container name becomes a markdown link when we have a
             # source URL — Telegram's parse_mode=Markdown renders
             # [text](url) as a tap-to-open hyperlink. Falls back to
             # plain `name` when no URL is available. Shared with the
             # result-message paths via _display_name().
-            names.append(f"• {self._display_name(u)} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
+            names.append(f"• {self._display_name(u)}{head_badge} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # One button per container + all/skip at the bottom

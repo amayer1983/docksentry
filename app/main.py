@@ -210,10 +210,28 @@ def main():
     from version import VERSION
     from i18n import get_translator
     t = get_translator(config.language)
+
+    # Data-loss alert (v1.22.0): if BOT_TOKEN is configured via env but
+    # settings.json is missing or empty, surface this as a Telegram
+    # message so the user knows immediately instead of silently
+    # discovering it later via the Web UI's setup wizard. Reported by
+    # @famewolf in #2 — three of his hosts simultaneously rebooted, all
+    # three came back with the wizard up. We can detect this case
+    # reliably: a fresh install with no env config wouldn't reach here
+    # at all (main.py would refuse to start), so the combination
+    # "Telegram configured AND settings.json missing" means real loss.
+    settings_missing = (
+        bot.enabled
+        and not os.path.exists(config.settings_file)
+        and not post_selfupdate_restart
+    )
+
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
         if bot.enabled:
             bot.send_message(startup_msg)
+            if settings_missing:
+                bot.send_message(t("data_loss_alert"))
 
     # One-shot migration notice if we just stripped self from auto-update.
     if self_in_autoupdate:

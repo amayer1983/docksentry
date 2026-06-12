@@ -302,8 +302,37 @@ class ContainerStore:
 
     @staticmethod
     def _save_dict(path, data):
+        """Atomic write — survive power-loss / OOM / mid-write kill
+        without corrupting the JSON file (v1.22.0).
+
+        Bug: the pre-v1.22.0 code did ``open(path, "w")`` which truncates
+        the target file to 0 bytes immediately, then wrote the new
+        content. A kill between truncate and close (Docker daemon
+        restart, host reboot, OOM) left a zero-byte or partially-written
+        file. Next boot: ``_load_dict`` parsed it, failed with
+        JSONDecodeError, returned ``{}`` — effectively wiping settings,
+        groups, notes, links, update windows. Reported by @famewolf in
+        #2 after three of his hosts simultaneously rebooted (likely
+        unattended-upgrades).
+
+        Fix: write to ``<path>.tmp``, flush + fsync to push the bytes
+        through the kernel page cache to disk, then ``os.replace()``
+        which is POSIX-atomic — either the new file is fully visible or
+        the old one is still there, never a partial state.
+        """
+        tmp = path + ".tmp"
         try:
-            with open(path, "w") as f:
+            with open(tmp, "w") as f:
                 json.dump(data, f, indent=2)
-        except IOError as e:
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except OSError as e:
             print(f"Failed to save {path}: {e}")
+            # Best-effort cleanup of the temp file. Ignore failures
+            # — if we can't remove it the OS likely has bigger
+            # problems and the next save will overwrite it anyway.
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass

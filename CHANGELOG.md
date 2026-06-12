@@ -2,6 +2,31 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.22.0] - 2026-06-12
+
+### Fixed
+- **Persistent state survives mid-write kills (atomic writes).** Reported by @famewolf in [#2](../../issues/2): all three of his hosts simultaneously rebooted (likely `unattended-upgrades`) and **every Docksentry instance came back with empty config** — container groups gone, web setup wizard re-appearing. Root cause: both `container_store._save_dict` and `config.save_persistent` used `open(path, "w")` which truncates the file to 0 bytes immediately, before the new content is written. A kill between truncate and close (host reboot, Docker daemon restart, OOM, power loss) left a 0-byte or partial-JSON file, which the next boot failed to parse and fell back to empty defaults. Bug existed since v1.7.0.
+
+  Fix: both write paths now write to `<path>.tmp`, `flush()` + `os.fsync()` to push bytes through the kernel page cache to disk, then `os.replace()` which is POSIX-atomic — either the new file is fully visible or the old one is still there, never a partial state. Applies to `settings.json`, `groups.json`, `notes.json`, `links.json`, `update_windows.json`, `pending_major.json`.
+
+### Added
+- **"No persisted settings" Telegram alert on boot.** When `BOT_TOKEN` is configured via env vars but `/data/settings.json` is missing on startup (and we're not in a post-selfupdate restart), surface a Telegram message warning of possible data loss. Means a user no longer needs to discover the wizard accidentally via the Web UI hours later — the bot tells them immediately. Implicit ask from @famewolf in the same [#2](../../issues/2) thread.
+
+- **Backup & Restore via Web UI.** New "Backup & Restore" card on the Settings page with **Export backup** and **Restore backup…** buttons. Export downloads a single JSON file containing every persisted state — settings, pinned, autoupdate, ask-major flags, container groups, notes, links, update windows — with a `schema_version` sentinel for forward compatibility. Restore reads a previously-exported file and writes each section through the now-atomic save paths. Defense-in-depth against the kind of data loss that hit @famewolf — also useful for host migrations or just routine snapshots. Asked for by @famewolf in [#2](../../issues/2).
+
+- **Container Groups ordering in update notifications, plus 👑 HEAD badge.** When a container is the first (head) member of a Container Group with ≥ 2 members, it now gets a 👑 badge in the "🔄 Updates Available" Telegram message. The same message also sorts updates by group position (head first, then dependents in order, orphans at the end) — mirrors the sort that `handle_autoupdates` already did during execution but extends it to the pre-update notification. Reported by @famewolf in [#2](../../issues/2): with a Gluetun+dependents stack, gluetun was showing up LAST in the notification, making cascade-debugging harder.
+
+### Changed
+- `_groups_html` removed. Dead code since v1.21.1 when the legacy Settings → Groups card was replaced by a redirect banner pointing at `/groups`. All Container Groups functionality lives in `_page_groups` now.
+
+### API
+- `/api/backup_export` (GET) — returns a `docksentry-backup-YYYYMMDD-HHMMSS.json` attachment with the full state bundle. Read-only.
+- `/api/backup_import` (POST, multipart/form-data with `file` field) — accepts a backup bundle, restores each known section, returns `{ok, restored: [...], errors: [...], schema_version, from_version}`. Unknown / missing sections are silently skipped (forward-compatible).
+
+### Notes
+- Hard-reload the Web UI (`Ctrl+Shift+R`) once after pulling so the new Backup/Restore card's JS lands.
+- Backup files contain webhook URLs and bot tokens — treat them like passwords.
+
 ## [1.21.2] - 2026-06-10
 
 ### Changed
