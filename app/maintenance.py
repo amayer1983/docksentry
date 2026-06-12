@@ -31,11 +31,18 @@ def _read(path):
 
 
 def _write(path, data):
+    """Atomic write — see container_store.atomic_write_json. v1.22.1
+    extended the v1.22.0 atomic-write fix to cover this site too.
+    """
+    from container_store import atomic_write_json
     try:
-        with open(path, "w") as f:
-            json.dump(data, f)
+        atomic_write_json(path, data)
     except OSError as e:
         print(f"Failed to write maintenance state: {e}")
+        try:
+            os.unlink(path + ".tmp")
+        except OSError:
+            pass
 
 
 def is_active(config, now=None):

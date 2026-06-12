@@ -193,28 +193,21 @@ class Config:
     def save_persistent(self):
         """Save current settings to settings.json for persistence.
 
-        Atomic write — see container_store._save_dict for the rationale.
-        @famewolf in #2 lost the entire config (all PERSISTENT_KEYS
-        defaulted, web_setup_done flipped to false → setup wizard
-        re-appeared) on all 3 of his hosts after a simultaneous reboot
-        wave, caused by the old non-atomic write being interrupted
-        mid-flight.
+        Atomic write via the shared ``atomic_write_json`` helper —
+        see its docstring for the rationale. v1.22.1 refactored this
+        to share the helper with every other JSON write in the codebase.
         """
+        from container_store import atomic_write_json
         data = {}
         for key in PERSISTENT_KEYS:
             data[key] = getattr(self, key)
-        tmp = self.settings_file + ".tmp"
         try:
-            with open(tmp, "w") as f:
-                json.dump(data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, self.settings_file)
+            atomic_write_json(self.settings_file, data, indent=2)
             self._restrict_settings_perms()
         except OSError as e:
             print(f"Failed to save settings: {e}")
             try:
-                os.unlink(tmp)
+                os.unlink(self.settings_file + ".tmp")
             except OSError:
                 pass
 

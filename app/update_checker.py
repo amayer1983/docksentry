@@ -561,11 +561,14 @@ class UpdateChecker:
         if last_warn and (datetime.now() - last_warn) < timedelta(hours=23):
             return "silent", percent, free / 1024**3
 
-        # Update state
+        # Update state — atomic (v1.22.1, see container_store.atomic_write_json)
         try:
-            with open(self.config.disk_warn_state_file, "w") as f:
-                json.dump({"last_warn": datetime.now().isoformat(timespec="seconds"),
-                           "percent": percent}, f)
+            from container_store import atomic_write_json
+            atomic_write_json(
+                self.config.disk_warn_state_file,
+                {"last_warn": datetime.now().isoformat(timespec="seconds"),
+                 "percent": percent},
+            )
             os.chmod(self.config.disk_warn_state_file, 0o600)
         except OSError:
             pass
@@ -625,10 +628,10 @@ class UpdateChecker:
             except (json.JSONDecodeError, IOError):
                 pass
         history.append(entry)
-        # Keep last 100 entries
+        # Keep last 100 entries — atomic write (v1.22.1)
         history = history[-100:]
-        with open(self.config.history_file, "w") as f:
-            json.dump(history, f, indent=2)
+        from container_store import atomic_write_json
+        atomic_write_json(self.config.history_file, history, indent=2)
 
     def _own_container_id(self):
         """Return our full 64-char container ID, or "" if we can't
@@ -969,9 +972,9 @@ class UpdateChecker:
             else:
                 self._debug(f"  → Up to date")
 
-        # Save pending updates
-        with open(self.config.pending_file, "w") as f:
-            json.dump(updates, f)
+        # Save pending updates — atomic write (v1.22.1)
+        from container_store import atomic_write_json
+        atomic_write_json(self.config.pending_file, updates)
         self._debug(f"Found {len(updates)} updates.")
 
         # Send debug log via Telegram

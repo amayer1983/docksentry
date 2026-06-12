@@ -10,6 +10,45 @@ import json
 import os
 
 
+def atomic_write_json(path, data, **dump_kwargs):
+    """Atomic JSON write — survive power-loss / OOM / mid-write kill
+    without corrupting the target file.
+
+    The naïve ``open(path, "w")`` truncates the target to 0 bytes
+    immediately, before ``json.dump`` writes any content. A kill
+    between truncate and close (host reboot, Docker daemon restart,
+    OOM, power loss) leaves a 0-byte or partial-JSON file. Next boot
+    parses it, fails with JSONDecodeError, and the loader falls back
+    to empty defaults — silently wiping persistent state.
+
+    Reported by @famewolf in #2 after three of his hosts simultaneously
+    rebooted (likely unattended-upgrades) and all came back with empty
+    config. Bug existed in this codebase since v1.7.0; v1.22.0 fixed
+    settings.json + the _save_dict files; v1.22.1 extends coverage to
+    every JSON write in the codebase (list-format files, history,
+    pending updates, maintenance state, weekly-report state, post-
+    selfupdate history fixup).
+
+    Strategy: write to ``<path>.tmp``, ``flush()`` + ``os.fsync()`` to
+    push bytes through the kernel page cache to disk, then
+    ``os.replace()`` which is POSIX-atomic — either the new file is
+    fully visible or the old one is still there, never a partial state.
+
+    ``dump_kwargs`` is forwarded to ``json.dump`` so call sites can
+    pass ``indent=2`` etc. as before.
+
+    Errors are propagated to the caller — wrap in try/except where
+    that's the current behaviour (most call sites print a warning and
+    continue rather than crash on failed save).
+    """
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, **dump_kwargs)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 class ContainerStore:
     def __init__(self, config):
         self.pinned_file = config.pinned_file
@@ -283,11 +322,19 @@ class ContainerStore:
 
     @staticmethod
     def _save(path, names):
+        """Atomic list write — same rationale as _save_dict, but for
+        list-shaped files (pinned, autoupdate, ask_before_major). The
+        v1.22.0 fix patched the dict path but missed this one — fixed
+        in v1.22.1 via the shared atomic_write_json helper.
+        """
         try:
-            with open(path, "w") as f:
-                json.dump(names, f)
-        except IOError as e:
+            atomic_write_json(path, names)
+        except OSError as e:
             print(f"Failed to save {path}: {e}")
+            try:
+                os.unlink(path + ".tmp")
+            except OSError:
+                pass
 
     @staticmethod
     def _load_dict(path):
@@ -302,37 +349,15 @@ class ContainerStore:
 
     @staticmethod
     def _save_dict(path, data):
-        """Atomic write — survive power-loss / OOM / mid-write kill
-        without corrupting the JSON file (v1.22.0).
-
-        Bug: the pre-v1.22.0 code did ``open(path, "w")`` which truncates
-        the target file to 0 bytes immediately, then wrote the new
-        content. A kill between truncate and close (Docker daemon
-        restart, host reboot, OOM) left a zero-byte or partially-written
-        file. Next boot: ``_load_dict`` parsed it, failed with
-        JSONDecodeError, returned ``{}`` — effectively wiping settings,
-        groups, notes, links, update windows. Reported by @famewolf in
-        #2 after three of his hosts simultaneously rebooted (likely
-        unattended-upgrades).
-
-        Fix: write to ``<path>.tmp``, flush + fsync to push the bytes
-        through the kernel page cache to disk, then ``os.replace()``
-        which is POSIX-atomic — either the new file is fully visible or
-        the old one is still there, never a partial state.
+        """Atomic dict write — see module-level atomic_write_json for
+        the rationale. Refactored in v1.22.1 to share the helper with
+        every other JSON write in the codebase.
         """
-        tmp = path + ".tmp"
         try:
-            with open(tmp, "w") as f:
-                json.dump(data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
+            atomic_write_json(path, data, indent=2)
         except OSError as e:
             print(f"Failed to save {path}: {e}")
-            # Best-effort cleanup of the temp file. Ignore failures
-            # — if we can't remove it the OS likely has bigger
-            # problems and the next save will overwrite it anyway.
             try:
-                os.unlink(tmp)
+                os.unlink(path + ".tmp")
             except OSError:
                 pass

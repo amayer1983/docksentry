@@ -118,9 +118,10 @@ class TelegramBot:
                     history = []
             history.append(entry)
             history = history[-100:]
-            with open(self.config.history_file, "w") as f:
-                _json.dump(history, f, indent=2)
-        except IOError as e:
+            # Atomic write (v1.22.1) — see container_store.atomic_write_json
+            from container_store import atomic_write_json
+            atomic_write_json(self.config.history_file, history, indent=2)
+        except OSError as e:
             print(f"Failed to record selfupdate history: {e}")
 
     def _own_container_meta(self):
@@ -692,10 +693,10 @@ class TelegramBot:
                 self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
                                                  source_url=target.get("source_url", ""))
 
-        # Remove from pending list
+        # Remove from pending list (atomic write — v1.22.1)
         remaining = [u for u in updates if u["name"] != container_name]
-        with open(self.config.pending_file, "w") as f:
-            json.dump(remaining, f)
+        from container_store import atomic_write_json
+        atomic_write_json(self.config.pending_file, remaining)
 
         if not remaining:
             self.send_message(self.t("update_all_done"))
@@ -971,8 +972,9 @@ class TelegramBot:
             # major-pending store independently.
             processed = {a["name"] for a in auto_updates if a["name"] not in {p[0] for p in major_pending_now}}
             remaining = [u for u in updates if u["name"] not in processed]
-            with open(self.config.pending_file, "w") as f:
-                json.dump(remaining, f)
+            # Atomic write — v1.22.1
+            from container_store import atomic_write_json
+            atomic_write_json(self.config.pending_file, remaining)
 
         # Window-skipped: tell the user once so they're not surprised
         if skipped_window:
@@ -1380,11 +1382,14 @@ class TelegramBot:
         if defer_check:
             try:
                 from datetime import datetime
-                with open(self.config.deferred_check_file, "w") as f:
-                    json.dump({
+                from container_store import atomic_write_json
+                atomic_write_json(
+                    self.config.deferred_check_file,
+                    {
                         "trigger_time": datetime.now().isoformat(timespec="seconds"),
                         "reason": "post-selfupdate",
-                    }, f)
+                    },
+                )
             except OSError as e:
                 print(f"Failed to write deferred-check marker: {e}")
 

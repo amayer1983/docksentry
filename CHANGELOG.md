@@ -2,6 +2,32 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.22.1] - 2026-06-12
+
+### Fixed
+- **v1.22.0 only patched 2 of 13 non-atomic JSON writes — the other 11 are now fixed too.** Hours after v1.22.0 shipped, a careful re-audit found that the atomic-write fix had been applied to `container_store._save_dict` and `config.save_persistent` but missed eleven other sites that all have the same bug class:
+  - `container_store._save` (list-format files: `pinned.json`, `autoupdate.json`, `ask_before_major.json`)
+  - `maintenance._write` (`maintenance.json`)
+  - `weekly_report._write_state`
+  - `update_checker` x3 (history, pending, disk-warn state)
+  - `telegram_bot` x4 (selfupdate-history, pending-after-single-update, pending-after-autoupdate-batch, deferred-check marker)
+  - `web_ui` x2 (pending-after-Web UI single-update, pending-after-Web UI bulk-update)
+  - `main.py` post-selfupdate history fixup
+
+  Same root cause as the v1.22.0 fix: `open(path, "w")` truncates the target to 0 bytes immediately, then `json.dump` writes the new content. A kill between truncate and close leaves a partial file. v1.22.0 was an incomplete fix — for @famewolf's specific symptom (settings + groups gone) it sufficed, but his pinned containers, autoupdate flags, or update history could have been wiped silently by the same bug.
+
+- **Refactor: shared `atomic_write_json(path, data, **dump_kwargs)` helper** at module level in `container_store.py`. All 13 write sites now route through it instead of inlining the tmp+fsync+rename pattern. Single point of fix if we ever need to change the strategy (retry on EBUSY, fdatasync vs fsync, etc.).
+
+### Smoke-tested
+- Helper write+read roundtrip ✓
+- Helper cleans up `.tmp` after rename ✓
+- Helper forwards `indent=2` kwarg ✓
+- Helper overwrites existing file correctly ✓
+- Live Docksentry container backup-export → backup-import roundtrip still works after the refactor ✓
+
+### Lesson learned
+v1.22.0 was rushed — the diagnosis was correct but the audit was shallow. Lesson: when fixing a bug class (vs a single bug), grep for the entire pattern across the codebase before declaring the fix complete. The 30-second `grep -rn 'json.dump' app/` would have caught all 11 missed sites yesterday.
+
 ## [1.22.0] - 2026-06-12
 
 ### Fixed

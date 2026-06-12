@@ -148,8 +148,10 @@ def main():
                     detail = last.get("detail", "")
                     if detail.endswith("→ ?)"):
                         last["detail"] = detail[:-len("?)")] + f"v{_NEW_VERSION})"
-                        with open(config.history_file, "w") as f:
-                            _json.dump(_hist, f, indent=2)
+                        # Atomic write (v1.22.1) — see
+                        # container_store.atomic_write_json.
+                        from container_store import atomic_write_json
+                        atomic_write_json(config.history_file, _hist, indent=2)
                         print(f"History: patched selfupdate entry with new version v{_NEW_VERSION}")
         except Exception as e:
             print(f"History fixup failed (non-fatal): {e}")

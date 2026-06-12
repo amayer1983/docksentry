@@ -136,11 +136,19 @@ def _read_state(path):
 
 
 def _write_state(path, state):
+    """Atomic — see container_store.atomic_write_json (v1.22.1 extends
+    coverage to every JSON write site).
+    """
+    from container_store import atomic_write_json
     try:
-        with open(path, "w") as f:
-            json.dump(state, f)
+        atomic_write_json(path, state)
     except OSError:
-        pass
+        # weekly-report state is purely cosmetic (last-sent timestamp);
+        # silent fail is acceptable as before.
+        try:
+            os.unlink(path + ".tmp")
+        except OSError:
+            pass
 
 
 def should_send_now(config, now=None):

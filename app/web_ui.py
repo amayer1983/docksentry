@@ -4306,10 +4306,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 bot.send_message(f"{status} `{name}`: {msg}")
                 if bot.notifier:
                     bot.notifier.send_update_result(name, target["image"], success, msg)
-                # Remove from pending
+                # Remove from pending — atomic write (v1.22.1)
                 remaining = [u for u in updates if u["name"] != name]
-                with open(config.pending_file, "w") as f:
-                    json.dump(remaining, f)
+                from container_store import atomic_write_json
+                atomic_write_json(config.pending_file, remaining)
             except Exception as e:
                 print(f"Web UI update error: {e}")
 
@@ -4393,10 +4393,10 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                             bot.notifier.send_update_result(
                                 target["name"], target["image"], success, msg
                             )
-                    # Drop processed entries from pending
+                    # Drop processed entries from pending — atomic (v1.22.1)
                     remaining = [u for u in updates if u["name"] not in [t["name"] for t in targets]]
-                    with open(config.pending_file, "w") as f:
-                        json.dump(remaining, f)
+                    from container_store import atomic_write_json
+                    atomic_write_json(config.pending_file, remaining)
                 else:
                     print(f"Web UI bulk: unknown action {action!r}")
             except Exception as e:
