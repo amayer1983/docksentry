@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.22.2] - 2026-06-13
+
+### Fixed
+- **Selfupdate history `(selfupdate vX → ?)` placeholder now always gets patched.** Reported by @famewolf in [#2](../../issues/2). The post-boot fixup in `main.py` (introduced in v1.17.6) that replaces the `?` placeholder with the new VERSION was gated on `post_selfupdate_restart`, which depends on the `deferred_check_file` marker. That marker is **only written by the auto-selfupdate path** (cron + `AUTO_SELFUPDATE=true`); manual `/selfupdate` doesn't create it. So users running manual selfupdates (which is the common case) saw the `?` placeholder stick around in their history forever, making downgrade discovery harder. Decoupled the fixup from the marker — the `endswith("→ ?)")` guard is itself the safety check, so running the fixup on every boot only ever touches the actual placeholder and is a no-op otherwise.
+
+- **Selfupdate no longer reports "❌ Selfupdate failed: Unable to find image 'docker:cli' locally"** when it actually worked. Reported by @NotRetarded in [#2](../../issues/2). The helper-container launch (`docker run docker:cli ...`) was relying on Docker's implicit auto-pull when the image wasn't local — and the auto-pull writes progress to stderr ("Unable to find image 'docker:cli' locally" + layer download lines). If the auto-pull went sideways (slow registry, transient network blip, rate-limit hiccup) the helper-launch subprocess surfaced that stderr as the failure message even when the update completed successfully a few seconds later.
+
+  Fixed: pre-pull `docker:cli` explicitly before launching the helper. Either the pull succeeds → helper launch is clean and silent → user sees no false failure; or the pull genuinely fails → user sees an honest error pointing at the helper image (not at our update logic).
+
 ## [1.22.1] - 2026-06-12
 
 ### Fixed

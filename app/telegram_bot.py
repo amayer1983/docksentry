@@ -1296,6 +1296,25 @@ class TelegramBot:
         subprocess.run(["docker", "rm", "-f", helper_name],
                        capture_output=True, timeout=10)
 
+        # v1.22.2: pre-pull `docker:cli` so the helper launch is clean.
+        # Previously the implicit auto-pull by `docker run` would write
+        # progress to stderr ("Unable to find image 'docker:cli' locally"
+        # + layer download lines), and if the auto-pull went sideways
+        # (slow registry, transient network blip) the helper-launch
+        # subprocess would surface that stderr as the failure message
+        # — confusing users when the selfupdate then succeeded anyway.
+        # Reported by @NotRetarded in #2.
+        helper_pull = subprocess.run(
+            ["docker", "pull", "docker:cli"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if helper_pull.returncode != 0:
+            self.send_message(
+                f"❌ Selfupdate failed: couldn't pull helper image `docker:cli` — "
+                f"{(helper_pull.stderr or helper_pull.stdout or 'unknown').strip()[:200]}"
+            )
+            return
+
         result = subprocess.run([
             "docker", "run", "-d",
             "--name", helper_name,

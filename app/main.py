@@ -136,25 +136,32 @@ def main():
     # the last entry, only when it ends with "→ ?)" — leaves anything
     # already complete (manual edits, old entries, regular container
     # updates) untouched. Reported by @famewolf in #22.
-    if post_selfupdate_restart:
-        try:
-            import json as _json
-            from version import VERSION as _NEW_VERSION
-            if os.path.exists(config.history_file):
-                with open(config.history_file) as f:
-                    _hist = _json.load(f)
-                if _hist:
-                    last = _hist[-1]
-                    detail = last.get("detail", "")
-                    if detail.endswith("→ ?)"):
-                        last["detail"] = detail[:-len("?)")] + f"v{_NEW_VERSION})"
-                        # Atomic write (v1.22.1) — see
-                        # container_store.atomic_write_json.
-                        from container_store import atomic_write_json
-                        atomic_write_json(config.history_file, _hist, indent=2)
-                        print(f"History: patched selfupdate entry with new version v{_NEW_VERSION}")
-        except Exception as e:
-            print(f"History fixup failed (non-fatal): {e}")
+    #
+    # v1.22.2: decoupled from `post_selfupdate_restart`. The deferred-
+    # check marker only exists for the AUTO-selfupdate path (cron +
+    # AUTO_SELFUPDATE=true). Manual `/selfupdate` doesn't write it,
+    # so manual-update placeholders were never patched. Reported by
+    # @famewolf in #2. The `endswith("→ ?)")` guard makes the fixup
+    # safe regardless of why we restarted — only the real placeholder
+    # matches the pattern, so all other history paths are no-ops.
+    try:
+        import json as _json
+        from version import VERSION as _NEW_VERSION
+        if os.path.exists(config.history_file):
+            with open(config.history_file) as f:
+                _hist = _json.load(f)
+            if _hist:
+                last = _hist[-1]
+                detail = last.get("detail", "")
+                if detail.endswith("→ ?)"):
+                    last["detail"] = detail[:-len("?)")] + f"v{_NEW_VERSION})"
+                    # Atomic write (v1.22.1) — see
+                    # container_store.atomic_write_json.
+                    from container_store import atomic_write_json
+                    atomic_write_json(config.history_file, _hist, indent=2)
+                    print(f"History: patched selfupdate entry with new version v{_NEW_VERSION}")
+    except Exception as e:
+        print(f"History fixup failed (non-fatal): {e}")
 
     # One-shot migration: if a previous Docksentry version saved its own
     # container into the auto-update list (which routes through the
