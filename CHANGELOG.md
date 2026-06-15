@@ -2,6 +2,23 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.2] - 2026-06-15
+
+### Fixed
+- **The entire Web UI JavaScript was broken in every browser from v1.22.0 to v1.23.1.** Reported by @famewolf in [#2](../../issues/2) via his browser console — the backup-restore button "did absolutely nothing" because `dsBackupImport` was `undefined`. Root cause: the `dsBackupImport` `confirm(...)` string in `_BASE_JS` was written with a `\n`. `_BASE_JS` is a regular (non-raw) Python triple-quoted string, so Python turned that `\n` into a **real newline character** in the rendered JavaScript — producing a string literal with an unescaped line break:
+  ```js
+  if (!confirm('Restore from "' + file.name + '"?
+  This will overwrite...')) {   // ← SyntaxError: unescaped line break
+  ```
+  That is a hard `SyntaxError` that aborts the **whole `<script>` block**, so *every* function defined in `_BASE_JS` — tab switching, theme toggle, confirm dialogs, drag-and-drop reorder, auto-detect modal, webhook test, cron preview, toast, AND backup/restore — silently failed to define. Server-side features (favicon, Discord links, page rendering) were unaffected, which is why it wasn't obvious.
+
+  Fixed by removing the newline from the confirm string. Verified with a comment- and regex-aware scanner that no raw control character remains inside any JS string literal across `/`, `/settings`, and `/groups`.
+
+- **Regression guard added to `scripts/pre-commit-check.py`.** A new check parses `_BASE_JS` and fails the build if any raw newline/CR appears inside a single- or double-quoted JS string literal — the exact class of bug above. Verified it passes clean now AND catches a deliberately-injected break.
+
+### Why our earlier testing missed it
+The v1.22.0 backup feature was "tested" three ways: the backend endpoint with `curl` (worked), a check that the `dsBackupImport` function *text* was present in the served HTML (it was), and a browser-style multipart upload to the endpoint (worked). None of those execute the page's JavaScript, so none caught that the script block fails to *parse*. @famewolf's browser console caught in one line what our tests structurally could not. The pre-commit guard closes that gap going forward.
+
 ## [1.23.1] - 2026-06-14
 
 Proactive audit pass: after the homarr deletion (v1.23.0), we swept the

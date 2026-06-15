@@ -1181,7 +1181,7 @@ function dsPersistGroupOrder(list) {
 function dsBackupImport(input) {
     var file = input.files && input.files[0];
     if (!file) return;
-    if (!confirm('Restore from "' + file.name + '"?\nThis will overwrite groups, notes, links, pins, autoupdate flags, update windows, and persisted settings.')) {
+    if (!confirm('Restore from "' + file.name + '"? This will overwrite groups, notes, links, pins, autoupdate flags, update windows, and persisted settings.')) {
         input.value = '';
         return;
     }
