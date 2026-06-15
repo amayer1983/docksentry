@@ -65,10 +65,31 @@ class TelegramBot:
         self.config = config
         self.store = container_store
         self.running = True
-        self.update_running = False
+        # Single mutex guarding ALL update flows — manual "Update all"
+        # (run_updates, bot thread), single-container update
+        # (_run_single_update, bot thread), major-confirm update, AND the
+        # scheduler's auto-update pass (handle_autoupdates, scheduler
+        # thread). Before v1.23.1 only the manual paths checked a plain
+        # `update_running` bool; the scheduler's auto-update ignored it
+        # entirely, so a cron tick could recreate the same container the
+        # user was mid-updating. A Lock with acquire(blocking=False)
+        # makes the check-and-claim atomic (the old bool had a TOCTOU
+        # window) and covers every entry point.
+        import threading as _threading
+        self._update_lock = _threading.Lock()
         self.notifier = None  # Set by main.py after init
         from i18n import get_translator
         self.t = get_translator(config.language)
+
+    @property
+    def update_running(self):
+        """True while any update flow holds the lock. Read-only view kept
+        for the /check race-guard and any external callers."""
+        locked = self._update_lock.acquire(blocking=False)
+        if locked:
+            self._update_lock.release()
+            return False
+        return True
 
     @property
     def enabled(self):
@@ -660,46 +681,55 @@ class TelegramBot:
 
     def _run_single_update(self, checker, container_name):
         """Update a single container."""
-        if not os.path.exists(self.config.pending_file):
-            self.send_message(self.t("no_pending_updates"))
+        # Claim the shared update mutex — before v1.23.1 this path took
+        # no lock at all, so tapping "update searxng" while an "Update
+        # all" was running recreated containers concurrently.
+        if not self._update_lock.acquire(blocking=False):
+            self.send_message(self.t("update_already_running"))
             return
-
-        with open(self.config.pending_file) as f:
-            updates = json.load(f)
-
-        target = next((u for u in updates if u["name"] == container_name), None)
-        if not target:
-            self.send_message(self.t("container_not_in_list", name=container_name))
-            return
-
-        # Enrich source_url so both the inline send_message line and
-        # the Discord/webhook send_update_result carry the link
-        # (parity with the auto-update + bulk-update flows, fixed in
-        # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
-        self._enrich_with_source_url([target])
-        self.send_message(self.t("update_single_starting", name=container_name))
-
         try:
-            compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
-            success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
-            status = "✅" if success else "❌"
-            self.send_message(f"{status} {self._display_name(target)}: {msg}")
-            if self.notifier:
-                self.notifier.send_update_result(container_name, target["image"], success, msg,
-                                                 source_url=target.get("source_url", ""))
-        except Exception as e:
-            self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
-            if self.notifier:
-                self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
-                                                 source_url=target.get("source_url", ""))
+            if not os.path.exists(self.config.pending_file):
+                self.send_message(self.t("no_pending_updates"))
+                return
 
-        # Remove from pending list (atomic write — v1.22.1)
-        remaining = [u for u in updates if u["name"] != container_name]
-        from container_store import atomic_write_json
-        atomic_write_json(self.config.pending_file, remaining)
+            with open(self.config.pending_file) as f:
+                updates = json.load(f)
 
-        if not remaining:
-            self.send_message(self.t("update_all_done"))
+            target = next((u for u in updates if u["name"] == container_name), None)
+            if not target:
+                self.send_message(self.t("container_not_in_list", name=container_name))
+                return
+
+            # Enrich source_url so both the inline send_message line and
+            # the Discord/webhook send_update_result carry the link
+            # (parity with the auto-update + bulk-update flows, fixed in
+            # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
+            self._enrich_with_source_url([target])
+            self.send_message(self.t("update_single_starting", name=container_name))
+
+            try:
+                compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
+                success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
+                status = "✅" if success else "❌"
+                self.send_message(f"{status} {self._display_name(target)}: {msg}")
+                if self.notifier:
+                    self.notifier.send_update_result(container_name, target["image"], success, msg,
+                                                     source_url=target.get("source_url", ""))
+            except Exception as e:
+                self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
+                if self.notifier:
+                    self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
+                                                     source_url=target.get("source_url", ""))
+
+            # Remove from pending list (atomic write — v1.22.1)
+            remaining = [u for u in updates if u["name"] != container_name]
+            from container_store import atomic_write_json
+            atomic_write_json(self.config.pending_file, remaining)
+
+            if not remaining:
+                self.send_message(self.t("update_all_done"))
+        finally:
+            self._update_lock.release()
 
     def _is_major_bump(self, update, checker):
         """Detect whether the available update for `update` is a SemVer major
@@ -736,21 +766,30 @@ class TelegramBot:
         if not pending:
             self.send_message(f"⚠️ No pending major update for `{name}`.")
             return
-        image = pending.get("image", "")
-        compose = pending.get("compose", {}) or {}
-        # Resolve link once for both Telegram + Discord/webhook surfaces
-        source_url = self._resolve_container_link(name, image)
+        # Claim the shared update mutex (v1.23.1) — this path previously
+        # took no lock, so confirming a major update could collide with
+        # a concurrent "Update all" or scheduler auto-update pass.
+        if not self._update_lock.acquire(blocking=False):
+            self.send_message(self.t("update_already_running"))
+            return
         try:
-            success, msg = checker.update_container(name, image, **compose)
-        except Exception as e:
-            success, msg = False, str(e)[:200]
-        status = "✅" if success else "❌"
-        display = f"[{name}]({source_url})" if source_url else f"`{name}`"
-        self.send_message(f"{status} {display}: {msg}")
-        if self.notifier:
-            self.notifier.send_update_result(name, image, success, msg, source_url=source_url)
-        if success:
-            self.store.remove_pending_major(name)
+            image = pending.get("image", "")
+            compose = pending.get("compose", {}) or {}
+            # Resolve link once for both Telegram + Discord/webhook surfaces
+            source_url = self._resolve_container_link(name, image)
+            try:
+                success, msg = checker.update_container(name, image, **compose)
+            except Exception as e:
+                success, msg = False, str(e)[:200]
+            status = "✅" if success else "❌"
+            display = f"[{name}]({source_url})" if source_url else f"`{name}`"
+            self.send_message(f"{status} {display}: {msg}")
+            if self.notifier:
+                self.notifier.send_update_result(name, image, success, msg, source_url=source_url)
+            if success:
+                self.store.remove_pending_major(name)
+        finally:
+            self._update_lock.release()
 
     def _wait_healthy(self, name, max_seconds):
         """Poll `docker inspect` until the container is running (and, if it
@@ -856,8 +895,25 @@ class TelegramBot:
             return (0, gp[0], gp[1])
         auto_updates.sort(key=_sort_key)
 
-        # Auto-update containers silently, respecting group order + wait
+        # Auto-update containers silently, respecting group order + wait.
+        # Claim the shared update mutex (v1.23.1) — this is the core of
+        # the concurrency fix: before, the scheduler's auto-update loop
+        # ignored the lock entirely, so a cron tick could recreate the
+        # very container a user was mid-updating from Telegram. If a
+        # manual update currently holds the lock we skip the auto-update
+        # this tick (the next cron tick retries); the manual flow handles
+        # those containers anyway. The notification sections further down
+        # run unconditionally — they don't touch containers.
+        auto_lock_held = False
         if auto_updates:
+            if self._update_lock.acquire(blocking=False):
+                auto_lock_held = True
+            else:
+                print("Auto-update skipped: another update flow is running "
+                      "(will retry next tick)")
+                auto_updates = []
+        try:
+          if auto_updates:
             # Enrich source_url so result lines render the container name
             # as a tap-to-open link (same as the pre-update "Updates
             # Available" notification). Without this the post-update
@@ -975,6 +1031,13 @@ class TelegramBot:
             # Atomic write — v1.22.1
             from container_store import atomic_write_json
             atomic_write_json(self.config.pending_file, remaining)
+        finally:
+            # Release the update mutex if we claimed it for this batch.
+            # try/finally guarantees release even if an enrich /
+            # send_message / atomic_write above raised — otherwise the
+            # lock would leak and block every future update.
+            if auto_lock_held:
+                self._update_lock.release()
 
         # Window-skipped: tell the user once so they're not surprised
         if skipped_window:
@@ -1444,52 +1507,58 @@ class TelegramBot:
         return True
 
     def run_updates(self, updater):
-        if self.update_running:
+        # Atomic claim of the shared update mutex. If any other update
+        # flow (single-container, major-confirm, or the scheduler's
+        # auto-update pass) holds it, bail. try/finally guarantees we
+        # always release — the old `update_running = False` only ran at
+        # the end, so an exception outside the inner loop would have left
+        # the flag stuck True forever, blocking all future updates.
+        if not self._update_lock.acquire(blocking=False):
             self.send_message(self.t("update_already_running"))
             return
-
-        pending_file = self.config.pending_file
-        if not os.path.exists(pending_file):
-            self.send_message(self.t("no_pending_updates"))
-            return
-
-        with open(pending_file) as f:
-            updates = json.load(f)
-
-        if not updates:
-            self.send_message(self.t("no_pending_updates"))
-            return
-
-        self.update_running = True
-        # Enrich for result-message links (same rationale as the
-        # auto-update path — keep the post-update results visually
-        # consistent with the pre-update "Updates Available" message).
-        self._enrich_with_source_url(updates)
-        self.send_message(self.t("update_starting", count=len(updates)))
-
-        results = []
-        for u in updates:
-            try:
-                compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                success, msg = updater.update_container(u["name"], u["image"], **compose_kwargs)
-                status = "✅" if success else "❌"
-                results.append(f"{status} {self._display_name(u)}: {msg}")
-                if self.notifier:
-                    self.notifier.send_update_result(u["name"], u["image"], success, msg,
-                                                     source_url=u.get("source_url", ""))
-            except Exception as e:
-                results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
-                if self.notifier:
-                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
-                                                     source_url=u.get("source_url", ""))
-
         try:
-            os.remove(pending_file)
-        except OSError:
-            pass
+            pending_file = self.config.pending_file
+            if not os.path.exists(pending_file):
+                self.send_message(self.t("no_pending_updates"))
+                return
 
-        self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
-        self.update_running = False
+            with open(pending_file) as f:
+                updates = json.load(f)
+
+            if not updates:
+                self.send_message(self.t("no_pending_updates"))
+                return
+
+            # Enrich for result-message links (same rationale as the
+            # auto-update path — keep the post-update results visually
+            # consistent with the pre-update "Updates Available" message).
+            self._enrich_with_source_url(updates)
+            self.send_message(self.t("update_starting", count=len(updates)))
+
+            results = []
+            for u in updates:
+                try:
+                    compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
+                    success, msg = updater.update_container(u["name"], u["image"], **compose_kwargs)
+                    status = "✅" if success else "❌"
+                    results.append(f"{status} {self._display_name(u)}: {msg}")
+                    if self.notifier:
+                        self.notifier.send_update_result(u["name"], u["image"], success, msg,
+                                                         source_url=u.get("source_url", ""))
+                except Exception as e:
+                    results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
+                    if self.notifier:
+                        self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
+                                                         source_url=u.get("source_url", ""))
+
+            try:
+                os.remove(pending_file)
+            except OSError:
+                pass
+
+            self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
+        finally:
+            self._update_lock.release()
 
     # Long-polling timing for getUpdates. Telegram holds the request open
     # for LONG_POLL_TIMEOUT seconds; the HTTP socket gets a generous extra

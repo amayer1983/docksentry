@@ -2,6 +2,28 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.1] - 2026-06-14
+
+Proactive audit pass: after the homarr deletion (v1.23.0), we swept the
+codebase for the same *classes* of bug — destructive operations without
+recovery, and concurrency on shared state — and fixed the two highest-
+risk findings before anyone hit them.
+
+### Fixed
+- **Rollback could strand a container or destroy the user's only copy.** All three rollback paths in `_update_standalone` (run-failed, unhealthy, and the catch-all exception handler) used `docker rm <name>` (no `-f`) followed by `docker rename <old> <name>`. Two failure modes:
+  1. If the broken new container wouldn't stop, the non-forced `docker rm` silently failed and the subsequent rename collided — leaving the user with the broken new container and the old one orphaned as `<name>_old`.
+  2. The exception handler blindly renamed `<name>_old` back even when no such backup existed.
+
+  New single `_rollback_to_old(name, old_name)` helper, used by all three sites. Safe ordering, "don't make it worse" first: **if no `<name>_old` backup exists it leaves `<name>` completely alone** (never destroys what might be the user's only container); otherwise it force-removes the broken new container (`-f` handles a wedged/running one) and restores the backup. Verified on a test host including the critical no-backup case.
+
+- **Scheduler auto-update could run concurrently with a manual update.** The manual paths (`run_updates`, `_run_single_update`, `_confirm_major_update`) guarded on a plain `update_running` bool, but the scheduler's `handle_autoupdates` ignored it entirely — so a cron tick could recreate the very container a user was mid-updating from Telegram, two recreate flows racing on the same container. Replaced the bool with a single `threading.Lock`; all four entry points now claim it atomically (`acquire(blocking=False)`), and the scheduler skips its auto-update pass when a manual update holds the lock (retrying next tick). The `update_running` read is preserved as a property for the existing `/check` race-guard.
+
+  Bonus: the lock is released in `try/finally` everywhere. The old `update_running = False` only ran at the end of `run_updates`, so an exception outside the inner loop would have left the flag stuck `True` and blocked every future update — that latent bug is gone too.
+
+### Still open (confirmed, next)
+- "Update all" stale-snapshot (updates current pending, not the notification's set).
+- Slow SIGTERM response via long-poll block.
+
 ## [1.23.0] - 2026-06-14
 
 ### Fixed

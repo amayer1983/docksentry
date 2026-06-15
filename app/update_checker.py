@@ -766,6 +766,44 @@ class UpdateChecker:
             # don't trigger a spurious recreate of a container that's fine.
             return True
 
+    def _rollback_to_old(self, name, old_name):
+        """Restore the pre-update container after a failed recreate.
+
+        Single source of truth for all rollback paths (run-failed,
+        unhealthy, and the catch-all exception handler). The previous
+        inline rollbacks each did `docker rm <name>` (no -f) followed by
+        `docker rename <old> <name>` — which silently failed and left the
+        user stranded if the new container wouldn't stop (rm without -f
+        can't remove a running container, so the rename then collided)
+        OR if the rename to `<old>` never happened in the first place
+        (then `rename <old> <name>` had nothing to restore).
+
+        Safe ordering, "don't make it worse" first:
+          1. If `old_name` doesn't exist we have NO backup — leave
+             `name` completely alone. It may be the only container the
+             user has, broken or not; destroying it would be strictly
+             worse than the failed update.
+          2. Otherwise force-remove whatever is at `name` (the broken
+             new container, or nothing) — `-f` handles a still-running
+             or wedged container — then rename the backup into place and
+             start it.
+
+        Returns True when the old container was restored and started.
+        """
+        if not self._container_exists(old_name):
+            self._debug(f"  Rollback: no {old_name} backup to restore — "
+                        f"leaving {name} untouched")
+            return False
+        # -f so a wedged/running broken new container can't block the
+        # rename the way the old non-forced `docker rm` did.
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+        subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
+        start = subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
+        ok = start.returncode == 0
+        self._debug(f"  Rollback: restored {old_name} → {name} "
+                    f"({'started' if ok else 'start failed'})")
+        return ok
+
     def _stop_container(self, name, inspect_config=None):
         """Stop a container, respecting its own `Config.StopTimeout`.
 
@@ -1965,9 +2003,8 @@ class UpdateChecker:
 
             if result.returncode != 0:
                 self._debug(f"  Run failed: {result.stderr[:300]}")
-                # Rollback: restore old container
-                subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
-                subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
+                # Rollback: restore old container (safe — see _rollback_to_old)
+                self._rollback_to_old(name, old_name)
                 msg = f"Recreate failed: {result.stderr[:200]}"
                 self._save_history(name, image, False, msg)
                 return False, msg
@@ -1992,13 +2029,12 @@ class UpdateChecker:
                 # a broken service.
                 self._debug(f"  Health check FAILED for {name} — rolling back")
                 tail = self._tail_logs(name, lines=10)
-                # Stop with the same generous timeout logic as the
-                # initial stop, so a slow-shutdown app doesn't leave
-                # the rollback half-finished.
-                self._stop_container(name)
-                subprocess.run(["docker", "rm", name], capture_output=True, timeout=10)
-                subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
-                subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
+                # Grab logs first (above), then roll back. _rollback_to_old
+                # force-removes the broken new container and restores the
+                # backup — safely (won't destroy `name` if no backup
+                # exists). Replaces the old stop+rm+rename+start sequence
+                # that silently failed when the new container wouldn't stop.
+                self._rollback_to_old(name, old_name)
                 msg = f"Health check failed (state={state}, health={health}) — rolled back"
                 if tail:
                     msg += f"\nLast logs:\n```\n{tail}\n```"
@@ -2034,8 +2070,12 @@ class UpdateChecker:
 
         except Exception as e:
             self._debug(f"  Error: {str(e)[:200]}")
-            # Try to restore on any failure
-            subprocess.run(["docker", "rename", f"{name}_old", name], capture_output=True, timeout=10)
-            subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
+            # Try to restore on any failure. Use the literal "<name>_old"
+            # (not the `old_name` local, which may be undefined if the
+            # exception fired before the rename step). _rollback_to_old
+            # leaves `name` untouched when no "<name>_old" backup exists —
+            # so if the exception happened before we ever stopped/renamed
+            # the original, the user's still-running container is safe.
+            self._rollback_to_old(name, f"{name}_old")
             self._save_history(name, image, False, str(e)[:200])
             return False, f"Error: {str(e)[:200]}"
