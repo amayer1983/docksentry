@@ -12,6 +12,8 @@
   "update_result": "*Update-Ergebnis:*",
   "update_all_done": "✅ Alle Updates abgeschlossen.",
   "update_already_running": "⚠️ Update läuft bereits...",
+  "update_snapshot_stale": "Diese Benachrichtigung ist veraltet",
+  "update_snapshot_stale_msg": "⚠️ Diese „Updates verfügbar“-Benachrichtigung ist zu alt (eine neuere Prüfung hat sie ersetzt, oder der Bot wurde neu gestartet). Führe /check für eine frische Liste aus.",
   "no_pending_updates": "⚠️ Keine ausstehenden Updates gefunden.",
   "container_not_in_list": "⚠️ Container `{name}` nicht in der Update-Liste.",
   "rate_limit": "Rate limit erreicht. `docker login` auf dem Host ausführen und Credentials mounten.",

@@ -440,5 +440,7 @@
   "web_backup_intro": "Export every persisted setting (groups, notes, links, pins, autoupdate flags, update windows, webhook URLs, etc.) into a single JSON file. Restore it later — useful before host migrations, or just as defense-in-depth against data loss.",
   "web_backup_export": "Export backup",
   "web_backup_import": "Restore backup…",
-  "web_backup_hint": "Backups contain webhook URLs and bot tokens — treat the file like a password. The import path skips unknown keys, so forward-compatible if a future Docksentry adds new settings."
+  "web_backup_hint": "Backups contain webhook URLs and bot tokens — treat the file like a password. The import path skips unknown keys, so forward-compatible if a future Docksentry adds new settings.",
+  "update_snapshot_stale": "This notification is stale",
+  "update_snapshot_stale_msg": "⚠️ That \"Updates Available\" notification is too old to act on (a newer check has replaced it, or the bot restarted). Run /check for a fresh list."
 }

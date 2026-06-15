@@ -77,6 +77,17 @@ class TelegramBot:
         # window) and covers every entry point.
         import threading as _threading
         self._update_lock = _threading.Lock()
+        # Per-notification snapshots of the "Updates Available" container
+        # list, keyed by a short token carried in the "Update all"
+        # button's callback_data (v1.23.3). Before this, "Update all"
+        # carried no reference to WHICH notification it came from — it
+        # just re-read the global pending_updates.json at click time. So
+        # tapping "Update all" on yesterday's notification (which showed
+        # one container) updated whatever the latest check had since
+        # written to pending (e.g. five containers). Reported by
+        # @famewolf in #2. Capped FIFO so the dict can't grow unbounded.
+        self._update_snapshots = {}
+        self._snapshot_seq = 0
         self.notifier = None  # Set by main.py after init
         from i18n import get_translator
         self.t = get_translator(config.language)
@@ -1141,6 +1152,20 @@ class TelegramBot:
             names.append(f"• {self._display_name(u)}{head_badge} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
+        # Snapshot this notification's exact container set, keyed by a
+        # short token carried in the "Update all" button. So tapping
+        # "Update all" updates THESE containers, not whatever the latest
+        # check has since written to pending_updates.json (#2, @famewolf).
+        # We store a shallow copy of the dicts so a later pending-file
+        # rewrite can't mutate the snapshot.
+        self._snapshot_seq += 1
+        token = str(self._snapshot_seq)
+        self._update_snapshots[token] = [dict(u) for u in updates]
+        # Cap the snapshot store (FIFO) so it can't grow without bound.
+        if len(self._update_snapshots) > 20:
+            oldest = sorted(self._update_snapshots, key=lambda k: int(k))[0]
+            self._update_snapshots.pop(oldest, None)
+
         # One button per container + all/skip at the bottom
         keyboard = []
         for u in updates:
@@ -1149,7 +1174,7 @@ class TelegramBot:
                 {"text": f"🔄 {u['name']} ({size})", "callback_data": f"update_one:{u['name']}"}
             ])
         keyboard.append([
-            {"text": self.t("update_all_btn"), "callback_data": "update_all"},
+            {"text": self.t("update_all_btn"), "callback_data": f"update_all:{token}"},
             {"text": self.t("manual_btn"), "callback_data": "update_skip"}
         ])
 
@@ -1506,7 +1531,17 @@ class TelegramBot:
         self._do_selfupdate(config, own_name, own_image)
         return True
 
-    def run_updates(self, updater):
+    def run_updates(self, updater, updates=None):
+        """Run a batch of container updates.
+
+        When `updates` is provided (a list of update dicts from a
+        notification snapshot, v1.23.3), exactly those containers are
+        updated and only their names are removed from the pending file
+        afterward — so "Update all" acts on the set the notification
+        actually showed. When `updates` is None (legacy bare-"update_all"
+        callback, or programmatic callers), the current pending file is
+        read and the whole file is cleared on completion as before.
+        """
         # Atomic claim of the shared update mutex. If any other update
         # flow (single-container, major-confirm, or the scheduler's
         # auto-update pass) holds it, bail. try/finally guarantees we
@@ -1517,13 +1552,14 @@ class TelegramBot:
             self.send_message(self.t("update_already_running"))
             return
         try:
+            from_snapshot = updates is not None
             pending_file = self.config.pending_file
-            if not os.path.exists(pending_file):
-                self.send_message(self.t("no_pending_updates"))
-                return
-
-            with open(pending_file) as f:
-                updates = json.load(f)
+            if not from_snapshot:
+                if not os.path.exists(pending_file):
+                    self.send_message(self.t("no_pending_updates"))
+                    return
+                with open(pending_file) as f:
+                    updates = json.load(f)
 
             if not updates:
                 self.send_message(self.t("no_pending_updates"))
@@ -1551,14 +1587,41 @@ class TelegramBot:
                         self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
                                                          source_url=u.get("source_url", ""))
 
-            try:
-                os.remove(pending_file)
-            except OSError:
-                pass
+            if from_snapshot:
+                # Remove only the processed containers from pending —
+                # the file may hold others the snapshot didn't include.
+                self._remove_from_pending([u["name"] for u in updates])
+            else:
+                try:
+                    os.remove(pending_file)
+                except OSError:
+                    pass
 
             self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         finally:
             self._update_lock.release()
+
+    def _remove_from_pending(self, names):
+        """Drop the given container names from pending_updates.json
+        (atomic). No-op if the file is missing or unreadable."""
+        pending_file = self.config.pending_file
+        if not os.path.exists(pending_file):
+            return
+        try:
+            with open(pending_file) as f:
+                pending = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        name_set = set(names)
+        remaining = [u for u in pending if u.get("name") not in name_set]
+        from container_store import atomic_write_json
+        if remaining:
+            atomic_write_json(pending_file, remaining)
+        else:
+            try:
+                os.remove(pending_file)
+            except OSError:
+                pass
 
     # Long-polling timing for getUpdates. Telegram holds the request open
     # for LONG_POLL_TIMEOUT seconds; the HTTP socket gets a generous extra
@@ -1698,11 +1761,32 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("not_authorized"))
             return
 
-        if data == "update_all":
+        if data == "update_all" or data.startswith("update_all:"):
+            # Tokenised form (v1.23.3): "update_all:<token>" updates the
+            # exact container set that THIS notification showed, looked
+            # up from the per-notification snapshot. Bare "update_all"
+            # (no token) is the legacy form from notifications sent by
+            # older versions still sitting in the chat — fall back to the
+            # current pending file as before.
+            snapshot = None
+            if data.startswith("update_all:"):
+                token = data.split(":", 1)[1]
+                snapshot = self._update_snapshots.get(token)
+                if snapshot is None:
+                    # Snapshot evicted (FIFO) or lost to a bot restart —
+                    # the notification is stale. Tell the user rather
+                    # than silently updating the wrong (current) set.
+                    self.answer_callback(callback["id"],
+                                         self.t("update_snapshot_stale"))
+                    if msg_id and chat_id:
+                        self.remove_buttons(chat_id, msg_id)
+                    self.send_message(self.t("update_snapshot_stale_msg"))
+                    return
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             self.answer_callback(callback["id"], self.t("updates_starting_cb"))
-            t = threading.Thread(target=self.run_updates, args=(checker,))
+            t = threading.Thread(target=self.run_updates,
+                                 args=(checker,), kwargs={"updates": snapshot})
             t.start()
         elif data == "update_skip":
             if msg_id and chat_id:

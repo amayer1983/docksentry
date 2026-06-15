@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.3] - 2026-06-15
+
+### Fixed
+- **"Update all" now updates exactly the containers the notification showed, not whatever is currently pending.** Reported by @famewolf in [#2](../../issues/2): he tapped "Update all" on a notification that listed only `searxng`, but it updated all five containers a later check had since written to `pending_updates.json`. The button carried no reference to *which* notification it came from — it just re-read the global pending file at click time.
+
+  Each "Updates Available" notification now snapshots its exact container set, keyed by a short token in the "Update all" button's `callback_data` (`update_all:<token>`). Clicking it updates that snapshot's containers and removes only their names from the pending file (leaving any others). Snapshots are capped FIFO (last 20) so the store can't grow unbounded. If a snapshot is gone (evicted, or the bot restarted), the user gets a clear "this notification is stale, run /check" message instead of silently updating the wrong set. Bare `update_all` (from notifications sent by older versions still in the chat) falls back to the previous read-pending behaviour.
+
+  Verified end-to-end: with `[searxng]` snapshotted and the pending file later overwritten with five containers, "Update all" updates only `searxng` and removes only `searxng` from pending.
+
+### Still open
+- Slow SIGTERM response (bot blocks in the Telegram long-poll). This is a tradeoff between poll frequency and shutdown speed rather than a clear-cut bug — deferred pending a decision on the right balance.
+
 ## [1.23.2] - 2026-06-15
 
 ### Fixed
