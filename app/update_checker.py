@@ -745,6 +745,27 @@ class UpdateChecker:
         except subprocess.SubprocessError:
             return False
 
+    def _container_exists(self, name):
+        """True if a container with this name still exists (any state).
+
+        Used after a stop attempt to detect the AutoRemove (`--rm`) case:
+        such containers are removed by Docker the moment they stop, so a
+        slow-to-stop `--rm` container vanishes entirely during our recreate
+        flow. Reported by @famewolf in #2 — homarr had `--rm`, was wedged,
+        our stop finally reaped it, Docker auto-removed it, and we walked
+        away leaving him with nothing. This check lets us recover.
+        """
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", "--format", "{{.Id}}", name],
+                capture_output=True, text=True, timeout=10,
+            )
+            return r.returncode == 0
+        except subprocess.SubprocessError:
+            # On inspect error we can't be sure — assume it exists so we
+            # don't trigger a spurious recreate of a container that's fine.
+            return True
+
     def _stop_container(self, name, inspect_config=None):
         """Stop a container, respecting its own `Config.StopTimeout`.
 
@@ -1863,10 +1884,63 @@ class UpdateChecker:
             # show up in debug logs instead of being silently dropped.
             self._audit_inspect_coverage(config)
 
+            # AutoRemove (`--rm`) containers are removed by Docker the
+            # instant they stop. For those the normal rename-old /
+            # run-new / rollback dance doesn't apply — there's no old
+            # container to rename or roll back to once we stop it.
+            # Detect it up front so we can branch correctly below.
+            auto_remove = bool((config.get("HostConfig") or {}).get("AutoRemove"))
+
             # Stop container, respecting its own Config.StopTimeout —
             # see _stop_container() and #11 for the slow-shutdown rationale.
             stop_ok, stop_detail = self._stop_container(name, inspect_config=config)
             self._debug(f"  Stop {name}: {stop_detail}")
+
+            # After stopping, check whether the container still exists.
+            # AutoRemove containers vanish on stop; a wedged `--rm`
+            # container (slow to stop) is exactly how @famewolf lost
+            # homarr in #2 — our stop reaped it, Docker auto-removed it,
+            # and the old `if not stop_ok: return` path walked away
+            # leaving him with nothing, even though we still had the full
+            # config in memory. Now: if it vanished, recreate directly
+            # from the captured config (the "old" is already gone, so we
+            # skip the rename/rollback machinery).
+            if not self._container_exists(name):
+                self._debug(f"  {name} vanished after stop "
+                            f"(AutoRemove={auto_remove}) — recreating from "
+                            f"captured config")
+                cmd = self._build_run_args(
+                    config, image, name, self._get_image_defaults(image)
+                )
+                run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if run.returncode != 0:
+                    msg = (f"Container was auto-removed when stopped and the "
+                           f"recreate failed: {run.stderr[:200]}")
+                    self._save_history(name, image, False, msg)
+                    return False, msg
+                self._attach_extra_networks(name, config)
+                outcome, state, health = self._wait_healthy(name)
+                detail = (f"🗓️ {old_created} → {new_created}, 📦 {new_size}"
+                          f"{getattr(self, '_version_arrow', '')}")
+                # No rollback target exists for a --rm container, so even
+                # on an unhealthy result we leave the freshly-created
+                # container in place and report honestly.
+                if outcome == "unhealthy":
+                    tail = self._tail_logs(name, lines=10)
+                    msg = (f"⚠ Recreated after auto-remove, but health check "
+                           f"failed (state={state}, health={health}). No "
+                           f"rollback target exists for a --rm container — "
+                           f"left running. ({detail})")
+                    if tail:
+                        msg += f"\nLast logs:\n```\n{tail}\n```"
+                    self._save_history(name, image, False, msg)
+                    return False, msg
+                suffix = " (recreated after auto-remove)"
+                self._save_history(name, image, True, detail + suffix)
+                return True, f"OK ({detail}){suffix}"
+
+            # Container still exists. If the stop itself failed, leave it
+            # alone — same as before.
             if not stop_ok:
                 return False, f"Couldn't stop container: {stop_detail}"
 

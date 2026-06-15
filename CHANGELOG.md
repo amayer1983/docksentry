@@ -2,6 +2,30 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.0] - 2026-06-14
+
+### Fixed
+- **`--rm` (AutoRemove) containers are no longer lost when an update stops a wedged container.** Reported by @famewolf in [#2](../../issues/2): his `homarr` container — which had `AutoRemove=true` — disappeared entirely during an update. We initially thought Docker's daemon garbage-collected it on its own. It did not: **our own stop sequence was the proximate cause**, and we reproduced the exact mechanism on a test host:
+
+  1. A `--rm` container that's slow to stop (homarr was wedged — our stop ran into the 90s timeout)
+  2. Our `docker stop` eventually reaps the process
+  3. **Because `--rm` is set, Docker auto-removes the container the instant it stops**
+  4. Our `docker kill` fallback then reports `cannot kill container: … No such container` — the exact error family @famewolf saw
+  5. The old code hit `if not stop_ok: return False` and **walked away, leaving him with no container** — even though we had its full inspect config in memory the whole time
+
+  We captured the container's config *before* stopping (we always have), so there was never any reason to leave the user stranded. Now: after the stop step we check whether the container still exists. If it vanished (the AutoRemove case), we **recreate it directly from the captured config** — the old container is already gone, so we skip the rename/rollback machinery and run the new one. `homarr` would have been updated correctly instead of deleted.
+
+  Verified end-to-end on a test host: a wedged `--rm` container that vanishes on stop is now recreated with all labels and config preserved.
+
+- New `_container_exists(name)` helper backs the recovery check.
+
+### Honesty note
+The first triage of this report concluded "probably not us — Docker daemon cleanup." That was wrong, and the working assumption should have been the opposite. When a user reports data loss during one of our operations, the burden is on us to *prove* we weren't involved, not to assume it. The empirical reproduction here came directly from re-investigating under that assumption.
+
+### Still open (confirmed, shipping separately)
+- "Update all" on a stale notification updates whatever is *currently* pending, not the set shown in that notification (global `pending_updates.json` is overwritten by each check). Confirmed from code; snapshot fix coming.
+- Bot is slow to respond to SIGTERM because it blocks in the Telegram long-poll; contributes to slow `docker compose down`. Fix coming.
+
 ## [1.22.2] - 2026-06-13
 
 ### Fixed
