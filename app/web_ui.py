@@ -1240,14 +1240,16 @@ function dsAutoDetectRender(data) {
         var isMulti = memberCount > 1;
         var hasNetns = stack.containers.some(function(c) { return !!c.netns_hint; });
 
-        // Default-check policy (v1.21.1 → v1.21.2 UX fix):
-        //   - Single-container stacks: UNCHECKED — making them a group
-        //     does nothing useful (no dependents to coordinate). User
-        //     can manually check if they're planning to add members later.
-        //   - Multi-container stacks: CHECKED — these are the real
-        //     import targets.
-        //   - Already-imported stacks: ALWAYS unchecked + disabled.
-        var importChecked = !stack.exists && isMulti ? ' checked' : '';
+        // Default-check policy (v1.23.4): NOTHING is checked by default.
+        // "Import selected" must mean "import what I selected" — opening
+        // the modal to look around and clicking Import should import
+        // nothing, not silently create groups for whatever was pre-
+        // checked. Reported by @famewolf in #2: he opened auto-detect to
+        // browse, checked nothing, clicked Import, and a multi-container
+        // stack (which v1.21.2 pre-checked) got imported anyway.
+        // Already-imported stacks stay disabled. The "single" badge below
+        // still steers users away from single-container stacks.
+        var importChecked = '';
         var importDisabled = stack.exists ? ' disabled' : '';
 
         // restart_dependents control (group-level, moved to header in v1.21.2):

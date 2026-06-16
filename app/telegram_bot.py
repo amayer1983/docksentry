@@ -1189,10 +1189,15 @@ class TelegramBot:
         self.send_message(self.t("all_up_to_date"))
 
     def _resolve_selfupdate_target(self, current_image, target):
-        """Resolve `target` ('previous' / 'X.Y.Z' / None) into a fully-
-        qualified image ref to pull. Returns (image_ref, error_msg).
+        """Resolve `target` into a fully-qualified image ref to pull.
+        Returns (image_ref, error_msg); error_msg is None on success.
 
-        On success, error_msg is None.
+        Accepted targets:
+            None         → whatever tag the container currently runs
+            "latest"     → <base>:latest  (v1.23.4)
+            "stable"     → <base>:stable   (v1.23.4)
+            "previous"   → last released version older than the running one
+            "X.Y.Z"      → a specific semver tag
         """
         if not target:
             return current_image, None
@@ -1202,6 +1207,13 @@ class TelegramBot:
             base = current_image.rsplit(":", 1)[0]
         else:
             base = current_image
+
+        # Moving tags: let the user jump from a pinned :X.Y.Z back onto
+        # the rolling :latest / :stable line. Reported by @famewolf in #2
+        # — his host was stuck on :1.19.0 and `/selfupdate latest` was
+        # rejected, so there was no in-band way to rejoin latest.
+        if target.lower() in ("latest", "stable"):
+            return f"{base}:{target.lower()}", None
 
         if target.lower() == "previous":
             # Walk the upstream CHANGELOG for the latest version older
@@ -1233,6 +1245,22 @@ class TelegramBot:
         if not _re.match(r"^\d+\.\d+\.\d+$", target):
             return None, self.t("selfupdate_invalid_version", version=target)
         return f"{base}:{target}", None
+
+    def _latest_released_version(self):
+        """Return the highest version in the upstream CHANGELOG as a
+        (major, minor, patch) tuple, or None if it can't be fetched or
+        parsed. Used to warn a user pinned to an old :X.Y.Z image tag
+        that a newer release exists (#2)."""
+        ok, content = self._fetch_changelog()
+        if not ok:
+            return None
+        import re
+        best = None
+        for m in re.finditer(r"^## \[(\d+)\.(\d+)\.(\d+)\]", content, re.MULTILINE):
+            v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            if best is None or v > best:
+                best = v
+        return best
 
     def _handle_selfupdate(self, target=None):
         """Pull a target image and recreate own container.
@@ -1295,6 +1323,25 @@ class TelegramBot:
         old_id = config["Image"]
 
         if new_id == old_id:
+            # Up to date for the CURRENT image tag. But if the user ran a
+            # plain /selfupdate while the container is on a fixed version
+            # tag (e.g. :1.19.0) and a newer release exists, plain "up to
+            # date" is misleading — they're stuck on an old version that
+            # can't self-update past itself. Guide them. Reported by
+            # @famewolf in #2 (his host was stuck on :1.19.0, still hit by
+            # the pre-v1.22.0 config-loss bug, with no obvious way out).
+            if target is None and ":" in current_image:
+                import re
+                tag = current_image.rsplit(":", 1)[1]
+                m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", tag)
+                if m:
+                    cur_v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                    latest_v = self._latest_released_version()
+                    if latest_v and latest_v > cur_v:
+                        latest_str = ".".join(str(x) for x in latest_v)
+                        self.send_message(self.t(
+                            "selfupdate_old_tag", current=tag, latest=latest_str))
+                        return
             self.send_message(self.t("selfupdate_up_to_date"))
             return
 

@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.4] - 2026-06-16
+
+### Added
+- **`/selfupdate latest` and `/selfupdate stable`** now work. Previously `/selfupdate` only accepted an exact `X.Y.Z` version or `previous`, so a container running a fixed version tag (e.g. `:1.19.0`) had no in-band way to rejoin the rolling `:latest` line. Reported by @famewolf in [#2](../../issues/2): his host was stuck on `:1.19.0` — and `/selfupdate latest` was rejected as an invalid version.
+
+- **Plain `/selfupdate` now warns when you're on an outdated fixed version tag.** If the container's image is a specific version (e.g. `:1.19.0`), `/selfupdate` checks that tag — which is immutable, so it correctly reports "up to date" even when a much newer release exists. That was genuinely misleading (and dangerous: @famewolf's `:1.19.0` host kept losing its config to the pre-v1.22.0 non-atomic-write bug, with no obvious signal that it was stuck on a buggy version). Now, when the current tag is a fixed `X.Y.Z` and the upstream CHANGELOG advertises a newer release, `/selfupdate` says so and offers three concrete ways out: `/selfupdate <new>`, `/selfupdate latest`, or switching the compose image to `:latest`. Only triggers on a plain `/selfupdate` (an explicit `/selfupdate X.Y.Z` is never second-guessed), and falls back silently to the normal "up to date" message if the CHANGELOG can't be fetched.
+
+### Changed
+- `selfupdate_invalid_version` message updated to list all accepted targets (`X.Y.Z`, `latest`, `stable`, `previous`).
+
+### Fixed
+- **Auto-detect "Import selected" no longer imports stacks you didn't pick.** Reported by @famewolf in [#2](../../issues/2): he opened the auto-detect modal to browse, checked nothing, clicked "Import selected" — and a multi-container stack got imported anyway, because v1.21.2 pre-checked multi-container stacks by default. Now **nothing is checked by default**; "Import selected" imports only what the user explicitly ticks, and clicking it with nothing selected shows a "Nothing selected" toast instead of silently creating a group. The `single` badge still steers users away from single-container stacks, and already-imported stacks stay disabled.
+
 ## [1.23.3] - 2026-06-15
 
 ### Fixed
