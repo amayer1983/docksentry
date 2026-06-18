@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.5] - 2026-06-18
+
+### Fixed
+- **An update that leaves a container crash-looping is no longer reported as a success.** A container can pass back through `running`/`starting` between crashes — so an image whose new version exits on startup (e.g. a failed database migration) and gets revived over and over by its `restart: always` policy would, at the moment Docksentry happened to inspect it, look alive. The health-wait only checked the current `State`/`Health` snapshot, never the restart count, so it either reported `healthy` or timed out into the "slow start" branch — and in the standalone path that branch even **deleted the rollback backup** before recording success. The result: a service down in a tight restart loop, marked as a clean update, with the backup it needed for recovery already gone.
+
+  The health-wait now records the container's `RestartCount` before it starts watching and re-checks it on every poll. If the count climbs while we wait, the update is classified as a **crash loop** — a hard failure: roll back to the backup (standalone), leave the old container in place (compose), and report `success: false` with a clear "crash-restart loop" message. The backup is never removed on this path.
+
+  It also no longer declares success the instant a container first looks healthy: it confirms the container *stays* up, with no restarts, for `crashloop_stable_seconds` (default 30s) before reporting `healthy`. This catches a container that boots cleanly and then crashes a few seconds later — slower than a single health poll would see. Genuinely slow-but-stable services (no restarts) are unaffected and still resolve to the "starting" warning rather than a false failure.
+
+  Together with the existing `restart: no` → `unhealthy` path, both crash shapes are now covered: a container that stays exited, and one that loops. Verified with a local five-case simulation against real crash-looping, healthy, slow-start, and boots-then-crashes containers (`scripts/sim_crashloop.py`).
+
 ## [1.23.4] - 2026-06-16
 
 ### Added

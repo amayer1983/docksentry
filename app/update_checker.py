@@ -925,6 +925,23 @@ class UpdateChecker:
         except subprocess.SubprocessError:
             return ""
 
+    def _restart_count(self, name):
+        """Current Docker RestartCount for a container (0 on any error).
+
+        Used by _wait_healthy to detect a post-update crash loop: a
+        container whose main process keeps exiting and getting revived
+        by its restart policy. A healthcheck stuck in "starting" would
+        otherwise hide this and we'd report a broken update as success.
+        """
+        rc = subprocess.run(
+            ["docker", "inspect", "--format", "{{.RestartCount}}", name],
+            capture_output=True, text=True
+        )
+        try:
+            return int(rc.stdout.strip())
+        except (ValueError, AttributeError):
+            return 0
+
     def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 
@@ -936,16 +953,21 @@ class UpdateChecker:
         at our default if our default is shorter than what the image
         author thought reasonable.
 
-        Three return outcomes (instead of the old two-value boolean):
+        Four return outcomes:
             "healthy"  → container reported healthy (or has no
-                         healthcheck and is running)
+                         healthcheck and is running) AND stayed that way,
+                         with no restarts, for `crashloop_stable_seconds`
             "unhealthy"→ healthcheck reported unhealthy, OR container
                          is not running. Caller should roll back.
-            "starting" → still in `starting` after our wait. The
-                         container is alive but slow. Caller should
-                         NOT roll back — leave it in place and warn
-                         the user so Docker's own start_period can
-                         eventually decide.
+            "crashloop"→ the container's RestartCount climbed while we
+                         waited: its main process keeps exiting and the
+                         restart policy keeps reviving it. A failed
+                         update masquerading as "starting". Caller should
+                         roll back / report failure — never success.
+            "starting" → still in `starting` after our wait, with NO
+                         restarts. The container is alive but slow.
+                         Caller should NOT roll back — leave it in place
+                         and warn so Docker's own start_period can decide.
 
         Returns (outcome, state, health).
         """
@@ -958,6 +980,19 @@ class UpdateChecker:
         if effective != max_starting:
             self._debug(f"  Effective health timeout: {effective}s (default {max_starting}s, image start_period {image_start:.0f}s)")
 
+        # Baseline restart count. If it climbs while we wait, the new
+        # container is crash-looping (exits → restart policy revives it
+        # → exits again). A healthcheck stuck in "starting" the whole
+        # time would otherwise mask this and we'd wrongly report success
+        # — exactly the GitLab DB-migration failure on 2026-06-18.
+        baseline_restarts = self._restart_count(name)
+        # Once the container first looks healthy we don't return immediately:
+        # we keep watching for `stable_needed` more seconds to be sure it
+        # STAYS up. Without this, a container that boots fine and then
+        # crashes a few seconds later (slower than a single poll) would slip
+        # through as a successful update. 0 disables the confirmation.
+        stable_needed = getattr(self.config, "crashloop_stable_seconds", 30)
+        healthy_since = None
         elapsed = 0
         check = 0
         state = ""
@@ -977,17 +1012,34 @@ class UpdateChecker:
             )
             health = hc.stdout.strip() if hc.returncode == 0 else ""
             self._debug(f"  Health check [{check}, {elapsed}s/{effective}s]: state={state}, health={health}")
+            # Crash-loop check first: a climbing RestartCount means the
+            # container keeps dying and being revived, regardless of what
+            # the current state/health snapshot happens to show.
+            restarts = self._restart_count(name)
+            if restarts > baseline_restarts:
+                self._debug(f"  Crash loop detected for {name}: RestartCount {baseline_restarts} → {restarts}")
+                return "crashloop", state, health
             if state != "running":
                 return "unhealthy", state, health
-            if not health or health == "<no value>":
-                return "healthy", state, health
-            if health == "healthy":
-                return "healthy", state, health
             if health == "unhealthy":
                 return "unhealthy", state, health
-            # health == "starting" → keep waiting
-        # Timed out with status still "starting" — container is alive
-        # but slow. Don't roll back; let the caller report a warning.
+            looks_healthy = (not health or health == "<no value>"
+                             or health == "healthy")
+            if looks_healthy:
+                if healthy_since is None:
+                    healthy_since = elapsed
+                    self._debug(f"  Looks healthy at {elapsed}s — confirming stable for {stable_needed}s")
+                if elapsed - healthy_since >= stable_needed:
+                    return "healthy", state, health
+                # else: keep observing to rule out a delayed crash loop
+            else:
+                # health == "starting" → regressed; reset the stable timer
+                healthy_since = None
+            # keep waiting
+        # Timed out. If it ever looked healthy and never restarted, it's slow
+        # but stable — accept it. Otherwise it's still genuinely 'starting'.
+        if healthy_since is not None:
+            return "healthy", state, health
         return "starting", state, health
 
     def check_all(self, bot=None):
@@ -1113,15 +1165,19 @@ class UpdateChecker:
         self._debug(f"  Health check: waiting for {name}...")
         outcome, state, health = self._wait_healthy(name)
 
-        if outcome == "unhealthy":
-            # Container actively unhealthy or no longer running — for
-            # the compose path, "rollback" via `compose up` is mostly a
-            # no-op (the same compose file produces the same container),
-            # so we honestly report "failed in place" instead of
-            # claiming a rollback that didn't happen.
-            self._debug(f"  Health check FAILED (compose) — container left in place")
+        if outcome in ("unhealthy", "crashloop"):
+            # Container actively unhealthy, no longer running, or
+            # crash-looping — for the compose path, "rollback" via
+            # `compose up` is mostly a no-op (the same compose file
+            # produces the same container), so we honestly report
+            # "failed in place" instead of claiming a rollback that
+            # didn't happen.
+            self._debug(f"  Health check FAILED ({outcome}, compose) — container left in place")
             tail = self._tail_logs(name, lines=10)
-            msg = f"Health check failed (state={state}, health={health}) — container left in place (compose)"
+            if outcome == "crashloop":
+                msg = f"Update produced a crash-restart loop (state={state}, health={health}) — left in place (compose)"
+            else:
+                msg = f"Health check failed (state={state}, health={health}) — container left in place (compose)"
             if tail:
                 msg += f"\nLast logs:\n```\n{tail}\n```"
             self._save_history(name, image, False, msg)
@@ -1963,10 +2019,11 @@ class UpdateChecker:
                 # No rollback target exists for a --rm container, so even
                 # on an unhealthy result we leave the freshly-created
                 # container in place and report honestly.
-                if outcome == "unhealthy":
+                if outcome in ("unhealthy", "crashloop"):
                     tail = self._tail_logs(name, lines=10)
-                    msg = (f"⚠ Recreated after auto-remove, but health check "
-                           f"failed (state={state}, health={health}). No "
+                    problem = ("is crash-looping" if outcome == "crashloop"
+                               else f"health check failed (state={state}, health={health})")
+                    msg = (f"⚠ Recreated after auto-remove, but {problem}. No "
                            f"rollback target exists for a --rm container — "
                            f"left running. ({detail})")
                     if tail:
@@ -2022,12 +2079,12 @@ class UpdateChecker:
             self._debug(f"  Health check: waiting for {name}...")
             outcome, state, health = self._wait_healthy(name)
 
-            if outcome == "unhealthy":
-                # Active failure — container died, or healthcheck went
-                # unhealthy after Docker's start_period elapsed. Roll
-                # back to the old container so the user isn't left with
-                # a broken service.
-                self._debug(f"  Health check FAILED for {name} — rolling back")
+            if outcome in ("unhealthy", "crashloop"):
+                # Active failure — container died, healthcheck went
+                # unhealthy after Docker's start_period elapsed, or the
+                # new container is crash-looping. Roll back to the old
+                # container so the user isn't left with a broken service.
+                self._debug(f"  Health check FAILED ({outcome}) for {name} — rolling back")
                 tail = self._tail_logs(name, lines=10)
                 # Grab logs first (above), then roll back. _rollback_to_old
                 # force-removes the broken new container and restores the
@@ -2035,7 +2092,10 @@ class UpdateChecker:
                 # exists). Replaces the old stop+rm+rename+start sequence
                 # that silently failed when the new container wouldn't stop.
                 self._rollback_to_old(name, old_name)
-                msg = f"Health check failed (state={state}, health={health}) — rolled back"
+                if outcome == "crashloop":
+                    msg = f"Update produced a crash-restart loop (state={state}, health={health}) — rolled back"
+                else:
+                    msg = f"Health check failed (state={state}, health={health}) — rolled back"
                 if tail:
                     msg += f"\nLast logs:\n```\n{tail}\n```"
                 self._save_history(name, image, False, msg)
