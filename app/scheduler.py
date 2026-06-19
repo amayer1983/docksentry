@@ -97,6 +97,12 @@ class Scheduler:
         self.bot = bot
         self.running = False
         self.thread = None
+        # In-memory fallbacks so a failed state-file write (e.g. a full disk —
+        # exactly when these alerts matter most) can't cause the same report
+        # to fire over and over. They persist for the process lifetime and
+        # reset on restart. See _run / _check_disk_space.
+        self._weekly_sent_date = None
+        self._disk_warned_at = None
 
     def start(self):
         self.running = True
@@ -193,6 +199,7 @@ class Scheduler:
         # for the same minute the deferred-check is already handling.
         last_check = getattr(self, "_resumed_minute", None)
         last_weekly = None
+        last_disk_ts = 0.0  # monotonic; 0 → first disk check fires on startup
         print(f"Scheduler started with schedule: {self.config.cron_schedule}")
         if last_check:
             print(f"Initial cron tick for {last_check} claimed by deferred-check (post-selfupdate)")
@@ -209,8 +216,14 @@ class Scheduler:
                 try:
                     from weekly_report import maybe_send_weekly_report
                     from i18n import get_translator
-                    t = get_translator(self.config.language)
-                    maybe_send_weekly_report(self.config, self.bot, t)
+                    today = now.date().isoformat()
+                    # In-memory guard: if the state file couldn't be written
+                    # last time (e.g. full disk), should_send_now would re-fire
+                    # the report every hour. Skip if we already sent it today.
+                    if self._weekly_sent_date != today:
+                        t = get_translator(self.config.language)
+                        if maybe_send_weekly_report(self.config, self.bot, t):
+                            self._weekly_sent_date = today
                 except Exception as e:
                     print(f"Weekly report check error: {e}")
 
@@ -273,23 +286,38 @@ class Scheduler:
                     except Exception as e:
                         print(f"Auto cleanup error: {e}")
 
-                # Disk space monitoring. Threshold notification once per day
-                # at most. With disk_warn_auto_cleanup enabled, also trigger
-                # an immediate cleanup pass (independent of auto_cleanup).
-                try:
+            # Disk monitoring on its OWN cadence — decoupled from the update
+            # cron. A disk can fill in minutes; tying the check to a once-a-day
+            # cron meant a crash-looping container filled the disk between two
+            # daily ticks with no warning at all (2026-06-18). Runs every
+            # disk_check_interval_seconds (default 300). Skipped in maintenance.
+            try:
+                from maintenance import is_active as _maint_active
+                disk_interval = int(getattr(self.config, "disk_check_interval_seconds", 300) or 300)
+                if (time.monotonic() - last_disk_ts >= disk_interval
+                        and not _maint_active(self.config)):
+                    last_disk_ts = time.monotonic()
                     self._check_disk_space()
-                except Exception as e:
-                    print(f"Disk space check error: {e}")
+            except Exception as e:
+                print(f"Disk space check error: {e}")
 
             time.sleep(30)
 
     def _check_disk_space(self):
         action, percent, free_gb = self.checker.check_disk_usage()
         if action == "ok":
+            self._disk_warned_at = None  # back below threshold — re-arm
             return
         if action == "silent":
-            return  # already warned today
-        # action == "warn"
+            return  # already warned today (persisted throttle)
+        # action == "warn". The file-based throttle in check_disk_usage can't
+        # persist its state when the disk is full — exactly the situation here —
+        # so it would return "warn" on every pass. The in-memory guard keeps
+        # the notification to ~once/day even when the state file can't be written.
+        now_ts = time.time()
+        if self._disk_warned_at and now_ts - self._disk_warned_at < 23 * 3600:
+            return
+        self._disk_warned_at = now_ts
         msg = f"⚠️ Disk usage at {percent}% — {free_gb:.1f} GB free."
         notifier = getattr(self.bot, "notifier", None)
         if notifier and notifier.has_channels():

@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.6] - 2026-06-19
+
+### Fixed
+- **Disk-usage monitoring no longer rides on the update-check schedule.** The disk check only ran inside a cron tick — so with a once-a-day schedule (`0 18 * * *`) the disk was inspected once per day, right after the update. A container that filled the disk *between* two daily ticks (e.g. a crash-looping service writing gigabytes of logs) crossed the warning threshold and ran the disk to 100% with no alert, because the next check wasn't due for ~24h. Disk monitoring now runs on its **own cadence**, independent of the update cron — every `disk_check_interval_seconds` (default 300s / 5 min), starting at boot. A disk can fill in minutes; it's now checked in minutes.
+
+- **A failed state-file write no longer causes the same alert to repeat endlessly.** When the disk is full, the throttle/state files for the disk warning and the weekly report can't be written — so the "already sent" marker never persisted and both fired again on every pass (the disk warning would have, and the weekly report demonstrably did: several duplicate weekly messages during the outage). The scheduler now keeps an **in-memory guard** for each: once a disk warning or weekly report has gone out, it won't repeat for its throttle window even if the state file can't be persisted. The guard re-arms when the disk drops back below the threshold (or the process restarts). Verified with `scripts/test_disk_guard.py`.
+
 ## [1.23.5] - 2026-06-18
 
 ### Fixed
