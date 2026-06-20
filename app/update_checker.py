@@ -942,6 +942,22 @@ class UpdateChecker:
         except (ValueError, AttributeError):
             return 0
 
+    def _image_id(self, image):
+        """Resolved image ID (sha256:...) for an image reference, or ''."""
+        r = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+            capture_output=True, text=True
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    def _container_image_id(self, name):
+        """Image ID the named container is actually running, or ''."""
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Image}}", name],
+            capture_output=True, text=True
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+
     def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 
@@ -1152,12 +1168,29 @@ class UpdateChecker:
         new_version = self._get_image_version_label(image)
         self._version_arrow = self._format_version_arrow(old_version, new_version)
 
-        # Recreate service via compose
-        up_cmd = ["docker", "compose", "-f", config_file, "-p", project, "up", "-d", "--no-deps", service]
-        self._debug(f"  Running: docker compose -f {config_file} -p {project} up -d --no-deps {service}")
+        # Recreate service via compose. `--force-recreate` so the container
+        # is actually replaced: a plain `up -d` can leave the old container
+        # (and old image) running if Compose judges the service "unchanged",
+        # so the new image gets pulled but never loaded (#35).
+        up_cmd = ["docker", "compose", "-f", config_file, "-p", project,
+                  "up", "-d", "--no-deps", "--force-recreate", service]
+        self._debug(f"  Running: docker compose -f {config_file} -p {project} up -d --no-deps --force-recreate {service}")
         result = subprocess.run(up_cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             msg = f"Compose up failed: {result.stderr[:200]}"
+            self._save_history(name, image, False, msg)
+            return False, msg
+
+        # Verify the running container actually picked up the new image.
+        # Pull + recreate can both "succeed" yet leave the container on the
+        # previous image (#35) — report that honestly instead of a phantom OK.
+        pulled_id = self._image_id(image)
+        running_id = self._container_image_id(name)
+        if pulled_id and running_id and pulled_id != running_id:
+            self._debug(f"  Image mismatch: running {running_id[:19]} != pulled {pulled_id[:19]}")
+            msg = (f"Pulled the new image but {name} is still running the old one "
+                   f"(running {running_id[:19]} != pulled {pulled_id[:19]}). "
+                   f"Try `docker compose -p {project} up -d --force-recreate {service}` manually.")
             self._save_history(name, image, False, msg)
             return False, msg
 

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.7] - 2026-06-20
+
+### Fixed
+- **A compose update that pulls the new image but keeps running the old one is no longer reported as success.** Reported by @NotRetarded in [#35](../../issues/35): an auto-update pulled the new image (local digest matched remote) and reported `OK`, but the container kept running the previous image — the app stayed on its old version until a manual force-recreate. The compose path ran `docker compose up -d --no-deps`, which can leave the existing container in place if Compose judges the service "unchanged", so the freshly-pulled image never gets loaded. Two changes: the recreate now uses `--force-recreate` so the container is actually replaced, and after it comes up Docksentry compares the running container's image ID against the pulled image's ID — if they differ, it reports a failure with a clear message instead of a phantom success.
+
 ## [1.23.6] - 2026-06-19
 
 ### Fixed
