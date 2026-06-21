@@ -1389,6 +1389,17 @@ class TelegramBot:
                 best = v
         return best
 
+    def _should_retag_moving(self, target, current_image, own_image):
+        """True when the user explicitly asked to move onto a ROLLING tag
+        (`latest`/`stable`) and the container is currently on a DIFFERENT
+        tag — so even when the pulled digest is unchanged we should recreate
+        to actually adopt the moving tag. Closes the SET/UNSET asymmetry:
+        `/selfupdate <version>` can pin a tag, but returning to `:latest`
+        used to require editing compose on the host because a same-digest
+        result short-circuited to "up to date" (#2, @famewolf). False when
+        already on that tag — no pointless recreate."""
+        return target in ("latest", "stable") and own_image != current_image
+
     def _handle_selfupdate(self, target=None):
         """Pull a target image and recreate own container.
 
@@ -1450,6 +1461,19 @@ class TelegramBot:
         old_id = config["Image"]
 
         if new_id == old_id:
+            # Same image bits — but if the user explicitly asked to rejoin a
+            # rolling tag (`/selfupdate latest`/`stable`) while the container
+            # runs a DIFFERENT tag (e.g. a pinned :1.19.0 whose digest equals
+            # :latest right now), force a re-tag recreate so the container's
+            # image reference actually becomes the moving tag and future
+            # updates track it again (#2, @famewolf).
+            if self._should_retag_moving(target, current_image, own_image):
+                self.send_message(self.t("selfupdate_retag",
+                                         old=current_image, new=own_image))
+                self._save_selfupdate_history(own_name, own_image,
+                                              old_created, new_created)
+                self._do_selfupdate(config, own_name, own_image)
+                return
             # Up to date for the CURRENT image tag. But if the user ran a
             # plain /selfupdate while the container is on a fixed version
             # tag (e.g. :1.19.0) and a newer release exists, plain "up to

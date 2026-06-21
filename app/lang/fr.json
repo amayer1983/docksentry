@@ -103,6 +103,7 @@
   "status_pinned": "Épinglés",
   "status_autoupdate": "Mise à jour auto",
   "startup_message": "🚀 *Docksentry démarré* (v{version})",
+  "selfupdate_retag": "🔁 *Re-joining the rolling line* — the image bits are identical, but I'll recreate so your container tracks `{new}` instead of `{old}` from now on. Bot will be briefly offline.",
   "groups_none": "No container groups configured yet. Create one in the Web UI → Groups.",
   "groups_title": "*Container Groups*",
   "groups_list_hint": "_Use /groups <name> for details._",

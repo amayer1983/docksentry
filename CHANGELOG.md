@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.25.1] - 2026-06-21
+
+### Fixed
+- **`/selfupdate latest` (and `stable`) now actually moves you back onto the rolling tag.** Closes the SET/UNSET asymmetry @famewolf raised in [#2](../../issues/2): `/selfupdate <version>` could *pin* a tag, but returning to `:latest` was a dead end — when the rolling tag's digest already equalled the pinned version's, the self-update short-circuited to "already up to date" and the container stayed on the pinned tag, so it would never track latest again. You had to edit compose on the host. Now, when you explicitly ask for `latest`/`stable` and the container is on a *different* tag, Docksentry re-tags and recreates even on an unchanged digest, so the image reference becomes the rolling tag. Asking for `latest` while already on `:latest` still does nothing (no pointless recreate). Logic test: `scripts/test_selfupdate_retag.py`.
+
 ## [1.25.0] - 2026-06-21
 
 ### Added
