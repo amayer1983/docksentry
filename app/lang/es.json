@@ -103,6 +103,7 @@
   "status_pinned": "Fijados",
   "status_autoupdate": "Auto-actualización",
   "startup_message": "🚀 *Docksentry iniciado* (v{version})",
+  "startup_reason_signal": "\n↻ _El reinicio se produjo tras una señal de parada externa ({signal}) — p. ej. un reinicio del host, `docker restart`, o el reinicio del demonio de Docker. Docksentry no se reinició solo._",
   "help_logs": "/logs — Mostrar logs del contenedor",
   "logs_usage": "Uso: `/logs nombre_contenedor`",
   "logs_title": "📋 *Logs de* `{name}` (últimas 30 líneas):",

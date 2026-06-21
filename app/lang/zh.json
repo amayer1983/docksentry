@@ -103,6 +103,7 @@
   "status_pinned": "已固定",
   "status_autoupdate": "自动更新",
   "startup_message": "🚀 *Docksentry 已启动* (v{version})",
+  "startup_reason_signal": "\n↻ _本次重启由外部停止信号（{signal}）触发——例如主机重启、`docker restart` 或 Docker 守护进程重启。Docksentry 并未自行重启。_",
   "help_logs": "/logs — 显示容器日志",
   "logs_usage": "用法：`/logs 容器名`",
   "logs_title": "📋 *日志：* `{name}` (最近30行)：",

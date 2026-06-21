@@ -103,6 +103,7 @@
   "status_pinned": "Bloccati",
   "status_autoupdate": "Auto-aggiornamento",
   "startup_message": "🚀 *Docksentry avviato* (v{version})",
+  "startup_reason_signal": "\n↻ _Il riavvio è seguito a un segnale di arresto esterno ({signal}) — es. riavvio dell'host, `docker restart` o riavvio del daemon Docker. Docksentry non si è riavviato da solo._",
   "help_logs": "/logs — Mostra i log del contenitore",
   "logs_usage": "Uso: `/logs nome_contenitore`",
   "logs_title": "📋 *Log di* `{name}` (ultime 30 righe):",

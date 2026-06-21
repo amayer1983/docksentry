@@ -197,6 +197,7 @@
   "status_pinned": "Pinned",
   "status_autoupdate": "Auto-Update",
   "startup_message": "🚀 *Docksentry started* (v{version})",
+  "startup_reason_signal": "\n↻ _Restart followed an external stop signal ({signal}) — e.g. a host reboot, `docker restart`, or the Docker daemon restarting. Docksentry did not restart itself._",
   "data_loss_alert": "⚠️ *No persisted settings found* — possible data loss.\n\nYour Telegram config came from env vars, but `/data/settings.json` is missing. Container groups, pin / autoupdate / link / window state may have been lost too. Common causes: host reboot mid-write (fixed in v1.22.0 with atomic writes — won't happen again), volume mount missing at start, fresh `/data/` volume.\n\nIf you have a backup, restore via Web UI → Settings → Import. Otherwise re-configure and check the Web UI's Status page for any groups / pins you'd set up.",
   "help_logs": "/logs — Show container logs",
   "logs_usage": "Usage: `/logs container_name`",

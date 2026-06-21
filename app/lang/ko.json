@@ -103,6 +103,7 @@
   "status_pinned": "고정됨",
   "status_autoupdate": "자동 업데이트",
   "startup_message": "🚀 *Docksentry 시작됨* (v{version})",
+  "startup_reason_signal": "\n↻ _외부 종료 신호({signal})로 인해 재시작되었습니다 — 예: 호스트 재부팅, `docker restart`, Docker 데몬 재시작. Docksentry가 스스로 재시작한 것이 아닙니다._",
   "help_logs": "/logs — 컨테이너 로그 표시",
   "logs_usage": "사용법: `/logs 컨테이너_이름`",
   "logs_title": "📋 *로그:* `{name}` (최근 30줄):",

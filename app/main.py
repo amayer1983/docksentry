@@ -110,6 +110,22 @@ def main():
 
     # Graceful shutdown
     def shutdown(sig, frame):
+        # Record the exit cause *first* — before stopping services, so the
+        # marker survives even if Docker escalates to SIGKILL after the stop
+        # timeout. The next boot reads this to tell the operator it was an
+        # external stop signal (host reboot, `docker restart`, daemon
+        # restart) rather than Docksentry restarting itself (#2, @famewolf).
+        try:
+            from container_store import atomic_write_json
+            try:
+                signame = signal.Signals(sig).name
+            except (ValueError, AttributeError):
+                signame = str(sig)
+            atomic_write_json(config.last_exit_file,
+                              {"reason": "signal", "signal": signame,
+                               "ts": time.time()})
+        except Exception as e:
+            print(f"Could not record exit cause (non-fatal): {e}")
         print("Shutting down...")
         scheduler.stop()
         bot.stop()
@@ -128,6 +144,25 @@ def main():
     # restart messages back-to-back. Reported by the user from a
     # real-world v1.17.0 deployment.
     post_selfupdate_restart = os.path.exists(config.deferred_check_file)
+
+    # Why did we (re)start? The SIGTERM/SIGINT handler leaves a marker when
+    # an external signal stopped the previous process; consume it here so the
+    # startup notification can say "this was an external stop, not a
+    # self-restart" (#2 — @famewolf's hosts reboot at midnight and the
+    # generic "started" banner made it look self-inflicted). Absent marker =
+    # first boot or an unclean kill (SIGKILL/OOM/power loss) — we don't claim
+    # a cause we can't prove, so no suffix in that case.
+    restart_signal = None
+    try:
+        if os.path.exists(config.last_exit_file):
+            import json as _json
+            with open(config.last_exit_file) as f:
+                _exit = _json.load(f)
+            if _exit.get("reason") == "signal":
+                restart_signal = _exit.get("signal", "signal")
+            os.unlink(config.last_exit_file)
+    except Exception as e:
+        print(f"Could not read exit cause (non-fatal): {e}")
 
     # Post-selfupdate fixup: when _save_selfupdate_history wrote the
     # entry before the swap, the new version wasn't known yet — it's
@@ -235,8 +270,13 @@ def main():
         and not post_selfupdate_restart
     )
 
+    if restart_signal:
+        print(f"Restart cause: external stop signal ({restart_signal}) — not a self-restart")
+
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
+        if restart_signal:
+            startup_msg += t("startup_reason_signal", signal=restart_signal)
         if bot.enabled:
             bot.send_message(startup_msg)
             if settings_missing:

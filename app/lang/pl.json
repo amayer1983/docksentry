@@ -103,6 +103,7 @@
   "status_pinned": "Przypięte",
   "status_autoupdate": "Auto-aktualizacja",
   "startup_message": "🚀 *Docksentry uruchomiony* (v{version})",
+  "startup_reason_signal": "\n↻ _Ponowne uruchomienie nastąpiło po zewnętrznym sygnale zatrzymania ({signal}) — np. restart hosta, `docker restart` lub restart demona Dockera. Docksentry nie zrestartował się sam._",
   "help_logs": "/logs — Pokaż logi kontenera",
   "logs_usage": "Użycie: `/logs nazwa_kontenera`",
   "logs_title": "📋 *Logi dla* `{name}` (ostatnie 30 linii):",

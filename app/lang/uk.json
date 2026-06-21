@@ -103,6 +103,7 @@
   "status_pinned": "Закріплені",
   "status_autoupdate": "Авто-оновлення",
   "startup_message": "🚀 *Docksentry запущено* (v{version})",
+  "startup_reason_signal": "\n↻ _Перезапуск стався після зовнішнього сигналу зупинки ({signal}) — наприклад, перезавантаження хоста, `docker restart` або перезапуск демона Docker. Docksentry не перезапускав себе сам._",
   "help_logs": "/logs — Показати логи контейнера",
   "logs_usage": "Використання: `/logs ім'я_контейнера`",
   "logs_title": "📋 *Логи* `{name}` (останні 30 рядків):",

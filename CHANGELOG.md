@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.8] - 2026-06-20
+
+### Added
+- **Startup notification now says *why* Docksentry restarted.** Reported by @famewolf in [#2](../../issues/2): three of his hosts reboot at midnight and each Docksentry came back with the generic "🚀 Docksentry started" banner, which made it look like Docksentry restarted *itself* — when in fact an external signal (host reboot / `docker restart` / Docker daemon restart) stopped it and the restart policy brought it back. The `SIGTERM`/`SIGINT` handler now records the exit cause, and the next boot appends a line to the startup message: *"Restart followed an external stop signal (SIGTERM) — Docksentry did not restart itself."* With `cron 0 18 * * *` + auto-selfupdate off there is no code path that restarts the process; the only emitter of "Shutting down…" is the signal handler, so this distinguishes external restarts from self-updates at a glance. Absent marker (first boot or an unclean SIGKILL/OOM/power loss) adds no suffix — we don't claim a cause we can't prove. Translated into all 17 languages.
+
 ## [1.23.7] - 2026-06-20
 
 ### Fixed

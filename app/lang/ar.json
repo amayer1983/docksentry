@@ -103,6 +103,7 @@
   "status_pinned": "مثبتة",
   "status_autoupdate": "تحديث تلقائي",
   "startup_message": "🚀 *تم تشغيل Docksentry* (v{version})",
+  "startup_reason_signal": "\n↻ _حدثت إعادة التشغيل بعد إشارة إيقاف خارجية ({signal}) — مثل إعادة تشغيل المضيف أو `docker restart` أو إعادة تشغيل خدمة Docker. لم يُعِد Docksentry تشغيل نفسه._",
   "help_logs": "/logs — عرض سجلات الحاوية",
   "logs_usage": "الاستخدام: `/logs اسم_الحاوية`",
   "logs_title": "📋 *سجلات* `{name}` (آخر 30 سطراً):",

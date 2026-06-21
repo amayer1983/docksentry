@@ -103,6 +103,7 @@
   "status_pinned": "Vastgezet",
   "status_autoupdate": "Auto-update",
   "startup_message": "🚀 *Docksentry gestart* (v{version})",
+  "startup_reason_signal": "\n↻ _De herstart volgde op een extern stopsignaal ({signal}) — bijv. een host-reboot, `docker restart` of het herstarten van de Docker-daemon. Docksentry heeft zichzelf niet herstart._",
   "help_logs": "/logs — Containerlogs tonen",
   "logs_usage": "Gebruik: `/logs container_naam`",
   "logs_title": "📋 *Logs van* `{name}` (laatste 30 regels):",

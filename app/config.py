@@ -119,6 +119,11 @@ class Config:
         # (> 1h) are ignored so a failed self-update doesn't trigger a
         # phantom check on the next manual restart.
         self.deferred_check_file = os.path.join(data_dir, "deferred_check.json")
+        # Written by the SIGTERM/SIGINT handler so the next boot can report
+        # *why* it restarted (external stop signal vs unexpected exit) — so
+        # users don't mistake a host reboot / `docker restart` for Docksentry
+        # restarting itself. See #2 (@famewolf).
+        self.last_exit_file = os.path.join(data_dir, "last_exit.json")
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port

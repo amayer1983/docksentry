@@ -103,6 +103,7 @@
   "status_pinned": "Sabitlenmiş",
   "status_autoupdate": "Otomatik güncelleme",
   "startup_message": "🚀 *Docksentry başlatıldı* (v{version})",
+  "startup_reason_signal": "\n↻ _Yeniden başlatma harici bir durdurma sinyalinin ({signal}) ardından gerçekleşti — ör. ana makinenin yeniden başlatılması, `docker restart` veya Docker arka plan hizmetinin yeniden başlatılması. Docksentry kendini yeniden başlatmadı._",
   "help_logs": "/logs — Konteyner loglarını göster",
   "logs_usage": "Kullanım: `/logs konteyner_adı`",
   "logs_title": "📋 *Loglar:* `{name}` (son 30 satır):",
