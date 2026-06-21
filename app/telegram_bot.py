@@ -45,6 +45,7 @@ _BOT_COMMANDS = [
     ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle",   "help_detail_lifecycle"),
     ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance", "help_detail_maintenance"),
     ("history",     "Recent update history",                                          "help_history",     "help_detail_history"),
+    ("groups",      "Show container groups — /groups or /groups <name>",              "help_groups",      "help_detail_groups"),
     ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin",         "help_detail_pin"),
     ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin",       "help_detail_pin"),
     ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate",  "help_detail_autoupdate"),
@@ -841,9 +842,14 @@ class TelegramBot:
 
         Returns a one-line user-facing result string for the update
         report."""
-        healthy = self._wait_healthy(head_name, max_wait)
-        if not healthy:
-            print(f"⚠ {head_name} not healthy after {max_wait}s — restarting dependents anyway")
+        # _wait_healthy returns a (outcome, state, health) tuple since
+        # v1.23.5 — unpack it. The old `if not healthy:` tested a 3-tuple
+        # (always truthy), so the warning never fired and the outcome was
+        # ignored. We still restart dependents regardless (a stuck namespace
+        # is worse than an early restart), but now we log the real reason.
+        outcome, _, _ = self._wait_healthy(head_name, max_wait)
+        if outcome != "healthy":
+            print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — restarting dependents anyway")
 
         restarted = []
         failed = []
@@ -1237,6 +1243,77 @@ class TelegramBot:
             lines.append("\n".join(block))
         lines.append("\n" + self.t("dryrun_footer"))
         return "\n".join(lines)
+
+    def _resolve_group(self, arg):
+        """Resolve a /groups argument to (group_id, group_dict). Matches the
+        opaque slug or the display name, case-insensitively, then falls back
+        to a unique partial match. Returns (None, None) if nothing matches or
+        the partial is ambiguous."""
+        groups = self.store.get_groups() or {}
+        if not groups:
+            return None, None
+        if arg in groups:
+            return arg, groups[arg]
+        al = arg.strip().lower()
+        for gid, g in groups.items():
+            if gid.lower() == al or (g.get("name", "") or "").lower() == al:
+                return gid, g
+        partial = [(gid, g) for gid, g in groups.items()
+                   if al in gid.lower() or al in (g.get("name", "") or "").lower()]
+        return partial[0] if len(partial) == 1 else (None, None)
+
+    def _running_names(self):
+        """Set of currently-running container names (one docker call)."""
+        try:
+            r = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                return set(r.stdout.split())
+        except (subprocess.SubprocessError, OSError):
+            pass
+        return set()
+
+    def _build_groups_list(self):
+        """Read-only overview of all Container Groups (#2 roadmap /groups)."""
+        groups = self.store.get_groups() or {}
+        if not groups:
+            return self.t("groups_none")
+        lines = [self.t("groups_title")]
+        for gid, g in groups.items():
+            members = g.get("containers") or []
+            rd = " 🔁" if g.get("restart_dependents") else ""
+            if len(members) > 1:
+                body = "👑 `" + members[0] + "` → " + ", ".join(f"`{m}`" for m in members[1:])
+            elif members:
+                body = "`" + members[0] + "`"
+            else:
+                body = "—"
+            lines.append(f"\n• `{g.get('name', gid)}` ({len(members)}){rd}\n  {body}")
+        lines.append("\n" + self.t("groups_list_hint"))
+        return "\n".join(lines)
+
+    def _build_group_detail(self, arg):
+        """Detail for one group + an optional restart-dependents button.
+        Returns (text, reply_markup)."""
+        gid, g = self._resolve_group(arg)
+        if not g:
+            return self.t("groups_not_found", name=arg), None
+        members = g.get("containers") or []
+        rd = bool(g.get("restart_dependents"))
+        running = self._running_names()
+        lines = [self.t("group_detail_title", name=g.get("name", gid))]
+        lines.append(self.t("group_detail_rd_on") if rd else self.t("group_detail_rd_off"))
+        lines.append("")
+        for i, m in enumerate(members):
+            icon = "🟢" if m in running else "⚪"
+            crown = " 👑" if i == 0 and len(members) > 1 else ""
+            lines.append(f"{icon} `{m}`{crown}")
+        markup = None
+        if rd and len(members) > 1:
+            markup = {"inline_keyboard": [[
+                {"text": self.t("group_restart_deps_btn"),
+                 "callback_data": f"restart_deps:{gid}"}]]}
+        return "\n".join(lines), markup
 
     def _resolve_selfupdate_target(self, current_image, target):
         """Resolve `target` into a fully-qualified image ref to pull.
@@ -1938,6 +2015,24 @@ class TelegramBot:
             ok, msg = self._lifecycle_action(action, target, checker)
             self.send_message(msg)
 
+        elif data.startswith("restart_deps:"):
+            # Manual restart-dependents cascade from /groups <name>.
+            gid = data.split(":", 1)[1]
+            g = self.store.get_group(gid)
+            members = (g or {}).get("containers") or []
+            if not g or len(members) < 2:
+                self.answer_callback(callback["id"], "No dependents")
+                return
+            self.answer_callback(callback["id"], self.t("group_restarting_deps"))
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            head, deps = members[0], members[1:]
+            wait = int(g.get("wait_seconds", 30) or 30)
+
+            def _run():
+                self.send_message(self._restart_group_dependents(head, deps, wait))
+            threading.Thread(target=_run).start()
+
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
         user_id = str(message.get("from", {}).get("id", ""))
@@ -2535,6 +2630,14 @@ class TelegramBot:
                 self.send_message(self.t("setlink_set", name=name, url=url))
             else:
                 self.send_message(self.t("setlink_cleared", name=name))
+
+        elif text.startswith("/groups ") and len(text.split(maxsplit=1)) > 1:
+            arg = text.split(maxsplit=1)[1].strip()
+            body, markup = self._build_group_detail(arg)
+            self.send_message(body, markup)
+
+        elif text == "/groups":
+            self.send_message(self._build_groups_list())
 
         elif text == "/settings":
             debug_status = self.t("debug_on") if self.config.debug else self.t("debug_off")

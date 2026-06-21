@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.25.0] - 2026-06-21
+
+### Added
+- **`/groups` Telegram command** — read-only Container Group view from chat, matching the Web UI Groups page. `/groups` lists every group with its member count and 👑 head; `/groups <name>` (matches the group name or slug, partial OK) shows each member with a 🟢 running / ⚪ stopped icon, the restart-dependents setting, and — for a `restart_dependents` group — a button to restart the dependents now (waits for the head to be healthy first). From the [#2](../../issues/2) roadmap. English + German translated; other languages fall back to English.
+
+### Fixed
+- **The "wait for head to be healthy before restarting dependents" check was a no-op.** In `_restart_group_dependents` the code did `healthy = self._wait_healthy(...)` then `if not healthy:` — but since v1.23.5 `_wait_healthy` returns a `(outcome, state, health)` tuple, which is always truthy, so the not-healthy branch never ran and the warning never logged. Dependents were still restarted (the intended fallback), but the outcome was silently ignored; now the tuple is unpacked and the real outcome is logged.
+
 ## [1.24.0] - 2026-06-21
 
 ### Added
