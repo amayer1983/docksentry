@@ -98,6 +98,11 @@ class Config:
         self.update_windows_file = os.path.join(data_dir, "update_windows.json")
         # Per-container "ask before major update" flag
         self.ask_before_major_file = os.path.join(data_dir, "ask_before_major.json")
+        # Per-container opt-in: after an update, accept `state=running` even
+        # if the healthcheck reports `unhealthy`. For containers with brittle
+        # healthchecks (e.g. VPN-sidecar dependents whose probe hits the
+        # wrong namespace) that work fine but flap unhealthy. See #9.
+        self.trust_running_file = os.path.join(data_dir, "trust_running_containers.json")
         # Pending major-confirmation queue (key: container_name → metadata)
         self.major_pending_file = os.path.join(data_dir, "major_confirmations.json")
         # Container groups (ordered update sequences)

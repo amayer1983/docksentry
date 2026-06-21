@@ -2692,6 +2692,14 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if name:
                     store.toggle_ask_before_major(name)
                 self._send_redirect("/")
+            elif path == "/api/trust_running":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                if name:
+                    store.toggle_trust_running(name)
+                self._send_redirect("/")
             elif path == "/api/major_confirm":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -3303,6 +3311,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             is_pinned_c = store.is_pinned(name)
             is_auto = store.is_auto(name)
             is_askm = store.is_ask_before_major(name)
+            is_trust_c = store.is_trust_running(name)
             window = store.get_update_window(name)
 
             # Pending update for this container?
@@ -3349,6 +3358,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 badges.append(f'<span class="badge badge-purple">{t("web_autoupdate_badge")}</span>')
             if is_askm:
                 badges.append(f'<span class="badge badge-blue">⚠ major-confirm</span>')
+            if is_trust_c:
+                badges.append(f'<span class="badge badge-blue">{t("web_trust_running_badge")}</span>')
             if pending_for_self:
                 badges.append(f'<span class="badge badge-yellow">{t("web_badge_update")}</span>')
             badges_html = " ".join(badges)
@@ -3466,6 +3477,15 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <input type="hidden" name="name" value="{_e(name)}">
 </form>
 <p class="form-help">{t("web_detail_major_hint")}</p>
+
+<div class="form-checkbox-row">
+  <input type="checkbox" id="cb-detail-trust" {'checked' if is_trust_c else ''} onchange="document.getElementById('frm-detail-trust').submit()">
+  <label for="cb-detail-trust">{t("web_trust_running")}</label>
+</div>
+<form id="frm-detail-trust" method="POST" action="/api/trust_running" class="inline-form">
+<input type="hidden" name="name" value="{_e(name)}">
+</form>
+<p class="form-help">{t("web_detail_trust_hint")}</p>
 
 <div class="form-checkbox-row">
   <input type="checkbox" id="cb-detail-pinned" {'checked' if is_pinned_c else ''} onchange="document.getElementById('frm-detail-pin').submit()">

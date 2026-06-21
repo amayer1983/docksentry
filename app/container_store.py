@@ -55,6 +55,7 @@ class ContainerStore:
         self.autoupdate_file = config.autoupdate_file
         self.update_windows_file = config.update_windows_file
         self.ask_before_major_file = config.ask_before_major_file
+        self.trust_running_file = config.trust_running_file
         self.major_pending_file = config.major_pending_file
         self.groups_file = config.groups_file
         self.notes_file = config.notes_file
@@ -152,6 +153,22 @@ class ContainerStore:
         else:
             names.append(name)
         self._save(self.ask_before_major_file, names)
+        return name in names
+
+    # ── Trust running state over healthcheck (#9) ─────────────
+    def get_trust_running(self):
+        return self._load(self.trust_running_file)
+
+    def is_trust_running(self, name):
+        return name in self.get_trust_running()
+
+    def toggle_trust_running(self, name):
+        names = self.get_trust_running()
+        if name in names:
+            names.remove(name)
+        else:
+            names.append(name)
+        self._save(self.trust_running_file, names)
         return name in names
 
     # ── Pending major-version confirmations ───────────────────

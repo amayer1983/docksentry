@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.9] - 2026-06-21
+
+### Added
+- **Per-container "trust running state over healthcheck" flag** ([#9](../../issues/9), @famewolf). Some containers report `health=unhealthy` even when they work fine — usually a brittle healthcheck command, not a broken app (classic case: a VPN-sidecar dependent whose probe hits the wrong network namespace). When this opt-in flag is set, after an update Docksentry accepts the container as healthy as long as `state=running`, instead of rolling back on the unhealthy verdict. **Safety preserved:** the relaxation applies *only* to the `health=unhealthy` rule — a climbing `RestartCount` (crash loop) and a container that isn't running are still treated as failed updates, so this can't mask a genuinely broken update. Default stays strict (trust the healthcheck). Toggle on the container detail page in the Web UI; stored in `/data/trust_running_containers.json`. Regression test: `scripts/test_trust_running.py`. English + German translated; other languages fall back to English.
+
 ## [1.23.8] - 2026-06-20
 
 ### Added

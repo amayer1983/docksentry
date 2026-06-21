@@ -958,6 +958,20 @@ class UpdateChecker:
         )
         return r.stdout.strip() if r.returncode == 0 else ""
 
+    def _is_trust_running(self, name):
+        """Whether the user opted this container into "accept running over
+        unhealthy" (#9). Read straight from the data file — the checker only
+        holds `config`, not a ContainerStore — and fail closed (default to
+        the strict healthcheck behaviour) on any read error."""
+        try:
+            path = getattr(self.config, "trust_running_file", None)
+            if path and os.path.exists(path):
+                with open(path) as f:
+                    return name in json.load(f)
+        except (ValueError, OSError):
+            pass
+        return False
+
     def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 
@@ -1002,6 +1016,15 @@ class UpdateChecker:
         # time would otherwise mask this and we'd wrongly report success
         # — exactly the GitLab DB-migration failure on 2026-06-18.
         baseline_restarts = self._restart_count(name)
+        # Per-container opt-in (#9): accept a running-but-unhealthy container
+        # instead of rolling back. For brittle healthchecks (VPN-sidecar
+        # dependents whose probe hits the wrong namespace) that flap
+        # `unhealthy` while actually serving fine. This only relaxes the
+        # `health == "unhealthy"` rule — a climbing RestartCount (crash loop)
+        # and `state != "running"` are still treated as real failures.
+        trust_running = self._is_trust_running(name)
+        if trust_running:
+            self._debug(f"  trust_running set for {name}: a running-but-unhealthy result will be accepted")
         # Once the container first looks healthy we don't return immediately:
         # we keep watching for `stable_needed` more seconds to be sure it
         # STAYS up. Without this, a container that boots fine and then
@@ -1037,10 +1060,11 @@ class UpdateChecker:
                 return "crashloop", state, health
             if state != "running":
                 return "unhealthy", state, health
-            if health == "unhealthy":
+            if health == "unhealthy" and not trust_running:
                 return "unhealthy", state, health
             looks_healthy = (not health or health == "<no value>"
-                             or health == "healthy")
+                             or health == "healthy"
+                             or (trust_running and state == "running"))
             if looks_healthy:
                 if healthy_since is None:
                     healthy_since = elapsed
