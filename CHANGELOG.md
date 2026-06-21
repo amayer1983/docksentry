@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.24.0] - 2026-06-21
+
+### Added
+- **`/check --dry-run` — preview an update before running it.** Runs the normal read-only update check, then instead of the actionable "Updates Available" notification it shows what *applying* each update would do — and changes nothing. For every pending update it reports: the recreate path (Compose `up -d <service>` vs. standalone recreate rebuilt from `docker inspect`, mirroring the real fallback rule), the dependents that would be restarted when the container is the head of a `restart_dependents` Container Group, and any major-version jump that would be held for confirmation. Aliases: `/check dry-run` and `/dryrun`. No buttons, no side effects. Logic test: `scripts/test_dry_run.py`. From the [#2](../../issues/2) roadmap. English + German translated; other languages fall back to English.
+
 ## [1.23.10] - 2026-06-21
 
 ### Changed

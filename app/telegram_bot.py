@@ -1188,6 +1188,56 @@ class TelegramBot:
     def notify_no_updates(self):
         self.send_message(self.t("all_up_to_date"))
 
+    def _build_dry_run(self, updates, checker):
+        """Read-only preview of what applying the pending updates WOULD do —
+        the recreate path (compose vs standalone), dependents that would be
+        restarted, and major-version jumps that would prompt confirmation.
+        Performs no changes (roadmap dry-run, #2)."""
+        self._enrich_with_source_url(updates)
+        groups = self.store.get_groups() or {}
+        # container_name → (group_id, position, members, restart_dependents)
+        group_for = {}
+        for gid, g in groups.items():
+            conts = g.get("containers") or []
+            for pos, cname in enumerate(conts):
+                group_for[cname] = (gid, pos, conts, bool(g.get("restart_dependents")))
+
+        lines = [self.t("dryrun_title")]
+        for u in updates:
+            name = u["name"]
+            size = u.get("size", "?")
+            created = u.get("created", "?")
+            compose_tag = " 🐳" if u.get("compose_project") else ""
+            block = [f"\n• {self._display_name(u)} ({u['image']}){compose_tag}"
+                     f"\n  📦 {size} | 🗓️ {self.t('current')}: {created}"]
+            # Update path — mirror _update_compose's own fallback rule: the
+            # compose path only runs when the YAML is actually reachable from
+            # inside Docksentry, otherwise it falls back to standalone.
+            cfile = u.get("compose_file")
+            if (u.get("compose_project") and u.get("compose_service")
+                    and cfile and os.path.isfile(cfile)):
+                block.append("  " + self.t("dryrun_path_compose",
+                                           service=u.get("compose_service")))
+            else:
+                block.append("  " + self.t("dryrun_path_standalone"))
+            # Dependents — only the HEAD (position 0) of a multi-member group
+            # with restart_dependents triggers the cascade.
+            gp = group_for.get(name)
+            if gp and gp[1] == 0 and gp[3] and len(gp[2]) > 1:
+                deps = ", ".join(f"`{d}`" for d in gp[2][1:])
+                block.append("  " + self.t("dryrun_dependents", deps=deps))
+            # Major-version jump — would be held for confirmation.
+            try:
+                is_major, cur_tag, cand_tag = self._is_major_bump(u, checker)
+                if is_major:
+                    block.append("  " + self.t("dryrun_major",
+                                               old=cur_tag, new=cand_tag))
+            except Exception:
+                pass
+            lines.append("\n".join(block))
+        lines.append("\n" + self.t("dryrun_footer"))
+        return "\n".join(lines)
+
     def _resolve_selfupdate_target(self, current_image, target):
         """Resolve `target` into a fully-qualified image ref to pull.
         Returns (image_ref, error_msg); error_msg is None on success.
@@ -2092,6 +2142,19 @@ class TelegramBot:
                     chunk += c + "\n"
                 if chunk.strip():
                     self.send_message(chunk)
+
+        elif text in ("/check --dry-run", "/check dry-run", "/dryrun"):
+            # Dry run: detect updates and show what applying them WOULD do
+            # (path, dependents, major jumps) without changing anything.
+            if self.update_running:
+                self.send_message(self.t("update_already_running"))
+                return
+            self.send_message(self.t("checking_updates"))
+            updates = checker.check_all(bot=self)
+            if updates:
+                self.send_message(self._build_dry_run(updates, checker))
+            else:
+                self.notify_no_updates()
 
         elif text == "/check":
             # Don't run a check while a manual update is in progress —
