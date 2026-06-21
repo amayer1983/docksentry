@@ -2967,7 +2967,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                     f'</form>'
                 )
                 auto_btn = (
-                    f'<form method="POST" action="/api/autoupdate" class="inline-form adv-only">'
+                    f'<form method="POST" action="/api/autoupdate" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
                     f'<button type="submit" class="btn-icon{" is-active" if is_auto else ""}" '
                     f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">{_ICONS["settings"]}</button>'
@@ -3140,8 +3140,8 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="button" class="btn-sm btn btn-icon-text" onclick="bulkSubmit('update')" title="{_e(t('web_bulk_update_tt'))}">{_ICONS["refresh"]}<span>{t("web_bulk_update")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('pin')" title="{_e(t('web_bulk_pin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_pin")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('unpin')" title="{_e(t('web_bulk_unpin_tt'))}">{_ICONS["pin"]}<span>{t("web_bulk_unpin")}</span></button>
-<button type="button" class="btn-sm btn-outline btn-icon-text adv-only" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
-<button type="button" class="btn-sm btn-outline btn-icon-text adv-only" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
+<button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
 <table>
 <tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>

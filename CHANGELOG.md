@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.23.10] - 2026-06-21
+
+### Changed
+- **Auto-update toggles are now visible in simple UI mode too.** The per-container auto-update button (container list) and the bulk "auto-update on/off" buttons were marked `adv-only` and hidden in simple mode — yet the container *detail* page already showed the same toggle in both modes. That inconsistency hid a core feature from simple-mode users for no good reason. The toggles now appear in both modes, matching the detail page. The major-version-confirm toggle and the Stop button stay advanced-only (deliberate: Stop leaves a container offline until someone starts it).
+
 ## [1.23.9] - 2026-06-21
 
 ### Added
