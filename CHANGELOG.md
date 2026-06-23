@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.26.1] - 2026-06-23
+
+### Added
+- **`/status <name>` now shows the image version and short image ID** ([#36](../../issues/36), @LeeNX) — the same detail the Web UI exposes since #32. The `org.opencontainers.image.version` OCI label answers "what version is this really?" beyond a rolling `:latest` tag, and the 12-char image ID identifies the exact build. Both are pulled from the inspect data the status detail already fetches, so no extra Docker call. Version line is omitted when the image carries no version label.
+
 ## [1.26.0] - 2026-06-22
 
 ### Added

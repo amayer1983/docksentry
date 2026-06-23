@@ -437,12 +437,23 @@ class TelegramBot:
 
         restart = (host.get("RestartPolicy") or {}).get("Name", "no")
 
+        # Resolved version + image hash (#36, @LeeNX — same data the Web UI
+        # detail shows since #32). Both come from the already-fetched inspect,
+        # so no extra docker call. The OCI version label is the honest answer
+        # to "what version is this really?" beyond a rolling :latest tag.
+        image_id = cfg.get("Image", "") or ""
+        short_id = image_id[7:19] if image_id.startswith("sha256:") else image_id[:12]
+        version = ((config.get("Labels") or {}).get(
+            "org.opencontainers.image.version") or "").strip()
+
         return {
             "name": cfg.get("Name", "").lstrip("/"),
             "state": status,
             "health": health,
             "uptime": uptime,
             "image": config.get("Image", "?"),
+            "version": version,
+            "short_id": short_id,
             "ports": ports,
             "volumes": volumes,
             "restart_policy": restart or "no",
@@ -2128,8 +2139,12 @@ class TelegramBot:
             ]
             if uptime_line:
                 lines.append(uptime_line)
+            lines.append(f"*Image:* `{info['image']}`")
+            if info.get("version"):
+                lines.append(f"*Version:* `{info['version']}`")
+            if info.get("short_id"):
+                lines.append(f"*Image ID:* `{info['short_id']}`")
             lines.extend([
-                f"*Image:* `{info['image']}`",
                 f"*Ports:* {info['ports']}",
                 f"*Volumes:* {info['volumes']}",
                 f"*Restart policy:* `{info['restart_policy']}`",
