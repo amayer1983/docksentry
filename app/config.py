@@ -103,6 +103,12 @@ class Config:
         # healthchecks (e.g. VPN-sidecar dependents whose probe hits the
         # wrong namespace) that work fine but flap unhealthy. See #9.
         self.trust_running_file = os.path.join(data_dir, "trust_running_containers.json")
+        # Per-container post-recreate cooldown (seconds). After updating a
+        # container that declares one, Docksentry waits before recreating the
+        # NEXT container in the same batch — so a heavy (GPU/RAM) container's
+        # load peak settles before the next one starts and they don't contend
+        # for memory. Opt-in, default 0. From #2 (@famewolf, GPU OOM).
+        self.cooldown_file = os.path.join(data_dir, "update_cooldowns.json")
         # Pending major-confirmation queue (key: container_name → metadata)
         self.major_pending_file = os.path.join(data_dir, "major_confirmations.json")
         # Container groups (ordered update sequences)

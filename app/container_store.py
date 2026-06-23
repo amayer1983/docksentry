@@ -56,6 +56,7 @@ class ContainerStore:
         self.update_windows_file = config.update_windows_file
         self.ask_before_major_file = config.ask_before_major_file
         self.trust_running_file = config.trust_running_file
+        self.cooldown_file = config.cooldown_file
         self.major_pending_file = config.major_pending_file
         self.groups_file = config.groups_file
         self.notes_file = config.notes_file
@@ -170,6 +171,31 @@ class ContainerStore:
             names.append(name)
         self._save(self.trust_running_file, names)
         return name in names
+
+    # ── Per-container update cooldown (seconds) (#2) ──────────
+    def get_cooldowns(self):
+        return self._load_dict(self.cooldown_file)
+
+    def get_cooldown(self, name):
+        """Cooldown seconds for a container (0 = none). Clamped to [0, 600]."""
+        try:
+            return max(0, min(600, int(self.get_cooldowns().get(name, 0) or 0)))
+        except (ValueError, TypeError):
+            return 0
+
+    def set_cooldown(self, name, seconds):
+        """Set (or, when seconds<=0, clear) a container's update cooldown."""
+        cds = self.get_cooldowns()
+        try:
+            seconds = max(0, min(600, int(seconds)))
+        except (ValueError, TypeError):
+            seconds = 0
+        if seconds:
+            cds[name] = seconds
+        else:
+            cds.pop(name, None)
+        self._save_dict(self.cooldown_file, cds)
+        return seconds
 
     # ── Pending major-version confirmations ───────────────────
     # Persisted across restarts — entries hold enough metadata for the

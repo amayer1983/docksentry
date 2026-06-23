@@ -49,6 +49,7 @@ _BOT_COMMANDS = [
     ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin",         "help_detail_pin"),
     ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin",       "help_detail_pin"),
     ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate",  "help_detail_autoupdate"),
+    ("cooldown",    "Per-container update cooldown — /cooldown <name> <seconds>",      "help_cooldown",    "help_detail_cooldown"),
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
@@ -873,6 +874,19 @@ class TelegramBot:
                     f"failed {len(failed)} ({', '.join(failed)})")
         return (f"🔁 `{head_name}` dependents restarted: {', '.join(f'`{d}`' for d in restarted)}")
 
+    def _maybe_cooldown(self, name, more_remaining):
+        """After recreating `name`, pause for its configured update cooldown
+        before the next container in the batch — but only when more updates
+        follow. Lets a heavy (GPU/RAM) container's load peak settle so the
+        next recreate doesn't contend for memory (#2, @famewolf)."""
+        if not more_remaining:
+            return
+        cd = self.store.get_cooldown(name)
+        if cd > 0:
+            import time as _time
+            print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
+            _time.sleep(cd)
+
     def handle_autoupdates(self, updates, checker):
         """Split updates into auto-update and manual, handle accordingly.
 
@@ -940,7 +954,7 @@ class TelegramBot:
             self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
             results = []
             prev_group = None
-            for u in auto_updates:
+            for idx, u in enumerate(auto_updates):
                 gp = group_position.get(u["name"])
                 cur_group = gp[0] if gp else None
 
@@ -1037,6 +1051,7 @@ class TelegramBot:
                         self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200],
                                                          source_url=u.get("source_url", ""))
                 prev_group = cur_group
+                self._maybe_cooldown(u["name"], more_remaining=idx < len(auto_updates) - 1)
             self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
 
             # Remove fully-processed auto-updated from pending. Major-pending
@@ -1770,7 +1785,7 @@ class TelegramBot:
             self.send_message(self.t("update_starting", count=len(updates)))
 
             results = []
-            for u in updates:
+            for idx, u in enumerate(updates):
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
                     success, msg = updater.update_container(u["name"], u["image"], **compose_kwargs)
@@ -1784,6 +1799,7 @@ class TelegramBot:
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
                                                          source_url=u.get("source_url", ""))
+                self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
 
             if from_snapshot:
                 # Remove only the processed containers from pending —
@@ -2578,6 +2594,35 @@ class TelegramBot:
                 auto_list.append(name)
                 self._save_autoupdate(auto_list)
                 self.send_message(self.t("autoupdate_on", name=name))
+
+        elif text.startswith("/cooldown"):
+            parts = text.split()
+            if len(parts) < 2:
+                cds = self.store.get_cooldowns()
+                if cds:
+                    lines = [f"• `{n}`: {s}s" for n, s in cds.items()]
+                    self.send_message(self.t("cooldown_list") + "\n" + "\n".join(lines))
+                else:
+                    self.send_message(self.t("cooldown_empty"))
+                return
+            name, err = self._resolve_container(parts[1])
+            if err:
+                self.send_message(err)
+                return
+            if len(parts) < 3:
+                self.send_message(self.t("cooldown_current", name=name,
+                                         seconds=self.store.get_cooldown(name)))
+                return
+            try:
+                secs = int(parts[2])
+            except ValueError:
+                self.send_message(self.t("cooldown_bad_value"))
+                return
+            applied = self.store.set_cooldown(name, secs)
+            if applied:
+                self.send_message(self.t("cooldown_set", name=name, seconds=applied))
+            else:
+                self.send_message(self.t("cooldown_cleared", name=name))
 
         elif text.startswith("/audit"):
             # /audit <container> — run UpdateChecker._audit_inspect_coverage

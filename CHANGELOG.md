@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.26.0] - 2026-06-22
+
+### Added
+- **Per-container update cooldown** (advanced mode) — an opt-in pause after recreating a container, before the next one in a batch update. From @famewolf's GPU case in [#2](../../issues/2): when two memory-heavy containers update in the same run, the freshly-recreated one is still loading (its memory peak) when the next recreate begins, so they contend and one OOMs. The manual update-all path had *no* inter-container wait (only the scheduled auto-update path did, between Container Group members) — this fills that gap in **both** paths, without needing a group. Set `/cooldown <name> <seconds>` (Telegram) or the field on the container detail page (Web UI, advanced mode), 0–600s, default 0. Test: `scripts/test_cooldown.py`. English + German translated; other languages fall back to English.
+
+  **Scope, honestly:** this spaces out *load-peak overlap* — it does not create memory. If your GPU/RAM genuinely can't hold all the recreated containers at once, ordering matters more than spacing: put them in a **Container Group** in the order that fits (heaviest first), which both update paths already honour. The crash-loop guard (v1.23.5) remains the backstop that rolls back an update that OOMs anyway.
+
 ## [1.25.1] - 2026-06-21
 
 ### Fixed

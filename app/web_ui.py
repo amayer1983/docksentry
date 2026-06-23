@@ -2700,6 +2700,15 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
                 if name:
                     store.toggle_trust_running(name)
                 self._send_redirect("/")
+            elif path == "/api/cooldown":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                seconds = params.get("seconds", ["0"])[0].strip()
+                if name:
+                    store.set_cooldown(name, seconds)
+                self._send_redirect(f"/container/{name}" if name else "/")
             elif path == "/api/major_confirm":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -3312,6 +3321,7 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
             is_auto = store.is_auto(name)
             is_askm = store.is_ask_before_major(name)
             is_trust_c = store.is_trust_running(name)
+            cooldown_c = store.get_cooldown(name)
             window = store.get_update_window(name)
 
             # Pending update for this container?
@@ -3486,6 +3496,16 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <input type="hidden" name="name" value="{_e(name)}">
 </form>
 <p class="form-help">{t("web_detail_trust_hint")}</p>
+
+<div class="form-checkbox-row adv-only" style="gap:8px">
+  <label for="inp-detail-cooldown" style="margin:0">{t("web_cooldown_label")}</label>
+  <form method="POST" action="/api/cooldown" class="inline-form" style="display:flex;gap:6px;align-items:center;margin:0">
+    <input type="hidden" name="name" value="{_e(name)}">
+    <input type="number" id="inp-detail-cooldown" name="seconds" min="0" max="600" value="{cooldown_c}" style="width:80px">
+    <button type="submit" class="btn btn-sm">{t("web_cooldown_save")}</button>
+  </form>
+</div>
+<p class="form-help adv-only">{t("web_detail_cooldown_hint")}</p>
 
 <div class="form-checkbox-row">
   <input type="checkbox" id="cb-detail-pinned" {'checked' if is_pinned_c else ''} onchange="document.getElementById('frm-detail-pin').submit()">
