@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.28.2] - 2026-06-25
+
+### Fixed
+- **Manual "Update all" now applies the same group gates as scheduled auto-updates.** Prompted by @famewolf in [#2](../../issues/2), who noticed a recurring pattern: bugs that only hit the manual path because it had drifted from the auto path. Audited both; the manual path was missing two group behaviours: it now (1) processes containers in **Container-Group order** and (2) **skips the rest of a group once a member fails** (`group_aborted`) — so a failed Gluetun head no longer leaves Docksentry recreating its dependents against a broken namespace — plus honours the inter-member `wait_seconds`. (The maintenance-window filter and the ask-before-major confirmation gate remain intentionally auto-only: tapping "Update all" is itself the explicit "do it now, majors included".) Test: `scripts/test_manual_update_gates.py`.
+
+  A deeper unification (manual + auto as thin triggers over one shared per-container routine, also @famewolf's suggestion) is tracked as a follow-up refactor.
+
 ## [1.28.1] - 2026-06-25
 
 ### Fixed

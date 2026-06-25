@@ -1859,8 +1859,41 @@ class TelegramBot:
                     u["netns_name"] = tn
 
             batch_names = {u["name"] for u in updates}
+            # Mirror the auto-update path's group-aware gates so manual
+            # "Update all" behaves the same (#2, @famewolf — the two paths had
+            # drifted): process in group order with the inter-member wait, and
+            # skip the rest of a group once one member fails. Deliberately NOT
+            # mirrored (these are correct as auto-only): the maintenance-window
+            # filter and the ask-before-major confirmation gate — tapping
+            # "Update all" is itself the explicit "do it now / yes to majors".
+            groups = self.store.get_groups() or {}
+            group_position = {}
+            for gid, g in groups.items():
+                for pos, cname in enumerate(g.get("containers") or []):
+                    group_position[cname] = (gid, pos)
+            updates.sort(key=lambda u: (0,) + group_position[u["name"]]
+                         if u["name"] in group_position else (1, "", 0))
+            group_aborted = set()
+            prev_group = None
+
             results = []
             for idx, u in enumerate(updates):
+                gp = group_position.get(u["name"])
+                cur_group = gp[0] if gp else None
+
+                # Skip the rest of a group whose earlier member already failed.
+                if cur_group and cur_group in group_aborted:
+                    results.append(
+                        f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)")
+                    continue
+
+                # Inter-container wait when staying inside the same group.
+                if cur_group and cur_group == prev_group:
+                    wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
+                    if wait_s > 0:
+                        import time as _t
+                        _t.sleep(wait_s)
+
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
                     success, msg = updater.update_container(
@@ -1876,7 +1909,7 @@ class TelegramBot:
                     # a dead namespace ID. Fix the ones NOT already in this batch
                     # (those self-heal via the netns-by-name recreate above).
                     if success:
-                        _gid, _g = self.store.get_group_for_container(u["name"])
+                        _g = groups.get(cur_group) if cur_group else None
                         _members = (_g or {}).get("containers") or []
                         if (_g and _g.get("restart_dependents") and _members
                                 and u["name"] == _members[0] and len(_members) > 1):
@@ -1885,11 +1918,16 @@ class TelegramBot:
                                 _wait = max(int(_g.get("wait_seconds", 30) or 30), 30)
                                 results.append(self._restart_group_dependents(
                                     u["name"], _deps, updater, max_wait=_wait))
+                    elif cur_group:
+                        group_aborted.add(cur_group)
                 except Exception as e:
                     results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
+                    if cur_group:
+                        group_aborted.add(cur_group)
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
                                                          source_url=u.get("source_url", ""))
+                prev_group = cur_group
                 self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
 
             if from_snapshot:
