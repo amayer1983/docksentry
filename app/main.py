@@ -164,6 +164,27 @@ def main():
     except Exception as e:
         print(f"Could not read exit cause (non-fatal): {e}")
 
+    # A self-update restart ALSO arrives as SIGTERM (the recreate stops our
+    # old container), but it is not an external stop. When our own
+    # self-update marker is present, suppress the "external stop signal"
+    # line — the version bump in the banner already tells the story (#2,
+    # @famewolf). Stale markers (>1h) are ignored so a long-ago abandoned
+    # self-update can't mask a later genuine external restart.
+    selfupdate_restart = False
+    try:
+        if os.path.exists(config.selfupdate_marker_file):
+            import json as _json, time as _time
+            with open(config.selfupdate_marker_file) as f:
+                _mark = _json.load(f)
+            if _time.time() - float(_mark.get("ts", 0) or 0) < 3600:
+                selfupdate_restart = True
+            os.unlink(config.selfupdate_marker_file)
+    except Exception as e:
+        print(f"Could not read selfupdate marker (non-fatal): {e}")
+    # A self-update is not an external signal, regardless of how we got here.
+    if selfupdate_restart:
+        restart_signal = None
+
     # Post-selfupdate fixup: when _save_selfupdate_history wrote the
     # entry before the swap, the new version wasn't known yet — it's
     # stored as `v{old} → ?`. We're the freshly-booted process and

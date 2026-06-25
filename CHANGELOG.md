@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.26.2] - 2026-06-24
+
+### Fixed
+- **A manual `/selfupdate` no longer mislabels itself as an external restart.** Reported by @famewolf in [#2](../../issues/2): after `/selfupdate` recreated Docksentry, the next boot printed *"↻ Restart followed an external stop signal (SIGTERM) — Docksentry did not restart itself"* — which is exactly backwards. The v1.23.8 startup-reason logic only suppressed that line when the *auto*-self-update deferred-check marker was present, but manual `/selfupdate` never writes that marker, so its (self-inflicted) recreate SIGTERM was read as external. `_do_selfupdate` now writes a dedicated self-update marker before the recreate (covering both manual and auto paths); the next boot consumes it and skips the external-signal line — the version bump in the startup banner already tells the story. Stale markers (>1h) are ignored. Test: `scripts/test_selfupdate_marker.py`.
+
 ## [1.26.1] - 2026-06-23
 
 ### Added

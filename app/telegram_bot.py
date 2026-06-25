@@ -1549,6 +1549,17 @@ class TelegramBot:
         short-lived helper container that runs on the host and performs the
         stop/rename/run/cleanup sequence from outside.
         """
+        # Mark that the imminent restart is a self-update. The recreate sends
+        # SIGTERM to our old container, which the signal handler records as a
+        # generic external stop — without this marker the next boot would
+        # mislabel the self-update as "external restart" (#2, @famewolf).
+        try:
+            import time as _time
+            from container_store import atomic_write_json
+            atomic_write_json(config.selfupdate_marker_file,
+                              {"image": own_image, "ts": _time.time()})
+        except Exception as e:
+            print(f"Could not write selfupdate marker (non-fatal): {e}")
         # Rebuild run command from inspect. Single source of truth via
         # UpdateChecker._build_run_args so the self-update path stays
         # in sync with the regular container-update path (#27): same

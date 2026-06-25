@@ -135,6 +135,12 @@ class Config:
         # users don't mistake a host reboot / `docker restart` for Docksentry
         # restarting itself. See #2 (@famewolf).
         self.last_exit_file = os.path.join(data_dir, "last_exit.json")
+        # Written just before a self-update recreate so the next boot knows
+        # the imminent SIGTERM was self-inflicted (a self-update) and does
+        # NOT mislabel it as an external restart in the startup message.
+        # Manual /selfupdate doesn't write the deferred-check marker, so we
+        # need this separate one to cover it. See #2 (@famewolf).
+        self.selfupdate_marker_file = os.path.join(data_dir, "selfupdate_restart.json")
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port
