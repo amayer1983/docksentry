@@ -871,46 +871,51 @@ class TelegramBot:
             _time.sleep(1)
         return False
 
-    def _restart_group_dependents(self, head_name, dependents, max_wait=30):
-        """After updating a group's head container, restart its
-        dependents. Waits up to `max_wait` seconds for the head to be
-        healthy first — if it never gets there, restart the dependents
-        anyway (with a log warning), because not restarting them leaves
-        them stuck on a defunct network namespace which is usually worse
-        than a slightly-too-early restart.
+    def _restart_group_dependents(self, head_name, dependents, checker, max_wait=30):
+        """After the head of a group is recreated, bring its dependents back
+        onto the new head. Waits up to `max_wait` for the head to be healthy.
 
-        Returns a one-line user-facing result string for the update
-        report."""
-        # _wait_healthy returns a (outcome, state, health) tuple since
-        # v1.23.5 — unpack it. The old `if not healthy:` tested a 3-tuple
-        # (always truthy), so the warning never fired and the outcome was
-        # ignored. We still restart dependents regardless (a stuck namespace
-        # is worse than an early restart), but now we log the real reason.
+        A netns sidecar (`network_mode: container:<head>`) can't just be
+        `docker restart`-ed once the head was recreated — it still references
+        the head's dead old ID and the restart fails (#8). Those are
+        *recreated* against the head's current name (via
+        checker.recreate_dependent). Non-netns group members are still just
+        restarted (cheaper, sufficient).
+
+        Returns a one-line user-facing result string for the update report."""
         outcome, _, _ = self._wait_healthy(head_name, max_wait)
         if outcome != "healthy":
-            print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — restarting dependents anyway")
+            print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — fixing dependents anyway")
 
-        restarted = []
-        failed = []
+        recreated, restarted, failed = [], [], []
         for dep in dependents:
             try:
-                r = subprocess.run(
-                    ["docker", "restart", dep],
-                    capture_output=True, text=True, timeout=30,
-                )
-                if r.returncode == 0:
-                    restarted.append(dep)
+                nm = subprocess.run(
+                    ["docker", "inspect", "-f", "{{.HostConfig.NetworkMode}}", dep],
+                    capture_output=True, text=True, timeout=10,
+                ).stdout.strip()
+                if nm.startswith("container:"):
+                    ok, _detail = checker.recreate_dependent(dep, head_name)
+                    (recreated if ok else failed).append(dep)
+                    if not ok:
+                        print(f"Failed to recreate netns dependent {dep}: {_detail}")
                 else:
-                    failed.append(dep)
-                    print(f"Failed to restart dependent {dep}: {r.stderr.strip()[:200]}")
+                    r = subprocess.run(["docker", "restart", dep],
+                                       capture_output=True, text=True, timeout=30)
+                    (restarted if r.returncode == 0 else failed).append(dep)
+                    if r.returncode != 0:
+                        print(f"Failed to restart dependent {dep}: {r.stderr.strip()[:200]}")
             except subprocess.SubprocessError as e:
                 failed.append(dep)
-                print(f"Restart of dependent {dep} crashed: {e}")
+                print(f"Fixing dependent {dep} crashed: {e}")
 
+        done = recreated + restarted
+        ok_str = ", ".join(f"`{d}`" for d in done) if done else "—"
         if failed:
-            return (f"🔁 `{head_name}` dependents: restarted {len(restarted)}, "
-                    f"failed {len(failed)} ({', '.join(failed)})")
-        return (f"🔁 `{head_name}` dependents restarted: {', '.join(f'`{d}`' for d in restarted)}")
+            return (f"🔁 `{head_name}` dependents: {len(done)} ok ({ok_str}), "
+                    f"failed {len(failed)} ({', '.join(f'`{d}`' for d in failed)})")
+        verb = "recreated/restarted" if recreated else "restarted"
+        return f"🔁 `{head_name}` dependents {verb}: {ok_str}"
 
     def _maybe_cooldown(self, name, more_remaining):
         """After recreating `name`, pause for its configured update cooldown
@@ -1057,7 +1062,7 @@ class TelegramBot:
                                 deps = members[1:]
                                 wait_s = int(grp.get("wait_seconds", 30) or 30)
                                 restart_msg = self._restart_group_dependents(
-                                    u["name"], deps, max_wait=max(wait_s, 30)
+                                    u["name"], deps, checker, max_wait=max(wait_s, 30)
                                 )
                                 results.append(restart_msg)
                     elif cur_group:
@@ -1084,7 +1089,7 @@ class TelegramBot:
                             deps = members[1:]
                             wait_s = int(grp.get("wait_seconds", 30) or 30)
                             restart_msg = self._restart_group_dependents(
-                                u["name"], deps, max_wait=max(wait_s, 30)
+                                u["name"], deps, checker, max_wait=max(wait_s, 30)
                             )
                             results.append(f"🔁 head rollback — dependents kicked: {restart_msg}")
                     if self.notifier:
@@ -1853,6 +1858,7 @@ class TelegramBot:
                 if tn:
                     u["netns_name"] = tn
 
+            batch_names = {u["name"] for u in updates}
             results = []
             for idx, u in enumerate(updates):
                 try:
@@ -1865,6 +1871,20 @@ class TelegramBot:
                     if self.notifier:
                         self.notifier.send_update_result(u["name"], u["image"], success, msg,
                                                          source_url=u.get("source_url", ""))
+                    # Restart-dependents cascade for the MANUAL path (#8): when a
+                    # group head was just recreated, its netns sidecars are now on
+                    # a dead namespace ID. Fix the ones NOT already in this batch
+                    # (those self-heal via the netns-by-name recreate above).
+                    if success:
+                        _gid, _g = self.store.get_group_for_container(u["name"])
+                        _members = (_g or {}).get("containers") or []
+                        if (_g and _g.get("restart_dependents") and _members
+                                and u["name"] == _members[0] and len(_members) > 1):
+                            _deps = [d for d in _members[1:] if d not in batch_names]
+                            if _deps:
+                                _wait = max(int(_g.get("wait_seconds", 30) or 30), 30)
+                                results.append(self._restart_group_dependents(
+                                    u["name"], _deps, updater, max_wait=_wait))
                 except Exception as e:
                     results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                     if self.notifier:
@@ -2141,7 +2161,7 @@ class TelegramBot:
             wait = int(g.get("wait_seconds", 30) or 30)
 
             def _run():
-                self.send_message(self._restart_group_dependents(head, deps, wait))
+                self.send_message(self._restart_group_dependents(head, deps, checker, max_wait=wait))
             threading.Thread(target=_run).start()
 
     def _handle_message(self, message, checker, scheduler):

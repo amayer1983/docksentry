@@ -995,6 +995,49 @@ class UpdateChecker:
             return None
         return rr.stdout.strip().lstrip("/") or None
 
+    def recreate_dependent(self, name, netns_name):
+        """Recreate a netns-sharing group dependent in place, rejoining the
+        head's CURRENT container via `container:<netns_name>`. After the head
+        is recreated (new ID) a plain `docker restart` of the sidecar fails —
+        it still references the dead old ID (#8). This rebuilds from inspect
+        with the SAME image (no pull, no version change), backing up the old
+        container first and rolling back on failure. Returns (ok, detail)."""
+        # Capture config up front so even an AutoRemove (--rm) container —
+        # which vanishes on stop — can still be rebuilt.
+        insp = subprocess.run(["docker", "inspect", name],
+                              capture_output=True, text=True)
+        if insp.returncode != 0:
+            return False, "inspect failed"
+        try:
+            config = json.loads(insp.stdout)[0]
+        except (ValueError, IndexError):
+            return False, "inspect parse failed"
+        image = (config.get("Config") or {}).get("Image") or ""
+        if not image:
+            return False, "no image in config"
+
+        old_name = f"{name}_old"
+        # Clear any stale backup from a previous interrupted run.
+        subprocess.run(["docker", "rm", "-f", old_name], capture_output=True, timeout=15)
+        self._stop_container(name)
+        # Back up by renaming — only if it survived the stop (AutoRemove may
+        # have deleted it, in which case we recreate straight from `config`).
+        if self._container_exists(name):
+            subprocess.run(["docker", "rename", name, old_name],
+                           capture_output=True, timeout=10)
+
+        cmd = self._build_run_args(config, image, name,
+                                   self._get_image_defaults(image),
+                                   netns_name=netns_name)
+        run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if run.returncode != 0:
+            err = run.stderr.strip()[:200]
+            self._debug(f"  Dependent recreate failed for {name}: {err}")
+            self._rollback_to_old(name, old_name)
+            return False, err
+        subprocess.run(["docker", "rm", "-f", old_name], capture_output=True, timeout=15)
+        return True, "recreated"
+
     def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 

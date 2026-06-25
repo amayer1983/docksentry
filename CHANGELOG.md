@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.28.1] - 2026-06-25
+
+### Fixed
+- **Gluetun-style dependents are now *recreated* after the VPN container updates, not just restarted** ([#8](../../issues/8), @famewolf). The `restart_dependents` cascade ran `docker restart` on each sidecar — but a container updated by Docksentry is **recreated** (new container ID), and a sidecar with `network_mode: container:<head>` can't rejoin by `docker restart`: it still references the head's dead old ID and the restart fails with `No such container`, leaving the sidecar **stopped**. The cascade now *recreates* netns-sharing dependents against the head's current name (reusing the v1.26.3 netns-by-name resolution, same image, no pull, with backup + rollback); non-netns group members are still just restarted. Two gaps closed at once: (1) the cascade now actually works after a head recreate, and (2) the cascade now also runs in the **manual "Update all"** path — previously only the scheduled auto-update path triggered it, so anyone who updates manually (and only the head has an update) was left with broken sidecars. Dependents already in the same batch are skipped (they self-heal via v1.26.3). End-to-end test: `scripts/test_dependents_recreate.py`.
+
 ## [1.28.0] - 2026-06-25
 
 ### Added
