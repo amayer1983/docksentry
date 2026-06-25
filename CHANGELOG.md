@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.26.4] - 2026-06-25
+
+### Added
+- **Self-update notifications now link to the release notes** ([#2](../../issues/2), @famewolf / @NotRetarded) — a single clutter-free link to the GitHub releases page in the "new image found" / auto-self-update messages, matching the repo links container updates already carry.
+- **`/changelog` shows the current version's notes when you're already up to date** ([#2](../../issues/2), @famewolf). Previously `/changelog` only listed releases *newer* than the running one, so after a `/selfupdate` there was no way to see what the version you just installed actually changed. Now, when nothing newer exists, it shows the running version's own changelog entry instead of a bare "up to date".
+
 ## [1.26.3] - 2026-06-25
 
 ### Fixed

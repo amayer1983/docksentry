@@ -103,6 +103,8 @@
   "status_pinned": "Épinglés",
   "status_autoupdate": "Mise à jour auto",
   "startup_message": "🚀 *Docksentry démarré* (v{version})",
+  "selfupdate_releases_link": "📄 [Release notes](https://github.com/amayer1983/docksentry/releases)",
+  "changelog_current": "📄 *You're on the latest — v{version}* ({date})\nWhat this version brought:",
   "cooldown_list": "*Update cooldowns:*",
   "cooldown_empty": "No per-container update cooldowns set. `/cooldown <name> <seconds>` to add one.",
   "cooldown_current": "`{name}` update cooldown: *{seconds}s*. `/cooldown {name} <seconds>` to change (0 clears).",

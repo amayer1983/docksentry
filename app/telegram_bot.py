@@ -319,6 +319,25 @@ class TelegramBot:
         newer = [(f"{v[0]}.{v[1]}.{v[2]}", d, b) for v, d, b in entries if v > cur]
         return newer
 
+    def _changelog_entry_for(self, text, version):
+        """Return (version, date, body) for the exact `version` in the
+        CHANGELOG, or None. Lets `/changelog` show what the version you're
+        *already* on brought, when nothing newer exists (#2, @famewolf)."""
+        import re
+        try:
+            want = tuple(int(x) for x in version.split(".")[:3])
+        except ValueError:
+            return None
+        pat = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\] - (\d{4}-\d{2}-\d{2})$", re.MULTILINE)
+        matches = list(pat.finditer(text))
+        for i, m in enumerate(matches):
+            v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            if v == want:
+                start = m.end()
+                end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+                return (f"{v[0]}.{v[1]}.{v[2]}", m.group(4), text[start:end].strip())
+        return None
+
     def _check_auth(self, chat_id, user_id, kind="message"):
         """Authorize an incoming Telegram message or callback.
 
@@ -1535,7 +1554,8 @@ class TelegramBot:
         msg = (
             self.t("selfupdate_found") + "\n"
             + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
-            + self.t("selfupdate_ids", old=old_id_short, new=new_id_short) + "\n\n"
+            + self.t("selfupdate_ids", old=old_id_short, new=new_id_short) + "\n"
+            + self.t("selfupdate_releases_link") + "\n\n"
             + self.t("selfupdate_restarting")
         )
         self.send_message(msg)
@@ -1750,12 +1770,14 @@ class TelegramBot:
             msg = (
                 self.t("selfupdate_auto") + "\n"
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
+                + self.t("selfupdate_releases_link") + "\n"
                 + self.t("selfupdate_restarting_then_check")
             )
         else:
             msg = (
                 self.t("selfupdate_auto") + "\n"
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
+                + self.t("selfupdate_releases_link") + "\n"
                 + self.t("selfupdate_restarting")
             )
         self.send_message(msg)
@@ -2373,7 +2395,19 @@ class TelegramBot:
                 return
             new_entries = self._parse_changelog_entries(content, VERSION)
             if not new_entries:
-                self.send_message(self.t("changelog_up_to_date", version=VERSION))
+                # Up to date — but show what the version you're ON brought,
+                # so a post-/selfupdate "what did I just get?" is answerable
+                # (#2, @famewolf). Fall back to the plain message if the
+                # current version isn't in the changelog yet.
+                cur = self._changelog_entry_for(content, VERSION)
+                if cur:
+                    v, d, body = cur
+                    tg = self._github_md_to_telegram(body)
+                    self.send_message(
+                        self.t("changelog_current", version=v, date=d)
+                        + "\n" + tg)
+                else:
+                    self.send_message(self.t("changelog_up_to_date", version=VERSION))
                 return
             # Build the message entry-by-entry and stop at the cap so we
             # never truncate mid-`*bold*` (which would leave an unpaired
