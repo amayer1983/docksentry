@@ -972,6 +972,29 @@ class UpdateChecker:
             pass
         return False
 
+    def netns_target_name(self, name):
+        """If `name` shares another container's network namespace
+        (`NetworkMode=container:<id>`, the Gluetun sidecar pattern), return
+        the owner's current NAME. Recreating the sidecar against
+        `container:<name>` survives the owner being recreated (new ID),
+        which a stored `container:<id>` does not (#2). Returns None when the
+        container doesn't share a netns or the owner can't be resolved."""
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.HostConfig.NetworkMode}}", name],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        nm = r.stdout.strip()
+        if not nm.startswith("container:"):
+            return None
+        ref = nm.split(":", 1)[1]
+        rr = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Name}}", ref],
+            capture_output=True, text=True)
+        if rr.returncode != 0:
+            return None
+        return rr.stdout.strip().lstrip("/") or None
+
     def _wait_healthy(self, name, max_starting=None, interval=10):
         """Wait for container to become healthy.
 
@@ -1155,14 +1178,19 @@ class UpdateChecker:
             self._save_history(name, image, False, msg)
             return False, msg
 
+        # Netns owner resolved to a stable NAME by the batch orchestrator
+        # (before the owner was recreated) — threaded into the standalone
+        # recreate so Gluetun-style sidecars rejoin the new owner (#2).
+        netns_name = kwargs.get("netns_name")
+
         # Try Compose update if container belongs to a stack
         if compose_project and compose_service and compose_file:
             return self._update_compose(name, image, compose_project, compose_service,
-                                        compose_file, compose_dir)
+                                        compose_file, compose_dir, netns_name=netns_name)
 
-        return self._update_standalone(name, image)
+        return self._update_standalone(name, image, netns_name=netns_name)
 
-    def _update_compose(self, name, image, project, service, config_file, working_dir):
+    def _update_compose(self, name, image, project, service, config_file, working_dir, netns_name=None):
         """Update a container using Docker Compose."""
         self._debug(f"Updating (compose): {name} (project={project}, service={service})...")
 
@@ -1175,7 +1203,7 @@ class UpdateChecker:
         # Check if compose file is accessible
         if not os.path.isfile(config_file):
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
-            return self._update_standalone(name, image)
+            return self._update_standalone(name, image, netns_name=netns_name)
 
         # Pull new image via compose
         pull_cmd = ["docker", "compose", "-f", config_file, "-p", project, "pull", service]
@@ -1260,7 +1288,7 @@ class UpdateChecker:
         return True, f"OK ({detail})"
 
     @staticmethod
-    def _build_run_args(config, image, name, image_defaults=None):
+    def _build_run_args(config, image, name, image_defaults=None, netns_name=None):
         """Reconstruct the full `docker run` argument list from a
         container's inspect dump. Single source of truth for both the
         standalone update path here and the self-update helper in
@@ -1317,6 +1345,14 @@ class UpdateChecker:
 
         # ── Network mode ───────────────────────────────────────
         network_mode = host.get("NetworkMode") or ""
+        # Gluetun-style netns sidecars: the stored NetworkMode is
+        # `container:<id>` — an ID that DIES when the netns owner (e.g.
+        # gluetun) is itself recreated, so the sidecar can't rejoin
+        # ("No such container", #2). When the batch orchestrator resolved
+        # the owner to a stable NAME before recreating it, use that instead
+        # so the sidecar joins the new owner via `container:<name>`.
+        if netns_name:
+            network_mode = f"container:{netns_name}"
         if network_mode and network_mode != "default":
             args.extend(["--network", network_mode])
         # When inheriting another container's network namespace, Docker
@@ -1949,7 +1985,7 @@ class UpdateChecker:
             "config_unknown": unknown_cfg,
         }
 
-    def _update_standalone(self, name, image):
+    def _update_standalone(self, name, image, netns_name=None):
         self._debug(f"Updating: {name} ({image})...")
 
         # Get old image info before pull. We also fetch the OCI
@@ -2061,7 +2097,8 @@ class UpdateChecker:
                             f"(AutoRemove={auto_remove}) — recreating from "
                             f"captured config")
                 cmd = self._build_run_args(
-                    config, image, name, self._get_image_defaults(image)
+                    config, image, name, self._get_image_defaults(image),
+                    netns_name=netns_name
                 )
                 run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if run.returncode != 0:
@@ -2109,7 +2146,8 @@ class UpdateChecker:
             # Cmd/Entrypoint. Image defaults let us avoid locking in
             # the OLD image's Cmd/Entrypoint on update.
             image_defaults = self._get_image_defaults(image)
-            cmd = self._build_run_args(config, image, name, image_defaults)
+            cmd = self._build_run_args(config, image, name, image_defaults,
+                                       netns_name=netns_name)
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.26.3] - 2026-06-25
+
+### Fixed
+- **Gluetun-style netns sidecars no longer fail to recreate when the VPN container is updated in the same batch.** Reported by @famewolf in [#2](../../issues/2): updating `gluetun` and its sidecars (`network_mode: container:gluetun`) together recreated gluetun first — giving it a new container ID — then the sidecars' recreate failed with `joining network namespace of container: No such container: <old-id>`, because their stored `NetworkMode=container:<id>` still pointed at the now-dead old gluetun. Docksentry now snapshots each updating container's netns-owner **by name** *before* anything is recreated, and rebuilds the sidecar against `container:<name>` (stable across the owner's recreate) instead of the volatile ID. Resolved per-container from the live owner, so it's correct even for non-head/chained netns sharing and needs no Container Group. Applies to both the manual "Update all" and scheduled auto-update paths. End-to-end test: `scripts/test_netns_recreate.py`.
+
 ## [1.26.2] - 2026-06-24
 
 ### Fixed

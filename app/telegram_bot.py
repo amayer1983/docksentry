@@ -963,6 +963,13 @@ class TelegramBot:
             # without the link, surfaced as a UX inconsistency report.
             self._enrich_with_source_url(auto_updates)
             self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
+            # Snapshot netns owners by NAME before any recreate (#2) — see the
+            # same step in run_updates. A Gluetun head recreated earlier in the
+            # batch changes ID; resolving to a stable name lets sidecars rejoin.
+            for u in auto_updates:
+                tn = checker.netns_target_name(u["name"])
+                if tn:
+                    u["netns_name"] = tn
             results = []
             prev_group = None
             for idx, u in enumerate(auto_updates):
@@ -1000,7 +1007,9 @@ class TelegramBot:
                         continue
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                    success, msg = checker.update_container(u["name"], u["image"], **compose_kwargs)
+                    success, msg = checker.update_container(
+                        u["name"], u["image"],
+                        netns_name=u.get("netns_name"), **compose_kwargs)
                     status = "✅" if success else "❌"
                     results.append(f"{status} {self._display_name(u)}: {msg}")
                     if success:
@@ -1806,11 +1815,21 @@ class TelegramBot:
             self._enrich_with_source_url(updates)
             self.send_message(self.t("update_starting", count=len(updates)))
 
+            # Snapshot Gluetun-style netns owners by NAME *before* any recreate
+            # — an owner (gluetun) recreated earlier in the batch changes ID,
+            # which breaks sidecars still referencing the old ID (#2).
+            for u in updates:
+                tn = updater.netns_target_name(u["name"])
+                if tn:
+                    u["netns_name"] = tn
+
             results = []
             for idx, u in enumerate(updates):
                 try:
                     compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                    success, msg = updater.update_container(u["name"], u["image"], **compose_kwargs)
+                    success, msg = updater.update_container(
+                        u["name"], u["image"],
+                        netns_name=u.get("netns_name"), **compose_kwargs)
                     status = "✅" if success else "❌"
                     results.append(f"{status} {self._display_name(u)}: {msg}")
                     if self.notifier:
