@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.28.0] - 2026-06-25
+
+### Added
+- **Per-container "protect from Stop" flag** ([#38](../../issues/38), @LeeNX). Mark a container and its Stop action is hidden and refused — in the Telegram `/status` buttons, the Web UI list, and via the new `/protect` command — so you can't accidentally take down something you depend on (LeeNX's example: stopping the VPN/tunnel that carries your remote access locks you out of the homelab). **Restart and updates stay allowed** — a brief restart is fine, a permanent stop is the dangerous one. Generalizes the existing self-stop guard to any container you choose. Set with `/protect <name>` (Telegram) or the toggle on the container detail page (Web UI); the callback/command is guarded server-side too, so a stale button can't slip a stop through. Test: `scripts/test_protect_stop.py`. English + German translated; other languages fall back to English.
+
 ## [1.27.0] - 2026-06-25
 
 ### Added

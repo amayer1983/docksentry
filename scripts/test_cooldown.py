@@ -16,7 +16,8 @@ from container_store import ContainerStore
 
 FILE_ATTRS = ["pinned_file", "autoupdate_file", "update_windows_file",
               "ask_before_major_file", "trust_running_file", "cooldown_file",
-              "major_pending_file", "groups_file", "notes_file", "links_file"]
+              "protect_stop_file", "major_pending_file", "groups_file",
+              "notes_file", "links_file"]
 
 
 def _store():

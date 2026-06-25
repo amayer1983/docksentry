@@ -2730,6 +2730,14 @@ def create_handler(config, checker, bot, store, password=None):
                 if name:
                     store.toggle_trust_running(name)
                 self._send_redirect("/")
+            elif path == "/api/protect":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                if name:
+                    store.toggle_protect_stop(name)
+                self._send_redirect(f"/container/{name}" if name else "/")
             elif path == "/api/cooldown":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -3036,17 +3044,21 @@ def create_handler(config, checker, bot, store, password=None):
                         f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["refresh"]}</button>'
                         f'</form>'
                     )
-                    stop_btn = (
-                        f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
-                        f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
-                        f'data-confirm-title="{_e(t("lifecycle_btn_stop"))}" '
-                        f'data-confirm-label="{_e(t("lifecycle_btn_stop"))}" '
-                        f'data-confirm-danger="1">'
-                        f'<input type="hidden" name="name" value="{name_attr}">'
-                        f'<input type="hidden" name="action" value="stop">'
-                        f'<button type="submit" class="btn-icon is-danger" title="{_e(t("lifecycle_btn_stop"))}">{_ICONS["x"]}</button>'
-                        f'</form>'
-                    )
+                    # Stop hidden for protected containers (#38) — restart stays.
+                    if store.is_protect_stop(c["name"]):
+                        stop_btn = ""
+                    else:
+                        stop_btn = (
+                            f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
+                            f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
+                            f'data-confirm-title="{_e(t("lifecycle_btn_stop"))}" '
+                            f'data-confirm-label="{_e(t("lifecycle_btn_stop"))}" '
+                            f'data-confirm-danger="1">'
+                            f'<input type="hidden" name="name" value="{name_attr}">'
+                            f'<input type="hidden" name="action" value="stop">'
+                            f'<button type="submit" class="btn-icon is-danger" title="{_e(t("lifecycle_btn_stop"))}">{_ICONS["x"]}</button>'
+                            f'</form>'
+                        )
                 actions = f'<div class="btn-row">{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
 
                 # Version / hash badge after image — requested in #32 by
@@ -3354,6 +3366,7 @@ def create_handler(config, checker, bot, store, password=None):
             is_askm = store.is_ask_before_major(name)
             is_trust_c = store.is_trust_running(name)
             cooldown_c = store.get_cooldown(name)
+            is_protect_c = store.is_protect_stop(name)
             window = store.get_update_window(name)
 
             # Pending update for this container?
@@ -3528,6 +3541,15 @@ def create_handler(config, checker, bot, store, password=None):
 <input type="hidden" name="name" value="{_e(name)}">
 </form>
 <p class="form-help">{t("web_detail_trust_hint")}</p>
+
+<div class="form-checkbox-row">
+  <input type="checkbox" id="cb-detail-protect" {'checked' if is_protect_c else ''} onchange="document.getElementById('frm-detail-protect').submit()">
+  <label for="cb-detail-protect">{t("web_protect_stop")}</label>
+</div>
+<form id="frm-detail-protect" method="POST" action="/api/protect" class="inline-form">
+<input type="hidden" name="name" value="{_e(name)}">
+</form>
+<p class="form-help">{t("web_detail_protect_hint")}</p>
 
 <div class="form-checkbox-row adv-only" style="gap:8px">
   <label for="inp-detail-cooldown" style="margin:0">{t("web_cooldown_label")}</label>

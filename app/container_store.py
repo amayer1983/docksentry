@@ -57,6 +57,7 @@ class ContainerStore:
         self.ask_before_major_file = config.ask_before_major_file
         self.trust_running_file = config.trust_running_file
         self.cooldown_file = config.cooldown_file
+        self.protect_stop_file = config.protect_stop_file
         self.major_pending_file = config.major_pending_file
         self.groups_file = config.groups_file
         self.notes_file = config.notes_file
@@ -170,6 +171,22 @@ class ContainerStore:
         else:
             names.append(name)
         self._save(self.trust_running_file, names)
+        return name in names
+
+    # ── Protect from stop (#38) ───────────────────────────────
+    def get_protect_stop(self):
+        return self._load(self.protect_stop_file)
+
+    def is_protect_stop(self, name):
+        return name in self.get_protect_stop()
+
+    def toggle_protect_stop(self, name):
+        names = self.get_protect_stop()
+        if name in names:
+            names.remove(name)
+        else:
+            names.append(name)
+        self._save(self.protect_stop_file, names)
         return name in names
 
     # ── Per-container update cooldown (seconds) (#2) ──────────

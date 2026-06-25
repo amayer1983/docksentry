@@ -50,6 +50,7 @@ _BOT_COMMANDS = [
     ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin",       "help_detail_pin"),
     ("autoupdate",  "Toggle auto-update — /autoupdate <name>",                        "help_autoupdate",  "help_detail_autoupdate"),
     ("cooldown",    "Per-container update cooldown — /cooldown <name> <seconds>",      "help_cooldown",    "help_detail_cooldown"),
+    ("protect",     "Protect a container from Stop — /protect <name>",                 "help_protect",     "help_detail_protect"),
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
@@ -489,6 +490,13 @@ class TelegramBot:
         """
         if action in ("stop", "restart") and checker._would_kill_self(name):
             return False, self.t("lifecycle_refused_self", action=action, name=name)
+
+        # Stop-protection (#38): a container the user marked must not be
+        # stopped (e.g. the VPN/tunnel carrying their remote access).
+        # Restart stays allowed — brief downtime during update/rollback is
+        # acceptable, a permanent stop is the dangerous one.
+        if action == "stop" and self.store.is_protect_stop(name):
+            return False, self.t("lifecycle_refused_protected", name=name)
 
         if action == "stop":
             ok, detail = checker._stop_container(name)
@@ -2207,8 +2215,12 @@ class TelegramBot:
             if info["running"]:
                 buttons.append({"text": self.t("lifecycle_btn_restart"),
                                 "callback_data": f"lifecycle:restart:{resolved}"})
-                buttons.append({"text": self.t("lifecycle_btn_stop"),
-                                "callback_data": f"lifecycle:stop:{resolved}"})
+                # Stop hidden for protected containers (#38). The callback is
+                # also guarded in _lifecycle_action, so a stale button can't
+                # slip a stop through either.
+                if not self.store.is_protect_stop(resolved):
+                    buttons.append({"text": self.t("lifecycle_btn_stop"),
+                                    "callback_data": f"lifecycle:stop:{resolved}"})
             else:
                 buttons.append({"text": self.t("lifecycle_btn_start"),
                                 "callback_data": f"lifecycle:start:{resolved}"})
@@ -2702,6 +2714,23 @@ class TelegramBot:
                 self.send_message(self.t("cooldown_set", name=name, seconds=applied))
             else:
                 self.send_message(self.t("cooldown_cleared", name=name))
+
+        elif text.startswith("/protect"):
+            parts = text.split()
+            if len(parts) < 2:
+                names = self.store.get_protect_stop()
+                if names:
+                    self.send_message(self.t("protect_list") + "\n"
+                                      + "\n".join(f"• `{n}`" for n in names))
+                else:
+                    self.send_message(self.t("protect_empty"))
+                return
+            name, err = self._resolve_container(parts[1])
+            if err:
+                self.send_message(err)
+                return
+            now_on = self.store.toggle_protect_stop(name)
+            self.send_message(self.t("protect_on" if now_on else "protect_off", name=name))
 
         elif text.startswith("/audit"):
             # /audit <container> — run UpdateChecker._audit_inspect_coverage

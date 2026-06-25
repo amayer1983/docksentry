@@ -109,6 +109,11 @@ class Config:
         # load peak settles before the next one starts and they don't contend
         # for memory. Opt-in, default 0. From #2 (@famewolf, GPU OOM).
         self.cooldown_file = os.path.join(data_dir, "update_cooldowns.json")
+        # Per-container opt-in: refuse to STOP this container (Telegram +
+        # Web UI hide/deny the Stop button) so you can't accidentally take
+        # down something you depend on — e.g. the VPN/tunnel that carries
+        # your remote access. Restart stays allowed. See #38 (@LeeNX).
+        self.protect_stop_file = os.path.join(data_dir, "protect_stop_containers.json")
         # Pending major-confirmation queue (key: container_name → metadata)
         self.major_pending_file = os.path.join(data_dir, "major_confirmations.json")
         # Container groups (ordered update sequences)
