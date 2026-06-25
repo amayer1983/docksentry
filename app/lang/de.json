@@ -197,6 +197,7 @@
   "status_pinned": "Gepinnt",
   "status_autoupdate": "Auto-Update",
   "startup_message": "🚀 *Docksentry gestartet* (v{version})",
+  "web_sort_name": "Nach Name sortieren (Klick: A→Z, Z→A, Gruppen-Reihenfolge)",
   "selfupdate_releases_link": "📄 [Release-Notes](https://github.com/amayer1983/docksentry/releases)",
   "changelog_current": "📄 *Du bist auf der neuesten — v{version}* ({date})\nWas diese Version brachte:",
   "cooldown_list": "*Update-Cooldowns:*",

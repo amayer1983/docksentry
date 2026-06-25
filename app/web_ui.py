@@ -891,6 +891,33 @@ pre {
 #   - Confirm dialog (window.dsConfirm(message, onYes))
 _BASE_JS = """
 (function() {
+    // ── Container table: optional Name-column sort (#37, @LeeNX) ──
+    // 3-state cycle on the Name header so the deliberate Container-Group
+    // order stays the default: group order → A→Z → Z→A → group order.
+    var _nameSort = 0, _ctblOrig = null;
+    window.sortByName = function() {
+        var body = document.getElementById('ctblBody');
+        if (!body) return;
+        if (_ctblOrig === null) _ctblOrig = Array.prototype.slice.call(body.rows);
+        _nameSort = (_nameSort + 1) % 3;
+        var arrow = document.getElementById('nameSortArrow');
+        var rows;
+        if (_nameSort === 0) {
+            rows = _ctblOrig.slice();
+            if (arrow) arrow.textContent = '';
+        } else {
+            rows = Array.prototype.slice.call(body.rows);
+            rows.sort(function(a, b) {
+                var an = (a.querySelector('.container-link') || {}).textContent || '';
+                var bn = (b.querySelector('.container-link') || {}).textContent || '';
+                return an.localeCompare(bn, undefined, {sensitivity: 'base'});
+            });
+            if (_nameSort === 2) rows.reverse();
+            if (arrow) arrow.textContent = _nameSort === 1 ? ' ▲' : ' ▼';
+        }
+        rows.forEach(function(r) { body.appendChild(r); });
+    };
+
     // ── Tabs ──────────────────────────────────────────────────
     document.querySelectorAll('[data-tabs]').forEach(function(group) {
         var buttons = group.querySelectorAll('.tab-btn');
@@ -1799,7 +1826,10 @@ def create_handler(config, checker, bot, store, password=None):
 {content}
 </div>
 <div class="footer">
-Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target="_blank" rel="noopener noreferrer">❤ Sponsor</a>
+<a href="https://github.com/amayer1983/docksentry/releases/tag/v{VERSION}" target="_blank" rel="noopener noreferrer">Docksentry v{VERSION}</a>
+ · <a href="https://github.com/amayer1983/docksentry" target="_blank" rel="noopener noreferrer">GitHub</a>
+ · <a href="https://github.com/amayer1983/docksentry/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+ · <a href="https://github.com/sponsors/amayer1983" target="_blank" rel="noopener noreferrer">❤ Sponsor</a>
 </div>
 <script>{_BASE_JS}</script>
 </body>
@@ -3152,9 +3182,11 @@ Docksentry v{VERSION} · <a href="https://github.com/sponsors/amayer1983" target
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
-<table>
-<tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th>{t("web_name")}</th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr>
+<table id="ctbl">
+<thead><tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th class="sortable" onclick="sortByName()" title="{t('web_sort_name')}" style="cursor:pointer;user-select:none">{t("web_name")} <span id="nameSortArrow"></span></th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_actions")}</th></tr></thead>
+<tbody id="ctblBody">
 {rows}
+</tbody>
 </table>
 </div>
 <script>

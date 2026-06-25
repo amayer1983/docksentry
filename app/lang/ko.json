@@ -103,6 +103,7 @@
   "status_pinned": "고정됨",
   "status_autoupdate": "자동 업데이트",
   "startup_message": "🚀 *Docksentry 시작됨* (v{version})",
+  "web_sort_name": "Sort by name (click to cycle A→Z, Z→A, group order)",
   "selfupdate_releases_link": "📄 [Release notes](https://github.com/amayer1983/docksentry/releases)",
   "changelog_current": "📄 *You're on the latest — v{version}* ({date})\nWhat this version brought:",
   "cooldown_list": "*Update cooldowns:*",

@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.27.0] - 2026-06-25
+
+### Added
+- **Web UI: sortable Name column** ([#37](../../issues/37), @LeeNX). With many containers it was hard to group similar names (e.g. several `cloudflare-*`). Clicking the **Name** header now cycles A→Z → Z→A → back to the default order. The default stays the deliberate Container-Group order (head first), so sorting is purely opt-in per view and a reload restores grouping.
+- **Web UI: footer links to GitHub, Releases and the running version's release notes** ([#37](../../issues/37), @LeeNX). The footer now links the version number straight to its release tag, plus standalone GitHub and Releases links — so checking for a newer release no longer means hunting through the Sponsor link.
+
 ## [1.26.4] - 2026-06-25
 
 ### Added
