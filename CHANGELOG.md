@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.28.3] - 2026-06-26
+
+### Fixed
+- **Docksentry's own image now carries an `org.opencontainers.image.version` label**, so `/status docksentry` (and the Web UI detail) shows its version, not just the image hash ([#39](../../issues/39), @LeeNX). The image was missing the version label — the `/status` reader (added v1.26.1) was working fine, there was simply nothing to read. The Dockerfile now sets it (plus an `image.title`) from a `VERSION` build-arg that the publish workflow fills from the release tag. Takes effect from this image onward; third-party images that genuinely don't set the label still show only the hash (there's no version to invent).
+
 ## [1.28.2] - 2026-06-25
 
 ### Fixed

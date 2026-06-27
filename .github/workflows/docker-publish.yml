@@ -50,6 +50,7 @@ jobs:
             echo "${{ env.GHCR_IMAGE }}:$VERSION" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           else
+            echo "version=dev" >> $GITHUB_OUTPUT
             echo "tags<<EOF" >> $GITHUB_OUTPUT
             echo "${{ env.DOCKERHUB_IMAGE }}:dev" >> $GITHUB_OUTPUT
             echo "${{ env.GHCR_IMAGE }}:dev" >> $GITHUB_OUTPUT
@@ -62,6 +63,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -1,6 +1,13 @@
 FROM python:3.12-alpine
 
+# Injected at build time from the release tag (see docker-publish.yml);
+# defaults to "dev" for local builds. Drives the OCI version label so
+# Docksentry's own image reports a version in /status etc. (#39, @LeeNX).
+ARG VERSION=dev
+
 LABEL maintainer="Andreas Mayer <andreas.mayer.1983@outlook.de>"
+LABEL org.opencontainers.image.title="Docksentry"
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/amayer1983/docksentry"
 LABEL org.opencontainers.image.description="Docksentry — Docker container update manager with Telegram bot, Web UI, and auto-rollback"
 
