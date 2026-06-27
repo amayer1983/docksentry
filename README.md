@@ -238,7 +238,7 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 
 ## Configuration
 
-At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEBHOOK_URL` must be configured — otherwise Docksentry has no way to notify or be controlled.
+At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOOK_URL`, or e-mail (`SMTP_HOST`+`SMTP_FROM`+`SMTP_TO`) must be configured — otherwise Docksentry has no way to notify or be controlled.
 
 > **Quoting env values in `docker-compose.yml`**: Docker Compose passes env values literally, so `BOT_TOKEN="abc123"` lands as the string `"abc123"` (quotes included) in Docksentry — which breaks Telegram API calls, `int()` parsing on `WEB_PORT`, etc. Since v1.19.1 Docksentry strips matching outer `"…"` and `'…'` quote pairs automatically, but the cleanest fix is to leave the quotes off entirely: `BOT_TOKEN=abc123`.
 
@@ -269,6 +269,13 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, or `WEB
 | `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST) |
+| `SMTP_HOST` | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications |
+| `SMTP_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain) |
+| `SMTP_USER` | | SMTP username (omit for an unauthenticated relay) |
+| `SMTP_PASSWORD` | | SMTP password |
+| `SMTP_FROM` | | Sender address, e.g. `docksentry@example.com` |
+| `SMTP_TO` | | Recipient(s), comma-separated |
+| `SMTP_TLS` | `starttls` | `starttls`, `ssl`, or `none` |
 | `TZ` | `Europe/Berlin` | Timezone |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |

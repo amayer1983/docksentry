@@ -59,7 +59,9 @@ class Config:
                  telegram_allowed_users, healthcheck_max_starting,
                  bot_label, docker_stop_timeout,
                  docker_username, docker_password,
-                 docker_auth_config, docker_registry):
+                 docker_auth_config, docker_registry,
+                 smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
+                 smtp_from="", smtp_to="", smtp_tls="starttls"):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -152,6 +154,16 @@ class Config:
         self.web_password = web_password
         self.discord_webhook = discord_webhook
         self.webhook_url = webhook_url
+        # Native e-mail / SMTP notification channel (#2). Active when host +
+        # from + to are set. tls: "starttls" (default, port 587), "ssl"
+        # (implicit TLS, port 465), or "none" (plain, e.g. internal relay).
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.smtp_user = smtp_user
+        self.smtp_password = smtp_password
+        self.smtp_from = smtp_from
+        self.smtp_to = smtp_to
+        self.smtp_tls = (smtp_tls or "starttls").lower()
         self.telegram_topic_id = telegram_topic_id
         # Optional whitelist of Telegram user IDs (in addition to the
         # chat-origin check). Empty list means "any user in the
@@ -301,4 +313,11 @@ class Config:
             docker_password=_env("DOCKER_PASSWORD"),
             docker_auth_config=_env("DOCKER_AUTH_CONFIG").strip(),
             docker_registry=_env("DOCKER_REGISTRY").strip(),
+            smtp_host=_env("SMTP_HOST").strip(),
+            smtp_port=int(_env("SMTP_PORT", "587") or "587"),
+            smtp_user=_env("SMTP_USER").strip(),
+            smtp_password=_env("SMTP_PASSWORD"),  # no strip — see DOCKER_PASSWORD
+            smtp_from=_env("SMTP_FROM").strip(),
+            smtp_to=_env("SMTP_TO").strip(),
+            smtp_tls=_env("SMTP_TLS", "starttls").strip(),
         )

@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.31.0] - 2026-06-26
+
+### Added
+- **Native e-mail / SMTP notifications** ([#2](../../issues/2)). A real e-mail channel alongside Telegram, Discord and generic webhooks — for "updates available", update results, and other notifications. Configure with `SMTP_HOST` + `SMTP_FROM` + `SMTP_TO` (plus optional `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`). `SMTP_TLS` selects the transport: `starttls` (default, port 587), `ssl` (implicit TLS, 465), or `none` (plain/relay). `SMTP_TO` accepts a comma-separated list; the `BOT_LABEL` prefix is applied to the subject so multi-host setups are distinguishable. Built on the Python standard library (`smtplib`) — no new dependency — and respects quiet hours / maintenance like the other channels. Sending is best-effort (failures are logged, never crash an update). Test: `scripts/test_smtp.py`.
+
+  This also makes the e-mail channel that earlier docs implied actually exist — it does now.
+
 ## [1.30.0] - 2026-06-26
 
 ### Added

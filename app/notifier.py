@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-channel notification dispatcher (Discord, Webhook)."""
+"""Multi-channel notification dispatcher (Discord, Webhook, e-mail/SMTP)."""
 
 import json
 import urllib.request
@@ -8,14 +8,20 @@ from quiet_hours import is_quiet_now
 
 
 class Notifier:
-    """Sends notifications to Discord and/or generic webhooks."""
+    """Sends notifications to Discord, generic webhooks, and/or e-mail."""
 
     def __init__(self, config):
         self.config = config
 
+    def _smtp_configured(self):
+        """E-mail is active once host + from + to are all set (#2)."""
+        c = self.config
+        return bool(c.smtp_host and c.smtp_from and c.smtp_to)
+
     def has_channels(self):
         """Check if any notification channels are configured."""
-        return bool(self.config.discord_webhook or self.config.webhook_url)
+        return bool(self.config.discord_webhook or self.config.webhook_url
+                    or self._smtp_configured())
 
     def _suppressed(self):
         """True if quiet-hours OR maintenance is active right now — skip
@@ -51,6 +57,11 @@ class Notifier:
                     for u in updates
                 ],
             })
+        if self._smtp_configured():
+            lines = [f"- {u['name']} ({u['image']}) — {u.get('size','?')}, {u.get('created','?')}"
+                     for u in updates]
+            self._smtp_send(f"{len(updates)} Docker update(s) available",
+                            "Docksentry found updates for:\n\n" + "\n".join(lines))
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
         """Notify about a completed update (success or failure).
@@ -77,6 +88,12 @@ class Notifier:
                 "detail": detail,
                 "source_url": source_url,
             })
+        if self._smtp_configured():
+            status = "OK" if success else "FAILED"
+            body = f"{name} ({image})\n\n{detail}"
+            if source_url:
+                body += f"\n\n{source_url}"
+            self._smtp_send(f"Update {status}: {name}", body)
 
     def send_message(self, text):
         """Send a plain text notification (subject to quiet hours)."""
@@ -86,6 +103,9 @@ class Notifier:
             self._discord_message(text)
         if self.config.webhook_url:
             self._webhook_send("message", {"text": text})
+        if self._smtp_configured():
+            # Strip Telegram *bold* markers for a clean plain-text mail.
+            self._smtp_send("Docksentry", text.replace("*", ""))
 
     # ── Discord ──────────────────────────────────────────────
 
@@ -204,3 +224,39 @@ class Notifier:
         except Exception as e:
             print(f"Webhook error: {e}")
             return None
+
+    # ── E-mail / SMTP ────────────────────────────────────────
+
+    def _smtp_send(self, subject, body):
+        """Send a plain-text e-mail via SMTP. `smtp_tls` selects the
+        transport: "starttls" (default, 587), "ssl" (implicit, 465) or
+        "none". SMTP_TO may be a comma/semicolon-separated list. Best-effort:
+        logs and returns on any failure, never raising into the caller —
+        same contract as the Discord/webhook channels."""
+        import smtplib
+        from email.message import EmailMessage
+        c = self.config
+        recipients = [r.strip() for r in c.smtp_to.replace(";", ",").split(",") if r.strip()]
+        if not recipients:
+            return
+        label = (c.bot_label or "").strip()
+        msg = EmailMessage()
+        msg["Subject"] = (f"[{label}] " if label else "") + subject
+        msg["From"] = c.smtp_from
+        msg["To"] = ", ".join(recipients)
+        msg.set_content(body)
+        try:
+            if c.smtp_tls == "ssl":
+                server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port, timeout=15)
+            else:
+                server = smtplib.SMTP(c.smtp_host, c.smtp_port, timeout=15)
+            try:
+                if c.smtp_tls == "starttls":
+                    server.starttls()
+                if c.smtp_user:
+                    server.login(c.smtp_user, c.smtp_password)
+                server.send_message(msg, to_addrs=recipients)
+            finally:
+                server.quit()
+        except Exception as e:
+            print(f"SMTP error: {e}")

@@ -93,6 +93,7 @@ def main():
         or config.web_ui
         or config.discord_webhook
         or config.webhook_url
+        or bool(config.smtp_host and config.smtp_from and config.smtp_to)
     )
     if not has_any_channel:
         print("ERROR: configure at least one of: BOT_TOKEN+CHAT_ID, WEB_UI=true,")
