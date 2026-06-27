@@ -576,6 +576,25 @@ class TelegramBot:
             return None, self.t("resolve_not_found", name=partial)
 
     @staticmethod
+    def _is_glob(s):
+        """True if `s` looks like a glob pattern (vs. a plain/partial name)."""
+        return any(c in s for c in "*?[")
+
+    def _match_glob(self, pattern, include_stopped=True):
+        """Return sorted container names matching a glob pattern (`*`, `?`,
+        `[...]`), case-insensitively — running + stopped, minus our `_old`
+        rollback leftovers. Empty list if nothing matches (#40, @LeeNX)."""
+        import fnmatch
+        cmd = ["docker", "ps", "--format", "{{.Names}}"]
+        if include_stopped:
+            cmd.insert(2, "-a")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        names = [n.strip() for n in result.stdout.strip().split("\n")
+                 if n.strip() and not n.strip().endswith("_old")]
+        pl = pattern.lower()
+        return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
+
+    @staticmethod
     def _is_timeout(exc):
         """Return True if `exc` is a network timeout (vs. a real API error)."""
         if isinstance(exc, (socket.timeout, TimeoutError)):
@@ -2236,6 +2255,24 @@ class TelegramBot:
         # buttons. The arg-less `/status` keeps the overview behaviour.
         if text.startswith("/status ") and len(text.split(maxsplit=1)) > 1:
             partial = text.split(maxsplit=1)[1].strip()
+            # Glob → a compact one-line-per-match overview (#40, @LeeNX).
+            # Read-only, so no action buttons; use /status <name> for the
+            # full single-container detail.
+            if self._is_glob(partial):
+                names = self._match_glob(partial)
+                if not names:
+                    self.send_message(self.t("glob_no_match", pattern=partial))
+                    return
+                lines = [self.t("glob_status_header", count=len(names), pattern=partial)]
+                for nm in names:
+                    si = self._container_state(nm)
+                    if not si:
+                        continue
+                    icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
+                    health = f" ({si['health']})" if si["health"] else ""
+                    lines.append(f"{icon} `{nm}` — {si['state']}{health}")
+                self.send_message("\n".join(lines))
+                return
             resolved, err = self._resolve_container(partial)
             if not resolved:
                 self.send_message(err)
@@ -2624,9 +2661,25 @@ class TelegramBot:
                 self.send_message(self.t("lifecycle_usage"))
                 return
             action = parts[0][1:]  # strip leading "/"
+            arg = parts[1].strip()
+            # Glob → bulk action on every match (#40). Each goes through the
+            # same _lifecycle_action, so the self-kill and protect-from-stop
+            # guards still apply per container; results are aggregated.
+            if self._is_glob(arg):
+                names = self._match_glob(arg)
+                if not names:
+                    self.send_message(self.t("glob_no_match", pattern=arg))
+                    return
+                lines = [self.t("glob_action_header", action=action,
+                                count=len(names), pattern=arg)]
+                for nm in names:
+                    ok, msg = self._lifecycle_action(action, nm, checker)
+                    lines.append(("✅ " if ok else "❌ ") + msg)
+                self.send_message("\n".join(lines))
+                return
             # include_stopped is now the default — see _resolve_container
             # docstring for rationale (#25).
-            resolved, err = self._resolve_container(parts[1].strip())
+            resolved, err = self._resolve_container(arg)
             if not resolved:
                 self.send_message(err)
                 return

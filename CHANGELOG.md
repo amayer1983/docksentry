@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.29.0] - 2026-06-26
+
+### Added
+- **Glob wildcard patterns for `<name>` commands** ([#40](../../issues/40), @LeeNX). When the argument contains `*`, `?` or `[...]`, Docksentry matches *all* containers (case-insensitively, running + stopped) instead of resolving one — handy for "address a bunch of similar containers at once". Supported now:
+  - **`/status <glob>`** — compact one-line-per-match overview, e.g. `/status ctf-*-even` (read-only).
+  - **`/start` / `/stop` / `/restart <glob>`** — act on every match, e.g. `/restart gluetun-*`, with aggregated per-container results. Each still goes through the same guards (self-kill protection, and protect-from-stop), so a glob can't stop a protected container or Docksentry itself.
+
+  No glob characters → exact/partial single-name behaviour is unchanged. Glob support for `/check` and `/update` (which tie into the batch-update flow) is a planned follow-up. Test: `scripts/test_glob.py`. English + German translated; other languages fall back to English.
+
 ## [1.28.3] - 2026-06-26
 
 ### Fixed
