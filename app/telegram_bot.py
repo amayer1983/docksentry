@@ -37,7 +37,8 @@ _BOT_COMMANDS = [
     # help block with synopsis, parameters, examples, side effects.
     # Multiple commands can share a detail key (lifecycle, pin/unpin).
     ("status",      "Container overview (add a name for details + action buttons)", "help_status",      "help_detail_status"),
-    ("check",       "Check for updates now",                                          "help_check",       "help_detail_check"),
+    ("check",       "Check for updates (add a name/glob to scope)",                   "help_check",       "help_detail_check"),
+    ("update",      "Update a container or glob — /update <name|*>",                   "help_update",      "help_detail_update"),
     ("updates",     "Show pending updates",                                           "help_updates",     "help_detail_updates"),
     ("cleanup",     "Remove unused images",                                           "help_cleanup",     "help_detail_cleanup"),
     ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle",   "help_detail_lifecycle"),
@@ -593,6 +594,20 @@ class TelegramBot:
                  if n.strip() and not n.strip().endswith("_old")]
         pl = pattern.lower()
         return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
+
+    def _select_containers(self, arg):
+        """Resolve a /check or /update argument to a list of container names.
+        Glob (`*?[`) → all matches; plain → single partial-resolved name.
+        Returns (names, error_msg); error_msg is None on success (#40)."""
+        if self._is_glob(arg):
+            names = self._match_glob(arg)
+            if not names:
+                return [], self.t("glob_no_match", pattern=arg)
+            return names, None
+        resolved, err = self._resolve_container(arg)
+        if err:
+            return [], err
+        return [resolved], None
 
     @staticmethod
     def _is_timeout(exc):
@@ -2464,6 +2479,53 @@ class TelegramBot:
                 self.send_message(self._build_dry_run(updates, checker))
             else:
                 self.notify_no_updates()
+
+        elif text.startswith("/check ") and len(text.split(maxsplit=1)) > 1:
+            # /check <name|glob> — scope the check to selected containers (#40).
+            if self.update_running:
+                self.send_message(self.t("update_already_running"))
+                return
+            arg = text.split(maxsplit=1)[1].strip()
+            names, err = self._select_containers(arg)
+            if err:
+                self.send_message(err)
+                return
+            self.send_message(self.t("checking_updates"))
+            nameset = set(names)
+            updates = [u for u in checker.check_all(bot=self) if u["name"] in nameset]
+            if updates:
+                self.notify_updates(updates)
+            else:
+                self.send_message(self.t("check_scoped_uptodate",
+                                         count=len(names), pattern=arg))
+
+        elif text == "/update" or (text.startswith("/update ") and len(text.split(maxsplit=1)) > 1):
+            # /update <name|glob> — check then update only the matching
+            # containers that actually have a pending update (#40). Bulk by
+            # design; the user typing the pattern is the explicit go-ahead,
+            # and run_updates carries all the group/guard gates + the mutex.
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                self.send_message(self.t("update_usage"))
+                return
+            if self.update_running:
+                self.send_message(self.t("update_already_running"))
+                return
+            arg = parts[1].strip()
+            names, err = self._select_containers(arg)
+            if err:
+                self.send_message(err)
+                return
+            self.send_message(self.t("checking_updates"))
+            nameset = set(names)
+            updates = [u for u in checker.check_all(bot=self) if u["name"] in nameset]
+            if not updates:
+                self.send_message(self.t("update_scoped_none", pattern=arg))
+                return
+            self.send_message(self.t("update_scoped_starting",
+                                     count=len(updates), pattern=arg))
+            threading.Thread(target=self.run_updates,
+                             args=(checker,), kwargs={"updates": updates}).start()
 
         elif text == "/check":
             # Don't run a check while a manual update is in progress —

@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.30.0] - 2026-06-26
+
+### Added
+- **`/check` and `/update` now take a name or glob** ([#40](../../issues/40), @LeeNX) — completing the glob support from v1.29.0:
+  - **`/check <name|glob>`** — scope a check to selected containers, e.g. `/check gluetun-*`; shows the "Updates Available" prompt for matches, or "up to date" if none.
+  - **`/update <name|glob>`** — new command: checks, then updates only the matching containers that actually have a pending update, e.g. `/update gluetun-*`. Runs through the same path as the Update-all button (group order, dependents cascade, health-check + rollback, mutex). Typing the pattern is the go-ahead; use `/check <glob>` first to preview. Bare `/update` shows usage.
+
+  Plain `/check` (no arg) is unchanged (full scan). Shared `_select_containers` resolver (glob → all matches, plain → single). English + German translated; other languages fall back to English.
+
 ## [1.29.0] - 2026-06-26
 
 ### Added
