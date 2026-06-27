@@ -1620,6 +1620,28 @@ class TelegramBot:
         self._save_selfupdate_history(own_name, own_image, old_created, new_created)
         self._do_selfupdate(config, own_name, own_image)
 
+    def _write_selfupdate_marker(self, image):
+        """Record that the imminent restart is a self-update so the next boot
+        doesn't mislabel it as an external stop (#2, @famewolf).
+
+        Writes to `self.config.selfupdate_marker_file` on the persistent data
+        dir (survives the container recreate). Best-effort — a failure only
+        costs a cosmetic "external restart" line, never the update itself.
+
+        NB: this MUST read the path off `self.config` (the app Config), not
+        off the docker-inspect dict that the selfupdate callers pass around as
+        their local `config` — that dict has no such attribute, and the bug
+        where the marker write silently `AttributeError`-ed for every
+        self-update (manual *and* auto) since v1.26.2 was exactly that mixup.
+        """
+        try:
+            import time as _time
+            from container_store import atomic_write_json
+            atomic_write_json(self.config.selfupdate_marker_file,
+                              {"image": image, "ts": _time.time()})
+        except Exception as e:
+            print(f"Could not write selfupdate marker (non-fatal): {e}")
+
     def _do_selfupdate(self, config, own_name, own_image):
         """Execute selfupdate via a temporary helper container on the host.
 
@@ -1632,13 +1654,7 @@ class TelegramBot:
         # SIGTERM to our old container, which the signal handler records as a
         # generic external stop — without this marker the next boot would
         # mislabel the self-update as "external restart" (#2, @famewolf).
-        try:
-            import time as _time
-            from container_store import atomic_write_json
-            atomic_write_json(config.selfupdate_marker_file,
-                              {"image": own_image, "ts": _time.time()})
-        except Exception as e:
-            print(f"Could not write selfupdate marker (non-fatal): {e}")
+        self._write_selfupdate_marker(own_image)
         # Rebuild run command from inspect. Single source of truth via
         # UpdateChecker._build_run_args so the self-update path stays
         # in sync with the regular container-update path (#27): same

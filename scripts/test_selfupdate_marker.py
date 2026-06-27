@@ -10,10 +10,11 @@ This mirrors main.py's consume logic (which is inline in main()) against the
 real atomic_write_json used to produce the marker. Fresh marker → suppress;
 stale (>1h) → ignore; absent → not a self-update. Exits non-zero on failure.
 """
-import sys, os, json, time, tempfile
+import sys, os, json, time, tempfile, types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from container_store import atomic_write_json
+from telegram_bot import TelegramBot
 
 
 def consume(path):
@@ -41,11 +42,24 @@ def main():
 
     absent = consume(p)
 
+    # ── WRITE path: _do_selfupdate's marker write must land on
+    # self.config.selfupdate_marker_file. Regression guard for the bug where
+    # it read the path off the docker-inspect dict instead (AttributeError →
+    # marker never written → every self-update mislabelled as external SIGTERM
+    # since v1.26.2). The write must then round-trip through the consume logic.
+    wp = os.path.join(d, "selfupdate_restart_write.json")
+    bot = types.SimpleNamespace(config=types.SimpleNamespace(selfupdate_marker_file=wp))
+    TelegramBot._write_selfupdate_marker(bot, "repo:latest")
+    written = os.path.exists(wp)
+    roundtrip = written and consume(wp) is True
+
     checks = {
         "fresh marker -> self-update (suppress external-signal line)": fresh is True,
         "marker consumed (deleted)": consumed,
         "stale marker (>1h) -> ignored": stale is False,
         "absent marker -> not a self-update": absent is False,
+        "_write_selfupdate_marker writes to self.config path": written,
+        "written marker round-trips through consume -> self-update": roundtrip,
     }
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
