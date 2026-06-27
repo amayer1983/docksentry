@@ -964,19 +964,152 @@ class TelegramBot:
             print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
             _time.sleep(cd)
 
+    def _process_update_batch(self, updates, checker, *, auto):
+        """Shared per-container update engine for BOTH the scheduled-auto
+        path (handle_autoupdates) and the manual path (run_updates /
+        "Update all"). This is the single source of truth that stops the
+        two from drifting (#2, @famewolf): group-order sort + inter-member
+        wait, the group-abort gate, the netns-owner-by-name snapshot,
+        update_container, the restart-dependents cascade (success +
+        head-rollback), per-container notifier results and the per-container
+        cooldown all live here, once.
+
+        `auto` toggles the one behaviour that is legitimately path-specific:
+        the ask-before-major confirmation gate runs ONLY for auto — tapping
+        "Update all" is itself the explicit "yes, including majors".
+
+        `updates` is mutated in place (sorted, enriched, `netns_name` added).
+        Returns (results, success_count, major_pending), where major_pending
+        is a list of (name, old_version, new_version) deferred for the
+        confirmation prompt.
+        """
+        import time as _time
+        self._enrich_with_source_url(updates)
+
+        groups = self.store.get_groups() or {}
+        group_position = {}  # container_name → (group_id, position)
+        for gid, g in groups.items():
+            for pos, cname in enumerate(g.get("containers") or []):
+                group_position[cname] = (gid, pos)
+        updates.sort(key=lambda u: (0,) + group_position[u["name"]]
+                     if u["name"] in group_position else (1, "", 0))
+
+        # Snapshot netns owners by NAME *before* any recreate (#2): a group
+        # head recreated earlier in the batch changes ID, so sidecars still
+        # referencing the old ID break — resolving to a stable name lets the
+        # sidecars rejoin.
+        for u in updates:
+            tn = checker.netns_target_name(u["name"])
+            if tn:
+                u["netns_name"] = tn
+
+        ask_major_list = self.store.get_ask_before_major() if auto else set()
+        batch_names = {u["name"] for u in updates}
+        results = []
+        success_count = 0
+        major_pending = []
+        group_aborted = set()  # group_ids whose remaining members are skipped
+        prev_group = None
+
+        for idx, u in enumerate(updates):
+            gp = group_position.get(u["name"])
+            cur_group = gp[0] if gp else None
+
+            # Skip the rest of a group whose earlier member already failed.
+            if cur_group and cur_group in group_aborted:
+                results.append(
+                    f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)")
+                continue
+
+            # Inter-container wait when staying inside the same group.
+            if cur_group and cur_group == prev_group:
+                wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
+                if wait_s > 0:
+                    _time.sleep(wait_s)
+
+            # Major-version confirmation gate — auto only (per-container opt-in).
+            if auto and u["name"] in ask_major_list:
+                is_major, old_ver, new_ver = self._is_major_bump(u, checker)
+                if is_major:
+                    self.store.add_pending_major(u["name"], {
+                        "image": u["image"],
+                        "old_version": old_ver,
+                        "new_version": new_ver,
+                        "compose": {k: u[k] for k in u if k.startswith("compose_")},
+                    })
+                    major_pending.append((u["name"], old_ver, new_ver))
+                    results.append(
+                        f"⏸ {self._display_name(u)}: major bump {old_ver} → {new_ver} — confirmation required")
+                    prev_group = cur_group
+                    continue
+
+            try:
+                compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
+                success, msg = checker.update_container(
+                    u["name"], u["image"],
+                    netns_name=u.get("netns_name"), **compose_kwargs)
+                status = "✅" if success else "❌"
+                results.append(f"{status} {self._display_name(u)}: {msg}")
+                if self.notifier:
+                    self.notifier.send_update_result(u["name"], u["image"], success, msg,
+                                                     source_url=u.get("source_url", ""))
+
+                grp = (groups.get(cur_group) or {}) if cur_group else {}
+                members = grp.get("containers") or []
+                is_head = bool(grp.get("restart_dependents") and members
+                               and u["name"] == members[0] and len(members) > 1)
+                if success:
+                    success_count += 1
+                    # Restart-dependents cascade. Members already IN this
+                    # batch self-heal via their own update (recreated onto the
+                    # head's new name through the netns snapshot above), so
+                    # only out-of-batch sidecars need the explicit kick.
+                    if is_head:
+                        deps = [d for d in members[1:] if d not in batch_names]
+                        if deps:
+                            wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
+                            results.append(self._restart_group_dependents(
+                                u["name"], deps, checker, max_wait=wait_s))
+                elif cur_group:
+                    # Failure aborts the remainder of this group. If the failed
+                    # container is a restart_dependents head, its dependents'
+                    # namespace was torn down when it stopped and the rollback
+                    # only restored the head — kick ALL dependents (incl. the
+                    # in-batch ones the group-abort gate would otherwise skip)
+                    # so they re-attach to the rolled-back head (#27).
+                    group_aborted.add(cur_group)
+                    if is_head:
+                        wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
+                        results.append("🔁 head rollback — dependents kicked: " +
+                                       self._restart_group_dependents(
+                                           u["name"], members[1:], checker, max_wait=wait_s))
+            except Exception as e:
+                results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
+                if cur_group:
+                    group_aborted.add(cur_group)
+                if self.notifier:
+                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
+                                                     source_url=u.get("source_url", ""))
+            prev_group = cur_group
+            self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
+
+        return results, success_count, major_pending
+
     def handle_autoupdates(self, updates, checker):
         """Split updates into auto-update and manual, handle accordingly.
 
         Returns the number of containers that were successfully auto-updated
         (used by the scheduler to decide whether to follow up with cleanup).
+
+        The actual per-container work runs in the shared `_process_update_batch`
+        engine (#2) — this method only does the auto-specific scaffolding:
+        candidate selection (auto-list + maintenance windows), the mutex
+        claim, pending-file bookkeeping, and the notification framing.
         """
-        import time as _time
         from update_window import is_window_open
 
         auto_list = self._get_autoupdate()
-        ask_major_list = self.store.get_ask_before_major()
         windows = self.store.get_update_windows()
-        groups = self.store.get_groups()
 
         auto_candidates = [u for u in updates if u["name"] in auto_list]
         # Filter out containers whose maintenance window is closed right now
@@ -986,32 +1119,14 @@ class TelegramBot:
         manual_updates = [u for u in updates if u["name"] not in auto_list]
         success_count = 0
         major_pending_now = []
-        group_aborted = set()  # group_ids whose remaining members must be skipped
 
-        # ── Sort auto_updates by group order ────────────────────
-        # Containers in a group are ordered as listed in the group; orphans
-        # (containers in no group) keep their original order at the end.
-        group_position = {}  # container_name → (group_id, position)
-        for gid, g in groups.items():
-            for pos, cname in enumerate(g.get("containers") or []):
-                group_position[cname] = (gid, pos)
-
-        def _sort_key(u):
-            gp = group_position.get(u["name"])
-            if gp is None:
-                return (1, "", 0)  # orphans last
-            return (0, gp[0], gp[1])
-        auto_updates.sort(key=_sort_key)
-
-        # Auto-update containers silently, respecting group order + wait.
-        # Claim the shared update mutex (v1.23.1) — this is the core of
-        # the concurrency fix: before, the scheduler's auto-update loop
-        # ignored the lock entirely, so a cron tick could recreate the
-        # very container a user was mid-updating from Telegram. If a
-        # manual update currently holds the lock we skip the auto-update
-        # this tick (the next cron tick retries); the manual flow handles
-        # those containers anyway. The notification sections further down
-        # run unconditionally — they don't touch containers.
+        # Claim the shared update mutex (v1.23.1): before, the scheduler's
+        # auto-update loop ignored the lock entirely, so a cron tick could
+        # recreate the very container a user was mid-updating from Telegram.
+        # If a manual update holds the lock we skip auto this tick (next tick
+        # retries); the manual flow handles those containers anyway. The
+        # notification sections below run regardless — they don't touch
+        # containers.
         auto_lock_held = False
         if auto_updates:
             if self._update_lock.acquire(blocking=False):
@@ -1021,139 +1136,27 @@ class TelegramBot:
                       "(will retry next tick)")
                 auto_updates = []
         try:
-          if auto_updates:
-            # Enrich source_url so result lines render the container name
-            # as a tap-to-open link (same as the pre-update "Updates
-            # Available" notification). Without this the post-update
-            # message was the only place users saw the bare `name`
-            # without the link, surfaced as a UX inconsistency report.
-            self._enrich_with_source_url(auto_updates)
-            self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
-            # Snapshot netns owners by NAME before any recreate (#2) — see the
-            # same step in run_updates. A Gluetun head recreated earlier in the
-            # batch changes ID; resolving to a stable name lets sidecars rejoin.
-            for u in auto_updates:
-                tn = checker.netns_target_name(u["name"])
-                if tn:
-                    u["netns_name"] = tn
-            results = []
-            prev_group = None
-            for idx, u in enumerate(auto_updates):
-                gp = group_position.get(u["name"])
-                cur_group = gp[0] if gp else None
+            if auto_updates:
+                self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
+                results, success_count, major_pending_now = self._process_update_batch(
+                    auto_updates, checker, auto=True)
+                self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
 
-                # If a previous container in this group failed, skip remaining
-                if cur_group and cur_group in group_aborted:
-                    results.append(
-                        f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)"
-                    )
-                    continue
-
-                # Inter-container wait when staying inside the same group
-                if cur_group and cur_group == prev_group:
-                    wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
-                    if wait_s > 0:
-                        _time.sleep(wait_s)
-
-                # Major-version confirmation gate (per-container opt-in)
-                if u["name"] in ask_major_list:
-                    is_major, old_ver, new_ver = self._is_major_bump(u, checker)
-                    if is_major:
-                        self.store.add_pending_major(u["name"], {
-                            "image": u["image"],
-                            "old_version": old_ver,
-                            "new_version": new_ver,
-                            "compose": {k: u[k] for k in u if k.startswith("compose_")},
-                        })
-                        major_pending_now.append((u["name"], old_ver, new_ver))
-                        results.append(
-                            f"⏸ {self._display_name(u)}: major bump {old_ver} → {new_ver} — confirmation required"
-                        )
-                        prev_group = cur_group
-                        continue
-                try:
-                    compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                    success, msg = checker.update_container(
-                        u["name"], u["image"],
-                        netns_name=u.get("netns_name"), **compose_kwargs)
-                    status = "✅" if success else "❌"
-                    results.append(f"{status} {self._display_name(u)}: {msg}")
-                    if success:
-                        success_count += 1
-                        # Restart-dependents cascade: if this container is
-                        # the first ("head") member of a group flagged
-                        # restart_dependents, wait for it to be healthy,
-                        # then restart every other group member. Covers
-                        # Gluetun-style "VPN sidecar restarts → all
-                        # dependents lose connectivity" workflows.
-                        if cur_group:
-                            grp = groups.get(cur_group) or {}
-                            members = grp.get("containers") or []
-                            if (grp.get("restart_dependents")
-                                    and members
-                                    and u["name"] == members[0]
-                                    and len(members) > 1):
-                                deps = members[1:]
-                                wait_s = int(grp.get("wait_seconds", 30) or 30)
-                                restart_msg = self._restart_group_dependents(
-                                    u["name"], deps, checker, max_wait=max(wait_s, 30)
-                                )
-                                results.append(restart_msg)
-                    elif cur_group:
-                        # Failure aborts the remainder of this group
-                        group_aborted.add(cur_group)
-                        # If the failed container is the head of a
-                        # restart_dependents group, the dependents are
-                        # already in a half-broken state — their
-                        # network namespace was torn down when the
-                        # head was stopped, and the rollback brought
-                        # the head back but the dependents kept
-                        # pointing at the now-stale namespace. Kick
-                        # them so they re-attach to the rolled-back
-                        # head. Same code path as the success cascade
-                        # but with a clear "rolled back" message so
-                        # the user knows why the cascade is firing.
-                        # Reported by @famewolf in #27.
-                        grp = groups.get(cur_group) or {}
-                        members = grp.get("containers") or []
-                        if (grp.get("restart_dependents")
-                                and members
-                                and u["name"] == members[0]
-                                and len(members) > 1):
-                            deps = members[1:]
-                            wait_s = int(grp.get("wait_seconds", 30) or 30)
-                            restart_msg = self._restart_group_dependents(
-                                u["name"], deps, checker, max_wait=max(wait_s, 30)
-                            )
-                            results.append(f"🔁 head rollback — dependents kicked: {restart_msg}")
-                    if self.notifier:
-                        self.notifier.send_update_result(u["name"], u["image"], success, msg,
-                                                         source_url=u.get("source_url", ""))
-                except Exception as e:
-                    results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
-                    if cur_group:
-                        group_aborted.add(cur_group)
-                    if self.notifier:
-                        self.notifier.send_update_result(u["name"], u["image"], False, str(e)[:200],
-                                                         source_url=u.get("source_url", ""))
-                prev_group = cur_group
-                self._maybe_cooldown(u["name"], more_remaining=idx < len(auto_updates) - 1)
-            self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
-
-            # Remove fully-processed auto-updated from pending. Major-pending
-            # entries stay in pending so the user can also act on them via the
-            # Web UI Update buttons; the dedicated confirm flow uses the
-            # major-pending store independently.
-            processed = {a["name"] for a in auto_updates if a["name"] not in {p[0] for p in major_pending_now}}
-            remaining = [u for u in updates if u["name"] not in processed]
-            # Atomic write — v1.22.1
-            from container_store import atomic_write_json
-            atomic_write_json(self.config.pending_file, remaining)
+                # Remove fully-processed auto-updates from pending. Major-pending
+                # entries stay in pending so the user can also act on them via
+                # the Web UI Update buttons; the dedicated confirm flow uses the
+                # major-pending store independently.
+                major_names = {p[0] for p in major_pending_now}
+                processed = {a["name"] for a in auto_updates if a["name"] not in major_names}
+                remaining = [u for u in updates if u["name"] not in processed]
+                # Atomic write — v1.22.1
+                from container_store import atomic_write_json
+                atomic_write_json(self.config.pending_file, remaining)
         finally:
             # Release the update mutex if we claimed it for this batch.
-            # try/finally guarantees release even if an enrich /
-            # send_message / atomic_write above raised — otherwise the
-            # lock would leak and block every future update.
+            # try/finally guarantees release even if a send_message /
+            # atomic_write above raised — otherwise the lock would leak and
+            # block every future update.
             if auto_lock_held:
                 self._update_lock.release()
 
@@ -1878,91 +1881,15 @@ class TelegramBot:
                 self.send_message(self.t("no_pending_updates"))
                 return
 
-            # Enrich for result-message links (same rationale as the
-            # auto-update path — keep the post-update results visually
-            # consistent with the pre-update "Updates Available" message).
-            self._enrich_with_source_url(updates)
             self.send_message(self.t("update_starting", count=len(updates)))
 
-            # Snapshot Gluetun-style netns owners by NAME *before* any recreate
-            # — an owner (gluetun) recreated earlier in the batch changes ID,
-            # which breaks sidecars still referencing the old ID (#2).
-            for u in updates:
-                tn = updater.netns_target_name(u["name"])
-                if tn:
-                    u["netns_name"] = tn
-
-            batch_names = {u["name"] for u in updates}
-            # Mirror the auto-update path's group-aware gates so manual
-            # "Update all" behaves the same (#2, @famewolf — the two paths had
-            # drifted): process in group order with the inter-member wait, and
-            # skip the rest of a group once one member fails. Deliberately NOT
-            # mirrored (these are correct as auto-only): the maintenance-window
-            # filter and the ask-before-major confirmation gate — tapping
-            # "Update all" is itself the explicit "do it now / yes to majors".
-            groups = self.store.get_groups() or {}
-            group_position = {}
-            for gid, g in groups.items():
-                for pos, cname in enumerate(g.get("containers") or []):
-                    group_position[cname] = (gid, pos)
-            updates.sort(key=lambda u: (0,) + group_position[u["name"]]
-                         if u["name"] in group_position else (1, "", 0))
-            group_aborted = set()
-            prev_group = None
-
-            results = []
-            for idx, u in enumerate(updates):
-                gp = group_position.get(u["name"])
-                cur_group = gp[0] if gp else None
-
-                # Skip the rest of a group whose earlier member already failed.
-                if cur_group and cur_group in group_aborted:
-                    results.append(
-                        f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)")
-                    continue
-
-                # Inter-container wait when staying inside the same group.
-                if cur_group and cur_group == prev_group:
-                    wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
-                    if wait_s > 0:
-                        import time as _t
-                        _t.sleep(wait_s)
-
-                try:
-                    compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                    success, msg = updater.update_container(
-                        u["name"], u["image"],
-                        netns_name=u.get("netns_name"), **compose_kwargs)
-                    status = "✅" if success else "❌"
-                    results.append(f"{status} {self._display_name(u)}: {msg}")
-                    if self.notifier:
-                        self.notifier.send_update_result(u["name"], u["image"], success, msg,
-                                                         source_url=u.get("source_url", ""))
-                    # Restart-dependents cascade for the MANUAL path (#8): when a
-                    # group head was just recreated, its netns sidecars are now on
-                    # a dead namespace ID. Fix the ones NOT already in this batch
-                    # (those self-heal via the netns-by-name recreate above).
-                    if success:
-                        _g = groups.get(cur_group) if cur_group else None
-                        _members = (_g or {}).get("containers") or []
-                        if (_g and _g.get("restart_dependents") and _members
-                                and u["name"] == _members[0] and len(_members) > 1):
-                            _deps = [d for d in _members[1:] if d not in batch_names]
-                            if _deps:
-                                _wait = max(int(_g.get("wait_seconds", 30) or 30), 30)
-                                results.append(self._restart_group_dependents(
-                                    u["name"], _deps, updater, max_wait=_wait))
-                    elif cur_group:
-                        group_aborted.add(cur_group)
-                except Exception as e:
-                    results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
-                    if cur_group:
-                        group_aborted.add(cur_group)
-                    if self.notifier:
-                        self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
-                                                         source_url=u.get("source_url", ""))
-                prev_group = cur_group
-                self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
+            # All per-container work (enrich, group-order sort, netns snapshot,
+            # update, cascade, cooldown) runs in the shared engine (#2). The
+            # manual path passes auto=False, which skips the maintenance-window
+            # filter (already applied at candidate selection) and the
+            # ask-before-major gate — tapping "Update all" is itself the
+            # explicit "do it now / yes to majors".
+            results, _sc, _mp = self._process_update_batch(updates, updater, auto=False)
 
             if from_snapshot:
                 # Remove only the processed containers from pending —

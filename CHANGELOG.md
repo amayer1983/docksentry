@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.32.0] - 2026-06-27
+
+### Changed
+- **Unified the manual and scheduled update paths onto a single engine** ([#2](../../issues/2), @famewolf). The per-container update loop — group-order sort, inter-member wait, the group-abort gate, the netns-owner-by-name snapshot, `update_container`, the restart-dependents cascade, notifier results and the per-container cooldown — now lives once in `_process_update_batch`. Both the manual path (`run_updates` / "Update all" / `/update`) and the scheduled-auto path (`handle_autoupdates`) call it; each keeps only its own scaffolding (candidate selection, mutex handling, message framing, pending-file bookkeeping). This removes the recurring class of bugs where the two paths drifted and one got a fix the other didn't.
+
+  Two behaviours are now consistent across both paths as a result:
+  - **Head-rollback dependents kick** — when a group head fails and rolls back, its dependents (whose network namespace was torn down) are re-attached. Previously auto-only ([#27](../../issues/27)); the manual path now does it too.
+  - **No double-touch on the success cascade** — dependents that are themselves part of the same batch self-heal via their own update instead of also being kicked; only out-of-batch sidecars get the explicit restart. Previously the auto path kicked all of them.
+
+  The one legitimately path-specific behaviour is preserved via a flag: the ask-before-major confirmation gate runs only on the auto path — tapping "Update all" / typing `/update` is itself the explicit go-ahead, majors included.
+
 ## [1.31.0] - 2026-06-26
 
 ### Added

@@ -48,6 +48,9 @@ def main():
     bot._maybe_cooldown = lambda *a, **k: None
     bot._remove_from_pending = lambda names: None
     bot._restart_group_dependents = lambda *a, **k: "cascade"
+    # run_updates now delegates the per-container loop to the shared engine
+    # (#2) — bind the real method so we still exercise the actual gate logic.
+    bot._process_update_batch = lambda *a, **k: TelegramBot._process_update_batch(bot, *a, **k)
 
     # unsorted on purpose — run_updates should sort into group order
     updates = [{"name": "dep2", "image": "i"}, {"name": "head", "image": "i"},
