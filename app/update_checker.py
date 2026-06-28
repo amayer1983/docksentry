@@ -24,7 +24,7 @@ class UpdateChecker:
 
     def get_running_containers(self):
         result = subprocess.run(
-            ["docker", "ps", "--format", "{{.Names}}|{{.Image}}"],
+            ["docker", "ps", "--format", "{{.Names}}|{{.Image}}|{{.Labels}}"],
             capture_output=True, text=True
         )
         # Get own container name to exclude self. Robust detection: tries
@@ -39,7 +39,11 @@ class UpdateChecker:
         for line in result.stdout.strip().split("\n"):
             if not line:
                 continue
-            name, image = line.split("|", 1)
+            parts = line.split("|", 2)
+            if len(parts) < 2:
+                continue
+            name, image = parts[0], parts[1]
+            labels = self._parse_ps_labels(parts[2] if len(parts) > 2 else "")
             # Skip self
             if own_name and name == own_name:
                 self._debug(f"  Skipped (self): {name}")
@@ -63,10 +67,54 @@ class UpdateChecker:
             if name in self._get_pinned():
                 self._debug(f"  Skipped (pinned): {name}")
                 continue
+            # Per-container label opt-out (#42, @LeeNX): a GitOps-friendly way
+            # to take a container out of Docksentry's scope from the compose
+            # file itself — `docksentry.enable=false` or `docksentry.exclude=true`.
+            if self.label_bool(labels, "enable") is False or self.label_bool(labels, "exclude") is True:
+                self._debug(f"  Skipped (docksentry label): {name}")
+                continue
             # Detect Docker Compose
             compose_info = self._get_compose_info(name)
             containers.append({"name": name, "image": image, **compose_info})
         return containers
+
+    @staticmethod
+    def _parse_ps_labels(label_str):
+        """Parse `docker ps` `{{.Labels}}` output (comma-separated
+        key=value) into a dict. Best-effort — malformed entries skipped.
+        Label values containing commas can't be represented in this flat
+        format, but the `docksentry.*` flags we care about are booleans."""
+        out = {}
+        for item in (label_str or "").split(","):
+            item = item.strip()
+            if "=" in item:
+                k, v = item.split("=", 1)
+                out[k.strip()] = v.strip()
+        return out
+
+    @staticmethod
+    def label_bool(labels, key):
+        """Interpret a `docksentry.<key>` container label as a bool, or
+        None when the label is absent (#42, @LeeNX). Accepts
+        true/1/yes/on (case-insensitive) as True, everything else False."""
+        v = (labels or {}).get(f"docksentry.{key}")
+        if v is None:
+            return None
+        return v.strip().lower() in ("true", "1", "yes", "on")
+
+    def get_container_labels(self, name):
+        """Return all labels of a single container as a dict (empty on any
+        failure). Used by the per-container label overrides (#42)."""
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", "--format", "{{json .Config.Labels}}", name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return json.loads(r.stdout) or {}
+        except (subprocess.SubprocessError, json.JSONDecodeError):
+            pass
+        return {}
 
     def _parse_image(self, image):
         """Parse image reference into registry, repository, tag."""

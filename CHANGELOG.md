@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.33.0] - 2026-06-28
+
+### Added
+- **Container labels for GitOps-style config** ([#42](../../issues/42), @LeeNX). Docksentry now reads a few `docksentry.*` labels straight off your containers, so you can keep the config in your compose file. A label, when present, **overrides** the equivalent bot/Web-UI toggle:
+  - `docksentry.enable=false` / `docksentry.exclude=true` — take the container out of Docksentry's update scope (same effect as `/pin`).
+  - `docksentry.protect=true` — refuse `/stop` for the container ([#38](../../issues/38)-style protection); `docksentry.protect=false` force-unprotects, overriding the toggle.
+
+  Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Label lookups are best-effort — an inspect failure falls back to the stored toggle and never silently unprotects. More label-driven settings can follow. Test: `scripts/test_labels.py`.
+- **`-?` per-command help alias** ([#15](../../issues/15), @LeeNX). Append `-?` to any command for its detailed help — `/protect -?` is exactly `/help protect`, routed through the same help code path.
+
 ## [1.32.1] - 2026-06-27
 
 ### Fixed

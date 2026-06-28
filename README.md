@@ -236,6 +236,29 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 
 > Partial name matching: `/pin ngi` matches `nginx`.
 
+> Per-command help: append `-?` to any command for its detailed help — `/protect -?` is the same as `/help protect`.
+
+## Container labels (GitOps)
+
+For GitOps-style setups where you keep all container config in one place, Docksentry reads a few `docksentry.*` labels straight off your containers. A label, when present, **overrides** the equivalent bot/Web-UI toggle — so your compose file stays the source of truth.
+
+```yaml
+services:
+  myapp:
+    image: ghcr.io/me/myapp:latest
+    labels:
+      - "docksentry.exclude=true"     # take this container out of Docksentry's scope
+      - "docksentry.protect=true"     # refuse /stop for this container (#38-style protection)
+```
+
+| Label | Effect |
+|-------|--------|
+| `docksentry.enable=false` | Exclude from update checks (equivalent to `/pin`) |
+| `docksentry.exclude=true` | Same as `docksentry.enable=false` |
+| `docksentry.protect=true` | Protect from `/stop` (a `=false` label force-unprotects, overriding the toggle) |
+
+Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). More label-driven settings (auto-update, cooldown, …) may follow — open an issue if there's one you need.
+
 ## Configuration
 
 At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOOK_URL`, or e-mail (`SMTP_HOST`+`SMTP_FROM`+`SMTP_TO`) must be configured — otherwise Docksentry has no way to notify or be controlled.

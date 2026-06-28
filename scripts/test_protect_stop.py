@@ -37,6 +37,11 @@ def main():
     checker = UpdateChecker(cfg)
 
     bot = types.SimpleNamespace(store=store, t=get_translator("en"))
+    # _lifecycle_action now resolves stop-protection via _is_protected (label
+    # override + store fallback, #42) — bind the real method so the stub
+    # exercises the actual path (the throwaway container has no docksentry.*
+    # labels, so it falls back to the store toggle).
+    bot._is_protected = lambda *a, **k: TelegramBot._is_protected(bot, *a, **k)
     act = lambda a: TelegramBot._lifecycle_action(bot, a, NAME, checker)
 
     subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)

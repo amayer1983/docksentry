@@ -397,6 +397,27 @@ class TelegramBot:
     def _save_autoupdate(self, containers):
         self.store.save_autoupdate(containers)
 
+    def _is_protected(self, name, checker):
+        """True if `name` is protected from /stop. A `docksentry.protect`
+        container label overrides the stored toggle when present (#42,
+        @LeeNX) — GitOps-style config in the compose file; otherwise the
+        bot/Web-UI toggle (#38) applies. Label failures fall back to the
+        toggle so a flaky inspect can never accidentally unprotect."""
+        try:
+            lab = checker.label_bool(checker.get_container_labels(name), "protect")
+        except Exception:
+            lab = None
+        return lab if lab is not None else self.store.is_protect_stop(name)
+
+    @staticmethod
+    def _help_alias(text):
+        """`/cmd -?` → `/help cmd` (#15, @LeeNX). Returns text unchanged
+        unless `-?` is the sole argument to a slash command, so a single
+        /help code path serves both forms."""
+        if text.startswith("/") and text.split()[1:] == ["-?"]:
+            return "/help " + text.split()[0].lstrip("/")
+        return text
+
     def _container_state(self, name):
         """Return a dict with current state of `name` for the per-container
         status output. Keys: state, health, uptime, image, ports, volumes,
@@ -496,7 +517,7 @@ class TelegramBot:
         # stopped (e.g. the VPN/tunnel carrying their remote access).
         # Restart stays allowed — brief downtime during update/rollback is
         # acceptable, a permanent stop is the dangerous one.
-        if action == "stop" and self.store.is_protect_stop(name):
+        if action == "stop" and self._is_protected(name, checker):
             return False, self.t("lifecycle_refused_protected", name=name)
 
         if action == "stop":
@@ -2209,6 +2230,11 @@ class TelegramBot:
                 return
             text = cmd.split("@", 1)[0] + sep + rest
 
+        # `-?` as a per-command help alias (#15, @LeeNX): `/protect -?`
+        # behaves exactly like `/help protect`, routed through the canonical
+        # /help path.
+        text = self._help_alias(text)
+
         # `/status <name>` — per-container detail with inline action
         # buttons. The arg-less `/status` keeps the overview behaviour.
         if text.startswith("/status ") and len(text.split(maxsplit=1)) > 1:
@@ -2271,7 +2297,7 @@ class TelegramBot:
                 # Stop hidden for protected containers (#38). The callback is
                 # also guarded in _lifecycle_action, so a stale button can't
                 # slip a stop through either.
-                if not self.store.is_protect_stop(resolved):
+                if not self._is_protected(resolved, checker):
                     buttons.append({"text": self.t("lifecycle_btn_stop"),
                                     "callback_data": f"lifecycle:stop:{resolved}"})
             else:
