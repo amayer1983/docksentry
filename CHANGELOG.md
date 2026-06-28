@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.33.1] - 2026-06-28
+
+### Fixed
+- **Self-detection failed where `$HOSTNAME` isn't an inspect-resolvable reference** ([#41](../../issues/41), @NotRetarded). On some hosts — confirmed on QNAP Container Station — `$HOSTNAME` is an ID-looking string that `docker inspect` reports as `no such object`. Every self-detection path resolved the running container by inspecting `$HOSTNAME` directly, so all of them silently failed, with two consequences: Docksentry checked (and could try to update) **itself** through the regular flow instead of filtering itself out, and the self-update paths couldn't identify their own container (so `AUTO_SELFUPDATE` never actually self-updated — users worked around it with external tools).
+
+  Self-resolution is now centralised in `UpdateChecker.resolve_own_id()` / `inspect_self()`, which first inspects by `$HOSTNAME`/`/etc/hostname` (the normal fast path, unchanged on standard Docker) and, when that fails, **falls back to scanning running containers for one whose `Config.Hostname` matches `$HOSTNAME`**. All four call sites — `get_running_containers` self-filter, `check_selfupdate_auto`, manual `/selfupdate`, and the `/check` self-update badge — now route through it. Test: `scripts/test_self_detection.py`.
+
 ## [1.33.0] - 2026-06-28
 
 ### Added

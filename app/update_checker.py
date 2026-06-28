@@ -681,53 +681,106 @@ class UpdateChecker:
         from container_store import atomic_write_json
         atomic_write_json(self.config.history_file, history, indent=2)
 
-    def _own_container_id(self):
-        """Return our full 64-char container ID, or "" if we can't
-        determine it. Used as the source-of-truth for self-detection —
-        any container that resolves to this ID is "us", regardless of
-        the docker `Name` it currently carries (which could be renamed
-        between checks).
-
-        Strategy: ask Docker to resolve us by hostname (Docker's default
-        is to set HOSTNAME = short container ID; even if compose
-        overrides hostname:, the actual /etc/hostname is still set
-        to that value, so inspect-by-name finds the right container).
-
-        Cgroup parsing isn't reliable on cgroups v2 (the unified
-        hierarchy often shows just `0::/` with no docker substring) and
-        the mountinfo overlay path is the *storage-driver* ID, not the
-        container ID — different identifiers. So we stick to the
-        conventional hostname-inspect route and don't pretend we can
-        be cleverer."""
-        if hasattr(self, "_own_id_cache"):
-            return self._own_id_cache
-        own_id = ""
-        candidates = []
+    @staticmethod
+    def _own_id_candidates():
+        """$HOSTNAME + /etc/hostname — the conventional self-reference
+        values Docker writes into the container."""
+        cands = []
         h = os.environ.get("HOSTNAME", "").strip()
         if h:
-            candidates.append(h)
+            cands.append(h)
         try:
             with open("/etc/hostname") as f:
                 hf = f.read().strip()
-                if hf and hf not in candidates:
-                    candidates.append(hf)
+                if hf and hf not in cands:
+                    cands.append(hf)
         except (OSError, IOError):
             pass
-        for c in candidates:
+        return cands
+
+    @staticmethod
+    def resolve_own_id():
+        """Best-effort full 64-char container ID of the running Docksentry,
+        or "". Source-of-truth for self-detection AND the self-update paths.
+
+        1. Inspect by $HOSTNAME / /etc/hostname — Docker's default sets
+           HOSTNAME to the short container ID, so this normally resolves.
+        2. Fallback: scan running containers for one whose
+           `Config.Hostname` equals $HOSTNAME. Needed where $HOSTNAME is
+           NOT an inspect-resolvable reference — e.g. QNAP Container
+           Station hands out a hostname that `docker inspect` reports as
+           "no such object" (#41, @NotRetarded). The container's own
+           Config.Hostname still carries that value, so we can match on it.
+
+        Cgroup parsing is deliberately avoided: unreliable on cgroups v2
+        (often just `0::/`), and the mountinfo overlay path is the
+        storage-driver ID, not the container ID."""
+        for c in UpdateChecker._own_id_candidates():
             try:
                 r = subprocess.run(
                     ["docker", "inspect", "--format", "{{.Id}}", c],
                     capture_output=True, text=True, timeout=5,
                 )
                 if r.returncode == 0:
-                    full_id = r.stdout.strip()
-                    if full_id.startswith("sha256:"):
-                        full_id = full_id[len("sha256:"):]
-                    if len(full_id) == 64:
-                        own_id = full_id
-                        break
+                    fid = r.stdout.strip()
+                    if fid.startswith("sha256:"):
+                        fid = fid[len("sha256:"):]
+                    if len(fid) == 64:
+                        return fid
             except subprocess.SubprocessError:
                 continue
+        h = os.environ.get("HOSTNAME", "").strip()
+        if h:
+            try:
+                ps = subprocess.run(
+                    ["docker", "ps", "-q", "--no-trunc"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                ids = [x for x in ps.stdout.split() if x]
+                if ids:
+                    r = subprocess.run(
+                        ["docker", "inspect", "--format",
+                         "{{.Id}}|{{.Config.Hostname}}", *ids],
+                        capture_output=True, text=True, timeout=20,
+                    )
+                    for line in r.stdout.splitlines():
+                        fid, _, hn = line.partition("|")
+                        if hn.strip() == h and len(fid.strip()) == 64:
+                            return fid.strip()
+            except subprocess.SubprocessError:
+                pass
+        return ""
+
+    @staticmethod
+    def inspect_self():
+        """Full docker-inspect dict of the running Docksentry container, or
+        None. Routes through resolve_own_id() so it works even where
+        $HOSTNAME isn't directly inspect-resolvable (#41). Used by both
+        self-update paths so they no longer rely on a raw
+        `docker inspect $HOSTNAME` that can fail."""
+        oid = UpdateChecker.resolve_own_id()
+        if not oid:
+            return None
+        try:
+            r = subprocess.run(
+                ["docker", "inspect", oid],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                data = json.loads(r.stdout)
+                if data:
+                    return data[0]
+        except (subprocess.SubprocessError, json.JSONDecodeError, IndexError):
+            pass
+        return None
+
+    def _own_container_id(self):
+        """Cached instance wrapper around resolve_own_id() — the per-check
+        self-detection source-of-truth (any container resolving to this ID
+        is "us", regardless of its current docker Name)."""
+        if hasattr(self, "_own_id_cache"):
+            return self._own_id_cache
+        own_id = self.resolve_own_id()
         self._own_id_cache = own_id
         return own_id
 

@@ -167,26 +167,17 @@ class TelegramBot:
         the answer doesn't change at runtime."""
         if hasattr(self, "_cached_own_meta"):
             return self._cached_own_meta
-        hostname = os.environ.get("HOSTNAME", "")
-        if not hostname:
+        # Robust self-resolution (#41) — works where $HOSTNAME isn't a
+        # directly inspect-resolvable reference (e.g. QNAP Container Station).
+        from update_checker import UpdateChecker as _UC
+        cfg = _UC.inspect_self()
+        if not cfg:
             self._cached_own_meta = (None, None)
             return self._cached_own_meta
-        try:
-            r = subprocess.run(
-                ["docker", "inspect", hostname],
-                capture_output=True, text=True, timeout=10,
-            )
-            if r.returncode != 0:
-                self._cached_own_meta = (None, None)
-                return self._cached_own_meta
-            cfg = json.loads(r.stdout)[0]
-            name = (cfg.get("Name", "") or "").lstrip("/")
-            image = cfg.get("Config", {}).get("Image", "") or ""
-            self._cached_own_meta = (name, image)
-            return self._cached_own_meta
-        except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, KeyError):
-            self._cached_own_meta = (None, None)
-            return self._cached_own_meta
+        name = (cfg.get("Name", "") or "").lstrip("/")
+        image = cfg.get("Config", {}).get("Image", "") or ""
+        self._cached_own_meta = (name, image)
+        return self._cached_own_meta
 
     def _resolve_container_link(self, name, image=""):
         """Return the URL that should wrap `name` in update
@@ -1534,21 +1525,14 @@ class TelegramBot:
                 "previous" → last released version older than the running one
                 "X.Y.Z"    → a specific semver tag
         """
-        hostname = os.environ.get("HOSTNAME", "")
-        if not hostname:
-            self.send_message(self.t("selfupdate_failed_id"))
-            return
-
-        # Get own container info
-        result = subprocess.run(
-            ["docker", "inspect", hostname],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
+        # Resolve our own container robustly — handles hosts where $HOSTNAME
+        # isn't a directly inspect-resolvable reference (e.g. QNAP Container
+        # Station reports "no such object" for it; #41, @NotRetarded).
+        from update_checker import UpdateChecker as _UC
+        config = _UC.inspect_self()
+        if not config:
             self.send_message(self.t("selfupdate_failed_container"))
             return
-
-        config = json.loads(result.stdout)[0]
         own_name = config["Name"].lstrip("/")
         current_image = config["Config"]["Image"]
         own_image, err = self._resolve_selfupdate_target(current_image, target)
@@ -1793,18 +1777,12 @@ class TelegramBot:
             False — no update available, or the inspect/pull failed.
                     Caller continues with the rest of the tick.
         """
-        hostname = os.environ.get("HOSTNAME", "")
-        if not hostname:
+        # Robust self-resolution (see _handle_selfupdate / #41) — works even
+        # where $HOSTNAME isn't directly inspect-resolvable.
+        from update_checker import UpdateChecker as _UC
+        config = _UC.inspect_self()
+        if not config:
             return False
-
-        result = subprocess.run(
-            ["docker", "inspect", hostname],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            return False
-
-        config = json.loads(result.stdout)[0]
         own_image = config["Config"]["Image"]
         old_id = config["Image"]
         old_created = config.get("Created", "")[:10]
