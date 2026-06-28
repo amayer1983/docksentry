@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *नई इमेज मिली!*",
   "selfupdate_dates": "🗓️ नया: {new} | पुराना: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "स्व-अपडेट शुरू... बॉट कुछ समय ऑफ़लाइन रहेगा।",
   "selfupdate_failed_pull": "❌ पुल विफल: {error}",
   "selfupdate_failed_id": "❌ स्व-अपडेट विफल: कंटेनर ID नहीं मिला।",

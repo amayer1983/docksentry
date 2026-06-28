@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *Знайдено новий образ!*",
   "selfupdate_dates": "🗓️ Новий: {new} | Старий: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "Запуск самооновлення... Бот буде тимчасово недоступний.",
   "selfupdate_failed_pull": "❌ Помилка завантаження: {error}",
   "selfupdate_failed_id": "❌ Самооновлення не вдалося: ID контейнера не знайдено.",

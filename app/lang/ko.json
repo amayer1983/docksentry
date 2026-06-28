@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *새 이미지 발견!*",
   "selfupdate_dates": "🗓️ 새: {new} | 이전: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "자동 업데이트 시작... 봇이 잠시 오프라인됩니다.",
   "selfupdate_failed_pull": "❌ 다운로드 실패: {error}",
   "selfupdate_failed_id": "❌ 자동 업데이트 실패: 컨테이너 ID를 찾을 수 없습니다.",

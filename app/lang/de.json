@@ -30,6 +30,7 @@
   "selfupdate_found": "⏳ *Neues Image gefunden!*",
   "selfupdate_dates": "🗓️ Neu: {new} | Alt: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "Starte Self-Update... Bot wird kurz offline sein.",
   "selfupdate_restarting_then_check": "Starte Self-Update — die Container-Update-Prüfung läuft direkt nach dem Neustart weiter.",
   "selfupdate_resumed_check": "✅ Mit v{version} neu gestartet — prüfe jetzt deine Container...",

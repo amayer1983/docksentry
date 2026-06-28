@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *Nuova immagine trovata!*",
   "selfupdate_dates": "🗓️ Nuovo: {new} | Vecchio: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "Avvio auto-aggiornamento... Il bot sarà brevemente offline.",
   "selfupdate_failed_pull": "❌ Download fallito: {error}",
   "selfupdate_failed_id": "❌ Auto-aggiornamento fallito: ID container non trovato.",

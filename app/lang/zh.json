@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *发现新镜像！*",
   "selfupdate_dates": "🗓️ 新：{new} | 旧：{old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "正在启动自我更新... 机器人将短暂离线。",
   "selfupdate_failed_pull": "❌ 拉取失败：{error}",
   "selfupdate_failed_id": "❌ 自我更新失败：未找到容器ID。",

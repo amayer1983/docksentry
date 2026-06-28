@@ -1608,6 +1608,7 @@ class TelegramBot:
         new_id_short = new_id[:19]
         msg = (
             self.t("selfupdate_found") + "\n"
+            + self._selfupdate_version_line(own_image)
             + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
             + self.t("selfupdate_ids", old=old_id_short, new=new_id_short) + "\n"
             + self.t("selfupdate_releases_link") + "\n\n"
@@ -1624,6 +1625,19 @@ class TelegramBot:
         # entry never gets written (#13).
         self._save_selfupdate_history(own_name, own_image, old_created, new_created)
         self._do_selfupdate(config, own_name, own_image)
+
+    def _selfupdate_version_line(self, target_image):
+        """The `v_old → v_new` line for self-update messages (#41 follow-up).
+        Old = the running VERSION; new = the target image's
+        org.opencontainers.image.version label. Returns "" (line omitted)
+        when the new version can't be read — e.g. a pre-label image — so we
+        never show a half-blank `v1.33.1 → v?` line."""
+        from version import VERSION as _cur
+        from update_checker import UpdateChecker as _UC
+        new_ver = _UC.image_version_label(target_image)
+        if not new_ver:
+            return ""
+        return self.t("selfupdate_versions", old=f"v{_cur}", new=f"v{new_ver}") + "\n"
 
     def _write_selfupdate_marker(self, image):
         """Record that the imminent restart is a self-update so the next boot
@@ -1831,9 +1845,11 @@ class TelegramBot:
 
         # Send a single combined notification when defer_check is on, so
         # the user sees one story instead of two unrelated messages.
+        version_line = self._selfupdate_version_line(own_image)
         if defer_check:
             msg = (
                 self.t("selfupdate_auto") + "\n"
+                + version_line
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
                 + self.t("selfupdate_releases_link") + "\n"
                 + self.t("selfupdate_restarting_then_check")
@@ -1841,6 +1857,7 @@ class TelegramBot:
         else:
             msg = (
                 self.t("selfupdate_auto") + "\n"
+                + version_line
                 + self.t("selfupdate_dates", new=new_created, old=old_created) + "\n"
                 + self.t("selfupdate_releases_link") + "\n"
                 + self.t("selfupdate_restarting")

@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *新しいイメージが見つかりました！*",
   "selfupdate_dates": "🗓️ 新: {new} | 旧: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "セルフアップデートを開始... ボットは一時的にオフラインになります。",
   "selfupdate_failed_pull": "❌ プル失敗: {error}",
   "selfupdate_failed_id": "❌ セルフアップデート失敗: コンテナIDが見つかりません。",

@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *Yeni imaj bulundu!*",
   "selfupdate_dates": "🗓️ Yeni: {new} | Eski: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "Otomatik güncelleme başlatılıyor... Bot kısa süreliğine çevrimdışı olacak.",
   "selfupdate_failed_pull": "❌ İndirme başarısız: {error}",
   "selfupdate_failed_id": "❌ Otomatik güncelleme başarısız: Konteyner ID bulunamadı.",

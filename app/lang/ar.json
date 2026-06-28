@@ -27,6 +27,7 @@
   "selfupdate_found": "⏳ *تم العثور على صورة جديدة!*",
   "selfupdate_dates": "🗓️ جديد: {new} | قديم: {old}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",
+  "selfupdate_versions": "🔖 *{old}* → *{new}*",
   "selfupdate_restarting": "جارٍ بدء التحديث الذاتي... سيكون البوت غير متصل لفترة قصيرة.",
   "selfupdate_failed_pull": "❌ فشل التنزيل: {error}",
   "selfupdate_failed_id": "❌ فشل التحديث الذاتي: لم يتم العثور على معرّف الحاوية.",

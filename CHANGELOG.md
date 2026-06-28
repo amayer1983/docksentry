@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.34.0] - 2026-06-28
+
+### Added
+- **Self-update messages now show the version** (`🔖 v1.33.1 → v1.34.0`). Previously the message only carried the build date — useless when several releases land the same day — and the opaque image hashes. The new line reads the target image's `org.opencontainers.image.version` label (stamped since v1.20.0) against the running version, on both the manual `/selfupdate` and the auto-self-update notifications. Omitted gracefully for pre-label images. New i18n key `selfupdate_versions` across all 16 languages.
+
 ## [1.33.1] - 2026-06-28
 
 ### Fixed

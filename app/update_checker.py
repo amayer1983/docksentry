@@ -116,6 +116,26 @@ class UpdateChecker:
             pass
         return {}
 
+    @staticmethod
+    def image_version_label(image):
+        """The `org.opencontainers.image.version` label of a local image, or
+        "" if absent/unreadable. Docksentry stamps this on its own images
+        (#39), so the self-update message can show `v1.33.1 → v1.33.2`
+        instead of opaque dates + image hashes (#41 follow-up)."""
+        try:
+            r = subprocess.run(
+                ["docker", "image", "inspect", "--format",
+                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                v = r.stdout.strip()
+                if v and v not in ("<no value>", "dev"):
+                    return v
+        except subprocess.SubprocessError:
+            pass
+        return ""
+
     def _parse_image(self, image):
         """Parse image reference into registry, repository, tag."""
         tag = "latest"

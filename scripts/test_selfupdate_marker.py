@@ -15,6 +15,9 @@ import sys, os, json, time, tempfile, types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from container_store import atomic_write_json
 from telegram_bot import TelegramBot
+from update_checker import UpdateChecker
+from i18n import get_translator
+from version import VERSION
 
 
 def consume(path):
@@ -53,6 +56,20 @@ def main():
     written = os.path.exists(wp)
     roundtrip = written and consume(wp) is True
 
+    # ── version line in the self-update message (#41 follow-up) ──
+    # Shows v_old → v_new (read from the target image's version label)
+    # instead of opaque dates/hashes; omitted when the label is unreadable.
+    vbot = types.SimpleNamespace(t=get_translator("en"))
+    _orig_lbl = UpdateChecker.image_version_label
+    try:
+        UpdateChecker.image_version_label = staticmethod(lambda img: "9.9.9")
+        line = TelegramBot._selfupdate_version_line(vbot, "img")
+        line_ok = (f"v{VERSION}" in line) and ("v9.9.9" in line) and line.endswith("\n")
+        UpdateChecker.image_version_label = staticmethod(lambda img: "")
+        empty_ok = TelegramBot._selfupdate_version_line(vbot, "img") == ""
+    finally:
+        UpdateChecker.image_version_label = staticmethod(_orig_lbl)
+
     checks = {
         "fresh marker -> self-update (suppress external-signal line)": fresh is True,
         "marker consumed (deleted)": consumed,
@@ -60,6 +77,8 @@ def main():
         "absent marker -> not a self-update": absent is False,
         "_write_selfupdate_marker writes to self.config path": written,
         "written marker round-trips through consume -> self-update": roundtrip,
+        "version line shows v_old -> v_new when label readable": line_ok,
+        "version line omitted when label unreadable": empty_ok,
     }
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
