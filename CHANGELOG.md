@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.34.1] - 2026-06-28
+
+### Fixed
+- **Recalled commands (↑ in Telegram) were silently ignored** ([#15](../../issues/15), @famewolf). Pressing the up-arrow in Telegram — especially Desktop — *edits* your last message instead of sending a new one, so a recalled `/command` arrives as an `edited_message`. Docksentry only subscribed to and processed `message` updates, so the edit never appeared (not even in the channel) and nothing happened; you had to retype the command. Docksentry now also handles `edited_message`, gated to *recent* edits (≤120s) so an old message edited for unrelated reasons can't silently re-run a command.
+
 ## [1.34.0] - 2026-06-28
 
 ### Added

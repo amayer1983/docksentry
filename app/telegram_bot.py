@@ -2056,7 +2056,7 @@ class TelegramBot:
                     {
                         "offset": offset,
                         "timeout": self.LONG_POLL_TIMEOUT,
-                        "allowed_updates": json.dumps(["callback_query", "message"]),
+                        "allowed_updates": json.dumps(["callback_query", "message", "edited_message"]),
                     },
                     timeout=self.LONG_POLL_HTTP_TIMEOUT,
                     quiet_timeout=True,
@@ -2076,9 +2076,10 @@ class TelegramBot:
                         self._handle_callback(callback, checker)
                         continue
 
-                    # Text commands
-                    message = update.get("message", {})
-                    self._handle_message(message, checker, scheduler)
+                    # Text commands (incl. recalled-via-↑ edits, #15)
+                    message = self._message_from_update(update)
+                    if message:
+                        self._handle_message(message, checker, scheduler)
 
             except Exception as e:
                 print(f"Bot listener error: {e}")
@@ -2194,6 +2195,26 @@ class TelegramBot:
             def _run():
                 self.send_message(self._restart_group_dependents(head, deps, checker, max_wait=wait))
             threading.Thread(target=_run).start()
+
+    @staticmethod
+    def _message_from_update(update, now=None):
+        """Pick the message to handle from a Telegram update. A normal
+        `message` passes through. An `edited_message` is honoured only when
+        the edit is recent (≤120s) — pressing ↑ in Telegram (Desktop) edits
+        the last message instead of sending a new one, so a recalled
+        `/command` arrives as an edit (#15, @famewolf); the recency guard
+        keeps an old message edited for unrelated reasons from re-running.
+        Returns {} when there's nothing actionable."""
+        msg = update.get("message")
+        if msg:
+            return msg
+        edited = update.get("edited_message")
+        if edited:
+            import time as _t
+            ref = now if now is not None else _t.time()
+            if ref - float(edited.get("edit_date", 0) or 0) <= 120:
+                return edited
+        return {}
 
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
