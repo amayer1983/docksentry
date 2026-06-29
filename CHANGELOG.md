@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.37.0] - 2026-06-29
+
+### Added
+- **Dedicated "Auto" column in the Web UI container table** ([#2](../../issues/2), @NotRetarded). The auto-update flag was a name-cell badge that wrapped under long container names; it now has its own column, so the name stays clean and the auto state is easy to scan.
+- **Touch-friendly icon legend** under the container table ([#2](../../issues/2), @NotRetarded). The action buttons have hover tooltips, but those don't exist on touch devices — a small legend now spells out what each icon does (update / pin / auto / major-confirm / stop).
+
+### Changed
+- **Web UI CSS/JS moved out of Python string literals into real static files** (`app/static/app.css`, `app/static/app.js`), served via a `/static` route with cache-busting on version. No new dependencies — still pure stdlib. This kills the class of bug where a stray character in the embedded `_BASE_JS` string broke the whole UI (v1.22.0, [#40](../../issues/40)) and makes the ~1300 lines of front-end code lintable/editable as actual CSS/JS. Purely internal — no behaviour change.
+
 ## [1.36.0] - 2026-06-29
 
 ### Added
