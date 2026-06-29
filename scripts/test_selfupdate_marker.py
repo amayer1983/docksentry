@@ -70,6 +70,16 @@ def main():
     finally:
         UpdateChecker.image_version_label = staticmethod(_orig_lbl)
 
+    # ── helper socket resolution (#43, @LeeNX) ──
+    # The self-update helper must mount the SAME host socket Docksentry uses,
+    # not a hardcoded /var/run/docker.sock — rootless Podman maps a different
+    # host path to /var/run/docker.sock inside the container.
+    hs = TelegramBot._host_docker_socket
+    podman_cfg = {"Mounts": [{"Destination": "/var/run/docker.sock",
+                              "Source": "/run/user/1002/podman/podman.sock"}]}
+    sock_podman = hs(podman_cfg) == "/run/user/1002/podman/podman.sock"
+    sock_fallback = hs({"Mounts": []}) == "/var/run/docker.sock"
+
     checks = {
         "fresh marker -> self-update (suppress external-signal line)": fresh is True,
         "marker consumed (deleted)": consumed,
@@ -79,6 +89,8 @@ def main():
         "written marker round-trips through consume -> self-update": roundtrip,
         "version line shows v_old -> v_new when label readable": line_ok,
         "version line omitted when label unreadable": empty_ok,
+        "helper mounts the container's real host socket (podman)": sock_podman,
+        "helper socket falls back to /var/run/docker.sock": sock_fallback,
     }
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)

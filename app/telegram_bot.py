@@ -1123,12 +1123,18 @@ class TelegramBot:
         auto_list = self._get_autoupdate()
         windows = self.store.get_update_windows()
 
-        auto_candidates = [u for u in updates if u["name"] in auto_list]
+        # AUTO_UPDATE_ALL (#45, @NotRetarded): treat *every* checked container
+        # as auto-update, not just the per-container opt-ins. Pinned/excluded
+        # and label-opt-out containers never reach `updates` in the first
+        # place, so this only auto-applies things that were already going to
+        # be reported. Off by default — the per-container list still rules.
+        all_auto = getattr(self.config, "auto_update_all", False)
+        auto_candidates = list(updates) if all_auto else [u for u in updates if u["name"] in auto_list]
         # Filter out containers whose maintenance window is closed right now
         skipped_window = [u for u in auto_candidates
                           if not is_window_open(windows.get(u["name"]))]
         auto_updates = [u for u in auto_candidates if u not in skipped_window]
-        manual_updates = [u for u in updates if u["name"] not in auto_list]
+        manual_updates = [] if all_auto else [u for u in updates if u["name"] not in auto_list]
         success_count = 0
         major_pending_now = []
 
@@ -1639,6 +1645,29 @@ class TelegramBot:
             return ""
         return self.t("selfupdate_versions", old=f"v{_cur}", new=f"v{new_ver}") + "\n"
 
+    @staticmethod
+    def _host_docker_socket(config):
+        """Resolve the HOST path of the Docker/Podman socket this container
+        talks to, from our own inspect Mounts. The self-update helper runs
+        as a *separate* container and must mount the SAME host socket —
+        hardcoding `/var/run/docker.sock` breaks rootless Podman / custom
+        socket paths where the real host socket lives elsewhere (e.g.
+        `/run/user/1002/podman/podman.sock` mapped to `/var/run/docker.sock`
+        inside the container; #43, @LeeNX). Falls back to
+        `/var/run/docker.sock` when it can't be determined."""
+        inside = "/var/run/docker.sock"
+        dh = os.environ.get("DOCKER_HOST", "")
+        if dh.startswith("unix://"):
+            inside = dh[len("unix://"):] or inside
+        mounts = config.get("Mounts") or []
+        for m in mounts:
+            if m.get("Destination") == inside and m.get("Source"):
+                return m["Source"]
+        for m in mounts:
+            if m.get("Destination") in ("/var/run/docker.sock", "/run/docker.sock") and m.get("Source"):
+                return m["Source"]
+        return "/var/run/docker.sock"
+
     def _write_selfupdate_marker(self, image):
         """Record that the imminent restart is a self-update so the next boot
         doesn't mislabel it as an external stop (#2, @famewolf).
@@ -1752,11 +1781,14 @@ class TelegramBot:
             )
             return
 
+        # Mount the SAME host socket Docksentry itself uses (not a hardcoded
+        # path) so the helper works on rootless Podman / custom sockets (#43).
+        host_sock = self._host_docker_socket(config)
         result = subprocess.run([
             "docker", "run", "-d",
             "--name", helper_name,
             "--rm",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock",
+            "-v", f"{host_sock}:/var/run/docker.sock",
             "docker:cli",
             "sh", "-c", update_script
         ], capture_output=True, text=True, timeout=30)

@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.35.0] - 2026-06-29
+
+### Added
+- **`AUTO_UPDATE_ALL`** ([#45](../../issues/45), @NotRetarded) — global, Watchtower-style auto-update of **every** checked container, not just the per-container opt-ins. Off by default; the per-container auto-update list still applies when it's off. Pinned / excluded / `docksentry.exclude` containers are skipped either way, and the auto-update window + ask-before-major gates still apply. For users who expected `AUTO_SELFUPDATE` to cover all containers — that flag only ever covered Docksentry itself.
+
+### Fixed
+- **Self-update on rootless Podman / custom socket paths didn't recreate the container** ([#43](../../issues/43), @LeeNX). The self-update helper hardcoded `-v /var/run/docker.sock:/var/run/docker.sock`, but on rootless Podman the real host socket lives elsewhere (e.g. `/run/user/1002/podman/podman.sock` mapped to `/var/run/docker.sock` inside the container). The helper got an empty socket, so its stop/rename/run swap silently no-op'd — the new image was pulled but never loaded. The helper now mounts the **same host socket Docksentry itself uses**, resolved from its own inspect Mounts (honouring `DOCKER_HOST`).
+
+### Changed
+- **Clearer date labels in self-update messages** ([#44](../../issues/44), @LeeNX). `🗓️ Current version: <date>` was a *date* mislabelled as a version, and `🗓️ New: … | Old: …` ran backwards versus every other line. Both now read `🗓️ Image date: …` with the consistent `old → new` direction. (The meaningful version line is the `🔖 v_old → v_new` arrow added in v1.34.0.)
+
 ## [1.34.1] - 2026-06-28
 
 ### Fixed

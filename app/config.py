@@ -61,7 +61,8 @@ class Config:
                  docker_username, docker_password,
                  docker_auth_config, docker_registry,
                  smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
-                 smtp_from="", smtp_to="", smtp_tls="starttls"):
+                 smtp_from="", smtp_to="", smtp_tls="starttls",
+                 auto_update_all=False):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -74,6 +75,9 @@ class Config:
         self.settings_file = os.path.join(data_dir, "settings.json")
         self.debug = False
         self.auto_selfupdate = auto_selfupdate
+        # Global "auto-update every checked container" (Watchtower-style),
+        # opposed to the per-container auto-update opt-in (#45, @NotRetarded).
+        self.auto_update_all = auto_update_all
         self.auto_cleanup = auto_cleanup
         self.cleanup_grace_hours = cleanup_grace_hours
         self.cleanup_backup_local_only = cleanup_backup_local_only
@@ -280,6 +284,7 @@ class Config:
             ],
             data_dir=_env("DATA_DIR", "/data"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
+            auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),
             cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),

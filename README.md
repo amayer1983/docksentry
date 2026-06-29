@@ -271,7 +271,8 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
-| `AUTO_SELFUPDATE` | `false` | Auto-update the bot on each check |
+| `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check |
+| `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container (Watchtower-style), not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
 | `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
 | `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
 | `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
