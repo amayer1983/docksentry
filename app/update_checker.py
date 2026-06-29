@@ -298,6 +298,91 @@ class UpdateChecker:
             self._debug(f"  Registry error: {e}")
             return None
 
+    def _registry_get(self, host, registry, repository, path, accept=None):
+        """GET a registry resource (manifest or blob) with Bearer-token
+        negotiation. Returns raw bytes, or None on failure. Mirrors the
+        auth flow of _get_remote_digest but for GET bodies."""
+        url = f"https://{host}/v2/{repository}/{path}"
+
+        def _attempt(token=None):
+            req = urllib.request.Request(url)
+            if accept:
+                req.add_header("Accept", accept)
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            return urllib.request.urlopen(req, timeout=15)
+
+        try:
+            with _attempt() as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            if e.code != 401:
+                return None
+            token = self._negotiate_token(
+                e.headers.get("WWW-Authenticate", ""), registry, repository)
+            if not token:
+                return None
+            try:
+                with _attempt(token) as resp:
+                    return resp.read()
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    def get_remote_image_meta(self, registry, repository, tag):
+        """Best-effort {version, created} of the REMOTE image for a tag, read
+        from its OCI config blob (the `org.opencontainers.image.version`
+        label and the build date). Lets the pre-update "Updates Available"
+        notification show `v_old → v_new` before anything is pulled (#44,
+        @LeeNX). Returns {} on any failure — the notification just omits the
+        version line then. Only called for containers that already have a
+        pending update, so the extra registry calls are few."""
+        host = "registry-1.docker.io" if "docker.io" in registry else registry
+        raw = self._registry_get(host, registry, repository,
+                                 f"manifests/{tag}", self._MANIFEST_ACCEPT)
+        if not raw:
+            return {}
+        try:
+            man = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+        # Multi-arch index → pick a linux/amd64 (else first linux, else first)
+        # platform manifest and fetch that, since the config lives there.
+        if man.get("manifests"):
+            entries = man["manifests"]
+            chosen = next((m for m in entries
+                           if (m.get("platform") or {}).get("os") == "linux"
+                           and (m.get("platform") or {}).get("architecture") == "amd64"), None)
+            chosen = chosen or next((m for m in entries
+                                     if (m.get("platform") or {}).get("os") == "linux"), None)
+            chosen = chosen or (entries[0] if entries else None)
+            if not chosen or not chosen.get("digest"):
+                return {}
+            raw = self._registry_get(host, registry, repository,
+                                     f"manifests/{chosen['digest']}", self._MANIFEST_ACCEPT)
+            if not raw:
+                return {}
+            try:
+                man = json.loads(raw)
+            except (ValueError, TypeError):
+                return {}
+        cfg_digest = (man.get("config") or {}).get("digest")
+        if not cfg_digest:
+            return {}
+        blob = self._registry_get(host, registry, repository, f"blobs/{cfg_digest}")
+        if not blob:
+            return {}
+        try:
+            cfg = json.loads(blob)
+        except (ValueError, TypeError):
+            return {}
+        labels = (cfg.get("config") or {}).get("Labels") or {}
+        version = self._normalize_version_label(
+            labels.get("org.opencontainers.image.version", "") or "")
+        created = (cfg.get("created") or "")[:10]
+        return {"version": version, "created": created}
+
     # Pattern that captures SemVer in a tag: "1.2.3", "v1.2.3", "1.2.3-rc1",
     # "redis-7.0.5", "alpine-3.19.0" all match. Suffixes after the version
     # (like "-rc1") are kept in `pre`, used for ordering / filtering.
@@ -1306,6 +1391,19 @@ class UpdateChecker:
                 self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
                 c["size"] = size
                 c["created"] = created
+                # Version info for the "Updates Available" notification (#44):
+                # old from the local OCI label (falling back to a SemVer tag),
+                # new from the remote image's OCI config. Best-effort, and
+                # only for containers that actually have an update.
+                old_v = self._get_image_version_label(image)
+                if not old_v and self._parse_semver(tag):
+                    old_v = tag
+                c["old_version"] = old_v
+                meta = self.get_remote_image_meta(registry, repository, tag)
+                if meta.get("version"):
+                    c["new_version"] = meta["version"]
+                if meta.get("created"):
+                    c["new_created"] = meta["created"]
                 updates.append(c)
             else:
                 self._debug(f"  → Up to date")

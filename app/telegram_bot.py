@@ -1229,6 +1229,19 @@ class TelegramBot:
             return f"[{u['name']}]({url})"
         return f"`{u['name']}`"
 
+    @staticmethod
+    def _version_badge(u):
+        """A ` 🔖 v_old → v_new` suffix for the "Updates Available" line when
+        version info is known (#44, @LeeNX): the arrow when both old and new
+        differ, otherwise whichever single version we have. Empty when none —
+        many images don't set `org.opencontainers.image.version`."""
+        old = (u.get("old_version") or "").strip()
+        new = (u.get("new_version") or "").strip()
+        if old and new and old != new:
+            return f" 🔖 v{old} → v{new}"
+        v = old or new
+        return f" 🔖 v{v}" if v else ""
+
     def notify_updates(self, updates, auto=False):
         if not updates:
             return
@@ -1277,7 +1290,7 @@ class TelegramBot:
             # [text](url) as a tap-to-open hyperlink. Falls back to
             # plain `name` when no URL is available. Shared with the
             # result-message paths via _display_name().
-            names.append(f"• {self._display_name(u)}{head_badge} ({u['image']}){compose_tag}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
+            names.append(f"• {self._display_name(u)}{head_badge} ({u['image']}){compose_tag}{self._version_badge(u)}\n  📦 {size} | 🗓️ {self.t('current')}: {created}")
         text = self.t("updates_available") + "\n\n" + "\n".join(names)
 
         # Snapshot this notification's exact container set, keyed by a

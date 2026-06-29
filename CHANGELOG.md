@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.36.0] - 2026-06-29
+
+### Added
+- **Version in the "Updates Available" notification** ([#44](../../issues/44), @LeeNX) — each container line now shows `🔖 v_old → v_new` (or the current version when only one side is known). The old version comes from the local image's `org.opencontainers.image.version` label (falling back to a SemVer tag); the new version is read from the **remote image's OCI config blob** before anything is pulled, via the registry's Bearer-auth manifest+blob flow (multi-arch indexes resolve to the linux/amd64 config). Best-effort: images without the label simply show no badge, and a registry hiccup never affects the check. The remote lookup only runs for the handful of containers that actually have a pending update, so it adds no per-check overhead. (Update *results* already showed this arrow since v1.18.x; this brings it to the pre-update notification too.)
+
 ## [1.35.0] - 2026-06-29
 
 ### Added
