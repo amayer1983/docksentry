@@ -37,6 +37,18 @@ class Notifier:
             pass
         return False
 
+    @staticmethod
+    def _version_str(u):
+        """`v_old → v_new` when both are known and differ, else the single
+        known version, else "". Mirrors the Telegram badge (#44) so Discord /
+        webhook / e-mail show the same version info."""
+        old = (u.get("old_version") or "").strip()
+        new = (u.get("new_version") or "").strip()
+        if old and new and old != new:
+            return f"v{old} → v{new}"
+        v = old or new
+        return f"v{v}" if v else ""
+
     def send_updates_available(self, updates):
         """Notify about available updates."""
         if self._suppressed():
@@ -50,6 +62,11 @@ class Notifier:
                     {"name": u["name"], "image": u["image"],
                      "size": u.get("size", "?"), "created": u.get("created", "?"),
                      "compose": bool(u.get("compose_project")),
+                     # Version info (#44) — read from OCI image.version
+                     # labels (old=local, new=remote). Empty when the image
+                     # doesn't carry the label.
+                     "old_version": u.get("old_version", ""),
+                     "new_version": u.get("new_version", ""),
                      # Repo / changelog URL — auto-detected from OCI
                      # labels or manually overridden in the Web UI
                      # (#20). Empty string when no link is available.
@@ -58,7 +75,9 @@ class Notifier:
                 ],
             })
         if self._smtp_configured():
-            lines = [f"- {u['name']} ({u['image']}) — {u.get('size','?')}, {u.get('created','?')}"
+            lines = [f"- {u['name']} ({u['image']})"
+                     + (f" {self._version_str(u)}" if self._version_str(u) else "")
+                     + f" — {u.get('size','?')}, {u.get('created','?')}"
                      for u in updates]
             self._smtp_send(f"{len(updates)} Docker update(s) available",
                             "Docksentry found updates for:\n\n" + "\n".join(lines))
@@ -146,9 +165,11 @@ class Notifier:
             link_line = ""
             if u.get("source_url"):
                 link_line = f"\n[Source ↗]({u['source_url']})"
+            ver = self._version_str(u)
+            ver_line = f"\n🔖 {ver}" if ver else ""
             fields.append({
                 "name": f"📦 {u['name']}{compose_tag}",
-                "value": f"`{u['image']}`\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}{link_line}",
+                "value": f"`{u['image']}`{ver_line}\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}{link_line}",
                 "inline": True,
             })
 

@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.38.0] - 2026-06-29
+
+### Added
+- **Installable Web UI (PWA)**. Added a web app manifest + icon so Docksentry can be added to a phone's home screen and run standalone — handy for the touch-first usage the Web UI was just polished for ([#2](../../issues/2)). Served via the existing `/static` route; `theme-color` / apple-touch meta included. No new dependencies.
+- **Version badge in Discord / webhook / e-mail "updates available"** ([#44](../../issues/44), @LeeNX). The `🔖 v_old → v_new` info added to the Telegram notification in v1.36.0 now also rides along on the other channels: Discord embeds show it per container, the generic webhook payload carries `old_version` / `new_version` fields, and the e-mail summary includes it. Empty when the image has no `org.opencontainers.image.version` label.
+
 ## [1.37.1] - 2026-06-29
 
 ### Fixed

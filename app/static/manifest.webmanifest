@@ -1,0 +1,13 @@
+{
+  "name": "Docksentry",
+  "short_name": "Docksentry",
+  "description": "Docker update manager — Telegram bot + Web UI",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#161b22",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

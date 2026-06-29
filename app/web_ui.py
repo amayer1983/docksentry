@@ -24,7 +24,9 @@ from config import PERSISTENT_KEYS
 # upgrade.
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".css": "text/css; charset=utf-8",
-                 ".js": "application/javascript; charset=utf-8"}
+                 ".js": "application/javascript; charset=utf-8",
+                 ".webmanifest": "application/manifest+json; charset=utf-8",
+                 ".svg": "image/svg+xml; charset=utf-8"}
 _STATIC_CACHE = {}
 
 
@@ -445,6 +447,11 @@ def create_handler(config, checker, bot, store, password=None):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docksentry</title>
+<link rel="manifest" href="/static/manifest.webmanifest?v={VERSION}">
+<meta name="theme-color" content="#161b22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Docksentry">
+<link rel="apple-touch-icon" href="/static/icon.svg">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23161b22'/><path d='M16 5 L26 9 V17 C26 22 21 26 16 28 C11 26 6 22 6 17 V9 Z' fill='%2358a6ff' stroke='%23ffffff' stroke-width='1.2'/><circle cx='16' cy='17' r='4.5' fill='%23161b22' stroke='%23ffffff' stroke-width='1.6'/><circle cx='16' cy='17' r='1.8' fill='%23ffffff'/></svg>">
 <script>
 // Apply theme before paint to avoid flash. Reads localStorage; falls back
@@ -513,7 +520,8 @@ def create_handler(config, checker, bot, store, password=None):
             path = self._get_path()
             # Static assets (CSS/JS extracted from Python literals → real
             # files). Served before the setup gate so the wizard is styled.
-            if path in ("/static/app.css", "/static/app.js"):
+            if path in ("/static/app.css", "/static/app.js",
+                        "/static/manifest.webmanifest", "/static/icon.svg"):
                 return self._serve_static(path.rsplit("/", 1)[1])
             # First-run gate: redirect everywhere to /setup until done.
             # /setup itself + /api/* must remain reachable (otherwise the

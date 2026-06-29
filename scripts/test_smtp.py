@@ -78,6 +78,12 @@ def main():
     finally:
         smtplib.SMTP, smtplib.SMTP_SSL = orig_smtp, orig_ssl
 
+    # version string for cross-channel "Updates Available" badge (#44)
+    vs = Notifier._version_str
+    checks["version: old → new arrow"] = vs({"old_version": "1.2.3", "new_version": "1.3.0"}) == "v1.2.3 → v1.3.0"
+    checks["version: single known"] = vs({"new_version": "1.3.0"}) == "v1.3.0"
+    checks["version: none → empty"] = vs({}) == ""
+
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
     if not all(checks.values()):
