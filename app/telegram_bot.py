@@ -888,35 +888,6 @@ class TelegramBot:
         finally:
             self._update_lock.release()
 
-    def _wait_healthy(self, name, max_seconds):
-        """Poll `docker inspect` until the container is running (and, if it
-        has a healthcheck, reports healthy). Returns True on success,
-        False on timeout. Polls every second. Used by the restart-
-        dependents cascade so we don't kick VPN-dependent containers
-        before the VPN sidecar is actually up."""
-        import time as _time
-        for _ in range(max(1, int(max_seconds))):
-            try:
-                r = subprocess.run(
-                    ["docker", "inspect", name],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if r.returncode == 0:
-                    data = json.loads(r.stdout)[0]
-                    state = data.get("State", {}) or {}
-                    if state.get("Running"):
-                        health = state.get("Health") or {}
-                        if not health:
-                            # No healthcheck configured — Running=true is
-                            # the best signal we have.
-                            return True
-                        if health.get("Status") == "healthy":
-                            return True
-            except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, KeyError):
-                pass
-            _time.sleep(1)
-        return False
-
     def _restart_group_dependents(self, head_name, dependents, checker, max_wait=30):
         """After the head of a group is recreated, bring its dependents back
         onto the new head. Waits up to `max_wait` for the head to be healthy.
@@ -929,7 +900,11 @@ class TelegramBot:
         restarted (cheaper, sufficient).
 
         Returns a one-line user-facing result string for the update report."""
-        outcome, _, _ = self._wait_healthy(head_name, max_wait)
+        # Use the checker's canonical 3-tuple _wait_healthy (outcome, state,
+        # health) — NOT a bot-local one. A stray bool-returning duplicate here
+        # caused "cannot unpack non-iterable bool object" mid-cascade (#2,
+        # @famewolf): the head updated fine, then the dependents kick crashed.
+        outcome, _, _ = checker._wait_healthy(head_name, max_wait)
         if outcome != "healthy":
             print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — fixing dependents anyway")
 

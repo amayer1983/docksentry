@@ -63,9 +63,13 @@ def main():
         _rm(HEAD)
         subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "400"], capture_output=True)
 
-        # 2. cascade: SIDE (netns) recreated, PLAIN restarted
+        # 2. cascade: SIDE (netns) recreated, PLAIN restarted.
+        # The cascade waits on the head via checker._wait_healthy (3-tuple) —
+        # stub it on the real checker (not the bot) so we don't actually wait,
+        # and so this exercises the real call path (#2 @famewolf: a bot-local
+        # bool _wait_healthy duplicate used to crash the cascade here).
         bot = types.SimpleNamespace()
-        bot._wait_healthy = lambda n, w: ("healthy", "running", "healthy")
+        chk._wait_healthy = lambda name, max_starting=None, interval=10: ("healthy", "running", "healthy")
         msg = TelegramBot._restart_group_dependents(bot, HEAD, [SIDE, PLAIN], chk, max_wait=5)
         c2 = _running(SIDE) and chk.netns_target_name(SIDE) == HEAD and _running(PLAIN)
         c3 = ("`%s`" % SIDE in msg) and ("failed" not in msg)

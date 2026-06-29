@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.37.1] - 2026-06-29
+
+### Fixed
+- **Restart-dependents cascade crashed with "cannot unpack non-iterable bool object"** ([#2](../../issues/2), @famewolf). A group head (e.g. gluetun) updated fine, then kicking its dependents threw — the head showed a second, bogus ❌ line. Cause: a stray bot-local `_wait_healthy` that returned a **bool** shadowed the checker's canonical 3-tuple `(outcome, state, health)` version, so `outcome, _, _ = self._wait_healthy(...)` tried to unpack a bool. The cascade now calls the checker's 3-tuple `_wait_healthy`, and the duplicate bool method is removed. The regression test (`test_dependents_recreate.py`) was masking it by stubbing a 3-tuple onto the bot; it now stubs the checker, exercising the real path.
+
 ## [1.37.0] - 2026-06-29
 
 ### Added
