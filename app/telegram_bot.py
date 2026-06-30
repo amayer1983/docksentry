@@ -659,29 +659,45 @@ class TelegramBot:
             )
         else:
             req = urllib.request.Request(url)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())
-        except urllib.error.HTTPError as e:
-            # Telegram returns 4xx with a JSON body for parse errors,
-            # rate-limit hints etc. Pass the parsed body to the caller so
-            # the markdown-retry path in send_message can act on it
-            # instead of treating it as a network failure.
+        # Bounded retry for transient network failures (timeout / connection
+        # error). A single blip — e.g. the network still settling right after
+        # a self-update restart — used to silently drop a notification while
+        # Discord/webhook got through (#2, @NotRetarded). The long-poll
+        # (quiet_timeout=True) is exempt: its timeouts are normal and it loops
+        # anyway. Trade-off: a read-timeout AFTER Telegram already processed a
+        # send can yield a duplicate message — accepted on purpose, a dropped
+        # update/self-update notification is worse than a rare dupe. Only the
+        # network layer is retried; HTTP 4xx (parse/rate-limit bodies) is
+        # returned to the caller unchanged.
+        import time as _t
+        attempts = 1 if quiet_timeout else 3
+        for attempt in range(attempts):
             try:
-                body = json.loads(e.read())
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())
+            except urllib.error.HTTPError as e:
+                # Telegram returns 4xx with a JSON body for parse errors,
+                # rate-limit hints etc. Pass the parsed body to the caller so
+                # the markdown-retry path in send_message can act on it
+                # instead of treating it as a network failure. Not retried.
+                try:
+                    body = json.loads(e.read())
+                    if not (quiet_timeout and self._is_timeout(e)):
+                        print(f"Telegram API {e.code}: {body.get('description', body)}")
+                    return body
+                except Exception:
+                    print(f"Telegram API error: {e}")
+                    return None
+            except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+                if attempt < attempts - 1:
+                    _t.sleep(2 * (attempt + 1))  # 2s, then 4s
+                    continue
                 if not (quiet_timeout and self._is_timeout(e)):
-                    print(f"Telegram API {e.code}: {body.get('description', body)}")
-                return body
-            except Exception:
+                    print(f"Telegram API error: {e}")
+                return None
+            except Exception as e:
                 print(f"Telegram API error: {e}")
                 return None
-        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
-            if not (quiet_timeout and self._is_timeout(e)):
-                print(f"Telegram API error: {e}")
-            return None
-        except Exception as e:
-            print(f"Telegram API error: {e}")
-            return None
 
     def send_message(self, text, reply_markup=None, auto=False):
         """Send a Telegram message.

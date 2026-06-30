@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.38.1] - 2026-06-29
+
+### Fixed
+- **Transient Telegram API timeouts silently dropped notifications** ([#2](../../issues/2), @NotRetarded). Right after a self-update restart the network can still be settling; a single `urlopen timed out` on the Telegram API meant the update/self-update notification was lost (while Discord/webhook, hitting the network a moment later, got through). `api_call` now retries transient network failures (timeout / connection error) up to 3× with a short backoff (2s, 4s). The long-poll (`getUpdates`) is exempt — its timeouts are expected and it loops anyway — and HTTP 4xx bodies are still returned unretried. Trade-off: a read-timeout after Telegram already accepted a send could produce a duplicate, which is preferable to a dropped notification. Test: `scripts/test_api_retry.py`.
+
 ## [1.38.0] - 2026-06-29
 
 ### Added
