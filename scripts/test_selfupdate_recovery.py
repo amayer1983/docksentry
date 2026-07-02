@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Self-update recovery net (#43, @LeeNX).
+
+If the recreate `docker run` fails (seen on rootless Podman), the swap must
+NOT leave Docksentry dead (renamed to `_old`, stopped). The helper script now
+rolls back: rename `_old` → current + start it. We run the real shell the
+helper would run, with a fake `docker` (and instant `sleep`) on PATH, and
+assert the rollback fires on run-failure but not on success.
+
+No Docker, no real waits. Exits non-zero on any failure.
+"""
+import sys, os, tempfile, subprocess, stat
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+from telegram_bot import TelegramBot
+
+
+def _run(fail_run):
+    d = tempfile.mkdtemp()
+    log = os.path.join(d, "log")
+    bindir = os.path.join(d, "bin")
+    os.makedirs(bindir)
+    with open(os.path.join(bindir, "docker"), "w") as f:
+        f.write("#!/bin/sh\n"
+                f'echo "$@" >> "{log}"\n'
+                'if [ "$1" = run ] && [ "$FAIL_RUN" = 1 ]; then exit 1; fi\n'
+                "exit 0\n")
+    with open(os.path.join(bindir, "sleep"), "w") as f:  # instant
+        f.write("#!/bin/sh\nexit 0\n")
+    for b in ("docker", "sleep"):
+        p = os.path.join(bindir, b)
+        os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    script = TelegramBot._build_selfupdate_script("ds", "-e X=1", "img:latest")
+    env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""),
+               FAIL_RUN="1" if fail_run else "0")
+    subprocess.run(["sh", "-c", script], env=env, timeout=30)
+    with open(log) as f:
+        return f.read()
+
+
+def main():
+    fail = _run(fail_run=True)
+    ok = _run(fail_run=False)
+    checks = {
+        # failure → old container restored, cleanup of _old NOT done
+        "fail: stop + rename to _old happened": "stop ds" in fail and "rename ds ds_old" in fail,
+        "fail: rolls back (rename _old -> ds + start)": "rename ds_old ds" in fail and "start ds" in fail,
+        "fail: does NOT rm the _old backup": "rm ds_old" not in fail,
+        # success → new container kept, _old cleaned up, no rollback
+        "ok: recreate + rm _old cleanup ran": "run -d" in ok and "rm ds_old" in ok,
+        "ok: no rollback (no rename back / start)": "rename ds_old ds" not in ok and "start ds" not in ok,
+    }
+    for k, v in checks.items():
+        print(("  ✅" if v else "  ❌"), k)
+    if not all(checks.values()):
+        print("FAIL\n--- fail log ---\n" + fail + "\n--- ok log ---\n" + ok)
+        return 1
+    print("PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

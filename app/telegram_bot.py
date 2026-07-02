@@ -1694,6 +1694,32 @@ class TelegramBot:
         except Exception as e:
             print(f"Could not write selfupdate marker (non-fatal): {e}")
 
+    @staticmethod
+    def _build_selfupdate_script(name, run_parts, image):
+        """Shell run by the helper container to swap Docksentry's image.
+
+        Recovery net (#43, @LeeNX): if the recreate `docker run` fails — e.g. a
+        flag the runtime rejects, seen on rootless Podman — the old
+        `stop && rename && run && rm` chain left Docksentry DEAD (renamed to
+        `_old`, stopped, no new container). The run is now guarded: on failure
+        we remove any partial new container, rename `_old` back and start it,
+        so the bot survives on the previous version. `rm _old` runs only after
+        a successful run, so a failed *cleanup* can't roll back a good update.
+        """
+        rollback = (
+            f"docker rm -f {name} 2>/dev/null; "
+            f"docker rename {name}_old {name} 2>/dev/null; "
+            f"docker start {name}"
+        )
+        return (
+            f"sleep 3 && "
+            f"docker stop {name} && "
+            f"docker rename {name} {name}_old && "
+            f"( docker run -d {run_parts} {image} || "
+            f"( echo 'Selfupdate recreate failed — rolling back'; {rollback}; exit 1 ) ) && "
+            f"docker rm {name}_old"
+        )
+
     def _do_selfupdate(self, config, own_name, own_image):
         """Execute selfupdate via a temporary helper container on the host.
 
@@ -1751,13 +1777,7 @@ class TelegramBot:
 
         # Build the full recreation command
         run_parts = " ".join(f'"{a}"' if " " in a or "=" in a else a for a in run_args)
-        update_script = (
-            f"sleep 3 && "
-            f"docker stop {own_name} && "
-            f"docker rename {own_name} {own_name}_old && "
-            f"docker run -d {run_parts} {own_image} && "
-            f"docker rm {own_name}_old"
-        )
+        update_script = self._build_selfupdate_script(own_name, run_parts, own_image)
 
         # Launch a temporary helper container on the host that performs the swap.
         # This container survives because it runs independently on the Docker host.

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.38.2] - 2026-07-02
+
+### Fixed
+- **A failed self-update recreate could leave Docksentry dead** ([#43](../../issues/43), @LeeNX). The helper ran `stop && rename→_old && run && rm _old`; if the `docker run` recreate failed (a flag the runtime rejects — seen on rootless Podman), the `&&` chain stopped with the container renamed to `_old` and stopped, and **no new container** — Docksentry was down with no recovery. The recreate is now guarded: on failure it removes any partial new container, renames `_old` back and starts it, so the bot survives on the previous version. `rm _old` runs only after a successful run, so a failed cleanup can't roll back a good update. Extracted into `_build_selfupdate_script`; test `scripts/test_selfupdate_recovery.py` runs the real shell against a fake `docker`. (Root cause of *why* the Podman recreate fails is still being gathered — the recovery net makes it non-fatal either way.)
+
 ## [1.38.1] - 2026-06-29
 
 ### Fixed
