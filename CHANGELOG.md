@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.39.1] - 2026-07-03
+
+### Fixed
+- **Discord and generic webhook notifications could silently drop on a transient network blip** (proactive audit follow-up to the Telegram retry in v1.38.1). `_discord_post` and `_webhook_send` did a single `urlopen` in a `try/except` — exactly the same structural gap that ate NotRetarded's Telegram notification right after a self-update restart, just on the other channels. Extracted a shared `_post_json_with_retry`: 3 attempts with 2s/4s backoff on transient network failures (timeout / connection error), no retry on HTTP status codes (those are the server's word, not a transient blip). Test: `scripts/test_notifier_retry.py`. Note: for a **generic webhook** pointing at an automation (Home Assistant, ntfy, custom script), the tiny edge case where a delivered send timed out on read can yield a duplicate; prefer idempotent handlers — noted in the README.
+
 ## [1.39.0] - 2026-07-03
 
 ### Changed

@@ -2,6 +2,9 @@
 """Multi-channel notification dispatcher (Discord, Webhook, e-mail/SMTP)."""
 
 import json
+import socket
+import time
+import urllib.error
 import urllib.request
 
 from quiet_hours import is_quiet_now
@@ -128,24 +131,48 @@ class Notifier:
 
     # ── Discord ──────────────────────────────────────────────
 
+    @staticmethod
+    def _post_json_with_retry(url, payload, headers, channel):
+        """POST a JSON body with bounded retry for transient network failures
+        (timeout / connection error) — 3 attempts, 2s and 4s backoff. Same
+        rationale as the Telegram retry in v1.38.1: right after a self-update
+        restart the network can still be settling, and a single dropped
+        notification is worse than a rare duplicate. HTTP status codes (2xx /
+        4xx) return on the first attempt — retry only covers real network
+        errors, not user config problems.
+
+        `channel` is a label used only in the error log ("Discord webhook",
+        "Webhook") so failures stay distinguishable.
+        """
+        data = json.dumps(payload).encode()
+        merged = {"Content-Type": "application/json", **(headers or {})}
+        req = urllib.request.Request(url, data=data, headers=merged, method="POST")
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return resp.status
+            except urllib.error.HTTPError as e:
+                # Server responded (4xx / 5xx) — not a transient network blip,
+                # don't retry. The retry loop is meant for the case where the
+                # request never reached the server.
+                print(f"{channel} error: HTTP {e.code}")
+                return None
+            except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                print(f"{channel} error: {e}")
+                return None
+            except Exception as e:
+                print(f"{channel} error: {e}")
+                return None
+        return None
+
     def _discord_post(self, payload):
         """POST JSON to Discord webhook."""
-        try:
-            data = json.dumps(payload).encode()
-            req = urllib.request.Request(
-                self.config.discord_webhook,
-                data=data,
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "Docksentry/1.0",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return resp.status
-        except Exception as e:
-            print(f"Discord webhook error: {e}")
-            return None
+        return self._post_json_with_retry(
+            self.config.discord_webhook, payload,
+            {"User-Agent": "Docksentry/1.0"}, "Discord webhook")
 
     def _footer_text(self):
         """Discord-embed footer text. Includes BOT_LABEL when set so
@@ -232,19 +259,13 @@ class Notifier:
         label = (self.config.bot_label or "").strip()
         if label:
             payload["bot_label"] = label
-        try:
-            body = json.dumps(payload).encode()
-            req = urllib.request.Request(
-                self.config.webhook_url,
-                data=body,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return resp.status
-        except Exception as e:
-            print(f"Webhook error: {e}")
-            return None
+        # Same retry contract as Discord and Telegram — a transient blip after
+        # a self-update restart shouldn't drop a notification. Note the
+        # trade-off is slightly different for a generic webhook: it may point
+        # at a user automation (Home Assistant, ntfy, custom script), so a
+        # duplicate could double-trigger something. Documented in the README.
+        return self._post_json_with_retry(
+            self.config.webhook_url, payload, None, "Webhook")
 
     # ── E-mail / SMTP ────────────────────────────────────────
 

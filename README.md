@@ -292,7 +292,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
 | `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
-| `WEBHOOK_URL` | | Generic webhook URL (JSON POST) |
+| `WEBHOOK_URL` | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
 | `SMTP_HOST` | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications |
 | `SMTP_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain) |
 | `SMTP_USER` | | SMTP username (omit for an unauthenticated relay) |
