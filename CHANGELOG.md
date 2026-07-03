@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.39.0] - 2026-07-03
+
+### Changed
+- **Disk-space warning is now actionable** ([#2](../../issues/2), @famewolf). A bare `⚠️ Disk usage at 88% — 5.3 GB free.` used to get lost in the noise (famewolf's 215 GB-of-orphaned-images lesson: the warning did fire, he just glossed over it while wrestling with LLM disk pressure). The warning now tells you **how much space `/cleanup` could reclaim** (from `docker system df` — unused images / build cache) and, if `DISK_WARN_AUTO_CLEANUP` is OFF, a one-line nudge to turn it on. So the message becomes "🧹 21.3 GB reclaimable via `/cleanup` — auto-cleanup is OFF, set `DISK_WARN_AUTO_CLEANUP=true` to reclaim automatically next time" — hard to ignore. Test: `scripts/test_disk_reclaim.py`.
+
 ## [1.38.2] - 2026-07-02
 
 ### Fixed

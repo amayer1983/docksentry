@@ -34,6 +34,9 @@ class Checker:
     def cleanup_images(self):
         return True, "noop"
 
+    def reclaimable_bytes(self):
+        return 0  # not exercised by the throttle test
+
 
 class Config:
     disk_warn_auto_cleanup = False

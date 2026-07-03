@@ -318,7 +318,18 @@ class Scheduler:
         if self._disk_warned_at and now_ts - self._disk_warned_at < 23 * 3600:
             return
         self._disk_warned_at = now_ts
+        # Extended warning body (#2, @famewolf): a bare "disk at X%" gets lost
+        # in the noise. Tell the user how much can be reclaimed with
+        # `/cleanup` and whether auto-cleanup would have already done it —
+        # then the warning is actionable, not just informational.
         msg = f"⚠️ Disk usage at {percent}% — {free_gb:.1f} GB free."
+        reclaim = self.checker.reclaimable_bytes()
+        if reclaim > 0:
+            gib = reclaim / (1024 ** 3)
+            unit = f"{gib:.1f} GB" if gib >= 0.1 else f"{reclaim / (1024 ** 2):.0f} MB"
+            msg += f"\n🧹 {unit} reclaimable via `/cleanup` (unused images / build cache)."
+        if not self.config.disk_warn_auto_cleanup:
+            msg += "\n💡 Auto-cleanup is OFF — set `DISK_WARN_AUTO_CLEANUP=true` (or enable it in Web UI → Settings) to reclaim automatically next time."
         notifier = getattr(self.bot, "notifier", None)
         if notifier and notifier.has_channels():
             notifier.send_message(msg)

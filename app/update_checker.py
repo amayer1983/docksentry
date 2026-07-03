@@ -519,6 +519,57 @@ class UpdateChecker:
             return created
         return "?"
 
+    @staticmethod
+    def _parse_human_size(s):
+        """`docker system df` size string → bytes. "20.1GB" -> 20100000000,
+        "20.1GB (50%)" -> same (Docker appends the %-of-total), "0B" -> 0,
+        "" / unparseable -> 0. Handles B / KB / MB / GB / TB (SI base 1000,
+        same as Docker prints)."""
+        if not s:
+            return 0
+        s = s.strip()
+        # Strip Docker's " (NN%)" suffix from `docker system df` JSON output.
+        p = s.find("(")
+        if p >= 0:
+            s = s[:p].strip()
+        s = s.replace(" ", "")
+        UNITS = {"TB": 1_000_000_000_000, "GB": 1_000_000_000,
+                 "MB": 1_000_000, "KB": 1_000, "B": 1}
+        for suf, mult in UNITS.items():
+            if s.endswith(suf):
+                try:
+                    return int(float(s[:-len(suf)]) * mult)
+                except ValueError:
+                    return 0
+        try:
+            return int(float(s))
+        except ValueError:
+            return 0
+
+    def reclaimable_bytes(self):
+        """Total reclaimable disk space via `docker system df` (bytes). Used
+        by the disk warning to tell the user how much space `docker image
+        prune` / `/cleanup` could free — famewolf's #2 point: without that
+        number the warning looks like noise and gets ignored. Best-effort,
+        returns 0 on any failure."""
+        try:
+            r = subprocess.run(
+                ["docker", "system", "df", "--format", "{{json .}}"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode != 0:
+                return 0
+            total = 0
+            for line in r.stdout.strip().splitlines():
+                try:
+                    d = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                total += self._parse_human_size(d.get("Reclaimable", ""))
+            return total
+        except (subprocess.SubprocessError, OSError):
+            return 0
+
     def cleanup_images(self):
         """Run image cleanup with optional pre-prune local-image backup.
 
