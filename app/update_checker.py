@@ -519,6 +519,35 @@ class UpdateChecker:
             return created
         return "?"
 
+    def has_selfupdate_available(self):
+        """Digest-only check whether the running Docksentry image has a newer
+        version on the registry. Used by /check to surface a selfupdate hint
+        (#2, @famewolf) — get_running_containers filters us out so the regular
+        update flow never sees us, and this fills that gap without triggering
+        a pull.
+
+        Returns True when local != remote, False otherwise (also on any
+        failure — we prefer a missed hint over a false positive)."""
+        try:
+            cfg = self.inspect_self()
+            if not cfg:
+                return False
+            image = cfg.get("Config", {}).get("Image", "")
+            if not image:
+                return False
+            local_digests = self._get_local_digests(image)
+            if not local_digests:
+                return False
+            registry, repository, tag = self._parse_image(image)
+            if not registry:
+                return False
+            remote_digest = self._get_remote_digest(registry, repository, tag)
+            if not remote_digest:
+                return False
+            return remote_digest not in local_digests
+        except Exception:
+            return False
+
     @staticmethod
     def _parse_human_size(s):
         """`docker system df` size string → bytes. "20.1GB" -> 20100000000,

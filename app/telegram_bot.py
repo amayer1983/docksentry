@@ -41,6 +41,7 @@ _BOT_COMMANDS = [
     ("update",      "Update a container or glob — /update <name|*>",                   "help_update",      "help_detail_update"),
     ("updates",     "Show pending updates",                                           "help_updates",     "help_detail_updates"),
     ("cleanup",     "Remove unused images",                                           "help_cleanup",     "help_detail_cleanup"),
+    ("checkimages", "How much space /cleanup would free (dry-run)",                    "help_checkimages", "help_detail_checkimages"),
     ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle",   "help_detail_lifecycle"),
     ("stop",        "Stop a running container — /stop <name>",                        "help_lifecycle",   "help_detail_lifecycle"),
     ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle",   "help_detail_lifecycle"),
@@ -1320,6 +1321,23 @@ class TelegramBot:
     def notify_no_updates(self):
         self.send_message(self.t("all_up_to_date"))
 
+    def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup):
+        """`/checkimages` reply — how much `/cleanup` would free right now.
+        Nothing-to-clean and auto-cleanup states each get a clear line so
+        the reply is answer-in-glance, not a puzzle."""
+        if reclaim_bytes <= 0:
+            return self.t("checkimages_none")
+        gib = reclaim_bytes / (1024 ** 3)
+        # Show GB only from ~1 GB up — a "0.2 GB" or "150 MB" reads much
+        # better than "0.2 GB", and 512 MB shouldn't get rounded to "0.5 GB".
+        size = f"{gib:.1f} GB" if gib >= 1.0 else f"{reclaim_bytes / (1024 ** 2):.0f} MB"
+        msg = self.t("checkimages_reclaimable", size=size)
+        if auto_cleanup:
+            msg += "\n" + self.t("checkimages_auto_on")
+        else:
+            msg += "\n" + self.t("checkimages_auto_off")
+        return msg
+
     def _build_dry_run(self, updates, checker):
         """Read-only preview of what applying the pending updates WOULD do —
         the recreate path (compose vs standalone), dependents that would be
@@ -2586,14 +2604,15 @@ class TelegramBot:
                 self.notify_updates(updates)
             else:
                 self.notify_no_updates()
-            # If Docksentry itself is in the updates list, point the user
-            # to /selfupdate (which is the right command — auto-updating
-            # ourselves via the regular update flow doesn't work because
-            # PID 1 can't replace its own container). Also hint at the
-            # new /changelog so they can preview what's changed before
-            # deciding. Requested by @famewolf in #2.
-            own_name, _ = self._own_container_meta()
-            if own_name and any(u.get("name") == own_name for u in updates):
+            # Docksentry-selfupdate hint (#2, @famewolf): the regular
+            # `check_all` filters us out (get_running_containers → "Skipped
+            # (self)") because auto-updating via the normal flow can't work
+            # (PID 1 can't replace its own container). So checking the
+            # updates list for our own name never matched — the hint hasn't
+            # been surfacing since the self-filter existed. Ask the checker
+            # directly (registry digest compare, no pull) and, if newer, tell
+            # the user to run /selfupdate and hint at /changelog for preview.
+            if checker.has_selfupdate_available():
                 self.send_message(self.t("docksentry_update_hint"))
 
         elif text == "/changelog":
@@ -2753,6 +2772,15 @@ class TelegramBot:
                 self.send_message(f"✅ {msg}")
             else:
                 self.send_message(f"❌ {msg}")
+
+        elif text == "/checkimages":
+            # Dry-run counterpart to /cleanup — how much would `/cleanup`
+            # free right now (unused images / build cache), plus the
+            # AUTO_CLEANUP status (#2, @famewolf: if you're not running
+            # auto-cleanup, being able to check on demand is valuable).
+            reclaim = checker.reclaimable_bytes()
+            auto_on = bool(getattr(self.config, "disk_warn_auto_cleanup", False))
+            self.send_message(self._build_checkimages_msg(reclaim, auto_on))
 
         # Container lifecycle commands — start / stop / restart.
         # Same partial-name matching as /pin / /logs. Stop and restart

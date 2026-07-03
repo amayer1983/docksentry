@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.40.0] - 2026-07-03
+
+### Added
+- **`/checkimages`** ([#2](../../issues/2), @famewolf) — dry-run counterpart to `/cleanup`. Reports how much disk space `/cleanup` would reclaim right now (unused images + build cache, from `docker system df`) and calls out the AUTO_CLEANUP status. Useful when you're not on auto-cleanup and want to check on demand instead of waiting for the disk warning to fire.
+
+### Fixed
+- **`/check` no longer surfaced the Docksentry-update hint** ([#2](../../issues/2), @famewolf). Since v1.17.4 the hint was gated on Docksentry appearing in the results list — but `get_running_containers` explicitly filters ourselves out ("Skipped (self)"; a normal-flow container update on ourselves can't work — PID 1 can't replace its own container). The hint therefore never fired since the self-filter existed. `/check` now consults the checker directly (`has_selfupdate_available()` — a digest-only registry compare, no pull) so a newer Docksentry image on the registry surfaces the "run /selfupdate" hint again. Test: `scripts/test_checkimages.py`.
+
 ## [1.39.1] - 2026-07-03
 
 ### Fixed
