@@ -5,7 +5,6 @@ import json
 import socket
 import subprocess
 import os
-import sys
 import threading
 import urllib.error
 import urllib.request

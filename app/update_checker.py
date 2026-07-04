@@ -283,7 +283,7 @@ class UpdateChecker:
             www_auth = e.headers.get("WWW-Authenticate", "")
             token = self._negotiate_token(www_auth, registry, repository)
             if not token:
-                self._debug(f"  Registry error: 401 (token negotiation failed)")
+                self._debug("  Registry error: 401 (token negotiation failed)")
                 return None
             try:
                 with _attempt(token) as resp:
@@ -640,7 +640,6 @@ class UpdateChecker:
                 return False, f"Cleanup failed: {result.stderr.strip()[:200]}"
             lines = result.stdout.strip().split("\n")
             space_line = next((l for l in lines if "reclaimed" in l.lower()), "")
-            deleted_lines = [l for l in lines if l.startswith(("Deleted: sha256:", "Untagged: "))]
             untagged = sorted({l[len("Untagged: "):].split("@")[0]
                                for l in lines if l.startswith("Untagged: ")})
 
@@ -1462,7 +1461,7 @@ class UpdateChecker:
             if remote_digest is None:
                 # Treat unknown as unknown — don't claim "up to date" when we
                 # couldn't actually reach the registry.
-                self._debug(f"  → Check FAILED (registry unreachable / unauthorized)")
+                self._debug("  → Check FAILED (registry unreachable / unauthorized)")
                 continue
 
             if remote_digest not in local_digests:
@@ -1486,7 +1485,7 @@ class UpdateChecker:
                     c["new_created"] = meta["created"]
                 updates.append(c)
             else:
-                self._debug(f"  → Up to date")
+                self._debug("  → Up to date")
 
         # Save pending updates — atomic write (v1.22.1)
         from container_store import atomic_write_json
@@ -1547,9 +1546,22 @@ class UpdateChecker:
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
             return self._update_standalone(name, image, netns_name=netns_name)
 
+        # Base compose invocation. When the stack was originally started from
+        # a different directory than the compose file's (label
+        # com.docker.compose.project.working_dir ≠ dirname(config_file)),
+        # compose resolves `.env` interpolation and env_file paths against
+        # the PROJECT directory — without --project-directory our recreate
+        # could interpolate ${VARS} differently than the original `up` did
+        # (found via lint: `working_dir` was accepted but never used; same
+        # recreate-fidelity class as #27/#29).
+        compose_base = ["docker", "compose", "-f", config_file, "-p", project]
+        if working_dir and os.path.isdir(working_dir) \
+                and os.path.realpath(working_dir) != os.path.realpath(os.path.dirname(config_file) or "."):
+            compose_base += ["--project-directory", working_dir]
+
         # Pull new image via compose
-        pull_cmd = ["docker", "compose", "-f", config_file, "-p", project, "pull", service]
-        self._debug(f"  Running: docker compose -f {config_file} -p {project} pull {service}")
+        pull_cmd = compose_base + ["pull", service]
+        self._debug(f"  Running: {' '.join(pull_cmd)}")
         result = subprocess.run(pull_cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0:
             msg = f"Compose pull failed: {result.stderr[:200]}"
@@ -1566,9 +1578,8 @@ class UpdateChecker:
         # is actually replaced: a plain `up -d` can leave the old container
         # (and old image) running if Compose judges the service "unchanged",
         # so the new image gets pulled but never loaded (#35).
-        up_cmd = ["docker", "compose", "-f", config_file, "-p", project,
-                  "up", "-d", "--no-deps", "--force-recreate", service]
-        self._debug(f"  Running: docker compose -f {config_file} -p {project} up -d --no-deps --force-recreate {service}")
+        up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate", service]
+        self._debug(f"  Running: {' '.join(up_cmd)}")
         result = subprocess.run(up_cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             msg = f"Compose up failed: {result.stderr[:200]}"

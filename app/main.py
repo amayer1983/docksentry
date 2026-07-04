@@ -5,7 +5,6 @@ import os
 import signal
 import socket
 import subprocess
-import threading
 import time
 import sys
 
@@ -65,10 +64,10 @@ def _setup_docker_auth(config):
             else:
                 err = (r.stderr or b"").decode(errors="replace").strip()[:200]
                 print(f"Docker auth: docker login failed ({registry}): {err}")
-                print(f"Docker auth: continuing with anonymous pulls")
+                print("Docker auth: continuing with anonymous pulls")
         except (subprocess.SubprocessError, OSError) as e:
             print(f"Docker auth: docker login error: {e}")
-            print(f"Docker auth: continuing with anonymous pulls")
+            print("Docker auth: continuing with anonymous pulls")
 
 
 def main():
@@ -248,7 +247,7 @@ def main():
         web = WebUI(config, checker, bot, store, config.web_port, config.web_password)
         web.start()
 
-    print(f"Docksentry started.")
+    print("Docksentry started.")
     print(f"Schedule: {config.cron_schedule}")
     print(f"Excluded: {config.exclude_containers or 'none'}")
     print(f"Auto selfupdate: {'ON' if config.auto_selfupdate else 'OFF'}")
@@ -262,12 +261,12 @@ def main():
     if config.web_ui:
         print(f"Web UI: http://0.0.0.0:{config.web_port}")
     if config.discord_webhook:
-        print(f"Discord: webhook configured")
+        print("Discord: webhook configured")
     if config.webhook_url:
         # Don't log the full URL — it can contain auth tokens (Ntfy, Gotify,
         # Home Assistant) that would otherwise leak via `docker logs` or log
         # aggregators.
-        print(f"Webhook: configured")
+        print("Webhook: configured")
 
     # Send startup notification to all channels — unless we're resuming
     # from a self-update, in which case the scheduler's deferred-check

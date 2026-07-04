@@ -8,7 +8,6 @@ import html
 import ipaddress
 import json
 import os
-import secrets
 import subprocess
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -131,7 +130,7 @@ def _validate_cron(expr):
         return False, f"need 5 space-separated fields, got {len(parts)}"
 
     field_names = ("minute", "hour", "day-of-month", "month", "day-of-week")
-    for name, pattern in zip(field_names, parts):
+    for name, pattern in zip(field_names, parts, strict=True):
         if pattern == "*":
             continue
         try:
@@ -715,7 +714,7 @@ def create_handler(config, checker, bot, store, password=None):
                 # short HH:MM strings (today/tomorrow rendered as the
                 # weekday name when ≥ 2h away). Pure read — no
                 # state changes — and bounded look-ahead.
-                from scheduler import cron_next_ticks, cron_matches
+                from scheduler import cron_next_ticks
                 from datetime import datetime as _dt
                 query = parse_qs(urlparse(self.path).query)
                 expr = (query.get("expr", [""])[0] or "").strip()
@@ -1658,7 +1657,7 @@ def create_handler(config, checker, bot, store, password=None):
                 elif health == "starting":
                     status_badge = '<span class="badge badge-yellow">starting</span>'
                 else:
-                    status_badge = f'<span class="badge badge-blue">running</span>'
+                    status_badge = '<span class="badge badge-blue">running</span>'
 
                 # Badges (compact, only show what's "different" from default)
                 badges = ""
@@ -2109,7 +2108,7 @@ def create_handler(config, checker, bot, store, password=None):
             if is_auto:
                 badges.append(f'<span class="badge badge-purple">{t("web_autoupdate_badge")}</span>')
             if is_askm:
-                badges.append(f'<span class="badge badge-blue">⚠ major-confirm</span>')
+                badges.append('<span class="badge badge-blue">⚠ major-confirm</span>')
             if is_trust_c:
                 badges.append(f'<span class="badge badge-blue">{t("web_trust_running_badge")}</span>')
             if pending_for_self:
@@ -2208,7 +2207,7 @@ def create_handler(config, checker, bot, store, password=None):
                 if output.strip():
                     logs_html += f'<pre>{html.escape(output.strip())}</pre>'
                 else:
-                    logs_html += f'<p style="color:var(--text-muted)">No logs found.</p>'
+                    logs_html += '<p style="color:var(--text-muted)">No logs found.</p>'
 
             # ── Settings tab — per-container toggles ─────────────
             window_form = self._container_window_form(t, name, window)
@@ -3062,7 +3061,7 @@ def create_handler(config, checker, bot, store, password=None):
                 if output.strip():
                     log_html = f'<pre>{html.escape(output.strip())}</pre>'
                 else:
-                    log_html = f'<p style="color:#8b949e">No logs found.</p>'
+                    log_html = '<p style="color:#8b949e">No logs found.</p>'
 
             content = f"""
 <div class="card">

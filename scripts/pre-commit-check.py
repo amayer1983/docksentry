@@ -177,6 +177,15 @@ for blk in _js_blocks:
 if js_problem_total == 0:
     check(True, "no raw control chars inside _BASE_JS string literals")
 
+# 4. Contract lint — return-arity drift + cross-class doppelgangers
+#    (the v1.37.1 _wait_healthy crash class). Pure stdlib AST.
+print("\n=== CONTRACT LINT ===")
+import subprocess as _sp
+_lc = _sp.run([sys.executable, os.path.join(os.path.dirname(__file__), "lint_contracts.py")],
+              capture_output=True, text=True)
+print(_lc.stdout.strip())
+check(_lc.returncode == 0, "contract lint (return shapes)")
+
 print()
 if errors:
     print(f"\u274c {errors} issue(s) found. Fix before committing!")

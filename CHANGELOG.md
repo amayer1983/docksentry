@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.40.1] - 2026-07-03
+
+### Fixed
+- **Compose recreates now pass `--project-directory`** when the stack was originally started from a different directory than the compose file's location (found via static-analysis audit: `_update_compose` accepted the `working_dir` from the `com.docker.compose.project.working_dir` label but never used it). Without it, compose resolves `.env` interpolation and `env_file:` paths against the compose file's directory instead of the original project directory — so a recreate could interpolate `${VARS}` differently than the original `up` did. Same recreate-fidelity class as [#27](../../issues/27)/[#29](../../issues/29).
+
+### Changed
+- **New permanent contract linter** (`scripts/lint_contracts.py`, wired into the pre-commit check): AST-based, flags functions whose return statements mix literal shapes (tuple vs scalar) and same-named methods across classes with conflicting return contracts — the exact class of the v1.37.1 `_wait_healthy` cascade crash. Verified it catches that historical bug. Plus a lint pass across the codebase: unused imports/variables removed, one `zip()` hardened with `strict=True`.
+
 ## [1.40.0] - 2026-07-03
 
 ### Added
