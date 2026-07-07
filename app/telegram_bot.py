@@ -1712,6 +1712,17 @@ class TelegramBot:
             print(f"Could not write selfupdate marker (non-fatal): {e}")
 
     @staticmethod
+    def _host_mount_source(inspect_config, dest):
+        """Host source path of the bind/volume mounted at container path
+        `dest`, from our own inspect dict, or None. Lets the self-update
+        helper mount the SAME host directory Docksentry uses for a path
+        (e.g. /data) so it can leave output where the next boot reads it."""
+        for m in (inspect_config.get("Mounts") or []):
+            if m.get("Destination") == dest and m.get("Source"):
+                return m["Source"]
+        return None
+
+    @staticmethod
     def _build_selfupdate_script(name, run_parts, image):
         """Shell run by the helper container to swap Docksentry's image.
 
@@ -1825,14 +1836,25 @@ class TelegramBot:
         # Mount the SAME host socket Docksentry itself uses (not a hardcoded
         # path) so the helper works on rootless Podman / custom sockets (#43).
         host_sock = self._host_docker_socket(config)
-        result = subprocess.run([
+        helper_args = [
             "docker", "run", "-d",
             "--name", helper_name,
             "--rm",
             "-v", f"{host_sock}:/var/run/docker.sock",
-            "docker:cli",
-            "sh", "-c", update_script
-        ], capture_output=True, text=True, timeout=30)
+        ]
+        # Also mount our /data host dir so the helper can drop its output
+        # where the next boot reads it — a --rm helper's stderr otherwise
+        # vanishes, which is why we've never seen WHY the podman recreate
+        # fails (#43). When mounted, redirect the whole swap script's output
+        # into it; the next boot surfaces it if the recreate rolled back.
+        host_data = self._host_mount_source(config, self.config.data_dir)
+        run_script = update_script
+        if host_data:
+            helper_args += ["-v", f"{host_data}:{self.config.data_dir}"]
+            logpath = f"{self.config.data_dir}/selfupdate_helper.log"
+            run_script = f"({update_script}) > {logpath} 2>&1"
+        helper_args += ["docker:cli", "sh", "-c", run_script]
+        result = subprocess.run(helper_args, capture_output=True, text=True, timeout=30)
 
         if result.returncode != 0:
             self.send_message(f"❌ Selfupdate failed: {result.stderr[:200]}")

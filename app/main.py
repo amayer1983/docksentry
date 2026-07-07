@@ -294,6 +294,28 @@ def main():
     if restart_signal:
         print(f"Restart cause: external stop signal ({restart_signal}) — not a self-restart")
 
+    # Surface a failed self-update recreate (#43). The helper writes its
+    # stdout/stderr to /data/selfupdate_helper.log; if the recreate rolled
+    # back (podman rejected `docker run`, etc.) we finally have the reason
+    # here instead of it vanishing with the --rm helper. On success the log
+    # exists too but has no "rolling back" marker — consume it silently.
+    try:
+        _hlog = config.selfupdate_helper_log
+        if os.path.exists(_hlog):
+            with open(_hlog) as f:
+                _hcontent = f.read()
+            os.unlink(_hlog)
+            if "rolling back" in _hcontent:
+                _tail = _hcontent.strip()[-900:]
+                _fail = t("selfupdate_recreate_failed", detail=_tail)
+                if bot.enabled:
+                    bot.send_message(_fail)
+                if notifier.has_channels():
+                    notifier.send_message(_fail)
+                print("Self-update recreate failed — helper output:\n" + _hcontent)
+    except Exception as e:
+        print(f"Could not read selfupdate helper log (non-fatal): {e}")
+
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
         if restart_signal:

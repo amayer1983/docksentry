@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.41.0] - 2026-07-07
+
+### Added
+- **Self-update failure diagnostics** ([#43](../../issues/43), @LeeNX). When a self-update recreate fails (seen repeatedly on rootless Podman) the reason used to vanish — the helper container runs `--rm`, so its stderr was gone before anyone could read it. The helper now also mounts Docksentry's `/data` host directory (resolved from our own inspect Mounts, same trick as the socket in v1.35.0) and redirects its whole swap-script output there. On the next boot, if the recreate rolled back, Docksentry reports the captured helper output so the actual `docker run` rejection is finally visible instead of a silent brick. On success the log is consumed silently. New i18n key `selfupdate_recreate_failed`. Test: `scripts/test_selfupdate_diag.py`. (This is the diagnostic that should finally reveal *why* the Podman recreate fails — the v1.38.2 recovery-net already made it survivable.)
+
 ## [1.40.1] - 2026-07-03
 
 ### Fixed

@@ -152,6 +152,11 @@ class Config:
         # Manual /selfupdate doesn't write the deferred-check marker, so we
         # need this separate one to cover it. See #2 (@famewolf).
         self.selfupdate_marker_file = os.path.join(data_dir, "selfupdate_restart.json")
+        # The self-update helper writes its stdout/stderr here (it mounts
+        # /data). The next boot reads it: if the recreate rolled back, the
+        # helper's error is finally visible instead of vanishing with the
+        # --rm helper container (#43 — diagnosing why podman rejects the run).
+        self.selfupdate_helper_log = os.path.join(data_dir, "selfupdate_helper.log")
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port

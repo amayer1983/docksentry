@@ -203,6 +203,7 @@
   "status_containers": "Container",
   "status_pinned": "Gepinnt",
   "status_autoupdate": "Auto-Update",
+  "selfupdate_recreate_failed": "⚠️ Self-Update fehlgeschlagen: der neue Container konnte nicht erstellt werden, Docksentry ist auf die vorherige Version zurückgerollt (läuft weiter). Helper-Ausgabe:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry gestartet* (v{version})",
   "check_scoped_uptodate": "✅ {count} Container passend zu `{pattern}` sind aktuell.",
   "update_scoped_none": "✅ Keine ausstehenden Updates bei Containern passend zu `{pattern}`.",
