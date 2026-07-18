@@ -1314,7 +1314,7 @@ class UpdateChecker:
         cmd = self._build_run_args(config, image, name,
                                    self._get_image_defaults(image),
                                    netns_name=netns_name,
-                                   inherited_env=self._image_env(config.get("Image")))
+                                   inherited=self._image_config(config.get("Image")))
         run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if run.returncode != 0:
             err = run.stderr.strip()[:200]
@@ -1640,7 +1640,7 @@ class UpdateChecker:
 
     @staticmethod
     def _build_run_args(config, image, name, image_defaults=None, netns_name=None,
-                        inherited_env=None):
+                        inherited=None):
         """Reconstruct the full `docker run` argument list from a
         container's inspect dump. Single source of truth for both the
         standalone update path here and the self-update helper in
@@ -1667,10 +1667,13 @@ class UpdateChecker:
         the image (the typical update path) — _update_standalone()
         does this automatically.
 
-        ``inherited_env`` is the OLD image's own ENV list (see
-        _image_env). Entries the container merely inherited are skipped
-        so the NEW image's defaults win; only real user overrides are
-        replicated. None means "replicate everything" (pre-v1.42.0).
+        ``inherited`` is the OLD image's own ``Config`` block (see
+        _image_config). Every value the container merely inherited from
+        it — Env, Labels, User, WorkingDir, StopSignal, Healthcheck — is
+        skipped so the NEW image's defaults win; only genuine user
+        overrides are replicated. None means "replicate everything"
+        (pre-v1.43.0 behaviour), which is also the fallback whenever the
+        old image can no longer be inspected.
 
         Historical field-coverage gaps closed:
           - v1.18.10 (#27 / @famewolf): CapAdd, Devices, Sysctls,
@@ -1810,11 +1813,11 @@ class UpdateChecker:
         # indistinguishable from an inherited one and gets dropped too —
         # harmless unless the new image changed that default, which is
         # precisely the case we want the new value to win.
-        # inherited_env is None when the old image is no longer
-        # inspectable — then replicate everything (pre-v1.42.0 behaviour).
-        inherited = set(inherited_env or ())
+        # inherited is None when the old image is no longer inspectable —
+        # then replicate everything (pre-v1.42.0 behaviour).
+        inherited_env = set((inherited or {}).get("Env") or ())
         for env in (cfg.get("Env") or []):
-            if env in inherited:
+            if env in inherited_env:
                 continue
             args.extend(["-e", env])
 
@@ -1869,8 +1872,19 @@ class UpdateChecker:
             for d in (host.get("DnsOptions") or []):
                 args.extend(["--dns-option", d])
 
-        # ── Labels (preserve all) ──────────────────────────────
+        # ── Labels (user's own only) ───────────────────────────
+        # Image LABELs merge into the container's labels indistinguishably
+        # from user/compose ones. Replicating all of them pins the OLD
+        # image's labels onto the new container — including
+        # `org.opencontainers.image.version`, which is exactly what the
+        # container detail view reports as "what version is this really?"
+        # (#36). So an updated container would keep claiming the old
+        # version. Skip labels the old image already carried verbatim;
+        # compose/user labels differ from it and survive.
+        inherited_labels = (inherited or {}).get("Labels") or {}
         for key, value in (cfg.get("Labels") or {}).items():
+            if inherited_labels.get(key) == value:
+                continue
             args.extend(["--label", f"{key}={value}"])
 
         # ── Hostname (skipped when sharing netns) ──────────────
@@ -1883,8 +1897,12 @@ class UpdateChecker:
                 args.extend(["--hostname", hostname])
 
         # ── User (uid[:gid]) ───────────────────────────────────
+        # Dockerfile USER lands here too. Pinning it breaks images that
+        # re-harden across versions (root → non-root, or a changed uid):
+        # the new image expects its own user, we'd force the old one and
+        # produce permission errors. Only a real user override survives.
         user = cfg.get("User", "")
-        if user:
+        if user and user != (inherited or {}).get("User", ""):
             args.extend(["--user", user])
 
         # ── Security options (AppArmor / seccomp / no-new-privileges) ─
@@ -2015,8 +2033,11 @@ class UpdateChecker:
             args.append("--rm")
 
         # ── Stop signal (compose `stop_signal:`) ───────────────
+        # Dockerfile STOPSIGNAL lands here as well — an image that
+        # switches to e.g. SIGRTMIN+3 (systemd-based images do) must not
+        # be held on its predecessor's signal, or shutdown breaks.
         stop_signal = cfg.get("StopSignal", "")
-        if stop_signal:
+        if stop_signal and stop_signal != (inherited or {}).get("StopSignal", ""):
             args.extend(["--stop-signal", stop_signal])
 
         # ── Stop timeout (compose `stop_grace_period:`) ────────
@@ -2025,8 +2046,10 @@ class UpdateChecker:
             args.extend(["--stop-timeout", str(stop_timeout)])
 
         # ── Working directory (compose `working_dir:`) ─────────
+        # Dockerfile WORKDIR lands here too; a relocated app directory in
+        # the new image would otherwise be overridden by the old path.
         workdir = cfg.get("WorkingDir", "")
-        if workdir:
+        if workdir and workdir != (inherited or {}).get("WorkingDir", ""):
             args.extend(["--workdir", workdir])
 
         # ── Domainname ─────────────────────────────────────────
@@ -2042,12 +2065,19 @@ class UpdateChecker:
             args.append("-i")
 
         # ── Healthcheck override ───────────────────────────────
-        # Compose `healthcheck:` overrides the image's HEALTHCHECK.
-        # inspect.Config.Healthcheck is set only when explicitly
-        # overridden — image-default HEALTHCHECKs don't end up here,
-        # so we can safely restore whatever's present without locking
-        # in an image-default that future image versions might change.
+        # Compose `healthcheck:` overrides the image's HEALTHCHECK — but
+        # so does the image's own HEALTHCHECK: contrary to what this
+        # comment claimed until v1.43.0, an image-default healthcheck DOES
+        # land in inspect.Config.Healthcheck, with no marker saying so.
+        # Replicating it unconditionally pinned the OLD image's
+        # healthcheck, and that one bites back: when a new image ships a
+        # *fixed* healthcheck, the stale one keeps failing, our
+        # post-update health gate treats that as a bad update and rolls
+        # back — so the very release that repairs the check can never be
+        # installed. Only replicate a genuine override.
         hc = cfg.get("Healthcheck") or {}
+        if hc and hc == ((inherited or {}).get("Healthcheck") or {}):
+            hc = {}
         hc_test = hc.get("Test") or []
         if hc_test:
             head = hc_test[0]
@@ -2219,20 +2249,27 @@ class UpdateChecker:
                            f"(running {running_id[:19]} != pulled {pulled_id[:19]})")
         return True, ""
 
-    def _image_env(self, ref):
-        """The ENV entries an image defines itself, as a list of
-        ``"KEY=value"`` strings — or ``None`` if the image can't be
+    @staticmethod
+    def _image_config(ref):
+        """An image's own ``Config`` block, or ``None`` if it can't be
         inspected.
 
-        Used to tell a container's *inherited* environment apart from the
-        user's explicit ``-e`` overrides on recreate. Pass the OLD image
-        (the container's ``.Image`` ID): the question is what the running
-        container inherited, not what the new image offers.
+        A container's inspect Config is the image's defaults *merged with*
+        the user's explicit overrides, and Docker records no distinction
+        between the two. Every Dockerfile instruction that lands in Config
+        — ENV, LABEL, USER, WORKDIR, STOPSIGNAL, HEALTHCHECK, CMD,
+        ENTRYPOINT — is therefore ambiguous on recreate. Comparing against
+        the OLD image's Config is what makes them separable: whatever
+        matches the old image was inherited and must NOT be replicated, so
+        the new image gets to supply its own value.
+
+        Pass the OLD image (the container's ``.Image`` ID) — the question
+        is what the running container inherited, not what the new image
+        offers. Static so the self-update path can reuse it.
         """
         try:
             r = subprocess.run(
-                ["docker", "image", "inspect", "--format",
-                 "{{json .Config.Env}}", ref],
+                ["docker", "image", "inspect", "--format", "{{json .Config}}", ref],
                 capture_output=True, text=True, timeout=10,
             )
             if r.returncode != 0:
@@ -2512,7 +2549,7 @@ class UpdateChecker:
                 cmd = self._build_run_args(
                     config, image, name, self._get_image_defaults(image),
                     netns_name=netns_name,
-                    inherited_env=self._image_env(config.get("Image")),
+                    inherited=self._image_config(config.get("Image")),
                 )
                 run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if run.returncode != 0:
@@ -2566,7 +2603,7 @@ class UpdateChecker:
             image_defaults = self._get_image_defaults(image)
             cmd = self._build_run_args(config, image, name, image_defaults,
                                        netns_name=netns_name,
-                                       inherited_env=self._image_env(config.get("Image")))
+                                       inherited=self._image_config(config.get("Image")))
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container

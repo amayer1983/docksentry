@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.43.0] - 2026-07-18
+
+### Fixed
+Proactive audit following [#35](../../issues/35): v1.42.0 fixed `Env`, but the same trap applied to every other Dockerfile instruction that lands in a container's inspect `Config`. A container's Config is the image's defaults *merged with* the user's overrides, with no marker saying which is which — so replicating it wholesale pins the OLD image's values onto the NEW one. All of these are now filtered against the old image's own Config, and only genuine user overrides are replicated:
+
+- **Labels.** Image `LABEL`s merged in indistinguishably from user/compose ones, so an updated container kept the old image's `org.opencontainers.image.version` — precisely what the container detail view reports as "what version is this really?" ([#36](../../issues/36)). An updated container therefore kept claiming its previous version. Compose and user labels are unaffected.
+- **Healthcheck.** A code comment claimed image-default `HEALTHCHECK`s never reach `inspect.Config.Healthcheck`; that was wrong, and verified wrong against a live daemon. Pinning the old one is self-reinforcing: when a new image ships a *repaired* healthcheck, the stale one keeps failing, the post-update health gate reads that as a bad update and rolls back — so the release that fixes the check can never be installed.
+- **User.** Images that re-harden across versions (root → non-root, or a changed uid) were forced back onto their predecessor's user, causing permission errors.
+- **WorkingDir** and **StopSignal.** A relocated app directory or a changed stop signal (systemd-based images use `SIGRTMIN+3`) was overridden by the old image's value.
+- **Self-update path.** `telegram_bot._do_selfupdate` built its run arguments without the v1.42.0 env filter, so Docksentry still pinned its own stale config when updating itself. It now uses the same filter as every other path.
+
+Falls back to the previous replicate-everything behaviour whenever the old image can no longer be inspected. Test: `scripts/test_image_inherit.py` (renamed from `test_env_inherit.py`), which additionally verifies against a live Docker daemon that these fields really are image-inherited.
+
 ## [1.42.0] - 2026-07-18
 
 ### Fixed

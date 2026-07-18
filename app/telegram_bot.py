@@ -1793,7 +1793,13 @@ class TelegramBot:
         except (subprocess.SubprocessError, json.JSONDecodeError,
                 IndexError, ValueError):
             pass
-        full = _UC._build_run_args(config, own_image, own_name, image_defaults)
+        # The OLD image's Config, so inherited Env/Labels/User/WorkingDir/
+        # StopSignal/Healthcheck aren't pinned onto the new one (#35).
+        # `config` is our own container inspect, so .Image is the image we
+        # are currently running — the one we're updating away from.
+        inherited = _UC._image_config(config.get("Image") or "")
+        full = _UC._build_run_args(config, own_image, own_name, image_defaults,
+                                   inherited=inherited)
         # full = ["docker", "run", "-d", "--name", own_name, ...flags..., own_image, ...cmd...]
         # We need just the flags between "-d" and own_image:
         try:
