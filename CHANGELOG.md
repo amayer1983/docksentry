@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.42.0] - 2026-07-18
+
+### Fixed
+- **Stale environment variables pinned onto the new image** ([#35](../../issues/35), @NotRetarded). A container's `Config.Env` is the image's own `ENV` *merged with* the user's `-e` overrides, and Docker records no distinction between the two. The standalone recreate replicated all of it, which handed the NEW image the OLD image's defaults on the command line. Images that carry configuration in their own `ENV` — unifi-os-server ships its version as `ENV APP_VERSION=5.1.21` — therefore kept reporting the old version after a *successful* update: the new image really was running (image IDs matched, which is why this looked so contradictory), it just received the stale value. Docksentry now reads the old image's own `ENV` and replicates only entries that differ from it, so genuine user overrides survive while inherited defaults come fresh from the new image. Falls back to the previous replicate-everything behaviour when the old image can't be inspected. This mirrors what v1.19.0 already did for `Cmd`/`Entrypoint`; `Env` was the remaining gap. Test: `scripts/test_env_inherit.py`.
+
+### Changed
+- **Post-update image verification now covers the standalone path too.** The "did the container actually pick up the pulled image?" check added in v1.23.7 only ran for Compose stacks; the standalone recreate reported `OK` on the strength of a passing health check alone. Extracted into a shared `_verify_running_image()` and applied to both paths — on the standalone path it runs *before* the old container is dropped, so a mismatch rolls back instead of being reported as success.
+
 ## [1.41.0] - 2026-07-07
 
 ### Added

@@ -1313,7 +1313,8 @@ class UpdateChecker:
 
         cmd = self._build_run_args(config, image, name,
                                    self._get_image_defaults(image),
-                                   netns_name=netns_name)
+                                   netns_name=netns_name,
+                                   inherited_env=self._image_env(config.get("Image")))
         run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if run.returncode != 0:
             err = run.stderr.strip()[:200]
@@ -1589,12 +1590,9 @@ class UpdateChecker:
         # Verify the running container actually picked up the new image.
         # Pull + recreate can both "succeed" yet leave the container on the
         # previous image (#35) — report that honestly instead of a phantom OK.
-        pulled_id = self._image_id(image)
-        running_id = self._container_image_id(name)
-        if pulled_id and running_id and pulled_id != running_id:
-            self._debug(f"  Image mismatch: running {running_id[:19]} != pulled {pulled_id[:19]}")
-            msg = (f"Pulled the new image but {name} is still running the old one "
-                   f"(running {running_id[:19]} != pulled {pulled_id[:19]}). "
+        ok, mismatch = self._verify_running_image(name, image)
+        if not ok:
+            msg = (f"{mismatch}. "
                    f"Try `docker compose -p {project} up -d --force-recreate {service}` manually.")
             self._save_history(name, image, False, msg)
             return False, msg
@@ -1641,7 +1639,8 @@ class UpdateChecker:
         return True, f"OK ({detail})"
 
     @staticmethod
-    def _build_run_args(config, image, name, image_defaults=None, netns_name=None):
+    def _build_run_args(config, image, name, image_defaults=None, netns_name=None,
+                        inherited_env=None):
         """Reconstruct the full `docker run` argument list from a
         container's inspect dump. Single source of truth for both the
         standalone update path here and the self-update helper in
@@ -1667,6 +1666,11 @@ class UpdateChecker:
         ``image_defaults`` from callers that have already inspected
         the image (the typical update path) — _update_standalone()
         does this automatically.
+
+        ``inherited_env`` is the OLD image's own ENV list (see
+        _image_env). Entries the container merely inherited are skipped
+        so the NEW image's defaults win; only real user overrides are
+        replicated. None means "replicate everything" (pre-v1.42.0).
 
         Historical field-coverage gaps closed:
           - v1.18.10 (#27 / @famewolf): CapAdd, Devices, Sysctls,
@@ -1793,7 +1797,25 @@ class UpdateChecker:
             args.extend(["--tmpfs", spec])
 
         # ── Environment variables ──────────────────────────────
+        # A container's Env is the image's own ENV *merged with* the
+        # user's -e overrides, and Docker keeps no record of which is
+        # which. Replicating all of it pins the NEW image's defaults to
+        # the OLD image's values: an image that carries its version as
+        # `ENV APP_VERSION=...` (unifi-os-server, #35) then keeps
+        # reporting the old version forever — the new image really is
+        # running, but we handed it the old value on the command line.
+        # So drop entries the old image already defined verbatim; those
+        # were inherited, and the new image should supply them again.
+        # A var explicitly set to exactly the image default is
+        # indistinguishable from an inherited one and gets dropped too —
+        # harmless unless the new image changed that default, which is
+        # precisely the case we want the new value to win.
+        # inherited_env is None when the old image is no longer
+        # inspectable — then replicate everything (pre-v1.42.0 behaviour).
+        inherited = set(inherited_env or ())
         for env in (cfg.get("Env") or []):
+            if env in inherited:
+                continue
             args.extend(["-e", env])
 
         # ── Volumes / Mounts ───────────────────────────────────
@@ -2181,6 +2203,44 @@ class UpdateChecker:
                 IndexError, ValueError):
             return None
 
+    def _verify_running_image(self, name, image):
+        """Whether ``name`` really runs the freshly pulled ``image``.
+
+        Pull + recreate can both "succeed" yet leave the container on the
+        previous image (#35) — report that honestly instead of a phantom
+        OK. Returns ``(True, "")`` when they match or either ID can't be
+        read (fail open: never fail an update on an inspect hiccup).
+        """
+        pulled_id = self._image_id(image)
+        running_id = self._container_image_id(name)
+        if pulled_id and running_id and pulled_id != running_id:
+            self._debug(f"  Image mismatch: running {running_id[:19]} != pulled {pulled_id[:19]}")
+            return False, (f"Pulled the new image but {name} is still running the old one "
+                           f"(running {running_id[:19]} != pulled {pulled_id[:19]})")
+        return True, ""
+
+    def _image_env(self, ref):
+        """The ENV entries an image defines itself, as a list of
+        ``"KEY=value"`` strings — or ``None`` if the image can't be
+        inspected.
+
+        Used to tell a container's *inherited* environment apart from the
+        user's explicit ``-e`` overrides on recreate. Pass the OLD image
+        (the container's ``.Image`` ID): the question is what the running
+        container inherited, not what the new image offers.
+        """
+        try:
+            r = subprocess.run(
+                ["docker", "image", "inspect", "--format",
+                 "{{json .Config.Env}}", ref],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode != 0:
+                return None
+            return json.loads(r.stdout.strip() or "null")
+        except (subprocess.SubprocessError, json.JSONDecodeError, ValueError):
+            return None
+
     def _attach_extra_networks(self, container_name, config):
         """Connect a container to its additional (non-primary) networks
         after ``docker run``. The primary network (HostConfig.NetworkMode)
@@ -2451,7 +2511,8 @@ class UpdateChecker:
                             f"captured config")
                 cmd = self._build_run_args(
                     config, image, name, self._get_image_defaults(image),
-                    netns_name=netns_name
+                    netns_name=netns_name,
+                    inherited_env=self._image_env(config.get("Image")),
                 )
                 run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if run.returncode != 0:
@@ -2477,6 +2538,10 @@ class UpdateChecker:
                         msg += f"\nLast logs:\n```\n{tail}\n```"
                     self._save_history(name, image, False, msg)
                     return False, msg
+                ok_img, mismatch = self._verify_running_image(name, image)
+                if not ok_img:
+                    self._save_history(name, image, False, mismatch)
+                    return False, mismatch
                 suffix = " (recreated after auto-remove)"
                 self._save_history(name, image, True, detail + suffix)
                 return True, f"OK ({detail}){suffix}"
@@ -2500,7 +2565,8 @@ class UpdateChecker:
             # the OLD image's Cmd/Entrypoint on update.
             image_defaults = self._get_image_defaults(image)
             cmd = self._build_run_args(config, image, name, image_defaults,
-                                       netns_name=netns_name)
+                                       netns_name=netns_name,
+                                       inherited_env=self._image_env(config.get("Image")))
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container
@@ -2567,6 +2633,16 @@ class UpdateChecker:
                     msg += f"\nLast logs:\n```\n{tail}\n```"
                 self._save_history(name, image, True, f"{detail} (slow start)")
                 return True, msg
+
+            # Verify the new container really runs the pulled image before
+            # we drop the rollback target (#35). Checked here, while
+            # `<name>_old` still exists, so a mismatch can be undone.
+            ok_img, mismatch = self._verify_running_image(name, image)
+            if not ok_img:
+                self._rollback_to_old(name, old_name)
+                msg = f"{mismatch} — rolled back"
+                self._save_history(name, image, False, msg)
+                return False, msg
 
             # Remove old container
             subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
