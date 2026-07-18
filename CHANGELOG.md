@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.43.2] - 2026-07-18
+
+### Fixed
+- **Web UI "Check updates" no longer pushes the debug log to Telegram** ([#35](../../issues/35) feedback, @NotRetarded). With `DEBUG=true`, a check run sends its full debug log to the requester — right for the Telegram `/check` command, where the requester is sitting in the chat, but a Web UI click sprayed the same wall of log chunks into Telegram too. Web-triggered checks now keep the log where the Web UI already shows it (the `/logs` page); "updates found" notifications are unaffected. Scheduled checks were never affected.
+
 ## [1.43.1] - 2026-07-18
 
 ### Fixed

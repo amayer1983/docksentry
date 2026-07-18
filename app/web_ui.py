@@ -3107,7 +3107,12 @@ def create_handler(config, checker, bot, store, password=None):
 
         def _api_check(self):
             try:
-                updates = checker.check_all(bot=bot)
+                # No `bot=` here: with DEBUG on, check_all pushes its whole
+                # debug log to Telegram for the requester — right for the
+                # Telegram /check command, spam for a Web UI click (the log
+                # is on the /logs page anyway). Found-updates notifications
+                # below are unaffected. (#35 feedback, @NotRetarded)
+                updates = checker.check_all()
                 if updates:
                     bot.notify_updates(updates)
             except Exception as e:
