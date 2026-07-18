@@ -137,15 +137,32 @@ class UpdateChecker:
         return ""
 
     def _parse_image(self, image):
-        """Parse image reference into registry, repository, tag."""
+        """Parse image reference into registry, repository, tag.
+
+        Returns ``(None, None, None)`` for references that can't be
+        update-checked: bare image IDs and digest-pinned references
+        (``repo@sha256:...``). A digest pin is the user explicitly
+        freezing the image — "is there something newer?" is meaningless
+        for it, and naive parsing would split at the digest's colon and
+        produce a garbage repository/tag that fails the registry call
+        every cycle (looking like a permanently unreachable registry).
+        """
+        # Digest-pinned reference — deliberately not updatable.
+        if "@" in image:
+            return None, None, None
+
+        # Bare image ID. Must be checked BEFORE the tag split: the split
+        # would eat the digest as a ":tag", leaving `image == "sha256"`,
+        # so this guard used to be dead code and IDs were queried on
+        # Docker Hub as the nonsense repository "library/sha256".
+        if image.startswith("sha256:"):
+            return None, None, None
+
         tag = "latest"
         if ":" in image and not image.endswith(":"):
             parts = image.rsplit(":", 1)
             if "/" not in parts[1]:
                 image, tag = parts
-
-        if image.startswith("sha256:"):
-            return None, None, None
 
         # Determine registry
         if "/" not in image:
@@ -247,6 +264,32 @@ class UpdateChecker:
             self._debug(f"  Token negotiation failed: {e}")
             return None
 
+    _host_platform_cache = None
+
+    def _host_platform(self):
+        """The DAEMON's (os, architecture) — the platform images are pulled
+        for — via ``docker version``. Asking the daemon (not Python's
+        ``platform`` module) matters because Docksentry itself runs in a
+        container: the daemon may sit on a different host than us (socket
+        proxy setups). Cached per process; falls back to linux/amd64 when
+        the daemon can't say.
+        """
+        if UpdateChecker._host_platform_cache is None:
+            os_name, arch = "linux", "amd64"
+            try:
+                r = subprocess.run(
+                    ["docker", "version", "--format",
+                     "{{.Server.Os}}/{{.Server.Arch}}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                parts = r.stdout.strip().split("/")
+                if r.returncode == 0 and len(parts) == 2 and all(parts):
+                    os_name, arch = parts
+            except (subprocess.SubprocessError, OSError):
+                pass
+            UpdateChecker._host_platform_cache = (os_name, arch)
+        return UpdateChecker._host_platform_cache
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -347,13 +390,16 @@ class UpdateChecker:
             man = json.loads(raw)
         except (ValueError, TypeError):
             return {}
-        # Multi-arch index → pick a linux/amd64 (else first linux, else first)
-        # platform manifest and fetch that, since the config lives there.
+        # Multi-arch index → pick the manifest matching the HOST's platform
+        # (an ARM host reading the amd64 config would get amd64's metadata;
+        # version labels are usually arch-identical, but "usually" isn't a
+        # contract). Fall back: first linux entry, else first entry.
         if man.get("manifests"):
             entries = man["manifests"]
+            host_os, host_arch = self._host_platform()
             chosen = next((m for m in entries
-                           if (m.get("platform") or {}).get("os") == "linux"
-                           and (m.get("platform") or {}).get("architecture") == "amd64"), None)
+                           if (m.get("platform") or {}).get("os") == host_os
+                           and (m.get("platform") or {}).get("architecture") == host_arch), None)
             chosen = chosen or next((m for m in entries
                                      if (m.get("platform") or {}).get("os") == "linux"), None)
             chosen = chosen or (entries[0] if entries else None)
@@ -1444,7 +1490,8 @@ class UpdateChecker:
             image = c["image"]
             registry, repository, tag = self._parse_image(image)
             if not registry:
-                self._debug(f"  Skipped (unparseable): {c['name']} ({image})")
+                reason = "pinned by digest" if "@" in image else "unparseable"
+                self._debug(f"  Skipped ({reason}): {c['name']} ({image})")
                 continue
 
             self._debug(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")

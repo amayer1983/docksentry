@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.43.1] - 2026-07-18
+
+### Fixed
+Cross-tool audit (how do Watchtower / Diun / What's-up-Docker handle updates?) — three findings in the image-reference layer:
+
+- **Digest-pinned images (`repo@sha256:...`) were parsed as garbage.** The parser split at the digest's colon, producing repository `library/nginx@sha256` with the hex digest as "tag" — the registry call failed every check cycle, so a deliberately pinned container looked like a permanently unreachable registry (plus one wasted network call per cycle). A digest pin is the user explicitly freezing an image; it now parses as "not update-checkable" and is skipped with an honest `pinned by digest` debug reason, matching how the established tools treat pins.
+- **Bare image IDs (`sha256:...`) were queried on Docker Hub as `library/sha256`.** The guard for them sat *after* the tag split, which had already eaten the digest as a ":tag" — dead code since its introduction. Guard moved before the split.
+- **Multi-arch version metadata was always read from the linux/amd64 manifest.** On ARM hosts (Raspberry Pi, ARM NAS) the "new version" shown in update notifications came from the amd64 image's config. Update *detection* was never affected (it compares the platform-independent index digest). The platform manifest is now chosen by the daemon's own os/arch (`docker version`, cached; asking the daemon rather than Python's `platform` matters for socket-proxy setups where the daemon lives elsewhere), falling back to linux/amd64.
+
+Test: `scripts/test_image_ref.py`.
+
 ## [1.43.0] - 2026-07-18
 
 ### Fixed
