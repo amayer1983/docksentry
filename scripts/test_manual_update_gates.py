@@ -38,6 +38,7 @@ def main():
     up = _Updater()
     bot = types.SimpleNamespace()
     bot._update_lock = threading.Lock()
+    bot._run_queued_selfupdate = lambda: None
     bot.config = types.SimpleNamespace(pending_file=os.path.join(tempfile.mkdtemp(), "p.json"))
     bot.store = _Store()
     bot.notifier = None

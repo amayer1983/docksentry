@@ -81,6 +81,16 @@ class TelegramBot:
         # window) and covers every entry point.
         import threading as _threading
         self._update_lock = _threading.Lock()
+        # A /selfupdate requested while the lock is held (container batch
+        # in progress) is queued instead of killing the batch mid-flight
+        # (#2, @famewolf): the restart aborted running updates, and if it
+        # had landed during a stop/rename/recreate it would have left a
+        # renamed `_old` orphan. Holds the 1-tuple `(target,)` or None.
+        self._queued_selfupdate = None
+        # True once the helper container is launched — the process is
+        # about to be stopped, so the wrapper keeps the update lock held
+        # (nothing may start an update in the final seconds).
+        self._swap_in_flight = False
         # Per-notification snapshots of the "Updates Available" container
         # list, keyed by a short token carried in the "Update all"
         # button's callback_data (v1.23.3). Before this, "Update all"
@@ -843,6 +853,7 @@ class TelegramBot:
                 self.send_message(self.t("update_all_done"))
         finally:
             self._update_lock.release()
+            self._run_queued_selfupdate()
 
     def _is_major_bump(self, update, checker):
         """Detect whether the available update for `update` is a SemVer major
@@ -903,6 +914,7 @@ class TelegramBot:
                 self.store.remove_pending_major(name)
         finally:
             self._update_lock.release()
+            self._run_queued_selfupdate()
 
     def _restart_group_dependents(self, head_name, dependents, checker, max_wait=30):
         """After the head of a group is recreated, bring its dependents back
@@ -1168,6 +1180,7 @@ class TelegramBot:
             # block every future update.
             if auto_lock_held:
                 self._update_lock.release()
+                self._run_queued_selfupdate()
 
         # Window-skipped: tell the user once so they're not surprised
         if skipped_window:
@@ -1546,12 +1559,50 @@ class TelegramBot:
     def _handle_selfupdate(self, target=None):
         """Pull a target image and recreate own container.
 
+        Coordinates with every other update flow via `_update_lock`:
+        - Lock held (a container batch is running): the self-update is
+          QUEUED and runs automatically when the batch finishes — a
+          restart mid-batch aborted the running updates (#2, @famewolf)
+          and could have orphaned a container mid-recreate.
+        - Lock free: held for the whole self-update, so no batch can
+          start while the swap is in flight. Released on every no-update
+          path; deliberately kept once the helper is launched (this
+          process is about to be stopped).
+
         Args:
             target: optional version override:
                 None       → whatever tag the container currently runs (usually :latest)
                 "previous" → last released version older than the running one
                 "X.Y.Z"    → a specific semver tag
         """
+        if not self._update_lock.acquire(blocking=False):
+            self._queued_selfupdate = (target,)
+            self.send_message(self.t("selfupdate_queued"))
+            return
+        try:
+            self._selfupdate_locked(target)
+        finally:
+            if not self._swap_in_flight:
+                self._update_lock.release()
+
+    def _run_queued_selfupdate(self):
+        """Run a self-update that was queued behind a container batch.
+        Called by every update flow right after it releases the lock;
+        no-op when nothing is queued. Never raises (a queue hiccup must
+        not mask the batch result it runs after)."""
+        q = self._queued_selfupdate
+        if q is None:
+            return
+        self._queued_selfupdate = None
+        try:
+            self.send_message(self.t("selfupdate_dequeued"))
+            self._handle_selfupdate(q[0])
+        except Exception as e:
+            print(f"Queued selfupdate error: {e}")
+
+    def _selfupdate_locked(self, target=None):
+        """Body of _handle_selfupdate; only ever called with the update
+        lock held (see wrapper above)."""
         # Resolve our own container robustly — handles hosts where $HOSTNAME
         # isn't a directly inspect-resolvable reference (e.g. QNAP Container
         # Station reports "no such object" for it; #41, @NotRetarded).
@@ -1866,15 +1917,33 @@ class TelegramBot:
             self.send_message(f"❌ Selfupdate failed: {result.stderr[:200]}")
             return
 
-        # The helper container will stop us in ~3 seconds.
-        # Just wait here — no sys.exit needed.
+        # The helper container will stop us in ~3 seconds. Keep the update
+        # lock held from here on (see _handle_selfupdate wrapper): nothing
+        # may start a container update in the final seconds of this process.
+        self._swap_in_flight = True
         print(f"Selfupdate helper started ({helper_name}). Waiting for shutdown...")
         import time
         time.sleep(30)
 
     def check_selfupdate_auto(self, defer_check=False):
         """Automatic selfupdate check — triggered by the scheduler when
-        AUTO_SELFUPDATE=true.
+        AUTO_SELFUPDATE=true. Skips the cycle (returns False) when any
+        update flow holds the lock — killing a manual batch mid-flight is
+        the same hazard as the manual /selfupdate case (#2, @famewolf);
+        the next scheduled tick simply retries. Holds the lock through
+        its own pull+swap so no batch can start mid-self-update.
+        """
+        if not self._update_lock.acquire(blocking=False):
+            return False
+        try:
+            return self._check_selfupdate_auto_locked(defer_check)
+        finally:
+            if not self._swap_in_flight:
+                self._update_lock.release()
+
+    def _check_selfupdate_auto_locked(self, defer_check=False):
+        """Body of check_selfupdate_auto; only ever called with the
+        update lock held (see wrapper above).
 
         When `defer_check` is True (called from a cron tick that is about
         to also run a container-update check), we write a deferred-check
@@ -2037,6 +2106,7 @@ class TelegramBot:
             self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         finally:
             self._update_lock.release()
+            self._run_queued_selfupdate()
 
     def _remove_from_pending(self, names):
         """Drop the given container names from pending_updates.json

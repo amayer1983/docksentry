@@ -32,6 +32,8 @@
   "selfupdate_current_version": "🗓️ Image-Datum: {date}",
   "selfupdate_image_id": "🆔 Image: `{id}`",
   "selfupdate_up_to_date": "✅ Bereits auf dem neuesten Stand.",
+  "selfupdate_queued": "⏳ Container-Updates laufen — Selfupdate eingereiht, es startet automatisch, sobald sie abgeschlossen sind.",
+  "selfupdate_dequeued": "🚀 Container-Updates abgeschlossen — starte das eingereihte Selfupdate...",
   "selfupdate_old_tag": "✅ Der `:{current}` Image-Tag ist aktuell — aber das ist eine *feste Version*, und eine neuere Release (`v{latest}`) existiert. Dein Container kommt von `:{current}` nicht von allein weg. Zum Aktualisieren:\n• `/selfupdate {latest}` (auf die neue Version springen), oder\n• `/selfupdate latest` (zurück auf die rollende latest-Linie), oder\n• `image: amayer1983/docksentry:latest` in der Compose setzen und `docker compose up -d`.",
   "selfupdate_found": "⏳ *Neues Image gefunden!*",
   "selfupdate_dates": "🗓️ Image-Datum: {old} → {new}",
@@ -473,7 +475,6 @@
   "web_setup_next": "Weiter",
   "web_setup_finish": "Fertig & starten",
   "web_setup_skip": "Überspringen — kenne mich aus",
-
   "web_maint_active": "Wartungsmodus aktiv",
   "web_maint_until": "endet in {remaining}",
   "web_maint_forever": "bis manuell deaktiviert",
@@ -487,7 +488,6 @@
   "web_maint_status_inactive": "Wartungsmodus ist aus — geplante Checks laufen normal.",
   "web_maint_status_active": "Aktiv bis {until}",
   "web_maint_status_active_forever": "Aktiv bis zur manuellen Deaktivierung",
-
   "maintenance_active_forever": "🛠 Wartungsmodus *aktiv* (bis zur manuellen Deaktivierung).",
   "maintenance_active_until": "🛠 Wartungsmodus *aktiv* — endet in {remaining}.",
   "maintenance_inactive": "✅ Wartungsmodus ist *aus*.",
@@ -496,7 +496,6 @@
   "maintenance_enabled_forever": "🛠 Wartungsmodus aktiviert — bis zur manuellen Deaktivierung.",
   "maintenance_enabled": "🛠 Wartungsmodus aktiviert — endet um {until}.",
   "help_maintenance": "/maintenance [Dauer|off] - Pausiert geplante Checks (z. B. 2h, 30m, 1d, forever)",
-
   "web_note_title": "Notiz",
   "web_note_intro": "Freitext-Memo für diesen Container, sichtbar im Tooltip der Statusliste.",
   "web_note_placeholder": "z. B. „läuft im Host-Netzwerk — Ports vorsichtig ändern\"",
@@ -505,7 +504,6 @@
   "web_link_intro": "Optionale URL, die in Update-Benachrichtigungen um den Container-Namen gelegt wird — typischerweise das Source-Repo, die Releases-Seite oder der Upstream-Changelog. Überschreibt die Auto-Erkennung aus OCI-Labels. Leer lassen für Auto-Erkennung.",
   "web_link_placeholder": "https://github.com/owner/repo oder https://example.com/changelog",
   "web_link_save": "Link speichern",
-
   "web_ui_mode_simple": "Einfach",
   "web_ui_mode_advanced": "Erweitert",
   "web_ui_mode_show_advanced": "In erweiterten Modus wechseln",

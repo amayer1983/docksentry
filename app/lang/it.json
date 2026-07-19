@@ -30,6 +30,8 @@
   "selfupdate_current_version": "🗓️ Data immagine: {date}",
   "selfupdate_image_id": "🆔 Immagine: `{id}`",
   "selfupdate_up_to_date": "✅ Già aggiornato.",
+  "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
+  "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
   "selfupdate_found": "⏳ *Nuova immagine trovata!*",
   "selfupdate_dates": "🗓️ Data immagine: {old} → {new}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",

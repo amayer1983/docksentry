@@ -32,6 +32,8 @@
   "selfupdate_current_version": "🗓️ Image date: {date}",
   "selfupdate_image_id": "🆔 Image: `{id}`",
   "selfupdate_up_to_date": "✅ Already up to date.",
+  "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
+  "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
   "selfupdate_old_tag": "✅ The `:{current}` image tag is up to date — but that's a *fixed version*, and a newer release (`v{latest}`) exists. Your container won't move past `:{current}` on its own. To upgrade:\n• `/selfupdate {latest}` (jump to the new version), or\n• `/selfupdate latest` (rejoin the rolling latest line), or\n• set `image: amayer1983/docksentry:latest` in your compose and `docker compose up -d`.",
   "selfupdate_found": "⏳ *New image found!*",
   "selfupdate_dates": "🗓️ Image date: {old} → {new}",
@@ -473,7 +475,6 @@
   "web_setup_next": "Next",
   "web_setup_finish": "Finish & start",
   "web_setup_skip": "Skip — I know what I'm doing",
-
   "web_maint_active": "Maintenance mode active",
   "web_maint_until": "ends in {remaining}",
   "web_maint_forever": "until manually disabled",
@@ -487,7 +488,6 @@
   "web_maint_status_inactive": "Maintenance mode is off — scheduled checks run as normal.",
   "web_maint_status_active": "Active until {until}",
   "web_maint_status_active_forever": "Active until manually disabled",
-
   "maintenance_active_forever": "🛠 Maintenance mode is *active* (until manually disabled).",
   "maintenance_active_until": "🛠 Maintenance mode is *active* — ends in {remaining}.",
   "maintenance_inactive": "✅ Maintenance mode is *off*.",
@@ -496,7 +496,6 @@
   "maintenance_enabled_forever": "🛠 Maintenance mode enabled — until manually disabled.",
   "maintenance_enabled": "🛠 Maintenance mode enabled — ends at {until}.",
   "help_maintenance": "/maintenance [duration|off] - Pause scheduled checks (e.g. 2h, 30m, 1d, forever)",
-
   "web_note_title": "Note",
   "web_note_intro": "Free-text memo for this container, visible in the status table tooltip.",
   "web_note_placeholder": "e.g. \"runs on host network — careful with port changes\"",
@@ -505,7 +504,6 @@
   "web_link_intro": "Optional URL wrapped around this container's name in update notifications — typically the source repo, releases page, or upstream changelog. Overrides the auto-detection from OCI labels. Leave empty to fall back to auto-detection.",
   "web_link_placeholder": "https://github.com/owner/repo or https://example.com/changelog",
   "web_link_save": "Save link",
-
   "web_ui_mode_simple": "Simple",
   "web_ui_mode_advanced": "Advanced",
   "web_ui_mode_show_advanced": "Switch to Advanced mode",

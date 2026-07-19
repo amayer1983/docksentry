@@ -30,6 +30,8 @@
   "selfupdate_current_version": "🗓️ इमेज दिनांक: {date}",
   "selfupdate_image_id": "🆔 इमेज: `{id}`",
   "selfupdate_up_to_date": "✅ पहले से अद्यतित।",
+  "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
+  "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
   "selfupdate_found": "⏳ *नई इमेज मिली!*",
   "selfupdate_dates": "🗓️ इमेज दिनांक: {old} → {new}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",

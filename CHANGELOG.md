@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.44.0] - 2026-07-19
+
+### Fixed
+- **`/selfupdate` no longer kills a running container-update batch** ([#2](../../issues/2), @famewolf). A self-update issued while updates were in progress restarted Docksentry mid-batch: the batch died, its updates were re-offered after the restart — and had the restart landed during a stop/rename/recreate, it would have left a renamed `_old` orphan (a #43-style brick). Self-updates now coordinate with every other flow through the shared update mutex:
+  - `/selfupdate` during a batch is **queued** and announced ("self-update queued, it will start automatically once they finish"), then runs exactly once when the batch completes.
+  - A running self-update **holds the lock through its own pull+swap**, so no batch can start in the final seconds before the restart.
+  - `AUTO_SELFUPDATE` skips its cycle when any update flow holds the lock (next tick retries) instead of killing a manual batch.
+  - **Web UI single-container updates now take the same mutex** — they used to run fully uncoordinated, so they could collide with a running batch or a self-update swap.
+
+  New i18n keys `selfupdate_queued` / `selfupdate_dequeued` (16 languages). Test: `scripts/test_selfupdate_queue.py`.
+
 ## [1.43.2] - 2026-07-18
 
 ### Fixed

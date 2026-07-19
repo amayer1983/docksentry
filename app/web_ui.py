@@ -3084,6 +3084,12 @@ def create_handler(config, checker, bot, store, password=None):
 
         def _api_update(self, name):
             """Trigger update for a single container from Web UI."""
+            # Same mutex as every bot-side update flow — Web UI updates
+            # used to run uncoordinated, so they could collide with a
+            # running batch or a self-update swap (#2 follow-up).
+            if not bot._update_lock.acquire(blocking=False):
+                bot.send_message(bot.t("update_already_running"))
+                return
             try:
                 if not os.path.exists(config.pending_file):
                     return
@@ -3104,6 +3110,9 @@ def create_handler(config, checker, bot, store, password=None):
                 atomic_write_json(config.pending_file, remaining)
             except Exception as e:
                 print(f"Web UI update error: {e}")
+            finally:
+                bot._update_lock.release()
+                bot._run_queued_selfupdate()
 
         def _api_check(self):
             try:

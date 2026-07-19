@@ -26,6 +26,7 @@ def run(all_auto, auto_list):
         get_update_windows=lambda: {},
         get_autoupdate=lambda: set(auto_list))
     bot._update_lock = threading.Lock()
+    bot._run_queued_selfupdate = lambda: None
     bot._get_autoupdate = lambda: set(auto_list)
     bot.t = get_translator("en")
     bot.send_message = lambda *a, **k: None
