@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.44.1] - 2026-07-19
+
+### Fixed
+- **A queued self-update is cancelled when the batch flow itself crashes** ([#2](../../issues/2) follow-up, @famewolf asked exactly this: "what happens if container updates FAIL with a queued selfupdate afterward?"). Two failure classes, two answers:
+  - *Per-container failures* (rollback, "left in place") are normal batch results — reported first, and the queued self-update still runs afterwards; a Docksentry restart can't make an already-handled container worse.
+  - *A flow-level crash* (exception in the batch machinery, state unknown, error not yet reported) now **cancels** the queued self-update with an honest message ("run /selfupdate again when ready") instead of restarting on top of an unreported error — the restart could have killed the process before the error message ever went out. New i18n key `selfupdate_queue_cancelled` (16 languages).
+
 ## [1.44.0] - 2026-07-19
 
 ### Fixed

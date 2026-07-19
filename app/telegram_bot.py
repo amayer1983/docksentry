@@ -1589,11 +1589,27 @@ class TelegramBot:
         """Run a self-update that was queued behind a container batch.
         Called by every update flow right after it releases the lock;
         no-op when nothing is queued. Never raises (a queue hiccup must
-        not mask the batch result it runs after)."""
+        not mask the batch result it runs after).
+
+        Per-container update FAILURES don't stop the queued run: they are
+        normal batch results — reported, rolled back / left in place —
+        and a Docksentry restart can't make them worse. But when we're
+        called during an exception unwind (the batch flow itself crashed,
+        state unknown, error not yet reported), restarting on top of that
+        would be reckless and could kill the process before the error
+        message ever goes out — so the queued self-update is CANCELLED
+        with an honest message instead (#2 follow-up, @famewolf)."""
         q = self._queued_selfupdate
         if q is None:
             return
         self._queued_selfupdate = None
+        import sys as _sys
+        if _sys.exc_info()[0] is not None:
+            try:
+                self.send_message(self.t("selfupdate_queue_cancelled"))
+            except Exception:
+                pass
+            return
         try:
             self.send_message(self.t("selfupdate_dequeued"))
             self._handle_selfupdate(q[0])

@@ -34,6 +34,7 @@
   "selfupdate_up_to_date": "✅ Bereits auf dem neuesten Stand.",
   "selfupdate_queued": "⏳ Container-Updates laufen — Selfupdate eingereiht, es startet automatisch, sobald sie abgeschlossen sind.",
   "selfupdate_dequeued": "🚀 Container-Updates abgeschlossen — starte das eingereihte Selfupdate...",
+  "selfupdate_queue_cancelled": "⚠️ Eingereihtes Selfupdate abgebrochen — der Update-Lauf ist auf einen unerwarteten Fehler gestoßen. Bei Bedarf /selfupdate erneut ausführen.",
   "selfupdate_old_tag": "✅ Der `:{current}` Image-Tag ist aktuell — aber das ist eine *feste Version*, und eine neuere Release (`v{latest}`) existiert. Dein Container kommt von `:{current}` nicht von allein weg. Zum Aktualisieren:\n• `/selfupdate {latest}` (auf die neue Version springen), oder\n• `/selfupdate latest` (zurück auf die rollende latest-Linie), oder\n• `image: amayer1983/docksentry:latest` in der Compose setzen und `docker compose up -d`.",
   "selfupdate_found": "⏳ *Neues Image gefunden!*",
   "selfupdate_dates": "🗓️ Image-Datum: {old} → {new}",

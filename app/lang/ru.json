@@ -32,6 +32,7 @@
   "selfupdate_up_to_date": "✅ Уже обновлено.",
   "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
   "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
+  "selfupdate_queue_cancelled": "⚠️ Queued self-update cancelled — the update run hit an unexpected error. Run /selfupdate again when ready.",
   "selfupdate_found": "⏳ *Найден новый образ!*",
   "selfupdate_dates": "🗓️ Дата образа: {old} → {new}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",

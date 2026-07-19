@@ -32,6 +32,7 @@
   "selfupdate_up_to_date": "✅ 이미 최신입니다.",
   "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
   "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
+  "selfupdate_queue_cancelled": "⚠️ Queued self-update cancelled — the update run hit an unexpected error. Run /selfupdate again when ready.",
   "selfupdate_found": "⏳ *새 이미지 발견!*",
   "selfupdate_dates": "🗓️ 이미지 날짜: {old} → {new}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",

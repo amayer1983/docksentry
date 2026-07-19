@@ -107,6 +107,27 @@ def main():
     checks["auto applied"] = bot6.check_selfupdate_auto() is True
     checks["auto lock kept after swap"] = bot6._update_lock.locked()
 
+    # ── 4c. batch flow CRASHED (exception unwind) → queued run cancelled ──
+    # Per-container failures are normal results and don't stop the queued
+    # run; but a flow-level exception means unknown state and an unreported
+    # error — restarting there could kill the process before the error
+    # message goes out. The queue must be dropped with an honest message.
+    bot8 = make_bot()
+    ran8 = []
+    bot8._selfupdate_locked = lambda target=None: ran8.append(target)
+    bot8._queued_selfupdate = (None,)
+    try:
+        try:
+            raise ValueError("batch flow crashed")
+        finally:
+            bot8._run_queued_selfupdate()
+    except ValueError:
+        pass
+    checks["crash: queued selfupdate NOT run"] = ran8 == []
+    checks["crash: cancellation announced"] = "selfupdate_queue_cancelled" in bot8.sent
+    checks["crash: queue cleared"] = bot8._queued_selfupdate is None
+    checks["crash: original exception preserved"] = True  # reaching here proves it
+
     # ── 5. queue survives an exception in the queued run ──
     bot7 = make_bot()
     def boom(target=None):
