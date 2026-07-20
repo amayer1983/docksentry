@@ -33,6 +33,8 @@
   "selfupdate_queued": "⏳ Container updates in progress — self-update queued, it will start automatically once they finish.",
   "selfupdate_dequeued": "🚀 Container updates finished — starting the queued self-update...",
   "selfupdate_queue_cancelled": "⚠️ Queued self-update cancelled — the update run hit an unexpected error. Run /selfupdate again when ready.",
+  "cleanup_busy": "⏳ Updates in progress — cleanup skipped so it can't delete a freshly pulled image. Try again once they finish.",
+  "lifecycle_busy": "⏳ Updates in progress — {action} refused so it can't interfere with a running update. Try again once they finish.",
   "selfupdate_found": "⏳ *Nuova immagine trovata!*",
   "selfupdate_dates": "🗓️ Data immagine: {old} → {new}",
   "selfupdate_ids": "🆔 `{old}` → `{new}`",

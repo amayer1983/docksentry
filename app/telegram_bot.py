@@ -514,6 +514,16 @@ class TelegramBot:
         if action in ("stop", "restart") and checker._would_kill_self(name):
             return False, self.t("lifecycle_refused_self", action=action, name=name)
 
+        # No user lifecycle actions while any update flow runs (#2
+        # follow-up, @famewolf's "other fringe cases"). A stop during the
+        # post-update health wait reads as unhealthy and triggers a bogus
+        # rollback of a good update; a restart can hit a container that is
+        # mid stop/rename/recreate. The update machinery itself doesn't go
+        # through this method (it calls _stop_container / docker restart
+        # directly), so this can never block an update's own steps.
+        if self.update_running:
+            return False, self.t("lifecycle_busy", action=action)
+
         # Stop-protection (#38): a container the user marked must not be
         # stopped (e.g. the VPN/tunnel carrying their remote access).
         # Restart stays allowed — brief downtime during update/rollback is
@@ -1584,6 +1594,29 @@ class TelegramBot:
         finally:
             if not self._swap_in_flight:
                 self._update_lock.release()
+
+    def cleanup_guarded(self, checker):
+        """Run image cleanup under the shared update mutex (#2 follow-up,
+        @famewolf). `docker image prune -a` filters on image CREATION
+        time, so an image built upstream days ago but pulled seconds ago
+        is fair game — pruning during an update's pull→run window would
+        delete the image the update is about to run. Serializing through
+        the same lock closes that window for every trigger (Telegram
+        /cleanup, Web UI button, disk-warning auto-cleanup, post-update
+        auto-cleanup).
+
+        Returns (ok, msg) from cleanup_images, or (None, busy-msg) when
+        an update flow holds the lock — callers decide how loudly to
+        report the skip. A skipped cleanup is never dangerous: the next
+        trigger simply runs it.
+        """
+        if not self._update_lock.acquire(blocking=False):
+            return None, self.t("cleanup_busy")
+        try:
+            return checker.cleanup_images()
+        finally:
+            self._update_lock.release()
+            self._run_queued_selfupdate()
 
     def _run_queued_selfupdate(self):
         """Run a self-update that was queued behind a container batch.
@@ -2878,8 +2911,10 @@ class TelegramBot:
 
         elif text == "/cleanup":
             self.send_message(self.t("cleanup_starting"))
-            ok, msg = checker.cleanup_images()
-            if ok and "Nothing" in msg:
+            ok, msg = self.cleanup_guarded(checker)
+            if ok is None:
+                self.send_message(msg)
+            elif ok and "Nothing" in msg:
                 self.send_message(self.t("cleanup_none"))
             elif ok:
                 self.send_message(f"✅ {msg}")

@@ -3130,7 +3130,11 @@ def create_handler(config, checker, bot, store, password=None):
         def _api_cleanup(self):
             """Run `docker image prune` to free disk space (manual trigger)."""
             try:
-                ok, msg = checker.cleanup_images()
+                ok, msg = bot.cleanup_guarded(checker)
+                if ok is None:
+                    bot.send_message(msg)
+                    print(f"Cleanup skipped: {msg}")
+                    return
                 if bot.enabled:
                     bot.send_message(f"{'✅' if ok else '❌'} {msg}")
                 if bot.notifier and bot.notifier.has_channels():

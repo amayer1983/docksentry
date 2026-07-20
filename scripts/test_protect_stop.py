@@ -42,6 +42,7 @@ def main():
     # exercises the actual path (the throwaway container has no docksentry.*
     # labels, so it falls back to the store toggle).
     bot._is_protected = lambda *a, **k: TelegramBot._is_protected(bot, *a, **k)
+    bot.update_running = False
     act = lambda a: TelegramBot._lifecycle_action(bot, a, NAME, checker)
 
     subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)

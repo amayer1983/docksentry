@@ -276,13 +276,19 @@ class Scheduler:
                 # built images are saved as tarballs first.
                 if self.config.auto_cleanup and auto_updated > 0:
                     try:
-                        ok, msg = self.checker.cleanup_images()
-                        print(f"Auto cleanup: {msg}")
-                        notifier = getattr(self.bot, "notifier", None)
-                        if ok and notifier and notifier.has_channels():
-                            notifier.send_message(f"🧹 Auto cleanup: {msg}")
-                        if ok and self.bot.enabled:
-                            self.bot.send_message(f"🧹 {msg}", auto=True)
+                        # Guarded: skips silently if another update flow
+                        # (e.g. a manual batch in the bot thread) holds the
+                        # mutex right now — the next trigger cleans instead.
+                        ok, msg = self.bot.cleanup_guarded(self.checker)
+                        if ok is None:
+                            print(f"Auto cleanup skipped: {msg}")
+                        else:
+                            print(f"Auto cleanup: {msg}")
+                            notifier = getattr(self.bot, "notifier", None)
+                            if ok and notifier and notifier.has_channels():
+                                notifier.send_message(f"🧹 Auto cleanup: {msg}")
+                            if ok and self.bot.enabled:
+                                self.bot.send_message(f"🧹 {msg}", auto=True)
                     except Exception as e:
                         print(f"Auto cleanup error: {e}")
 
@@ -339,7 +345,13 @@ class Scheduler:
 
         if self.config.disk_warn_auto_cleanup:
             print("Disk warning + auto-cleanup enabled — running cleanup")
-            ok, cmsg = self.checker.cleanup_images()
+            # Guarded: if an update is mid-flight, pruning now could delete
+            # the image it just pulled. Skip — the disk monitor re-fires on
+            # its own cadence, so a genuinely full disk retries in minutes.
+            ok, cmsg = self.bot.cleanup_guarded(self.checker)
+            if ok is None:
+                print(f"Disk auto cleanup skipped: {cmsg}")
+                return
             full = f"🧹 Auto cleanup (disk): {cmsg}"
             if notifier and notifier.has_channels():
                 notifier.send_message(full)

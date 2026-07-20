@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.45.0] - 2026-07-20
+
+### Fixed
+Systematic pass over every docker-mutating operation, prompted by @famewolf's "imagine /cleanup would also want to respect the queue — not sure if there are other fringe cases" ([#2](../../issues/2)). v1.44.x serialized the update flows; this closes the rest:
+
+- **Cleanup can no longer delete an image an update just pulled.** `docker image prune -a` filters on image *creation* time, so an image built upstream days ago but pulled seconds ago was fair game — pruning during an update's pull→recreate window would have removed the image the update was about to run (recoverable via re-pull, but a real reliability hole; with a registry outage, a failed update). All four cleanup triggers — Telegram `/cleanup`, Web UI button, disk-warning auto-cleanup, post-auto-update cleanup — now take the shared update mutex via `cleanup_guarded()`: manual triggers report "⏳ Updates in progress — cleanup skipped", automatic ones skip silently and retry on their own cadence. Conversely, updates can't start mid-prune.
+- **Stop/start/restart are refused while an update runs.** A user `/stop` landing during the post-update health wait read as "unhealthy" and triggered a bogus rollback of a perfectly good update; a restart could hit a container mid stop/rename/recreate. All lifecycle entry points (Telegram commands, bulk actions, Web UI buttons) funnel through `_lifecycle_action`, which now refuses with an honest message while any update flow holds the mutex. The update machinery itself bypasses this method, so its own stop/restart steps are never blocked.
+- A self-update queued while cleanup holds the mutex runs right after cleanup finishes.
+
+New i18n keys `cleanup_busy` / `lifecycle_busy` (16 languages). Test: `scripts/test_op_coordination.py`.
+
 ## [1.44.1] - 2026-07-19
 
 ### Fixed
