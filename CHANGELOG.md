@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.46.0] - 2026-07-20
+
+### Added
+- **Complete `docksentry.*` label family — GitOps-style per-container control from the compose file** ([#42](../../issues/42), @LeeNX). v1.32.0 added `enable`/`exclude`/`protect`; this completes the set so every per-container toggle has a declarative twin:
+  - `docksentry.pin=true` — freeze a container (twin of `/pin`): never listed, never updated.
+  - `docksentry.auto=true|false` — opt in to / out of auto-updates. `=false` keeps a container manual **even under `AUTO_UPDATE_ALL=true`** (it still shows up in the manual "updates available" notification); `=true` opts in without the Web-UI toggle.
+  - `docksentry.ask-major=true|false` — require / skip the major-version confirmation gate for auto-updates.
+  - `docksentry.trust-running=true` — accept "running" as healthy after updates (#9 behaviour).
+
+  Precedence everywhere: label wins over the stored bot/Web-UI toggle; no label → toggle applies, exactly as before. The Web UI status table now shows the *effective* Pin/Auto state (label included) instead of just the stored toggle. README documents the full family. Tests: `scripts/test_labels.py` extended (34 checks).
+
 ## [1.45.0] - 2026-07-20
 
 ### Fixed

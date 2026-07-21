@@ -1052,8 +1052,18 @@ class TelegramBot:
                 if wait_s > 0:
                     _time.sleep(wait_s)
 
-            # Major-version confirmation gate — auto only (per-container opt-in).
-            if auto and u["name"] in ask_major_list:
+            # Major-version confirmation gate — auto only (per-container
+            # opt-in). A `docksentry.ask-major` label wins over the stored
+            # toggle (#42, @LeeNX); no label → stored list as before.
+            ask_lab = None
+            if auto:
+                try:
+                    ask_lab = checker.label_bool(
+                        checker.get_container_labels(u["name"]), "ask-major")
+                except Exception:
+                    ask_lab = None
+            ask_this = ask_lab if ask_lab is not None else (u["name"] in ask_major_list)
+            if auto and ask_this:
                 is_major, old_ver, new_ver = self._is_major_bump(u, checker)
                 if is_major:
                     self.store.add_pending_major(u["name"], {
@@ -1142,12 +1152,31 @@ class TelegramBot:
         # place, so this only auto-applies things that were already going to
         # be reported. Off by default — the per-container list still rules.
         all_auto = getattr(self.config, "auto_update_all", False)
-        auto_candidates = list(updates) if all_auto else [u for u in updates if u["name"] in auto_list]
+
+        def _effective_auto(u):
+            """Auto-update this container? A `docksentry.auto` label wins
+            over both the stored per-container toggle and AUTO_UPDATE_ALL
+            (#42, @LeeNX — compose file as source of truth): `auto=false`
+            keeps a container manual even under AUTO_UPDATE_ALL, `auto=true`
+            opts it in without touching the Web UI. No label → previous
+            behaviour."""
+            lab = None
+            if checker is not None:
+                try:
+                    lab = checker.label_bool(
+                        checker.get_container_labels(u["name"]), "auto")
+                except Exception:
+                    lab = None
+            if lab is not None:
+                return lab
+            return all_auto or u["name"] in auto_list
+
+        auto_candidates = [u for u in updates if _effective_auto(u)]
         # Filter out containers whose maintenance window is closed right now
         skipped_window = [u for u in auto_candidates
                           if not is_window_open(windows.get(u["name"]))]
         auto_updates = [u for u in auto_candidates if u not in skipped_window]
-        manual_updates = [] if all_auto else [u for u in updates if u["name"] not in auto_list]
+        manual_updates = [u for u in updates if u not in auto_candidates]
         success_count = 0
         major_pending_now = []
 

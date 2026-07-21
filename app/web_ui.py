@@ -379,6 +379,10 @@ def create_handler(config, checker, bot, store, password=None):
                     "health": health,
                     "version": info.get("version", ""),
                     "short_id": info.get("short_id", ""),
+                    # docksentry.* labels drive per-container overrides
+                    # (#42) — carried along so the table can show EFFECTIVE
+                    # states instead of just the stored toggles.
+                    "labels": (cfg.get("Config") or {}).get("Labels") or {},
                 })
             return containers
 
@@ -1648,6 +1652,7 @@ def create_handler(config, checker, bot, store, password=None):
             t = get_translator(config.language)
 
             rows = ""
+            from update_checker import UpdateChecker as _UC
             for c in containers:
                 health = c.get("health", "")
                 if health == "healthy":
@@ -1679,14 +1684,19 @@ def create_handler(config, checker, bot, store, password=None):
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
                 name_attr = _e(c["name"])
-                is_auto = c["name"] in auto_list
+                # Effective states: a docksentry.* label overrides the
+                # stored toggle (#42, @LeeNX) — the table must show what
+                # actually applies, not just what was clicked in the UI.
+                _lab_auto = _UC.label_bool(c.get("labels"), "auto")
+                _lab_pin = _UC.label_bool(c.get("labels"), "pin")
+                is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
                 # Dedicated Auto column (#2, @NotRetarded): a clear on/off cell
                 # instead of a name-cell badge that wrapped under long names.
                 auto_cell = (
                     f'<span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
                     if is_auto else '<span class="muted">—</span>')
                 is_askm = c["name"] in ask_major
-                is_pinned_c = c["name"] in pinned
+                is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
                 update_btn = (
                     f'<form method="POST" action="/api/update" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'

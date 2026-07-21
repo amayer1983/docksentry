@@ -247,17 +247,22 @@ services:
   myapp:
     image: ghcr.io/me/myapp:latest
     labels:
-      - "docksentry.exclude=true"     # take this container out of Docksentry's scope
+      - "docksentry.auto=true"        # auto-update this container without touching the Web UI
       - "docksentry.protect=true"     # refuse /stop for this container (#38-style protection)
+      - "docksentry.ask-major=true"   # pause auto-updates on major version bumps until confirmed
 ```
 
 | Label | Effect |
 |-------|--------|
-| `docksentry.enable=false` | Exclude from update checks (equivalent to `/pin`) |
+| `docksentry.enable=false` | Take the container out of Docksentry's scope entirely (not checked, not listed) |
 | `docksentry.exclude=true` | Same as `docksentry.enable=false` |
+| `docksentry.pin=true` | Freeze the container — never listed as an update, never updated (twin of `/pin`) |
+| `docksentry.auto=true` / `=false` | Opt in to / out of auto-updates. `=false` keeps a container manual **even with `AUTO_UPDATE_ALL=true`**; `=true` opts it in without the per-container toggle |
 | `docksentry.protect=true` | Protect from `/stop` (a `=false` label force-unprotects, overriding the toggle) |
+| `docksentry.ask-major=true` / `=false` | Require / skip the major-version confirmation gate for auto-updates |
+| `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
 
-Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). More label-driven settings (auto-update, cooldown, …) may follow — open an issue if there's one you need.
+Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere: **label wins over the stored bot/Web-UI toggle; no label → toggle applies.** The Web UI status table shows the *effective* state (label included) for Pin and Auto — note that clicking a UI toggle cannot override a label; remove the label from your compose file instead.
 
 ## Configuration
 

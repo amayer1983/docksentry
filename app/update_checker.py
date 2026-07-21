@@ -67,6 +67,12 @@ class UpdateChecker:
             if name in self._get_pinned():
                 self._debug(f"  Skipped (pinned): {name}")
                 continue
+            # GitOps twin of /pin (#42, @LeeNX): freeze a container from its
+            # own compose file. Same effect as the stored pin — never listed,
+            # never updated.
+            if self.label_bool(labels, "pin") is True:
+                self._debug(f"  Skipped (pinned via label): {name}")
+                continue
             # Per-container label opt-out (#42, @LeeNX): a GitOps-friendly way
             # to take a container out of Docksentry's scope from the compose
             # file itself — `docksentry.enable=false` or `docksentry.exclude=true`.
@@ -1291,9 +1297,17 @@ class UpdateChecker:
 
     def _is_trust_running(self, name):
         """Whether the user opted this container into "accept running over
-        unhealthy" (#9). Read straight from the data file — the checker only
-        holds `config`, not a ContainerStore — and fail closed (default to
-        the strict healthcheck behaviour) on any read error."""
+        unhealthy" (#9). A `docksentry.trust-running` label wins over the
+        stored toggle (#42, @LeeNX — compose as source of truth); otherwise
+        read straight from the data file — the checker only holds `config`,
+        not a ContainerStore — and fail closed (default to the strict
+        healthcheck behaviour) on any read error."""
+        try:
+            lab = self.label_bool(self.get_container_labels(name), "trust-running")
+            if lab is not None:
+                return lab
+        except Exception:
+            pass
         try:
             path = getattr(self.config, "trust_running_file", None)
             if path and os.path.exists(path):

@@ -64,6 +64,47 @@ def main():
     checks["protect: no label -> toggle (off)"] = protected(None, False) is False
     checks["protect: inspect failure -> toggle (on, never unprotect)"] = protected("false", True, boom=True) is True
 
+    # ── docksentry.pin (mirrors get_running_containers) ────────
+    checks["pin: label true -> skipped"] = lb({"docksentry.pin": "true"}, "pin") is True
+    checks["pin: label false -> kept"] = lb({"docksentry.pin": "false"}, "pin") is False
+    checks["pin: absent -> stored pin rules"] = lb({}, "pin") is None
+
+    # ── docksentry.auto precedence (mirrors handle_autoupdates) ─
+    def effective_auto(label_val, all_auto, in_list):
+        labels = {"docksentry.auto": label_val} if label_val is not None else {}
+        lab = lb(labels, "auto")
+        if lab is not None:
+            return lab
+        return all_auto or in_list
+
+    checks["auto: label false beats AUTO_UPDATE_ALL"] = effective_auto("false", True, True) is False
+    checks["auto: label true beats missing toggle"] = effective_auto("true", False, False) is True
+    checks["auto: no label + all_auto"] = effective_auto(None, True, False) is True
+    checks["auto: no label + toggle"] = effective_auto(None, False, True) is True
+    checks["auto: no label + nothing -> manual"] = effective_auto(None, False, False) is False
+
+    # ── docksentry.trust-running via checker (#9 + #42) ─────────
+    class _TRConfig:
+        trust_running_file = None
+    def trust(label_val):
+        ck = UpdateChecker.__new__(UpdateChecker)
+        ck.config = _TRConfig()
+        labels = {"docksentry.trust-running": label_val} if label_val is not None else {}
+        ck.get_container_labels = lambda name: labels
+        return ck._is_trust_running("c")
+    checks["trust: label true"] = trust("true") is True
+    checks["trust: label false"] = trust("false") is False
+    checks["trust: absent -> stored (off)"] = trust(None) is False
+
+    # ── docksentry.ask-major precedence (mirrors batch gate) ────
+    def ask_major(label_val, in_list):
+        labels = {"docksentry.ask-major": label_val} if label_val is not None else {}
+        lab = lb(labels, "ask-major")
+        return lab if lab is not None else in_list
+    checks["ask-major: label true forces gate"] = ask_major("true", False) is True
+    checks["ask-major: label false skips gate"] = ask_major("false", True) is False
+    checks["ask-major: absent -> stored list"] = ask_major(None, True) is True
+
     # ── /cmd -? help alias (#15) ───────────────────────────────
     ha = TelegramBot._help_alias
     checks["alias: /protect -? -> /help protect"] = ha("/protect -?") == "/help protect"
