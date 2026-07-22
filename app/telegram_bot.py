@@ -486,8 +486,23 @@ class TelegramBot:
         # to "what version is this really?" beyond a rolling :latest tag.
         image_id = cfg.get("Image", "") or ""
         short_id = image_id[7:19] if image_id.startswith("sha256:") else image_id[:12]
-        version = ((config.get("Labels") or {}).get(
-            "org.opencontainers.image.version") or "").strip()
+        # Version from the RUNNING image's own label, not the container's:
+        # pre-v1.43.0 recreates pinned stale version labels onto containers
+        # (#46, @LeeNX — /status kept showing the old version after every
+        # selfupdate). The image can't lie about itself; the container can.
+        version = ""
+        if image_id:
+            r = subprocess.run(
+                ["docker", "image", "inspect", "--format",
+                 '{{index .Config.Labels "org.opencontainers.image.version"}}',
+                 image_id],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                version = r.stdout.strip()
+        if not version:
+            version = ((config.get("Labels") or {}).get(
+                "org.opencontainers.image.version") or "").strip()
 
         return {
             "name": cfg.get("Name", "").lstrip("/"),

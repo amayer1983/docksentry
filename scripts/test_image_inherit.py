@@ -90,6 +90,22 @@ def main():
     checks["healthcheck: inherited not pinned"] = flags(a, "--health-cmd") == []
     checks["healthcheck: no interval either"] = flags(a, "--health-interval") == []
 
+    # -- Sticky stale OCI label (#46, @LeeNX) --
+    # Pre-v1.43.0 recreates pinned e.g. version=1.40.1 explicitly onto the
+    # container. That stale value differs from the old image's own label,
+    # so the plain value-comparison saw a "user override" and carried it
+    # through every future update -- /status showed 1.40.1 forever. The
+    # org.opencontainers.* namespace is image metadata and must NEVER be
+    # replicated, match or no match.
+    stale = dict(container)
+    stale["Labels"] = dict(container["Labels"],
+                           **{"org.opencontainers.image.version": "1.40.1"})
+    s = build(stale, old_img)
+    checks["sticky: stale OCI version dropped despite mismatch"] = not any(
+        x.startswith("org.opencontainers.") for x in flags(s, "--label"))
+    checks["sticky: compose label still kept"] = (
+        "com.docker.compose.project=stack" in flags(s, "--label"))
+
     # -- Genuine overrides must all survive --
     over = dict(container,
                 User="1000:1000", WorkingDir="/data", StopSignal="SIGKILL",

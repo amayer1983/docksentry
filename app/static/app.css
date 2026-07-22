@@ -843,3 +843,7 @@ pre {
 /* docksentry.* label authority marker (#42, @LeeNX) */
 .label-mark { opacity: .75; font-size: .85em; cursor: help; }
 .btn-icon:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Legend icons mirror the real button styling (colours included) but are
+   inert — they're keys, not controls (#46, @LeeNX). */
+.icon-legend .btn-icon { cursor: default; pointer-events: none; }

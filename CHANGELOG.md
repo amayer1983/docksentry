@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.47.0] - 2026-07-22
+
+### Fixed
+Both reports from [#46](../../issues/46) plus the version-display mystery from [#43](../../issues/43) (@LeeNX):
+
+- **Stale version numbers after self-updates — the "sticky label" bug.** Pre-v1.43.0 recreates pinned `org.opencontainers.image.version=<old>` explicitly onto containers. The v1.43.0 inherited-filter compares against the old image's own label — a stale value *differs* from it, so it masqueraded as a user override and stuck to the container through every future update: `/status docksentry` and the detail view kept reporting the old version forever. Two-part fix:
+  - `org.opencontainers.*` labels are now **never** replicated on recreate — they're image metadata, the new image always supplies its own. (Root fix, prevents new stickiness.)
+  - `/status` and the Web UI now read the version from the **running image's** label instead of the container's — the image can't lie about itself, the container can. This heals already-sticky containers immediately, no re-recreate needed. The Web UI table also keys by the running image **ID** rather than the tag, so a container still on an older image no longer borrows the tag's newer version.
+- **`docksentry.protect` label was invisible to the Web UI.** Label-protected containers still showed the Stop button (the stop itself was refused — the backend has been label-aware since v1.32.0 — but the UI lied). Stop-button visibility, a new 🛡 badge (with 🏷 when label-controlled), and the detail-view protect checkbox (disabled under label control) now all use the effective state.
+- **Icon legend fixes:** keys now carry the same styling as the real buttons (Update shows its active colour, Stop its red), a Restart key was added (same glyph as Update — colour is the differentiator, which the legend now actually shows), tooltips on every key, and a 🏷 key explaining the label marker.
+
+Note: the "no Stop buttons at all" observation on the fresh Podman host is **not** a bug — Stop is an advanced-mode-only control (Settings → advanced UI); the other host had advanced mode enabled.
+
 ## [1.46.1] - 2026-07-22
 
 ### Added

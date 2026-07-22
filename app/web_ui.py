@@ -325,9 +325,13 @@ def create_handler(config, checker, bot, store, password=None):
             # from the bare tag (often `latest`). Pulling
             # `org.opencontainers.image.version` is the cheap honest answer
             # when the upstream image sets it (~40% coverage in the wild).
+            # Inspect by the container's RUNNING image ID (top-level
+            # .Image), not the tag: a tag can move to a newer image while
+            # the container still runs the old one — keying by tag showed
+            # the tag's version, not the container's (#46, @LeeNX saw
+            # "new version in the table, old version everywhere else").
             unique_images = list({
-                (c.get("Config") or {}).get("Image", "") for c in inspected
-                if (c.get("Config") or {}).get("Image")
+                c.get("Image", "") for c in inspected if c.get("Image")
             })
             image_info = {}  # image_ref -> {"version": "...", "short_id": "abcd1234"}
             if unique_images:
@@ -346,6 +350,7 @@ def create_handler(config, checker, bot, store, password=None):
                     image_id = entry.get("Id", "")
                     short_id = image_id[7:19] if image_id.startswith("sha256:") else image_id[:12]
                     info = {"version": version, "short_id": short_id}
+                    image_info[image_id] = info
                     for tag in (entry.get("RepoTags") or []):
                         image_info[tag] = info
                     for digest in (entry.get("RepoDigests") or []):
@@ -371,7 +376,9 @@ def create_handler(config, checker, bot, store, password=None):
                     status_str = base
                 # Version / hash from image_info lookup (may be empty if
                 # the image doesn't carry the OCI label).
-                info = image_info.get(image) or {}
+                # Running image ID first — the tag may already point at a
+                # newer image than the one this container actually runs.
+                info = image_info.get(cfg.get("Image", "")) or image_info.get(image) or {}
                 containers.append({
                     "name": name,
                     "image": image,
@@ -1673,8 +1680,11 @@ def create_handler(config, checker, bot, store, password=None):
                 # the label anyway, pretending otherwise would be a lie.
                 _lab_auto = _UC.label_bool(c.get("labels"), "auto")
                 _lab_pin = _UC.label_bool(c.get("labels"), "pin")
+                _lab_protect = _UC.label_bool(c.get("labels"), "protect")
                 is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
                 is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
+                _protected_c = (_lab_protect if _lab_protect is not None
+                                else store.is_protect_stop(c["name"]))
                 _lab_mark = (f' <span class="label-mark" '
                              f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
 
@@ -1685,6 +1695,10 @@ def create_handler(config, checker, bot, store, password=None):
                 if is_pinned_c:
                     badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
                     if _lab_pin is not None:
+                        badges += _lab_mark
+                if _protected_c:
+                    badges += f' <span class="badge badge-blue" title="{_e(t("web_protect_stop"))}">🛡</span>'
+                    if _lab_protect is not None:
                         badges += _lab_mark
                 # Auto-update now has its own table column (#2, @NotRetarded) —
                 # no longer a name-cell badge that wrapped under long names.
@@ -1760,8 +1774,11 @@ def create_handler(config, checker, bot, store, password=None):
                         f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["refresh"]}</button>'
                         f'</form>'
                     )
-                    # Stop hidden for protected containers (#38) — restart stays.
-                    if store.is_protect_stop(c["name"]):
+                    # Stop hidden for protected containers (#38) — restart
+                    # stays. Effective state: docksentry.protect label wins
+                    # over the stored toggle (#46, @LeeNX — label-protected
+                    # containers still showed the Stop button).
+                    if _protected_c:
                         stop_btn = ""
                     else:
                         stop_btn = (
@@ -1918,11 +1935,13 @@ def create_handler(config, checker, bot, store, password=None):
 </tbody>
 </table>
 <div class="icon-legend" aria-label="button legend">
-<span>{_ICONS["refresh"]} {t("web_update")}</span>
-<span>{_ICONS["pin"]} {t("web_pin")}</span>
-<span>{_ICONS["settings"]} {t("web_autoupdate_badge")}</span>
-<span>{_ICONS["alert"]} major-confirm</span>
-<span>{_ICONS["x"]} {t("lifecycle_btn_stop")}</span>
+<span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {t("web_update")}</span>
+<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["refresh"]}</span> {t("lifecycle_btn_restart")}</span>
+<span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {t("web_pin")}</span>
+<span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {t("web_autoupdate_badge")}</span>
+<span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> major-confirm</span>
+<span title="{_e(t("lifecycle_btn_stop"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {t("lifecycle_btn_stop")}</span>
+<span title="{_e(t("web_label_authoritative"))}">🏷 label</span>
 </div>
 </div>
 <script>
@@ -2090,7 +2109,14 @@ def create_handler(config, checker, bot, store, password=None):
             is_askm = store.is_ask_before_major(name)
             is_trust_c = store.is_trust_running(name)
             cooldown_c = store.get_cooldown(name)
-            is_protect_c = store.is_protect_stop(name)
+            # Effective protect: docksentry.protect label wins (#46). When a
+            # label controls it, the checkbox is disabled — a click couldn't
+            # override the label.
+            from update_checker import UpdateChecker as _UC2
+            _det_lab_protect = _UC2.label_bool(
+                checker.get_container_labels(name), "protect")
+            is_protect_c = (_det_lab_protect if _det_lab_protect is not None
+                            else store.is_protect_stop(name))
             window = store.get_update_window(name)
 
             # Pending update for this container?
@@ -2267,8 +2293,8 @@ def create_handler(config, checker, bot, store, password=None):
 <p class="form-help">{t("web_detail_trust_hint")}</p>
 
 <div class="form-checkbox-row">
-  <input type="checkbox" id="cb-detail-protect" {'checked' if is_protect_c else ''} onchange="document.getElementById('frm-detail-protect').submit()">
-  <label for="cb-detail-protect">{t("web_protect_stop")}</label>
+  <input type="checkbox" id="cb-detail-protect" {'checked' if is_protect_c else ''} {'disabled' if _det_lab_protect is not None else ''} onchange="document.getElementById('frm-detail-protect').submit()">
+  <label for="cb-detail-protect" {'title="' + _e(t("web_label_authoritative")) + '"' if _det_lab_protect is not None else ''}>{t("web_protect_stop")}{' 🏷' if _det_lab_protect is not None else ''}</label>
 </div>
 <form id="frm-detail-protect" method="POST" action="/api/protect" class="inline-form">
 <input type="hidden" name="name" value="{_e(name)}">

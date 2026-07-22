@@ -1946,6 +1946,18 @@ class UpdateChecker:
         for key, value in (cfg.get("Labels") or {}).items():
             if inherited_labels.get(key) == value:
                 continue
+            # org.opencontainers.* is image METADATA (version, revision,
+            # created, ...) — never legitimate container-level config. It
+            # must always come fresh from the new image. Crucially, the
+            # value-comparison above can't catch a label that is already
+            # stale: pre-v1.43.0 recreates pinned e.g.
+            # `org.opencontainers.image.version=1.40.1` explicitly, and
+            # that stale value differs from the old image's own label, so
+            # it masqueraded as a user override and stuck to the container
+            # through every future update (#46, @LeeNX — /status kept
+            # reporting the old version forever).
+            if key.startswith("org.opencontainers."):
+                continue
             args.extend(["--label", f"{key}={value}"])
 
         # ── Hostname (skipped when sharing netns) ──────────────
