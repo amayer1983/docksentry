@@ -839,3 +839,7 @@ pre {
 
 /* Muted placeholder (e.g. the "off" state in the Auto column, #2). */
 .muted { color: var(--text-muted); }
+
+/* docksentry.* label authority marker (#42, @LeeNX) */
+.label-mark { opacity: .75; font-size: .85em; cursor: help; }
+.btn-icon:disabled { opacity: .35; cursor: not-allowed; }

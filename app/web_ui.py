@@ -1664,12 +1664,28 @@ def create_handler(config, checker, bot, store, password=None):
                 else:
                     status_badge = '<span class="badge badge-blue">running</span>'
 
+                # Effective states: a docksentry.* label overrides the
+                # stored toggle (#42, @LeeNX) — the table must show what
+                # actually applies, not just what was clicked in the UI.
+                # The 🏷 marker tells the user a label is authoritative
+                # (LeeNX's follow-up: make that visible), and the matching
+                # toggle buttons are disabled — a click couldn't override
+                # the label anyway, pretending otherwise would be a lie.
+                _lab_auto = _UC.label_bool(c.get("labels"), "auto")
+                _lab_pin = _UC.label_bool(c.get("labels"), "pin")
+                is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
+                is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
+                _lab_mark = (f' <span class="label-mark" '
+                             f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
+
                 # Badges (compact, only show what's "different" from default)
                 badges = ""
                 if c["name"] in pending_names:
                     badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
-                if c["name"] in pinned:
+                if is_pinned_c:
                     badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
+                    if _lab_pin is not None:
+                        badges += _lab_mark
                 # Auto-update now has its own table column (#2, @NotRetarded) —
                 # no longer a name-cell badge that wrapped under long names.
                 if c["name"] in ask_major:
@@ -1684,19 +1700,14 @@ def create_handler(config, checker, bot, store, password=None):
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
                 name_attr = _e(c["name"])
-                # Effective states: a docksentry.* label overrides the
-                # stored toggle (#42, @LeeNX) — the table must show what
-                # actually applies, not just what was clicked in the UI.
-                _lab_auto = _UC.label_bool(c.get("labels"), "auto")
-                _lab_pin = _UC.label_bool(c.get("labels"), "pin")
-                is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
                 # Dedicated Auto column (#2, @NotRetarded): a clear on/off cell
                 # instead of a name-cell badge that wrapped under long names.
                 auto_cell = (
                     f'<span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
                     if is_auto else '<span class="muted">—</span>')
+                if _lab_auto is not None:
+                    auto_cell += _lab_mark
                 is_askm = c["name"] in ask_major
-                is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
                 update_btn = (
                     f'<form method="POST" action="/api/update" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
@@ -1704,18 +1715,25 @@ def create_handler(config, checker, bot, store, password=None):
                     f'</form>'
                 ) if c["name"] in pending_names else ''
                 pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
+                _pin_disabled = ' disabled' if _lab_pin is not None else ''
+                _pin_title = (t("web_label_authoritative") if _lab_pin is not None
+                              else (t("web_unpin") if is_pinned_c else t("web_pin")))
                 pin_btn = (
                     f'<form method="POST" action="{pin_form_action}" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
-                    f'title="{_e(t("web_unpin") if is_pinned_c else t("web_pin"))}">{_ICONS["pin"]}</button>'
+                    f'<button type="submit"{_pin_disabled} class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
+                    f'title="{_e(_pin_title)}">{_ICONS["pin"]}</button>'
                     f'</form>'
                 )
+                _auto_disabled = ' disabled' if _lab_auto is not None else ''
+                _auto_title = (t("web_label_authoritative") if _lab_auto is not None
+                               else (t("web_autoupdate_disable") if is_auto
+                                     else t("web_autoupdate_enable")))
                 auto_btn = (
                     f'<form method="POST" action="/api/autoupdate" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon{" is-active" if is_auto else ""}" '
-                    f'title="{_e(t("web_autoupdate_disable") if is_auto else t("web_autoupdate_enable"))}">{_ICONS["settings"]}</button>'
+                    f'<button type="submit"{_auto_disabled} class="btn-icon{" is-active" if is_auto else ""}" '
+                    f'title="{_e(_auto_title)}">{_ICONS["settings"]}</button>'
                     f'</form>'
                 )
                 ask_btn = (

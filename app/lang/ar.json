@@ -253,6 +253,7 @@
   "web_badge_update_tt": "An update is available — open the row's update button or use Bulk Update.",
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
+  "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",
   "web_bulk_update_tt": "Update all selected pending containers.",
   "web_bulk_pin_tt": "Pin all selected — they'll be skipped on update checks.",

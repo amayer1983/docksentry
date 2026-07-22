@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.46.1] - 2026-07-22
+
+### Added
+- **Web UI shows when a `docksentry.*` label is in charge** ([#42](../../issues/42) follow-up, @LeeNX: "show the user that labels are the authoritative"). Wherever a label overrides the stored toggle, the status table now displays a 🏷 marker with the tooltip "Controlled by a docksentry.* label in the compose file — remove the label there to change this", and the corresponding Pin/Auto toggle buttons are **disabled** — a click couldn't override the label anyway, and an active-looking button that silently does nothing would be worse than an honest disabled one. The pinned badge also reflects label-pins now (previously it only knew the stored list). New i18n key `web_label_authoritative` (16 languages).
+
 ## [1.46.0] - 2026-07-20
 
 ### Added
