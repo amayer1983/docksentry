@@ -5,7 +5,7 @@
 <h1 align="center">Docksentry</h1>
 
 <p align="center">
-Auto-update Docker containers and manage their lifecycle via interactive <b>Telegram bot</b>, <b>Web UI</b>, <b>Discord</b>, or <b>webhooks</b>. Auto-rollback on failed updates. 16 languages. Telegram is optional — runs fully headless.
+Auto-update, monitor and manage Docker containers via interactive <b>Telegram bot</b>, <b>Web UI</b>, <b>Discord</b>, or <b>webhooks</b>. Auto-rollback on failed updates, alerts on crashes, OOM kills and failing healthchecks. 16 languages. Telegram is optional — runs fully headless.
 </p>
 
 <p align="center">
@@ -28,6 +28,7 @@ Most Docker auto-update tools either set-and-forget like Watchtower (no human in
 - **Container groups** — update Gluetun first, restart the Sonarr / Radarr / qBittorrent stack after it's healthy
 - **Lifecycle commands** — `/status nginx` shows state + inline `[🔁 Restart] [🟥 Stop]` buttons. One tap to fix a hung container without leaving the chat
 - **Auto-rollback** if the new container fails its healthcheck (respecting the image's own `start_period`)
+- **State monitoring** — a healthcheck flips to unhealthy, a container dies with a non-zero exit code, gets OOM-killed or crash-loops through its restart policy → you hear about it, with flap protection and quiet hours
 - **Maintenance mode** to pause everything while you tinker with the host (`/maintenance 2h`)
 - **Multi-bot setup** for several Docker hosts in one Telegram group, each labelled so you can tell them apart
 
@@ -44,6 +45,7 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 - **Per-container auto-update** — selected containers update without confirmation
 - **Pin/Freeze containers** — exclude containers from updates
 - **Auto-rollback** — failed updates automatically restore the previous container
+- **Container monitoring** — transition-based alerts for unhealthy containers, non-zero exits, OOM kills and crash-restarts; disk-space warnings with reclaim preview
 - **Docker Compose support** — native `docker compose pull/up` for Compose stacks
 - **Self-update** — the bot can update itself automatically
 - **Persistent settings** — Web UI changes survive restarts
