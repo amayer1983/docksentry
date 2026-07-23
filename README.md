@@ -261,6 +261,7 @@ services:
 | `docksentry.protect=true` | Protect from `/stop` (a `=false` label force-unprotects, overriding the toggle) |
 | `docksentry.ask-major=true` / `=false` | Require / skip the major-version confirmation gate for auto-updates |
 | `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
+| `docksentry.monitor=false` | Exclude the container from state monitoring (health/exit/OOM notifications) |
 
 Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere: **label wins over the stored bot/Web-UI toggle; no label → toggle applies.** The Web UI status table shows the *effective* state (label included) for Pin and Auto — note that clicking a UI toggle cannot override a label; remove the label from your compose file instead.
 
@@ -284,6 +285,8 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `CLEANUP_BACKUP_DAYS` | `7` | How long backup tarballs are kept (1–365 days) |
 | `DISK_WARN_PERCENT` | `85` | Notify when disk usage exceeds this percentage (50–100) |
 | `DISK_WARN_AUTO_CLEANUP` | `false` | Automatically run cleanup when disk warning fires |
+| `MONITOR` | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
+| `MONITOR_INTERVAL` | `60` | Seconds between monitoring passes (min 15) |
 | `QUIET_HOURS_START` | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
 | `QUIET_HOURS_END` | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
 | `WEEKLY_REPORT_ENABLED` | `false` | Send a once-a-week summary report to all configured channels |

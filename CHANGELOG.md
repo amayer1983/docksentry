@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.48.0] - 2026-07-23
+
+### Added
+- **Container state monitoring** ([#2](../../issues/2), @NotRetarded: "why keep this app strictly as just an updating tool?"). Docksentry now watches for state *transitions* between checks and notifies on:
+  - a healthcheck turning **unhealthy** — and the recovery back to healthy
+  - a container **exiting with a non-zero code** (zero exits stay silent: one-shot jobs end normally all day)
+  - an **OOM kill** (with a nudge to raise the memory limit)
+  - a **crash + auto-restart** (RestartCount increased while the container kept running — the case a plain exit check misses on `restart: always` fleets)
+
+  Guard rails, in order of importance: transitions only (an unhealthy container fires once, not every pass); the whole pass is skipped while any update flow runs (containers bounce legitimately during updates — the baseline is rebuilt afterwards, so recreates never read as crashes); per-(container, kind) cooldown of 30 minutes against flapping; first pass after boot is a silent baseline; quiet-hours and maintenance mode are honored like every other auto-notification.
+
+  Config: `MONITOR` (default `true`), `MONITOR_INTERVAL` (default 60s, min 15). Per-container opt-out via the label family: `docksentry.monitor=false`. Notifications fan out to Telegram, Discord and webhooks like everything else; 5 new i18n keys in 16 languages. Runs on the scheduler's existing loop — no new thread, one `docker ps -a` + one batch inspect per pass. Disk-threshold monitoring (also on the wishlist) already existed: `DISK_WARN_PERCENT` / `DISK_WARN_AUTO_CLEANUP`. Memory-usage *thresholds* are deliberately deferred — they'd need `docker stats` polling; the OOM-kill notification covers the acute failure case without it. Test: `scripts/test_monitor.py` (21 checks), verified end-to-end against a live container.
+
 ## [1.47.4] - 2026-07-23
 
 ### Fixed

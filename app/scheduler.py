@@ -200,6 +200,14 @@ class Scheduler:
         last_check = getattr(self, "_resumed_minute", None)
         last_weekly = None
         last_disk_ts = 0.0  # monotonic; 0 → first disk check fires on startup
+        last_mon_ts = 0.0
+        # Container state monitor (#2, @NotRetarded) — same own-cadence
+        # pattern as the disk check. Constructed lazily so a disabled
+        # monitor costs nothing.
+        monitor = None
+        if getattr(self.config, "monitor_enabled", True):
+            from monitor import ContainerMonitor
+            monitor = ContainerMonitor(self.config, self.checker, self.bot)
         print(f"Scheduler started with schedule: {self.config.cron_schedule}")
         if last_check:
             print(f"Initial cron tick for {last_check} claimed by deferred-check (post-selfupdate)")
@@ -306,6 +314,20 @@ class Scheduler:
                     self._check_disk_space()
             except Exception as e:
                 print(f"Disk space check error: {e}")
+
+            # Container state monitor — transitions only, quiet during
+            # updates (the tick itself checks the update mutex) and in
+            # maintenance mode.
+            try:
+                if monitor is not None:
+                    from maintenance import is_active as _maint_active2
+                    mon_interval = int(getattr(self.config, "monitor_interval_seconds", 60) or 60)
+                    if (time.monotonic() - last_mon_ts >= mon_interval
+                            and not _maint_active2(self.config)):
+                        last_mon_ts = time.monotonic()
+                        monitor.tick()
+            except Exception as e:
+                print(f"Monitor error: {e}")
 
             time.sleep(30)
 

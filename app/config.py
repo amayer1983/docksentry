@@ -44,6 +44,7 @@ PERSISTENT_KEYS = [
     "telegram_topic_id", "telegram_allowed_users",
     "healthcheck_max_starting",
     "bot_label", "docker_stop_timeout",
+    "monitor_enabled", "monitor_interval_seconds",
 ]
 
 
@@ -62,7 +63,8 @@ class Config:
                  docker_auth_config, docker_registry,
                  smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
                  smtp_from="", smtp_to="", smtp_tls="starttls",
-                 auto_update_all=False):
+                 auto_update_all=False,
+                 monitor_enabled=True, monitor_interval_seconds=60):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -78,6 +80,13 @@ class Config:
         # Global "auto-update every checked container" (Watchtower-style),
         # opposed to the per-container auto-update opt-in (#45, @NotRetarded).
         self.auto_update_all = auto_update_all
+        # Container state monitoring (#2, @NotRetarded): health transitions,
+        # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
+        self.monitor_enabled = monitor_enabled
+        try:
+            self.monitor_interval_seconds = max(15, int(monitor_interval_seconds))
+        except (TypeError, ValueError):
+            self.monitor_interval_seconds = 60
         self.auto_cleanup = auto_cleanup
         self.cleanup_grace_hours = cleanup_grace_hours
         self.cleanup_backup_local_only = cleanup_backup_local_only
@@ -290,6 +299,8 @@ class Config:
             data_dir=_env("DATA_DIR", "/data"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
+            monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
+            monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),
             cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
