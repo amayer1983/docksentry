@@ -56,6 +56,9 @@ def _e(value):
 # to do that is *not* using a color emoji like 📌.
 _ICONS = {
     "refresh":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9c-2.4 0-4.6-.9-6.3-2.5L3 21"/><path d="M3 12a9 9 0 0 1 9-9c2.4 0 4.6.9 6.3 2.5L21 3"/><path d="M21 3v6h-6"/><path d="M3 21v-6h6"/></svg>',
+    # Single circular arrow — deliberately distinct from the two-arrow
+    # "refresh" so Update and Restart stop sharing a glyph (#46, @LeeNX).
+    "restart":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>',
     "pin":       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 17 .003 5"/><path d="M12 17a5 5 0 0 0 5-5V8.4l1.6-1.6a1 1 0 0 0 0-1.4l-3-3a1 1 0 0 0-1.4 0L12.6 4H7a5 5 0 0 0-5 5"/><path d="M2 22 22 2"/></svg>',
     "settings":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2"/><circle cx="12" cy="12" r="3"/></svg>',
     "alert":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
@@ -1771,7 +1774,7 @@ def create_handler(config, checker, bot, store, password=None):
                         f'<form method="POST" action="/api/lifecycle" class="inline-form">'
                         f'<input type="hidden" name="name" value="{name_attr}">'
                         f'<input type="hidden" name="action" value="restart">'
-                        f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["refresh"]}</button>'
+                        f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["restart"]}</button>'
                         f'</form>'
                     )
                     # Stop hidden for protected containers (#38) — restart
@@ -1936,7 +1939,7 @@ def create_handler(config, checker, bot, store, password=None):
 </table>
 <div class="icon-legend" aria-label="button legend">
 <span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {t("web_update")}</span>
-<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["refresh"]}</span> {t("lifecycle_btn_restart")}</span>
+<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {t("lifecycle_btn_restart")}</span>
 <span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {t("web_pin")}</span>
 <span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {t("web_autoupdate_badge")}</span>
 <span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> major-confirm</span>

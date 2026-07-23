@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.47.2] - 2026-07-23
+
+### Changed
+Web UI polish from @LeeNX's feedback round in [#46](../../issues/46):
+- **Restart has its own icon** — a single circular arrow, drawn in-house in the same stroke style; Update keeps the two-arrow glyph. The two actions no longer share a symbol with colour as the only differentiator.
+- **The legend's Stop key is outlined red instead of filled** — it mirrored the real button's solid red and looked heavy in a key row. The actual Stop button is unchanged (solid red is right for a destructive action).
+- **Consistent help cursor** on every hover-explained element — the 🏷 marker had it, the protect/pinned/group badges didn't.
+
 ## [1.47.1] - 2026-07-23
 
 ### Fixed

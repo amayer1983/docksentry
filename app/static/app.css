@@ -847,3 +847,14 @@ pre {
 /* Legend icons mirror the real button styling (colours included) but are
    inert — they're keys, not controls (#46, @LeeNX). */
 .icon-legend .btn-icon { cursor: default; pointer-events: none; }
+
+/* #46 polish (@LeeNX): the legend's stop key mirrored the filled red
+   button and looked "out of place" in a key row — outlined red keeps the
+   colour coding without the weight. Real buttons are unchanged. */
+.icon-legend .btn-icon.is-danger {
+    color: var(--danger);
+    background: rgba(248,81,73,0.08);
+}
+/* Consistent help cursor on every hover-explained element — the 🏷 marker
+   had it, the protect/pinned/... badges didn't. */
+.badge[title], .note-icon { cursor: help; }
