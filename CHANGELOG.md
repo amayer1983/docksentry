@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.47.3] - 2026-07-23
+
+### Fixed
+- **Theme button and UI-mode switcher are vertically aligned** ([#46](../../issues/46), @LeeNX's QA-friend round 😄). The mode switcher sat inside a `display:inline` form and participated in baseline layout, landing a few pixels below its flex-child sibling. Now `inline-flex`.
+
 ## [1.47.2] - 2026-07-23
 
 ### Changed

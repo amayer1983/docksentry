@@ -487,7 +487,10 @@ def create_handler(config, checker, bot, store, password=None):
 <h1>Docksentry</h1>
 </div>
 <div class="header-host-slot"><!-- v2.0: host selector slot --></div>
-<form method="POST" action="/api/ui_mode" style="display:inline;margin-left:auto">
+<!-- inline-flex, not inline: an inline form participates in baseline
+     layout and sat a few px lower than its flex-child sibling (the theme
+     button) — the misalignment @LeeNX screenshotted in #46. -->
+<form method="POST" action="/api/ui_mode" style="display:inline-flex;align-items:center;margin-left:auto">
 <input type="hidden" name="mode" value="{ui_mode_other}">
 <button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
 </form>
