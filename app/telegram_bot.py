@@ -2027,6 +2027,7 @@ class TelegramBot:
         its own pull+swap so no batch can start mid-self-update.
         """
         if not self._update_lock.acquire(blocking=False):
+            print("Selfupdate check: skipped — another update flow is running.")
             return False
         try:
             return self._check_selfupdate_auto_locked(defer_check)
@@ -2056,20 +2057,29 @@ class TelegramBot:
         """
         # Robust self-resolution (see _handle_selfupdate / #41) — works even
         # where $HOSTNAME isn't directly inspect-resolvable.
+        # Every exit below PRINTS its reason. This path is the ONLY
+        # selfupdate channel on headless installs (Web UI button with
+        # Telegram off), and its silent `return False`s made a failing
+        # podman pull indistinguishable from "already up to date" —
+        # @LeeNX chased exactly that ghost in #43/#46.
         from update_checker import UpdateChecker as _UC
         config = _UC.inspect_self()
         if not config:
+            print("Selfupdate check: FAILED — can't inspect own container.")
             return False
         own_image = config["Config"]["Image"]
         old_id = config["Image"]
         old_created = config.get("Created", "")[:10]
+        print(f"Selfupdate check: pulling {own_image} "
+              f"(running {old_id[:19]}, created {old_created})...")
 
-        # Pull latest silently
         pull = subprocess.run(
             ["docker", "pull", own_image],
             capture_output=True, text=True, timeout=300
         )
         if pull.returncode != 0:
+            print(f"Selfupdate check: FAILED — pull of {own_image!r} "
+                  f"returned {pull.returncode}: {pull.stderr.strip()[:300]}")
             return False
 
         # Check if image changed
@@ -2082,8 +2092,10 @@ class TelegramBot:
         new_created = parts[1][:10] if len(parts) > 1 else "?"
 
         if new_id == old_id:
-            print("Auto selfupdate: already up to date.")
+            print(f"Selfupdate check: already up to date ({new_id[:19]}).")
             return False
+        print(f"Selfupdate check: update found {old_id[:19]} -> {new_id[:19]} "
+              f"({old_created} -> {new_created}) — starting selfupdate.")
 
         # Notify and update
         own_name = config["Name"].lstrip("/")

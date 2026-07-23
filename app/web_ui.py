@@ -3207,9 +3207,14 @@ def create_handler(config, checker, bot, store, password=None):
                 if bot.enabled:
                     bot._handle_selfupdate()
                 else:
-                    # Headless variant — reuse the auto-selfupdate path which
-                    # already runs without sending Telegram messages.
-                    bot.check_selfupdate_auto()
+                    # Headless variant — reuse the auto-selfupdate path,
+                    # which now prints its outcome (found / up-to-date /
+                    # pull failed / busy) to the container log; on headless
+                    # installs that log is the user's only feedback channel
+                    # (#43, @LeeNX pressed this button and got silence).
+                    applied = bot.check_selfupdate_auto()
+                    print(f"Web UI selfupdate (headless): "
+                          f"{'update started' if applied else 'no update applied — see lines above for the reason'}")
             except Exception as e:
                 print(f"Web UI selfupdate error: {e}")
                 if bot.notifier and bot.notifier.has_channels():

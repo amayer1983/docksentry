@@ -247,7 +247,11 @@ def main():
         web = WebUI(config, checker, bot, store, config.web_port, config.web_password)
         web.start()
 
-    print("Docksentry started.")
+    # Version + debug state up front — the container log is often the only
+    # thing a headless user can paste, and "which version even is this?"
+    # was the first question every time (#43, @LeeNX).
+    from version import VERSION as _V
+    print(f"Docksentry started. (v{_V}, debug {'ON' if config.debug else 'OFF'})")
     print(f"Schedule: {config.cron_schedule}")
     print(f"Excluded: {config.exclude_containers or 'none'}")
     print(f"Auto selfupdate: {'ON' if config.auto_selfupdate else 'OFF'}")

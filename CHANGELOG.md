@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.47.1] - 2026-07-23
+
+### Fixed
+- **The headless self-update path is no longer silent** ([#43](../../issues/43), @LeeNX). On installs without Telegram, the Web UI's self-update button runs the auto-selfupdate path — whose failure exits all returned a bare `False` with zero output. A failing image pull was therefore indistinguishable from "already up to date": the button did nothing and said nothing. Every exit now prints its reason to the container log (skipped — update running / can't inspect own container / pull failed with the actual ref and stderr / up to date with image ID / update found), and the Web UI logs the outcome of the button press. On headless installs the container log is the only feedback channel there is.
+
+### Added
+- **Startup log states version and debug state** (suggested by @LeeNX in #43): `Docksentry started. (v1.47.1, debug OFF)` — the container log is often the only thing a headless user can paste, and "which version even is this?" was the first question every time.
+
 ## [1.47.0] - 2026-07-22
 
 ### Fixed
