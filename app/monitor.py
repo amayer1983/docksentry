@@ -24,6 +24,7 @@ Design constraints, in order of importance:
    re-announce the world.
 """
 import json
+import os
 import subprocess
 import time
 
@@ -170,9 +171,41 @@ class ContainerMonitor:
             if now_ts - last < self.COOLDOWN_SECONDS:
                 continue
             self._last_sent[key] = now_ts
+            self._record(kind, name, detail)
             self._notify(kind, name, detail)
             sent.append((kind, name, detail))
         return sent
+
+    MAX_EVENTS = 200
+
+    def _record(self, kind, name, detail):
+        """Append to the persistent event log (shown in the Web UI's
+        Events section). Telegram scrollback is no audit trail, and on
+        headless installs without notification channels this file is the
+        only place "what happened last night?" can be answered at all.
+        Best-effort — a failed write must never break monitoring."""
+        try:
+            from datetime import datetime
+            from container_store import atomic_write_json
+            path = getattr(self.config, "monitor_events_file", None)
+            if not path:
+                return
+            events = []
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        events = json.load(f) or []
+                except (ValueError, OSError):
+                    events = []
+            events.append({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "kind": kind,
+                "container": name,
+                "detail": detail,
+            })
+            atomic_write_json(path, events[-self.MAX_EVENTS:])
+        except Exception as e:
+            print(f"Monitor event log error: {e}")
 
     def _notify(self, kind, name, detail):
         t = self.bot.t

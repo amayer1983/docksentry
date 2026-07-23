@@ -2748,6 +2748,50 @@ def create_handler(config, checker, bot, store, password=None):
 </table>
 </div>"""
 
+            # ── Monitor events (v1.48.1) ───────────────────────────
+            # The monitor's persistent audit trail: what crashed, went
+            # unhealthy or got OOM-killed while nobody was watching.
+            # Rendered through the same monitor_* i18n keys as the live
+            # notifications so both channels tell the same story.
+            events = []
+            ev_path = getattr(config, "monitor_events_file", None)
+            if ev_path and os.path.exists(ev_path):
+                try:
+                    with open(ev_path) as f:
+                        events = json.load(f) or []
+                except (json.JSONDecodeError, IOError):
+                    events = []
+            if events:
+                ev_rows = ""
+                for ev in reversed(events[-100:]):
+                    kind = ev.get("kind", "")
+                    try:
+                        msg = t(f"monitor_{kind}", name=ev.get("container", "?"),
+                                **(ev.get("detail") or {}))
+                    except Exception:
+                        msg = f"{kind}: {ev.get('container', '?')}"
+                    ev_rows += f"""<tr>
+<td>{_e(ev.get('timestamp', ''))}</td>
+<td>{_e(ev.get('container', ''))}</td>
+<td style="font-size:12px">{_e(msg)}</td>
+</tr>"""
+                content += f"""<div class="card">
+<h2>{t("web_events")}</h2>
+<table>
+<tr><th>{t("web_date")}</th><th>{t("web_name")}</th><th>{t("web_detail")}</th></tr>
+{ev_rows}
+</table>
+</div>"""
+            else:
+                content += f"""<div class="card">
+<h2>{t("web_events")}</h2>
+<div class="empty">
+  <div class="empty-icon">🩺</div>
+  <div class="empty-title">{t("web_events_empty")}</div>
+  <div class="empty-hint">{t("web_events_empty_hint")}</div>
+</div>
+</div>"""
+
             self._send_html(self._render_page(content, "history"))
 
         def _page_settings(self):

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.48.1] - 2026-07-23
+
+### Added
+- **Persistent event history for the monitor** ([#2](../../issues/2) follow-up). v1.48.0's alerts had no memory: an OOM kill at 3 a.m. lived in Telegram scrollback, or — headless without notification channels — only in the container log. Monitor events (health flips, non-zero exits, OOM kills, crash-restarts) are now written to `/data/monitor_events.json` (atomic, capped at the latest 200) and shown in a **Container Events** section on the Web UI's History page, rendered through the same i18n keys as the live notifications so both channels tell the same story. A failed write never breaks monitoring. New i18n keys `web_events`, `web_events_empty`, `web_events_empty_hint` (16 languages). Tests: `scripts/test_monitor.py` extended to 26 checks; verified end-to-end against a live container.
+
 ## [1.48.0] - 2026-07-23
 
 ### Added

@@ -128,6 +128,49 @@ def main():
     m4.snapshot = lambda: {"a": c(health="unhealthy")}
     checks["exclude_containers honored"] = m4.tick() == []
 
+    # ── persistent event log (v1.48.1) ──
+    import tempfile, json as _json
+    d = tempfile.mkdtemp()
+    evfile = os.path.join(d, "monitor_events.json")
+    m5 = make_monitor()
+    m5.config.monitor_events_file = evfile
+    m5.snapshot = lambda: {"a": c()}
+    m5.tick()
+    m5.snapshot = lambda: {"a": c(status="exited", code=137)}
+    m5.tick()
+    with open(evfile) as f:
+        evs = _json.load(f)
+    checks["event: persisted to file"] = len(evs) == 1
+    checks["event: structure complete"] = (
+        evs[0]["kind"] == "exited" and evs[0]["container"] == "a"
+        and evs[0]["detail"] == {"code": 137} and bool(evs[0]["timestamp"]))
+
+    # cap: prefill beyond MAX_EVENTS, next record trims
+    from container_store import atomic_write_json
+    atomic_write_json(evfile, [{"timestamp": "t", "kind": "exited",
+                                "container": "x", "detail": {}}] * 250)
+    m5._last_sent = {}
+    m5.snapshot = lambda: {"a": c()}
+    m5.tick()
+    m5.snapshot = lambda: {"a": c(status="exited", code=1)}
+    m5.tick()
+    with open(evfile) as f:
+        evs = _json.load(f)
+    checks["event: capped at MAX_EVENTS"] = len(evs) == m5.MAX_EVENTS
+    checks["event: newest survives the cap"] = evs[-1]["container"] == "a"
+
+    # a failed write must never break the tick
+    m6 = make_monitor()
+    m6.config.monitor_events_file = os.path.join(d, "nodir", "sub", "x.json")
+    m6.snapshot = lambda: {"a": c()}
+    m6.tick()
+    m6.snapshot = lambda: {"a": c(status="exited", code=1)}
+    try:
+        sent = m6.tick()
+        checks["event: write failure doesn't break tick"] = kinds(sent) == [("exited", "a")]
+    except Exception:
+        checks["event: write failure doesn't break tick"] = False
+
     for k, v in checks.items():
         print(("  PASS" if v else "  FAIL"), k)
     if not all(checks.values()):
