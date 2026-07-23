@@ -2083,6 +2083,13 @@ class UpdateChecker:
         # Compose `ulimits:`; stored as [{Name, Soft, Hard}].
         for ulimit in (host.get("Ulimits") or []):
             uname = ulimit.get("Name", "")
+            # Podman inspect reports rlimit names in POSIX form
+            # (RLIMIT_NOFILE); the --ulimit flag only accepts the short
+            # form (nofile), so replicating the raw name failed every
+            # podman standalone recreate with "invalid ulimit type"
+            # (#48, @LeeNX). Docker already reports the short form.
+            if uname.upper().startswith("RLIMIT_"):
+                uname = uname[7:].lower()
             soft = ulimit.get("Soft", 0)
             hard = ulimit.get("Hard", 0)
             if not uname:

@@ -73,6 +73,19 @@ _ICONS = {
 
 # Inline-flex helper that pairs an SVG icon with text — used in badges
 # where we want a small icon glued to a label.
+def _legend_word(label):
+    """Strip a leading emoji/symbol prefix from a translated button label.
+
+    Labels like "🟥 Stop" / "🔁 Restart" are right for Telegram buttons,
+    but in the icon legend the styled key already IS the icon — the emoji
+    doubled it ("double red square" next to Stop, "the old icon" next to
+    Restart; #46, @LeeNX). Strips leading non-letter symbols only, so any
+    language's actual text survives untouched.
+    """
+    import re
+    return re.sub(r"^[^\w(]+", "", label, flags=re.UNICODE) or label
+
+
 def _icon_label(icon_key, label):
     """Return an inline SVG icon followed by a label, both inside a span."""
     return (f'<span class="icon-label">'
@@ -1941,12 +1954,12 @@ def create_handler(config, checker, bot, store, password=None):
 </tbody>
 </table>
 <div class="icon-legend" aria-label="button legend">
-<span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {t("web_update")}</span>
-<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {t("lifecycle_btn_restart")}</span>
-<span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {t("web_pin")}</span>
-<span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {t("web_autoupdate_badge")}</span>
+<span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {_legend_word(t("web_update"))}</span>
+<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {_legend_word(t("lifecycle_btn_restart"))}</span>
+<span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
+<span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {_legend_word(t("web_autoupdate_badge"))}</span>
 <span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> major-confirm</span>
-<span title="{_e(t("lifecycle_btn_stop"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {t("lifecycle_btn_stop")}</span>
+<span title="{_e(t("lifecycle_btn_stop"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
 <span title="{_e(t("web_label_authoritative"))}">🏷 label</span>
 </div>
 </div>

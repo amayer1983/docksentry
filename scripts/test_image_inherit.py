@@ -120,6 +120,28 @@ def main():
     off = dict(container, Healthcheck={"Test": ["NONE"]})
     checks["override: --no-healthcheck kept"] = "--no-healthcheck" in build(off, old_img)
 
+    # -- podman POSIX ulimit names normalized (#48, @LeeNX) --
+    # Podman inspect reports RLIMIT_NOFILE; --ulimit only accepts the
+    # short form (nofile). The raw name failed every podman standalone
+    # recreate with "invalid ulimit type". Docker's short names pass through.
+    ul_cfg = {
+        "Config": {"Env": [], "Labels": {}},
+        "HostConfig": {"Ulimits": [
+            {"Name": "RLIMIT_NOFILE", "Soft": 524288, "Hard": 524288},
+            {"Name": "nofile", "Soft": 1024, "Hard": 2048},
+        ]},
+        "Mounts": [], "NetworkSettings": {"Networks": {}},
+    }
+    ua = UpdateChecker._build_run_args(
+        ul_cfg, "img:new", "c1",
+        image_defaults={"Entrypoint": None, "Cmd": None})
+    checks["ulimit: podman RLIMIT_NOFILE -> nofile"] = (
+        "nofile=524288" in flags(ua, "--ulimit"))
+    checks["ulimit: docker short name untouched"] = (
+        "nofile=1024:2048" in flags(ua, "--ulimit"))
+    checks["ulimit: no raw RLIMIT_ passes through"] = not any(
+        "RLIMIT" in x for x in flags(ua, "--ulimit"))
+
     # -- inherited=None -> replicate everything (backward compatible) --
     c = build(container, None)
     checks["None: replicates env"] = "APP_VERSION=5.1.19" in flags(c, "-e")

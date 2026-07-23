@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.47.4] - 2026-07-23
+
+### Fixed
+- **Podman standalone recreates failed on ulimits** ([#48](../../issues/48), @LeeNX — first bug caught end-to-end by the new debug log). Podman's inspect reports rlimit names in POSIX form (`RLIMIT_NOFILE`); the `--ulimit` flag only accepts the short form (`nofile`), so every podman standalone recreate of a container with ulimits failed with `invalid ulimit type: RLIMIT_NOFILE` — and rolled back (the recovery net held; the container kept running on the old image). Names are now normalized; Docker's already-short names pass through untouched.
+- **Legend, corrected interpretation** ([#46](../../issues/46)): the "double red square" next to Stop was the `🟥` emoji *inside the translated label* sitting next to the styled key — same story for `🔁` next to Restart ("the old icon"). The legend now strips leading emoji from label words (the styled key already is the icon; actual text in all 16 languages survives untouched), and the Stop key is solid red again, matching the real button — v1.47.3's outlined variant was a misreading of the feedback.
+
 ## [1.47.3] - 2026-07-23
 
 ### Fixed
