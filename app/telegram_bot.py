@@ -46,6 +46,7 @@ _BOT_COMMANDS = [
     ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle",   "help_detail_lifecycle"),
     ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance", "help_detail_maintenance"),
     ("history",     "Recent update history",                                          "help_history",     "help_detail_history"),
+    ("events",      "Recent container events (crashes, OOM, health flips)",           "help_events",      "help_detail_events"),
     ("groups",      "Show container groups — /groups or /groups <name>",              "help_groups",      "help_detail_groups"),
     ("pin",         "Skip updates for a container — /pin <name>",                     "help_pin",         "help_detail_pin"),
     ("unpin",       "Re-enable updates — /unpin <name>",                              "help_unpin",       "help_detail_pin"),
@@ -1386,6 +1387,31 @@ class TelegramBot:
 
     def notify_no_updates(self):
         self.send_message(self.t("all_up_to_date"))
+
+    def _build_events_msg(self, limit=15):
+        """`/events` reply — the most recent monitor events from the
+        persisted log, rendered through the same monitor_* keys as the
+        live notifications (#2). Newest first."""
+        events = []
+        path = getattr(self.config, "monitor_events_file", None)
+        if path and os.path.exists(path):
+            try:
+                with open(path) as f:
+                    events = json.load(f) or []
+            except (ValueError, OSError):
+                events = []
+        if not events:
+            return self.t("events_empty")
+        lines = [self.t("events_header", count=min(limit, len(events)))]
+        for ev in reversed(events[-limit:]):
+            kind = ev.get("kind", "")
+            try:
+                msg = self.t(f"monitor_{kind}", name=ev.get("container", "?"),
+                             **(ev.get("detail") or {}))
+            except Exception:
+                msg = f"{kind}: {ev.get('container', '?')}"
+            lines.append(f"`{ev.get('timestamp', '')}` {msg}")
+        return "\n".join(lines)
 
     def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup):
         """`/checkimages` reply — how much `/cleanup` would free right now.
@@ -2985,6 +3011,11 @@ class TelegramBot:
             reclaim = checker.reclaimable_bytes()
             auto_on = bool(getattr(self.config, "disk_warn_auto_cleanup", False))
             self.send_message(self._build_checkimages_msg(reclaim, auto_on))
+
+        elif text == "/events":
+            # Telegram parity for the Web UI's Container Events section
+            # (#2): same persisted log, same monitor_* message keys.
+            self.send_message(self._build_events_msg())
 
         # Container lifecycle commands — start / stop / restart.
         # Same partial-name matching as /pin / /logs. Stop and restart

@@ -207,6 +207,46 @@ class ContainerMonitor:
         except Exception as e:
             print(f"Monitor event log error: {e}")
 
+    @staticmethod
+    def _mem_to_bytes(s):
+        """'1.5GiB' / '412MiB' / '820kB' from `docker stats` → bytes (0 on
+        anything unparseable)."""
+        s = (s or "").strip()
+        units = {"KIB": 1024, "MIB": 1024**2, "GIB": 1024**3, "TIB": 1024**4,
+                 "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4, "B": 1}
+        for u in sorted(units, key=len, reverse=True):
+            if s.upper().endswith(u):
+                try:
+                    return float(s[:-len(u)].strip()) * units[u]
+                except ValueError:
+                    return 0
+        return 0
+
+    def _memory_snapshot(self, top=3):
+        """Top memory consumers RIGHT NOW, as a one-line summary — taken
+        only when an OOM event fires (#2, @NotRetarded's Sencho case: the
+        OOM alert names the victim, this names the culprit). One
+        `docker stats --no-stream` at event time; no idle polling."""
+        try:
+            r = subprocess.run(
+                ["docker", "stats", "--no-stream", "--format",
+                 "{{.Name}}|{{.MemUsage}}"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0:
+                return ""
+            rows = []
+            for line in r.stdout.strip().split("\n"):
+                if "|" not in line:
+                    continue
+                cname, usage = line.split("|", 1)
+                used = usage.split("/")[0].strip()
+                rows.append((self._mem_to_bytes(used), cname.strip(), used))
+            rows.sort(reverse=True)
+            return " · ".join(f"{cname} {used}" for _, cname, used in rows[:top])
+        except (subprocess.SubprocessError, OSError):
+            return ""
+
     def _notify(self, kind, name, detail):
         t = self.bot.t
         if kind == "unhealthy":
@@ -219,6 +259,24 @@ class ContainerMonitor:
             msg = t("monitor_crash_restart", name=name, count=detail.get("count", "?"))
         else:
             msg = t("monitor_exited", name=name, code=detail.get("code", "?"))
+
+        # OOM: name the culprit, not just the victim — one stats snapshot
+        # at event time shows who was actually eating the memory.
+        if kind == "oom":
+            snap = self._memory_snapshot()
+            if snap:
+                msg += "\n" + t("monitor_top_memory", list=snap)
+
+        # The first question after any death or health flip is "why?" —
+        # attach the same log tail the update failures carry. Recovery
+        # messages stay clean.
+        if kind in ("unhealthy", "exited", "oom", "crash_restart"):
+            try:
+                tail = self.checker._tail_logs(name, lines=10)
+            except Exception:
+                tail = ""
+            if tail:
+                msg += f"\nLast logs:\n```\n{tail}\n```"
         try:
             self.bot.send_message(msg, auto=True)
         except Exception as e:

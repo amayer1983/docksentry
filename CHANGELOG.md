@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.49.0] - 2026-07-23
+
+### Added
+First round of monitoring follow-ups from the [#2](../../issues/2) discussion (thanks @NotRetarded):
+
+- **Crash/exit/OOM/unhealthy notifications now carry the last 10 log lines.** The first question after "💥 X exited with code 137" is always *why* — the same log tail that update failures already attach is now on monitor events too. Recovery messages stay clean.
+- **OOM notifications name the culprit, not just the victim.** @NotRetarded's case: on an 8 GB host, one container (Sencho) quietly ate the memory and a *different* one (UniFi OS Server) got OOM-killed for it — the alert named the victim, leaving the actual cause invisible. An OOM event now takes a single `docker stats --no-stream` snapshot *at event time* and lists the top memory consumers: `Top memory at event time: sencho 5.1GiB · unifi 1.9GiB · postgres 412MiB`. One stats call when it fires, zero idle polling.
+- **`/events` Telegram command** — parity with the Web UI's Container Events section: the recent persisted events, newest first, rendered through the same message keys.
+
+New i18n keys `monitor_top_memory`, `events_header`, `events_empty`, `help_events`, `help_detail_events` (16 languages). Tests: `scripts/test_monitor.py` (36 checks); log-tail attachment verified end-to-end.
+
 ## [1.48.1] - 2026-07-23
 
 ### Added

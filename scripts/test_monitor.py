@@ -35,7 +35,9 @@ def make_monitor(update_running=False, exclude=None):
     m.checker = types.SimpleNamespace(
         label_bool=UpdateChecker.label_bool,
         _own_container_name=lambda: "docksentry",
+        _tail_logs=lambda name, lines=10: "",
     )
+    m._memory_snapshot = lambda top=3: ""
     m.bot = types.SimpleNamespace(
         update_running=update_running,
         t=lambda key, **kw: key,
@@ -127,6 +129,47 @@ def main():
     m4.tick()
     m4.snapshot = lambda: {"a": c(health="unhealthy")}
     checks["exclude_containers honored"] = m4.tick() == []
+
+    # ── log tail + OOM memory snapshot in notifications (v1.49.0) ──
+    m7 = make_monitor()
+    m7.checker._tail_logs = lambda name, lines=10: "boom line 1\nboom line 2"
+    m7._memory_snapshot = lambda top=3: "sencho 5.1GiB · unifi 1.9GiB"
+    m7.snapshot = lambda: {"a": c()}
+    m7.tick()
+    m7.snapshot = lambda: {"a": c(status="exited", code=137, oom=True)}
+    m7.tick()
+    full = m7.sent[-1]
+    checks["oom msg carries memory snapshot"] = "monitor_top_memory" in full
+    checks["oom msg carries log tail"] = "boom line 1" in full
+    m7._last_sent = {}
+    m7.snapshot = lambda: {"a": c(health="unhealthy")}
+    # rebaseline for health flip
+    m7._prev = {"a": c(health="healthy")}
+    m7.tick()
+    checks["unhealthy msg carries tail, no snapshot"] = (
+        "boom line 1" in m7.sent[-1] and "monitor_top_memory" not in m7.sent[-1])
+    m7._prev = {"a": c(health="unhealthy")}
+    m7.snapshot = lambda: {"a": c(health="healthy")}
+    m7.tick()
+    checks["recovery msg stays clean"] = ("boom" not in m7.sent[-1]
+                                          and m7.sent[-1].startswith("monitor_recovered"))
+    # tail failure must never break notify
+    m8 = make_monitor()
+    def _boom(name, lines=10):
+        raise RuntimeError("no logs")
+    m8.checker._tail_logs = _boom
+    m8.snapshot = lambda: {"a": c()}
+    m8.tick()
+    m8.snapshot = lambda: {"a": c(status="exited", code=1)}
+    checks["tail failure doesn't break notify"] = len(m8.tick()) == 1
+
+    # ── _mem_to_bytes parsing ──
+    mb = ContainerMonitor._mem_to_bytes
+    checks["mem: GiB"] = mb("1.5GiB") == 1.5 * 1024**3
+    checks["mem: MiB"] = mb("412MiB") == 412 * 1024**2
+    checks["mem: decimal MB"] = mb("820MB") == 820 * 1000**2
+    checks["mem: plain bytes"] = mb("512B") == 512
+    checks["mem: garbage -> 0"] = mb("n/a") == 0 and mb("") == 0
 
     # ── persistent event log (v1.48.1) ──
     import tempfile, json as _json
