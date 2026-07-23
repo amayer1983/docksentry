@@ -2315,6 +2315,22 @@ class TelegramBot:
                 _time.sleep(1)
             return
 
+        # Send-only mode (#2, @famewolf): notifications yes, polling no.
+        # Telegram allows one getUpdates consumer per token, so a second
+        # app sharing the bot (Home Assistant) fights us for it. We skip
+        # BOTH the poll loop AND the startup flush (itself a getUpdates
+        # call) AND setMyCommands (which is global per bot and would clobber
+        # the other app's command list). sendMessage never conflicts, so
+        # notifications keep flowing. Interactive commands are off — the
+        # user drives Docksentry from the Web UI instead.
+        if not getattr(self.config, "telegram_polling", True):
+            print("Telegram in send-only mode (TELEGRAM_POLLING=false): "
+                  "notifications on, interactive commands off. "
+                  "Control Docksentry via the Web UI.")
+            while self.running:
+                _time.sleep(1)
+            return
+
         # Register our command list with Telegram so users get the
         # native `/` autocomplete picker (with one-line descriptions per
         # command). Idempotent — Telegram just stores the latest set —

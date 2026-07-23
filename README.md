@@ -300,6 +300,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `WEB_PASSWORD` | | Web UI password (Basic Auth) |
 | `TELEGRAM_TOPIC_ID` | | Telegram topic/thread ID (for groups with topics) |
 | `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
+| `TELEGRAM_POLLING` | `true` | Set `false` for **send-only mode**: Docksentry sends notifications but doesn't poll for commands. Use this to share one bot token with another app (e.g. Home Assistant) — Telegram allows only one command-polling consumer per token, so let the other app own commands while Docksentry just posts. Control Docksentry via the Web UI in this mode. |
 | `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |

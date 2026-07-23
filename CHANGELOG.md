@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.50.0] - 2026-07-23
+
+### Added
+- **Send-only Telegram mode** (`TELEGRAM_POLLING=false`) for sharing one bot with another app ([#2](../../issues/2), @famewolf). If Docksentry and, say, Home Assistant both poll the same bot token, Telegram lets only one of them win `getUpdates` and the other logs `Conflict: terminated by other getUpdates request` on a loop. Send-only mode makes Docksentry stop polling entirely — no `getUpdates`, no startup flush, no `setMyCommands` (which is global per bot and would otherwise clobber the other app's command list) — while still sending notifications, since `sendMessage` never conflicts. Let the other app own the interactive side; drive Docksentry from the Web UI. Interactive Telegram commands are off in this mode by design. Env-only (it's a wiring decision, not a runtime toggle); default stays `true`, so nothing changes for existing setups. Test: `scripts/test_send_only.py`.
+
+  This does **not** let two apps both run *interactive* commands on one token — that's a hard Telegram limit (one command-poller per token), not something any tool can work around.
+
 ## [1.49.0] - 2026-07-23
 
 ### Added

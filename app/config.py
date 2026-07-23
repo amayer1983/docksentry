@@ -64,7 +64,8 @@ class Config:
                  smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
-                 monitor_enabled=True, monitor_interval_seconds=60):
+                 monitor_enabled=True, monitor_interval_seconds=60,
+                 telegram_polling=True):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -190,6 +191,15 @@ class Config:
         # groups where you don't want every member to be able to
         # trigger updates. Stored as a list of stringified IDs.
         self.telegram_allowed_users = telegram_allowed_users
+        # Send-only Telegram: keep sending notifications but DON'T poll
+        # getUpdates. Telegram allows exactly one getUpdates consumer per
+        # bot token — a second one (e.g. Home Assistant sharing the same
+        # bot) gets "Conflict: terminated by other getUpdates request" on
+        # a loop (#2, @famewolf). sendMessage never conflicts, so this lets
+        # one bot fan out notifications from several apps while another app
+        # owns the interactive side. Interactive commands are off in this
+        # mode; control Docksentry via the Web UI instead.
+        self.telegram_polling = telegram_polling
         # Max seconds we wait for a freshly-updated container to leave
         # "starting" health-state and report "healthy". Slow apps like
         # GitLab / Nextcloud / Mastodon can need 10+ minutes. We also
@@ -320,6 +330,7 @@ class Config:
             discord_webhook=_env("DISCORD_WEBHOOK"),
             webhook_url=_env("WEBHOOK_URL"),
             telegram_topic_id=_env("TELEGRAM_TOPIC_ID"),
+            telegram_polling=_env("TELEGRAM_POLLING", "true").lower() in ("true", "1", "yes"),
             telegram_allowed_users=[
                 u.strip() for u in _env("TELEGRAM_ALLOWED_USERS").split(",")
                 if u.strip()
