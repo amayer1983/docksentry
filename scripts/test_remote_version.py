@@ -58,6 +58,31 @@ def main():
     chk._registry_get = lambda *a, **k: None
     checks["registry failure → {}"] = chk.get_remote_image_meta("r", "x", "latest") == {}
 
+    # ── empty remote digest is a FAILURE, not a spurious update (Fix 2) ──
+    # _get_remote_digest returns "" (not None) for a 200 manifest with no
+    # Docker-Content-Digest header. "" must be treated as unreachable, never
+    # as a digest that mismatches the local one.
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    cfg = types.SimpleNamespace(debug=False,
+                                pending_file=os.path.join(tmp, "pending.json"))
+    dchk = UpdateChecker(cfg)
+    dchk.get_running_containers = lambda: [{"name": "app", "image": "reg/repo:tag"}]
+    dchk._parse_image = lambda img: ("reg", "repo", "tag")
+    dchk._get_local_digests = lambda img: ["sha256:LOCAL"]
+
+    dchk._get_remote_digest = lambda registry, repository, tag: ""
+    checks["empty remote digest → no update"] = dchk.check_all() == []
+
+    # control: a real, differing remote digest DOES report an update
+    dchk._get_image_size = lambda img: 0
+    dchk._get_image_created = lambda img: ""
+    dchk._get_image_version_label = lambda img: ""
+    dchk._parse_semver = lambda t: None
+    dchk.get_remote_image_meta = lambda *a, **k: {}
+    dchk._get_remote_digest = lambda registry, repository, tag: "sha256:REMOTE"
+    checks["differing remote digest → one update"] = len(dchk.check_all()) == 1
+
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
     if not all(checks.values()):

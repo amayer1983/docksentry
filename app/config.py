@@ -65,7 +65,7 @@ class Config:
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
-                 telegram_polling=True):
+                 telegram_polling=True, debug=False):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -76,7 +76,11 @@ class Config:
         self.pinned_file = os.path.join(data_dir, "pinned_containers.json")
         self.autoupdate_file = os.path.join(data_dir, "autoupdate_containers.json")
         self.settings_file = os.path.join(data_dir, "settings.json")
-        self.debug = False
+        # DEBUG follows the same precedence as every other persistent key:
+        # the env var seeds the initial value, and a later /debug or Web UI
+        # toggle persisted to settings.json still overrides on load (see
+        # _load_persistent — "debug" is in PERSISTENT_KEYS).
+        self.debug = debug
         self.auto_selfupdate = auto_selfupdate
         # Global "auto-update every checked container" (Watchtower-style),
         # opposed to the per-container auto-update opt-in (#45, @NotRetarded).
@@ -308,6 +312,7 @@ class Config:
                 if c.strip()
             ],
             data_dir=_env("DATA_DIR", "/data"),
+            debug=_env("DEBUG", "false").lower() in ("true", "1", "yes"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),

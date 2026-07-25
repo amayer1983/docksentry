@@ -1520,9 +1520,11 @@ class UpdateChecker:
             self._debug(f"  Local:  {', '.join(d[:30] + '...' for d in local_digests)}")
             self._debug(f"  Remote: {(remote_digest or 'FAILED')[:30]}...")
 
-            if remote_digest is None:
+            if not remote_digest:
                 # Treat unknown as unknown — don't claim "up to date" when we
-                # couldn't actually reach the registry.
+                # couldn't actually reach the registry. An empty string (a 200
+                # manifest with no Docker-Content-Digest header) is a failure
+                # too, not a real digest that would spuriously mismatch.
                 self._debug("  → Check FAILED (registry unreachable / unauthorized)")
                 continue
 

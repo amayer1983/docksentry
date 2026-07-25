@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.52.0] - 2026-07-25
+
+### Fixed
+- **A container that recovers by restarting no longer silences its monitoring for good** ([#2](../../issues/2)). The v1.51.0 debounce only ended an unhealthy episode on a direct `unhealthy → healthy` flip. But a container that recovers by restarting goes `unhealthy → starting → healthy` and never touches `healthy` coming straight off `unhealthy`, so the recovery alert never fired *and* the name got stuck in the "already alerted" set forever — which meant every future unhealthy alert for that container was suppressed silently. Now an episode ends the moment a container *leaves* the unhealthy state, wherever it lands, and that's the recovery signal. I also prune the pending/alerted state each pass so a container that vanishes and comes back starts with a clean slate instead of inheriting a stuck flag. New tests in `scripts/test_monitor.py` cover restart-recovery, the `unhealthy → starting → healthy` path, and the vanish-then-reappear case.
+- **Empty remote digest no longer reads as a phantom update.** When a registry returns a 200 manifest with no `Docker-Content-Digest` header, the digest lookup hands back an empty string rather than `None`. The update check guarded only against `None`, so the empty string slipped through and looked like a digest that didn't match the local one — a false "update available". The check now treats any falsy digest (empty *or* missing) as a failed lookup, same as the self-update path already did. Test in `scripts/test_remote_version.py`.
+
+### Changed
+- **`DEBUG=true` is finally honored as an env var.** The README documented it and I'd told people to set it, but nothing actually read it — debug mode could only be turned on via `/debug` or the Web UI. It now seeds the initial debug state from the environment like every other persistent setting, and a later `/debug`/Web UI toggle still overrides and persists across restarts.
+
+### Docs
+- Corrected the Telegram command count (it was stuck at "14") and filled in the nine commands missing from the table, clarified the `AUTO_SELFUPDATE` vs `AUTO_UPDATE_ALL` / `docksentry.auto` distinction (self-update vs updating your other containers), and narrowed the Web-UI-persistence claim to the settings that are actually editable there.
+
 ## [1.51.0] - 2026-07-25
 
 ### Fixed

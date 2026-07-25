@@ -38,14 +38,14 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 
 - **Automatic update detection** — compares image digests on a configurable cron schedule
 - **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update
-- **Telegram bot** *(optional)* — full interactive control with inline buttons and 14 commands
+- **Telegram bot** *(optional)* — full interactive control with inline buttons and 20+ commands
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Ntfy, Gotify, Home Assistant, or any HTTP endpoint
 - **Headless mode** — run without Telegram; Web UI + Discord/Webhook is enough
 - **Per-container auto-update** — selected containers update without confirmation
 - **Pin/Freeze containers** — exclude containers from updates
 - **Auto-rollback** — failed updates automatically restore the previous container
-- **Container monitoring** — transition-based alerts for unhealthy containers, non-zero exits, OOM kills and crash-restarts; disk-space warnings with reclaim preview
+- **Container monitoring** — transition-based alerts for unhealthy containers, non-zero exits, OOM kills and crash-restarts; disk-space warnings with reclaim preview. Every event is kept in a persistent history you can browse on the Web UI History page or recall with `/events`
 - **Docker Compose support** — native `docker compose pull/up` for Compose stacks
 - **Self-update** — the bot can update itself automatically
 - **Persistent settings** — Web UI changes survive restarts
@@ -140,7 +140,7 @@ If you have **compose-specific orchestration** (depends_on chains, profiles, mul
 
 The log line `Compose file not found: <path> — falling back to standalone` is the marker that the fallback is being taken. Not an error per se, just informational. If you see it on every update and want the compose path instead, mount the relevant host directory read-only into Docksentry.
 
-**Audit mode (debug):** run with `DEBUG=true` and Docksentry logs `[audit] HostConfig.<key>` / `[audit] Config.<key>` for any inspect field that's non-default but not restored on recreate. Future Docker versions adding new keys surface here — please report any sightings as an issue so we can extend coverage.
+**Audit mode (debug):** on every update check Docksentry logs `[audit] HostConfig.<key>` / `[audit] Config.<key>` to the container log (`docker logs docksentry`) for any inspect field that's non-default but not restored on recreate. Set `DEBUG=true` to also fan the check's debug output out to Telegram (and flip it at runtime with `/debug` or the Web UI — that toggle persists). Future Docker versions adding new keys surface here — please report any sightings as an issue so we can extend coverage.
 
 ### Experimental: Podman support
 
@@ -216,7 +216,8 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 |---------|-------------|
 | `/status` | Container overview with health, uptime, images |
 | `/status <name>` | Per-container detail with inline Stop/Restart/Start buttons |
-| `/check` | Manually trigger an update check |
+| `/check` | Manually trigger an update check (add a name/glob to scope) |
+| `/update <name\|*>` | Update a container or everything matching a glob |
 | `/updates` | Show pending updates |
 | `/start <name>` | Start a stopped container |
 | `/stop <name>` | Stop a running container |
@@ -225,8 +226,16 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 | `/pin <name>` | Pin container — excluded from updates |
 | `/unpin <name>` | Unpin container |
 | `/autoupdate <name>` | Toggle auto-update per container |
+| `/cooldown <name> <seconds>` | Per-container post-update cooldown before the next in a batch |
+| `/protect <name>` | Protect a container from `/stop` |
+| `/setlink <name> <url>` | Set a repo/changelog link for a container |
+| `/groups` | Show container groups (or `/groups <name>`) |
+| `/maintenance <2h\|off>` | Pause auto-updates for a window |
 | `/history` | Show update history |
+| `/events` | Recent container events (crashes, OOM, health flips) |
+| `/audit <name>` | Audit container inspect coverage |
 | `/cleanup` | Remove old unused images |
+| `/checkimages` | How much space `/cleanup` would free (dry-run) |
 | `/selfupdate` | Update the bot itself (latest) |
 | `/selfupdate <version>` | Pin to a specific version (e.g. `/selfupdate 1.17.4`) |
 | `/selfupdate previous` | Roll back to the previous release |
@@ -259,7 +268,7 @@ services:
 | `docksentry.enable=false` | Take the container out of Docksentry's scope entirely (not checked, not listed) |
 | `docksentry.exclude=true` | Same as `docksentry.enable=false` |
 | `docksentry.pin=true` | Freeze the container — never listed as an update, never updated (twin of `/pin`) |
-| `docksentry.auto=true` / `=false` | Opt in to / out of auto-updates. `=false` keeps a container manual **even with `AUTO_UPDATE_ALL=true`**; `=true` opts it in without the per-container toggle |
+| `docksentry.auto=true` / `=false` | Opt in to / out of auto-updates **(auto-updating your other containers, not Docksentry itself)**. `=false` keeps a container manual **even with `AUTO_UPDATE_ALL=true`**; `=true` opts it in without the per-container toggle |
 | `docksentry.protect=true` | Protect from `/stop` (a `=false` label force-unprotects, overriding the toggle) |
 | `docksentry.ask-major=true` / `=false` | Require / skip the major-version confirmation gate for auto-updates |
 | `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
@@ -279,8 +288,8 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
-| `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check |
-| `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container (Watchtower-style), not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
+| `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
+| `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container **(auto-updating your other containers, not Docksentry itself)** — Watchtower-style, not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
 | `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
 | `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
 | `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
@@ -320,8 +329,9 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `DOCKER_REGISTRY` | `docker.io` | Registry to log into. Set to `ghcr.io`, `quay.io`, an internal Harbor, etc. when using `DOCKER_USERNAME`/`PASSWORD`. |
 | `HEALTHCHECK_MAX_STARTING` | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
+| `DEBUG` | `false` | Seed debug mode on at startup (verbose logging + the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
 
-All settings except BOT_TOKEN and CHAT_ID can also be changed via the Web UI and persist across restarts. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
+Only the settings that live in the Web UI (roughly: schedule, exclude list, auto-selfupdate, cleanup options, disk-warning, quiet hours, weekly report, language, Web password, Discord/webhook URLs, debug, Telegram topic/allowed-users, bot label, stop timeout, monitoring toggle/interval) can be edited there and persist across restarts. Everything else is env-only — notably `SMTP_*`, `DOCKER_USERNAME`/`PASSWORD`/`AUTH_CONFIG`/`REGISTRY`, `AUTO_UPDATE_ALL`, `TELEGRAM_POLLING`, `WEB_UI`, `WEB_PORT`, plus `BOT_TOKEN`/`CHAT_ID` — several of them (credentials especially) intentionally never touch the data volume. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 
@@ -409,7 +419,7 @@ This is a stepping stone, not a replacement for v2.0 multi-host: you still maint
 
 ## Web UI
 
-Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, and full settings management — all in a dark-themed, mobile-responsive interface.
+Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, a Container Events history (the same crash/OOM/health-flip log you get from `/events`), and full settings management — all in a dark-themed, mobile-responsive interface.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-status.png" alt="Web UI Status" width="700">

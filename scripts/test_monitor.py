@@ -93,6 +93,41 @@ def main():
     ev, pend, alrt = he({"a": c(health="")}, {"a": c(health="")}, {}, set())
     checks["no healthcheck -> no health events"] = ev == [] and pend == {} and alrt == set()
 
+    # ── recovery-by-restart: leaving unhealthy ends the episode (regression) ──
+    # (a) confirmed unhealthy recovers via unhealthy->starting: one "recovered",
+    #     alerted cleared, and a later unhealthy episode alerts normally again.
+    ev, pend, alrt = he({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set())
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, pend, alrt)
+    checks["restart-recovery: confirmed first"] = alrt == {"a"}
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="starting")}, pend, alrt)
+    checks["restart-recovery: ->starting fires recovered once"] = (
+        kinds(ev) == [("recovered", "a")] and alrt == set() and pend == {})
+    # a fresh episode after restart-recovery alerts again (no stuck flag)
+    ev, pend, alrt = he({"a": c(health="starting")}, {"a": c(health="unhealthy")}, pend, alrt)
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, pend, alrt)
+    checks["restart-recovery: later episode alerts again"] = (
+        kinds(ev) == [("unhealthy", "a")] and alrt == {"a"})
+
+    # (b) unhealthy->starting->healthy fires recovery ONCE, not twice.
+    ev, pend, alrt = he({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set())
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, pend, alrt)
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="starting")}, pend, alrt)
+    r1 = kinds(ev)
+    ev, pend, alrt = he({"a": c(health="starting")}, {"a": c(health="healthy")}, pend, alrt)
+    r2 = kinds(ev)
+    checks["restart-recovery: ->starting->healthy fires once, no double"] = (
+        r1 == [("recovered", "a")] and r2 == [] and alrt == set())
+
+    # pending-only blip that leaves unhealthy (never confirmed) stays silent
+    ev, pend, alrt = he({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set())
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="starting")}, pend, alrt)
+    checks["restart-recovery: unconfirmed blip stays silent"] = (
+        ev == [] and pend == {} and alrt == set())
+
+    # (c*) prune: an alerted name absent from cur is dropped (no stuck flag)
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {}, {}, {"a"})
+    checks["prune: vanished container drops stuck flag"] = pend == {} and alrt == set()
+
     # ── exits ──
     ev = diff({"a": c()}, {"a": c(status="exited", code=0)})
     checks["zero exit is silent"] = ev == []
@@ -142,6 +177,27 @@ def main():
     mf.snapshot = lambda: {"a": c(health="healthy")}
     f2 = mf.tick()                               # resolved before confirm
     checks["one-pass flap: zero notifications"] = f1 == [] and f2 == [] and mf.sent == []
+
+    # a confirmed-unhealthy container that VANISHES then reappears can alert
+    # again through tick() — the prune must clear its stuck alerted flag.
+    mv = make_monitor()
+    mv.snapshot = lambda: {"a": c(health="healthy")}
+    mv.tick()                                    # baseline
+    mv.snapshot = lambda: {"a": c(health="unhealthy")}
+    mv.tick()                                    # pending
+    mv.snapshot = lambda: {"a": c(health="unhealthy")}
+    checks["vanish/reappear: first episode alerts"] = kinds(mv.tick()) == [("unhealthy", "a")]
+    mv.snapshot = lambda: {}                      # container removed
+    mv.tick()
+    checks["vanish/reappear: flag pruned on vanish"] = "a" not in mv._alerted_unhealthy
+    mv._last_sent = {}                            # isolate the flag from cooldown
+    mv.snapshot = lambda: {"a": c(health="healthy")}
+    mv.tick()                                    # recreated, re-baselined healthy
+    mv.snapshot = lambda: {"a": c(health="unhealthy")}
+    mv.tick()                                    # pending again
+    mv.snapshot = lambda: {"a": c(health="unhealthy")}
+    checks["vanish/reappear: second episode alerts again"] = (
+        kinds(mv.tick()) == [("unhealthy", "a")])
 
     # exits / OOM / crash_restart still fire IMMEDIATELY (unchanged)
     mi = make_monitor()

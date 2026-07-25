@@ -167,11 +167,21 @@ class ContainerMonitor:
                 else:
                     # first flip -> pending; remember the pre-unhealthy state
                     new_pending[name] = h_before or "?"
-            elif h_before == "unhealthy" and h_now == "healthy":
+            elif h_before == "unhealthy":
+                # The episode ends the moment the container LEAVES unhealthy,
+                # no matter where it lands. Recovery-by-restart goes
+                # unhealthy->starting->healthy and never touches "healthy"
+                # directly, so keying recovery on ->healthy stranded the name
+                # in `alerted` forever and muted it for good. Leaving unhealthy
+                # IS the recovery signal.
                 new_pending.pop(name, None)
                 if name in new_alerted:
                     events.append(("recovered", name, {}))
                     new_alerted.discard(name)
+        # A vanished (or recreated) container must not drag a stale flag into
+        # its next life — prune anything no longer present so it starts clean.
+        new_pending = {n: v for n, v in new_pending.items() if n in cur}
+        new_alerted = {n for n in new_alerted if n in cur}
         return events, new_pending, new_alerted
 
     # ── tick ────────────────────────────────────────────────────
