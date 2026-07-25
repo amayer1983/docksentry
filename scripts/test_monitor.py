@@ -128,6 +128,85 @@ def main():
     ev, pend, alrt = he({"a": c(health="unhealthy")}, {}, {}, {"a"})
     checks["prune: vanished container drops stuck flag"] = pend == {} and alrt == set()
 
+    # ── unhealthy-at-baseline / stopped-container false alert (#2 @famewolf) ──
+    # (BUG 1) a RUNNING container unhealthy at both passes but never observed
+    # flipping from healthy (empty pending) must NOT alert — it was already
+    # unhealthy when the baseline was built.
+    ev, pend, alrt = he({"a": c(health="unhealthy")},
+                        {"a": c(health="unhealthy")}, {}, set())
+    checks["running unhealthy-at-baseline: no spurious alert"] = (
+        ev == [] and alrt == set())
+
+    # (BUG 2) a STOPPED container frozen at unhealthy (its health field is a
+    # stale value from its last run) must never produce a health event, and
+    # must not linger in pending/alerted.
+    ev, pend, alrt = he({"a": c(status="exited", health="unhealthy")},
+                        {"a": c(status="exited", health="unhealthy")}, {}, set())
+    checks["stopped frozen-unhealthy: no event ever"] = (
+        ev == [] and pend == {} and alrt == set())
+    # even if it somehow arrived carrying flags, they get cleared silently
+    ev, pend, alrt = he({"a": c(status="exited", health="unhealthy")},
+                        {"a": c(status="exited", health="unhealthy")},
+                        {"a": "healthy"}, {"a"})
+    checks["stopped frozen-unhealthy: stale flags cleared, no event"] = (
+        ev == [] and pend == {} and alrt == set())
+
+    # genuine transition still fires exactly once, with prev="healthy"
+    ev, pend, alrt = he({"a": c(health="healthy")},
+                        {"a": c(health="unhealthy")}, {}, set())
+    checks["genuine flip: pending, silent"] = ev == [] and pend == {"a": "healthy"}
+    ev, pend, alrt = he({"a": c(health="unhealthy")},
+                        {"a": c(health="unhealthy")}, pend, alrt)
+    checks["genuine flip: confirms once with prev=healthy"] = (
+        ev == [("unhealthy", "a", {"prev": "healthy"})] and alrt == {"a"})
+    ev, pend, alrt = he({"a": c(health="unhealthy")},
+                        {"a": c(health="unhealthy")}, pend, alrt)
+    checks["genuine flip: does not re-fire"] = ev == []
+
+    # an alerted RUNNING container that STOPS (->exited): no "recovered" event,
+    # flag cleared silently (stopping is not recovering; diff() reports the exit)
+    ev, pend, alrt = he({"a": c(health="unhealthy")},
+                        {"a": c(status="exited", health="unhealthy")}, {}, {"a"})
+    checks["alerted then stops: no recovered event, flag cleared"] = (
+        ev == [] and alrt == set() and pend == {})
+
+    # invariant sweep: run every health scenario above and assert no emitted
+    # unhealthy event ever carries prev == "unhealthy".
+    _scenarios = [
+        ({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, {}, set()),
+        ({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set()),
+        ({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")},
+         {"a": "healthy"}, set()),
+        ({"a": c(status="exited", health="unhealthy")},
+         {"a": c(status="exited", health="unhealthy")}, {}, set()),
+    ]
+    _bad_prev = False
+    for _p, _cu, _pe, _al in _scenarios:
+        _ev, _, _ = he(_p, _cu, _pe, _al)
+        for _k, _n, _d in _ev:
+            if _k == "unhealthy" and _d.get("prev") == "unhealthy":
+                _bad_prev = True
+    checks["no unhealthy event ever has prev=='unhealthy'"] = not _bad_prev
+
+    # through tick(): a container already unhealthy when the baseline is built
+    # (and still unhealthy after) never fires — the reproduced #2 bug.
+    mbz = make_monitor()
+    mbz.snapshot = lambda: {"a": c(health="unhealthy")}
+    mbz.tick()                                    # silent baseline, unhealthy
+    mbz.snapshot = lambda: {"a": c(health="unhealthy")}
+    checks["tick: unhealthy-at-baseline never alerts"] = mbz.tick() == []
+    mbz.snapshot = lambda: {"a": c(health="unhealthy")}
+    checks["tick: still-unhealthy-at-baseline still silent"] = mbz.tick() == []
+
+    # through tick(): a stopped container frozen at unhealthy never alerts
+    msz = make_monitor()
+    msz.snapshot = lambda: {"a": c(status="exited", health="unhealthy")}
+    msz.tick()                                    # baseline
+    msz.snapshot = lambda: {"a": c(status="exited", health="unhealthy")}
+    checks["tick: stopped frozen-unhealthy never alerts"] = (
+        msz.tick() == [] and "a" not in msz._alerted_unhealthy
+        and "a" not in msz._health_pending)
+
     # ── exits ──
     ev = diff({"a": c()}, {"a": c(status="exited", code=0)})
     checks["zero exit is silent"] = ev == []
@@ -279,9 +358,10 @@ def main():
     checks["oom msg carries log tail"] = "boom line 1" in full
     m7._last_sent = {}
     m7.snapshot = lambda: {"a": c(health="unhealthy")}
-    # confirmed unhealthy (prev already unhealthy, not yet alerted) -> fires
+    # confirmed unhealthy (pending flip observed last pass, still unhealthy,
+    # running) -> fires
     m7._prev = {"a": c(health="unhealthy")}
-    m7._health_pending = {}
+    m7._health_pending = {"a": "healthy"}
     m7._alerted_unhealthy = set()
     m7.tick()
     checks["unhealthy msg carries tail, no snapshot"] = (

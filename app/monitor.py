@@ -170,20 +170,37 @@ class ContainerMonitor:
             before = prev.get(name)
             if before is None:
                 continue
+            # Health only means something for a RUNNING container. A stopped/
+            # exited container's State.Health.Status is a stale frozen value
+            # from when it last ran, not a live signal (#2, @famewolf: a
+            # months-dead container still read "unhealthy" and fired a bogus
+            # alert). Its stop/exit is already reported by diff(), so don't
+            # double-report it here — and clear any flags so it starts clean if
+            # it ever runs again. Stopping is NOT recovering: a previously
+            # alerted container that merely stops gets no "recovered" event,
+            # just a silent flag cleanup.
+            if now.get("status") != "running":
+                new_pending.pop(name, None)
+                new_alerted.discard(name)
+                continue
             h_now = now["health"]
             h_before = before["health"]
 
             if h_now == "unhealthy":
                 if name in new_alerted:
                     continue                      # already alerted, stay quiet
-                if h_before == "unhealthy":
-                    # confirmed on a second consecutive pass -> alert now
-                    origin = new_pending.pop(name, h_before)
+                if name in new_pending:
+                    # we saw it flip healthy->unhealthy last pass and it's still
+                    # unhealthy -> confirmed, alert now with the pre-flip state
+                    origin = new_pending.pop(name)
                     events.append(("unhealthy", name, {"prev": origin or "?"}))
                     new_alerted.add(name)
-                else:
-                    # first flip -> pending; remember the pre-unhealthy state
+                elif h_before != "unhealthy":
+                    # fresh healthy->unhealthy flip -> pend; remember pre-state
                     new_pending[name] = h_before or "?"
+                # else: already unhealthy at baseline / never observed flipping
+                # -> stay silent (silent-baseline-on-restart principle). "prev"
+                # can therefore never be "unhealthy" in an emitted event.
             elif h_before == "unhealthy":
                 # The episode ends the moment the container LEAVES unhealthy,
                 # no matter where it lands. Recovery-by-restart goes

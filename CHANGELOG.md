@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.53.2] - 2026-07-25
+
+### Fixed
+- **Bogus "turned UNHEALTHY (health was: unhealthy)" alert** ([#2](../../issues/2), @famewolf). The monitor could fire a nonsensical unhealthy alert claiming the previous health was already "unhealthy". Two things caused it. First, a container that was already unhealthy when Docksentry built its baseline (rather than one we actually watched flip from healthy) got confirmed on the second pass and alerted — the confirm keyed off "was unhealthy last pass" instead of "we saw it flip". That contradicts the silent-baseline-on-restart principle, so now only a genuinely observed `healthy → unhealthy` transition alerts, and "health was:" can never say "unhealthy". Second, the container that triggered this was *stopped* — its logs were months old — and a stopped container's health field is just a frozen leftover from when it last ran, not a live signal. Health is now evaluated for running containers only; a stopped or exited container never produces a health event (its exit is already reported separately), and merely stopping isn't treated as a recovery. New tests in `scripts/test_monitor.py`.
+
 ## [1.53.1] - 2026-07-25
 
 ### Fixed
