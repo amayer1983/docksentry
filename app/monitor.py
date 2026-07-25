@@ -8,7 +8,8 @@ Watches for state *transitions* between scheduler ticks and notifies:
   one-shot jobs would spam otherwise)
 - container was OOM-killed
 - container crashed and was brought back by its restart policy
-  (RestartCount increased while the container kept "running")
+  (RestartCount increased since the last pass — status-agnostic, so an
+  instant-crash loop stuck in restart-backoff is still caught)
 
 Design constraints, in order of importance:
 
@@ -111,23 +112,39 @@ class ContainerMonitor:
             if before is None:
                 continue
 
-            # running -> exited
-            if before["status"] == "running" and now["status"] == "exited":
-                if now["oom"]:
-                    events.append(("oom", name, {"code": now["exit_code"]}))
-                elif now["exit_code"] != 0:
-                    events.append(("exited", name, {"code": now["exit_code"]}))
-                # zero exit: a normal ending, stay quiet
-
-            # crashed + auto-restarted between ticks: RestartCount went up.
-            # Only increases count — a recreate resets the counter to 0.
-            if (now["restarts"] > before["restarts"]
-                    and now["status"] == "running"):
+            # Crash loop: RestartCount climbed since last pass, so the restart
+            # POLICY fired — the container crashed and was auto-restarted. This
+            # is the loop signal and it is STATUS-AGNOSTIC on purpose. A
+            # container that crashes instantly on startup spends almost all its
+            # time in restart-backoff (Docker reports status "restarting",
+            # Podman may report "exited" between attempts), so at a 60s sample
+            # it is rarely caught "running" — keying the old detector on
+            # status == "running" missed the loop entirely (#2, @NotRetarded's
+            # VPN-on-unsupported-kernel case, no healthcheck). Keying off the
+            # count instead catches it whether we sample it running, restarting
+            # or briefly exited, on both Docker and Podman. RestartCount only
+            # increments on a POLICY restart — a manual `docker restart` does
+            # NOT bump it — so a climbing count is always a real crash loop
+            # worth one alert; the 30-min per-(container,kind) cooldown already
+            # prevents spam. A recreate resets the counter to 0, so only a real
+            # increase fires. (OOM keeps precedence over crash_restart.)
+            if now["restarts"] > before["restarts"]:
                 if now["oom"]:
                     events.append(("oom", name, {"code": now["exit_code"]}))
                 else:
                     events.append(("crash_restart", name,
                                    {"count": now["restarts"]}))
+            # One-time death, count UNCHANGED: running -> exited. A container
+            # that crashes then STAYS down (no restart policy, or the policy
+            # gave up) lands here on the pass its status settles to exited with
+            # the count no longer moving. `elif` so a looping container fires
+            # crash_restart only, never a duplicate "exited" on the same pass.
+            elif before["status"] == "running" and now["status"] == "exited":
+                if now["oom"]:
+                    events.append(("oom", name, {"code": now["exit_code"]}))
+                elif now["exit_code"] != 0:
+                    events.append(("exited", name, {"code": now["exit_code"]}))
+                # zero exit: a normal ending, stay quiet
         return events
 
     @staticmethod

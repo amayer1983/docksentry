@@ -142,6 +142,33 @@ def main():
     ev = diff({"a": c(restarts=3)}, {"a": c(restarts=0)})
     checks["count reset (recreate) is silent"] = ev == []
 
+    # crash loop caught mid-backoff (#2, @NotRetarded): the container is almost
+    # never sampled "running" — it sits in restart-backoff. Detection must key
+    # off the RestartCount climb, not the status.
+    # (a) caught as "restarting" (Docker) with the count up -> crash_restart.
+    #     This is the previously-MISSED case.
+    ev = diff({"a": c(status="restarting", restarts=4)},
+              {"a": c(status="restarting", restarts=5)})
+    checks["crash loop caught 'restarting' fires crash_restart"] = (
+        ev == [("crash_restart", "a", {"count": 5})])
+    # (b) caught as "exited" (Podman between attempts) with the count up ->
+    #     crash_restart, NOT a plain "exited", because the count climbed.
+    ev = diff({"a": c(status="exited", restarts=4)},
+              {"a": c(status="exited", code=1, restarts=5)})
+    checks["crash loop caught 'exited' + count up fires crash_restart"] = (
+        ev == [("crash_restart", "a", {"count": 5})])
+    # a genuine one-shot non-zero exit with the count UNCHANGED still fires the
+    # plain "exited" (not reclassified as a crash loop).
+    ev = diff({"a": c(status="running", restarts=2)},
+              {"a": c(status="exited", code=1, restarts=2)})
+    checks["one-shot exit, count unchanged, fires exited"] = (
+        ev == [("exited", "a", {"code": 1})])
+    # OOM precedence holds when the count is up: oom, not crash_restart.
+    ev = diff({"a": c(restarts=2)},
+              {"a": c(status="restarting", code=137, oom=True, restarts=3)})
+    checks["oom precedence over crash_restart when count up"] = (
+        kinds(ev) == [("oom", "a")])
+
     # ── population changes ──
     ev = diff({"a": c()}, {})
     checks["vanished container is silent"] = ev == []

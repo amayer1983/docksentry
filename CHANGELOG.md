@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.53.1] - 2026-07-25
+
+### Fixed
+- **Crash loops were missed for containers that crash instantly** ([#2](../../issues/2), @NotRetarded's VPN-on-unsupported-kernel case). A container that dies the moment it starts spends almost all its time in restart-backoff — Docker reports it as `restarting`, Podman as `exited` between attempts — so a 60-second monitor sample rarely catches it `running`. The crash-restart detector required `status == "running"` at sample time, so it never saw the loop and nothing alerted. Detection now keys off the RestartCount increase alone, regardless of the sampled state, so a crash loop fires whether we catch it running, restarting or briefly exited, on both Docker and Podman. RestartCount only climbs when the restart *policy* kicks in (a manual `docker restart` doesn't bump it), so a rising count is always a real loop — and this needs **no healthcheck**, the count itself is the signal. A one-shot container that just exits once (count unchanged) still fires the plain "exited" as before. New tests in `scripts/test_monitor.py`.
+
 ## [1.53.0] - 2026-07-25
 
 ### Added
