@@ -4,7 +4,9 @@
 Transition detection between snapshots plus the guard rails that keep the
 feature from becoming a spam cannon:
 
-- health healthy->unhealthy fires once; the recovery fires once
+- health is debounced: a one-pass flap is silent; a still-unhealthy
+  container on the next pass fires once; recovery fires once (only if the
+  unhealthy was confirmed)
 - zero exits are silent (one-shot jobs end normally all day long)
 - non-zero exits and OOM kills notify, with code
 - RestartCount increase while "running" = crashed + auto-restarted
@@ -47,6 +49,8 @@ def make_monitor(update_running=False, exclude=None):
     m.sent = []
     m._prev = None
     m._last_sent = {}
+    m._health_pending = {}
+    m._alerted_unhealthy = set()
     return m
 
 
@@ -58,15 +62,36 @@ def main():
     checks = {}
     diff = ContainerMonitor.diff
 
-    # ── health transitions ──
-    ev = diff({"a": c(health="healthy")}, {"a": c(health="unhealthy")})
-    checks["healthy->unhealthy fires"] = kinds(ev) == [("unhealthy", "a")]
-    ev = diff({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")})
-    checks["staying unhealthy is silent"] = ev == []
-    ev = diff({"a": c(health="unhealthy")}, {"a": c(health="healthy")})
-    checks["recovery fires"] = kinds(ev) == [("recovered", "a")]
-    ev = diff({"a": c(health="")}, {"a": c(health="")})
-    checks["no healthcheck -> no health events"] = ev == []
+    # ── health transitions (debounced, #2 @famewolf) ──
+    he = ContainerMonitor._health_events
+    # diff() itself no longer emits health events — they live in _health_events
+    checks["diff has no health events"] = (
+        diff({"a": c(health="healthy")}, {"a": c(health="unhealthy")}) == []
+        and diff({"a": c(health="unhealthy")}, {"a": c(health="healthy")}) == [])
+
+    # first flip healthy->unhealthy: pending, NO alert
+    ev, pend, alrt = he({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set())
+    checks["first unhealthy flip is silent (pending)"] = (
+        ev == [] and pend == {"a": "healthy"} and alrt == set())
+    # still unhealthy next pass: fire once, remember the pre-unhealthy state
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, pend, alrt)
+    checks["confirmed unhealthy fires on next pass"] = (
+        ev == [("unhealthy", "a", {"prev": "healthy"})] and alrt == {"a"} and pend == {})
+    # already alerted, stays unhealthy: no repeat
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="unhealthy")}, pend, alrt)
+    checks["confirmed unhealthy does not repeat"] = ev == [] and alrt == {"a"}
+    # recovery of a confirmed unhealthy fires once and clears
+    ev, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="healthy")}, pend, alrt)
+    checks["recovery of confirmed fires once"] = (
+        kinds(ev) == [("recovered", "a")] and alrt == set())
+    # one-pass flap (pending then healthy again) -> ZERO events, no residue
+    ev, pend, alrt = he({"a": c(health="healthy")}, {"a": c(health="unhealthy")}, {}, set())
+    ev2, pend, alrt = he({"a": c(health="unhealthy")}, {"a": c(health="healthy")}, pend, alrt)
+    checks["one-pass flap is fully silent"] = (
+        ev == [] and ev2 == [] and pend == {} and alrt == set())
+    # no healthcheck -> nothing ever
+    ev, pend, alrt = he({"a": c(health="")}, {"a": c(health="")}, {}, set())
+    checks["no healthcheck -> no health events"] = ev == [] and pend == {} and alrt == set()
 
     # ── exits ──
     ev = diff({"a": c()}, {"a": c(status="exited", code=0)})
@@ -92,17 +117,43 @@ def main():
     m = make_monitor()
     m.snapshot = lambda: {"a": c(health="healthy"), "docksentry": c()}
     checks["first tick: silent baseline"] = m.tick() == []
+    # exits stay IMMEDIATE; the health flip is only pending on this pass
     m.snapshot = lambda: {"a": c(health="unhealthy"), "docksentry": c(status="exited", code=1)}
     sent = m.tick()
-    checks["second tick: notifies transition"] = kinds(sent) == [("unhealthy", "a")]
+    checks["health flip pending: no notify yet"] = sent == []
     checks["own container ignored"] = all(n != "docksentry" for _, n in kinds(sent))
+    # still unhealthy next pass -> confirmed alert fires now
+    m.snapshot = lambda: {"a": c(health="unhealthy")}
+    sent = m.tick()
+    checks["confirmed unhealthy notifies on next pass"] = kinds(sent) == [("unhealthy", "a")]
     checks["message rendered via i18n key"] = m.sent == ["monitor_unhealthy"]
 
-    # cooldown: same transition again within window stays quiet
+    # a confirmed unhealthy that recovers fires exactly one recovery
     m.snapshot = lambda: {"a": c(health="healthy")}
-    m.tick()  # recovery fires (different kind, allowed)
-    m.snapshot = lambda: {"a": c(health="unhealthy")}
-    checks["flap within cooldown suppressed"] = m.tick() == []
+    sent = m.tick()
+    checks["recovery of confirmed notifies once"] = kinds(sent) == [("recovered", "a")]
+
+    # a one-pass flap through tick() produces ZERO notifications AND ZERO events
+    mf = make_monitor()
+    mf.snapshot = lambda: {"a": c(health="healthy")}
+    mf.tick()                                    # baseline
+    mf.snapshot = lambda: {"a": c(health="unhealthy")}
+    f1 = mf.tick()                               # pending, silent
+    mf.snapshot = lambda: {"a": c(health="healthy")}
+    f2 = mf.tick()                               # resolved before confirm
+    checks["one-pass flap: zero notifications"] = f1 == [] and f2 == [] and mf.sent == []
+
+    # exits / OOM / crash_restart still fire IMMEDIATELY (unchanged)
+    mi = make_monitor()
+    mi.snapshot = lambda: {"a": c(), "b": c(), "d": c(restarts=1)}
+    mi.tick()
+    mi.snapshot = lambda: {"a": c(status="exited", code=1),
+                           "b": c(status="exited", code=137, oom=True),
+                           "d": c(restarts=2)}
+    imm = kinds(mi.tick())
+    checks["exit fires immediately"] = ("exited", "a") in imm
+    checks["oom fires immediately"] = ("oom", "b") in imm
+    checks["crash_restart fires immediately"] = ("crash_restart", "d") in imm
 
     # ── update-lock guard ──
     m2 = make_monitor()
@@ -115,19 +166,21 @@ def main():
     m2.snapshot = lambda: {"a": c(status="exited", code=1)}
     checks["post-update tick re-baselines silently"] = m2.tick() == []
 
-    # ── label opt-out ──
+    # ── label opt-out (confirmed unhealthy still suppressed) ──
     m3 = make_monitor()
     lab = {"docksentry.monitor": "false"}
     m3.snapshot = lambda: {"a": c(health="healthy", labels=lab)}
     m3.tick()
     m3.snapshot = lambda: {"a": c(health="unhealthy", labels=lab)}
+    m3.tick()
     checks["docksentry.monitor=false opts out"] = m3.tick() == []
 
-    # ── exclude list ──
+    # ── exclude list (confirmed unhealthy still suppressed) ──
     m4 = make_monitor(exclude=["a"])
     m4.snapshot = lambda: {"a": c(health="healthy")}
     m4.tick()
     m4.snapshot = lambda: {"a": c(health="unhealthy")}
+    m4.tick()
     checks["exclude_containers honored"] = m4.tick() == []
 
     # ── log tail + OOM memory snapshot in notifications (v1.49.0) ──
@@ -143,12 +196,16 @@ def main():
     checks["oom msg carries log tail"] = "boom line 1" in full
     m7._last_sent = {}
     m7.snapshot = lambda: {"a": c(health="unhealthy")}
-    # rebaseline for health flip
-    m7._prev = {"a": c(health="healthy")}
+    # confirmed unhealthy (prev already unhealthy, not yet alerted) -> fires
+    m7._prev = {"a": c(health="unhealthy")}
+    m7._health_pending = {}
+    m7._alerted_unhealthy = set()
     m7.tick()
     checks["unhealthy msg carries tail, no snapshot"] = (
         "boom line 1" in m7.sent[-1] and "monitor_top_memory" not in m7.sent[-1])
+    # recovery of a confirmed unhealthy -> fires clean
     m7._prev = {"a": c(health="unhealthy")}
+    m7._alerted_unhealthy = {"a"}
     m7.snapshot = lambda: {"a": c(health="healthy")}
     m7.tick()
     checks["recovery msg stays clean"] = ("boom" not in m7.sent[-1]

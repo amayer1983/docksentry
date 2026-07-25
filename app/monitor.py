@@ -2,7 +2,8 @@
 
 Watches for state *transitions* between scheduler ticks and notifies:
 
-- health went unhealthy (and the recovery back to healthy)
+- health went unhealthy (debounced: confirmed on the next pass before we
+  alert, so flappy healthchecks don't spam) and the recovery back to healthy
 - container exited with a non-zero code (zero exits are normal endings —
   one-shot jobs would spam otherwise)
 - container was OOM-killed
@@ -38,6 +39,11 @@ class ContainerMonitor:
         self.bot = bot
         self._prev = None          # name -> state dict; None = no baseline yet
         self._last_sent = {}       # (name, kind) -> monotonic ts
+        # Health debounce (#2, @famewolf): a healthy->unhealthy flip is held
+        # for one pass before we alert, so flappy healthchecks (gluetun's
+        # ICMP-mismatch blip) that self-resolve within a minute stay silent.
+        self._health_pending = {}  # name -> pre-unhealthy health (awaiting confirm)
+        self._alerted_unhealthy = set()  # names we've actually fired unhealthy for
 
     # ── docker reads ────────────────────────────────────────────
 
@@ -92,21 +98,18 @@ class ContainerMonitor:
 
     @staticmethod
     def diff(prev, cur):
-        """Transition events between two snapshots. Pure — returns a list
-        of (kind, name, detail) tuples. Containers that vanished are NOT
-        events (removal is deliberate); new containers just get baselined.
+        """Transition events between two snapshots — exits, OOM kills and
+        crash-restarts only. Pure; returns a list of (kind, name, detail)
+        tuples. These stay IMMEDIATE (a death is a death). Health
+        transitions are debounced separately, see _health_events.
+        Containers that vanished are NOT events (removal is deliberate);
+        new containers just get baselined.
         """
         events = []
         for name, now in cur.items():
             before = prev.get(name)
             if before is None:
                 continue
-
-            # health transitions (only containers that have a healthcheck)
-            if now["health"] == "unhealthy" and before["health"] != "unhealthy":
-                events.append(("unhealthy", name, {"prev": before["health"] or "?"}))
-            elif before["health"] == "unhealthy" and now["health"] == "healthy":
-                events.append(("recovered", name, {}))
 
             # running -> exited
             if before["status"] == "running" and now["status"] == "exited":
@@ -127,6 +130,50 @@ class ContainerMonitor:
                                    {"count": now["restarts"]}))
         return events
 
+    @staticmethod
+    def _health_events(prev, cur, pending, alerted):
+        """Debounced health transitions (#2, @famewolf). Pure.
+
+        A healthy->unhealthy flip does NOT alert on its own — it becomes
+        *pending*. Only when the container is STILL unhealthy on the NEXT
+        pass do we fire the unhealthy alert and remember we did. A recovery
+        fires only if we actually alerted the unhealthy for it; a blip that
+        resolves before confirmation produces ZERO notifications — neither
+        unhealthy nor recovered.
+
+        `pending` maps a name to the health it had right before it went
+        unhealthy (so the alert can still say "health was: healthy").
+        `alerted` is the set of names whose unhealthy we've fired. Returns
+        (events, new_pending, new_alerted); the caller stores the two back.
+        """
+        events = []
+        new_pending = dict(pending)
+        new_alerted = set(alerted)
+        for name, now in cur.items():
+            before = prev.get(name)
+            if before is None:
+                continue
+            h_now = now["health"]
+            h_before = before["health"]
+
+            if h_now == "unhealthy":
+                if name in new_alerted:
+                    continue                      # already alerted, stay quiet
+                if h_before == "unhealthy":
+                    # confirmed on a second consecutive pass -> alert now
+                    origin = new_pending.pop(name, h_before)
+                    events.append(("unhealthy", name, {"prev": origin or "?"}))
+                    new_alerted.add(name)
+                else:
+                    # first flip -> pending; remember the pre-unhealthy state
+                    new_pending[name] = h_before or "?"
+            elif h_before == "unhealthy" and h_now == "healthy":
+                new_pending.pop(name, None)
+                if name in new_alerted:
+                    events.append(("recovered", name, {}))
+                    new_alerted.discard(name)
+        return events, new_pending, new_alerted
+
     # ── tick ────────────────────────────────────────────────────
 
     def tick(self):
@@ -139,6 +186,11 @@ class ContainerMonitor:
         # read every recreate as a crash.
         if getattr(self.bot, "update_running", False):
             self._prev = None
+            # Baseline reset -> the health debounce resets with it, so a
+            # stale "already alerted" entry can't swallow a real alert after
+            # the update window (and pending flips don't survive it either).
+            self._health_pending = {}
+            self._alerted_unhealthy = set()
             return []
 
         cur = self.snapshot()
@@ -156,9 +208,13 @@ class ContainerMonitor:
             self._prev = cur          # silent baseline
             return []
 
+        health_events, self._health_pending, self._alerted_unhealthy = \
+            self._health_events(self._prev, cur, self._health_pending,
+                                self._alerted_unhealthy)
+        raw = list(self.diff(self._prev, cur)) + health_events
         events = [
             (kind, name, detail)
-            for kind, name, detail in self.diff(self._prev, cur)
+            for kind, name, detail in raw
             if self._monitored(name, cur.get(name) or {})
         ]
         self._prev = cur

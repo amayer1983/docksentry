@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.51.0] - 2026-07-25
+
+### Fixed
+- **Self-update no longer bricks containers whose labels or env contain backticks or `$`** ([#49](../../issues/49), thanks @LeeNX). The helper that recreates Docksentry builds a `docker run` line and hands it to `sh -c`. I was wrapping args in double quotes, which don't protect backticks or `$` from the shell — so a Traefik label like `traefik.http.routers.x.rule=Host(`host.example.com`)` made `sh` try to run the hostname (`sh: host.example.com: not found`), the recreate failed, and the update rolled back and left the container dead. Every arg is now quoted with `shlex.quote` (single quotes, which are safe for backticks, `$`, spaces, the lot), so the label reaches Docker verbatim. This hit the current version too — worth updating for anyone running behind Traefik. (The `RLIMIT_NOFILE` line in Lee's log was a separate thing, [#48](../../issues/48), already fixed back in v1.47.4.)
+
+### Changed
+- **Flappy healthchecks don't spam anymore** ([#2](../../issues/2), @famewolf). A healthy→unhealthy flip no longer alerts on the spot — it waits one monitor pass. If the container is still unhealthy on the next pass, you get the "unhealthy" alert as before; if it's already back to healthy, you get nothing at all — no unhealthy, no recovery, complete silence. The motivating case is gluetun's ICMP-mismatch blip that clears itself within a minute. Exits, OOM kills and crash-restarts stay immediate — a death is a death. This isn't configurable, it's just the sensible default now. Tests in `scripts/test_monitor.py`.
+
 ## [1.50.0] - 2026-07-23
 
 ### Added

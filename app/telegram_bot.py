@@ -2,6 +2,7 @@
 """Telegram Bot - handles messages, callbacks, and notifications."""
 
 import json
+import shlex
 import socket
 import subprocess
 import os
@@ -1904,18 +1905,27 @@ class TelegramBot:
         so the bot survives on the previous version. `rm _old` runs only after
         a successful run, so a failed *cleanup* can't roll back a good update.
         """
+        # Quote the container name and image before they land in the `sh -c`
+        # script (run_parts is already shlex-quoted by the caller). Docker
+        # restricts names/tags to safe characters so shlex.quote is normally
+        # a no-op here, but quoting keeps the script robust and consistent
+        # with the run-arg handling. `{qname}_old` concatenates fine in sh:
+        # an unquoted name stays `ds_old`; a quoted one becomes `'x'_old`,
+        # which the shell joins into a single token.
+        qname = shlex.quote(name)
+        qimage = shlex.quote(image)
         rollback = (
-            f"docker rm -f {name} 2>/dev/null; "
-            f"docker rename {name}_old {name} 2>/dev/null; "
-            f"docker start {name}"
+            f"docker rm -f {qname} 2>/dev/null; "
+            f"docker rename {qname}_old {qname} 2>/dev/null; "
+            f"docker start {qname}"
         )
         return (
             f"sleep 3 && "
-            f"docker stop {name} && "
-            f"docker rename {name} {name}_old && "
-            f"( docker run -d {run_parts} {image} || "
+            f"docker stop {qname} && "
+            f"docker rename {qname} {qname}_old && "
+            f"( docker run -d {run_parts} {qimage} || "
             f"( echo 'Selfupdate recreate failed — rolling back'; {rollback}; exit 1 ) ) && "
-            f"docker rm {name}_old"
+            f"docker rm {qname}_old"
         )
 
     def _do_selfupdate(self, config, own_name, own_image):
@@ -1980,7 +1990,7 @@ class TelegramBot:
             run_args = full[3:-1]
 
         # Build the full recreation command
-        run_parts = " ".join(f'"{a}"' if " " in a or "=" in a else a for a in run_args)
+        run_parts = " ".join(shlex.quote(a) for a in run_args)
         update_script = self._build_selfupdate_script(own_name, run_parts, own_image)
 
         # Launch a temporary helper container on the host that performs the swap.
