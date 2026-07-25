@@ -524,5 +524,6 @@
   "web_ui_mode_simple": "Simple",
   "web_ui_mode_advanced": "Advanced",
   "web_ui_mode_show_advanced": "Switch to Advanced mode",
-  "web_ui_mode_show_simple": "Switch to Simple mode"
+  "web_ui_mode_show_simple": "Switch to Simple mode",
+  "policy_held": "⏸ `{name}`: held back by update policy ({level} {old} → {new}). Run /update {name} to apply, or set docksentry.policy=all."
 }

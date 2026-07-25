@@ -271,6 +271,7 @@ services:
 | `docksentry.auto=true` / `=false` | Opt in to / out of auto-updates **(auto-updating your other containers, not Docksentry itself)**. `=false` keeps a container manual **even with `AUTO_UPDATE_ALL=true`**; `=true` opts it in without the per-container toggle |
 | `docksentry.protect=true` | Protect from `/stop` (a `=false` label force-unprotects, overriding the toggle) |
 | `docksentry.ask-major=true` / `=false` | Require / skip the major-version confirmation gate for auto-updates |
+| `docksentry.policy=all` / `minor` / `patch` | Cap **auto-updates** by semver bump level: `all` applies every bump (default), `minor` applies minor+patch but holds back majors, `patch` applies patch only. Manual `/update` and the Bulk "Update all" button always apply regardless. An update whose version can't be classified is allowed. Overrides the global `UPDATE_POLICY`. |
 | `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
 | `docksentry.monitor=false` | Exclude the container from state monitoring (health/exit/OOM notifications) |
 
@@ -290,6 +291,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
 | `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
 | `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container **(auto-updating your other containers, not Docksentry itself)** — Watchtower-style, not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
+| `UPDATE_POLICY` | `all` | Global default cap on which semver bump levels **auto-updates** apply: `all` (every bump), `minor` (minor+patch, hold back majors) or `patch` (patch only). The per-container `docksentry.policy` label overrides it. Manual `/update` and Bulk update always apply. An update whose version can't be classified is allowed. This caps *by bump level only* — it does **not** make Docksentry follow or switch semver tags (it never rewrites `:1.2.3` → `:1.2.4`); that's a separate future capability. Env-only. |
 | `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
 | `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
 | `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
@@ -331,7 +333,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
 | `DEBUG` | `false` | Seed debug mode on at startup (verbose logging + the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
 
-Only the settings that live in the Web UI (roughly: schedule, exclude list, auto-selfupdate, cleanup options, disk-warning, quiet hours, weekly report, language, Web password, Discord/webhook URLs, debug, Telegram topic/allowed-users, bot label, stop timeout, monitoring toggle/interval) can be edited there and persist across restarts. Everything else is env-only — notably `SMTP_*`, `DOCKER_USERNAME`/`PASSWORD`/`AUTH_CONFIG`/`REGISTRY`, `AUTO_UPDATE_ALL`, `TELEGRAM_POLLING`, `WEB_UI`, `WEB_PORT`, plus `BOT_TOKEN`/`CHAT_ID` — several of them (credentials especially) intentionally never touch the data volume. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
+Only the settings that live in the Web UI (roughly: schedule, exclude list, auto-selfupdate, cleanup options, disk-warning, quiet hours, weekly report, language, Web password, Discord/webhook URLs, debug, Telegram topic/allowed-users, bot label, stop timeout, monitoring toggle/interval) can be edited there and persist across restarts. Everything else is env-only — notably `SMTP_*`, `DOCKER_USERNAME`/`PASSWORD`/`AUTH_CONFIG`/`REGISTRY`, `AUTO_UPDATE_ALL`, `UPDATE_POLICY`, `TELEGRAM_POLLING`, `WEB_UI`, `WEB_PORT`, plus `BOT_TOKEN`/`CHAT_ID` — several of them (credentials especially) intentionally never touch the data volume. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 

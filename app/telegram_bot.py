@@ -909,6 +909,76 @@ class TelegramBot:
             return False, None, None
         return best_parsed[0] > cur[0], tag, best_tag
 
+    def _resolve_update_policy(self, name, checker):
+        """The effective update policy for a container (v1.53.0, roadmap #2).
+
+        Precedence: the `docksentry.policy` container label wins over the
+        global `UPDATE_POLICY` env default. Valid values are `all`, `minor`
+        and `patch`; anything else (or an unreadable label) falls back to
+        `all` — fail-open, so a typo never silently freezes a container's
+        updates. Mirrors the label-over-toggle precedence used for
+        auto/ask-major (#42, @LeeNX)."""
+        if checker is not None:
+            try:
+                labels = checker.get_container_labels(name) or {}
+                raw = labels.get("docksentry.policy")
+                if raw is not None:
+                    v = raw.strip().lower()
+                    return v if v in ("all", "minor", "patch") else "all"
+            except Exception:
+                pass
+        pol = (getattr(self.config, "update_policy", "all") or "all").strip().lower()
+        return pol if pol in ("all", "minor", "patch") else "all"
+
+    @staticmethod
+    def _policy_allows_level(policy, level):
+        """Does `policy` permit auto-applying a `level` bump? `all` allows
+        everything; `minor` allows minor+patch (blocks major); `patch`
+        allows patch only. An unknown `level` (None — we couldn't classify
+        the bump) is ALWAYS allowed: fail-open, never skip something we
+        couldn't classify. An unknown policy also fails open to allow."""
+        if level is None:
+            return True
+        if policy == "minor":
+            return level in ("minor", "patch")
+        if policy == "patch":
+            return level == "patch"
+        # "all" or any unrecognised policy → allow
+        return True
+
+    def _policy_decision(self, u, checker):
+        """Decide whether the update `u` is held back by its container's
+        update policy on the AUTO path (v1.53.0). Returns None when the
+        update is allowed, otherwise `(level, old, new)` describing the
+        blocked bump for the "held back" message.
+
+        Classification reuses the version info Docksentry already computes
+        (`old_version` / `new_version`, set best-effort by check_all from
+        OCI labels / semver tags). If either is missing we fall back to the
+        image tag when it's a full semver, but keep it simple — an
+        unclassifiable bump is allowed (fail-open)."""
+        policy = self._resolve_update_policy(u["name"], checker)
+        if policy == "all":
+            return None
+        old = (u.get("old_version") or "").strip()
+        new = (u.get("new_version") or "").strip()
+        # Best-effort fallback: derive `old` from a full-semver image tag
+        # when the OCI-label version wasn't available.
+        if not old and checker is not None:
+            try:
+                _, _, tag = checker._parse_image(u.get("image", ""))
+                if tag and checker._parse_semver(tag):
+                    old = tag
+            except Exception:
+                pass
+        try:
+            level = checker._bump_level(old, new)
+        except Exception:
+            level = None
+        if self._policy_allows_level(policy, level):
+            return None
+        return (level, old, new)
+
     def _confirm_major_update(self, checker, name):
         """Resume an update that was held back by the major-confirmation gate.
         Reads metadata from the pending-major store, runs update_container,
@@ -1193,6 +1263,25 @@ class TelegramBot:
         skipped_window = [u for u in auto_candidates
                           if not is_window_open(windows.get(u["name"]))]
         auto_updates = [u for u in auto_candidates if u not in skipped_window]
+
+        # Per-container update policy (v1.53.0, roadmap #2 —
+        # @NotRetarded/@famewolf): cap which semver bump levels auto-apply.
+        # A policy-blocked update is held back from auto (but stays in
+        # pending and is surfaced below), exactly like the ask-major gate —
+        # this does NOT rewrite image references or follow tags, it only
+        # gates the existing auto path. Manual /update and "Update all"
+        # (auto=False) bypass policy entirely — an explicit human action
+        # always wins. Fail-open: an unclassifiable bump is allowed.
+        policy_blocked = []  # list of (u, level, old, new)
+        allowed_auto = []
+        for u in auto_updates:
+            dec = self._policy_decision(u, checker)
+            if dec is None:
+                allowed_auto.append(u)
+            else:
+                policy_blocked.append((u, dec[0], dec[1], dec[2]))
+        auto_updates = allowed_auto
+
         manual_updates = [u for u in updates if u not in auto_candidates]
         success_count = 0
         major_pending_now = []
@@ -1246,6 +1335,16 @@ class TelegramBot:
                 auto=True,
             )
 
+        # Policy-held: tell the user once per container that a newer version
+        # exists but was capped by the update policy. It stays in pending
+        # (surfaced in the "Updates Available" list below), so /update or a
+        # policy change can still apply it.
+        for u, level, old, new in policy_blocked:
+            self.send_message(
+                self.t("policy_held", name=u["name"], level=level, old=old, new=new),
+                auto=True,
+            )
+
         # Major-confirm queue: send confirmation prompt(s)
         for name, old_ver, new_ver in major_pending_now:
             keyboard = {"inline_keyboard": [[
@@ -1260,10 +1359,13 @@ class TelegramBot:
                 auto=True,
             )
 
-        # Notify about remaining manual updates (this is auto-triggered from
-        # scheduler — respect quiet hours)
-        if manual_updates:
-            self.notify_updates(manual_updates, auto=True)
+        # Notify about remaining updates (this is auto-triggered from the
+        # scheduler — respect quiet hours). Policy-held updates ride along in
+        # the "Updates Available" list so the user keeps seeing that a newer
+        # version exists, alongside the dedicated "held back" note above.
+        notify_list = manual_updates + [b[0] for b in policy_blocked]
+        if notify_list:
+            self.notify_updates(notify_list, auto=True)
 
         return success_count
 

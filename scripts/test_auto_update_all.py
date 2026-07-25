@@ -31,6 +31,12 @@ def run(all_auto, auto_list):
     bot.t = get_translator("en")
     bot.send_message = lambda *a, **k: None
     bot.notify_updates = lambda upd, **k: cap["manual"].extend(u["name"] for u in upd)
+    # Update-policy gate (v1.53.0) — bind the real resolution/decision so the
+    # gate runs; with no UPDATE_POLICY set it resolves to "all" (allow all),
+    # so this test's auto/manual routing is unchanged.
+    bot._resolve_update_policy = lambda n, c: TelegramBot._resolve_update_policy(bot, n, c)
+    bot._policy_allows_level = TelegramBot._policy_allows_level
+    bot._policy_decision = lambda u, c: TelegramBot._policy_decision(bot, u, c)
 
     def fake_batch(updates, checker, *, auto):
         cap["auto"] = [u["name"] for u in updates]

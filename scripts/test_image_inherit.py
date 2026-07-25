@@ -120,6 +120,21 @@ def main():
     off = dict(container, Healthcheck={"Test": ["NONE"]})
     checks["override: --no-healthcheck kept"] = "--no-healthcheck" in build(off, old_img)
 
+    # -- podman default namespace mode "private" not replicated (#49, @LeeNX) --
+    # Podman reports the default PidMode/UTSMode as "private" where Docker
+    # reports ""; `--pid private` is not a valid run value and bricked podman
+    # self-update. Real values like "host" must still pass through.
+    def nsflags(host):
+        cfg = {"Config": {"Env": [], "Labels": {}}, "HostConfig": host,
+               "Mounts": [], "NetworkSettings": {"Networks": {}}}
+        a = UpdateChecker._build_run_args(
+            cfg, "img:new", "c1", image_defaults={"Entrypoint": None, "Cmd": None})
+        return [a[i + 1] for i, x in enumerate(a) if x in ("--pid", "--uts", "--ipc")]
+    checks["ns: podman default 'private' dropped"] = nsflags(
+        {"PidMode": "private", "UTSMode": "private", "IpcMode": "private"}) == []
+    checks["ns: real 'host' mode kept"] = nsflags(
+        {"PidMode": "host", "UTSMode": "host", "IpcMode": "host"}) == ["host", "host", "host"]
+
     # -- podman POSIX ulimit names normalized (#48, @LeeNX) --
     # Podman inspect reports RLIMIT_NOFILE; --ulimit only accepts the
     # short form (nofile). The raw name failed every podman standalone

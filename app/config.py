@@ -65,7 +65,7 @@ class Config:
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
-                 telegram_polling=True, debug=False):
+                 telegram_polling=True, debug=False, update_policy="all"):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -85,6 +85,15 @@ class Config:
         # Global "auto-update every checked container" (Watchtower-style),
         # opposed to the per-container auto-update opt-in (#45, @NotRetarded).
         self.auto_update_all = auto_update_all
+        # Global default update policy (v1.53.0, roadmap #2): caps which
+        # semver bump levels auto-apply — "all" (every bump), "minor"
+        # (minor+patch, skip major) or "patch" (patch only). The
+        # per-container `docksentry.policy` label overrides this. Env-only
+        # (a wiring decision, not a runtime toggle) — deliberately NOT in
+        # PERSISTENT_KEYS, mirroring TELEGRAM_POLLING. Invalid → "all"
+        # (fail-open).
+        pol = (update_policy or "all").strip().lower()
+        self.update_policy = pol if pol in ("all", "minor", "patch") else "all"
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -315,6 +324,7 @@ class Config:
             debug=_env("DEBUG", "false").lower() in ("true", "1", "yes"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
+            update_policy=_env("UPDATE_POLICY", "all"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),

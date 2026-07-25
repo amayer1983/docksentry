@@ -454,6 +454,31 @@ class UpdateChecker:
         return (int(m.group("major")), int(m.group("minor")), int(m.group("patch")),
                 m.group("pre") or "")
 
+    @classmethod
+    def _bump_level(cls, old_version, new_version):
+        """Classify a version change as "major", "minor" or "patch", or None
+        when it can't be determined. Powers the per-container update policy
+        gate (v1.53.0) that caps which bump levels auto-apply.
+
+        Both sides go through _parse_semver, which strips a leading `v` /
+        naming prefix. Comparison is on the (major, minor, patch) tuple:
+        differing major → "major"; same major, differing minor → "minor";
+        same major+minor, differing patch → "patch". Returns None when
+        either side is empty / unparseable, or the two are equal — the
+        caller treats None as "allow" (fail-open, never skip something we
+        couldn't classify)."""
+        a = cls._parse_semver(old_version or "")
+        b = cls._parse_semver(new_version or "")
+        if a is None or b is None:
+            return None
+        if a[0] != b[0]:
+            return "major"
+        if a[1] != b[1]:
+            return "minor"
+        if a[2] != b[2]:
+            return "patch"
+        return None
+
     def _list_remote_tags(self, registry, repository):
         """GET /v2/<repo>/tags/list with Bearer token negotiation. Returns
         a list of tag strings, or [] on failure. No pagination support yet —
@@ -1998,10 +2023,16 @@ class UpdateChecker:
             args.extend(["--shm-size", str(shm)])
 
         # ── Namespace modes (skip Docker defaults) ─────────────
+        # Podman reports the DEFAULT namespace mode as "private" (and
+        # sometimes "default") where Docker reports "" — and `--pid private`
+        # / `--uts private` are not valid run values, so replicating them
+        # bricked podman self-update/recreate ("invalid PID mode", #49
+        # @LeeNX). IpcMode already skipped "private"; PID/UTS were the gap.
+        # Real values like "host" / "container:<id>" still pass through.
         for flag, key, default in (
-            ("--ipc", "IpcMode",  ("", "private", "shareable")),
-            ("--pid", "PidMode",  ("",)),
-            ("--uts", "UTSMode",  ("",)),
+            ("--ipc", "IpcMode",  ("", "private", "shareable", "default")),
+            ("--pid", "PidMode",  ("", "private", "default")),
+            ("--uts", "UTSMode",  ("", "private", "default")),
         ):
             v = host.get(key, "") or ""
             if v and v not in default:

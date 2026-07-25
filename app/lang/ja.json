@@ -524,5 +524,6 @@
   "web_backup_hint": "Backups contain webhook URLs and bot tokens — treat the file like a password. The import path skips unknown keys, so forward-compatible if a future Docksentry adds new settings.",
   "update_snapshot_stale": "This notification is stale",
   "update_snapshot_stale_msg": "⚠️ That \"Updates Available\" notification is too old to act on (a newer check has replaced it, or the bot restarted). Run /check for a fresh list.",
-  "selfupdate_old_tag": "✅ The `:{current}` image tag is up to date — but that's a *fixed version*, and a newer release (`v{latest}`) exists. Your container won't move past `:{current}` on its own. To upgrade:\n• `/selfupdate {latest}` (jump to the new version), or\n• `/selfupdate latest` (rejoin the rolling latest line), or\n• set `image: amayer1983/docksentry:latest` in your compose and `docker compose up -d`."
+  "selfupdate_old_tag": "✅ The `:{current}` image tag is up to date — but that's a *fixed version*, and a newer release (`v{latest}`) exists. Your container won't move past `:{current}` on its own. To upgrade:\n• `/selfupdate {latest}` (jump to the new version), or\n• `/selfupdate latest` (rejoin the rolling latest line), or\n• set `image: amayer1983/docksentry:latest` in your compose and `docker compose up -d`.",
+  "policy_held": "⏸ `{name}`: held back by update policy ({level} {old} → {new}). Run /update {name} to apply, or set docksentry.policy=all."
 }

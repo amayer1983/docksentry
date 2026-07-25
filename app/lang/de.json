@@ -524,5 +524,6 @@
   "web_ui_mode_simple": "Einfach",
   "web_ui_mode_advanced": "Erweitert",
   "web_ui_mode_show_advanced": "In erweiterten Modus wechseln",
-  "web_ui_mode_show_simple": "In einfachen Modus wechseln"
+  "web_ui_mode_show_simple": "In einfachen Modus wechseln",
+  "policy_held": "⏸ `{name}`: von der Update-Richtlinie zurückgehalten ({level} {old} → {new}). Mit /update {name} anwenden oder docksentry.policy=all setzen."
 }

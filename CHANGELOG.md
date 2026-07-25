@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.53.0] - 2026-07-25
+
+### Added
+- **Per-container update policy** ([#2](../../issues/2), voted for by @NotRetarded and @famewolf). You can now cap how far an *auto-update* is allowed to jump on the semver ladder: `all` (every bump, the default and current behaviour), `minor` (apply minor and patch, but hold back majors) or `patch` (patch releases only). Set it per container with a `docksentry.policy=minor` label, or globally with `UPDATE_POLICY=minor` — the label wins where both are set. When an auto-update is held back you still get told a newer version is out (it stays in the "Updates Available" list, plus a one-line "⏸ held back by update policy" note), and `/update <name>` or the Bulk update button applies it immediately — an explicit action always overrides the policy. The bump level is worked out from the version info Docksentry already reads (the OCI `org.opencontainers.image.version` labels, falling back to a semver tag); anything it can't classify is allowed rather than silently skipped.
+
+  To be clear about what this is *not*: it's a gate on the existing digest-based auto-update path, the same shape as the ask-before-major confirmation. It does **not** follow or switch semver tags — Docksentry still never rewrites `:1.2.3` to `:1.2.4`. Tag-following is a separate thing for another day.
+
+### Fixed
+- **Podman self-update/recreate failed with `invalid PID mode`** ([#49](../../issues/49), @LeeNX). Podman reports a container's default PID and UTS namespace mode as `"private"` where Docker reports an empty string, and `--pid private` / `--uts private` aren't valid `docker run` values — so the recreate crashed (and rolled back) on podman. We already skipped `"private"` for `--ipc`; PID and UTS had the same gap and now skip it too. Real values like `host` or `container:<id>` still carry over.
+
 ## [1.52.0] - 2026-07-25
 
 ### Fixed
