@@ -157,6 +157,40 @@ def main():
     checks["ulimit: no raw RLIMIT_ passes through"] = not any(
         "RLIMIT" in x for x in flags(ua, "--ulimit"))
 
+    # -- memory.swappiness is cgroup-v1-only; podman/crun on cgroup v2
+    #    rejects --memory-swappiness, so we skip it there (#50) --
+    def swap_flags(cgroup_version):
+        cfg = {
+            "Config": {"Env": [], "Labels": {}},
+            "HostConfig": {"MemorySwappiness": 60},
+            "Mounts": [], "NetworkSettings": {"Networks": {}},
+        }
+        got = UpdateChecker._build_run_args(
+            cfg, "img:new", "c1",
+            image_defaults={"Entrypoint": None, "Cmd": None},
+            cgroup_version=cgroup_version)
+        return flags(got, "--memory-swappiness")
+    checks["swappiness: cgroup v2 -> flag suppressed"] = swap_flags("2") == []
+    checks["swappiness: cgroup v1 -> flag emitted"] = swap_flags("1") == ["60"]
+    checks["swappiness: default/None -> flag emitted (no regression)"] = (
+        swap_flags(None) == ["60"])
+    # MemorySwappiness=-1 means "unset" and must never be emitted, v1 or v2.
+    neg_cfg = {
+        "Config": {"Env": [], "Labels": {}},
+        "HostConfig": {"MemorySwappiness": -1},
+        "Mounts": [], "NetworkSettings": {"Networks": {}},
+    }
+    checks["swappiness: -1 never emitted (v1)"] = flags(
+        UpdateChecker._build_run_args(
+            neg_cfg, "img:new", "c1",
+            image_defaults={"Entrypoint": None, "Cmd": None},
+            cgroup_version="1"), "--memory-swappiness") == []
+    checks["swappiness: -1 never emitted (v2)"] = flags(
+        UpdateChecker._build_run_args(
+            neg_cfg, "img:new", "c1",
+            image_defaults={"Entrypoint": None, "Cmd": None},
+            cgroup_version="2"), "--memory-swappiness") == []
+
     # -- inherited=None -> replicate everything (backward compatible) --
     c = build(container, None)
     checks["None: replicates env"] = "APP_VERSION=5.1.19" in flags(c, "-e")

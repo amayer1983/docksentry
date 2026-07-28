@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.53.3] - 2026-07-28
+
+### Fixed
+- **Podman recreate on cgroup-v2 hosts failed with `cannot set memory swappiness with cgroupv2`** ([#50](../../issues/50), @LeeNX). When replicating a container's resource limits on recreate we passed through `--memory-swappiness`, but `memory.swappiness` is a cgroup-v1-only control — it doesn't exist under cgroup v2, so crun/podman rejected the flag outright and the recreate died (the recovery net then rolled it back safely, so nothing was lost). Same class of bug as the earlier ulimit and namespace-mode podman fixes. We now check the daemon's cgroup version via `docker info` and skip `--memory-swappiness` on cgroup-v2 daemons, while cgroup-v1 docker hosts — where the flag is valid — still get it. New tests in `scripts/test_image_inherit.py`.
+
 ## [1.53.2] - 2026-07-25
 
 ### Fixed

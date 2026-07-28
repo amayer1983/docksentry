@@ -296,6 +296,35 @@ class UpdateChecker:
             UpdateChecker._host_platform_cache = (os_name, arch)
         return UpdateChecker._host_platform_cache
 
+    _cgroup_version_cache = None
+
+    @classmethod
+    def _cgroup_version(cls):
+        """The DAEMON's cgroup version — "1" or "2" — via ``docker info``.
+        Works against both Docker and Podman over the docker-compatible
+        socket. Cached per process. On any error we assume "1", because
+        that's the conservative choice: several HostConfig knobs (e.g.
+        memory.swappiness) are cgroup-v1-only and must still be emitted
+        on real cgroup-v1 docker hosts; over-suppressing there would be
+        the regression. A classmethod so the self-update path in
+        telegram_bot (which calls _build_run_args statically) can reuse
+        it too.
+        """
+        if cls._cgroup_version_cache is None:
+            version = "1"
+            try:
+                r = subprocess.run(
+                    ["docker", "info", "--format", "{{.CgroupVersion}}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                out = r.stdout.strip()
+                if r.returncode == 0 and out in ("1", "2"):
+                    version = out
+            except (subprocess.SubprocessError, OSError):
+                pass
+            cls._cgroup_version_cache = version
+        return cls._cgroup_version_cache
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -1399,7 +1428,8 @@ class UpdateChecker:
         cmd = self._build_run_args(config, image, name,
                                    self._get_image_defaults(image),
                                    netns_name=netns_name,
-                                   inherited=self._image_config(config.get("Image")))
+                                   inherited=self._image_config(config.get("Image")),
+                                   cgroup_version=self._cgroup_version())
         run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if run.returncode != 0:
             err = run.stderr.strip()[:200]
@@ -1728,7 +1758,7 @@ class UpdateChecker:
 
     @staticmethod
     def _build_run_args(config, image, name, image_defaults=None, netns_name=None,
-                        inherited=None):
+                        inherited=None, cgroup_version=None):
         """Reconstruct the full `docker run` argument list from a
         container's inspect dump. Single source of truth for both the
         standalone update path here and the self-update helper in
@@ -2066,8 +2096,13 @@ class UpdateChecker:
             # means "use the kernel default" — skip both.
             if v and v > 0:
                 args.extend([flag, str(v)])
+        # memory.swappiness is a cgroup-v1-only control; it doesn't exist
+        # on cgroup v2, so crun/podman rejects --memory-swappiness on a
+        # cgroup-v2 host regardless of the value (#50). cgroup_version is
+        # None for callers that can't detect it (assume v1 / emit as
+        # before); the real recreate paths thread the daemon's version in.
         msrl = host.get("MemorySwappiness")
-        if msrl is not None and msrl >= 0:
+        if msrl is not None and msrl >= 0 and cgroup_version != "2":
             args.extend(["--memory-swappiness", str(msrl)])
 
         # ── CPU limits ─────────────────────────────────────────
@@ -2663,6 +2698,7 @@ class UpdateChecker:
                     config, image, name, self._get_image_defaults(image),
                     netns_name=netns_name,
                     inherited=self._image_config(config.get("Image")),
+                    cgroup_version=self._cgroup_version(),
                 )
                 run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if run.returncode != 0:
@@ -2716,7 +2752,8 @@ class UpdateChecker:
             image_defaults = self._get_image_defaults(image)
             cmd = self._build_run_args(config, image, name, image_defaults,
                                        netns_name=netns_name,
-                                       inherited=self._image_config(config.get("Image")))
+                                       inherited=self._image_config(config.get("Image")),
+                                       cgroup_version=self._cgroup_version())
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container

@@ -2081,7 +2081,8 @@ class TelegramBot:
         # are currently running — the one we're updating away from.
         inherited = _UC._image_config(config.get("Image") or "")
         full = _UC._build_run_args(config, own_image, own_name, image_defaults,
-                                   inherited=inherited)
+                                   inherited=inherited,
+                                   cgroup_version=_UC._cgroup_version())
         # full = ["docker", "run", "-d", "--name", own_name, ...flags..., own_image, ...cmd...]
         # We need just the flags between "-d" and own_image:
         try:
