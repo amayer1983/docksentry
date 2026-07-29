@@ -28,6 +28,11 @@ def make_checker(names, outdated, debug=False):
     chk.get_running_containers = lambda: [{"name": n, "image": f"reg/{n}:tag"} for n in names]
     chk._parse_image = lambda img: ("reg", img.split("/", 1)[1].split(":")[0], "tag")
     chk._get_local_digests = lambda img: ["sha256:LOCAL"]
+    # The #53 diagnostics reach for `docker inspect` and `docker info`.
+    # Without these two the "no network, no daemon" promise above quietly
+    # stops being true and the tests shell out for real.
+    chk._get_local_repo_digests = lambda img: [f"{img.split(':')[0]}@sha256:LOCAL"]
+    chk._registry_environment = lambda: "host linux/amd64, mirrors: none"
 
     def remote(registry, repository, tag):
         calls.append(repository)

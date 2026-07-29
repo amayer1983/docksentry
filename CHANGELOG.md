@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.56.0] - 2026-07-29
+
+### Added
+- **The update check can now explain itself** ([#53](../../issues/53), @LeeNX). "Up to date" reads like a claim you have to take on faith when the only evidence is two truncated hashes. With `DEBUG` on, the check now prints the URL it actually requested, the HTTP status and content type it got back (which also tells you whether a multi-arch index came down), whether authentication was anonymous or a token, and the final URL if the registry redirected. Plus one line per run naming the host platform, the daemon's configured registry mirrors, the daemon's proxy settings and any proxy set inside the Docksentry container itself — that last one matters because Python's URL opener quietly picks up `http_proxy`/`https_proxy` from the environment, and until now nothing said so.
+- **Digests are shown in full, with their repository.** The log truncated them to 30 characters, which is plenty to compare two of them but useless if you want to check one yourself against `docker manifest inspect`. And a container can carry several repo digests, which showed up as unexplained hashes side by side — they now say which repository each belongs to.
+- **"Up to date" can name the version behind the digest.** This is the actual answer to #53: seeing `66d8096…` tells you nothing, seeing that it *is* `2.3.0` settles the question. It runs for an explicit per-container check (the 🔍 button) or with `DEBUG` on, and prints either way in the first case — never during a scheduled sweep, for a reason worth stating: resolving a version needs `GET`s on manifests, and unlike the `HEAD` the digest check uses, those count against Docker Hub's anonymous budget of 100 an hour. Thirty containers on a quarter-hourly schedule would be about 240 requests an hour. Docksentry would rate-limit itself into `429`s and start genuinely missing updates — the exact failure this feature exists to explain.
+
+### Changed
+- **Registry tokens are reused within a check.** Every registry call negotiated a fresh one, so each lookup cost three round trips instead of one. They're now cached per repository for the run, honouring the expiry the registry gives.
+
+### Docs
+- `docs/updates.md` has a "Why didn't it see my new release?" section with an annotated log, and a note on the `HEAD` versus `GET` distinction behind Docker Hub's rate limit.
+
 ## [1.55.0] - 2026-07-29
 
 ### Added

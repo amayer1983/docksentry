@@ -81,6 +81,68 @@ Pinned containers (`/pin nginx` or via Web UI) are completely excluded from upda
 - Containers in the `EXCLUDE_CONTAINERS` list
 - Pinned containers
 
+## Why didn't it see my new release?
+
+By default a check prints a verdict and the digests behind it:
+
+```
+Checking 2 containers for updates...
+  Checking: gitea-runner (registry-1.docker.io/gitea/runner:latest)
+  Local:  gitea/runner@sha256:66d80966792e621c9761c47919644198d35fd1c297e9a01e69ed3c1ae37db0c7
+  Remote: sha256:66d80966792e621c9761c47919644198d35fd1c297e9a01e69ed3c1ae37db0c7
+  → Up to date
+```
+
+The digests are printed in full and with the repository prefix on purpose — that's the exact string you can hand to `docker manifest inspect gitea/runner:latest` to confirm the verdict yourself.
+
+When that isn't enough, set `DEBUG=true` (or `/debug`, or the Web UI toggle) and run the check again. Same two containers:
+
+```
+Environment: host linux/amd64, mirrors: none, daemon proxy: none, our proxy: none
+Checking 2 containers for updates...
+  Checking: gitea-runner (registry-1.docker.io/gitea/runner:latest)
+    HEAD https://registry-1.docker.io/v2/gitea/runner/manifests/latest
+      HTTP 200, auth anonymous, content-type application/vnd.oci.image.index.v1+json
+  Local:  gitea/runner@sha256:66d80966792e621c9761c47919644198d35fd1c297e9a01e69ed3c1ae37db0c7
+  Remote: sha256:66d80966792e621c9761c47919644198d35fd1c297e9a01e69ed3c1ae37db0c7
+  → Up to date
+    local image built 2026-07-11, size 141 MB
+    GET https://registry-1.docker.io/v2/gitea/runner/manifests/latest
+      HTTP 200, auth anonymous, content-type application/vnd.oci.image.index.v1+json
+    GET https://registry-1.docker.io/v2/gitea/runner/manifests/sha256:bbb…
+      HTTP 200, auth anonymous, content-type application/vnd.oci.image.manifest.v1+json
+    GET https://registry-1.docker.io/v2/gitea/runner/blobs/sha256:ccc…
+      HTTP 200, auth anonymous, content-type application/octet-stream
+      redirected to https://production.cloudflare.docker.com/registry-v2/…
+    remote :latest is version 2.3.0 (built 2026-07-11)
+  Checking: vaultwarden (registry-1.docker.io/vaultwarden/server:latest)
+    HEAD https://registry-1.docker.io/v2/vaultwarden/server/manifests/latest
+      HTTP 200, auth anonymous, content-type application/vnd.oci.image.index.v1+json
+  Local:  vaultwarden/server@sha256:968b93c034b6231be037b8abce159dedbf7eb16adbc79ee2b1555c0eea31a4d3
+  Remote: sha256:66d80966792e621c9761c47919644198d35fd1c297e9a01e69ed3c1ae37db0c7
+  → UPDATE AVAILABLE (current: 2026-03-02, size: 196 MB)
+    …
+    remote :latest is version 1.35.0 (built 2026-07-24), local is 1.34.1
+Found 1 updates.
+```
+
+What each part answers:
+
+| Line | Tells you |
+|---|---|
+| `Environment:` | The daemon's platform, its **registry mirrors**, its proxy settings, and the `http_proxy`/`https_proxy` variables set inside the Docksentry container. The last one matters: Python's HTTP client picks those up on its own, so a proxy nobody configured in Docksentry can still sit in the path. `unknown` means `docker info` was refused — normal behaviour behind a restrictive socket proxy. |
+| `HEAD` / `GET <url>` | The exact request. Docksentry talks to the registry itself over HTTP — no docker CLI, no daemon — so this is the whole story. |
+| `HTTP <code>, auth …, content-type …` | Status, how we authenticated (`anonymous`, `bearer`, or `credentials from config` — the token itself is never logged) and what came back. An `image.index` / `manifest.list` content type means a multi-arch index; anything else means a single-arch image. |
+| `redirected to …` | A mirror, a proxy or a CDN answered instead of the host we asked. If you suspect stale caching, this is where it shows. |
+| `remote :<tag> is version …` | **The digest, resolved to a human version.** `66d8096…` on its own tells you nothing; `66d8096… is 2.3.0` settles the question. |
+
+Two things worth knowing about the version line:
+
+- It's read from the image's `org.opencontainers.image.version` label. Images that don't set one report `carries no version label` — that's the image's choice, not a failure.
+- It costs extra registry requests, so it doesn't run on every container of every scheduled sweep. You get it when you press the 🔍 button on a single container, or on any check while `DEBUG` is on. See the rate-limit note below for why.
+
+Added for [#53](https://github.com/amayer1983/docksentry/issues/53) (@LeeNX).
+
 ## Docker Hub Rate Limits
 
 | | Update checks | Image pulls |
@@ -89,6 +151,8 @@ Pinned containers (`/pin nginx` or via Web UI) are completely excluded from upda
 | **With login** | Unlimited | Unlimited |
 
 Update checks use the registry API and do **not** count against pull limits. For most setups, the rate limit is not an issue.
+
+The digest check is a `HEAD` on the manifest, and Docker Hub doesn't charge for those. Reading the *version* behind a digest needs `GET`s (two or three manifests plus the config blob, per container), and those do count — anonymously that's 100 an hour. Thirty containers on a 15-minute schedule would be roughly 240 requests an hour and Docksentry would rate-limit itself into `429`s, which is a far better way to miss an update than any it might explain. So version resolution is limited to a single-container check or a `DEBUG` run, and the scheduled sweep stays on `HEAD`.
 
 To add Docker Hub login, mount your credentials read-only:
 

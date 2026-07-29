@@ -16,11 +16,38 @@ class UpdateChecker:
     def __init__(self, config):
         self.config = config
         self.debug_log = []
+        # Per-run scratch state. Cleared at the top of check_all so a long
+        # running process never serves stale data from an earlier sweep.
+        self._repo_digest_cache = {}
+        self._token_cache = {}
+        self._auth_kind = "anonymous"
 
     def _debug(self, msg):
         print(msg)
         if self.config.debug:
             self.debug_log.append(msg)
+
+    def _diag_on(self):
+        """Whether the verbose registry diagnostics (#53, @LeeNX) are on.
+
+        Guard for anything that costs a subprocess or an HTTP request before
+        it can be handed to _vdebug — an f-string argument is evaluated
+        whether or not the line ends up being printed.
+        """
+        return bool(getattr(self.config, "debug", False))
+
+    def _vdebug(self, msg):
+        """Verbose diagnostic line — DEBUG only.
+
+        Deliberately NOT _debug: that one prints unconditionally and lets
+        `config.debug` decide only whether the line is also collected for
+        Telegram / the Web UI console. Everything added for #53 is here
+        instead, because it is a lot of text per container and nobody who
+        didn't ask for it should find it in `docker logs docksentry`.
+        """
+        if not self._diag_on():
+            return
+        self._debug(msg)
 
     def get_running_containers(self):
         result = subprocess.run(
@@ -241,11 +268,26 @@ class UpdateChecker:
         Falls back to building a default scope (`repository:<repo>:pull`) if
         the server doesn't include one. Uses Basic-Auth credentials from
         docker config.json if available (for private registries).
+
+        Tokens are cached per (registry, repository) for the rest of the run,
+        honouring the `expires_in` the registry hands out (minus a safety
+        margin). Without it every single registry access pays the full three
+        round-trips — 401, token, retry — and get_remote_image_meta alone
+        makes three accesses per container.
         """
         params = self._parse_www_authenticate(www_auth)
         realm = params.get("realm")
         if not realm:
             return None
+
+        auth_header = self._get_docker_credentials(registry)
+        self._auth_kind = "credentials from config" if auth_header else "bearer"
+
+        key = (registry, repository)
+        cached = self._token_cache.get(key)
+        if cached and cached[1] > time.time():
+            self._vdebug(f"      auth: reusing cached {self._auth_kind} token")
+            return cached[0]
 
         query = []
         if "service" in params:
@@ -256,8 +298,14 @@ class UpdateChecker:
         query.append(("scope", scope))
         token_url = realm + "?" + urllib.parse.urlencode(query)
 
+        # Realm and scope are useful (a wrong scope is a classic cause of a
+        # 401 loop), the token never is — so the challenge gets logged and
+        # the response does not. Scope is truncated because on private
+        # registries it can carry a full internal project path.
+        self._vdebug(f"      auth: {self._auth_kind} challenge from {realm} "
+                     f"(scope {self._short(scope, 60)})")
+
         req = urllib.request.Request(token_url)
-        auth_header = self._get_docker_credentials(registry)
         if auth_header:
             req.add_header("Authorization", f"Basic {auth_header}")
 
@@ -265,10 +313,31 @@ class UpdateChecker:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read())
                 # Some registries return "token", others "access_token".
-                return data.get("token") or data.get("access_token")
+                token = data.get("token") or data.get("access_token")
         except Exception as e:
             self._debug(f"  Token negotiation failed: {e}")
             return None
+        if token:
+            try:
+                ttl = int(data.get("expires_in") or 60)
+            except (TypeError, ValueError):
+                ttl = 60
+            # 10s of slack so we never present a token that expires in
+            # flight; a too-short TTL just costs us a renegotiation.
+            self._token_cache[key] = (token, time.time() + max(1, ttl - 10))
+        return token
+
+    def _forget_token(self, registry, repository):
+        """Drop a cached token after it was rejected. A registry may expire a
+        token earlier than its own `expires_in` promised; without this the
+        whole run would keep replaying the stale one."""
+        self._token_cache.pop((registry, repository), None)
+
+    @staticmethod
+    def _short(text, limit):
+        """Truncate for log output (never for comparisons)."""
+        text = str(text or "")
+        return text if len(text) <= limit else text[:limit - 3] + "..."
 
     _host_platform_cache = None
 
@@ -325,6 +394,115 @@ class UpdateChecker:
             cls._cgroup_version_cache = version
         return cls._cgroup_version_cache
 
+    _daemon_net_cache = None
+
+    @classmethod
+    def _daemon_net_info(cls):
+        """The daemon's registry mirrors and proxy settings, from
+        ``docker info``. Returns a dict with "mirrors" and "proxy", both
+        already formatted for the log.
+
+        Same failure policy as _cgroup_version: a restrictive socket proxy
+        may refuse /info outright, and a check that would otherwise have
+        worked must not die over a diagnostic. We write "unknown" and move
+        on. Cached per process — this never changes while we run.
+        """
+        if cls._daemon_net_cache is None:
+            info = {"mirrors": "unknown", "proxy": "unknown"}
+            try:
+                r = subprocess.run(
+                    ["docker", "info", "--format",
+                     "{{json .RegistryConfig.Mirrors}}\t{{.HTTPProxy}}\t"
+                     "{{.HTTPSProxy}}\t{{.NoProxy}}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                # Strip newlines only — an unset proxy is an EMPTY field, and
+                # a plain .strip() would eat the trailing tabs along with it
+                # and leave us with fewer columns than we asked for.
+                parts = [p.strip() for p in r.stdout.strip("\r\n").split("\t")]
+                if r.returncode == 0 and len(parts) == 4:
+                    try:
+                        mirrors = json.loads(parts[0]) or []
+                    except (ValueError, TypeError):
+                        mirrors = []
+                    info["mirrors"] = ", ".join(mirrors) if mirrors else "none"
+                    proxies = [f"{label}={cls._mask_url(v)}"
+                               for label, v in (("http", parts[1]),
+                                                ("https", parts[2]),
+                                                ("no_proxy", parts[3]))
+                               if v and v != "<no value>"]
+                    info["proxy"] = ", ".join(proxies) if proxies else "none"
+            except (subprocess.SubprocessError, OSError):
+                pass
+            cls._daemon_net_cache = info
+        return cls._daemon_net_cache
+
+    @staticmethod
+    def _mask_url(url):
+        """Strip userinfo from a URL before it is logged. Proxy settings
+        routinely carry `http://user:password@proxy:3128`, and a debug log
+        ends up pasted into a GitHub issue."""
+        url = str(url or "")
+        if "@" in url and "//" in url:
+            head, _, tail = url.partition("//")
+            _, _, hostpart = tail.rpartition("@")
+            return f"{head}//***@{hostpart}"
+        return url
+
+    def _proxy_environment(self):
+        """Proxy variables set inside OUR container.
+
+        Worth a line of its own because ``urllib.request.urlopen`` uses the
+        default opener, and that one silently picks up ``http_proxy`` /
+        ``https_proxy`` from the environment. So a proxy nobody configured
+        in Docksentry can still sit between us and the registry, and until
+        now nothing said so.
+        """
+        seen = {}
+        for var in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                    "http_proxy", "https_proxy", "no_proxy"):
+            val = os.environ.get(var)
+            if val:
+                seen[var] = self._mask_url(val)
+        if not seen:
+            return "none"
+        return ", ".join(f"{k}={v}" for k, v in seen.items())
+
+    def _registry_environment(self):
+        """One line covering everything that sits between us and a registry —
+        printed once per check run (#53, @LeeNX)."""
+        os_name, arch = self._host_platform()
+        daemon = self._daemon_net_info()
+        return (f"host {os_name}/{arch}, mirrors: {daemon['mirrors']}, "
+                f"daemon proxy: {daemon['proxy']}, "
+                f"our proxy: {self._proxy_environment()}")
+
+    def _log_registry_response(self, resp, url):
+        """Describe a registry response for the debug log (#53, @LeeNX).
+
+        Status, content type and the effective URL are the three things that
+        tell you what actually answered: a `manifest.list`/`image.index`
+        content type means a multi-arch index came back, and a URL that no
+        longer matches the one we asked for means a mirror, a proxy or a CDN
+        redirect sits in the path. Which is precisely the class of problem
+        that used to leave nothing but two truncated hashes behind.
+
+        Only the auth CATEGORY is named — never the token, never the
+        Basic-Auth header.
+        """
+        if not self._diag_on():
+            return
+        try:
+            status = getattr(resp, "status", None) or getattr(resp, "code", "?")
+            ctype = resp.headers.get("Content-Type", "?")
+            final = getattr(resp, "url", "") or url
+        except Exception:
+            return
+        self._vdebug(f"      HTTP {status}, auth {self._auth_kind}, "
+                     f"content-type {self._short(ctype, 70)}")
+        if final != url:
+            self._vdebug(f"      redirected to {self._short(final, 120)}")
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -336,12 +514,20 @@ class UpdateChecker:
         This works generically for Docker Hub, GHCR, lscr.io, quay.io,
         gcr.io, registry.gitlab.com and any spec-compliant registry — no
         per-host hardcoding required.
+
+        Stays a HEAD on purpose. A GET would hand us the manifest body (and
+        with it the version) in one shot, but GETs count against Docker Hub's
+        pull budget and HEADs do not — the tag-resolution done for #53 is
+        gated for exactly that reason, and it would be pointless to pay the
+        toll on the base check instead.
         """
         if "docker.io" in registry:
             host = "registry-1.docker.io"
         else:
             host = registry
         url = f"https://{host}/v2/{repository}/manifests/{tag}"
+        self._auth_kind = "anonymous"
+        self._vdebug(f"    HEAD {url}")
 
         def _attempt(token=None):
             req = urllib.request.Request(url, method="HEAD")
@@ -352,6 +538,7 @@ class UpdateChecker:
 
         try:
             with _attempt() as resp:
+                self._log_registry_response(resp, url)
                 return resp.headers.get("Docker-Content-Digest", "")
         except urllib.error.HTTPError as e:
             if e.code != 401:
@@ -365,8 +552,11 @@ class UpdateChecker:
                 return None
             try:
                 with _attempt(token) as resp:
+                    self._log_registry_response(resp, url)
                     return resp.headers.get("Docker-Content-Digest", "")
             except urllib.error.HTTPError as e2:
+                if e2.code == 401:
+                    self._forget_token(registry, repository)
                 self._debug(f"  Registry error after auth: HTTP {e2.code} {e2.reason}")
                 return None
             except Exception as e2:
@@ -379,8 +569,13 @@ class UpdateChecker:
     def _registry_get(self, host, registry, repository, path, accept=None):
         """GET a registry resource (manifest or blob) with Bearer-token
         negotiation. Returns raw bytes, or None on failure. Mirrors the
-        auth flow of _get_remote_digest but for GET bodies."""
+        auth flow of _get_remote_digest but for GET bodies.
+
+        Unlike the HEAD of the base check, these GETs DO count against Docker
+        Hub's anonymous pull budget — see the gate in check_all."""
         url = f"https://{host}/v2/{repository}/{path}"
+        self._auth_kind = "anonymous"
+        self._vdebug(f"    GET {url}")
 
         def _attempt(token=None):
             req = urllib.request.Request(url)
@@ -392,9 +587,11 @@ class UpdateChecker:
 
         try:
             with _attempt() as resp:
+                self._log_registry_response(resp, url)
                 return resp.read()
         except urllib.error.HTTPError as e:
             if e.code != 401:
+                self._vdebug(f"      HTTP {e.code} {e.reason}")
                 return None
             token = self._negotiate_token(
                 e.headers.get("WWW-Authenticate", ""), registry, repository)
@@ -402,7 +599,13 @@ class UpdateChecker:
                 return None
             try:
                 with _attempt(token) as resp:
+                    self._log_registry_response(resp, url)
                     return resp.read()
+            except urllib.error.HTTPError as e2:
+                if e2.code == 401:
+                    self._forget_token(registry, repository)
+                self._vdebug(f"      HTTP {e2.code} {e2.reason} after auth")
+                return None
             except Exception:
                 return None
         except Exception:
@@ -581,19 +784,41 @@ class UpdateChecker:
         best_parsed, best_tag = candidates[0]
         return best_tag, best_parsed
 
-    def _get_local_digests(self, image):
-        """Get all local image digests from RepoDigests."""
-        result = subprocess.run(
-            ["docker", "inspect", "--format", "{{json .RepoDigests}}", image],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            return []
+    def _get_local_repo_digests(self, image):
+        """RepoDigests as Docker reports them — `repo@sha256:…`, prefix and
+        all. Cached per run, so asking for both this and the bare digests
+        costs one `docker inspect`, not two.
+
+        The prefix is what makes a logged digest actionable (#53, @LeeNX):
+        `gitea/runner@sha256:66d8…` can be pasted straight into
+        `docker manifest inspect`; a bare hash next to another bare hash
+        can't be checked against anything.
+        """
+        cached = self._repo_digest_cache.get(image)
+        if cached is not None:
+            return cached
+        digests = []
         try:
-            repo_digests = json.loads(result.stdout.strip())
-            return [d.split("@")[1] for d in repo_digests if "@" in d]
-        except (json.JSONDecodeError, IndexError):
-            return []
+            result = subprocess.run(
+                ["docker", "inspect", "--format", "{{json .RepoDigests}}", image],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                digests = [d for d in json.loads(result.stdout.strip() or "[]")
+                           if isinstance(d, str) and "@" in d]
+        except (json.JSONDecodeError, TypeError, subprocess.SubprocessError, OSError):
+            digests = []
+        self._repo_digest_cache[image] = digests
+        return digests
+
+    def _get_local_digests(self, image):
+        """Get all local image digests from RepoDigests (bare `sha256:…`).
+
+        Signature and contract unchanged — has_selfupdate_available and the
+        digest comparison in check_all both compare against the remote
+        `Docker-Content-Digest`, which carries no repository prefix.
+        """
+        return [d.split("@")[1] for d in self._get_local_repo_digests(image)]
 
     def _get_image_size(self, image):
         """Get local image size in human-readable format."""
@@ -635,6 +860,10 @@ class UpdateChecker:
         Returns True when local != remote, False otherwise (also on any
         failure — we prefer a missed hint over a false positive)."""
         try:
+            # This one runs outside check_all, on a checker that lives for
+            # the whole process — so drop the per-run RepoDigests cache
+            # first, or a re-pull between two calls would go unnoticed.
+            self._repo_digest_cache = {}
             cfg = self.inspect_self()
             if not cfg:
                 return False
@@ -1558,6 +1787,27 @@ class UpdateChecker:
         the old behaviour: check everything.
         """
         self.debug_log = []
+        self._repo_digest_cache = {}
+        self._token_cache = {}
+        diag = self._diag_on()
+        # Resolving a digest to its version means GETting 2-3 manifests plus
+        # a config blob per container, and GETs — unlike the HEAD the digest
+        # check itself uses — count against Docker Hub's anonymous budget of
+        # 100 per hour. Thirty containers on a quarter-hourly cron would be
+        # ~240 requests an hour: Docksentry would rate-limit itself into 429s
+        # and start missing updates for real, which is the exact failure it
+        # is supposed to explain. So it runs only for an explicit
+        # single-container check, or when someone turned DEBUG on.
+        resolve_versions = only is not None or diag
+        # …and where the answer goes. An explicit single-container check is a
+        # deliberate act that already spent that container's quota, so its
+        # result belongs in the log whether or not DEBUG is on — resolving a
+        # version and then printing nothing would be paying for an answer and
+        # throwing it away. In a full sweep the same line stays behind DEBUG,
+        # where it only runs because someone asked for the noise.
+        _vlog = self._debug if only is not None else self._vdebug
+        if diag:
+            self._vdebug(f"Environment: {self._registry_environment()}")
         containers = self.get_running_containers()
         if only is not None:
             wanted = set(only)
@@ -1584,8 +1834,15 @@ class UpdateChecker:
 
             remote_digest = self._get_remote_digest(registry, repository, tag)
 
-            self._debug(f"  Local:  {', '.join(d[:30] + '...' for d in local_digests)}")
-            self._debug(f"  Remote: {(remote_digest or 'FAILED')[:30]}...")
+            # Full digests, with the repository prefix Docker reports them
+            # under. Truncating to 30 chars saved a line break and cost the
+            # reader any way of checking the value against
+            # `docker manifest inspect` (#53, @LeeNX). The prefix falls back
+            # to the parsed repository if RepoDigests is unavailable.
+            local_shown = (self._get_local_repo_digests(image)
+                           or [f"{repository}@{d}" for d in local_digests])
+            self._debug(f"  Local:  {', '.join(local_shown)}")
+            self._debug(f"  Remote: {remote_digest or 'FAILED'}")
 
             if not remote_digest:
                 # Treat unknown as unknown — don't claim "up to date" when we
@@ -1614,9 +1871,34 @@ class UpdateChecker:
                     c["new_version"] = meta["version"]
                 if meta.get("created"):
                     c["new_created"] = meta["created"]
+                if resolve_versions:
+                    # The same line the up-to-date branch prints, so both
+                    # verdicts can be read the same way.
+                    _vlog(f"    remote :{tag} is version "
+                          f"{meta.get('version') or '?'} "
+                          f"(built {meta.get('created') or '?'}), "
+                          f"local is {old_v or '?'}")
                 updates.append(c)
             else:
                 self._debug("  → Up to date")
+                if diag:
+                    # Local, so free: what the digest above actually is.
+                    self._vdebug(f"    local image built {self._get_image_created(image)}"
+                                 f", size {self._get_image_size(image)}")
+                if resolve_versions:
+                    # THE point of #53: "up to date" reads like a claim you
+                    # have to take on faith as long as the log shows nothing
+                    # but a hash. Naming the version behind it — 66d8096… is
+                    # 2.3.0 — settles the question in one line.
+                    meta = self.get_remote_image_meta(registry, repository, tag)
+                    if meta.get("version"):
+                        _vlog(f"    remote :{tag} is version {meta['version']}"
+                              f" (built {meta.get('created') or '?'})")
+                    elif meta.get("created"):
+                        _vlog(f"    remote :{tag} carries no version label"
+                              f" (built {meta['created']})")
+                    else:
+                        _vlog(f"    remote :{tag} version could not be read")
 
         # Save pending updates — atomic write (v1.22.1)
         from container_store import atomic_write_json
