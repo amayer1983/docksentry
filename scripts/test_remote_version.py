@@ -70,6 +70,9 @@ def main():
     dchk.get_running_containers = lambda: [{"name": "app", "image": "reg/repo:tag"}]
     dchk._parse_image = lambda img: ("reg", "repo", "tag")
     dchk._get_local_digests = lambda img: ["sha256:LOCAL"]
+    # Since #53 the check keys on the running image ID; fake it so no
+    # `docker inspect` is shelled out. Running image == tag image here.
+    dchk._container_image_id = lambda name: "sha256:RUNNING"
 
     dchk._get_remote_digest = lambda registry, repository, tag: ""
     checks["empty remote digest → no update"] = dchk.check_all() == []

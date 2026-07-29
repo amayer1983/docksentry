@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.57.1] - 2026-07-29
+
+### Fixed
+- **The update check compared the tag, not the running container — and could miss real updates** ([#53](../../issues/53), @LeeNX). Surfaced by the v1.56.0 diagnostics on the first run: his Web UI showed gitea-runner as 2.0.1 while the check said "up to date" and read the registry as 2.3.0. All three were honest. His container was running image `b1addbb…` (2.0.1); his `:latest` tag pointed at a *different* image, `15cc00a…` (2.3.0). Once a tag gets pulled forward without recreating the container — a manual `pull`, another tool, anything — the tag and the running image drift apart, and the check was comparing the *tag's* digest against the registry. Tag and registry both said 2.3.0, so it reported "up to date" while never looking at what the container actually runs. Docksentry went blind to a genuine update.
+
+  The check now compares the image the container is **running** against the registry, which is the same running-image-ID basis the Web UI has used since [#46](../../issues/46). Behaviour is unchanged for the normal case — a container created from its current tag runs the tag's image, so the two digests are identical and every verdict, log line and notification field comes out exactly as before. It only differs where the tag and the running image have drifted, where "up to date" was wrong. A running image with no repo digest (built locally, or a tag since moved) falls back to the old tag comparison rather than risk a false "update available", and with `DEBUG` on the log spells the drift out: `Container runs 2.0.1, but tag … points at 2.3.0 — container was not recreated after the tag moved`.
+
 ## [1.57.0] - 2026-07-29
 
 ### Fixed

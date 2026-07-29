@@ -29,8 +29,12 @@ def make_checker(names, outdated, debug=False):
     chk._parse_image = lambda img: ("reg", img.split("/", 1)[1].split(":")[0], "tag")
     chk._get_local_digests = lambda img: ["sha256:LOCAL"]
     # The #53 diagnostics reach for `docker inspect` and `docker info`.
-    # Without these two the "no network, no daemon" promise above quietly
-    # stops being true and the tests shell out for real.
+    # Without these three the "no network, no daemon" promise above quietly
+    # stops being true and the tests shell out for real. Since #53 the check
+    # keys on the container's running image ID, so that lookup is faked too;
+    # here the running image == the tag image (no divergence), which is what
+    # keeps this factory's expectations identical to the pre-#53 behaviour.
+    chk._container_image_id = lambda name: f"sha256:RUN-{name}"
     chk._get_local_repo_digests = lambda img: [f"{img.split(':')[0]}@sha256:LOCAL"]
     chk._registry_environment = lambda: "host linux/amd64, mirrors: none"
 
