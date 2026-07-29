@@ -160,3 +160,7 @@ To add Docker Hub login, mount your credentials read-only:
 volumes:
   - /root/.docker/config.json:/.docker/config.json:ro
 ```
+
+## Other registries
+
+The numbers above are Docker Hub's — it's the strict one, and the registry most people bump into. Others set their own rules, and they're generally more permissive: GitHub's `ghcr.io` and `quay.io`, for example, don't rate-limit anonymous manifest reads the way Hub does. Docksentry doesn't special-case any of them; it does the same lightweight `HEAD`-first check everywhere, which is exactly the shape that stays under whatever limit a given registry happens to enforce. If you do run into throttling on a registry, the same credential mount applies — Docksentry authenticates against whatever host `DOCKER_REGISTRY` points at, not just Hub — and the `DEBUG` log will show you which host actually answered, so you can tell a real limit from a mirror or proxy in the path.
