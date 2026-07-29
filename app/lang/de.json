@@ -368,6 +368,8 @@
   "web_badge_pinned_tt": "Gepinnt — bei Update-Checks übersprungen.",
   "web_badge_auto_tt": "Auto-Update aktiv — läuft beim nächsten geplanten Cron-Tick.",
   "web_label_authoritative": "Wird durch ein docksentry.*-Label im Compose-File gesteuert — zum Ändern das Label dort entfernen.",
+  "web_env_override_tt": "Die Umgebung setzt {var}={value}, aber der hier gespeicherte Wert gewinnt. Feld ändern und speichern, um ihn zu überschreiben — oder den Schlüssel aus der settings.json entfernen, damit wieder die Umgebung gilt.",
+  "web_env_override_secret_tt": "Die Umgebung setzt {var}, aber der hier gespeicherte Wert gewinnt. Feld ändern und speichern, um ihn zu überschreiben — oder den Schlüssel aus der settings.json entfernen, damit wieder die Umgebung gilt.",
   "web_badge_major_tt": "Major-Update-Bestätigung aktiv — Major-Versionssprünge erfordern manuelle Bestätigung.",
   "web_bulk_update_tt": "Alle ausgewählten ausstehenden Container aktualisieren.",
   "web_bulk_pin_tt": "Alle ausgewählten pinnen — sie werden bei Update-Checks übersprungen.",

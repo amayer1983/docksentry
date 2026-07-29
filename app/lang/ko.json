@@ -267,6 +267,8 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_env_override_tt": "환경 변수는 {var}={value}로 설정되어 있지만 여기에 저장된 값이 우선합니다. 이 필드를 바꿔 저장하면 덮어쓸 수 있고, 다시 환경 변수를 따르게 하려면 settings.json에서 해당 키를 삭제하세요.",
+  "web_env_override_secret_tt": "환경 변수는 {var}를 설정하지만 여기에 저장된 값이 우선합니다. 이 필드를 바꿔 저장하면 덮어쓸 수 있고, 다시 환경 변수를 따르게 하려면 settings.json에서 해당 키를 삭제하세요.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",
   "web_bulk_update_tt": "Update all selected pending containers.",
   "web_bulk_pin_tt": "Pin all selected — they'll be skipped on update checks.",

@@ -272,6 +272,14 @@ def main():
         # aggregators.
         print("Webhook: configured")
 
+    # Say out loud which env vars settings.json is overruling (#53, @LeeNX).
+    # He set DEBUG=true, read "debug OFF" two lines up, and had no way to
+    # find out why. The saved value still wins — but silently winning was
+    # the actual bug. Values for secrets are never in these lines; see
+    # Config.env_override_lines / LOGGABLE_PERSISTENT_KEYS.
+    for _line in config.env_override_lines():
+        print(_line)
+
     # Send startup notification to all channels — unless we're resuming
     # from a self-update, in which case the scheduler's deferred-check
     # resume will send a more specific message (with version + "checking

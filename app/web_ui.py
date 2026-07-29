@@ -2203,7 +2203,7 @@ def create_handler(config, checker, bot, store, password=None):
 <td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
 <td>{status_badge}</td>
 <td>{auto_cell}</td>
-<td>{actions}</td>
+<td class="actions-cell">{actions}</td>
 </tr>"""
 
             major_banner = ""
@@ -3304,6 +3304,24 @@ def create_handler(config, checker, bot, store, password=None):
             def help_(text):
                 return f'<span class="help" data-tt="{_e(text)}">?</span>'
 
+            def env_(key):
+                """Marker for a field whose saved value overrules a set env var.
+
+                Same mechanism as the 🏷 label marker and the ⚙ self-update
+                marker — a glyph plus a title — but a third statement: the
+                env var is only the starting value, this field owns it now.
+                Empty string when nothing is being overruled (#53, @LeeNX).
+                """
+                o = config.env_override(key)
+                if not o:
+                    return ""
+                # Secrets: name the variable, never its value. o["env"] is
+                # None for those (Config._display_value refuses).
+                tip = (t("web_env_override_secret_tt", var=o["var"])
+                       if o["secret"] else
+                       t("web_env_override_tt", var=o["var"], value=o["env"]))
+                return f' <span class="env-mark" title="{_e(tip)}">env</span>'
+
             content = f"""
 <div class="card">
 <h2>{t("web_settings")}</h2>
@@ -3322,20 +3340,26 @@ def create_handler(config, checker, bot, store, password=None):
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="general">
   <div class="grid">
     <div>
-      <label>{t("web_language")}</label>
+      <label>{t("web_language")}{env_("language")}</label>
       <select name="language">{lang_options}</select>
     </div>
     <div>
-      <label>{t("web_cron_schedule")} {help_(t("web_cron_help"))}</label>
+      <label>{t("web_cron_schedule")} {help_(t("web_cron_help"))}{env_("cron_schedule")}</label>
       <input type="text" name="cron_schedule" id="f-cron_schedule" value="{_e(config.cron_schedule)}" oninput="dsCronPreview()">
       <div id="cron-preview" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px">⏳ {_e(t("web_cron_preview_loading"))}</div>
     </div>
   </div>
-  <label>{t("web_excluded")} {help_(t("web_excluded_help"))}</label>
+  <label>{t("web_excluded")} {help_(t("web_excluded_help"))}{env_("exclude_containers")}</label>
   <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
-  <div class="form-checkbox-row adv-only">
+  <!-- NOT adv-only. It used to be, and that closed the last door: DEBUG
+       from the environment can be overruled by settings.json, and the
+       only other way to switch debug on was a checkbox that simple mode
+       hides with display:none — invisible even to the browser's own
+       find-in-page. Env powerless, switch unfindable, no way in at all
+       (#53, @LeeNX). One toggle in the simple view is the smaller cost. -->
+  <div class="form-checkbox-row">
     <input type="checkbox" name="debug" id="cb-debug" {cb(config.debug)}>
-    <label for="cb-debug">{t("web_debug_mode")} {help_(t("web_debug_help"))}</label>
+    <label for="cb-debug">{t("web_debug_mode")} {help_(t("web_debug_help"))}{env_("debug")}</label>
   </div>
 </div>
 
@@ -3343,7 +3367,7 @@ def create_handler(config, checker, bot, store, password=None):
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="updates">
   <div class="form-checkbox-row">
     <input type="checkbox" name="auto_selfupdate" id="cb-auto-su" {cb(config.auto_selfupdate)}>
-    <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}</label>
+    <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}{env_("auto_selfupdate")}</label>
   </div>
   <p class="form-help">{t("web_updates_tab_hint")}</p>
 </div>
@@ -3352,23 +3376,23 @@ def create_handler(config, checker, bot, store, password=None):
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="cleanup">
   <div class="form-checkbox-row">
     <input type="checkbox" name="auto_cleanup" id="cb-auto-cl" {cb(config.auto_cleanup)}>
-    <label for="cb-auto-cl">{t("web_auto_cleanup")}</label>
+    <label for="cb-auto-cl">{t("web_auto_cleanup")}{env_("auto_cleanup")}</label>
   </div>
   <p class="form-help">{t("web_auto_cleanup_hint")}</p>
 
   <div class="grid adv-only">
     <div>
-      <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}</label>
+      <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}{env_("cleanup_grace_hours")}</label>
       <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
     </div>
     <div>
-      <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}</label>
+      <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}{env_("cleanup_backup_days")}</label>
       <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
     </div>
   </div>
   <div class="form-checkbox-row adv-only">
     <input type="checkbox" name="cleanup_backup_local_only" id="cb-bak-local" {cb(config.cleanup_backup_local_only)}>
-    <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}</label>
+    <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}{env_("cleanup_backup_local_only")}</label>
   </div>
   <p class="form-help adv-only">{t("web_cleanup_backup_local_only_hint")}</p>
 </div>
@@ -3377,13 +3401,13 @@ def create_handler(config, checker, bot, store, password=None):
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="notifs">
   <div class="grid adv-only">
     <div>
-      <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}</label>
+      <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}{env_("disk_warn_percent")}</label>
       <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
     </div>
     <div>
       <div class="form-checkbox-row" style="margin-top:24px">
         <input type="checkbox" name="disk_warn_auto_cleanup" id="cb-disk-acl" {cb(config.disk_warn_auto_cleanup)}>
-        <label for="cb-disk-acl">{t("web_disk_warn_auto_cleanup")}</label>
+        <label for="cb-disk-acl">{t("web_disk_warn_auto_cleanup")}{env_("disk_warn_auto_cleanup")}</label>
       </div>
       <p class="form-help">{t("web_disk_warn_auto_cleanup_hint")}</p>
     </div>
@@ -3393,11 +3417,11 @@ def create_handler(config, checker, bot, store, password=None):
 
   <div class="grid">
     <div>
-      <label>{t("web_quiet_hours_start")}</label>
+      <label>{t("web_quiet_hours_start")}{env_("quiet_hours_start")}</label>
       <input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
     </div>
     <div>
-      <label>{t("web_quiet_hours_end")}</label>
+      <label>{t("web_quiet_hours_end")}{env_("quiet_hours_end")}</label>
       <input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
     </div>
   </div>
@@ -3409,18 +3433,18 @@ def create_handler(config, checker, bot, store, password=None):
   <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_weekly_title")}</h3>
   <div class="form-checkbox-row">
     <input type="checkbox" name="weekly_report_enabled" id="cb-weekly" {cb(config.weekly_report_enabled)}>
-    <label for="cb-weekly">{t("web_weekly_enable")}</label>
+    <label for="cb-weekly">{t("web_weekly_enable")}{env_("weekly_report_enabled")}</label>
   </div>
   <p class="form-help">{t("web_weekly_hint")}</p>
   <div class="grid">
     <div>
-      <label>{t("web_weekly_day")}</label>
+      <label>{t("web_weekly_day")}{env_("weekly_report_weekday")}</label>
       <select name="weekly_report_weekday">
         {''.join(f'<option value="{i}" {"selected" if int(config.weekly_report_weekday or 0)==i else ""}>{name}</option>' for i, name in enumerate([t("web_weekday_mon"), t("web_weekday_tue"), t("web_weekday_wed"), t("web_weekday_thu"), t("web_weekday_fri"), t("web_weekday_sat"), t("web_weekday_sun")]))}
       </select>
     </div>
     <div>
-      <label>{t("web_weekly_hour")}</label>
+      <label>{t("web_weekly_hour")}{env_("weekly_report_hour")}</label>
       <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23">
     </div>
   </div>
@@ -3430,23 +3454,23 @@ def create_handler(config, checker, bot, store, password=None):
 <!-- ── Kanäle ────────────────────────────────────── -->
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
   <div class="adv-only">
-    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}</label>
+    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
     <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
 
-    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}</label>
+    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
     <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}">
 
-    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}</label>
+    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
     <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}">
   </div>
 
-  <label>Discord Webhook {help_(t("web_discord_help"))}</label>
+  <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
   <div style="display:flex;gap:8px">
     <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1">
     <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
   </div>
 
-  <label>Webhook URL {help_(t("web_webhook_help"))}</label>
+  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
   <div style="display:flex;gap:8px">
     <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1">
     <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>

@@ -47,6 +47,133 @@ PERSISTENT_KEYS = [
     "monitor_enabled", "monitor_interval_seconds",
 ]
 
+# Attribute name → environment variable, for every persistent key that can
+# be seeded from the environment. Written out by hand and checked against
+# from_env() one key at a time — `key.upper()` is NOT the rule: MONITOR
+# seeds monitor_enabled and MONITOR_INTERVAL seeds monitor_interval_seconds.
+# web_setup_done and ui_mode have no env var at all and are absent here on
+# purpose. Keep this in sync when a key is added to PERSISTENT_KEYS.
+PERSISTENT_ENV_VARS = {
+    "cron_schedule": "CRON_SCHEDULE",
+    "exclude_containers": "EXCLUDE_CONTAINERS",
+    "auto_selfupdate": "AUTO_SELFUPDATE",
+    "auto_cleanup": "AUTO_CLEANUP",
+    "cleanup_grace_hours": "CLEANUP_GRACE_HOURS",
+    "cleanup_backup_local_only": "CLEANUP_BACKUP_LOCAL_ONLY",
+    "cleanup_backup_days": "CLEANUP_BACKUP_DAYS",
+    "disk_warn_percent": "DISK_WARN_PERCENT",
+    "disk_warn_auto_cleanup": "DISK_WARN_AUTO_CLEANUP",
+    "quiet_hours_start": "QUIET_HOURS_START",
+    "quiet_hours_end": "QUIET_HOURS_END",
+    "weekly_report_enabled": "WEEKLY_REPORT_ENABLED",
+    "weekly_report_weekday": "WEEKLY_REPORT_WEEKDAY",
+    "weekly_report_hour": "WEEKLY_REPORT_HOUR",
+    "language": "LANGUAGE",
+    "web_password": "WEB_PASSWORD",
+    "discord_webhook": "DISCORD_WEBHOOK",
+    "webhook_url": "WEBHOOK_URL",
+    "debug": "DEBUG",
+    "telegram_topic_id": "TELEGRAM_TOPIC_ID",
+    "telegram_allowed_users": "TELEGRAM_ALLOWED_USERS",
+    "healthcheck_max_starting": "HEALTHCHECK_MAX_STARTING",
+    "bot_label": "BOT_LABEL",
+    "docker_stop_timeout": "DOCKER_STOP_TIMEOUT",
+    "monitor_enabled": "MONITOR",
+    "monitor_interval_seconds": "MONITOR_INTERVAL",
+}
+
+# The value from_env() ends up with when the variable is absent — already
+# parsed (bool / int / list), not the raw string, so the comparison in
+# _detect_env_overrides is against the same type the attribute holds.
+#
+# These duplicate the defaults written inline in from_env(); keeping them
+# honest is test_env_override.py's job — it builds a Config with every
+# variable stripped from the environment and asserts each attribute comes
+# out equal to its entry here, so a default changed in one place and not
+# the other fails the suite instead of quietly skewing the detection.
+#
+# Deliberately NOT read from the Dockerfile: the image the process happens
+# to run in is not the authority on what Docksentry's defaults are (it can
+# be an old image, a rebuild, or no image at all when run from source).
+PERSISTENT_ENV_DEFAULTS = {
+    "cron_schedule": "0 18 * * *",
+    "exclude_containers": [],
+    "auto_selfupdate": False,
+    "auto_cleanup": False,
+    "cleanup_grace_hours": 24,
+    "cleanup_backup_local_only": False,
+    "cleanup_backup_days": 7,
+    "disk_warn_percent": 85,
+    "disk_warn_auto_cleanup": False,
+    "quiet_hours_start": "",
+    "quiet_hours_end": "",
+    "weekly_report_enabled": False,
+    "weekly_report_weekday": 0,
+    "weekly_report_hour": 9,
+    "language": "en",
+    "web_password": "",
+    "discord_webhook": "",
+    "webhook_url": "",
+    "debug": False,
+    "telegram_topic_id": "",
+    "telegram_allowed_users": [],
+    "healthcheck_max_starting": 600,
+    "bot_label": "",
+    "docker_stop_timeout": 60,
+    "monitor_enabled": True,
+    "monitor_interval_seconds": 60,
+}
+
+# Persistent keys whose *value* may be printed (startup log, Web UI hint).
+# Deliberately an ALLOW-list: everything not named here — including any key
+# someone adds to PERSISTENT_KEYS later — is treated as a secret and gets
+# reported by name only. Forgetting to add a harmless key here costs a bit
+# of detail in one log line; forgetting to add a secret to a deny-list
+# would put a password into `docker logs`.
+LOGGABLE_PERSISTENT_KEYS = {
+    "cron_schedule", "exclude_containers", "auto_selfupdate", "auto_cleanup",
+    "cleanup_grace_hours", "cleanup_backup_local_only", "cleanup_backup_days",
+    "disk_warn_percent", "disk_warn_auto_cleanup",
+    "quiet_hours_start", "quiet_hours_end",
+    "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
+    "web_setup_done", "ui_mode", "language", "debug",
+    "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
+    "monitor_enabled", "monitor_interval_seconds",
+}
+# NOT loggable, for the record: web_password, discord_webhook, webhook_url
+# (credentials / tokenised URLs) and telegram_topic_id +
+# telegram_allowed_users (personal data — main.py already prints only the
+# *count* of allowed users for the same reason).
+
+# Which Settings tab a key is edited on. Only meaningful for keys that
+# actually have a field in the Web UI form — a warning that doesn't say
+# where to go isn't worth printing. Keys with no field of their own
+# (web_password, monitor_*, docker_stop_timeout, healthcheck_max_starting)
+# are absent and get the settings.json-only wording instead.
+PERSISTENT_SETTINGS_TAB = {
+    "language": "General",
+    "cron_schedule": "General",
+    "exclude_containers": "General",
+    "debug": "General",
+    "auto_selfupdate": "Updates",
+    "auto_cleanup": "Cleanup",
+    "cleanup_grace_hours": "Cleanup",
+    "cleanup_backup_days": "Cleanup",
+    "cleanup_backup_local_only": "Cleanup",
+    "disk_warn_percent": "Notifications",
+    "disk_warn_auto_cleanup": "Notifications",
+    "quiet_hours_start": "Notifications",
+    "quiet_hours_end": "Notifications",
+    "weekly_report_enabled": "Notifications",
+    "weekly_report_weekday": "Notifications",
+    "weekly_report_hour": "Notifications",
+    "telegram_topic_id": "Channels",
+    "telegram_allowed_users": "Channels",
+    "bot_label": "Channels",
+    "discord_webhook": "Channels",
+    "webhook_url": "Channels",
+}
+
 
 class Config:
     def __init__(self, bot_token, chat_id, cron_schedule, exclude_containers, data_dir,
@@ -79,7 +206,9 @@ class Config:
         # DEBUG follows the same precedence as every other persistent key:
         # the env var seeds the initial value, and a later /debug or Web UI
         # toggle persisted to settings.json still overrides on load (see
-        # _load_persistent — "debug" is in PERSISTENT_KEYS).
+        # _load_persistent — "debug" is in PERSISTENT_KEYS). That precedence
+        # is unchanged since #53 — but it is now announced instead of
+        # happening silently; see _detect_env_overrides.
         self.debug = debug
         self.auto_selfupdate = auto_selfupdate
         # Global "auto-update every checked container" (Watchtower-style),
@@ -252,8 +381,125 @@ class Config:
         self.docker_auth_config = docker_auth_config
         self.docker_registry = docker_registry
 
+        # Snapshot what the environment produced for every persistent key
+        # that looks deliberately set — taken before settings.json lands on
+        # top, so we can say afterwards which of them the saved file
+        # overrules (#53, @LeeNX). "Deliberately set" = present in
+        # os.environ AND not equal to our own default; see
+        # _detect_env_overrides for why both halves are needed.
+        _env_seeded = {}
+        for key, var in PERSISTENT_ENV_VARS.items():
+            if var not in os.environ:
+                continue
+            value = getattr(self, key)
+            if value == PERSISTENT_ENV_DEFAULTS[key]:
+                continue
+            _env_seeded[key] = value
+
         # Load persistent overrides from settings.json
         self._load_persistent()
+
+        # Precedence is unchanged — the saved value still wins, on purpose:
+        # flipping it would silently reset every user who set something in
+        # the env once and later changed it in the Web UI. What was missing
+        # is that nothing ever *said* so.
+        self.env_overrides = self._detect_env_overrides(_env_seeded)
+
+    def _detect_env_overrides(self, env_seeded):
+        """Which explicitly set env vars does settings.json overrule?
+
+        ``env_seeded`` maps key → the value the environment produced,
+        captured before _load_persistent() ran, for variables that are both
+        present in os.environ AND carrying something other than our own
+        default (PERSISTENT_ENV_DEFAULTS).
+
+        Presence alone does not work, however much it looks like the right
+        test. Our own Dockerfile declares 18 of these variables with `ENV`
+        — CRON_SCHEDULE, CLEANUP_GRACE_HOURS, DISK_WARN_PERCENT,
+        QUIET_HOURS_*, WEEKLY_REPORT_*, LANGUAGE and more — all at exactly
+        the built-in default. They are therefore in os.environ in *every*
+        Docksentry container whether the user typed them or not, so a
+        presence check reported eight lines on a normal install where two
+        were real. Six wrong lines hide the two right ones; that is worse
+        than not warning at all.
+
+        KNOWN BLIND SPOT, accepted on purpose: setting a variable to
+        exactly the default while a different value is saved is no longer
+        reported — `DEBUG=false` in the compose file against
+        ``"debug": true`` in settings.json stays silent. That case is real
+        but rare, and it is indistinguishable from the Dockerfile's own
+        `ENV DEBUG="false"`-style declarations without parsing the image,
+        which would make the running container the authority on our
+        defaults. Not a bug and not an oversight — the price of the
+        warning being readable at all.
+
+        The trap being warned about is unchanged. @LeeNX set ``DEBUG=true``
+        and got "debug OFF" plus ``"debug": false`` in settings.json — not
+        because he ever turned debug off, but because save_persistent()
+        writes *all* PERSISTENT_KEYS at once, so any unrelated Web UI save
+        froze the then-current value. Same trap for every persistent key.
+        """
+        overrides = []
+        for key, env_value in env_seeded.items():
+            saved_value = getattr(self, key, None)
+            if saved_value == env_value:
+                continue
+            overrides.append({
+                "key": key,
+                "var": PERSISTENT_ENV_VARS[key],
+                "env": self._display_value(key, env_value),
+                "saved": self._display_value(key, saved_value),
+                "secret": key not in LOGGABLE_PERSISTENT_KEYS,
+                "tab": PERSISTENT_SETTINGS_TAB.get(key, ""),
+            })
+        return overrides
+
+    def env_override(self, key):
+        """Return the override entry for `key`, or None. For the Web UI."""
+        for o in self.env_overrides:
+            if o["key"] == key:
+                return o
+        return None
+
+    @staticmethod
+    def _display_value(key, value):
+        """Human-readable value for a persistent key — None if it's secret.
+
+        The allow-list check lives here rather than at every call site so
+        there is exactly one place that can leak a value, and its default
+        answer is "no".
+        """
+        if key not in LOGGABLE_PERSISTENT_KEYS:
+            return None
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (list, tuple)):
+            return ", ".join(str(v) for v in value) or "(empty)"
+        return str(value) if str(value) != "" else "(empty)"
+
+    def env_override_lines(self):
+        """Startup log lines for the overruled env vars (English, like the
+        rest of the boot output — no translation files down here).
+
+        Every line has to answer "where do I change it?", otherwise it just
+        tells the user something is wrong and leaves him there.
+        """
+        lines = []
+        for o in self.env_overrides:
+            if o["secret"]:
+                what = (f"{o['var']} is set in the environment, but the saved "
+                        f"setting wins (values hidden)")
+            else:
+                what = (f"{o['var']}={o['env']} is set in the environment, but "
+                        f"the saved setting {o['key']}={o['saved']} wins")
+            if o["tab"]:
+                where = (f"change it under Settings › {o['tab']}, or remove "
+                         f"\"{o['key']}\" from {self.settings_file}")
+            else:
+                where = (f"remove \"{o['key']}\" from {self.settings_file} to "
+                         f"fall back to the environment")
+            lines.append(f"Env override: {what} — {where}.")
+        return lines
 
     def _load_persistent(self):
         """Load saved settings from settings.json, overriding ENV defaults."""

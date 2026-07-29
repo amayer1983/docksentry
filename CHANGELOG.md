@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.57.0] - 2026-07-29
+
+### Fixed
+- **An environment variable that stops working, and never says so** ([#53](../../issues/53), @LeeNX). He set `DEBUG=true` in his compose file, restarted, and got `debug OFF`. The cause is worse than it looks: settings you can edit in the Web UI are stored in `settings.json` and take precedence on load — that part is intended — but saving *anything* in the Web UI writes **all** of them at once. So changing your language, or a bot label, or a monitor setting, quietly froze the then-current value of every one of those variables, and your compose file stopped meaning anything for them from that moment on. He never turned debug off. A save he made for an unrelated reason did it for him.
+
+  The precedence stays as it is — flipping it would reset everyone who set something in the environment once and later changed it in the Web UI. What was missing is that nothing ever *said* so. Startup now names each explicitly-set variable that a saved value overrules, and where to change it:
+
+  ```
+  Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins
+    — change it under Settings › General, or remove "debug" from /data/settings.json.
+  ```
+
+  Presence in the environment is the test, not "differs from the default": setting `DEBUG=false` is a statement, leaving it out is not, and comparing against defaults can't tell those apart. Secrets are named but never printed — `WEB_PASSWORD`, the webhook URLs and the Telegram fields say "values hidden". That's an allow-list, so a persistent setting added later is treated as secret until someone decides otherwise.
+
+  The same note appears next to the affected field in Settings, so it's visible where you'd actually go looking.
+- **Action buttons stacked one per line and made table rows enormous** ([#46](../../issues/46), @LeeNX). Nothing reserved any width for the Actions column, so the widest image reference anywhere in the table decided how much was left for it. On a host full of long `ghcr.io/owner/name:tag` references the buttons collapsed to a single column — four buttons tall, per row — while the same version on another host showed two across. Same code, different containers, different layout, which is why it looked like something he'd broken himself. The column now keeps room for four buttons across, which caps the seven at two rows; the image cell yields instead, since it can wrap and buttons can't.
+- **Debug could not be switched on at all in Simple mode** ([#53](../../issues/53)). The only checkbox for it was marked advanced-only, so Simple mode hid it with `display: none` — which also means the browser's own find-on-page can't see it, which is exactly how @LeeNX ended up looking for a switch that was there all along. Combined with the bug above, there was genuinely no way left to turn it on. It's visible in both modes now.
+
 ## [1.56.0] - 2026-07-29
 
 ### Added

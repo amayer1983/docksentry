@@ -500,6 +500,15 @@ body.mode-advanced .simple-hint { display: none; }
     border-top: 1px solid var(--border);
 }
 .btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+/* Actions column: keep room for four buttons across (#46, @LeeNX).
+   Nothing reserved this width, so the widest image reference in the whole
+   table decided what was left over — on a host full of long ghcr.io names
+   the buttons collapsed to ONE per line and made every row four buttons
+   tall. Same table, different host, different layout, which is why it
+   looked like a mystery. Four across (4×32px + 3×4px gap) caps our seven
+   buttons at two rows, which is what he asked for. The image cell yields
+   instead: it can wrap or ellipsise, buttons can't. */
+.actions-cell { min-width: 168px; }
 .inline-form { display: inline; }
 .btn-compact {
     text-decoration: none;
@@ -884,6 +893,22 @@ pre {
    it's only the starting value, and it IS changeable — under
    Settings › Updates. Own glyph, own wording, same mechanism. */
 .self-mark { opacity: .75; font-size: .85em; cursor: help; }
+/* "this field currently overrules an env var" marker (#53, @LeeNX). Third
+   statement after 🏷 and ⚙: the variable seeded the value, the saved
+   setting owns it now. A word rather than a glyph — "env" is the thing
+   the user typed in his compose file, so it's the fastest thing to
+   recognise sitting next to a field label. */
+.env-mark {
+    font-size: .7em;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    vertical-align: middle;
+    cursor: help;
+}
 /* The Auto cell of our own row links to the setting that actually works
    instead of offering a toggle that writes into a list the update flow
    ignores. Sized like the .btn-icon it replaces. */

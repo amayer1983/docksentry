@@ -267,6 +267,8 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_env_override_tt": "El entorno define {var}={value}, pero gana el valor guardado aquí. Cambia este campo y guarda para sobrescribirlo, o elimina la clave de settings.json para volver a seguir el entorno.",
+  "web_env_override_secret_tt": "El entorno define {var}, pero gana el valor guardado aquí. Cambia este campo y guarda para sobrescribirlo, o elimina la clave de settings.json para volver a seguir el entorno.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",
   "web_bulk_update_tt": "Update all selected pending containers.",
   "web_bulk_pin_tt": "Pin all selected — they'll be skipped on update checks.",
