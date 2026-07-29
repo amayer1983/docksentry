@@ -261,6 +261,7 @@ services:
       - "docksentry.auto=true"        # auto-update this container without touching the Web UI
       - "docksentry.protect=true"     # refuse /stop for this container (#38-style protection)
       - "docksentry.ask-major=true"   # pause auto-updates on major version bumps until confirmed
+      - "docksentry.link=https://github.com/me/myapp/releases"  # repo / changelog link
 ```
 
 | Label | Effect |
@@ -274,6 +275,7 @@ services:
 | `docksentry.policy=all` / `minor` / `patch` | Cap **auto-updates** by semver bump level: `all` applies every bump (default), `minor` applies minor+patch but holds back majors, `patch` applies patch only. Manual `/update` and the Bulk "Update all" button always apply regardless. An update whose version can't be classified is allowed. Overrides the global `UPDATE_POLICY`. |
 | `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
 | `docksentry.monitor=false` | Exclude the container from state monitoring (health/exit/OOM notifications) |
+| `docksentry.link=<url>` | Repo / changelog URL for the container — wrapped around its name in update notifications, shown as `🔗` in the Web UI status table and on the detail page, and used by `/changelog <name>`. Beats both `/setlink` and the Web UI field (which is disabled while the label is set). Must be a complete `http://` or `https://` URL; anything else is ignored and the next source in the chain applies. Resolution order: this label → `/setlink` value → `org.opencontainers.image.source` → `org.opencontainers.image.url` → registry overview page guessed from the image name |
 
 Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere: **label wins over the stored bot/Web-UI toggle; no label → toggle applies.** The Web UI status table shows the *effective* state (label included) for Pin and Auto — note that clicking a UI toggle cannot override a label; remove the label from your compose file instead.
 

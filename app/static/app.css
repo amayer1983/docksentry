@@ -113,6 +113,17 @@ body {
     letter-spacing: -0.01em;
 }
 .header-host-slot { font-size: 13px; color: var(--text-muted); }
+/* Header control form (the Simple/Advanced switcher). inline-flex, not
+   inline, so it doesn't drop into baseline layout next to its flex-sibling
+   theme button — and margin-top:0, because the global `form { margin-top:
+   8px }` becomes part of the margin box that .header-row's
+   align-items:center centres, which shifted the button 4px down (#46,
+   @LeeNX). Pushed to the right edge via margin-left:auto. */
+.header-form {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 0 0 auto;
+}
 .nav-wrap { max-width: 900px; margin: 12px auto 0 auto; }
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 nav a {
@@ -206,6 +217,28 @@ hr.section-divider {
     border: none;
     border-top: 1px solid var(--border);
     margin: 16px 0;
+}
+/* Logs filter row — Logs page and the Logs tab of the container detail
+   view. Both used to carry the same inline styles plus a height:38px hack
+   on the button. The row aligns its children on `end`, and flexbox aligns
+   MARGIN boxes: the global `input, select, textarea { margin-bottom: 12px }`
+   therefore pushed the button (which has no such margin) 12px below the
+   fields (#46, @LeeNX). Overrides are scoped to this row only — the global
+   margin still holds for every settings form. The shared height also ends
+   the 2px mismatch between the select and the number input. */
+.logs-filter {
+    display: flex;
+    gap: 12px;
+    align-items: end;
+    margin: 0 0 16px 0;
+}
+.logs-filter .logs-filter-grow { flex: 1; }
+.logs-filter .logs-filter-lines { width: 100px; }
+.logs-filter input,
+.logs-filter select,
+.logs-filter button {
+    margin-bottom: 0;
+    height: 38px;
 }
 
 /* ── Buttons ────────────────────────────────────────────────── */
@@ -342,6 +375,9 @@ h2 svg, h3 svg { vertical-align: middle; width: 16px; height: 16px; }
     transition: color 0.15s;
 }
 .container-link:hover { color: var(--accent); }
+/* Inline pointer to a place in Settings (used by the self-update rows, #51) */
+.settings-link { color: var(--accent); text-decoration: none; }
+.settings-link:hover { text-decoration: underline; }
 .btn-back {
     color: var(--text-muted);
     text-decoration: none;
@@ -842,6 +878,16 @@ pre {
 
 /* docksentry.* label authority marker (#42, @LeeNX) */
 .label-mark { opacity: .75; font-size: .85em; cursor: help; }
+/* Self-update marker (#51, @LeeNX). Deliberately NOT the 🏷 label marker:
+   that one means "a compose label is authoritative, not changeable here",
+   and neither half applies. AUTO_SELFUPDATE is a persisted setting, so
+   it's only the starting value, and it IS changeable — under
+   Settings › Updates. Own glyph, own wording, same mechanism. */
+.self-mark { opacity: .75; font-size: .85em; cursor: help; }
+/* The Auto cell of our own row links to the setting that actually works
+   instead of offering a toggle that writes into a list the update flow
+   ignores. Sized like the .btn-icon it replaces. */
+a.btn-icon { text-decoration: none; }
 .btn-icon:disabled { opacity: .35; cursor: not-allowed; }
 
 /* Legend icons mirror the real button styling (colours included) but are

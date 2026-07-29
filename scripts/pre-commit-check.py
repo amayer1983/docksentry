@@ -2,6 +2,7 @@
 """Pre-commit check: verify all languages are in sync and README is complete."""
 
 import json
+import glob
 import os
 import sys
 
@@ -165,6 +166,35 @@ print("\n=== WEB UI: inline JS string literals ===")
 import re as _re
 with open(WEB_UI, encoding="utf-8") as f:
     web_src = f.read()
+
+# 4b. Emoji doubled next to a styled icon (#46, @LeeNX).
+#     A label like "🔍 Check Updates" is right in Telegram, where the
+#     emoji IS the button's icon. In the Web UI the styled SVG is the
+#     icon, so the emoji draws a second one beside it. v1.47.4 fixed
+#     that for the legend, but the global "Check Updates" button kept
+#     doing it for months, in all 16 languages, top-right on the main
+#     page — nobody spots this in a diff, only on screen. So: catch it
+#     mechanically. Wrap the label in _strip_emoji() to fix a hit.
+def _icon_text_keys(src):
+    return set(_re.findall(
+        r'\{_ICONS\[[^\]]+\]\}<span>\{t\("([a-z0-9_]+)"\)\}', src))
+
+
+_icon_keys = _icon_text_keys(web_src)
+_doubled = {}
+for _lf in sorted(glob.glob(os.path.join(LANG_DIR, "*.json"))):
+    with open(_lf, encoding="utf-8") as _f:
+        _d = json.load(_f)
+    for _k in _icon_keys:
+        _val = _d.get(_k, "")
+        if isinstance(_val, str) and _val and _re.match(r"[^\w(]", _val):
+            _doubled.setdefault(_k, []).append(
+                os.path.basename(_lf)[:-5])
+for _k, _langs in sorted(_doubled.items()):
+    print(f"     {_k}: leading emoji next to a styled icon in "
+          f"{len(_langs)} language(s) — wrap it in _strip_emoji()")
+check(not _doubled, "no emoji doubled next to a styled icon")
+
 # Pull the _BASE_JS triple-quoted block (the big shared script) and any
 # other triple-quoted chunk that contains JS function defs.
 _js_blocks = _re.findall(r'_BASE_JS\s*=\s*"""(.*?)"""', web_src, _re.DOTALL)

@@ -2,6 +2,31 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.55.0] - 2026-07-29
+
+### Added
+- **`docksentry.link` label for the repo / changelog URL** ([#52](../../issues/52), @LeeNX). The link that shows up next to a container in update notifications can now be set with a label, which makes it part of your compose file instead of something you configure once and forget where. It takes precedence over a link set with `/setlink` or in the Web UI, in keeping with every other `docksentry.*` label — and where it wins, the Web UI form is disabled and marked 🏷, so the field can't quietly hold a value that nothing uses.
+- **The link is now visible in the Web UI at all** ([#52](../../issues/52), @LeeNX). It has existed since v1.31.0, but only ever in Telegram, Discord and the webhook payload — in the Web UI it sat in a text field on the container page and appeared nowhere else. There's a 🔗 next to each container name now, and a row on the detail page, both saying where the URL came from: your label, your own entry, the image's OCI metadata, or a guess from the registry. Resolving it costs nothing extra — the labels the Web UI already reads carry everything the chain needs.
+- **The Docksentry row finally shows its own update setting** ([#51](../../issues/51), @LeeNX). With `AUTO_SELFUPDATE=true` the status table showed a dash in the Auto column, exactly as if you'd switched it off. The column was reading the per-container opt-in list, and Docksentry deliberately isn't in it — self-update is a different mechanism with a different switch. It now reads `AUTO_SELFUPDATE` for its own row and marks it ⚙ in both states, because a dash there means "self-update is manual", not "nobody enabled this yet".
+
+### Fixed
+- **The Auto toggle on the Docksentry row did nothing, twice over** ([#51](../../issues/51)). Clicking it wrote our own name into the per-container opt-in list, the update flow skipped it because it skips us by definition, and the next restart quietly stripped it back out. So the button showed a state that had no effect and then forgot it. It's replaced by a link to Settings › Updates, where the switch that actually governs this lives — and the tab picker learned to follow `#hash`, so that link lands where it promises. The same bug was in the bulk action and is guarded there too.
+- **`/changelog <name>` ignored a link you'd set yourself** ([#52](../../issues/52)). It went straight to the image's OCI metadata and skipped the stored value, even though `/setlink`'s own help text promised the opposite. Both now go through the same resolver.
+- **Emoji leaking into Web UI tooltips and the stop dialog** ([#46](../../issues/46), @LeeNX). v1.47.4 stripped them from the legend but not from the `title` attributes or the confirmation modal, so `🔁 Restart` and `🟥 Stop` still turned up where the styled key already is the icon. They stay in the translations — Telegram's buttons want them.
+- **The "Check Updates" button had two magnifying glasses** ([#46](../../issues/46)). The styled icon plus the 🔍 that lives inside the translated label, in all 16 languages, top right of the main page — the same doubling as above, sitting in the most visible spot in the app and somehow surviving every review since v1.31.0. There's now a check in `pre-commit-check.py` that fails the build if any label rendered beside a styled icon starts with an emoji, so this particular mistake can't come back.
+- **Telegram markdown rendered literally in the Web UI.** The groups page described the first container as the `*head*` — asterisks and all — and a rolled-back update's log turned up on the history page wrapped in ``` fences. Every string in this project was written for Telegram first, and the Web UI was handing them straight to a browser. The Web UI now strips the markers on its way out, at the one place it builds its translator, so a future string with a backtick in it can't reintroduce this. Markers are removed rather than turned into `<strong>`/`<code>`: history details carry raw container logs, and converting arbitrary upstream output into markup is how injection holes start.
+- **Two misaligned controls** ([#46](../../issues/46), @LeeNX). The Simple/Advanced switch sat 4px below the theme button, and "Show Logs" 12px below its own filter fields. Both came from global form margins that a flex container aligns along with everything else — and the 4px one was introduced by the v1.47.3 fix for the *previous* alignment bug at that spot. Both now use their own classes instead of inline styles, and the logs filter form on the container page had the same fault and gets the same fix.
+
+### Changed
+- **Button tooltips say what the button does** ([#46](../../issues/46), @LeeNX). Update, Pin, Restart and Stop had tooltips that repeated the button's own word. They now explain the action and what survives it.
+- **The legend reads in one language** ([#46](../../issues/46)). `major-confirm` and `label` were English string literals, so a German legend read "Prüfen · Updaten · Neustart · Pinnen · auto · major-confirm · Stop · label". Both are translated now, and the entries are capitalised consistently.
+- **An over-long link is rejected rather than truncated.** `set_link` used to silently cut at 500 characters, which produces a link that looks saved and doesn't work.
+
+### Security
+- **Backup import no longer trusts the links it restores.** Container links went into storage raw, bypassing the validation the normal save path applies, so a hand-edited backup could plant a `javascript:` URL. That was inert while nothing rendered a link — this release renders links, which would have made it live. Imported links are now validated like any other, rejects are counted and reported rather than silently dropped, and every link is validated again on its way into an `href`. URL validation itself now decides the scheme with a parser instead of a prefix check, which a capitalised `JavaScript:` or a leading space defeats.
+
+Tests: new `scripts/test_link_safety.py`, `scripts/test_link_render.py` and `scripts/test_web_selfupdate_row.py` — the first Web UI rendering tests in the project.
+
 ## [1.54.0] - 2026-07-29
 
 ### Added

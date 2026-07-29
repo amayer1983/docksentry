@@ -38,12 +38,17 @@
         buttons.forEach(function(b) {
             b.addEventListener('click', function() { activate(b.dataset.tabTarget); });
         });
-        // Restore from localStorage or default to first tab
+        // A #hash naming a tab wins over the stored one, so links like
+        // /settings#updates land where they promise (#51). Otherwise:
+        // restore from localStorage, else first tab.
+        function known(name) {
+            return name && Array.from(buttons).some(function(b){return b.dataset.tabTarget===name;});
+        }
+        var hash = (location.hash || '').replace(/^#/, '');
         var stored = null;
         try { stored = localStorage.getItem('ds-tab-' + group.dataset.tabs); } catch(e) {}
-        var initial = stored && Array.from(buttons).some(function(b){return b.dataset.tabTarget===stored;})
-            ? stored
-            : (buttons[0] && buttons[0].dataset.tabTarget);
+        var initial = known(hash) ? hash
+            : (known(stored) ? stored : (buttons[0] && buttons[0].dataset.tabTarget));
         if (initial) activate(initial);
     });
 
@@ -228,7 +233,10 @@ function dsCheckOne(btn) {
             } else {
                 var msg = btn.dataset.msgError || 'Check failed';
                 if (data.error) msg += ' (' + data.error + ')';
-                dsToast(msg, 'error');
+                // 'danger', not 'error': the toast kind becomes the CSS class
+                // `is-<kind>`, and app.css only defines is-success / is-warn /
+                // is-danger. 'error' silently renders without the red bar.
+                dsToast(msg, 'danger');
             }
             release();
             return;
@@ -243,7 +251,7 @@ function dsCheckOne(btn) {
         dsToast(btn.dataset.msgNone || 'Up to date');
         release();
     }).catch(function(e) {
-        dsToast((btn.dataset.msgError || 'Check failed') + ' (' + e.message + ')', 'error');
+        dsToast((btn.dataset.msgError || 'Check failed') + ' (' + e.message + ')', 'danger');
         release();
     });
 }

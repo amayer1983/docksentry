@@ -191,36 +191,102 @@ class TelegramBot:
         self._cached_own_meta = (name, image)
         return self._cached_own_meta
 
-    def _resolve_container_link(self, name, image=""):
+    def _label_checker(self):
+        """Lazily built UpdateChecker used purely as a label reader for
+        call sites that don't already have one in scope. Cheap to build
+        (it only stores the config), cached so repeated notification
+        passes don't churn objects. Returns None if construction fails
+        so callers can treat it as "no labels available"."""
+        ck = getattr(self, "_cached_label_checker", None)
+        if ck is None:
+            try:
+                from update_checker import UpdateChecker as _UC
+                ck = _UC(self.config)
+            except Exception:
+                return None
+            self._cached_label_checker = ck
+        return ck
+
+    def _label_link(self, name, checker=None):
+        """The `docksentry.link` container label, or "" when absent,
+        unusable or unreadable (#52, @LeeNX).
+
+        Read via `checker.get_container_labels()` — i.e. `docker inspect`
+        — and deliberately NOT via the `docker ps --format {{.Labels}}`
+        path: that one splits the label blob on commas, and commas are
+        perfectly normal inside a query string, so a URL label would
+        come back shredded.
+
+        The value is validated with the shared `is_safe_link`. A value
+        that fails is treated exactly like an unset label — we fall
+        through to the next source rather than erroring out; a typo in a
+        compose file must never break notifications. Note there is no
+        `.lower()` here (unlike `_resolve_update_policy`): URL paths and
+        query strings are case-sensitive.
+        """
+        from container_store import is_safe_link
+        ck = checker if checker is not None else self._label_checker()
+        if ck is None:
+            return ""
+        try:
+            labels = ck.get_container_labels(name) or {}
+            raw = labels.get("docksentry.link")
+            if raw is None:
+                return ""
+            url = str(raw).strip()
+            return url if is_safe_link(url) else ""
+        except Exception:
+            return ""
+
+    def _resolve_container_link(self, name, image="", checker=None):
         """Return the URL that should wrap `name` in update
         notifications, or empty string when no link is available.
+        Thin wrapper around `_resolve_link_with_kind` for the many call
+        sites that only care about the URL itself."""
+        return self._resolve_link_with_kind(name, image, checker)[0]
+
+    def _resolve_link_with_kind(self, name, image="", checker=None):
+        """(url, kind) for a container's repo/changelog link.
 
         Priority order:
-          1. Manual override stored via Web UI (`container_links.json`).
-             Lets users point at the actual changelog of containers
-             whose images don't ship OCI labels (redis, postgres,
-             nginx-proxy-manager, …).
+          0. `docksentry.link` container label (#52) — GitOps source of
+             truth: the link travels with the compose file, no state in
+             Docksentry needed.
+          1. Manual override stored via Web UI / `/setlink`
+             (`container_links.json`). Lets users point at the actual
+             changelog of containers whose images don't ship OCI labels
+             (redis, postgres, nginx-proxy-manager, …).
           2. `org.opencontainers.image.source` OCI label (gold standard).
           3. `org.opencontainers.image.url` OCI label (fallback).
           4. Registry overview heuristic (Hub / ghcr.io / quay.io /
              lscr.io → fleet.linuxserver.io) from the image reference.
 
+        `kind` is one of "label", "manual", "source", "url", "registry",
+        "none" — `/changelog <container>` uses it to pick how confident
+        its wording should be. Everything else just wants the URL.
+
         Reuses the v1.18.3 `/changelog <container>` helpers so the
         notification-link feature gets the same coverage as that
         command (~67 % auto-detection rate without any user setup).
         """
+        # 0. Container label
+        labelled = self._label_link(name, checker)
+        if labelled:
+            return labelled, "label"
         # 1. Manual override
         manual = self.store.get_link(name)
         if manual:
-            return manual
+            return manual, "manual"
         # 2 + 3. OCI labels
         url, kind = self._container_source_url(name)
         if url and kind in ("source", "url"):
-            return url
+            return url, kind
         # 4. Registry-overview heuristic — only when we have an image ref
         if image:
-            return self._guess_registry_overview_url(image)
-        return ""
+            guess = self._guess_registry_overview_url(image)
+            if guess:
+                return guess, "registry"
+        return "", "none"
 
     def _container_source_url(self, name):
         """Look up the upstream source URL for a container from its OCI
@@ -3042,8 +3108,17 @@ class TelegramBot:
                 image_ref = ir.stdout.strip() if ir.returncode == 0 else ""
             except subprocess.SubprocessError:
                 image_ref = ""
-            source_url, kind = self._container_source_url(resolved)
-            if kind == "source":
+            # Go through the shared resolver, NOT straight to
+            # _container_source_url: this path used to skip both the
+            # `docksentry.link` label and the stored /setlink override
+            # entirely, so a user who set a link saw the OCI label here
+            # while notifications showed their link. `help_detail_setlink`
+            # promised the opposite ("drives BOTH the /changelog output
+            # AND the repo link") — this makes the promise true.
+            source_url, kind = self._resolve_link_with_kind(resolved, image_ref)
+            if kind in ("label", "manual", "source"):
+                # An explicitly configured link is at least as good as an
+                # OCI source label, so it gets the same wording.
                 self.send_message(self.t(
                     "changelog_container_source",
                     name=resolved, url=source_url,
@@ -3053,18 +3128,16 @@ class TelegramBot:
                     "changelog_container_url_only",
                     name=resolved, url=source_url,
                 ))
+            elif kind == "registry":
+                self.send_message(self.t(
+                    "changelog_container_registry_fallback",
+                    name=resolved, url=source_url,
+                ))
             else:
-                fallback = self._guess_registry_overview_url(image_ref) if image_ref else ""
-                if fallback:
-                    self.send_message(self.t(
-                        "changelog_container_registry_fallback",
-                        name=resolved, url=fallback,
-                    ))
-                else:
-                    self.send_message(self.t(
-                        "changelog_container_none",
-                        name=resolved,
-                    ))
+                self.send_message(self.t(
+                    "changelog_container_none",
+                    name=resolved,
+                ))
 
         elif text == "/updates":
             if os.path.exists(self.config.pending_file):

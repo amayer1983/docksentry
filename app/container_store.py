@@ -8,6 +8,72 @@ small dedicated module instead of the Telegram bot lets headless setups
 
 import json
 import os
+import urllib.parse
+
+
+# ── Link safety (#20, #52) ─────────────────────────────────────────────
+# Hard cap on stored/label link length. Long enough for any real
+# changelog URL, short enough to keep notification payloads sane.
+MAX_LINK_LENGTH = 500
+
+# Characters that can break out of the contexts a link gets rendered in:
+# HTML attributes (quotes, angle brackets), Markdown links (parentheses,
+# brackets are handled by the parser but `(` `)` end the target), and
+# shell/JS-ish escapes (backslash, backtick). `{}`, `|`, `^` are not
+# legal in a URI unencoded anyway, so rejecting them costs nothing.
+_UNSAFE_LINK_CHARS = frozenset('()<>"\'`\\{}|^')
+
+
+def is_safe_link(url):
+    """True when `url` is safe to render as an `href` / Markdown target.
+
+    This is the ONLY thing standing between a user-controlled string and
+    script execution in the Web UI. `html.escape()` does NOT help here:
+    it encodes `<`, `>`, `&`, quotes — but it does not touch the URL
+    *scheme*, so `javascript:alert(1)` survives escaping intact and fires
+    on click. There is no CSP header, the UI is same-origin with every
+    `/api/*` POST endpoint, and neither Basic-Auth nor the CSRF token
+    protects against script running inside the page itself.
+
+    Rules:
+      - scheme must be exactly `http` or `https`, decided by
+        `urllib.parse.urlparse` — NOT by `str.startswith()`. A
+        startswith check is trivially defeated by `JavaScript:` (the
+        scheme is case-insensitive) or by leading whitespace/control
+        characters, both of which browsers strip before dispatching.
+      - a hostname must be present, which also rejects scheme-relative
+        values like `//evil.example` that inherit the current scheme.
+      - no character that could terminate an HTML attribute or a
+        Markdown link target, and no whitespace or control character.
+      - at most MAX_LINK_LENGTH characters.
+
+    Whitespace is rejected outright rather than stripped: a leading
+    space (or tab, or newline) in front of `javascript:` is exactly the
+    trick that defeats naive prefix checks, and no legitimate URL needs
+    a literal space — that is what %20 is for.
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    if len(url) > MAX_LINK_LENGTH:
+        return False
+    for ch in url:
+        # Control characters (incl. the NUL/TAB/CR/LF that urlparse
+        # silently strips but browsers act on), any kind of whitespace,
+        # and the attribute/markdown breakers.
+        if ord(ch) < 0x20 or ord(ch) == 0x7F:
+            return False
+        if ch.isspace() or ch in _UNSAFE_LINK_CHARS:
+            return False
+    try:
+        parts = urllib.parse.urlparse(url)
+    except ValueError:
+        # e.g. malformed IPv6 literal — treat as unsafe, not as a crash
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    if not parts.hostname:
+        return False
+    return True
 
 
 def atomic_write_json(path, data, **dump_kwargs):
@@ -356,12 +422,15 @@ class ContainerStore:
     def set_link(self, name, url):
         links = self.get_links()
         url = (url or "").strip()
-        # Minimal validation: must start with http(s):// to render as
-        # a clickable link in Telegram / Discord. Empty clears.
-        if url and not (url.startswith("http://") or url.startswith("https://")):
+        # Validation lives in the shared `is_safe_link` helper so the
+        # Telegram `/setlink`, the Web UI and the `docksentry.link`
+        # label (#52) all agree on what a link may look like. The old
+        # `startswith("http://")` check here was not enough once the
+        # value gets rendered as an `<a href>`. Empty clears the entry.
+        if url and not is_safe_link(url):
             return False
         if url:
-            links[name] = url[:500]  # cap to keep payload reasonable
+            links[name] = url
         else:
             links.pop(name, None)
         self._save_dict(self.links_file, links)

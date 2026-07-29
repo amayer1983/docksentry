@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Test container-label config overrides (#42, @LeeNX) and the `-?` help
-alias (#15, @LeeNX).
+"""Test container-label config overrides (#42, #52, @LeeNX) and the `-?`
+help alias (#15, @LeeNX).
 
 Pure logic — no Docker. Covers the label parser/interpreter, the
 get_running_containers exclude decision, the _is_protected precedence
 (label overrides stored toggle; absence + inspect-failure fall back to the
-toggle and never silently unprotect), and the /cmd -? → /help cmd rewrite.
+toggle and never silently unprotect), the `docksentry.link` link-resolution
+precedence (#52), and the /cmd -? → /help cmd rewrite.
 """
 import sys, os, types
 
@@ -104,6 +105,84 @@ def main():
     checks["ask-major: label true forces gate"] = ask_major("true", False) is True
     checks["ask-major: label false skips gate"] = ask_major("false", True) is False
     checks["ask-major: absent -> stored list"] = ask_major(None, True) is True
+
+    # ── docksentry.link resolution (#52) ───────────────────────
+    # Precedence: label > stored /setlink value > image.source >
+    # image.url > registry heuristic. A label that is missing, empty,
+    # whitespace-only, unsafe or unreadable must fall THROUGH to the
+    # stored value — never wipe it.
+    class _LinkStore:
+        def __init__(self, stored): self._s = stored
+        def get_link(self, name): return self._s
+
+    class _LinkChecker:
+        def __init__(self, labels, boom=False): self._l, self._boom = labels, boom
+        def get_container_labels(self, name):
+            if self._boom:
+                raise RuntimeError("docker inspect failed")
+            return self._l
+
+    class _LinkBot:
+        # Real methods under test, minimal collaborators around them.
+        _label_link = TelegramBot._label_link
+        _resolve_link_with_kind = TelegramBot._resolve_link_with_kind
+        _resolve_container_link = TelegramBot._resolve_container_link
+
+        def __init__(self, stored="", oci=("", "none"), guess=""):
+            self.store = _LinkStore(stored)
+            self._oci, self._guess = oci, guess
+
+        def _container_source_url(self, name): return self._oci
+        def _guess_registry_overview_url(self, image): return self._guess
+
+    LBL = "https://git.example.com/owner/repo/-/releases"
+    STORED = "https://stored.example.com/changelog"
+    OCI_SRC = "https://github.com/owner/repo"
+    OCI_URL = "https://product.example.com"
+    REG = "https://hub.docker.com/r/owner/repo"
+
+    def resolve(label_val, stored=STORED, oci=("", "none"), guess="", boom=False):
+        labels = {"docksentry.link": label_val} if label_val is not None else {}
+        bot = _LinkBot(stored, oci, guess)
+        return bot._resolve_link_with_kind("c", "owner/repo:latest",
+                                           _LinkChecker(labels, boom))
+
+    checks["link: label beats stored + OCI + heuristic"] = resolve(
+        LBL, oci=(OCI_SRC, "source"), guess=REG) == (LBL, "label")
+    checks["link: no label -> stored value"] = resolve(
+        None, oci=(OCI_SRC, "source")) == (STORED, "manual")
+    checks["link: empty label -> stored value (not cleared)"] = resolve(
+        "", oci=(OCI_SRC, "source")) == (STORED, "manual")
+    checks["link: whitespace-only label -> stored value"] = resolve(
+        "   ", oci=(OCI_SRC, "source")) == (STORED, "manual")
+    checks["link: unsafe label (javascript:) -> stored value"] = resolve(
+        "javascript:alert1") == (STORED, "manual")
+    checks["link: unsafe label (no host) -> stored value"] = resolve(
+        "//evil.example") == (STORED, "manual")
+    checks["link: inspect failure -> stored value"] = resolve(
+        LBL, boom=True) == (STORED, "manual")
+    checks["link: stored beats image.source"] = resolve(
+        None, oci=(OCI_SRC, "source")) == (STORED, "manual")
+    checks["link: no label + no stored -> image.source"] = resolve(
+        None, stored="", oci=(OCI_SRC, "source"), guess=REG) == (OCI_SRC, "source")
+    checks["link: image.url when no source label"] = resolve(
+        None, stored="", oci=(OCI_URL, "url"), guess=REG) == (OCI_URL, "url")
+    checks["link: registry heuristic is last resort"] = resolve(
+        None, stored="", oci=("", "none"), guess=REG) == (REG, "registry")
+    checks["link: nothing anywhere -> ('', 'none')"] = resolve(
+        None, stored="", oci=("", "none"), guess="") == ("", "none")
+    # docker inspect (not the comma-splitting `docker ps` path), so a
+    # comma in the query string must survive intact.
+    comma = "https://example.com/releases?tags=v1,v2"
+    checks["link: comma in query survives"] = resolve(comma)[0] == comma
+    # URLs are case-sensitive — unlike docksentry.policy there is no .lower()
+    mixed = "https://example.com/Owner/RepoName/CHANGELOG.md"
+    checks["link: case preserved"] = resolve(mixed)[0] == mixed
+    # The url-only wrapper stays a plain string for all the notification
+    # call sites that don't care about the kind.
+    checks["link: _resolve_container_link returns the url only"] = (
+        _LinkBot(STORED)._resolve_container_link(
+            "c", "owner/repo:latest", _LinkChecker({"docksentry.link": LBL})) == LBL)
 
     # ── /cmd -? help alias (#15) ───────────────────────────────
     ha = TelegramBot._help_alias

@@ -81,17 +81,75 @@ _ICONS = {
 
 # Inline-flex helper that pairs an SVG icon with text — used in badges
 # where we want a small icon glued to a label.
-def _legend_word(label):
+def _strip_emoji(label):
     """Strip a leading emoji/symbol prefix from a translated button label.
 
     Labels like "🟥 Stop" / "🔁 Restart" are right for Telegram buttons,
-    but in the icon legend the styled key already IS the icon — the emoji
+    but the Web UI draws its own icons — next to a styled key the emoji
     doubled it ("double red square" next to Stop, "the old icon" next to
-    Restart; #46, @LeeNX). Strips leading non-letter symbols only, so any
-    language's actual text survives untouched.
+    Restart; #46, @LeeNX), and inside a title= attribute or a confirm
+    dialog it's just noise the browser renders raw. Strips leading
+    non-letter symbols only, so any language's actual text survives
+    untouched. Used well beyond the legend now, hence the rename from
+    _legend_word.
     """
     import re
     return re.sub(r"^[^\w(]+", "", label, flags=re.UNICODE) or label
+
+
+def _strip_md(text):
+    """Drop Telegram markdown markers from a string bound for HTML.
+
+    Every user-facing string in this project was written for Telegram
+    first, where `*head*` renders bold and backticks render code. The
+    Web UI hands the same strings to a browser, which shows the markers
+    themselves — the groups page read "the first container is the
+    *head*" with literal asterisks, and a rolled-back update's log
+    turned up wrapped in ``` fences on the history page. Same root as
+    the emoji doubling in #46: Telegram formatting leaking into HTML.
+
+    Markers are removed and the text inside them kept — deliberately
+    NOT converted to <strong>/<code>. History details carry raw
+    container logs, i.e. arbitrary upstream output, and turning parts
+    of that into markup is how you grow an injection hole.
+    """
+    if not text:
+        return text
+    import re
+    text = text.replace("```", "")
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
+    return text
+
+
+def _web_translator(language):
+    """`get_translator`, minus the Telegram markdown.
+
+    Wrapping here rather than in i18n keeps Telegram's own formatting
+    intact — the bot and the Web UI share every translation file. And
+    wrapping at the source means a future string with a backtick in it
+    can't reintroduce the bug: there is no call site left to forget.
+    """
+    from i18n import get_translator
+    base = get_translator(language)
+
+    def t(key, **kwargs):
+        return _strip_md(base(key, **kwargs))
+
+    return t
+
+
+def _legend_word(label):
+    """Legend key text: emoji-stripped and first letter upper-cased.
+
+    The legend mixed "Update"/"Restart" with a lowercase "auto" (#46,
+    @LeeNX). Deliberately `s[:1].upper() + s[1:]` and not `.capitalize()`
+    — the latter lowercases the rest and would turn "Auto-Update" into
+    "Auto-update". Only the legend uses this; the badge text and the table
+    header keep their lowercase "auto".
+    """
+    s = _strip_emoji(label)
+    return s[:1].upper() + s[1:]
 
 
 def _icon_label(icon_key, label):
@@ -417,6 +475,130 @@ def create_handler(config, checker, bot, store, password=None):
                 })
             return containers
 
+        def _is_own_container(self, name):
+            """True when `name` is the Docksentry container we run in.
+
+            Never true when self-detection comes back empty (QNAP / Podman
+            corner cases, scripts/test_self_detection.py) — an unresolved
+            own name must leave every code path exactly as it was.
+            """
+            if not name:
+                return False
+            try:
+                own = checker._own_container_name()
+            except Exception:
+                return False
+            return bool(own) and name == own
+
+        # ── Repo / changelog links (#52, @LeeNX) ──────────────────────
+        # Three helpers so every place that renders a link goes through
+        # the same gate. Nothing here ever builds an `href` without a
+        # fresh `is_safe_link()` — see `_link_anchor`.
+
+        def _row_link(self, c, links):
+            """(url, kind) for one status-table row — WITHOUT a single
+            extra `docker inspect`.
+
+            Same priority chain as `TelegramBot._resolve_link_with_kind`
+            (label → stored → OCI source → OCI url → registry guess),
+            but fed from data `_get_containers` already has in hand. That
+            matters: the table renders every running container, so one
+            inspect per row would turn the status page into an N-call
+            fan-out on hosts with 50+ containers.
+
+            The chain is free here because `c["labels"]` comes from
+            `docker inspect <ids>` → `.Config.Labels`, which is the exact
+            same dict `UpdateChecker.get_container_labels()` returns —
+            and Docker merges the *image's* labels into a container's
+            Config.Labels, so `org.opencontainers.image.source` / `.url`
+            are already present (verified against a live daemon: 7 of 19
+            running containers carry OCI labels there). The registry
+            fallback is pure string work on the image reference, no
+            network, no daemon.
+
+            `kind` is one of "label" | "manual" | "source" | "url" |
+            "registry" | "none" — same vocabulary as the bot, so the
+            origin wording is shared between both surfaces.
+            """
+            from container_store import is_safe_link
+            labels = c.get("labels") or {}
+
+            def _lab(key):
+                v = labels.get(key)
+                return str(v).strip() if isinstance(v, str) else ""
+
+            # 0. `docksentry.link` container label — GitOps source of
+            #    truth. No `.lower()`: URL paths are case-sensitive.
+            raw = _lab("docksentry.link")
+            if raw and is_safe_link(raw):
+                return raw, "label"
+            # 1. Manual override stored via Web UI / `/setlink`.
+            stored = links.get(c.get("name", ""))
+            stored = str(stored).strip() if isinstance(stored, str) else ""
+            if stored and is_safe_link(stored):
+                return stored, "manual"
+            # 2 + 3. OCI labels off the image.
+            for key, kind in (("org.opencontainers.image.source", "source"),
+                              ("org.opencontainers.image.url", "url")):
+                v = _lab(key)
+                if v and is_safe_link(v):
+                    return v, kind
+            # 4. Registry-overview heuristic. `_guess_registry_overview_url`
+            #    is a pure string mapping on TelegramBot; reused rather
+            #    than copied so bot and Web UI can never drift apart.
+            #    `bot` is None in headless/test setups — then we simply
+            #    have no guess, which is a fine answer.
+            image = c.get("image") or ""
+            if image and image != "?" and bot is not None:
+                try:
+                    guess = bot._guess_registry_overview_url(image)
+                except Exception:
+                    guess = ""
+                if guess and is_safe_link(guess):
+                    return guess, "registry"
+            return "", "none"
+
+        def _link_origin_text(self, t, kind):
+            """Human wording for where a link came from. The user
+            otherwise cannot tell a changelog URL they typed themselves
+            from one Docksentry guessed off the image name — and the
+            registry guess is frequently *not* a changelog."""
+            return {
+                "label": t("web_link_origin_label"),
+                "manual": t("web_link_origin_manual"),
+                "source": t("web_link_origin_source"),
+                "url": t("web_link_origin_url"),
+                "registry": t("web_link_origin_registry"),
+            }.get(kind, "")
+
+        def _link_anchor(self, t, url, kind, text="🔗", attrs=""):
+            """A single `<a>` for a container link, or "" when there is
+            nothing safe to render.
+
+            THE choke point for defence in depth: `is_safe_link` runs
+            again right here, on the way into the `href`. Values in
+            `container_links.json` predating the validation (restored
+            from an old backup, hand-edited, written by a pre-#52 build)
+            were never checked on the way in, and `html.escape()` does
+            not touch a URL scheme — `javascript:alert(1)` survives
+            escaping intact and fires on click. No fresh check, no link.
+
+            `target="_blank"` always ships with `rel="noopener
+            noreferrer"`, same as the four footer links: without
+            `noopener` the opened page gets a `window.opener` handle
+            back into the Docksentry UI.
+            """
+            from container_store import is_safe_link
+            if not url or not is_safe_link(url):
+                return ""
+            origin = self._link_origin_text(t, kind)
+            title = t("web_link_open_tt")
+            if origin:
+                title = f"{title} — {origin}"
+            pre = f" {attrs}" if attrs else ""
+            return (f'<a{pre} href="{_e(url)}" target="_blank" '
+                    f'rel="noopener noreferrer" title="{_e(title)}">{text}</a>')
+
         def _get_pending(self):
             if os.path.exists(config.pending_file):
                 with open(config.pending_file) as f:
@@ -424,10 +606,9 @@ def create_handler(config, checker, bot, store, password=None):
             return []
 
         def _render_page(self, content, active="status"):
-            from i18n import get_translator
             from version import VERSION
             from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             nav_items = [
                 ("status", f'📊 {t("web_nav_status")}', "/"),
@@ -508,10 +689,12 @@ def create_handler(config, checker, bot, store, password=None):
 <h1>Docksentry</h1>
 </div>
 <div class="header-host-slot"><!-- v2.0: host selector slot --></div>
-<!-- inline-flex, not inline: an inline form participates in baseline
-     layout and sat a few px lower than its flex-child sibling (the theme
-     button) — the misalignment @LeeNX screenshotted in #46. -->
-<form method="POST" action="/api/ui_mode" style="display:inline-flex;align-items:center;margin-left:auto">
+<!-- .header-form (app.css): inline-flex, not inline — an inline form
+     participates in baseline layout and sat a few px lower than its
+     flex-child sibling (the theme button). And margin-top:0, which kills
+     the remaining 4px offset coming from the global 8px form margin-top
+     — both halves of the misalignment @LeeNX screenshotted in #46. -->
+<form method="POST" action="/api/ui_mode" class="header-form">
 <input type="hidden" name="mode" value="{ui_mode_other}">
 <button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
 </form>
@@ -999,8 +1182,14 @@ def create_handler(config, checker, bot, store, password=None):
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
                 name = params.get("name", [""])[0]
-                if name:
+                if name and not self._is_own_container(name):
                     store.toggle_auto(name)
+                # else: our own container. Auto-update for Docksentry is
+                # AUTO_SELFUPDATE (Settings › Updates), never the per-container
+                # opt-in list — the update flow skips self, and main.py strips
+                # us from the list on the next boot anyway. The UI no longer
+                # offers the toggle (#51); this is the defence behind it, for
+                # bookmarked POSTs and hand-rolled clients.
                 self._send_redirect("/")
             elif path == "/api/lifecycle":
                 # Container start / stop / restart from the Status page
@@ -1094,20 +1283,36 @@ def create_handler(config, checker, bot, store, password=None):
                 self.end_headers()
                 self.wfile.write(payload)
             elif path == "/api/link":
-                # Per-container repo / changelog URL override (#20).
-                # Empty input clears. set_link validates http(s):// prefix
-                # and returns False on bad input — we silently drop bad
-                # URLs rather than surfacing an error toast (the field
-                # is power-user territory; UI shows a hint).
+                # Per-container repo / changelog URL override (#20, #52).
+                # Empty input clears. `set_link` runs the value through
+                # the shared `container_store.is_safe_link` — scheme via
+                # urlparse, hostname required, no attribute/markdown
+                # breakers — and returns False when it refuses.
+                #
+                # That return value used to be dropped on the floor: the
+                # field simply came back empty and the user was left to
+                # guess whether the URL had been saved. Now the outcome
+                # rides back on the redirect and the container page
+                # renders it inline (`link_notice`). This matters more
+                # now that the value is actually rendered as an `<a
+                # href>` — a silently rejected link looks identical to a
+                # link that just doesn't show up.
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
                 name = params.get("name", [""])[0].strip()
                 url = params.get("url", [""])[0].strip()
+                outcome = ""
                 if name:
-                    store.set_link(name, url)
+                    ok = store.set_link(name, url)
+                    if not url:
+                        outcome = "cleared"
+                    else:
+                        outcome = "saved" if ok else "rejected"
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
+                if outcome:
+                    ref_path = f"{ref_path}?link={outcome}"
                 self._send_redirect(ref_path)
             elif path == "/api/maintenance":
                 length = int(self.headers.get("Content-Length", 0))
@@ -1231,6 +1436,7 @@ def create_handler(config, checker, bot, store, password=None):
                     return
                 restored = []
                 errors = []
+                dropped_links = 0   # links rejected by is_safe_link (#52)
                 # Settings — apply via the PERSISTENT_KEYS allowlist so
                 # we don't accept arbitrary attribute injection.
                 if isinstance(bundle.get("settings"), dict):
@@ -1266,8 +1472,39 @@ def create_handler(config, checker, bot, store, password=None):
                     store._save_dict(store.notes_file, bundle["notes"])
                     restored.append("notes")
                 if isinstance(bundle.get("links"), dict):
-                    store._save_dict(store.links_file, bundle["links"])
-                    restored.append("links")
+                    # Links are the one section that gets rendered as an
+                    # `<a href>` (#52) — everything else in a bundle ends
+                    # up as escaped text. Writing them through _save_dict
+                    # raw bypassed set_link and therefore the validator,
+                    # so a hand-edited backup file could plant
+                    # `javascript:…` in container_links.json and have the
+                    # Web UI hand it to the browser on the next render.
+                    # A backup is a file, not a trusted channel: it
+                    # arrives over an unauthenticated-by-content upload
+                    # and nothing about "the user picked it" says the
+                    # user wrote it.
+                    #
+                    # Every entry goes through the same is_safe_link the
+                    # live write path uses. Rejects are dropped and
+                    # COUNTED — swallowing them silently would restore a
+                    # bundle "successfully" while quietly losing data the
+                    # user believes is back.
+                    from container_store import is_safe_link as _is_safe_link
+                    clean_links = {}
+                    for k, v in bundle["links"].items():
+                        if isinstance(k, str) and isinstance(v, str) and _is_safe_link(v.strip()):
+                            clean_links[k] = v.strip()
+                        else:
+                            dropped_links += 1
+                    store._save_dict(store.links_file, clean_links)
+                    # The import toast prints `restored` verbatim, so the
+                    # count has to travel inside it to be seen at all.
+                    restored.append("links" if not dropped_links
+                                    else f"links ({dropped_links} unsafe dropped)")
+                    if dropped_links:
+                        errors.append(
+                            f"links: {dropped_links} entry/entries rejected by the "
+                            f"URL validator (not http/https, or unsafe characters)")
                 if isinstance(bundle.get("update_windows"), dict):
                     store._save_dict(store.update_windows_file, bundle["update_windows"])
                     restored.append("update_windows")
@@ -1275,6 +1512,9 @@ def create_handler(config, checker, bot, store, password=None):
                     "ok": True,
                     "restored": restored,
                     "errors": errors,
+                    # Machine-readable twin of the note in `restored` —
+                    # 0 when the bundle had no links section at all.
+                    "links_dropped": dropped_links,
                     "schema_version": bundle.get("schema_version"),
                     "from_version": bundle.get("docksentry_version"),
                 }).encode()
@@ -1524,8 +1764,8 @@ def create_handler(config, checker, bot, store, password=None):
             submit, after which the redirect-gate releases the rest of
             the UI.
             """
-            from i18n import available_languages, get_translator
-            t = get_translator(config.language)
+            from i18n import available_languages
+            t = _web_translator(config.language)
 
             langs = available_languages()
             lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español",
@@ -1698,14 +1938,24 @@ def create_handler(config, checker, bot, store, password=None):
                 for cname in g.get("containers") or []:
                     groups_lookup[cname] = (gid, gname)
             notes_lookup = store.get_notes()
+            # One read for the whole table (#52) — `_row_link` takes the
+            # dict, so a 50-container page still touches the store once.
+            links_lookup = store.get_links()
             major_pending = store.get_pending_major() or {}
 
-            from i18n import get_translator
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             rows = ""
             from update_checker import UpdateChecker as _UC
             for c in containers:
+                # Are we looking at our own row? Determined up front because
+                # the Auto column, the badges and the action buttons all need
+                # it. `own_name` is empty on hosts where self-detection can't
+                # resolve a name (QNAP/Podman corner cases, see
+                # scripts/test_self_detection.py) — the `own_name and` guard
+                # keeps that case on exactly the old behaviour instead of
+                # matching every container against "".
+                is_self = bool(own_name) and c["name"] == own_name
                 health = c.get("health", "")
                 if health == "healthy":
                     status_badge = '<span class="badge badge-green">healthy</span>'
@@ -1726,12 +1976,30 @@ def create_handler(config, checker, bot, store, password=None):
                 _lab_auto = _UC.label_bool(c.get("labels"), "auto")
                 _lab_pin = _UC.label_bool(c.get("labels"), "pin")
                 _lab_protect = _UC.label_bool(c.get("labels"), "protect")
-                is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
+                if is_self:
+                    # Our own updates are governed by AUTO_SELFUPDATE and by
+                    # nothing else (#51, @LeeNX): the opt-in list is skipped
+                    # for ourselves by the update flow, and main.py strips our
+                    # name from it on every boot. _lab_auto is IGNORED here on
+                    # purpose — a docksentry.auto label on the Docksentry
+                    # container describes how *another* instance would treat
+                    # this container, and no such instance is watching us.
+                    # Letting it win over AUTO_SELFUPDATE would show a state
+                    # that never applies; that mix-up is the heart of #51.
+                    is_auto = bool(config.auto_selfupdate)
+                else:
+                    is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
                 is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
                 _protected_c = (_lab_protect if _lab_protect is not None
                                 else store.is_protect_stop(c["name"]))
                 _lab_mark = (f' <span class="label-mark" '
                              f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
+                # Our own row gets its own marker — NOT 🏷. That one says
+                # "a compose label decides this, you can't change it here";
+                # here a setting decides it, and it very much is changeable,
+                # just under Settings › Updates.
+                _self_mark = (f' <span class="self-mark" '
+                              f'title="{_e(t("web_selfupdate_marker_tt"))}">⚙</span>')
 
                 # Badges (compact, only show what's "different" from default)
                 badges = ""
@@ -1755,16 +2023,55 @@ def create_handler(config, checker, bot, store, password=None):
                 if c["name"] in notes_lookup:
                     note_text = notes_lookup[c["name"]]
                     badges += f' <span class="note-icon" title="{_e(note_text)}">📝</span>'
+                # Repo / changelog link (#52, @LeeNX): "Not all my
+                # Docksentry instances have Telegram or webhook
+                # integration" — so the URL that notifications wrap
+                # around the name has to be reachable from the table
+                # too. Resolved from labels already in hand, no extra
+                # docker call; see _row_link.
+                _link_url, _link_kind = self._row_link(c, links_lookup)
+                # …but only where the URL actually leads somewhere the
+                # user asked for. `registry` is our own guess at an
+                # overview page derived from the image reference — a
+                # Docker Hub landing page, not a changelog. On this host
+                # that guess covers 12 of 19 containers, so showing it
+                # would put an icon on nearly every row and have most of
+                # them lead somewhere LeeNX didn't ask to go. The table
+                # is also the exact place he's twice asked us to keep
+                # quieter (#37, #46). The guess still stands in Telegram
+                # and on the container page, where there's room to
+                # explain it.
+                if _link_kind == "registry":
+                    _link_url = ""
+                # Styled inline instead of via a CSS class: the same
+                # discreet look as .note-icon, minus its `cursor: help`
+                # (this one is genuinely clickable) and minus the
+                # default link underline.
+                _link_a = self._link_anchor(
+                    t, _link_url, _link_kind,
+                    attrs='class="row-link" style="opacity:.65;margin-left:4px;'
+                          'font-size:12px;text-decoration:none"')
+                if _link_a:
+                    badges += f' {_link_a}'
 
                 # Action buttons — icon-only with tooltips. Container name is
                 # escaped for safe use in HTML attributes.
                 name_attr = _e(c["name"])
                 # Dedicated Auto column (#2, @NotRetarded): a clear on/off cell
                 # instead of a name-cell badge that wrapped under long names.
+                # Our own row reads AUTO_SELFUPDATE, so the tooltip has to
+                # say so — "runs on the next scheduled tick" is true, but
+                # the user needs to know *which* switch produced this value.
                 auto_cell = (
-                    f'<span class="badge badge-purple" title="{_e(t("web_badge_auto_tt"))}">{t("web_autoupdate_badge")}</span>'
+                    f'<span class="badge badge-purple" '
+                    f'title="{_e(t("web_selfupdate_marker_tt") if is_self else t("web_badge_auto_tt"))}">'
+                    f'{t("web_autoupdate_badge")}</span>'
                     if is_auto else '<span class="muted">—</span>')
-                if _lab_auto is not None:
+                if is_self:
+                    # Marker in both states: "—" on our own row means
+                    # "self-update is manual", not "nobody clicked the toggle".
+                    auto_cell += _self_mark
+                elif _lab_auto is not None:
                     auto_cell += _lab_mark
                 is_askm = c["name"] in ask_major
                 # Per-container check (#50). Not a form — it talks to
@@ -1784,13 +2091,13 @@ def create_handler(config, checker, bot, store, password=None):
                 update_btn = (
                     f'<form method="POST" action="/api/update" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update"))}">{_ICONS["refresh"]}</button>'
+                    f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
                     f'</form>'
                 ) if c["name"] in pending_names else ''
                 pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
                 _pin_disabled = ' disabled' if _lab_pin is not None else ''
                 _pin_title = (t("web_label_authoritative") if _lab_pin is not None
-                              else (t("web_unpin") if is_pinned_c else t("web_pin")))
+                              else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt")))
                 pin_btn = (
                     f'<form method="POST" action="{pin_form_action}" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
@@ -1798,17 +2105,30 @@ def create_handler(config, checker, bot, store, password=None):
                     f'title="{_e(_pin_title)}">{_ICONS["pin"]}</button>'
                     f'</form>'
                 )
-                _auto_disabled = ' disabled' if _lab_auto is not None else ''
-                _auto_title = (t("web_label_authoritative") if _lab_auto is not None
-                               else (t("web_autoupdate_disable") if is_auto
-                                     else t("web_autoupdate_enable")))
-                auto_btn = (
-                    f'<form method="POST" action="/api/autoupdate" class="inline-form">'
-                    f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit"{_auto_disabled} class="btn-icon{" is-active" if is_auto else ""}" '
-                    f'title="{_e(_auto_title)}">{_ICONS["settings"]}</button>'
-                    f'</form>'
-                )
+                if is_self:
+                    # No toggle on our own row (#51). It used to render fully
+                    # active, and a click wrote our name into the opt-in file
+                    # — where the update flow ignores it (self is skipped) and
+                    # the migration in main.py silently drops it on the next
+                    # boot. A button that promises something and then forgets
+                    # it is worse than no button: link to the switch that
+                    # actually works instead.
+                    auto_btn = (
+                        f'<a href="/settings#updates" class="btn-icon" '
+                        f'title="{_e(t("web_selfupdate_settings_tt"))}">{_ICONS["settings"]}</a>'
+                    )
+                else:
+                    _auto_disabled = ' disabled' if _lab_auto is not None else ''
+                    _auto_title = (t("web_label_authoritative") if _lab_auto is not None
+                                   else (t("web_autoupdate_disable") if is_auto
+                                         else t("web_autoupdate_enable")))
+                    auto_btn = (
+                        f'<form method="POST" action="/api/autoupdate" class="inline-form">'
+                        f'<input type="hidden" name="name" value="{name_attr}">'
+                        f'<button type="submit"{_auto_disabled} class="btn-icon{" is-active" if is_auto else ""}" '
+                        f'title="{_e(_auto_title)}">{_ICONS["settings"]}</button>'
+                        f'</form>'
+                    )
                 ask_btn = (
                     f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
@@ -1821,7 +2141,6 @@ def create_handler(config, checker, bot, store, password=None):
                 # Restart is shown in both UI modes (low-risk, reversible);
                 # Stop is advanced-only because it leaves the container
                 # offline until someone starts it back up.
-                is_self = (c["name"] == own_name)
                 if is_self:
                     restart_btn = ""
                     stop_btn = ""
@@ -1830,7 +2149,7 @@ def create_handler(config, checker, bot, store, password=None):
                         f'<form method="POST" action="/api/lifecycle" class="inline-form">'
                         f'<input type="hidden" name="name" value="{name_attr}">'
                         f'<input type="hidden" name="action" value="restart">'
-                        f'<button type="submit" class="btn-icon" title="{_e(t("lifecycle_btn_restart"))}">{_ICONS["restart"]}</button>'
+                        f'<button type="submit" class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
                         f'</form>'
                     )
                     # Stop hidden for protected containers (#38) — restart
@@ -1843,12 +2162,16 @@ def create_handler(config, checker, bot, store, password=None):
                         stop_btn = (
                             f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
                             f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
-                            f'data-confirm-title="{_e(t("lifecycle_btn_stop"))}" '
-                            f'data-confirm-label="{_e(t("lifecycle_btn_stop"))}" '
+                            # Heading and button label of the confirm modal —
+                            # emoji-stripped like everything else the browser
+                            # renders as plain text (#46): "🟥 Stop" was
+                            # showing up raw in the dialog.
+                            f'data-confirm-title="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
+                            f'data-confirm-label="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
                             f'data-confirm-danger="1">'
                             f'<input type="hidden" name="name" value="{name_attr}">'
                             f'<input type="hidden" name="action" value="stop">'
-                            f'<button type="submit" class="btn-icon is-danger" title="{_e(t("lifecycle_btn_stop"))}">{_ICONS["x"]}</button>'
+                            f'<button type="submit" class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
                             f'</form>'
                         )
                 actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
@@ -1970,7 +2293,7 @@ def create_handler(config, checker, bot, store, password=None):
 <div class="card">
 <div class="card-header-row">
 <h2 style="margin:0">{t("web_containers")}</h2>
-<a href="/api/check" class="btn btn-blue btn-compact btn-icon-text">{_ICONS["search"]}<span>{t("web_check_updates")}</span></a>
+<a href="/api/check" class="btn btn-blue btn-compact btn-icon-text">{_ICONS["search"]}<span>{_strip_emoji(t("web_check_updates"))}</span></a>
 </div>
 <div class="toolbar-row">
 <input type="text" id="containerSearch" class="search-input" placeholder="{_e(t('web_search_placeholder'))}">
@@ -1993,15 +2316,22 @@ def create_handler(config, checker, bot, store, password=None):
 {rows}
 </tbody>
 </table>
+<!-- Legend keys: _legend_word() strips the Telegram emoji and upper-cases
+     the first letter, so the row no longer mixes "Update" with a lowercase
+     "auto"/"major-confirm"/"label" (#46, @LeeNX). The last two used to be
+     hardcoded English — they're translated keys now. Tooltips carry the
+     same substantial *_tt texts as the real buttons. -->
 <div class="icon-legend" aria-label="button legend">
 <span title="{_e(t("web_check_one_tt"))}"><span class="btn-icon">{_ICONS["search"]}</span> {_legend_word(t("web_check_one"))}</span>
-<span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {_legend_word(t("web_update"))}</span>
-<span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {_legend_word(t("lifecycle_btn_restart"))}</span>
-<span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
+<span title="{_e(t("web_update_tt"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {_legend_word(t("web_update"))}</span>
+<span title="{_e(t("web_restart_tt"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {_legend_word(t("lifecycle_btn_restart"))}</span>
+<span title="{_e(t("web_pin_tt"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
 <span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {_legend_word(t("web_autoupdate_badge"))}</span>
-<span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> major-confirm</span>
-<span title="{_e(t("lifecycle_btn_stop"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
-<span title="{_e(t("web_label_authoritative"))}">🏷 label</span>
+<span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> {_legend_word(t("web_legend_major_confirm"))}</span>
+<span title="{_e(t("web_stop_tt"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
+<span title="{_e(t("web_label_authoritative"))}">🏷 {_legend_word(t("web_legend_label"))}</span>
+<span title="{_e(t("web_selfupdate_marker_tt"))}">⚙ {_legend_word(t("web_legend_selfupdate"))}</span>
+<span title="{_e(t("web_link_open_tt"))}">🔗 {_legend_word(t("web_link_title"))}</span>
 </div>
 </div>
 <script>
@@ -2095,8 +2425,7 @@ def create_handler(config, checker, bot, store, password=None):
             Tabs persist in localStorage so reloading keeps the user on the
             same view. URL is stable: /container/<name>.
             """
-            from i18n import get_translator
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
             name = name.strip("/")
             if not name:
                 self._send_redirect("/")
@@ -2165,7 +2494,12 @@ def create_handler(config, checker, bot, store, password=None):
 
             # Per-container flags
             is_pinned_c = store.is_pinned(name)
-            is_auto = store.is_auto(name)
+            # Same rule as the status table (#51): for our own container the
+            # auto-update state is AUTO_SELFUPDATE, not the opt-in list — that
+            # list is skipped for self and cleared on the next boot. Empty
+            # own-name (QNAP/Podman) falls through to the old behaviour.
+            det_is_self = self._is_own_container(name)
+            is_auto = bool(config.auto_selfupdate) if det_is_self else store.is_auto(name)
             is_askm = store.is_ask_before_major(name)
             is_trust_c = store.is_trust_running(name)
             cooldown_c = store.get_cooldown(name)
@@ -2173,11 +2507,48 @@ def create_handler(config, checker, bot, store, password=None):
             # label controls it, the checkbox is disabled — a click couldn't
             # override the label.
             from update_checker import UpdateChecker as _UC2
-            _det_lab_protect = _UC2.label_bool(
-                checker.get_container_labels(name), "protect")
+            # One inspect for every label this page needs — the protect
+            # override AND the `docksentry.link` lock below both read
+            # this dict (#52). A second get_container_labels() call would
+            # be a second `docker inspect` for data we already have.
+            det_labels = checker.get_container_labels(name) or {}
+            _det_lab_protect = _UC2.label_bool(det_labels, "protect")
             is_protect_c = (_det_lab_protect if _det_lab_protect is not None
                             else store.is_protect_stop(name))
             window = store.get_update_window(name)
+
+            # ── Repo / changelog link (#52) ───────────────────────
+            # One container per page, so the full resolver is affordable
+            # here: same chain, same `kind` vocabulary, and — unlike the
+            # table — guaranteed to agree with what Telegram/Discord put
+            # in a notification, because it IS the notification's code.
+            from container_store import is_safe_link as _is_safe_link
+            _img_ref = image if image and image != "?" else ""
+            if bot is not None:
+                det_link_url, det_link_kind = bot._resolve_link_with_kind(
+                    name, _img_ref, checker)
+            else:
+                # Headless / test setups without a Telegram bot object.
+                det_link_url, det_link_kind = self._row_link(
+                    {"name": name, "image": _img_ref, "labels": det_labels},
+                    store.get_links())
+            # Defence in depth. `_resolve_link_with_kind` validates the
+            # label but hands the stored override straight through from
+            # `container_links.json`, and that file may hold values from
+            # before set_link validated anything. Re-check before it can
+            # reach an href.
+            if det_link_url and not _is_safe_link(det_link_url):
+                det_link_url, det_link_kind = "", "none"
+            # A `docksentry.link` label outranks anything the form can
+            # save. Leaving the form live would let the user store a URL
+            # that then never shows up anywhere — the exact lie the 🏷
+            # marker exists to prevent, so the form gets disabled instead.
+            _det_lab_link = det_labels.get("docksentry.link")
+            _det_lab_link = (str(_det_lab_link).strip()
+                             if isinstance(_det_lab_link, str) else "")
+            link_locked = bool(_det_lab_link) and _is_safe_link(_det_lab_link)
+            _lab_link_mark = (f'<span class="label-mark" '
+                              f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
 
             # Pending update for this container?
             pending = self._get_pending()
@@ -2220,7 +2591,10 @@ def create_handler(config, checker, bot, store, password=None):
             if is_pinned_c:
                 badges.append(f'<span class="badge badge-red">{t("web_pinned_badge")}</span>')
             if is_auto:
-                badges.append(f'<span class="badge badge-purple">{t("web_autoupdate_badge")}</span>')
+                badges.append(
+                    f'<span class="badge badge-purple" '
+                    f'title="{_e(t("web_selfupdate_marker_tt") if det_is_self else t("web_badge_auto_tt"))}">'
+                    f'{t("web_autoupdate_badge")}</span>')
             if is_askm:
                 badges.append('<span class="badge badge-blue">⚠ major-confirm</span>')
             if is_trust_c:
@@ -2258,6 +2632,22 @@ def create_handler(config, checker, bot, store, password=None):
                     f'<span style="color:var(--text-muted);font-size:12px">({t("web_detail_group_pos", pos=pos, total=len(cnames))})</span></td></tr>'
                 )
 
+            # Repo / changelog row — clickable, with the origin spelled
+            # out next to it (#52). Rendered only when we actually have
+            # a link, same as the compose / window / group rows above.
+            link_row = ""
+            _link_a = self._link_anchor(t, det_link_url, det_link_kind,
+                                        text=_e(det_link_url))
+            if _link_a:
+                _origin = self._link_origin_text(t, det_link_kind)
+                _origin_html = (f' <span class="muted" style="font-size:12px">'
+                                f'({_e(_origin)})</span>' if _origin else "")
+                link_row = (
+                    f'<tr><td>{t("web_link_title")}</td>'
+                    f'<td>🔗 {_link_a}{_origin_html}'
+                    f'{" " + _lab_link_mark if link_locked else ""}</td></tr>'
+                )
+
             note_text = store.get_note(name)
             note_html = ""
             if note_text:
@@ -2266,15 +2656,30 @@ def create_handler(config, checker, bot, store, password=None):
 <div style="font-size:13px;white-space:pre-wrap">{_e(note_text)}</div>
 </div>"""
 
+            # Our own row gets a plain-language line about how it updates
+            # itself (#51, @LeeNX) — the container detail view said nothing
+            # about AUTO_SELFUPDATE at all.
+            selfupdate_row = ""
+            if det_is_self:
+                selfupdate_row = (
+                    f'<tr><td>{t("web_detail_selfupdate")}</td>'
+                    f'<td>{t("web_selfupdate_auto") if is_auto else t("web_selfupdate_manual")}'
+                    f' <span class="self-mark" title="{_e(t("web_selfupdate_marker_tt"))}">⚙</span>'
+                    f' · <a href="/settings#updates" class="settings-link">'
+                    f'{t("web_selfupdate_open_settings")}</a></td></tr>'
+                )
+
             overview_html = f"""<table>
 <tr><td style="width:30%">{t("web_detail_image")}</td><td><code>{_e(image)}</code></td></tr>
 <tr><td>{t("web_detail_status")}</td><td>{status_badge} {badges_html}</td></tr>
 <tr><td>{t("web_detail_size")}</td><td>{_e(size_str)}</td></tr>
 <tr><td>{t("web_detail_created")}</td><td>{_e(created)}</td></tr>
 <tr><td>{t("web_detail_started")}</td><td>{_e(started_at)}</td></tr>
+{selfupdate_row}
 {compose_row}
 {window_row}
 {group_row}
+{link_row}
 </table>
 {note_html}"""
 
@@ -2284,7 +2689,7 @@ def create_handler(config, checker, bot, store, password=None):
                 for h in reversed(history[-50:]):
                     icon = '✅' if h.get("success") else '❌'
                     # Normalize legacy v1.16.1 calendar glyph (see CHANGELOG v1.16.2)
-                    detail = h.get("detail", "").replace("📅", "🗓️")
+                    detail = _strip_md(h.get("detail", "").replace("📅", "🗓️"))
                     hist_rows += (
                         f'<tr><td>{_e(h.get("timestamp",""))}</td>'
                         f'<td>{icon}</td>'
@@ -2302,9 +2707,11 @@ def create_handler(config, checker, bot, store, password=None):
 </div>"""
 
             # ── Logs tab — fetched on demand, not pre-rendered ────
-            logs_html = f"""<form method="GET" action="/container/{_e(name)}" style="display:flex;gap:12px;align-items:end;margin-bottom:16px">
+            # Same .logs-filter row as the Logs page — see app.css for why the
+            # field margins have to be zeroed inside it (#46).
+            logs_html = f"""<form method="GET" action="/container/{_e(name)}" class="logs-filter">
 <input type="hidden" name="tab" value="logs">
-<div style="flex:1">
+<div class="logs-filter-grow">
 <label>{t("web_logs_lines")}</label>
 <input type="number" name="lines" value="100" min="10" max="500">
 </div>
@@ -2324,8 +2731,42 @@ def create_handler(config, checker, bot, store, password=None):
                     logs_html += '<p style="color:var(--text-muted)">No logs found.</p>'
 
             # ── Settings tab — per-container toggles ─────────────
+            # Feedback for the /api/link POST (#52). That handler used to
+            # throw away a rejected URL without a word — the field just
+            # came back empty and the user was left guessing. There is no
+            # server-side toast infrastructure (app.js only reacts to
+            # `?saved=1`), so the answer is rendered inline, right above
+            # the field it belongs to.
+            _link_msg = (query.get("link", [""])[0] or "").strip()
+            _link_notice_map = {
+                "saved": ("var(--success)", t("web_link_saved")),
+                "cleared": ("var(--text-muted)", t("web_link_cleared")),
+                "rejected": ("var(--danger)", t("web_link_rejected")),
+            }
+            link_notice = ""
+            if _link_msg in _link_notice_map:
+                _colour, _text = _link_notice_map[_link_msg]
+                link_notice = (
+                    f'<div style="margin-bottom:8px;padding:8px 10px;'
+                    f'background:var(--bg);border-left:3px solid {_colour};'
+                    f'border-radius:var(--radius-sm);font-size:13px">'
+                    f'{_e(_text)}</div>'
+                )
             window_form = self._container_window_form(t, name, window)
-            settings_html = f"""<div class="form-checkbox-row">
+            # Our own container: the auto-update checkbox did nothing here
+            # either — it posts to /api/autoupdate, which is now guarded, and
+            # the opt-in list has never governed our own updates. Replaced by
+            # the same statement + link the Status table shows (#51).
+            if det_is_self:
+                auto_block = f"""<div class="form-checkbox-row">
+  <span>{t("web_detail_selfupdate")}: <strong>{t("web_selfupdate_auto") if is_auto else t("web_selfupdate_manual")}</strong>
+  <span class="self-mark" title="{_e(t("web_selfupdate_marker_tt"))}">⚙</span></span>
+  <a href="/settings#updates" class="settings-link">{t("web_selfupdate_open_settings")}</a>
+</div>
+<p class="form-help">{t("web_detail_selfupdate_hint")}</p>
+"""
+            else:
+                auto_block = f"""<div class="form-checkbox-row">
   <input type="checkbox" id="cb-detail-auto" {'checked' if is_auto else ''} onchange="document.getElementById('frm-detail-auto').submit()">
   <label for="cb-detail-auto">{t("web_autoupdate_enable")}</label>
 </div>
@@ -2333,6 +2774,8 @@ def create_handler(config, checker, bot, store, password=None):
 <input type="hidden" name="name" value="{_e(name)}">
 </form>
 <p class="form-help">{t("web_detail_auto_hint")}</p>
+"""
+            settings_html = f"""{auto_block}
 
 <div class="form-checkbox-row">
   <input type="checkbox" id="cb-detail-major" {'checked' if is_askm else ''} onchange="document.getElementById('frm-detail-major').submit()">
@@ -2392,12 +2835,13 @@ def create_handler(config, checker, bot, store, password=None):
 
 <hr class="section-divider">
 
-<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_link_title")}</h3>
+<h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_link_title")}{" " + _lab_link_mark if link_locked else ""}</h3>
 <p class="form-help" style="margin-bottom:8px">{t("web_link_intro")}</p>
+{link_notice}
 <form method="POST" action="/api/link">
 <input type="hidden" name="name" value="{_e(name)}">
-<input type="url" name="url" placeholder="{_e(t('web_link_placeholder'))}" value="{_e(store.get_link(name))}" style="width:100%">
-<button type="submit" class="btn btn-sm" style="margin-top:6px">{t("web_link_save")}</button>
+<input type="url" name="url" placeholder="{_e(t('web_link_placeholder'))}" value="{_e(_det_lab_link if link_locked else store.get_link(name))}" style="width:100%"{' disabled title="' + _e(t("web_label_authoritative")) + '"' if link_locked else ''}>
+<button type="submit" class="btn btn-sm" style="margin-top:6px"{' disabled title="' + _e(t("web_label_authoritative")) + '"' if link_locked else ''}>{t("web_link_save")}</button>
 </form>
 
 <hr class="section-divider">
@@ -2501,8 +2945,7 @@ def create_handler(config, checker, bot, store, password=None):
             legacy Settings tab. The legacy tab still works (some users
             have bookmarks) but is now a thin wrapper that links here.
             """
-            from i18n import get_translator
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             try:
                 live = self._get_containers()
@@ -2694,8 +3137,7 @@ def create_handler(config, checker, bot, store, password=None):
             self._send_html(self._render_page(content, "groups"))
 
         def _page_history(self):
-            from i18n import get_translator
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             history = []
             if os.path.exists(config.history_file):
@@ -2767,7 +3209,7 @@ def create_handler(config, checker, bot, store, password=None):
                 for h in reversed(filtered):
                     icon = '<span class="badge badge-green">✅</span>' if h["success"] else '<span class="badge badge-yellow">❌</span>'
                     # Normalize legacy v1.16.1 calendar glyph (see CHANGELOG v1.16.2)
-                    detail = h.get('detail', '').replace('📅', '🗓️')
+                    detail = _strip_md(h.get('detail', '').replace('📅', '🗓️'))
                     rows += f"""<tr>
 <td>{_e(h.get('timestamp', ''))}</td>
 <td>{_e(h.get('container', ''))}</td>
@@ -2836,9 +3278,9 @@ def create_handler(config, checker, bot, store, password=None):
             self._send_html(self._render_page(content, "history"))
 
         def _page_settings(self):
-            from i18n import available_languages, get_translator
+            from i18n import available_languages
             from version import VERSION
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             langs = available_languages()
             lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español",
@@ -3193,8 +3635,7 @@ def create_handler(config, checker, bot, store, password=None):
 </form>"""
 
         def _page_logs(self):
-            from i18n import get_translator
-            t = get_translator(config.language)
+            t = _web_translator(config.language)
 
             query = parse_qs(urlparse(self.path).query)
             container = query.get("container", [""])[0]
@@ -3224,16 +3665,16 @@ def create_handler(config, checker, bot, store, password=None):
             content = f"""
 <div class="card">
 <h2>{t("web_logs")}</h2>
-<form method="GET" action="/logs" style="display:flex;gap:12px;align-items:end;margin-bottom:16px">
-<div style="flex:1">
+<form method="GET" action="/logs" class="logs-filter">
+<div class="logs-filter-grow">
 <label>Container</label>
 <select name="container">{options}</select>
 </div>
-<div style="width:100px">
+<div class="logs-filter-lines">
 <label>{t("web_logs_lines")}</label>
 <input type="number" name="lines" value="{lines}" min="10" max="500">
 </div>
-<button type="submit" class="btn btn-blue" style="height:38px">{t("web_logs_show")}</button>
+<button type="submit" class="btn btn-blue">{t("web_logs_show")}</button>
 </form>
 {log_html}
 </div>"""
@@ -3404,7 +3845,10 @@ def create_handler(config, checker, bot, store, password=None):
                 elif action == "autoupdate_on":
                     auto = store.get_autoupdate()
                     for n in names:
-                        if n not in auto:
+                        # Same self-guard as /api/autoupdate (#51): our own
+                        # name in the opt-in list does nothing and gets wiped
+                        # on the next boot.
+                        if n not in auto and not self._is_own_container(n):
                             auto.append(n)
                     store.save_autoupdate(auto)
                 elif action == "autoupdate_off":
