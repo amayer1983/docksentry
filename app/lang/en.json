@@ -525,5 +525,11 @@
   "web_ui_mode_advanced": "Advanced",
   "web_ui_mode_show_advanced": "Switch to Advanced mode",
   "web_ui_mode_show_simple": "Switch to Simple mode",
-  "policy_held": "⏸ `{name}`: held back by update policy ({level} {old} → {new}). Run /update {name} to apply, or set docksentry.policy=all."
+  "policy_held": "⏸ `{name}`: held back by update policy ({level} {old} → {new}). Run /update {name} to apply, or set docksentry.policy=all.",
+  "web_check_one": "Check",
+  "web_check_one_tt": "Check this container for updates now",
+  "web_check_one_found": "{name}: update available",
+  "web_check_one_none": "{name} is up to date",
+  "web_check_one_busy": "An update is running right now — try again in a moment",
+  "web_check_one_error": "Check failed"
 }

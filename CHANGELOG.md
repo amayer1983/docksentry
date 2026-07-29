@@ -2,6 +2,26 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.54.0] - 2026-07-29
+
+### Added
+- **Per-container update check in the Web UI** ([#50](../../issues/50), @LeeNX). Every row in the status table gets a 🔍 button that checks that one container right now and tells you the answer on the spot — update available, already up to date, or what went wrong. It waits for the result instead of firing and forgetting, because a single container check is one registry HEAD request and there's no reason to make you guess.
+
+  This matters most on the installs it was asked for. The existing "Check Updates" button starts a background thread and bounces you straight back to a page still showing the old numbers; the only feedback was the notification that follows, and on a host with no Telegram, no Discord and no webhook that notification goes nowhere at all. So you pressed a button and got, quite literally, nothing. Now you get an answer whether or not you have a channel configured.
+
+  Two things behind the scenes worth knowing. A scoped check *merges* its result into `pending_updates.json` rather than overwriting the file — otherwise checking one container would have quietly wiped every other container's update badge and update button. And the Docksentry row is a special case: we filter our own container out of the normal check, so that button asks the registry about the running image directly instead of coming back empty and looking broken.
+
+  On the "force refresh" idea that came with the request: there's nothing to force. Docksentry keeps no digest cache — every check goes to the registry fresh, and even the auth token is re-negotiated each time. What looks like a stale answer is just the check cadence (the default is once a day at 18:00) plus the fact that the table renders the last saved result, so reloading the page checks nothing. This button *is* the refresh.
+
+### Fixed
+- **The Web UI's check could run alongside an update and report a phantom one** ([#50](../../issues/50)). The Telegram `/check` path has skipped checks while an update is in flight since #26 — mid-recreate the container still reports its pre-pull digest, so a check catching that moment announces an update that was just applied seconds ago. The Web UI path never got that guard; it has it now.
+- **Two clicks on "Check Updates" started two checks.** Both wrote `pending_updates.json`, so whichever finished second silently overwrote the other's result. A check now takes a lock that a second one won't queue behind — it's simply refused and says so.
+
+### Docs
+- The Web UI's update checking is described in the README for the first time; it was only ever documented for Telegram.
+
+Tests: new `scripts/test_check_scoped.py` covers the scoped run and, above all, that an unrelated container's pending entry survives it.
+
 ## [1.53.3] - 2026-07-28
 
 ### Fixed

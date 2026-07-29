@@ -28,6 +28,14 @@ _STATIC_TYPES = {".css": "text/css; charset=utf-8",
                  ".svg": "image/svg+xml; charset=utf-8"}
 _STATIC_CACHE = {}
 
+# Serialises every update check triggered from the Web UI — the global
+# "Check Updates" button and the per-container one alike. Both write
+# config.pending_file, so two overlapping runs raced each other and the
+# loser's result was silently overwritten. Two quick clicks on the global
+# button were enough to hit it (#50). Non-blocking acquire: a second
+# request is refused, not queued.
+_CHECK_LOCK = threading.Lock()
+
 
 def _read_static(name):
     """Read app/static/<name> (basename-sanitised), cached after first read.
@@ -952,6 +960,24 @@ def create_handler(config, checker, bot, store, password=None):
                 if name:
                     threading.Thread(target=self._api_update, args=(name,)).start()
                 self._send_redirect("/")
+            elif path == "/api/check_one":
+                # Per-container update check from the Status table (#50).
+                # POST rather than GET so it inherits the auth + CSRF checks
+                # above, and answered synchronously: it's a single registry
+                # HEAD request, and on a Telegram-less install the JSON
+                # response is the *only* feedback the user can get —
+                # bot.notify_updates is a no-op without any channel.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = parse_qs(body)
+                name = params.get("name", [""])[0].strip()
+                response = self._api_check_one(name)
+                payload = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path == "/api/pin":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -1741,6 +1767,20 @@ def create_handler(config, checker, bot, store, password=None):
                 if _lab_auto is not None:
                     auto_cell += _lab_mark
                 is_askm = c["name"] in ask_major
+                # Per-container check (#50). Not a form — it talks to
+                # /api/check_one via fetch and reports back with a toast,
+                # because a redirect would land the user on the same stale
+                # page the global check already leaves them on. All labels
+                # ride along as data-* attributes; app.js has no translator.
+                check_btn = (
+                    f'<button type="button" class="btn-icon" '
+                    f'onclick="dsCheckOne(this)" data-name="{name_attr}" '
+                    f'data-msg-found="{_e(t("web_check_one_found", name=c["name"]))}" '
+                    f'data-msg-none="{_e(t("web_check_one_none", name=c["name"]))}" '
+                    f'data-msg-busy="{_e(t("web_check_one_busy"))}" '
+                    f'data-msg-error="{_e(t("web_check_one_error"))}" '
+                    f'title="{_e(t("web_check_one_tt"))}">{_ICONS["search"]}</button>'
+                )
                 update_btn = (
                     f'<form method="POST" action="/api/update" class="inline-form">'
                     f'<input type="hidden" name="name" value="{name_attr}">'
@@ -1811,7 +1851,7 @@ def create_handler(config, checker, bot, store, password=None):
                             f'<button type="submit" class="btn-icon is-danger" title="{_e(t("lifecycle_btn_stop"))}">{_ICONS["x"]}</button>'
                             f'</form>'
                         )
-                actions = f'<div class="btn-row">{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
+                actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
 
                 # Version / hash badge after image — requested in #32 by
                 # @LeeNX so you can tell at a glance whether a container
@@ -1954,6 +1994,7 @@ def create_handler(config, checker, bot, store, password=None):
 </tbody>
 </table>
 <div class="icon-legend" aria-label="button legend">
+<span title="{_e(t("web_check_one_tt"))}"><span class="btn-icon">{_ICONS["search"]}</span> {_legend_word(t("web_check_one"))}</span>
 <span title="{_e(t("web_update"))}"><span class="btn-icon is-active">{_ICONS["refresh"]}</span> {_legend_word(t("web_update"))}</span>
 <span title="{_e(t("lifecycle_btn_restart"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {_legend_word(t("lifecycle_btn_restart"))}</span>
 <span title="{_e(t("web_pin"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
@@ -3232,6 +3273,18 @@ def create_handler(config, checker, bot, store, password=None):
                 bot._run_queued_selfupdate()
 
         def _api_check(self):
+            # The race guard the Telegram /check branch has had since #26,
+            # which this path never got: a check running alongside an update
+            # still sees the pre-pull digest and reports a phantom
+            # "update available" a few seconds after the user hit Update.
+            if bot.update_running:
+                print("Web UI check skipped: an update is currently running")
+                return
+            # …and one against the Web UI's own double-click: two clicks used
+            # to start two checks that both wrote config.pending_file (#50).
+            if not _CHECK_LOCK.acquire(blocking=False):
+                print("Web UI check skipped: a check is already running")
+                return
             try:
                 # No `bot=` here: with DEBUG on, check_all pushes its whole
                 # debug log to Telegram for the requester — right for the
@@ -3243,6 +3296,57 @@ def create_handler(config, checker, bot, store, password=None):
                     bot.notify_updates(updates)
             except Exception as e:
                 print(f"Web UI check error: {e}")
+            finally:
+                _CHECK_LOCK.release()
+
+        def _api_check_one(self, name):
+            """Check a single container and return a JSON-able result dict.
+
+            Runs inline instead of in a thread: one registry HEAD request is
+            quick enough to wait for, and the caller needs the outcome. The
+            old global check fired a thread and redirected immediately, so
+            the user saw the stale numbers and got feedback only via
+            bot.notify_updates — which does nothing on an install without
+            Telegram, Discord or a webhook. That's the whole complaint in #50.
+            """
+            if not name:
+                return {"ok": False, "error": "missing name"}
+            if bot.update_running:
+                return {"ok": False, "busy": True, "error": "update running"}
+            if not _CHECK_LOCK.acquire(blocking=False):
+                return {"ok": False, "busy": True, "error": "check running"}
+            try:
+                own_name = ""
+                try:
+                    own_name = checker._own_container_name()
+                except Exception:
+                    pass
+                if own_name and name == own_name:
+                    # get_running_containers filters our own container out,
+                    # so check_all(only={us}) can only ever come back empty
+                    # and the button would look broken on that one row. Ask
+                    # the registry directly instead — digest compare, no pull.
+                    checker.debug_log = []
+                    found = checker.has_selfupdate_available()
+                    result = {"ok": True, "name": name,
+                              "found": bool(found), "selfupdate": True}
+                else:
+                    updates = checker.check_all(only={name})
+                    result = {"ok": True, "name": name,
+                              "found": any(u.get("name") == name for u in updates),
+                              "selfupdate": False}
+            except Exception as e:
+                print(f"Web UI single check error: {e}")
+                return {"ok": False, "error": str(e)[:200]}
+            finally:
+                _CHECK_LOCK.release()
+            # Debug lines only when DEBUG is on. The buffer is empty
+            # otherwise, so this changes nothing functionally — but the log
+            # carries registry hosts and repository paths, and on a private
+            # registry that's not something to hand out by default.
+            if config.debug:
+                result["debug"] = list(checker.debug_log)
+            return result
 
         def _api_cleanup(self):
             """Run `docker image prune` to free disk space (manual trigger)."""

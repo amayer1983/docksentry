@@ -1549,9 +1549,21 @@ class UpdateChecker:
             return "healthy", state, health
         return "starting", state, health
 
-    def check_all(self, bot=None):
+    def check_all(self, bot=None, only=None):
+        """Check running containers for image updates.
+
+        ``only`` (set/list of container names) scopes the run to those
+        containers — the Web UI's per-container check button. Names that
+        aren't currently running are simply skipped. ``only=None`` keeps
+        the old behaviour: check everything.
+        """
         self.debug_log = []
         containers = self.get_running_containers()
+        if only is not None:
+            wanted = set(only)
+            containers = [c for c in containers if c["name"] in wanted]
+            self._debug(f"Scoped check: {len(containers)} of {len(wanted)} "
+                        f"requested container(s) are running")
         self._debug(f"Checking {len(containers)} containers for updates...")
         updates = []
 
@@ -1608,7 +1620,30 @@ class UpdateChecker:
 
         # Save pending updates — atomic write (v1.22.1)
         from container_store import atomic_write_json
-        atomic_write_json(self.config.pending_file, updates)
+        if only is None:
+            atomic_write_json(self.config.pending_file, updates)
+        else:
+            # A scoped run only knows about the containers it actually
+            # checked. Writing `updates` wholesale here would wipe every
+            # OTHER container's pending entry — and with it its update
+            # badge and update button in the Web UI. So: replace the
+            # entries of the checked names, pass the rest through
+            # untouched. A missing/corrupt file is treated as empty, same
+            # as everywhere else that reads this file.
+            checked = {c["name"] for c in containers}
+            existing = []
+            if os.path.exists(self.config.pending_file):
+                try:
+                    with open(self.config.pending_file) as f:
+                        existing = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    existing = []
+            if not isinstance(existing, list):
+                existing = []
+            merged = [u for u in existing
+                      if isinstance(u, dict) and u.get("name") not in checked]
+            merged.extend(updates)
+            atomic_write_json(self.config.pending_file, merged)
         self._debug(f"Found {len(updates)} updates.")
 
         # Send debug log via Telegram

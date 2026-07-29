@@ -423,6 +423,8 @@ This is a stepping stone, not a replacement for v2.0 multi-host: you still maint
 
 Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, a Container Events history (the same crash/OOM/health-flip log you get from `/events`), and full settings management — all in a dark-themed, mobile-responsive interface.
 
+**Checking for updates.** The **Check Updates** button above the container table runs the same check as `/check` and the cron schedule: every container, results in the pending list. Each row also has its own 🔍 button that checks just that container and tells you the outcome right there — handy when you only care about one image and don't want to wait for a full sweep, and the only way to get feedback at all if you run without Telegram or a webhook. Both refuse to start while an update is in progress, and while a check is already running, so a double-click can't produce two competing results. With `DEBUG=true` the per-container check also writes its registry log to the browser console.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-status.png" alt="Web UI Status" width="700">
 </p>

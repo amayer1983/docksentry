@@ -525,5 +525,11 @@
   "web_ui_mode_advanced": "Erweitert",
   "web_ui_mode_show_advanced": "In erweiterten Modus wechseln",
   "web_ui_mode_show_simple": "In einfachen Modus wechseln",
-  "policy_held": "⏸ `{name}`: von der Update-Richtlinie zurückgehalten ({level} {old} → {new}). Mit /update {name} anwenden oder docksentry.policy=all setzen."
+  "policy_held": "⏸ `{name}`: von der Update-Richtlinie zurückgehalten ({level} {old} → {new}). Mit /update {name} anwenden oder docksentry.policy=all setzen.",
+  "web_check_one": "Prüfen",
+  "web_check_one_tt": "Diesen Container jetzt auf Updates prüfen",
+  "web_check_one_found": "{name}: Update verfügbar",
+  "web_check_one_none": "{name} ist aktuell",
+  "web_check_one_busy": "Gerade läuft ein Update — bitte gleich noch einmal versuchen",
+  "web_check_one_error": "Prüfung fehlgeschlagen"
 }

@@ -190,6 +190,64 @@ function dsTestWebhook(kind) {
     });
 }
 
+// ── Per-container update check (Status page, #50) ─────────────
+// The global check button fires a thread and redirects straight back
+// to a page still showing the old numbers; the only feedback is a
+// Telegram/webhook notification, which people running neither never
+// see. This one waits for the answer (a single registry HEAD) and
+// says so on screen. The button stays disabled for the round trip —
+// that's both the double-click guard and what keeps an impatient
+// user from hammering the registry into a rate limit.
+// All wording comes from data-* attributes: the backend owns the
+// translations, this file has no access to them.
+function dsCheckOne(btn) {
+    if (!btn || btn.disabled) return;
+    var name = btn.dataset.name || '';
+    if (!name) return;
+    function release() {
+        btn.disabled = false;
+        btn.style.opacity = '';
+    }
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    fetch('/api/check_one', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'name=' + encodeURIComponent(name),
+    }).then(function(r) {
+        return r.json().catch(function() { return {ok: false, error: 'HTTP ' + r.status}; });
+    }).then(function(data) {
+        // Only present when DEBUG is on. Console, not the page: it can be
+        // a few dozen lines and it names registries and repositories.
+        if (data.debug && data.debug.length) {
+            try { console.log('[docksentry] check ' + name + '\n' + data.debug.join('\n')); } catch (e) {}
+        }
+        if (!data.ok) {
+            if (data.busy) {
+                dsToast(btn.dataset.msgBusy || 'An update is already running', 'warn');
+            } else {
+                var msg = btn.dataset.msgError || 'Check failed';
+                if (data.error) msg += ' (' + data.error + ')';
+                dsToast(msg, 'error');
+            }
+            release();
+            return;
+        }
+        if (data.found) {
+            // Reload so the pending badge, the counter and the Update
+            // button actually show up — they're rendered server-side.
+            dsToast(btn.dataset.msgFound || 'Update available', 'success');
+            setTimeout(function() { window.location.reload(); }, 1200);
+            return;
+        }
+        dsToast(btn.dataset.msgNone || 'Up to date');
+        release();
+    }).catch(function(e) {
+        dsToast((btn.dataset.msgError || 'Check failed') + ' (' + e.message + ')', 'error');
+        release();
+    });
+}
+
 // ── Cron schedule live preview (Settings page) ────────────────
 // Debounced (300ms) so we don't spam /api/cron_preview while the
 // user is mid-typing. Backend returns next 3 ticks for the
