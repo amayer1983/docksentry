@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.57.2] - 2026-07-30
+
+### Fixed
+- **The v1.57.1 fix missed the case it was written for** ([#53](../../issues/53), @LeeNX). v1.57.1 compares the running image's digest against the registry — but when a tag gets pulled forward and the container isn't recreated, the *old* image the container keeps running loses its repo digest entirely (it's dangling). v1.57.1 had a deliberate fallback for a running image with no digest — compare the tag instead, rather than risk a false positive — and that fallback landed @LeeNX right back on the original bug: his gitea-runner (2.0.1, no digest) fell back to the tag (2.3.0), which matched the registry, so it read "up to date" again. His v1.57.1 log said it out loud: `Running image … has no repo digest — falling back to the tag`.
+
+  Now, before that fallback, the check compares image *IDs*. If the running image has no digest but the tag is a real registry image (it has a digest, so a newer image genuinely is pullable) and the container's image ID differs from the one the tag now resolves to, the container is simply behind the tag — the newer image is already local, only a recreate is missing — and that's reported as an update. A locally-built image the user rebuilds but never recreates still doesn't false-positive: the tag has no repo digest there, so nothing is claimed to be pullable. New tests in `scripts/test_running_image_check.py` cover @LeeNX's exact shape (running 2.0.1 with no digest, tag on 2.3.0) and the local-build guard.
+
 ## [1.57.1] - 2026-07-29
 
 ### Fixed

@@ -24,7 +24,7 @@ IMAGE = "reg/app:latest"       # the reference the container was created from
 
 
 def make_checker(*, running_digests, tag_digests, remote,
-                 versions=None, run_id=RUN_ID, meta=None, debug=False):
+                 versions=None, run_id=RUN_ID, tag_id="", meta=None, debug=False):
     """Fake checker over a single container `app` running image `IMAGE`.
 
     running_digests -- bare-sha256 RepoDigests of the image the container is
@@ -33,6 +33,9 @@ def make_checker(*, running_digests, tag_digests, remote,
     remote          -- the remote Docker-Content-Digest of the tag
     versions        -- optional {ref: version-label} for the diagnostic line
     run_id          -- what `_container_image_id` returns ("" = unreadable)
+    tag_id          -- what `_image_id(IMAGE)` returns: the image id the tag
+                       points at now ("" = unreadable). Only consulted on the
+                       digestless-running-image fallback path.
     """
     versions = versions or {}
     tmp = tempfile.mkdtemp()
@@ -43,6 +46,7 @@ def make_checker(*, running_digests, tag_digests, remote,
     chk.get_running_containers = lambda: [{"name": "app", "image": IMAGE}]
     chk._parse_image = lambda img: ("reg", "app", "latest")
     chk._container_image_id = lambda name: run_id
+    chk._image_id = lambda ref: tag_id
 
     def local_digests(ref):
         if ref == run_id:
@@ -113,15 +117,40 @@ def main():
     chk, _ = make_checker(running_digests=[], tag_digests=[], remote="sha256:REMOTE")
     checks["no digests anywhere: skipped, no false update"] = run(chk) == []
 
+    # ── 4b. Digestless running image, but the container is ALREADY on the ─
+    #    tag image (run_id == tag_id) — the image just happens to have no
+    #    RepoDigest. Nothing is behind anything → clean fallback, no update.
+    chk, _ = make_checker(running_digests=[], tag_digests=["sha256:LOCAL"],
+                          remote="sha256:LOCAL",
+                          run_id="sha256:SAME", tag_id="sha256:SAME")
+    checks["digestless, run_id==tag_id: no false update (fallback)"] = run(chk) == []
+
+    # ── 4c. Digestless running image AND the tag is digestless too (a purely
+    #    locally-built image the user rebuilds but never recreates). IDs
+    #    differ, but there is no registry image to pull → must NOT invent an
+    #    update. This is the case the tag-has-RepoDigests guard protects.
+    chk, _ = make_checker(running_digests=[], tag_digests=[], remote="sha256:REMOTE",
+                          run_id="sha256:AAA", tag_id="sha256:BBB")
+    checks["digestless running + digestless tag, ids differ: no false update"] = run(chk) == []
+
     # ── 5. The exact #53 case (LeeNX's podman/arm64 gitea-runner) ────────
-    #    Container image-id b1addbb… = 2.0.1; tag :latest → 15cc00a… = 2.3.0;
-    #    remote :latest = 2.3.0. Must be UPDATE AVAILABLE, and the notified
-    #    old_version must be the RUNNING 2.0.1 (not the tag's 2.3.0).
+    #    His actual failure on v1.57.1: the container runs image b1addbb…
+    #    (2.0.1). `:latest` was pulled forward to 15cc00a… (2.3.0) but the
+    #    container was never recreated, so 2.0.1 lost its RepoDigest and is
+    #    now DANGLING — the digest comparison can't fire, and v1.57.1 fell
+    #    back to comparing the tag (2.3.0) against remote (2.3.0) and said
+    #    "up to date". The tag image 15cc00a… still carries a real RepoDigest
+    #    (66d8096 == remote), so this is a pullable update the container is
+    #    behind. Must be UPDATE AVAILABLE; old_version = the RUNNING 2.0.1,
+    #    new_version = the remote 2.3.0. (This is the case that would fail on
+    #    v1.57.1 — the running image is digestless, not digest-divergent.)
     chk, _ = make_checker(
-        running_digests=["sha256:b1addbb"],       # 2.0.1, what the container runs
-        tag_digests=["sha256:15cc00a"],           # 2.3.0, where :latest points now
-        remote="sha256:15cc00a",                  # registry :latest = 2.3.0
-        versions={RUN_ID: "2.0.1", IMAGE: "2.3.0"},
+        running_digests=[],                        # 2.0.1 is dangling: NO RepoDigest
+        tag_digests=["sha256:66d8096"],            # tag image is real: RepoDigest == remote
+        remote="sha256:66d8096",                   # registry :latest = 2.3.0
+        run_id="sha256:b1addbb",                   # image id the container runs (2.0.1)
+        tag_id="sha256:15cc00a",                   # image id :latest points at now (2.3.0)
+        versions={"sha256:b1addbb": "2.0.1", IMAGE: "2.3.0"},
         meta={"version": "2.3.0", "created": "2026-07-01"},
         debug=True)
     res = run(chk)

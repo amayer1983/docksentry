@@ -1857,11 +1857,67 @@ class UpdateChecker:
                 # The running image carries no RepoDigests — it was built
                 # locally, or the tag that produced it was since removed /
                 # moved so the old image is now digestless — or we couldn't
-                # read the running image ID at all. Fall back to the tag
-                # image (today's behaviour) rather than risk a false
-                # "update available": a missing digest turning into a
-                # phantom update would be noise for every user, strictly
-                # worse than the status quo.
+                # read the running image ID at all.
+                #
+                # Before falling back to the tag we still catch the exact #53
+                # (@LeeNX) shape the digest check above misses: `:latest` was
+                # pulled forward to a NEW image but the container was never
+                # recreated, so the OLD image it keeps running lost its
+                # RepoDigest (it's now dangling) and can't be compared by
+                # digest. We can still compare IMAGE IDs. If the TAG is a real
+                # registry image (it has RepoDigests — so a newer image really
+                # is pullable, this isn't a locally-built tag the user rebuilds
+                # but never recreates) AND both image IDs are readable AND the
+                # container runs a DIFFERENT id than the tag now points at,
+                # then the container is simply behind the tag. The newer image
+                # is already local (the tag has it); only a recreate is
+                # missing → report the update. Old side = the running image,
+                # new side = the tag / remote.
+                tag_id = self._image_id(image)
+                tag_repo_digests = self._get_local_repo_digests(image)
+                if tag_repo_digests and run_id and tag_id and run_id != tag_id:
+                    local_ref = run_id
+                    if self._diag_on():
+                        run_desc = (self._get_image_version_label(run_id)
+                                    or self._short(run_id, 19))
+                        tag_desc = (self._get_image_version_label(image)
+                                    or self._short(tag_id, 19))
+                        self._vdebug(
+                            f"  Running image {run_desc} differs from the tag "
+                            f"image {tag_desc} and has no digest to compare — "
+                            f"container is behind the tag (not recreated after "
+                            f"the tag moved), recreate needed (#53)")
+                    # Same shape as the normal UPDATE-AVAILABLE branch below,
+                    # but keyed on the running image: size/created/version come
+                    # from what the container actually runs, the new version
+                    # from the remote's OCI metadata.
+                    size = self._get_image_size(local_ref)
+                    created = self._get_image_created(local_ref)
+                    self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
+                    c["size"] = size
+                    c["created"] = created
+                    old_v = self._get_image_version_label(local_ref)
+                    if not old_v and self._parse_semver(tag):
+                        old_v = tag
+                    c["old_version"] = old_v
+                    meta = self.get_remote_image_meta(registry, repository, tag)
+                    if meta.get("version"):
+                        c["new_version"] = meta["version"]
+                    if meta.get("created"):
+                        c["new_created"] = meta["created"]
+                    if resolve_versions:
+                        _vlog(f"    remote :{tag} is version "
+                              f"{meta.get('version') or '?'} "
+                              f"(built {meta.get('created') or '?'}), "
+                              f"local is {old_v or '?'}")
+                    updates.append(c)
+                    continue
+                # Fall back to the tag image (today's behaviour) rather than
+                # risk a false "update available": a missing digest turning
+                # into a phantom update would be noise for every user, strictly
+                # worse than the status quo. This covers a locally-built tag
+                # (no RepoDigests → nothing to pull), a container already on the
+                # tag image (run_id == tag_id), and an unreadable image id.
                 local_digests = self._get_local_digests(image)
                 local_ref = image
                 if run_id:
