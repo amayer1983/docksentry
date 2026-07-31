@@ -29,13 +29,17 @@ class UpdateChecker:
         b = getattr(self, "_backend", None)
         return b if b is not None else _cb.default_backend()
 
-    def __init__(self, config):
+    def __init__(self, config, backend=None):
         self.config = config
         # Container CLI seam: every container command in this file — reads
         # and writes — goes through it, so the binary name and argv
         # construction live in one place (podman / remote hosts become a
         # backend swap instead of edits in ninety places).
-        self._backend = _cb.get_backend(config)
+        #
+        # `backend` is how multi-host works (#7): one checker per host, each
+        # handed a backend pointed at that host. Left unset it builds the
+        # local one, which is the single-host case and unchanged.
+        self._backend = backend if backend is not None else _cb.get_backend(config)
         self.debug_log = []
         # Per-run scratch state. Cleared at the top of check_all so a long
         # running process never serves stale data from an earlier sweep.

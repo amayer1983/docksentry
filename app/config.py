@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 
 
 def _strip_quotes(value):
@@ -30,6 +31,55 @@ def _strip_quotes(value):
 def _env(key, default=""):
     """Read an env var and strip matching outer quotes. See _strip_quotes."""
     return _strip_quotes(os.environ.get(key, default))
+
+
+#: Host names we won't accept from config — `local` always means the
+#: machine Docksentry itself runs on and can't be reassigned.
+RESERVED_HOST_NAMES = ("local",)
+
+
+def parse_docker_hosts(raw):
+    """Parse `DOCKER_HOSTS` into a list of {"name", "endpoint"} dicts (#7).
+
+    Format: ``name:endpoint, name2:endpoint2`` — e.g.
+    ``pve1:ssh://root@pve1, nas:tcp://nas:2375``. Only the FIRST colon
+    separates name from endpoint, because endpoints contain colons too.
+
+    Fails soft, deliberately: a malformed entry is skipped with a warning
+    rather than taking the whole instance down. A typo'd host should cost
+    you that host, not your monitoring. Empty/unset input gives an empty
+    list, which means "single-host, exactly as before".
+
+    Names are lowercased and must be alphanumeric plus `-`/`_` so they can
+    serve as routing tokens in commands and as state-key prefixes without
+    quoting. Duplicates and the reserved `local` are dropped.
+    """
+    hosts = []
+    seen = set()
+    for chunk in (raw or "").split(","):
+        entry = chunk.strip()
+        if not entry:
+            continue
+        name, sep, endpoint = entry.partition(":")
+        name = name.strip().lower()
+        endpoint = endpoint.strip()
+        if not sep or not endpoint:
+            print(f"DOCKER_HOSTS: skipping {entry!r} — expected name:endpoint")
+            continue
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+            print(f"DOCKER_HOSTS: skipping {entry!r} — host name must be "
+                  f"alphanumeric (plus - and _)")
+            continue
+        if name in RESERVED_HOST_NAMES:
+            print(f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved "
+                  f"for the machine Docksentry runs on")
+            continue
+        if name in seen:
+            print(f"DOCKER_HOSTS: skipping duplicate host {name!r}")
+            continue
+        seen.add(name)
+        hosts.append({"name": name, "endpoint": endpoint})
+    return hosts
 
 
 # Settings that can be changed via Web UI and persist across restarts
@@ -197,7 +247,7 @@ class Config:
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
                  telegram_polling=True, debug=False, update_policy="all",
-                 container_cli="auto"):
+                 container_cli="auto", docker_hosts=""):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -233,6 +283,14 @@ class Config:
         # covers the docker→podman alias setups people already run).
         cli = (container_cli or "auto").strip().lower()
         self.container_cli = cli if cli in ("auto", "docker", "podman") else "auto"
+        # Extra Docker/Podman hosts this instance also manages (#7). Format
+        # (per the issue): "name:endpoint, name2:endpoint2", e.g.
+        # "pve1:ssh://root@pve1, nas:tcp://nas:2375". Split on the FIRST
+        # colon only — endpoints contain colons themselves. The machine we
+        # run on is always managed and is NOT listed here; it stays the
+        # implicit "local" host, so an unset DOCKER_HOSTS means exactly
+        # today's single-host behaviour.
+        self.docker_hosts = parse_docker_hosts(docker_hosts)
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -582,6 +640,7 @@ class Config:
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
             update_policy=_env("UPDATE_POLICY", "all"),
             container_cli=_env("CONTAINER_CLI", "auto"),
+            docker_hosts=_env("DOCKER_HOSTS", ""),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
