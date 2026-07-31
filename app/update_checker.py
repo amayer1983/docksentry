@@ -11,19 +11,31 @@ import urllib.parse
 import re
 from datetime import datetime, timedelta
 
+# The container CLI seam. Module-level so the @staticmethod/@classmethod
+# helpers (which have no self) can reach the shared backend too.
+import container_backend as _cb
+
 
 class UpdateChecker:
+    @property
+    def backend(self):
+        """The container CLI backend for this checker.
+
+        Falls back to the process-wide default when `__init__` never ran:
+        tests build a bare `UpdateChecker.__new__(UpdateChecker)` to
+        exercise pure helpers, and a read shouldn't explode on those. Same
+        reasoning as the no-self helpers using `_cb.default_backend()`.
+        """
+        b = getattr(self, "_backend", None)
+        return b if b is not None else _cb.default_backend()
+
     def __init__(self, config):
         self.config = config
-        # Container CLI seam. The write/lifecycle calls in this file route
-        # through it so the `docker` binary name and argv construction live
-        # in one place (podman/remote hosts become a backend swap, not edits
-        # in ninety places). The READ calls here are still on direct
-        # subprocess by design — several tests patch
-        # `update_checker.subprocess.run`, and rerouting those would bypass
-        # the mocks and leave the tests green while asserting nothing.
-        from container_backend import get_backend
-        self.backend = get_backend(config)
+        # Container CLI seam: every container command in this file — reads
+        # and writes — goes through it, so the binary name and argv
+        # construction live in one place (podman / remote hosts become a
+        # backend swap instead of edits in ninety places).
+        self._backend = _cb.get_backend(config)
         self.debug_log = []
         # Per-run scratch state. Cleared at the top of check_all so a long
         # running process never serves stale data from an earlier sweep.
@@ -59,10 +71,8 @@ class UpdateChecker:
         self._debug(msg)
 
     def get_running_containers(self):
-        result = subprocess.run(
-            ["docker", "ps", "--format", "{{.Names}}|{{.Image}}|{{.Labels}}"],
-            capture_output=True, text=True
-        )
+        result = self.backend.run(
+            ["ps", "--format", "{{.Names}}|{{.Image}}|{{.Labels}}"])
         # Get own container name to exclude self. Robust detection: tries
         # HOSTNAME env first, falls back to /proc/self/cgroup if that's
         # missing or doesn't resolve. The old HOSTNAME-only path silently
@@ -86,10 +96,8 @@ class UpdateChecker:
                 continue
             # Resolve images referenced by ID via container inspect
             if re.match(r'^[0-9a-f]{12,}$', image):
-                resolved = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.Config.Image}}", name],
-                    capture_output=True, text=True
-                )
+                resolved = self.backend.run(
+                    ["inspect", "--format", "{{.Config.Image}}", name])
                 if resolved.returncode == 0 and resolved.stdout.strip() and \
                    not re.match(r'^[0-9a-f]{12,}$', resolved.stdout.strip()):
                     image = resolved.stdout.strip()
@@ -148,10 +156,8 @@ class UpdateChecker:
         """Return all labels of a single container as a dict (empty on any
         failure). Used by the per-container label overrides (#42)."""
         try:
-            r = subprocess.run(
-                ["docker", "inspect", "--format", "{{json .Config.Labels}}", name],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = self.backend.run(
+                ["inspect", "--format", "{{json .Config.Labels}}", name], timeout=10)
             if r.returncode == 0 and r.stdout.strip():
                 return json.loads(r.stdout) or {}
         except (subprocess.SubprocessError, json.JSONDecodeError):
@@ -165,11 +171,9 @@ class UpdateChecker:
         (#39), so the self-update message can show `v1.33.1 → v1.33.2`
         instead of opaque dates + image hashes (#41 follow-up)."""
         try:
-            r = subprocess.run(
-                ["docker", "image", "inspect", "--format",
-                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = _cb.default_backend().run(
+                ["image", "inspect", "--format",
+                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image], timeout=10)
             if r.returncode == 0:
                 v = r.stdout.strip()
                 if v and v not in ("<no value>", "dev"):
@@ -361,11 +365,9 @@ class UpdateChecker:
         if UpdateChecker._host_platform_cache is None:
             os_name, arch = "linux", "amd64"
             try:
-                r = subprocess.run(
-                    ["docker", "version", "--format",
-                     "{{.Server.Os}}/{{.Server.Arch}}"],
-                    capture_output=True, text=True, timeout=10,
-                )
+                r = self.backend.run(
+                    ["version", "--format",
+                     "{{.Server.Os}}/{{.Server.Arch}}"], timeout=10)
                 parts = r.stdout.strip().split("/")
                 if r.returncode == 0 and len(parts) == 2 and all(parts):
                     os_name, arch = parts
@@ -391,10 +393,8 @@ class UpdateChecker:
         if cls._cgroup_version_cache is None:
             version = "1"
             try:
-                r = subprocess.run(
-                    ["docker", "info", "--format", "{{.CgroupVersion}}"],
-                    capture_output=True, text=True, timeout=10,
-                )
+                r = _cb.default_backend().run(
+                    ["info", "--format", "{{.CgroupVersion}}"], timeout=10)
                 out = r.stdout.strip()
                 if r.returncode == 0 and out in ("1", "2"):
                     version = out
@@ -419,12 +419,10 @@ class UpdateChecker:
         if cls._daemon_net_cache is None:
             info = {"mirrors": "unknown", "proxy": "unknown"}
             try:
-                r = subprocess.run(
-                    ["docker", "info", "--format",
+                r = _cb.default_backend().run(
+                    ["info", "--format",
                      "{{json .RegistryConfig.Mirrors}}\t{{.HTTPProxy}}\t"
-                     "{{.HTTPSProxy}}\t{{.NoProxy}}"],
-                    capture_output=True, text=True, timeout=10,
-                )
+                     "{{.HTTPSProxy}}\t{{.NoProxy}}"], timeout=10)
                 # Strip newlines only — an unset proxy is an EMPTY field, and
                 # a plain .strip() would eat the trailing tabs along with it
                 # and leave us with fewer columns than we asked for.
@@ -808,10 +806,8 @@ class UpdateChecker:
             return cached
         digests = []
         try:
-            result = subprocess.run(
-                ["docker", "inspect", "--format", "{{json .RepoDigests}}", image],
-                capture_output=True, text=True
-            )
+            result = self.backend.run(
+                ["inspect", "--format", "{{json .RepoDigests}}", image])
             if result.returncode == 0:
                 digests = [d for d in json.loads(result.stdout.strip() or "[]")
                            if isinstance(d, str) and "@" in d]
@@ -831,10 +827,8 @@ class UpdateChecker:
 
     def _get_image_size(self, image):
         """Get local image size in human-readable format."""
-        result = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Size}}", image],
-            capture_output=True, text=True
-        )
+        result = self.backend.run(
+            ["image", "inspect", "--format", "{{.Size}}", image])
         if result.returncode == 0:
             try:
                 size_bytes = int(result.stdout.strip())
@@ -850,10 +844,8 @@ class UpdateChecker:
 
     def _get_image_created(self, image):
         """Get image creation date."""
-        result = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Created}}", image],
-            capture_output=True, text=True
-        )
+        result = self.backend.run(
+            ["image", "inspect", "--format", "{{.Created}}", image])
         if result.returncode == 0:
             created = result.stdout.strip()[:10]  # Just the date part
             return created
@@ -926,10 +918,8 @@ class UpdateChecker:
         number the warning looks like noise and gets ignored. Best-effort,
         returns 0 on any failure."""
         try:
-            r = subprocess.run(
-                ["docker", "system", "df", "--format", "{{json .}}"],
-                capture_output=True, text=True, timeout=15,
-            )
+            r = self.backend.run(
+                ["system", "df", "--format", "{{json .}}"], timeout=15)
             if r.returncode != 0:
                 return 0
             total = 0
@@ -1007,17 +997,13 @@ class UpdateChecker:
         os.makedirs(self.config.cleanup_backup_dir, exist_ok=True)
 
         # IDs of all images currently in use (running or stopped containers)
-        ps_result = subprocess.run(
-            ["docker", "ps", "-a", "--no-trunc", "--format", "{{.ImageID}}"],
-            capture_output=True, text=True, timeout=30
-        )
+        ps_result = self.backend.run(
+            ["ps", "-a", "--no-trunc", "--format", "{{.ImageID}}"], timeout=30)
         used_ids = {l.strip() for l in ps_result.stdout.strip().split("\n") if l.strip()}
 
         # All images, full inspect form (need RepoDigests + RepoTags)
-        ls_result = subprocess.run(
-            ["docker", "image", "ls", "-a", "--no-trunc", "--format", "{{.ID}}"],
-            capture_output=True, text=True, timeout=30
-        )
+        ls_result = self.backend.run(
+            ["image", "ls", "-a", "--no-trunc", "--format", "{{.ID}}"], timeout=30)
         all_ids = [l.strip() for l in ls_result.stdout.strip().split("\n") if l.strip()]
         # De-dup (image ls can list same ID multiple times for multiple tags)
         all_ids = list(dict.fromkeys(all_ids))
@@ -1029,10 +1015,8 @@ class UpdateChecker:
         for img_id in all_ids:
             if img_id in used_ids:
                 continue
-            inspect = subprocess.run(
-                ["docker", "image", "inspect", img_id],
-                capture_output=True, text=True, timeout=30
-            )
+            inspect = self.backend.run(
+                ["image", "inspect", img_id], timeout=30)
             if inspect.returncode != 0:
                 continue
             try:
@@ -1147,15 +1131,13 @@ class UpdateChecker:
 
     def _get_compose_info(self, name):
         """Detect if container belongs to a Docker Compose stack."""
-        result = subprocess.run(
-            ["docker", "inspect", "--format",
+        result = self.backend.run(
+            ["inspect", "--format",
              "{{index .Config.Labels \"com.docker.compose.project\"}}||"
              "{{index .Config.Labels \"com.docker.compose.service\"}}||"
              "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}||"
              "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}",
-             name],
-            capture_output=True, text=True
-        )
+             name])
         if result.returncode != 0:
             return {}
         parts = result.stdout.strip().split("||")
@@ -1240,10 +1222,8 @@ class UpdateChecker:
         storage-driver ID, not the container ID."""
         for c in UpdateChecker._own_id_candidates():
             try:
-                r = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.Id}}", c],
-                    capture_output=True, text=True, timeout=5,
-                )
+                r = _cb.default_backend().run(
+                    ["inspect", "--format", "{{.Id}}", c], timeout=5)
                 if r.returncode == 0:
                     fid = r.stdout.strip()
                     if fid.startswith("sha256:"):
@@ -1255,17 +1235,13 @@ class UpdateChecker:
         h = os.environ.get("HOSTNAME", "").strip()
         if h:
             try:
-                ps = subprocess.run(
-                    ["docker", "ps", "-q", "--no-trunc"],
-                    capture_output=True, text=True, timeout=10,
-                )
+                ps = _cb.default_backend().run(
+                    ["ps", "-q", "--no-trunc"], timeout=10)
                 ids = [x for x in ps.stdout.split() if x]
                 if ids:
-                    r = subprocess.run(
-                        ["docker", "inspect", "--format",
-                         "{{.Id}}|{{.Config.Hostname}}", *ids],
-                        capture_output=True, text=True, timeout=20,
-                    )
+                    r = _cb.default_backend().run(
+                        ["inspect", "--format",
+                         "{{.Id}}|{{.Config.Hostname}}", *ids], timeout=20)
                     for line in r.stdout.splitlines():
                         fid, _, hn = line.partition("|")
                         if hn.strip() == h and len(fid.strip()) == 64:
@@ -1285,10 +1261,8 @@ class UpdateChecker:
         if not oid:
             return None
         try:
-            r = subprocess.run(
-                ["docker", "inspect", oid],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = _cb.default_backend().run(
+                ["inspect", oid], timeout=10)
             if r.returncode == 0 and r.stdout.strip():
                 data = json.loads(r.stdout)
                 if data:
@@ -1325,10 +1299,8 @@ class UpdateChecker:
             candidates.append(cid)
         for c in candidates:
             try:
-                r = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.Name}}", c],
-                    capture_output=True, text=True, timeout=5,
-                )
+                r = self.backend.run(
+                    ["inspect", "--format", "{{.Name}}", c], timeout=5)
                 if r.returncode == 0:
                     n = r.stdout.strip().lstrip("/")
                     if n:
@@ -1351,10 +1323,8 @@ class UpdateChecker:
         if not own_id:
             return False
         try:
-            r = subprocess.run(
-                ["docker", "inspect", "--format", "{{.Id}}", target_name],
-                capture_output=True, text=True, timeout=5,
-            )
+            r = self.backend.run(
+                ["inspect", "--format", "{{.Id}}", target_name], timeout=5)
             if r.returncode != 0:
                 return False
             # docker inspect on a CONTAINER returns "HEX" with no prefix;
@@ -1380,10 +1350,8 @@ class UpdateChecker:
         away leaving him with nothing. This check lets us recover.
         """
         try:
-            r = subprocess.run(
-                ["docker", "inspect", "--format", "{{.Id}}", name],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = self.backend.run(
+                ["inspect", "--format", "{{.Id}}", name], timeout=10)
             return r.returncode == 0
         except subprocess.SubprocessError:
             # On inspect error we can't be sure — assume it exists so we
@@ -1453,10 +1421,8 @@ class UpdateChecker:
                 stop_timeout = int(t)
         else:
             try:
-                r = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.Config.StopTimeout}}", name],
-                    capture_output=True, text=True, timeout=5,
-                )
+                r = self.backend.run(
+                    ["inspect", "--format", "{{.Config.StopTimeout}}", name], timeout=5)
                 if r.returncode == 0:
                     raw = r.stdout.strip()
                     if raw and raw != "<no value>":
@@ -1505,12 +1471,10 @@ class UpdateChecker:
         default is also 0s. Used to bound our max_starting wait so we
         respect what the image author declared."""
         try:
-            r = subprocess.run(
-                ["docker", "inspect",
+            r = self.backend.run(
+                ["inspect",
                  "--format", "{{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod}}{{end}}",
-                 name],
-                capture_output=True, text=True, timeout=5,
-            )
+                 name], timeout=5)
             if r.returncode != 0:
                 return 0.0
             raw = r.stdout.strip()
@@ -1527,10 +1491,8 @@ class UpdateChecker:
         can see in chat what the container was last doing instead of
         having to SSH to the host."""
         try:
-            r = subprocess.run(
-                ["docker", "logs", "--tail", str(lines), name],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = self.backend.run(
+                ["logs", "--tail", str(lines), name], timeout=10)
             # docker logs interleaves stdout+stderr — combine both
             text = (r.stdout or "") + (r.stderr or "")
             text = text.strip()
@@ -1552,10 +1514,8 @@ class UpdateChecker:
         by its restart policy. A healthcheck stuck in "starting" would
         otherwise hide this and we'd report a broken update as success.
         """
-        rc = subprocess.run(
-            ["docker", "inspect", "--format", "{{.RestartCount}}", name],
-            capture_output=True, text=True
-        )
+        rc = self.backend.run(
+            ["inspect", "--format", "{{.RestartCount}}", name])
         try:
             return int(rc.stdout.strip())
         except (ValueError, AttributeError):
@@ -1563,10 +1523,8 @@ class UpdateChecker:
 
     def _image_id(self, image):
         """Resolved image ID (sha256:...) for an image reference, or ''."""
-        r = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
-            capture_output=True, text=True
-        )
+        r = self.backend.run(
+            ["image", "inspect", "--format", "{{.Id}}", image])
         return r.stdout.strip() if r.returncode == 0 else ""
 
     def _container_image_id(self, name):
@@ -1579,10 +1537,8 @@ class UpdateChecker:
         fail-opens on ''.
         """
         try:
-            r = subprocess.run(
-                ["docker", "inspect", "--format", "{{.Image}}", name],
-                capture_output=True, text=True
-            )
+            r = self.backend.run(
+                ["inspect", "--format", "{{.Image}}", name])
         except (subprocess.SubprocessError, OSError):
             return ""
         return r.stdout.strip() if r.returncode == 0 else ""
@@ -1616,18 +1572,16 @@ class UpdateChecker:
         `container:<name>` survives the owner being recreated (new ID),
         which a stored `container:<id>` does not (#2). Returns None when the
         container doesn't share a netns or the owner can't be resolved."""
-        r = subprocess.run(
-            ["docker", "inspect", "--format", "{{.HostConfig.NetworkMode}}", name],
-            capture_output=True, text=True)
+        r = self.backend.run(
+            ["inspect", "--format", "{{.HostConfig.NetworkMode}}", name])
         if r.returncode != 0:
             return None
         nm = r.stdout.strip()
         if not nm.startswith("container:"):
             return None
         ref = nm.split(":", 1)[1]
-        rr = subprocess.run(
-            ["docker", "inspect", "--format", "{{.Name}}", ref],
-            capture_output=True, text=True)
+        rr = self.backend.run(
+            ["inspect", "--format", "{{.Name}}", ref])
         if rr.returncode != 0:
             return None
         return rr.stdout.strip().lstrip("/") or None
@@ -1641,8 +1595,7 @@ class UpdateChecker:
         container first and rolling back on failure. Returns (ok, detail)."""
         # Capture config up front so even an AutoRemove (--rm) container —
         # which vanishes on stop — can still be rebuilt.
-        insp = subprocess.run(["docker", "inspect", name],
-                              capture_output=True, text=True)
+        insp = self.backend.run(["inspect", name])
         if insp.returncode != 0:
             return False, "inspect failed"
         try:
@@ -1746,15 +1699,11 @@ class UpdateChecker:
             time.sleep(interval)
             elapsed += interval
             check += 1
-            sc = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.Status}}", name],
-                capture_output=True, text=True
-            )
+            sc = self.backend.run(
+                ["inspect", "--format", "{{.State.Status}}", name])
             state = sc.stdout.strip() if sc.returncode == 0 else ""
-            hc = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.Health.Status}}", name],
-                capture_output=True, text=True
-            )
+            hc = self.backend.run(
+                ["inspect", "--format", "{{.State.Health.Status}}", name])
             health = hc.stdout.strip() if hc.returncode == 0 else ""
             self._debug(f"  Health check [{check}, {elapsed}s/{effective}s]: state={state}, health={health}")
             # Crash-loop check first: a climbing RestartCount means the
@@ -2739,11 +2688,9 @@ class UpdateChecker:
         """Read & normalize `org.opencontainers.image.version` from an
         image's labels. Returns empty string when missing/unusable."""
         try:
-            r = subprocess.run(
-                ["docker", "image", "inspect", "--format",
-                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image],
-                capture_output=True, text=True, timeout=5,
-            )
+            r = self.backend.run(
+                ["image", "inspect", "--format",
+                 '{{index .Config.Labels "org.opencontainers.image.version"}}', image], timeout=5)
             if r.returncode == 0:
                 return self._normalize_version_label(r.stdout.strip())
         except subprocess.SubprocessError:
@@ -2801,10 +2748,8 @@ class UpdateChecker:
         _build_run_args get pre-v1.19.0 behaviour (blind Cmd restore).
         """
         try:
-            r = subprocess.run(
-                ["docker", "image", "inspect", image],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = self.backend.run(
+                ["image", "inspect", image], timeout=10)
             if r.returncode != 0:
                 return None
             data = json.loads(r.stdout)
@@ -2854,10 +2799,8 @@ class UpdateChecker:
         offers. Static so the self-update path can reuse it.
         """
         try:
-            r = subprocess.run(
-                ["docker", "image", "inspect", "--format", "{{json .Config}}", ref],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = _cb.default_backend().run(
+                ["image", "inspect", "--format", "{{json .Config}}", ref], timeout=10)
             if r.returncode != 0:
                 return None
             return json.loads(r.stdout.strip() or "null")
@@ -3032,11 +2975,9 @@ class UpdateChecker:
         # best-effort, silently skipped when unavailable.
         old_created = "?"
         old_version = ""
-        old_inspect = subprocess.run(
-            ["docker", "image", "inspect", "--format",
-             '{{.Created}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image],
-            capture_output=True, text=True
-        )
+        old_inspect = self.backend.run(
+            ["image", "inspect", "--format",
+             '{{.Created}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image])
         if old_inspect.returncode == 0:
             parts = old_inspect.stdout.strip().split("||")
             old_created = parts[0][:10]
@@ -3058,11 +2999,9 @@ class UpdateChecker:
         new_created = "?"
         new_size = "?"
         new_version = ""
-        new_inspect = subprocess.run(
-            ["docker", "image", "inspect", "--format",
-             '{{.Created}}||{{.Size}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image],
-            capture_output=True, text=True
-        )
+        new_inspect = self.backend.run(
+            ["image", "inspect", "--format",
+             '{{.Created}}||{{.Size}}||{{index .Config.Labels "org.opencontainers.image.version"}}', image])
         if new_inspect.returncode == 0:
             parts = new_inspect.stdout.strip().split("||")
             new_created = parts[0][:10]
@@ -3089,10 +3028,8 @@ class UpdateChecker:
         # Recreate container: stop, rename old, create new with same config, start, remove old
         try:
             # Get full container config for recreation
-            inspect_raw = subprocess.run(
-                ["docker", "inspect", name],
-                capture_output=True, text=True
-            )
+            inspect_raw = self.backend.run(
+                ["inspect", name])
             if inspect_raw.returncode != 0:
                 return True, "Image pulled. Container inspect failed."
 

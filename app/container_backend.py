@@ -214,6 +214,26 @@ class DockerBackend(ContainerBackend):
     cli_binary = "docker"
 
 
+_default_backend = None
+
+
+def default_backend():
+    """Process-wide backend for call sites that have no `self`.
+
+    A handful of container reads live on `@staticmethod`/`@classmethod`
+    helpers (`resolve_own_id`, `inspect_self`, `_image_config`,
+    `_cgroup_version`, …) that can't reach an instance's `self.backend`.
+    They go through this shared instance instead. `get_backend()` records
+    what it hands out, so once main.py has built the real backend these
+    resolve to the same object; before that it lazily falls back to Docker,
+    which is what those helpers used to hardcode anyway.
+    """
+    global _default_backend
+    if _default_backend is None:
+        _default_backend = DockerBackend()
+    return _default_backend
+
+
 def get_backend(config):
     """Return the container backend for this deployment.
 
@@ -223,4 +243,9 @@ def get_backend(config):
     """
     # v2: inspect config here to pick DockerBackend / PodmanBackend / a
     # remote-host backend. Kept deliberately trivial for now.
-    return DockerBackend()
+    global _default_backend
+    backend = DockerBackend()
+    # Record it so the no-self call sites (default_backend()) resolve to the
+    # same object instead of quietly building their own Docker one.
+    _default_backend = backend
+    return backend
