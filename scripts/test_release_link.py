@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Auto-detected GitHub/GitLab repo links point at the releases page (#52, @LeeNX).
 
-`TelegramBot._prefer_release_url` rewrites a BARE `host/owner/repo` URL
+`LinkResolver.prefer_release_url` rewrites a BARE `host/owner/repo` URL
 to its releases page — but only that shape, only on github.com/gitlab.com,
 and never anything deeper or any other host. Pure function, no Docker, no
 network.
@@ -11,9 +11,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
-from telegram_bot import TelegramBot   # noqa: E402
+from link_resolver import LinkResolver   # noqa: E402
 
-f = TelegramBot._prefer_release_url
+f = LinkResolver.prefer_release_url
 checks = {}
 
 # ── GitHub: bare repo → releases/latest ──────────────────────────────

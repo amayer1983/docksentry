@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import web_ui                       # noqa: E402
 import telegram_bot                 # noqa: E402
+import link_resolver                # noqa: E402
 from container_store import ContainerStore   # noqa: E402
 
 MISSING = "/nonexistent/docksentry-test"
@@ -134,18 +135,16 @@ class FakeChecker:
 
 
 class FakeBot:
-    """Borrows the REAL resolver chain off TelegramBot.
+    """A stand-in Telegram bot, present only so the Web UI takes its
+    "real deployment" branch.
 
-    Not a stub of the logic — the point is that the Web UI and the
-    Telegram notifications resolve a link the same way. Only the
-    plumbing (config, store) is faked.
+    Link resolution no longer lives on the bot: since #52 was extracted
+    to `link_resolver.LinkResolver`, the Web UI builds its own resolver
+    (`LinkResolver(store, config)`) and never reaches into the bot. So
+    this fake needs no resolver methods — just to exist and carry a
+    store, which is what guarantees the Web UI and the Telegram
+    notifications resolve a link the same way (same module, same code).
     """
-    _label_link = telegram_bot.TelegramBot._label_link
-    _label_checker = telegram_bot.TelegramBot._label_checker
-    _resolve_link_with_kind = telegram_bot.TelegramBot._resolve_link_with_kind
-    _resolve_container_link = telegram_bot.TelegramBot._resolve_container_link
-    _container_source_url = telegram_bot.TelegramBot._container_source_url
-    _guess_registry_overview_url = telegram_bot.TelegramBot._guess_registry_overview_url
 
     def __init__(self, store):
         self.store = store
@@ -161,7 +160,7 @@ class FakeProc:
 
 def fake_subprocess(inspect_obj, labels):
     """A `subprocess` stand-in that answers the docker calls both
-    _page_container and TelegramBot._container_source_url make."""
+    _page_container and LinkResolver.container_source_url make."""
     def run(cmd, **kw):
         if cmd[:3] == ["docker", "image", "inspect"]:
             return FakeProc("123456789")
@@ -246,9 +245,16 @@ def render_detail(name="nginx", image="nginx:latest", labels=None,
         "Created": "2026-07-01T09:00:00.000000000Z",
     }
     fake_sp = fake_subprocess(inspect_obj, labels)
-    real_web, real_bot = web_ui.subprocess, telegram_bot.subprocess
+    # The OCI-label lookup (`container_source_url`) now lives in
+    # link_resolver, so its `subprocess` module is what the detail page's
+    # resolver reaches for — patch it alongside web_ui's (and telegram_bot's,
+    # harmless) so the real resolver runs against fake inspect output.
+    real_web = web_ui.subprocess
+    real_bot = telegram_bot.subprocess
+    real_lr = link_resolver.subprocess
     web_ui.subprocess = fake_sp
     telegram_bot.subprocess = fake_sp
+    link_resolver.subprocess = fake_sp
     try:
         checker = FakeChecker(own_name="docksentry", labels=labels)
         handler_cls = web_ui.create_handler(cfg, checker, FakeBot(store), store)
@@ -261,6 +267,7 @@ def render_detail(name="nginx", image="nginx:latest", labels=None,
     finally:
         web_ui.subprocess = real_web
         telegram_bot.subprocess = real_bot
+        link_resolver.subprocess = real_lr
 
 
 def link_section(html):

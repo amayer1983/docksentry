@@ -105,6 +105,14 @@ class TelegramBot:
         self._update_snapshots = {}
         self._snapshot_seq = 0
         self.notifier = None  # Set by main.py after init
+        # Container repo/changelog link resolution (#52) — a neutral,
+        # Telegram-agnostic module so the Web UI (and, in v2, Discord)
+        # resolve links through the same code instead of reaching into
+        # the bot's privates. Store supplies the manual /setlink override;
+        # config lets it lazily build a label reader when a call site has
+        # no checker in scope.
+        from link_resolver import LinkResolver
+        self.link_resolver = LinkResolver(container_store, config)
         from i18n import get_translator
         self.t = get_translator(config.language)
 
@@ -190,197 +198,6 @@ class TelegramBot:
         image = cfg.get("Config", {}).get("Image", "") or ""
         self._cached_own_meta = (name, image)
         return self._cached_own_meta
-
-    def _label_checker(self):
-        """Lazily built UpdateChecker used purely as a label reader for
-        call sites that don't already have one in scope. Cheap to build
-        (it only stores the config), cached so repeated notification
-        passes don't churn objects. Returns None if construction fails
-        so callers can treat it as "no labels available"."""
-        ck = getattr(self, "_cached_label_checker", None)
-        if ck is None:
-            try:
-                from update_checker import UpdateChecker as _UC
-                ck = _UC(self.config)
-            except Exception:
-                return None
-            self._cached_label_checker = ck
-        return ck
-
-    def _label_link(self, name, checker=None):
-        """The `docksentry.link` container label, or "" when absent,
-        unusable or unreadable (#52, @LeeNX).
-
-        Read via `checker.get_container_labels()` — i.e. `docker inspect`
-        — and deliberately NOT via the `docker ps --format {{.Labels}}`
-        path: that one splits the label blob on commas, and commas are
-        perfectly normal inside a query string, so a URL label would
-        come back shredded.
-
-        The value is validated with the shared `is_safe_link`. A value
-        that fails is treated exactly like an unset label — we fall
-        through to the next source rather than erroring out; a typo in a
-        compose file must never break notifications. Note there is no
-        `.lower()` here (unlike `_resolve_update_policy`): URL paths and
-        query strings are case-sensitive.
-        """
-        from container_store import is_safe_link
-        ck = checker if checker is not None else self._label_checker()
-        if ck is None:
-            return ""
-        try:
-            labels = ck.get_container_labels(name) or {}
-            raw = labels.get("docksentry.link")
-            if raw is None:
-                return ""
-            url = str(raw).strip()
-            return url if is_safe_link(url) else ""
-        except Exception:
-            return ""
-
-    def _resolve_container_link(self, name, image="", checker=None):
-        """Return the URL that should wrap `name` in update
-        notifications, or empty string when no link is available.
-        Thin wrapper around `_resolve_link_with_kind` for the many call
-        sites that only care about the URL itself."""
-        return self._resolve_link_with_kind(name, image, checker)[0]
-
-    def _resolve_link_with_kind(self, name, image="", checker=None):
-        """(url, kind) for a container's repo/changelog link.
-
-        Priority order:
-          0. `docksentry.link` container label (#52) — GitOps source of
-             truth: the link travels with the compose file, no state in
-             Docksentry needed.
-          1. Manual override stored via Web UI / `/setlink`
-             (`container_links.json`). Lets users point at the actual
-             changelog of containers whose images don't ship OCI labels
-             (redis, postgres, nginx-proxy-manager, …).
-          2. `org.opencontainers.image.source` OCI label (gold standard).
-          3. `org.opencontainers.image.url` OCI label (fallback).
-          4. Registry overview heuristic (Hub / ghcr.io / quay.io /
-             lscr.io → fleet.linuxserver.io) from the image reference.
-
-        `kind` is one of "label", "manual", "source", "url", "registry",
-        "none" — `/changelog <container>` uses it to pick how confident
-        its wording should be. Everything else just wants the URL.
-
-        Reuses the v1.18.3 `/changelog <container>` helpers so the
-        notification-link feature gets the same coverage as that
-        command (~67 % auto-detection rate without any user setup).
-        """
-        # 0. Container label
-        labelled = self._label_link(name, checker)
-        if labelled:
-            return labelled, "label"
-        # 1. Manual override
-        manual = self.store.get_link(name)
-        if manual:
-            return manual, "manual"
-        # 2 + 3. OCI labels
-        url, kind = self._container_source_url(name)
-        if url and kind in ("source", "url"):
-            return url, kind
-        # 4. Registry-overview heuristic — only when we have an image ref
-        if image:
-            guess = self._guess_registry_overview_url(image)
-            if guess:
-                return guess, "registry"
-        return "", "none"
-
-    def _container_source_url(self, name):
-        """Look up the upstream source URL for a container from its OCI
-        labels. Returns (url, kind) where kind is:
-          - "source": from `org.opencontainers.image.source` (the gold
-                      standard — points at a real source repo)
-          - "url":    fallback to `org.opencontainers.image.url`
-                      (usually the product/landing page, less useful)
-          - "none":   no usable label found
-
-        Used by /changelog <container> to give the user a link to the
-        upstream repo instead of trying (and frequently failing) to
-        fetch + parse an arbitrary container's CHANGELOG file."""
-        for label in ("org.opencontainers.image.source",
-                      "org.opencontainers.image.url"):
-            try:
-                r = subprocess.run(
-                    ["docker", "inspect", "--format",
-                     "{{index .Config.Labels \"" + label + "\"}}", name],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if r.returncode == 0:
-                    url = r.stdout.strip()
-                    if url and url not in ("<no value>", "no value"):
-                        kind = "source" if "source" in label else "url"
-                        return self._prefer_release_url(url), kind
-            except subprocess.SubprocessError:
-                continue
-        return "", "none"
-
-    @staticmethod
-    def _prefer_release_url(url):
-        """Point an auto-detected GitHub/GitLab *repo* link at its releases
-        page instead of the bare homepage (#52, @LeeNX). A container's
-        `org.opencontainers.image.source` almost always points at the
-        project repo, and mid-upgrade the release notes are what you
-        actually want — not the front page you then have to click through.
-
-        Only a BARE repo URL is rewritten: exactly ``host/owner/repo``,
-        with an optional trailing ``.git`` or ``/``. Anything deeper (a
-        URL that already points at ``/releases``, a ``/tree/...`` path, a
-        specific file) is left alone, as is any non-GitHub/GitLab host.
-        The rewrite only ever runs on auto-detected OCI links; a link the
-        user set by hand (``docksentry.link`` label or ``/setlink``) never
-        reaches here, so their explicit choice is always respected. A repo
-        with no releases will 404 on ``/releases/latest`` — that's the
-        case the override exists for, and @LeeNX asked for `/latest`
-        explicitly."""
-        try:
-            p = urllib.parse.urlparse(url)
-        except ValueError:
-            return url
-        if p.scheme not in ("http", "https") or not p.netloc:
-            return url
-        host = p.netloc.lower()
-        parts = [s for s in p.path.split("/") if s]
-        if len(parts) != 2:
-            return url
-        owner, repo = parts[0], parts[1]
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-        if not owner or not repo:
-            return url
-        if host in ("github.com", "www.github.com"):
-            return f"https://github.com/{owner}/{repo}/releases/latest"
-        if host in ("gitlab.com", "www.gitlab.com"):
-            return f"https://gitlab.com/{owner}/{repo}/-/releases"
-        return url
-
-    def _guess_registry_overview_url(self, image):
-        """Heuristic for "where can the user look this up?" when the
-        image has no OCI source label. Maps the image reference to its
-        registry's overview page URL. Best-effort — at worst we say
-        'check the registry's own page'."""
-        # Strip tag
-        ref = image.rsplit(":", 1)[0] if ":" in image else image
-        # Docker Hub library/official ("redis" → docker.io/library/redis)
-        if "/" not in ref:
-            return f"https://hub.docker.com/_/{ref}"
-        # GHCR
-        if ref.startswith("ghcr.io/"):
-            rest = ref[len("ghcr.io/"):]
-            return f"https://github.com/{rest}/pkgs/container/{rest.split('/')[-1]}"
-        # Quay
-        if ref.startswith("quay.io/"):
-            return f"https://quay.io/repository/{ref[len('quay.io/'):]}"
-        # GitLab Container Registry (registry.gitlab.com / *.gitlab.io)
-        if ref.startswith("registry.gitlab.com/"):
-            return f"https://gitlab.com/{ref[len('registry.gitlab.com/'):]}"
-        # LinuxServer (lscr.io) → fleet page
-        if ref.startswith("lscr.io/"):
-            return f"https://fleet.linuxserver.io/image?name={ref[len('lscr.io/'):]}"
-        # Default: Docker Hub repo page (works for `user/image`)
-        return f"https://hub.docker.com/r/{ref}"
 
     def _fetch_changelog(self):
         """Fetch CHANGELOG.md from GitHub raw. Returns (ok, text_or_error)."""
@@ -1102,7 +919,7 @@ class TelegramBot:
             image = pending.get("image", "")
             compose = pending.get("compose", {}) or {}
             # Resolve link once for both Telegram + Discord/webhook surfaces
-            source_url = self._resolve_container_link(name, image)
+            source_url = self.link_resolver.resolve_container_link(name, image)
             try:
                 success, msg = checker.update_container(name, image, **compose)
             except Exception as e:
@@ -1475,14 +1292,11 @@ class TelegramBot:
         return success_count
 
     def _enrich_with_source_url(self, updates):
-        """Set u['source_url'] on each update from the link store + OCI
-        labels + registry fallback. Idempotent — safe to call multiple
-        times (it overwrites). Used by every notification path so the
-        Telegram markdown link, Discord embed and webhook payload all
-        share the same resolved URL.
-        """
-        for u in updates:
-            u["source_url"] = self._resolve_container_link(u["name"], u.get("image", ""))
+        """Set u['source_url'] on each update via the shared LinkResolver.
+        Kept as a thin instance method (not inlined at call sites) because
+        the notifier docs point at it and several tests monkeypatch it on
+        a bot instance to stub link resolution out."""
+        self.link_resolver.enrich_with_source_url(updates)
 
     def _display_name(self, u):
         """Format a container name for Telegram messages: `[name](url)`
@@ -3169,13 +2983,13 @@ class TelegramBot:
             except subprocess.SubprocessError:
                 image_ref = ""
             # Go through the shared resolver, NOT straight to
-            # _container_source_url: this path used to skip both the
+            # container_source_url: this path used to skip both the
             # `docksentry.link` label and the stored /setlink override
             # entirely, so a user who set a link saw the OCI label here
             # while notifications showed their link. `help_detail_setlink`
             # promised the opposite ("drives BOTH the /changelog output
             # AND the repo link") — this makes the promise true.
-            source_url, kind = self._resolve_link_with_kind(resolved, image_ref)
+            source_url, kind = self.link_resolver.resolve_link_with_kind(resolved, image_ref)
             if kind in ("label", "manual", "source"):
                 # An explicitly configured link is at least as good as an
                 # OCI source label, so it gets the same wording.

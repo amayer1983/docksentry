@@ -13,6 +13,7 @@ import sys, os, types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from update_checker import UpdateChecker
 from telegram_bot import TelegramBot
+from link_resolver import LinkResolver
 
 
 def main():
@@ -123,17 +124,18 @@ def main():
             return self._l
 
     class _LinkBot:
-        # Real methods under test, minimal collaborators around them.
-        _label_link = TelegramBot._label_link
-        _resolve_link_with_kind = TelegramBot._resolve_link_with_kind
-        _resolve_container_link = TelegramBot._resolve_container_link
+        # Real methods under test (now on LinkResolver), minimal
+        # collaborators around them.
+        label_link = LinkResolver.label_link
+        resolve_link_with_kind = LinkResolver.resolve_link_with_kind
+        resolve_container_link = LinkResolver.resolve_container_link
 
         def __init__(self, stored="", oci=("", "none"), guess=""):
             self.store = _LinkStore(stored)
             self._oci, self._guess = oci, guess
 
-        def _container_source_url(self, name): return self._oci
-        def _guess_registry_overview_url(self, image): return self._guess
+        def container_source_url(self, name): return self._oci
+        def guess_registry_overview_url(self, image): return self._guess
 
     LBL = "https://git.example.com/owner/repo/-/releases"
     STORED = "https://stored.example.com/changelog"
@@ -144,8 +146,8 @@ def main():
     def resolve(label_val, stored=STORED, oci=("", "none"), guess="", boom=False):
         labels = {"docksentry.link": label_val} if label_val is not None else {}
         bot = _LinkBot(stored, oci, guess)
-        return bot._resolve_link_with_kind("c", "owner/repo:latest",
-                                           _LinkChecker(labels, boom))
+        return bot.resolve_link_with_kind("c", "owner/repo:latest",
+                                          _LinkChecker(labels, boom))
 
     checks["link: label beats stored + OCI + heuristic"] = resolve(
         LBL, oci=(OCI_SRC, "source"), guess=REG) == (LBL, "label")
@@ -180,8 +182,8 @@ def main():
     checks["link: case preserved"] = resolve(mixed)[0] == mixed
     # The url-only wrapper stays a plain string for all the notification
     # call sites that don't care about the kind.
-    checks["link: _resolve_container_link returns the url only"] = (
-        _LinkBot(STORED)._resolve_container_link(
+    checks["link: resolve_container_link returns the url only"] = (
+        _LinkBot(STORED).resolve_container_link(
             "c", "owner/repo:latest", _LinkChecker({"docksentry.link": LBL})) == LBL)
 
     # ── /cmd -? help alias (#15) ───────────────────────────────

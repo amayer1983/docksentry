@@ -14,6 +14,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 from config import PERSISTENT_KEYS
+from link_resolver import LinkResolver
 
 
 # Static frontend assets live as real files under app/static/ (extracted
@@ -508,7 +509,7 @@ def create_handler(config, checker, bot, store, password=None):
             """(url, kind) for one status-table row — WITHOUT a single
             extra `docker inspect`.
 
-            Same priority chain as `TelegramBot._resolve_link_with_kind`
+            Same priority chain as `LinkResolver.resolve_link_with_kind`
             (label → stored → OCI source → OCI url → registry guess),
             but fed from data `_get_containers` already has in hand. That
             matters: the table renders every running container, so one
@@ -552,15 +553,16 @@ def create_handler(config, checker, bot, store, password=None):
                 v = _lab(key)
                 if v and is_safe_link(v):
                     return v, kind
-            # 4. Registry-overview heuristic. `_guess_registry_overview_url`
-            #    is a pure string mapping on TelegramBot; reused rather
+            # 4. Registry-overview heuristic. `guess_registry_overview_url`
+            #    is a pure string mapping on LinkResolver; reused rather
             #    than copied so bot and Web UI can never drift apart.
-            #    `bot` is None in headless/test setups — then we simply
-            #    have no guess, which is a fine answer.
+            #    `bot` is None in headless/test setups — then we deliberately
+            #    keep suppressing the guess (unchanged behaviour), which is
+            #    a fine answer.
             image = c.get("image") or ""
             if image and image != "?" and bot is not None:
                 try:
-                    guess = bot._guess_registry_overview_url(image)
+                    guess = LinkResolver.guess_registry_overview_url(image)
                 except Exception:
                     guess = ""
                 if guess and is_safe_link(guess):
@@ -2581,14 +2583,15 @@ def create_handler(config, checker, bot, store, password=None):
             from container_store import is_safe_link as _is_safe_link
             _img_ref = image if image and image != "?" else ""
             if bot is not None:
-                det_link_url, det_link_kind = bot._resolve_link_with_kind(
+                det_link_url, det_link_kind = LinkResolver(
+                    store, config).resolve_link_with_kind(
                     name, _img_ref, checker)
             else:
                 # Headless / test setups without a Telegram bot object.
                 det_link_url, det_link_kind = self._row_link(
                     {"name": name, "image": _img_ref, "labels": det_labels},
                     store.get_links())
-            # Defence in depth. `_resolve_link_with_kind` validates the
+            # Defence in depth. `resolve_link_with_kind` validates the
             # label but hands the stored override straight through from
             # `container_links.json`, and that file may hold values from
             # before set_link validated anything. Re-check before it can
