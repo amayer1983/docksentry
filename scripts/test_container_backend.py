@@ -93,6 +93,20 @@ def main():
             "system df --format":
                 (argv(lambda: b.system_df(fmt="{{json .}}")),
                  ["docker", "system", "df", "--format", "{{json .}}"]),
+            # ── write / lifecycle verbs ─────────────────────────────
+            "pull":
+                (argv(lambda: b.pull("nginx:latest")),
+                 ["docker", "pull", "nginx:latest"]),
+            # Dynamically-assembled argv (compose, docker run, network
+            # connect) goes through the generic run() so the executed
+            # command stays byte-identical to the old call site. The
+            # caller strips the leading CLI name; the backend re-adds it.
+            "generic run: compose up":
+                (argv(lambda: b.run(["compose", "-f", "/x/dc.yml", "-p", "proj",
+                                     "up", "-d", "--no-deps",
+                                     "--force-recreate", "web"])),
+                 ["docker", "compose", "-f", "/x/dc.yml", "-p", "proj",
+                  "up", "-d", "--no-deps", "--force-recreate", "web"]),
         }
         for label, (produced, expected) in cases.items():
             checks[f"argv: {label}"] = produced == expected

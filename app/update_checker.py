@@ -15,6 +15,15 @@ from datetime import datetime, timedelta
 class UpdateChecker:
     def __init__(self, config):
         self.config = config
+        # Container CLI seam. The write/lifecycle calls in this file route
+        # through it so the `docker` binary name and argv construction live
+        # in one place (podman/remote hosts become a backend swap, not edits
+        # in ninety places). The READ calls here are still on direct
+        # subprocess by design — several tests patch
+        # `update_checker.subprocess.run`, and rerouting those would bypass
+        # the mocks and leave the tests green while asserting nothing.
+        from container_backend import get_backend
+        self.backend = get_backend(config)
         self.debug_log = []
         # Per-run scratch state. Cleared at the top of check_all so a long
         # running process never serves stale data from an earlier sweep.
@@ -2116,7 +2125,10 @@ class UpdateChecker:
         # Pull new image via compose
         pull_cmd = compose_base + ["pull", service]
         self._debug(f"  Running: {' '.join(pull_cmd)}")
-        result = subprocess.run(pull_cmd, capture_output=True, text=True, timeout=1800)
+        # compose_base still carries the leading CLI name so the debug line
+        # above shows the full command; the backend prepends its own, hence
+        # the [1:].
+        result = self.backend.run(pull_cmd[1:], timeout=1800)
         if result.returncode != 0:
             msg = f"Compose pull failed: {result.stderr[:200]}"
             self._save_history(name, image, False, msg)
@@ -2134,7 +2146,7 @@ class UpdateChecker:
         # so the new image gets pulled but never loaded (#35).
         up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate", service]
         self._debug(f"  Running: {' '.join(up_cmd)}")
-        result = subprocess.run(up_cmd, capture_output=True, text=True, timeout=120)
+        result = self.backend.run(up_cmd[1:], timeout=120)
         if result.returncode != 0:
             msg = f"Compose up failed: {result.stderr[:200]}"
             self._save_history(name, image, False, msg)
@@ -3041,10 +3053,7 @@ class UpdateChecker:
                 old_version = self._normalize_version_label(parts[1])
 
         # Pull new image
-        result = subprocess.run(
-            ["docker", "pull", image],
-            capture_output=True, text=True, timeout=1800
-        )
+        result = self.backend.pull(image, timeout=1800)
         if result.returncode != 0:
             if "toomanyrequests" in result.stderr:
                 msg = "Rate limit erreicht"

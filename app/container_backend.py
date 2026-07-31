@@ -13,10 +13,13 @@ it; the typed read-methods build the argv and hand it to `run()`.
 byte-for-byte what the old call sites produced — the behaviour is
 definitionally unchanged, and the argv-mocking tests stay green.
 
-Scope, deliberately: READ operations only. The update/lifecycle core
-(recreate, rollback, pull, stop, …) is the risky part and stays on its
-existing direct `subprocess` calls until a later, serial phase migrates it.
-No write/lifecycle methods live here yet.
+Scope: the READ operations came first; the update/lifecycle core (pull,
+compose, stop/kill/rm/rename/start, recreate, housekeeping) is migrating
+in small serial slices behind the same seam. Read call sites inside
+`update_checker.py` are deliberately still on direct `subprocess` calls —
+several tests patch `update_checker.subprocess.run`, so rerouting those
+would silently bypass the mocks and leave the tests green while testing
+nothing. That wave needs the mocks moved first.
 
 Pure standard library — the project's core promise.
 """
@@ -132,6 +135,18 @@ class ContainerBackend:
         if fmt is not None:
             args += ["--format", fmt]
         return self.run(args, timeout=timeout)
+
+    # ── write / lifecycle operations ────────────────────────────────
+    # Migrated from update_checker.py in serial slices. Same rule as the
+    # read helpers: build EXACTLY the argv the historical call site built,
+    # then delegate to run(). Anything whose argv is assembled dynamically
+    # (docker run from _build_run_args, network connect) deliberately does
+    # NOT get a typed method — those go through the generic run() so the
+    # executed argv stays byte-identical.
+
+    def pull(self, ref, *, timeout=None):
+        """`docker pull REF`."""
+        return self.run(["pull", ref], timeout=timeout)
 
 
 class DockerBackend(ContainerBackend):
