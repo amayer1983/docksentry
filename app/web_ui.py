@@ -2462,11 +2462,18 @@ def create_handler(config, checker, bot, store, password=None):
             started_at = state.get("StartedAt", "")[:19].replace("T", " ")
             created = meta.get("Created", "")[:10]
 
-            # Image size
+            # Image size — of the image the container is actually RUNNING
+            # (meta["Image"], the running image ID), not `image` which is the
+            # tag reference. If the tag has moved forward but the container
+            # wasn't recreated (the #53 drift), inspecting the tag would report
+            # the new image's size instead of the running one. Same class the
+            # status table fixed in v1.47.0 and the update check in v1.57.x.
+            # Falls back to the tag ref if the running ID is somehow absent.
+            running_image = meta.get("Image") or image
             size_bytes = 0
             try:
                 size_inspect = subprocess.run(
-                    ["docker", "image", "inspect", "--format", "{{.Size}}", image],
+                    ["docker", "image", "inspect", "--format", "{{.Size}}", running_image],
                     capture_output=True, text=True
                 )
                 if size_inspect.returncode == 0:

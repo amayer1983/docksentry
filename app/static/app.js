@@ -186,10 +186,10 @@ function dsTestWebhook(kind) {
         if (data.ok) {
             dsToast('Test message sent ✓', 'success');
         } else {
-            dsToast('Failed: ' + (data.error || 'unknown'), 'error');
+            dsToast('Failed: ' + (data.error || 'unknown'), 'danger');
         }
     }).catch(function(e) {
-        dsToast('Network error: ' + e.message, 'error');
+        dsToast('Network error: ' + e.message, 'danger');
     }).finally(function() {
         if (btn) { btn.disabled = false; btn.textContent = btn.dataset.origText || 'Send test'; }
     });
@@ -366,11 +366,11 @@ function dsPersistGroupOrder(list) {
                 first.querySelector('code').after(b);
             }
         } else {
-            dsToast('Reorder failed — refreshing', 'error');
+            dsToast('Reorder failed — refreshing', 'danger');
             setTimeout(function() { location.reload(); }, 1500);
         }
     }).catch(function(e) {
-        dsToast('Network error: ' + e.message, 'error');
+        dsToast('Network error: ' + e.message, 'danger');
     });
 }
 
@@ -396,12 +396,12 @@ function dsBackupImport(input) {
                 dsToast('Restored: ' + keys, 'success');
                 setTimeout(function() { location.reload(); }, 1200);
             } else {
-                dsToast('Import failed: ' + (data.error || 'unknown'), 'error');
+                dsToast('Import failed: ' + (data.error || 'unknown'), 'danger');
                 input.value = '';
             }
         })
         .catch(function(e) {
-            dsToast('Network error: ' + e.message, 'error');
+            dsToast('Network error: ' + e.message, 'danger');
             input.value = '';
         });
 }
@@ -584,31 +584,15 @@ function dsAutoDetectImport() {
             dsToast(data.created + ' stack(s) imported ✓', 'success');
             setTimeout(function() { location.reload(); }, 700);
         } else {
-            dsToast('Import failed', 'error');
+            dsToast('Import failed', 'danger');
             if (btn) { btn.disabled = false; btn.textContent = 'Import selected'; }
         }
     }).catch(function(e) {
-        dsToast('Network error: ' + e.message, 'error');
+        dsToast('Network error: ' + e.message, 'danger');
         if (btn) { btn.disabled = false; btn.textContent = 'Import selected'; }
     });
 }
 function dsEscape(s) {
     var d = document.createElement('div');
     d.textContent = s; return d.innerHTML;
-}
-
-function dsToast(msg, kind) {
-    var div = document.createElement('div');
-    div.textContent = msg;
-    var bg = kind === 'success' ? '#3fb950'
-           : kind === 'warn' ? '#d29922'
-           : kind === 'error' ? '#f85149'
-           : '#58a6ff';
-    div.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 18px;background:' + bg + ';color:#fff;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;font-weight:500;max-width:400px';
-    document.body.appendChild(div);
-    setTimeout(function() {
-        div.style.transition = 'opacity 0.3s';
-        div.style.opacity = '0';
-        setTimeout(function() { div.remove(); }, 300);
-    }, 3500);
 }

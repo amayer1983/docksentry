@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.57.3] - 2026-07-31
+
+### Fixed
+- **Error toasts in the Web UI didn't look like errors.** Eight of them passed `'error'` to the toast helper, but the stylesheet only defines `is-success` / `is-warn` / `is-danger` — so `is-error` matched no rule and the toast came up in the neutral accent colour instead of red. A failed import or a network error read like a normal notice. They pass `'danger'` now, which is the class the stylesheet actually has. (A second, dead copy of the toast function — the one that made `'error'` look plausible in the first place, unreachable since the shared script loads — is removed.)
+- **The container detail page could show the wrong image's size.** It inspected the tag reference for `{{.Size}}`, so if the tag had moved forward but the container wasn't recreated (the same #53 drift), it reported the *new* image's size rather than the one the container runs. It now inspects the running image ID, matching what the status table (v1.47.0) and the update check (v1.57.x) already do.
+
 ## [1.57.2] - 2026-07-30
 
 ### Fixed
