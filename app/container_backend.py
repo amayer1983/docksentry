@@ -183,6 +183,26 @@ class ContainerBackend:
         args += self._as_list(names)
         return self.run(args, timeout=timeout, text=False)
 
+    def image_prune(self, *, all=False, force=False, until=None, timeout=None):
+        """`docker image prune [-a] [--force] [--filter until=X]`.
+
+        NOTE the `until` filter matches image CREATION time, not pull time —
+        that semantic is load-bearing for the cleanup grace period and is
+        asserted by the coordination tests. Keep the argv exact.
+        """
+        args = ["image", "prune"]
+        if all:
+            args.append("-a")
+        if force:
+            args.append("--force")
+        if until is not None:
+            args += ["--filter", f"until={until}"]
+        return self.run(args, timeout=timeout)
+
+    def image_save(self, ref, path, *, timeout=None):
+        """`docker image save -o PATH REF`."""
+        return self.run(["image", "save", "-o", path, ref], timeout=timeout)
+
 
 class DockerBackend(ContainerBackend):
     """Docker CLI backend — the current, only production backend.

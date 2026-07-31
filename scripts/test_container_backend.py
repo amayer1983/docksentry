@@ -116,6 +116,17 @@ def main():
                  ["docker", "rm", "-f", "web_old"]),
             "rm multiple":
                 (argv(lambda: b.rm(["a", "b"])), ["docker", "rm", "a", "b"]),
+            # The `until` filter matches image CREATION time, not pull time.
+            # cleanup_images relies on that; keep the argv exact.
+            "image prune -a --force --filter":
+                (argv(lambda: b.image_prune(all=True, force=True, until="72h")),
+                 ["docker", "image", "prune", "-a", "--force",
+                  "--filter", "until=72h"]),
+            "image prune bare":
+                (argv(lambda: b.image_prune()), ["docker", "image", "prune"]),
+            "image save":
+                (argv(lambda: b.image_save("sha256:abc", "/tmp/x.tar")),
+                 ["docker", "image", "save", "-o", "/tmp/x.tar", "sha256:abc"]),
             # Dynamically-assembled argv (compose, docker run, network
             # connect) goes through the generic run() so the executed
             # command stays byte-identical to the old call site. The

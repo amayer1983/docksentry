@@ -976,10 +976,8 @@ class UpdateChecker:
                 # Continue with prune anyway — backups are nice-to-have
 
         try:
-            result = subprocess.run(
-                ["docker", "image", "prune", "-a", "--force", "--filter", f"until={grace}h"],
-                capture_output=True, text=True, timeout=180
-            )
+            result = self.backend.image_prune(
+                all=True, force=True, until=f"{grace}h", timeout=180)
             if result.returncode != 0:
                 return False, f"Cleanup failed: {result.stderr.strip()[:200]}"
             lines = result.stdout.strip().split("\n")
@@ -1057,10 +1055,7 @@ class UpdateChecker:
             os.makedirs(run_dir, exist_ok=True)
             safe_name = repo_tags[0].replace("/", "_").replace(":", "_")
             tarball = os.path.join(run_dir, f"{safe_name}.tar")
-            save = subprocess.run(
-                ["docker", "image", "save", "-o", tarball, img_id],
-                capture_output=True, text=True, timeout=600
-            )
+            save = self.backend.image_save(img_id, tarball, timeout=600)
             if save.returncode == 0:
                 backed_up.append((img_id, tarball))
                 self._debug(f"  Backed up: {repo_tags[0]} → {tarball}")
