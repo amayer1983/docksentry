@@ -13,6 +13,7 @@ import sys, os, types, threading, tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 from i18n import get_translator
 
 
@@ -51,7 +52,7 @@ def main():
     bot._restart_group_dependents = lambda *a, **k: "cascade"
     # run_updates now delegates the per-container loop to the shared engine
     # (#2) — bind the real method so we still exercise the actual gate logic.
-    bot._process_update_batch = lambda *a, **k: TelegramBot._process_update_batch(bot, *a, **k)
+    bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
 
     # unsorted on purpose — run_updates should sort into group order
     updates = [{"name": "dep2", "image": "i"}, {"name": "head", "image": "i"},

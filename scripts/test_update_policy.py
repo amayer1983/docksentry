@@ -138,7 +138,7 @@ def _int_bot(update_policy):
     bot._resolve_update_policy = lambda n, c: UpdateEngine._resolve_update_policy(bot, n, c)
     bot._policy_allows_level = UpdateEngine._policy_allows_level
     bot._policy_decision = lambda u, c: UpdateEngine._policy_decision(bot, u, c)
-    bot._process_update_batch = lambda *a, **k: TelegramBot._process_update_batch(bot, *a, **k)
+    bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
     return bot
 
 
@@ -168,7 +168,7 @@ def test_integration_manual():
     # do) — the policy gate lives only on the auto path, so this must apply.
     updates = [{"name": "majorapp", "image": "majorapp:1.2.3",
                 "old_version": "1.2.3", "new_version": "2.0.0"}]
-    TelegramBot._process_update_batch(bot, updates, ck, auto=False)
+    UpdateEngine._process_update_batch(bot, updates, ck, auto=False)
     checks["major bump applied on manual path (policy bypassed)"] = ("majorapp" in ck.calls)
     return checks
 

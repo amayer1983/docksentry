@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.4] - 2026-07-31
+
+### Changed
+- **Internal groundwork (v2):** the shared per-container update loop — the single piece of code both the scheduled auto-update pass and the manual "Update all" run through (group ordering, the netns snapshot, the restart-dependents cascade, per-container notifier results and cooldown) — moved from the Telegram bot onto the `UpdateEngine`. The bot keeps a thin passthrough, so both paths and every test behave exactly as before; the code is a verbatim move, byte-for-byte. This is the heart of the update orchestration finally living outside the chat adapter, which is what lets a second interface share it later.
+
 ## [1.60.3] - 2026-07-31
 
 ### Changed

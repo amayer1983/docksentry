@@ -52,6 +52,12 @@ class UpdateEngine:
         # about to be stopped, so the wrapper keeps the update lock held
         # (nothing may start an update in the final seconds).
         self._swap_in_flight = False
+        # Notifier (Discord/webhook fan-out) — single-sourced here so the
+        # orchestration methods that moved off the bot (_process_update_batch)
+        # can reach it, while the bot mirrors it through a property. Set by
+        # main.py after init (bot.notifier = Notifier(config), which writes
+        # through to here). Defensive default so the attribute always exists.
+        self.notifier = None
 
     @property
     def update_running(self):
@@ -232,6 +238,147 @@ class UpdateEngine:
             import time as _time
             print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
             _time.sleep(cd)
+
+    def _process_update_batch(self, updates, checker, *, auto):
+        """Shared per-container update engine for BOTH the scheduled-auto
+        path (handle_autoupdates) and the manual path (run_updates /
+        "Update all"). This is the single source of truth that stops the
+        two from drifting (#2, @famewolf): group-order sort + inter-member
+        wait, the group-abort gate, the netns-owner-by-name snapshot,
+        update_container, the restart-dependents cascade (success +
+        head-rollback), per-container notifier results and the per-container
+        cooldown all live here, once.
+
+        `auto` toggles the one behaviour that is legitimately path-specific:
+        the ask-before-major confirmation gate runs ONLY for auto — tapping
+        "Update all" is itself the explicit "yes, including majors".
+
+        `updates` is mutated in place (sorted, enriched, `netns_name` added).
+        Returns (results, success_count, major_pending), where major_pending
+        is a list of (name, old_version, new_version) deferred for the
+        confirmation prompt.
+        """
+        import time as _time
+        self._enrich_with_source_url(updates)
+
+        groups = self.store.get_groups() or {}
+        group_position = {}  # container_name → (group_id, position)
+        for gid, g in groups.items():
+            for pos, cname in enumerate(g.get("containers") or []):
+                group_position[cname] = (gid, pos)
+        updates.sort(key=lambda u: (0,) + group_position[u["name"]]
+                     if u["name"] in group_position else (1, "", 0))
+
+        # Snapshot netns owners by NAME *before* any recreate (#2): a group
+        # head recreated earlier in the batch changes ID, so sidecars still
+        # referencing the old ID break — resolving to a stable name lets the
+        # sidecars rejoin.
+        for u in updates:
+            tn = checker.netns_target_name(u["name"])
+            if tn:
+                u["netns_name"] = tn
+
+        ask_major_list = self.store.get_ask_before_major() if auto else set()
+        batch_names = {u["name"] for u in updates}
+        results = []
+        success_count = 0
+        major_pending = []
+        group_aborted = set()  # group_ids whose remaining members are skipped
+        prev_group = None
+
+        for idx, u in enumerate(updates):
+            gp = group_position.get(u["name"])
+            cur_group = gp[0] if gp else None
+
+            # Skip the rest of a group whose earlier member already failed.
+            if cur_group and cur_group in group_aborted:
+                results.append(
+                    f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)")
+                continue
+
+            # Inter-container wait when staying inside the same group.
+            if cur_group and cur_group == prev_group:
+                wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
+                if wait_s > 0:
+                    _time.sleep(wait_s)
+
+            # Major-version confirmation gate — auto only (per-container
+            # opt-in). A `docksentry.ask-major` label wins over the stored
+            # toggle (#42, @LeeNX); no label → stored list as before.
+            ask_lab = None
+            if auto:
+                try:
+                    ask_lab = checker.label_bool(
+                        checker.get_container_labels(u["name"]), "ask-major")
+                except Exception:
+                    ask_lab = None
+            ask_this = ask_lab if ask_lab is not None else (u["name"] in ask_major_list)
+            if auto and ask_this:
+                is_major, old_ver, new_ver = self._is_major_bump(u, checker)
+                if is_major:
+                    self.store.add_pending_major(u["name"], {
+                        "image": u["image"],
+                        "old_version": old_ver,
+                        "new_version": new_ver,
+                        "compose": {k: u[k] for k in u if k.startswith("compose_")},
+                    })
+                    major_pending.append((u["name"], old_ver, new_ver))
+                    results.append(
+                        f"⏸ {self._display_name(u)}: major bump {old_ver} → {new_ver} — confirmation required")
+                    prev_group = cur_group
+                    continue
+
+            try:
+                compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
+                success, msg = checker.update_container(
+                    u["name"], u["image"],
+                    netns_name=u.get("netns_name"), **compose_kwargs)
+                status = "✅" if success else "❌"
+                results.append(f"{status} {self._display_name(u)}: {msg}")
+                if self.notifier:
+                    self.notifier.send_update_result(u["name"], u["image"], success, msg,
+                                                     source_url=u.get("source_url", ""))
+
+                grp = (groups.get(cur_group) or {}) if cur_group else {}
+                members = grp.get("containers") or []
+                is_head = bool(grp.get("restart_dependents") and members
+                               and u["name"] == members[0] and len(members) > 1)
+                if success:
+                    success_count += 1
+                    # Restart-dependents cascade. Members already IN this
+                    # batch self-heal via their own update (recreated onto the
+                    # head's new name through the netns snapshot above), so
+                    # only out-of-batch sidecars need the explicit kick.
+                    if is_head:
+                        deps = [d for d in members[1:] if d not in batch_names]
+                        if deps:
+                            wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
+                            results.append(self._restart_group_dependents(
+                                u["name"], deps, checker, max_wait=wait_s))
+                elif cur_group:
+                    # Failure aborts the remainder of this group. If the failed
+                    # container is a restart_dependents head, its dependents'
+                    # namespace was torn down when it stopped and the rollback
+                    # only restored the head — kick ALL dependents (incl. the
+                    # in-batch ones the group-abort gate would otherwise skip)
+                    # so they re-attach to the rolled-back head (#27).
+                    group_aborted.add(cur_group)
+                    if is_head:
+                        wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
+                        results.append("🔁 head rollback — dependents kicked: " +
+                                       self._restart_group_dependents(
+                                           u["name"], members[1:], checker, max_wait=wait_s))
+            except Exception as e:
+                results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
+                if cur_group:
+                    group_aborted.add(cur_group)
+                if self.notifier:
+                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
+                                                     source_url=u.get("source_url", ""))
+            prev_group = cur_group
+            self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
+
+        return results, success_count, major_pending
 
     def _enrich_with_source_url(self, updates):
         """Set u['source_url'] on each update via the shared LinkResolver.
