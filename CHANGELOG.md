@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.1] - 2026-07-31
+
+### Changed
+- **Internal groundwork:** the container CLI is starting to move behind a small `ContainerBackend` seam instead of `docker …` calls scattered inline. This release routes the read-only commands in the monitor and the Web UI (ps, inspect, image inspect, logs, stats) through it; the update engine is untouched. No behaviour change — the commands sent are byte-identical — it's the groundwork that makes a real podman backend, and eventually remote hosts, a contained change rather than edits in ninety places.
+
 ## [1.60.0] - 2026-07-31
 
 ### Added

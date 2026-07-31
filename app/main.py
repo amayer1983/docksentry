@@ -106,6 +106,11 @@ def main():
     bot.notifier = notifier
     checker = UpdateChecker(config)
     scheduler = Scheduler(config, checker, bot)
+    # Container CLI seam (v2 groundwork): build one backend and hand it to
+    # the consumers that were migrated to it. The monitor is constructed
+    # lazily inside the scheduler and defaults to its own backend there.
+    from container_backend import get_backend
+    backend = get_backend(config)
     web = None
 
     # Graceful shutdown
@@ -244,7 +249,8 @@ def main():
     # Start Web UI if enabled
     if config.web_ui:
         from web_ui import WebUI
-        web = WebUI(config, checker, bot, store, config.web_port, config.web_password)
+        web = WebUI(config, checker, bot, store, config.web_port,
+                    config.web_password, backend=backend)
         web.start()
 
     # Version + debug state up front — the container log is often the only

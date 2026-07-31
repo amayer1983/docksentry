@@ -290,8 +290,15 @@ def _validate_webhook_url(url, kind="generic"):
     return True, None
 
 
-def create_handler(config, checker, bot, store, password=None):
+def create_handler(config, checker, bot, store, password=None, backend=None):
     """Create a request handler with access to app components."""
+
+    # Container CLI seam (v2 groundwork). Resolved here once so the read
+    # views can go through `backend`; defaulting keeps existing callers
+    # (and render tests that build the handler directly) working unchanged.
+    if backend is None:
+        from container_backend import get_backend
+        backend = get_backend(config)
 
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -395,17 +402,11 @@ def create_handler(config, checker, bot, store, password=None):
             # not append `(healthy)` to the Status field — that's a Docker CLI
             # cosmetic — but State.Health.Status is consistently provided by
             # both. Reported by LeeNX in #28 for podman-compose containers.
-            ids_p = subprocess.run(
-                ["docker", "ps", "-q"],
-                capture_output=True, text=True
-            )
+            ids_p = backend.ps(quiet=True)
             ids = [i for i in ids_p.stdout.strip().split("\n") if i]
             if not ids:
                 return []
-            ins_p = subprocess.run(
-                ["docker", "inspect", *ids],
-                capture_output=True, text=True
-            )
+            ins_p = backend.inspect(ids)
             try:
                 inspected = json.loads(ins_p.stdout) or []
             except (json.JSONDecodeError, ValueError):
@@ -427,10 +428,7 @@ def create_handler(config, checker, bot, store, password=None):
             })
             image_info = {}  # image_ref -> {"version": "...", "short_id": "abcd1234"}
             if unique_images:
-                img_p = subprocess.run(
-                    ["docker", "image", "inspect", *unique_images],
-                    capture_output=True, text=True
-                )
+                img_p = backend.image_inspect(unique_images)
                 try:
                     img_data = json.loads(img_p.stdout) or []
                 except (json.JSONDecodeError, ValueError):
@@ -786,12 +784,12 @@ def create_handler(config, checker, bot, store, password=None):
                 #   "conflicts": {"<container>": "<existing-group-name>"}, "exists": bool}]}
                 # Conservative — restart_dependents stays user-choice in the modal.
                 try:
-                    r = subprocess.run(
-                        ["docker", "ps", "-a", "--format",
-                         "{{.Names}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}|"
-                         "{{.Label \"com.docker.compose.service\"}}|"
-                         "{{.Label \"com.docker.stack.namespace\"}}"],
-                        capture_output=True, text=True, timeout=20
+                    r = backend.ps(
+                        all=True,
+                        fmt="{{.Names}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}|"
+                            "{{.Label \"com.docker.compose.service\"}}|"
+                            "{{.Label \"com.docker.stack.namespace\"}}",
+                        timeout=20,
                     )
                     lines = [l for l in r.stdout.strip().split("\n") if l]
                 except subprocess.SubprocessError:
@@ -804,10 +802,10 @@ def create_handler(config, checker, bot, store, password=None):
                 if lines:
                     try:
                         names_only = [l.split("|", 1)[0] for l in lines]
-                        ins = subprocess.run(
-                            ["docker", "inspect", "--format",
-                             "{{.Name}}|{{.HostConfig.NetworkMode}}", *names_only],
-                            capture_output=True, text=True, timeout=20
+                        ins = backend.inspect(
+                            names_only,
+                            fmt="{{.Name}}|{{.HostConfig.NetworkMode}}",
+                            timeout=20,
                         )
                         for ln in ins.stdout.strip().split("\n"):
                             if not ln or "|" not in ln:
@@ -2483,10 +2481,7 @@ def create_handler(config, checker, bot, store, password=None):
                 return
 
             # Resolve container info — must exist in `docker ps -a`
-            inspect = subprocess.run(
-                ["docker", "inspect", name],
-                capture_output=True, text=True
-            )
+            inspect = backend.inspect(name)
             if inspect.returncode != 0:
                 content = f"""<div class="card">
 <h2>{_e(name)}</h2>
@@ -2523,10 +2518,7 @@ def create_handler(config, checker, bot, store, password=None):
             running_image = meta.get("Image") or image
             size_bytes = 0
             try:
-                size_inspect = subprocess.run(
-                    ["docker", "image", "inspect", "--format", "{{.Size}}", running_image],
-                    capture_output=True, text=True
-                )
+                size_inspect = backend.image_inspect(running_image, fmt="{{.Size}}")
                 if size_inspect.returncode == 0:
                     size_bytes = int(size_inspect.stdout.strip() or 0)
             except (ValueError, subprocess.SubprocessError):
@@ -2779,10 +2771,7 @@ def create_handler(config, checker, bot, store, password=None):
             query = parse_qs(urlparse(self.path).query)
             if query.get("tab", [""])[0] == "logs":
                 lines = max(10, min(int(query.get("lines", ["100"])[0]), 500))
-                logs_result = subprocess.run(
-                    ["docker", "logs", "--tail", str(lines), name],
-                    capture_output=True, text=True, timeout=10
-                )
+                logs_result = backend.logs(name, tail=lines, timeout=10)
                 output = logs_result.stdout or logs_result.stderr
                 if output.strip():
                     logs_html += f'<pre>{html.escape(output.strip())}</pre>'
@@ -3012,10 +3001,7 @@ def create_handler(config, checker, bot, store, password=None):
                 live = []
             # Include stopped + running so users can group stopped helpers.
             try:
-                all_ids = subprocess.run(
-                    ["docker", "ps", "-a", "--format", "{{.Names}}"],
-                    capture_output=True, text=True
-                )
+                all_ids = backend.ps(all=True, fmt="{{.Names}}")
                 all_names = sorted(set(
                     n for n in all_ids.stdout.strip().split("\n") if n
                 ))
@@ -3765,10 +3751,7 @@ def create_handler(config, checker, bot, store, password=None):
 
             log_html = ""
             if container:
-                result = subprocess.run(
-                    ["docker", "logs", "--tail", str(lines), container],
-                    capture_output=True, text=True, timeout=10
-                )
+                result = backend.logs(container, tail=lines, timeout=10)
                 output = result.stdout or result.stderr
                 if output.strip():
                     log_html = f'<pre>{html.escape(output.strip())}</pre>'
@@ -3999,10 +3982,12 @@ def create_handler(config, checker, bot, store, password=None):
 
 
 class WebUI:
-    def __init__(self, config, checker, bot, store, port=8080, password=""):
+    def __init__(self, config, checker, bot, store, port=8080, password="",
+                 backend=None):
         self.config = config
         self.port = port
-        self.handler = create_handler(config, checker, bot, store, password or None)
+        self.handler = create_handler(config, checker, bot, store,
+                                      password or None, backend)
         self.server = None
         self.thread = None
 

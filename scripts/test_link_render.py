@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import web_ui                       # noqa: E402
 import telegram_bot                 # noqa: E402
 import link_resolver                # noqa: E402
+import container_backend            # noqa: E402
 from container_store import ContainerStore   # noqa: E402
 
 MISSING = "/nonexistent/docksentry-test"
@@ -252,9 +253,14 @@ def render_detail(name="nginx", image="nginx:latest", labels=None,
     real_web = web_ui.subprocess
     real_bot = telegram_bot.subprocess
     real_lr = link_resolver.subprocess
+    # The detail page's inspect / image-inspect reads now go through the
+    # container backend, whose only subprocess window is
+    # container_backend.subprocess — patch it too so the fake serves them.
+    real_cb = container_backend.subprocess
     web_ui.subprocess = fake_sp
     telegram_bot.subprocess = fake_sp
     link_resolver.subprocess = fake_sp
+    container_backend.subprocess = fake_sp
     try:
         checker = FakeChecker(own_name="docksentry", labels=labels)
         handler_cls = web_ui.create_handler(cfg, checker, FakeBot(store), store)
@@ -268,6 +274,7 @@ def render_detail(name="nginx", image="nginx:latest", labels=None,
         web_ui.subprocess = real_web
         telegram_bot.subprocess = real_bot
         link_resolver.subprocess = real_lr
+        container_backend.subprocess = real_cb
 
 
 def link_section(html):

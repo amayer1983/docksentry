@@ -34,10 +34,17 @@ import time
 class ContainerMonitor:
     COOLDOWN_SECONDS = 1800
 
-    def __init__(self, config, checker, bot):
+    def __init__(self, config, checker, bot, backend=None):
         self.config = config
         self.checker = checker
         self.bot = bot
+        # The container CLI seam (v2 groundwork). Defaulting to get_backend
+        # here keeps existing construction sites (scheduler, tests) working
+        # unchanged while routing the docker reads through the backend.
+        if backend is None:
+            from container_backend import get_backend
+            backend = get_backend(config)
+        self.backend = backend
         self._prev = None          # name -> state dict; None = no baseline yet
         self._last_sent = {}       # (name, kind) -> monotonic ts
         # Health debounce (#2, @famewolf): a healthy->unhealthy flip is held
@@ -52,19 +59,13 @@ class ContainerMonitor:
         """Current state of all containers (running and stopped), or None
         when docker can't be read (never diff against a broken snapshot)."""
         try:
-            ps = subprocess.run(
-                ["docker", "ps", "-a", "--format", "{{.Names}}"],
-                capture_output=True, text=True, timeout=30,
-            )
+            ps = self.backend.ps(all=True, fmt="{{.Names}}", timeout=30)
             if ps.returncode != 0:
                 return None
             names = [n for n in ps.stdout.strip().split("\n") if n]
             if not names:
                 return {}
-            ins = subprocess.run(
-                ["docker", "inspect", *names],
-                capture_output=True, text=True, timeout=30,
-            )
+            ins = self.backend.inspect(names, timeout=30)
             if ins.returncode != 0:
                 return None
             data = json.loads(ins.stdout) or []
@@ -328,11 +329,7 @@ class ContainerMonitor:
         OOM alert names the victim, this names the culprit). One
         `docker stats --no-stream` at event time; no idle polling."""
         try:
-            r = subprocess.run(
-                ["docker", "stats", "--no-stream", "--format",
-                 "{{.Name}}|{{.MemUsage}}"],
-                capture_output=True, text=True, timeout=30,
-            )
+            r = self.backend.stats(fmt="{{.Name}}|{{.MemUsage}}", timeout=30)
             if r.returncode != 0:
                 return ""
             rows = []
