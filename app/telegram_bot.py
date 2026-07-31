@@ -3013,7 +3013,17 @@ class TelegramBot:
                 return
             self.send_message(self.t("checking_updates"))
             nameset = set(names)
-            updates = [u for u in checker.check_all(bot=self) if u["name"] in nameset]
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so `nameset` is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. check_all
+            # merges the scoped result into pending_updates.json rather than
+            # overwriting it, so the untouched entries stay put.
+            updates = checker.check_all(bot=self, only=nameset)
             if updates:
                 self.notify_updates(updates)
             else:
@@ -3039,7 +3049,18 @@ class TelegramBot:
                 return
             self.send_message(self.t("checking_updates"))
             nameset = set(names)
-            updates = [u for u in checker.check_all(bot=self) if u["name"] in nameset]
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so `nameset` is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. The
+            # returned `updates` already contains only the matched containers
+            # that have a pending update, so run_updates below acts on exactly
+            # them, unchanged.
+            updates = checker.check_all(bot=self, only=nameset)
             if not updates:
                 self.send_message(self.t("update_scoped_none", pattern=arg))
                 return

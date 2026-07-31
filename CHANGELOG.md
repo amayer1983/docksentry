@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.58.1] - 2026-07-31
+
+### Changed
+- **`/check <name>` and `/update <name>` only check the containers you named.** They used to check *everything* and then filter the output down to the match — so `/check nginx` still hit the registry for every container on the host. They now scope the check to the matched containers, which is fewer registry requests and easier on Docker Hub's anonymous rate limit (the thing behind much of #53). One deliberate consequence: a scoped check no longer refreshes the pending state of the *other* containers as a side effect — that's intended (targeted means it only touches what you named), and the scheduled full check keeps the rest current. The global `/check` and `/update` with no name still check everything.
+
 ## [1.58.0] - 2026-07-31
 
 ### Added
