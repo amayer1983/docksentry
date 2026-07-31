@@ -174,6 +174,51 @@ def main():
             DockerBackend.cli_binary == "docker")
         checks["get_backend returns a DockerBackend"] = isinstance(
             get_backend(types.SimpleNamespace()), DockerBackend)
+
+        # ── Podman: same argv shape, different binary ───────────────
+        # The whole point of the seam: one class swap re-points every
+        # command, including the compose verbs (`podman compose …`).
+        pb = container_backend.PodmanBackend()
+        checks["PodmanBackend.cli_binary == 'podman'"] = (
+            pb.cli_binary == "podman")
+        pod_cases = {
+            "podman ps": (argv(lambda: pb.ps(fmt="{{.Names}}")),
+                          ["podman", "ps", "--format", "{{.Names}}"]),
+            "podman pull": (argv(lambda: pb.pull("nginx")),
+                            ["podman", "pull", "nginx"]),
+            "podman stop": (argv(lambda: pb.stop("web", time=30)),
+                            ["podman", "stop", "--time", "30", "web"]),
+            "podman compose (generic run)":
+                (argv(lambda: pb.run(["compose", "-f", "x.yml", "up", "-d"])),
+                 ["podman", "compose", "-f", "x.yml", "up", "-d"]),
+        }
+        for label, (produced, expected) in pod_cases.items():
+            checks[f"argv: {label}"] = produced == expected
+
+        # ── CLI selection ───────────────────────────────────────────
+        checks["resolve_cli('podman') → podman"] = (
+            container_backend.resolve_cli("podman") == "podman")
+        checks["resolve_cli('docker') → docker"] = (
+            container_backend.resolve_cli("docker") == "docker")
+        checks["resolve_cli('auto') picks one of the two"] = (
+            container_backend.resolve_cli("auto") in ("docker", "podman"))
+        checks["resolve_cli(junk) falls back to auto"] = (
+            container_backend.resolve_cli("wat") in ("docker", "podman"))
+        container_backend._default_backend = None
+        checks["get_backend(container_cli='podman') → PodmanBackend"] = isinstance(
+            get_backend(types.SimpleNamespace(container_cli="podman")),
+            container_backend.PodmanBackend)
+        container_backend._default_backend = None
+        checks["get_backend(container_cli='docker') → DockerBackend"] = isinstance(
+            get_backend(types.SimpleNamespace(container_cli="docker")),
+            DockerBackend)
+        # get_backend records what it handed out, so the no-self call sites
+        # (default_backend()) don't silently build a second, Docker one.
+        container_backend._default_backend = None
+        chosen = get_backend(types.SimpleNamespace(container_cli="podman"))
+        checks["default_backend() follows get_backend"] = (
+            container_backend.default_backend() is chosen)
+        container_backend._default_backend = None
     finally:
         container_backend.subprocess = real
 

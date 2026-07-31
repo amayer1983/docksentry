@@ -196,7 +196,8 @@ class Config:
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
-                 telegram_polling=True, debug=False, update_policy="all"):
+                 telegram_polling=True, debug=False, update_policy="all",
+                 container_cli="auto"):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -227,6 +228,11 @@ class Config:
         # (fail-open).
         pol = (update_policy or "all").strip().lower()
         self.update_policy = pol if pol in ("all", "minor", "patch") else "all"
+        # Which container CLI to speak: auto | docker | podman. "auto" keeps
+        # the historical behaviour (Docker whenever `docker` exists, which
+        # covers the docker→podman alias setups people already run).
+        cli = (container_cli or "auto").strip().lower()
+        self.container_cli = cli if cli in ("auto", "docker", "podman") else "auto"
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -575,6 +581,7 @@ class Config:
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),
             update_policy=_env("UPDATE_POLICY", "all"),
+            container_cli=_env("CONTAINER_CLI", "auto"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),

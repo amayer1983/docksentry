@@ -23,6 +23,7 @@ nothing. That wave needs the mocks moved first.
 
 Pure standard library — the project's core promise.
 """
+import shutil
 import subprocess
 
 
@@ -217,13 +218,36 @@ class ContainerBackend:
 
 
 class DockerBackend(ContainerBackend):
-    """Docker CLI backend — the current, only production backend.
+    """Docker CLI backend — the default production backend.
 
     `cli_binary = "docker"` makes every argv identical to what the code
     shelled out to before this seam existed.
     """
 
     cli_binary = "docker"
+
+
+class PodmanBackend(ContainerBackend):
+    """Podman CLI backend — speaks `podman` instead of `docker`.
+
+    Podman's CLI is docker-compatible for everything Docksentry issues, and
+    `podman compose` covers the compose verbs, so this really is just the
+    binary name. The runtime differences that used to bite (#48 ulimit
+    names, #49 PID/UTS `private`, #50 cgroup-v2 swappiness) are NOT handled
+    here: they are normalisations of what *inspect reports* into what the
+    *run flag* accepts, they live in `UpdateChecker._build_run_args`, and
+    they are already correct on both runtimes.
+
+    KNOWN LIMITATION — self-update: `TelegramBot`'s self-update path still
+    issues literal `docker` commands and launches a `docker:cli` helper
+    container, because it can't run inside the container it is replacing.
+    That path is deliberately not migrated yet, so on Podman self-update
+    still needs `docker` to resolve (the usual `docker`→`podman` alias).
+    Everything else — checks, updates, recreates, rollback, lifecycle,
+    cleanup — goes through this backend.
+    """
+
+    cli_binary = "podman"
 
 
 _default_backend = None
@@ -246,17 +270,36 @@ def default_backend():
     return _default_backend
 
 
+def resolve_cli(preference="auto"):
+    """Decide which container CLI to speak.
+
+    `docker` / `podman` force the choice. `auto` (the default) keeps the
+    historical behaviour: Docker whenever the `docker` command exists —
+    which includes every setup that aliases `docker` to Podman, as Podman
+    users have been doing all along. Only when `docker` is genuinely absent
+    and `podman` is present do we switch, which turns a previously broken
+    install into a working one rather than changing any working one.
+    """
+    pref = (preference or "auto").strip().lower()
+    if pref in ("docker", "podman"):
+        return pref
+    if shutil.which("docker"):
+        return "docker"
+    if shutil.which("podman"):
+        return "podman"
+    return "docker"
+
+
 def get_backend(config):
     """Return the container backend for this deployment.
 
-    For now this is always Docker. A Podman-native backend (and, later,
-    remote-host selection) will branch here off config — the placeholder
-    is intentional; the selection logic does NOT belong in this wave.
+    Driven by `config.container_cli` (env `CONTAINER_CLI`): `auto` by
+    default, or an explicit `docker` / `podman`. Remote-host selection will
+    branch here too, once multi-host lands.
     """
-    # v2: inspect config here to pick DockerBackend / PodmanBackend / a
-    # remote-host backend. Kept deliberately trivial for now.
     global _default_backend
-    backend = DockerBackend()
+    pref = getattr(config, "container_cli", "auto") if config is not None else "auto"
+    backend = PodmanBackend() if resolve_cli(pref) == "podman" else DockerBackend()
     # Record it so the no-self call sites (default_backend()) resolve to the
     # same object instead of quietly building their own Docker one.
     _default_backend = backend
