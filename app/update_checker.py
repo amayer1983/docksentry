@@ -1672,7 +1672,9 @@ class UpdateChecker:
                                    netns_name=netns_name,
                                    inherited=self._image_config(config.get("Image")),
                                    cgroup_version=self._cgroup_version())
-        run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # _build_run_args keeps returning argv that starts with the CLI name
+        # (tests assert on it directly); the backend prepends its own → [1:].
+        run = self.backend.run(cmd[1:], timeout=120)
         if run.returncode != 0:
             err = run.stderr.strip()[:200]
             self._debug(f"  Dependent recreate failed for {name}: {err}")
@@ -2903,7 +2905,7 @@ class UpdateChecker:
                 cmd.extend(["--link", link])
             cmd.extend([net_name, container_name])
             try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                r = self.backend.run(cmd[1:], timeout=15)
                 if r.returncode != 0:
                     self._debug(f"  Network connect to {net_name} failed: "
                                 f"{r.stderr[:200]}")
@@ -3138,7 +3140,7 @@ class UpdateChecker:
                     inherited=self._image_config(config.get("Image")),
                     cgroup_version=self._cgroup_version(),
                 )
-                run = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                run = self.backend.run(cmd[1:], timeout=120)
                 if run.returncode != 0:
                     msg = (f"Container was auto-removed when stopped and the "
                            f"recreate failed: {run.stderr[:200]}")
@@ -3195,7 +3197,7 @@ class UpdateChecker:
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = self.backend.run(cmd[1:], timeout=120)
 
             if result.returncode != 0:
                 self._debug(f"  Run failed: {result.stderr[:300]}")
