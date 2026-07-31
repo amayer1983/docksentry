@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.58.0] - 2026-07-31
+
+### Added
+- **Auto-detected GitHub/GitLab links point at the release notes, not the homepage** ([#52](../../issues/52), @LeeNX). When a container's link comes from its `org.opencontainers.image.source` / `.url` label and that's a bare GitHub or GitLab repo, Docksentry now links to the releases page (`…/releases/latest`, GitLab `…/-/releases`) rather than the project's front page — which is what you actually want mid-upgrade, without clicking through. Only a bare `host/owner/repo` is rewritten; anything deeper (a URL that already points at a release, a subpath, a file) and any other host are left exactly as they were. A link you set by hand — the `docksentry.link` label or `/setlink` — is never touched, so your explicit choice always wins, which also covers the repos that don't publish releases.
+
 ## [1.57.3] - 2026-07-31
 
 ### Fixed

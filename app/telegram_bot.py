@@ -312,10 +312,49 @@ class TelegramBot:
                     url = r.stdout.strip()
                     if url and url not in ("<no value>", "no value"):
                         kind = "source" if "source" in label else "url"
-                        return url, kind
+                        return self._prefer_release_url(url), kind
             except subprocess.SubprocessError:
                 continue
         return "", "none"
+
+    @staticmethod
+    def _prefer_release_url(url):
+        """Point an auto-detected GitHub/GitLab *repo* link at its releases
+        page instead of the bare homepage (#52, @LeeNX). A container's
+        `org.opencontainers.image.source` almost always points at the
+        project repo, and mid-upgrade the release notes are what you
+        actually want — not the front page you then have to click through.
+
+        Only a BARE repo URL is rewritten: exactly ``host/owner/repo``,
+        with an optional trailing ``.git`` or ``/``. Anything deeper (a
+        URL that already points at ``/releases``, a ``/tree/...`` path, a
+        specific file) is left alone, as is any non-GitHub/GitLab host.
+        The rewrite only ever runs on auto-detected OCI links; a link the
+        user set by hand (``docksentry.link`` label or ``/setlink``) never
+        reaches here, so their explicit choice is always respected. A repo
+        with no releases will 404 on ``/releases/latest`` — that's the
+        case the override exists for, and @LeeNX asked for `/latest`
+        explicitly."""
+        try:
+            p = urllib.parse.urlparse(url)
+        except ValueError:
+            return url
+        if p.scheme not in ("http", "https") or not p.netloc:
+            return url
+        host = p.netloc.lower()
+        parts = [s for s in p.path.split("/") if s]
+        if len(parts) != 2:
+            return url
+        owner, repo = parts[0], parts[1]
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        if not owner or not repo:
+            return url
+        if host in ("github.com", "www.github.com"):
+            return f"https://github.com/{owner}/{repo}/releases/latest"
+        if host in ("gitlab.com", "www.gitlab.com"):
+            return f"https://gitlab.com/{owner}/{repo}/-/releases"
+        return url
 
     def _guess_registry_overview_url(self, image):
         """Heuristic for "where can the user look this up?" when the
