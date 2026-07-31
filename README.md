@@ -319,6 +319,9 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
 | `DISCORD_WEBHOOK` | | Discord webhook URL |
 | `WEBHOOK_URL` | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
+| `NTFY_URL` | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
+| `NTFY_SERVER` | | ntfy server base URL, e.g. `https://ntfy.sh` — combined with `NTFY_TOPIC` when `NTFY_URL` isn't set |
+| `NTFY_TOPIC` | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
 | `SMTP_HOST` | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications |
 | `SMTP_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain) |
 | `SMTP_USER` | | SMTP username (omit for an unauthenticated relay) |

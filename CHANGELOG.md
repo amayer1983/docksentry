@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.0] - 2026-07-31
+
+### Added
+- **ntfy notifications**, and a notifier layer that makes adding a channel a one-file job. Set `NTFY_URL` (or `NTFY_SERVER` + `NTFY_TOPIC`) and update results and available-update alerts land on your ntfy topic, with the failure ones raised to high priority. Under the hood the notification channels — Discord, generic webhook, e-mail, and now ntfy — are each a self-contained plugin that the notifier discovers automatically; a channel that errors is skipped without taking the others down. Discord/webhook/e-mail send exactly what they did before: same embeds, same payload fields, same retry, same `BOT_LABEL` framing.
+
+### Changed
+- **Internal groundwork:** container link resolution moved out of the Telegram bot into its own `link_resolver` module, so the Web UI no longer reaches into private bot methods to build a link. No behaviour change — same resolution order, same release-notes rewriting — it just lives where it belongs now, which clears the way for sharing it with future interfaces.
+
 ## [1.59.0] - 2026-07-31
 
 ### Added

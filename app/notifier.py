@@ -1,30 +1,45 @@
 #!/usr/bin/env python3
-"""Multi-channel notification dispatcher (Discord, Webhook, e-mail/SMTP)."""
+"""Multi-channel notification dispatcher (Discord, Webhook, e-mail/SMTP, ntfy).
 
-import json
-import socket
-import time
-import urllib.error
-import urllib.request
+Thin facade over the channel plugins in ``app/notifiers/``. The dispatch code
+no longer knows anything about individual channels: it asks the registry for
+the configured plugins and forwards each payload best-effort. Adding a channel
+is one new file under ``app/notifiers/`` — no edits here.
+
+``import time`` / ``import urllib.request`` are kept at module scope so the
+notifier retry test can patch ``notifier.time.sleep`` /
+``notifier.urllib.request.urlopen`` (they mutate the shared module objects the
+plugins' transport helper uses).
+"""
+
+import time  # noqa: F401  (kept for test monkeypatch surface)
+import urllib.request  # noqa: F401  (kept for test monkeypatch surface)
 
 from quiet_hours import is_quiet_now
+from notifiers import build_all, version_str
 
 
 class Notifier:
-    """Sends notifications to Discord, generic webhooks, and/or e-mail."""
+    """Dispatches notifications to every configured channel plugin."""
 
     def __init__(self, config):
         self.config = config
+        # Instantiate all registered channels once; filter by `configured()`
+        # at dispatch time so a live config change (Web UI) is picked up.
+        self._plugins = build_all(config)
+        self._by_name = {p.name: p for p in self._plugins}
 
-    def _smtp_configured(self):
-        """E-mail is active once host + from + to are all set (#2)."""
-        c = self.config
-        return bool(c.smtp_host and c.smtp_from and c.smtp_to)
+    def _configured_plugins(self):
+        return [p for p in self._plugins if p.configured()]
 
     def has_channels(self):
         """Check if any notification channels are configured."""
-        return bool(self.config.discord_webhook or self.config.webhook_url
-                    or self._smtp_configured())
+        return any(p.configured() for p in self._plugins)
+
+    def _smtp_configured(self):
+        """E-mail is active once host + from + to are all set (#2)."""
+        p = self._by_name.get("smtp")
+        return bool(p and p.configured())
 
     def _suppressed(self):
         """True if quiet-hours OR maintenance is active right now — skip
@@ -45,45 +60,23 @@ class Notifier:
         """`v_old → v_new` when both are known and differ, else the single
         known version, else "". Mirrors the Telegram badge (#44) so Discord /
         webhook / e-mail show the same version info."""
-        old = (u.get("old_version") or "").strip()
-        new = (u.get("new_version") or "").strip()
-        if old and new and old != new:
-            return f"v{old} → v{new}"
-        v = old or new
-        return f"v{v}" if v else ""
+        return version_str(u)
+
+    def _dispatch(self, method, *args):
+        """Call `method` on every configured plugin, best-effort: a channel
+        that raises must not stop the others (each existing channel is already
+        internally best-effort; this also contains any new/buggy channel)."""
+        for p in self._configured_plugins():
+            try:
+                getattr(p, method)(*args)
+            except Exception as e:
+                print(f"{p.name} error: {e}")
 
     def send_updates_available(self, updates):
         """Notify about available updates."""
         if self._suppressed():
             return
-        if self.config.discord_webhook:
-            self._discord_updates(updates)
-        if self.config.webhook_url:
-            self._webhook_send("updates_available", {
-                "count": len(updates),
-                "containers": [
-                    {"name": u["name"], "image": u["image"],
-                     "size": u.get("size", "?"), "created": u.get("created", "?"),
-                     "compose": bool(u.get("compose_project")),
-                     # Version info (#44) — read from OCI image.version
-                     # labels (old=local, new=remote). Empty when the image
-                     # doesn't carry the label.
-                     "old_version": u.get("old_version", ""),
-                     "new_version": u.get("new_version", ""),
-                     # Repo / changelog URL — auto-detected from OCI
-                     # labels or manually overridden in the Web UI
-                     # (#20). Empty string when no link is available.
-                     "source_url": u.get("source_url", "")}
-                    for u in updates
-                ],
-            })
-        if self._smtp_configured():
-            lines = [f"- {u['name']} ({u['image']})"
-                     + (f" {self._version_str(u)}" if self._version_str(u) else "")
-                     + f" — {u.get('size','?')}, {u.get('created','?')}"
-                     for u in updates]
-            self._smtp_send(f"{len(updates)} Docker update(s) available",
-                            "Docksentry found updates for:\n\n" + "\n".join(lines))
+        self._dispatch("send_updates_available", updates)
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
         """Notify about a completed update (success or failure).
@@ -100,205 +93,27 @@ class Notifier:
         """
         if self._suppressed():
             return
-        if self.config.discord_webhook:
-            self._discord_update_result(name, image, success, detail, source_url)
-        if self.config.webhook_url:
-            self._webhook_send("update_result", {
-                "container": name,
-                "image": image,
-                "success": success,
-                "detail": detail,
-                "source_url": source_url,
-            })
-        if self._smtp_configured():
-            status = "OK" if success else "FAILED"
-            body = f"{name} ({image})\n\n{detail}"
-            if source_url:
-                body += f"\n\n{source_url}"
-            self._smtp_send(f"Update {status}: {name}", body)
+        self._dispatch("send_update_result", name, image, success, detail, source_url)
 
     def send_message(self, text):
         """Send a plain text notification (subject to quiet hours)."""
         if self._suppressed():
             return
-        if self.config.discord_webhook:
-            self._discord_message(text)
-        if self.config.webhook_url:
-            self._webhook_send("message", {"text": text})
-        if self._smtp_configured():
-            # Strip Telegram *bold* markers for a clean plain-text mail.
-            self._smtp_send("Docksentry", text.replace("*", ""))
+        self._dispatch("send_message", text)
 
-    # ── Discord ──────────────────────────────────────────────
-
-    @staticmethod
-    def _post_json_with_retry(url, payload, headers, channel):
-        """POST a JSON body with bounded retry for transient network failures
-        (timeout / connection error) — 3 attempts, 2s and 4s backoff. Same
-        rationale as the Telegram retry in v1.38.1: right after a self-update
-        restart the network can still be settling, and a single dropped
-        notification is worse than a rare duplicate. HTTP status codes (2xx /
-        4xx) return on the first attempt — retry only covers real network
-        errors, not user config problems.
-
-        `channel` is a label used only in the error log ("Discord webhook",
-        "Webhook") so failures stay distinguishable.
-        """
-        data = json.dumps(payload).encode()
-        merged = {"Content-Type": "application/json", **(headers or {})}
-        req = urllib.request.Request(url, data=data, headers=merged, method="POST")
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return resp.status
-            except urllib.error.HTTPError as e:
-                # Server responded (4xx / 5xx) — not a transient network blip,
-                # don't retry. The retry loop is meant for the case where the
-                # request never reached the server.
-                print(f"{channel} error: HTTP {e.code}")
-                return None
-            except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                print(f"{channel} error: {e}")
-                return None
-            except Exception as e:
-                print(f"{channel} error: {e}")
-                return None
-        return None
+    # ── Backwards-compat delegators ──────────────────────────────────
+    # weekly_report.py (not part of this change) and the notifier tests
+    # reach into these internal entry points directly. They forward to the
+    # matching plugin so the wire behaviour and return values are unchanged.
 
     def _discord_post(self, payload):
-        """POST JSON to Discord webhook."""
-        return self._post_json_with_retry(
-            self.config.discord_webhook, payload,
-            {"User-Agent": "Docksentry/1.0"}, "Discord webhook")
-
-    def _footer_text(self):
-        """Discord-embed footer text. Includes BOT_LABEL when set so
-        multiple Docksentry instances posting into the same Discord
-        channel can be told apart (e.g. 'Docksentry · pve1')."""
-        label = (self.config.bot_label or "").strip()
-        return f"Docksentry · {label}" if label else "Docksentry"
-
-    def _discord_updates(self, updates):
-        """Send update notification as Discord embed."""
-        fields = []
-        for u in updates:
-            compose_tag = " 🐳" if u.get("compose_project") else ""
-            # Discord embed fields don't render links in `name`, but
-            # `value` is full markdown — append a clickable
-            # "[Source ↗](url)" line when we have a source URL (#20).
-            link_line = ""
-            if u.get("source_url"):
-                link_line = f"\n[Source ↗]({u['source_url']})"
-            ver = self._version_str(u)
-            ver_line = f"\n🔖 {ver}" if ver else ""
-            fields.append({
-                "name": f"📦 {u['name']}{compose_tag}",
-                "value": f"`{u['image']}`{ver_line}\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}{link_line}",
-                "inline": True,
-            })
-
-        label = (self.config.bot_label or "").strip()
-        title_prefix = f"{label} · " if label else ""
-        embed = {
-            "title": f"{title_prefix}🔄 Docker Updates Available ({len(updates)})",
-            "color": 0x58a6ff,  # Blue
-            "fields": fields,
-            "footer": {"text": self._footer_text()},
-        }
-        self._discord_post({"embeds": [embed]})
-
-    def _discord_update_result(self, name, image, success, detail, source_url=""):
-        """Send update result as Discord embed."""
-        label = (self.config.bot_label or "").strip()
-        title_prefix = f"{label} · " if label else ""
-        # Discord embed `description` is full markdown — render the
-        # container name as a clickable [name](url) when we have a
-        # source URL (matches the "Updates Available" embed already
-        # does this for fields, and the Telegram side does it for
-        # both pre/post-update message types since v1.19.2).
-        name_md = f"[**{name}**]({source_url})" if source_url else f"**{name}**"
-        if success:
-            embed = {
-                "title": f"{title_prefix}✅ Update Successful",
-                "description": f"{name_md} (`{image}`)\n{detail}",
-                "color": 0x3fb950,  # Green
-                "footer": {"text": self._footer_text()},
-            }
-        else:
-            embed = {
-                "title": f"{title_prefix}❌ Update Failed",
-                "description": f"{name_md} (`{image}`)\n{detail}",
-                "color": 0xf85149,  # Red
-                "footer": {"text": self._footer_text()},
-            }
-        self._discord_post({"embeds": [embed]})
-
-    def _discord_message(self, text):
-        """Send plain text to Discord."""
-        # Strip Markdown bold (*text*) for Discord
-        clean = text.replace("*", "**")
-        label = (self.config.bot_label or "").strip()
-        if label:
-            clean = f"**{label}** · {clean}"
-        self._discord_post({"content": clean})
-
-    # ── Generic Webhook ──────────────────────────────────────
+        """POST JSON to Discord webhook (returns HTTP status or None)."""
+        return self._by_name["discord"].post(payload)
 
     def _webhook_send(self, event, data):
-        """POST JSON to generic webhook URL."""
-        payload = {
-            "event": event,
-            "source": "docksentry",
-            **data,
-        }
-        # Add bot label to the payload when set so downstream automations
-        # (Home Assistant, Ntfy, custom scripts) can route per-host.
-        label = (self.config.bot_label or "").strip()
-        if label:
-            payload["bot_label"] = label
-        # Same retry contract as Discord and Telegram — a transient blip after
-        # a self-update restart shouldn't drop a notification. Note the
-        # trade-off is slightly different for a generic webhook: it may point
-        # at a user automation (Home Assistant, ntfy, custom script), so a
-        # duplicate could double-trigger something. Documented in the README.
-        return self._post_json_with_retry(
-            self.config.webhook_url, payload, None, "Webhook")
-
-    # ── E-mail / SMTP ────────────────────────────────────────
+        """POST JSON to the generic webhook (returns HTTP status or None)."""
+        return self._by_name["webhook"].send_raw(event, data)
 
     def _smtp_send(self, subject, body):
-        """Send a plain-text e-mail via SMTP. `smtp_tls` selects the
-        transport: "starttls" (default, 587), "ssl" (implicit, 465) or
-        "none". SMTP_TO may be a comma/semicolon-separated list. Best-effort:
-        logs and returns on any failure, never raising into the caller —
-        same contract as the Discord/webhook channels."""
-        import smtplib
-        from email.message import EmailMessage
-        c = self.config
-        recipients = [r.strip() for r in c.smtp_to.replace(";", ",").split(",") if r.strip()]
-        if not recipients:
-            return
-        label = (c.bot_label or "").strip()
-        msg = EmailMessage()
-        msg["Subject"] = (f"[{label}] " if label else "") + subject
-        msg["From"] = c.smtp_from
-        msg["To"] = ", ".join(recipients)
-        msg.set_content(body)
-        try:
-            if c.smtp_tls == "ssl":
-                server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port, timeout=15)
-            else:
-                server = smtplib.SMTP(c.smtp_host, c.smtp_port, timeout=15)
-            try:
-                if c.smtp_tls == "starttls":
-                    server.starttls()
-                if c.smtp_user:
-                    server.login(c.smtp_user, c.smtp_password)
-                server.send_message(msg, to_addrs=recipients)
-            finally:
-                server.quit()
-        except Exception as e:
-            print(f"SMTP error: {e}")
+        """Send a plain-text e-mail via SMTP (best-effort)."""
+        return self._by_name["smtp"].send_raw(subject, body)
