@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.5] - 2026-07-31
+
+### Fixed
+- **Web UI "Update" now runs through the exact same update engine as the Telegram "Update all".** Web-triggered updates used to take a shortcut — a plain per-container loop that skipped container-group ordering, the network-namespace sidecar snapshot, the restart-dependents cascade and the per-container cooldown; on top of that the bulk-update path didn't take the shared update lock, so a Web "Update selected" could overlap a running scheduled update or a self-update swap. Both the single-row Update button and the bulk "Update selected" now go through the shared engine under that lock, so groups, sidecars, dependents and cooldowns are all honoured no matter where you start the update from, and two updates can no longer run at once. Notifications and the Telegram summary now also match the bot path exactly.
+
 ## [1.60.4] - 2026-07-31
 
 ### Changed

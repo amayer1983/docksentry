@@ -3777,37 +3777,57 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 
             self._send_html(self._render_page(content, "logs"))
 
-        def _api_update(self, name):
-            """Trigger update for a single container from Web UI."""
-            # Same mutex as every bot-side update flow — Web UI updates
-            # used to run uncoordinated, so they could collide with a
-            # running batch or a self-update swap (#2 follow-up).
-            if not bot._update_lock.acquire(blocking=False):
-                bot.send_message(bot.t("update_already_running"))
+        def _run_web_update_batch(self, names):
+            """Run the pending updates for `names` through the SAME engine as
+            every other update flow (v1.60.5). Web UI updates used to bypass
+            the shared update core: they called checker.update_container in a
+            bare loop, so a Web-triggered update skipped the group ordering,
+            the netns-owner snapshot, the restart-dependents cascade and the
+            per-container cooldown that the Telegram "Update all" path gets —
+            and the bulk path didn't even take the update lock, so it could
+            collide with a running batch or a self-update swap. Routing both
+            Web handlers through engine._process_update_batch under the shared
+            lock closes that divergence; the notifier fan-out and Telegram
+            summary now match the bot path exactly."""
+            engine = bot.engine
+            if not os.path.exists(config.pending_file):
                 return
             try:
-                if not os.path.exists(config.pending_file):
-                    return
                 with open(config.pending_file) as f:
                     updates = json.load(f)
-                target = next((u for u in updates if u["name"] == name), None)
-                if not target:
-                    return
-                compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
-                success, msg = checker.update_container(name, target["image"], **compose_kwargs)
-                status = "✅" if success else "❌"
-                bot.send_message(f"{status} `{name}`: {msg}")
-                if bot.notifier:
-                    bot.notifier.send_update_result(name, target["image"], success, msg)
-                # Remove from pending — atomic write (v1.22.1)
-                remaining = [u for u in updates if u["name"] != name]
-                from container_store import atomic_write_json
-                atomic_write_json(config.pending_file, remaining)
+            except (OSError, json.JSONDecodeError):
+                return
+            name_set = set(names)
+            targets = [u for u in updates if u.get("name") in name_set]
+            if not targets:
+                return
+            # Atomic claim of the shared update mutex — same one the bot's
+            # run_updates / single-update / self-update flows use. Busy → bail.
+            if not engine._update_lock.acquire(blocking=False):
+                if bot.enabled:
+                    bot.send_message(bot.t("update_already_running"))
+                return
+            try:
+                # All per-container work (enrich, group-order sort, netns
+                # snapshot, update, cascade, cooldown, notifier results) runs
+                # in the shared engine. auto=False: no ask-before-major gate —
+                # clicking Update in the Web UI is the explicit "do it now".
+                results, _sc, _mp = engine._process_update_batch(targets, checker, auto=False)
+                # Drop the processed containers from pending (atomic); the file
+                # may hold others this action didn't touch.
+                bot._remove_from_pending([u["name"] for u in targets])
+                if bot.enabled:
+                    bot.send_message(bot.t("update_result") + "\n\n" + "\n".join(results))
             except Exception as e:
                 print(f"Web UI update error: {e}")
             finally:
-                bot._update_lock.release()
+                engine._update_lock.release()
                 bot._run_queued_selfupdate()
+
+        def _api_update(self, name):
+            """Trigger update for a single container from Web UI. Runs through
+            the shared engine batch under the update lock (v1.60.5)."""
+            self._run_web_update_batch([name])
 
         def _api_check(self):
             # The race guard the Telegram /check branch has had since #26,
@@ -3952,27 +3972,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
                     auto = [a for a in auto if a not in names]
                     store.save_autoupdate(auto)
                 elif action == "update":
-                    if not os.path.exists(config.pending_file):
-                        return
-                    with open(config.pending_file) as f:
-                        updates = json.load(f)
-                    targets = [u for u in updates if u["name"] in names]
-                    for target in targets:
-                        compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
-                        success, msg = checker.update_container(
-                            target["name"], target["image"], **compose_kwargs
-                        )
-                        status = "✅" if success else "❌"
-                        if bot.enabled:
-                            bot.send_message(f"{status} `{target['name']}`: {msg}")
-                        if bot.notifier:
-                            bot.notifier.send_update_result(
-                                target["name"], target["image"], success, msg
-                            )
-                    # Drop processed entries from pending — atomic (v1.22.1)
-                    remaining = [u for u in updates if u["name"] not in [t["name"] for t in targets]]
-                    from container_store import atomic_write_json
-                    atomic_write_json(config.pending_file, remaining)
+                    # Route through the shared engine batch under the update
+                    # lock — same path as single-update and the bot (v1.60.5),
+                    # so bulk gets group ordering, netns, cascade, cooldown and
+                    # mutex protection instead of a bare update_container loop.
+                    self._run_web_update_batch(names)
                 else:
                     print(f"Web UI bulk: unknown action {action!r}")
             except Exception as e:
