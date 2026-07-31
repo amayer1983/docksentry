@@ -2,7 +2,7 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
-## [1.61.0] - 2026-08-01
+## [1.61.0] - 2026-07-31
 
 ### Added
 - **Native Podman support.** Set `CONTAINER_CLI=podman` and Docksentry calls `podman` directly — checks, updates, recreates, rollback, start/restart, compose (`podman compose`), image cleanup, the lot. No more aliasing `docker` to `podman` to make it work. The default is `auto`, which behaves exactly as before: it uses `docker` whenever that command exists (so every existing setup, alias ones included, is untouched) and only reaches for `podman` when `docker` genuinely isn't there. One honest caveat: **self-update** still shells out to `docker` and launches a `docker:cli` helper container — it can't run inside the container it's replacing — so on Podman that single path still needs `docker` to resolve. Everything else goes through the CLI you picked.
