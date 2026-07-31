@@ -195,6 +195,37 @@ def main():
         for label, (produced, expected) in pod_cases.items():
             checks[f"argv: {label}"] = produced == expected
 
+        # ── Remote: the endpoint rides in front of every subcommand ──
+        # `docker -H ssh://box ps`, never `docker ps -H …`. Because it sits
+        # in global_args, no call site has to know the host exists.
+        rb = container_backend.RemoteBackend("ssh://me@box", name="box")
+        remote_cases = {
+            "remote ps": (argv(lambda: rb.ps(fmt="{{.Names}}")),
+                          ["docker", "-H", "ssh://me@box", "ps",
+                           "--format", "{{.Names}}"]),
+            "remote pull": (argv(lambda: rb.pull("nginx")),
+                            ["docker", "-H", "ssh://me@box", "pull", "nginx"]),
+            "remote rm -f": (argv(lambda: rb.rm("web", force=True)),
+                             ["docker", "-H", "ssh://me@box", "rm", "-f", "web"]),
+            "remote compose (generic run)":
+                (argv(lambda: rb.run(["compose", "-f", "x.yml", "up", "-d"])),
+                 ["docker", "-H", "ssh://me@box", "compose", "-f", "x.yml",
+                  "up", "-d"]),
+        }
+        for label, (produced, expected) in remote_cases.items():
+            checks[f"argv: {label}"] = produced == expected
+        checks["remote carries its host name"] = rb.name == "box"
+        checks["remote defaults name to the endpoint"] = (
+            container_backend.RemoteBackend("tcp://h:2375").name == "tcp://h:2375")
+        # Podman speaks the same global flag.
+        rpb = container_backend.RemoteBackend("tcp://h:2375", cli_binary="podman")
+        checks["argv: remote podman"] = (
+            argv(lambda: rpb.ps()) == ["podman", "-H", "tcp://h:2375", "ps"])
+        # …and the local backends must be untouched by all of this.
+        checks["local backend emits no global args"] = (
+            argv(lambda: b.ps()) == ["docker", "ps"])
+        checks["local backend name is 'local'"] = b.name == "local"
+
         # ── CLI selection ───────────────────────────────────────────
         checks["resolve_cli('podman') → podman"] = (
             container_backend.resolve_cli("podman") == "podman")

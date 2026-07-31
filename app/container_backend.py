@@ -35,6 +35,19 @@ class ContainerBackend:
 
     cli_binary = None
 
+    # Flags emitted BETWEEN the binary and the subcommand
+    # (`docker -H ssh://box ps`, not `docker ps -H …`). Empty for local
+    # backends, so their argv is exactly what it always was; a remote
+    # backend fills it with its endpoint. Keeping it here rather than in
+    # `run()`'s callers is what lets several backends — one per host —
+    # coexist in one process without any call site knowing.
+    global_args = ()
+
+    # Human-readable host label. "local" for the machine we run on;
+    # remote backends carry the configured host alias. This is what
+    # multi-host uses to key state and to say WHICH box a message is about.
+    name = "local"
+
     def run(self, args, *, timeout=None, text=True, input=None,
             capture_output=True):
         """The one and only call into `subprocess` for this backend.
@@ -49,7 +62,7 @@ class ContainerBackend:
         capture_output=True) this is byte-identical to the historical
         ``subprocess.run(argv, capture_output=True, text=True)``.
         """
-        argv = [self.cli_binary] + list(args)
+        argv = [self.cli_binary] + list(self.global_args) + list(args)
         return subprocess.run(
             argv,
             capture_output=capture_output,
@@ -248,6 +261,34 @@ class PodmanBackend(ContainerBackend):
     """
 
     cli_binary = "podman"
+
+
+class RemoteBackend(ContainerBackend):
+    """A container CLI pointed at ANOTHER host.
+
+    Both CLIs can drive a remote daemon with a global `-H` endpoint:
+    `docker -H ssh://user@box ps`, `docker -H tcp://box:2375 ps`. Because
+    that flag lives in `global_args`, every command Docksentry issues —
+    reads, updates, recreates, rollback, compose — goes to that host with
+    no call site aware of it. That is the whole point of having spent the
+    effort on the seam.
+
+    Several of these can exist side by side, one per configured host, which
+    is what single-process multi-host needs.
+
+    SSH endpoints rely on the CLI's own ssh handling, so key-based auth has
+    to already work for the user Docksentry runs as (`ssh user@box` must
+    succeed non-interactively). We deliberately don't reimplement ssh.
+
+    NOT for self-update: Docksentry updates the instance it runs in, which
+    is by definition local. Self-update stays on the local backend.
+    """
+
+    def __init__(self, endpoint, *, name=None, cli_binary="docker"):
+        self.endpoint = endpoint
+        self.cli_binary = cli_binary
+        self.global_args = ("-H", endpoint)
+        self.name = name or endpoint
 
 
 _default_backend = None
