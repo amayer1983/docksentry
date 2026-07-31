@@ -15,6 +15,7 @@ import sys, os, types, threading, tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 from update_checker import UpdateChecker
 from i18n import get_translator
 
@@ -61,25 +62,27 @@ def _fake_bot(update_policy="all", label_policy=None):
 
 def test_precedence():
     checks = {}
+    # _resolve_update_policy now lives on UpdateEngine; call it there
+    # directly (the bare stub only needs `config`, which the method uses).
     # label wins over env
     bot, ck = _fake_bot(update_policy="all", label_policy="minor")
     checks["label minor overrides env all"] = (
-        TelegramBot._resolve_update_policy(bot, "c", ck) == "minor")
+        UpdateEngine._resolve_update_policy(bot, "c", ck) == "minor")
     bot, ck = _fake_bot(update_policy="minor", label_policy="all")
     checks["label all overrides env minor"] = (
-        TelegramBot._resolve_update_policy(bot, "c", ck) == "all")
+        UpdateEngine._resolve_update_policy(bot, "c", ck) == "all")
     # no label -> env
     bot, ck = _fake_bot(update_policy="patch", label_policy=None)
     checks["no label falls back to env patch"] = (
-        TelegramBot._resolve_update_policy(bot, "c", ck) == "patch")
+        UpdateEngine._resolve_update_policy(bot, "c", ck) == "patch")
     # invalid label -> fail-open all
     bot, ck = _fake_bot(update_policy="patch", label_policy="bogus")
     checks["invalid label -> all (fail-open)"] = (
-        TelegramBot._resolve_update_policy(bot, "c", ck) == "all")
+        UpdateEngine._resolve_update_policy(bot, "c", ck) == "all")
     # invalid env -> all
     bot, ck = _fake_bot(update_policy="nonsense", label_policy=None)
     checks["invalid env -> all (fail-open)"] = (
-        TelegramBot._resolve_update_policy(bot, "c", ck) == "all")
+        UpdateEngine._resolve_update_policy(bot, "c", ck) == "all")
     return checks
 
 
@@ -131,10 +134,10 @@ def _int_bot(update_policy):
     bot._enrich_with_source_url = lambda u: None
     bot._display_name = lambda u: u["name"]
     bot._maybe_cooldown = lambda *a, **k: None
-    # bind the real methods under test
-    bot._resolve_update_policy = lambda n, c: TelegramBot._resolve_update_policy(bot, n, c)
-    bot._policy_allows_level = TelegramBot._policy_allows_level
-    bot._policy_decision = lambda u, c: TelegramBot._policy_decision(bot, u, c)
+    # bind the real methods under test (they now live on UpdateEngine)
+    bot._resolve_update_policy = lambda n, c: UpdateEngine._resolve_update_policy(bot, n, c)
+    bot._policy_allows_level = UpdateEngine._policy_allows_level
+    bot._policy_decision = lambda u, c: UpdateEngine._policy_decision(bot, u, c)
     bot._process_update_batch = lambda *a, **k: TelegramBot._process_update_batch(bot, *a, **k)
     return bot
 

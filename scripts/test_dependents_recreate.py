@@ -18,6 +18,7 @@ import sys, os, types, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from update_checker import UpdateChecker
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 
 HEAD, SIDE, PLAIN = "ds8_head", "ds8_side", "ds8_plain"
 
@@ -70,7 +71,9 @@ def main():
         # bool _wait_healthy duplicate used to crash the cascade here).
         bot = types.SimpleNamespace()
         chk._wait_healthy = lambda name, max_starting=None, interval=10: ("healthy", "running", "healthy")
-        msg = TelegramBot._restart_group_dependents(bot, HEAD, [SIDE, PLAIN], chk, max_wait=5)
+        # _restart_group_dependents now lives on UpdateEngine; call it there
+        # directly (it only needs the passed `checker` + subprocess).
+        msg = UpdateEngine._restart_group_dependents(bot, HEAD, [SIDE, PLAIN], chk, max_wait=5)
         c2 = _running(SIDE) and chk.netns_target_name(SIDE) == HEAD and _running(PLAIN)
         c3 = ("`%s`" % SIDE in msg) and ("failed" not in msg)
     finally:

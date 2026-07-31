@@ -13,6 +13,7 @@ import sys, os, types, threading, tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 from i18n import get_translator
 
 
@@ -34,9 +35,9 @@ def run(all_auto, auto_list):
     # Update-policy gate (v1.53.0) — bind the real resolution/decision so the
     # gate runs; with no UPDATE_POLICY set it resolves to "all" (allow all),
     # so this test's auto/manual routing is unchanged.
-    bot._resolve_update_policy = lambda n, c: TelegramBot._resolve_update_policy(bot, n, c)
-    bot._policy_allows_level = TelegramBot._policy_allows_level
-    bot._policy_decision = lambda u, c: TelegramBot._policy_decision(bot, u, c)
+    bot._resolve_update_policy = lambda n, c: UpdateEngine._resolve_update_policy(bot, n, c)
+    bot._policy_allows_level = UpdateEngine._policy_allows_level
+    bot._policy_decision = lambda u, c: UpdateEngine._policy_decision(bot, u, c)
 
     def fake_batch(updates, checker, *, auto):
         cap["auto"] = [u["name"] for u in updates]

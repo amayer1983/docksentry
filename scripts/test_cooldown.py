@@ -12,6 +12,7 @@ import sys, os, tempfile, types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import telegram_bot
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 from container_store import ContainerStore
 
 FILE_ATTRS = ["pinned_file", "autoupdate_file", "update_windows_file",
@@ -52,7 +53,9 @@ def main():
         class _Bot:
             store = st2
         bot = _Bot()
-        mc = TelegramBot._maybe_cooldown
+        # _maybe_cooldown now lives on UpdateEngine; call it there directly
+        # (the bare stub only needs `store`, which the engine method uses).
+        mc = UpdateEngine._maybe_cooldown
 
         slept.clear(); mc(bot, "heavy", more_remaining=True)
         checks["sleeps cooldown when more remain"] = slept == [15]

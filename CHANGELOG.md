@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.3] - 2026-07-31
+
+### Changed
+- **Internal groundwork (v2):** the neutral, Telegram-agnostic helpers behind update orchestration — major-bump detection, the per-container update-policy resolution, the cooldown wait, the group-dependents restart, and the container-name/version formatting — moved from the Telegram bot onto the `UpdateEngine`. The bot keeps a thin passthrough for each, so every existing caller and every test still works exactly as before, and the message wording is byte-for-byte unchanged. Same continued, deliberate step-by-step move of the update logic off the bot so a second interface can share it later.
+
 ## [1.60.2] - 2026-07-31
 
 ### Changed
