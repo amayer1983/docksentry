@@ -20,6 +20,7 @@ import sys, os, threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 
 
 class FakeChecker:
@@ -34,9 +35,16 @@ class FakeChecker:
 
 def make_bot():
     bot = TelegramBot.__new__(TelegramBot)
-    bot._update_lock = threading.Lock()
-    bot._queued_selfupdate = None
-    bot._swap_in_flight = False
+    # The lock and the two flags now live on the engine; the bot mirrors
+    # them read-only (lock) / via setters (flags). Give the bare bot an
+    # engine so `bot._update_lock` and the flag assignments below route to
+    # the one Lock object — assertions still read `bot._update_lock` and
+    # see exactly that object.
+    engine = UpdateEngine.__new__(UpdateEngine)
+    engine._update_lock = threading.Lock()
+    engine._queued_selfupdate = None
+    engine._swap_in_flight = False
+    bot.engine = engine
     bot.sent = []
     bot.t = lambda key, **kw: key
     bot.send_message = lambda msg, **kw: bot.sent.append(msg)

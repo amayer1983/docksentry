@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.60.2] - 2026-07-31
+
+### Changed
+- **Internal groundwork (v2):** the update lock — the single mutex that coordinates the scheduler, the Web UI and the bot so two updates never run at once — now lives on a new `UpdateEngine` instead of the Telegram bot, mirrored back onto the bot by property so every existing caller still sees the exact same lock object. Pure aliasing, no behaviour change; it's the first, deliberately smallest step of moving the update orchestration out of the Telegram bot so a second interface (a Discord bot, later) can share it. The riskier pieces follow one at a time.
+
 ## [1.60.1] - 2026-07-31
 
 ### Changed

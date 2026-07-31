@@ -67,32 +67,21 @@ _BOT_COMMANDS = [
 
 
 class TelegramBot:
-    def __init__(self, config, container_store):
+    def __init__(self, config, container_store, engine=None):
         self.config = config
         self.store = container_store
         self.running = True
-        # Single mutex guarding ALL update flows — manual "Update all"
-        # (run_updates, bot thread), single-container update
-        # (_run_single_update, bot thread), major-confirm update, AND the
-        # scheduler's auto-update pass (handle_autoupdates, scheduler
-        # thread). Before v1.23.1 only the manual paths checked a plain
-        # `update_running` bool; the scheduler's auto-update ignored it
-        # entirely, so a cron tick could recreate the same container the
-        # user was mid-updating. A Lock with acquire(blocking=False)
-        # makes the check-and-claim atomic (the old bool had a TOCTOU
-        # window) and covers every entry point.
-        import threading as _threading
-        self._update_lock = _threading.Lock()
-        # A /selfupdate requested while the lock is held (container batch
-        # in progress) is queued instead of killing the batch mid-flight
-        # (#2, @famewolf): the restart aborted running updates, and if it
-        # had landed during a stop/rename/recreate it would have left a
-        # renamed `_old` orphan. Holds the 1-tuple `(target,)` or None.
-        self._queued_selfupdate = None
-        # True once the helper container is launched — the process is
-        # about to be stopped, so the wrapper keeps the update lock held
-        # (nothing may start an update in the final seconds).
-        self._swap_in_flight = False
+        # Update-orchestration state (the mutex guarding ALL update flows
+        # plus the self-update queue and swap-in-flight flags) now lives on
+        # a neutral UpdateEngine (v2 groundwork). The bot mirrors it through
+        # the `_update_lock` / `update_running` / `_queued_selfupdate` /
+        # `_swap_in_flight` properties below so every existing call site —
+        # here, the Web UI, the scheduler — keeps working unchanged and,
+        # critically, keeps seeing the SAME single Lock object. The
+        # `engine=None` fallback builds one so callers/tests that still do
+        # `TelegramBot(config, store)` don't break.
+        from update_engine import UpdateEngine
+        self.engine = engine or UpdateEngine(config, container_store)
         # Per-notification snapshots of the "Updates Available" container
         # list, keyed by a short token carried in the "Update all"
         # button's callback_data (v1.23.3). Before this, "Update all"
@@ -116,15 +105,37 @@ class TelegramBot:
         from i18n import get_translator
         self.t = get_translator(config.language)
 
+    # ── Update-orchestration state, mirrored from the engine ───────────
+    # These four properties keep every existing call site (this file, the
+    # Web UI, the scheduler) working unchanged while the real state lives
+    # on `self.engine`. The lock and `update_running` are read-only views;
+    # the two flags need setters because the self-update paths assign them
+    # (queued at :1681, cleared at :1730; swap flag set at :2074).
+    @property
+    def _update_lock(self):
+        return self.engine._update_lock
+
     @property
     def update_running(self):
         """True while any update flow holds the lock. Read-only view kept
         for the /check race-guard and any external callers."""
-        locked = self._update_lock.acquire(blocking=False)
-        if locked:
-            self._update_lock.release()
-            return False
-        return True
+        return self.engine.update_running
+
+    @property
+    def _queued_selfupdate(self):
+        return self.engine._queued_selfupdate
+
+    @_queued_selfupdate.setter
+    def _queued_selfupdate(self, value):
+        self.engine._queued_selfupdate = value
+
+    @property
+    def _swap_in_flight(self):
+        return self.engine._swap_in_flight
+
+    @_swap_in_flight.setter
+    def _swap_in_flight(self, value):
+        self.engine._swap_in_flight = value
 
     @property
     def enabled(self):

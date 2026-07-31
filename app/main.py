@@ -20,6 +20,7 @@ if os.environ.get("DOCKSENTRY_IPV6", "false").lower() not in ("true", "1", "yes"
 from config import Config
 from container_store import ContainerStore
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
 from update_checker import UpdateChecker
 from scheduler import Scheduler
 from notifier import Notifier
@@ -101,7 +102,10 @@ def main():
         sys.exit(1)
 
     store = ContainerStore(config)
-    bot = TelegramBot(config, store)
+    # Update orchestration lives on a neutral engine (v2 groundwork); build
+    # it once and hand it to the bot so both share the one update mutex.
+    engine = UpdateEngine(config, store)
+    bot = TelegramBot(config, store, engine)
     notifier = Notifier(config)
     bot.notifier = notifier
     checker = UpdateChecker(config)
