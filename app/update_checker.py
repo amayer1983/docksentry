@@ -1425,9 +1425,9 @@ class UpdateChecker:
             return False
         # -f so a wedged/running broken new container can't block the
         # rename the way the old non-forced `docker rm` did.
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
-        subprocess.run(["docker", "rename", old_name, name], capture_output=True, timeout=10)
-        start = subprocess.run(["docker", "start", name], capture_output=True, timeout=60)
+        self.backend.rm(name, force=True, timeout=15)
+        self.backend.rename(old_name, name, timeout=10)
+        start = self.backend.start(name, timeout=60)
         ok = start.returncode == 0
         self._debug(f"  Rollback: restored {old_name} → {name} "
                     f"({'started' if ok else 'start failed'})")
@@ -1482,10 +1482,8 @@ class UpdateChecker:
 
         self._debug(f"  Stop {name}: effective_stop={effective_stop}s, subprocess={subprocess_timeout}s")
         try:
-            r = subprocess.run(
-                ["docker", "stop", "--time", str(effective_stop), name],
-                capture_output=True, text=True, timeout=subprocess_timeout,
-            )
+            r = self.backend.stop(name, time=effective_stop,
+                                  timeout=subprocess_timeout)
             if r.returncode == 0:
                 return True, "stopped"
             err = (r.stderr or "").strip()[:200]
@@ -1498,10 +1496,7 @@ class UpdateChecker:
         # Fallback: force-kill so we don't leave the recreate flow
         # half-finished.
         try:
-            kill = subprocess.run(
-                ["docker", "kill", name],
-                capture_output=True, text=True, timeout=15,
-            )
+            kill = self.backend.kill(name, timeout=15)
             if kill.returncode == 0:
                 return True, "killed after stop timeout"
             return False, f"stop+kill both failed: {(kill.stderr or '').strip()[:120]}"
@@ -1665,13 +1660,12 @@ class UpdateChecker:
 
         old_name = f"{name}_old"
         # Clear any stale backup from a previous interrupted run.
-        subprocess.run(["docker", "rm", "-f", old_name], capture_output=True, timeout=15)
+        self.backend.rm(old_name, force=True, timeout=15)
         self._stop_container(name)
         # Back up by renaming — only if it survived the stop (AutoRemove may
         # have deleted it, in which case we recreate straight from `config`).
         if self._container_exists(name):
-            subprocess.run(["docker", "rename", name, old_name],
-                           capture_output=True, timeout=10)
+            self.backend.rename(name, old_name, timeout=10)
 
         cmd = self._build_run_args(config, image, name,
                                    self._get_image_defaults(image),
@@ -1684,7 +1678,7 @@ class UpdateChecker:
             self._debug(f"  Dependent recreate failed for {name}: {err}")
             self._rollback_to_old(name, old_name)
             return False, err
-        subprocess.run(["docker", "rm", "-f", old_name], capture_output=True, timeout=15)
+        self.backend.rm(old_name, force=True, timeout=15)
         return True, "recreated"
 
     def _wait_healthy(self, name, max_starting=None, interval=10):
@@ -3183,7 +3177,7 @@ class UpdateChecker:
 
             # Rename old container
             old_name = f"{name}_old"
-            subprocess.run(["docker", "rename", name, old_name], capture_output=True, timeout=10)
+            self.backend.rename(name, old_name, timeout=10)
             self._debug(f"  Renamed to: {old_name}")
 
             # Build docker run command from inspect config — single
@@ -3256,7 +3250,7 @@ class UpdateChecker:
                 # what the user wants), and report as a warning so the
                 # user knows to keep an eye on it.
                 tail = self._tail_logs(name, lines=10)
-                subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
+                self.backend.rm(old_name, timeout=30)
                 detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
                 msg = (f"⚠ Updated but still 'starting' after our wait — left running. "
                        f"Docker's own healthcheck will keep checking. ({detail})")
@@ -3276,7 +3270,7 @@ class UpdateChecker:
                 return False, msg
 
             # Remove old container
-            subprocess.run(["docker", "rm", old_name], capture_output=True, timeout=30)
+            self.backend.rm(old_name, timeout=30)
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
             detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"

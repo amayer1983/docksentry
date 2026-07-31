@@ -148,6 +148,41 @@ class ContainerBackend:
         """`docker pull REF`."""
         return self.run(["pull", ref], timeout=timeout)
 
+    # text= is NOT uniform across these, and that is deliberate: it mirrors
+    # what each historical call site passed. `stop`/`kill` ran with
+    # text=True and their callers read `.stderr` as a str — handing those
+    # bytes would break `.strip()`. `start`/`rename`/`rm` ran with
+    # capture_output only and never read the output, so text=False keeps
+    # them byte-faithful. The argv is identical either way.
+
+    def stop(self, name, *, time=None, timeout=None):
+        """`docker stop [--time N] NAME`. Text mode — callers read stderr."""
+        args = ["stop"]
+        if time is not None:
+            args += ["--time", str(time)]
+        args.append(name)
+        return self.run(args, timeout=timeout)
+
+    def kill(self, name, *, timeout=None):
+        """`docker kill NAME`. Text mode — callers read stderr."""
+        return self.run(["kill", name], timeout=timeout)
+
+    def start(self, name, *, timeout=None):
+        """`docker start NAME`."""
+        return self.run(["start", name], timeout=timeout, text=False)
+
+    def rename(self, src, dst, *, timeout=None):
+        """`docker rename SRC DST`."""
+        return self.run(["rename", src, dst], timeout=timeout, text=False)
+
+    def rm(self, names, *, force=False, timeout=None):
+        """`docker rm [-f] NAME...`."""
+        args = ["rm"]
+        if force:
+            args.append("-f")
+        args += self._as_list(names)
+        return self.run(args, timeout=timeout, text=False)
+
 
 class DockerBackend(ContainerBackend):
     """Docker CLI backend — the current, only production backend.

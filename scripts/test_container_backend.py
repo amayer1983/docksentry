@@ -97,6 +97,25 @@ def main():
             "pull":
                 (argv(lambda: b.pull("nginx:latest")),
                  ["docker", "pull", "nginx:latest"]),
+            "stop --time":
+                (argv(lambda: b.stop("web", time=90)),
+                 ["docker", "stop", "--time", "90", "web"]),
+            "stop without --time":
+                (argv(lambda: b.stop("web")), ["docker", "stop", "web"]),
+            "kill":
+                (argv(lambda: b.kill("web")), ["docker", "kill", "web"]),
+            "start":
+                (argv(lambda: b.start("web")), ["docker", "start", "web"]),
+            "rename":
+                (argv(lambda: b.rename("web", "web_old")),
+                 ["docker", "rename", "web", "web_old"]),
+            "rm":
+                (argv(lambda: b.rm("web_old")), ["docker", "rm", "web_old"]),
+            "rm -f":
+                (argv(lambda: b.rm("web_old", force=True)),
+                 ["docker", "rm", "-f", "web_old"]),
+            "rm multiple":
+                (argv(lambda: b.rm(["a", "b"])), ["docker", "rm", "a", "b"]),
             # Dynamically-assembled argv (compose, docker run, network
             # connect) goes through the generic run() so the executed
             # command stays byte-identical to the old call site. The
@@ -121,6 +140,23 @@ def main():
         b.ps(quiet=True)
         checks["run leaves timeout=None when unset"] = (
             rec.kwargs.get("timeout") is None)
+
+        # ── text mode per lifecycle verb ────────────────────────────
+        # NOT uniform, deliberately: it mirrors what each historical call
+        # site passed. stop/kill ran text=True and their callers do
+        # `(r.stderr or "").strip()` — bytes there would raise. rm/rename/
+        # start ran capture_output-only and never read the output.
+        for verb, call, want_text in (
+            ("stop", lambda: b.stop("web", time=10), True),
+            ("kill", lambda: b.kill("web"), True),
+            ("start", lambda: b.start("web"), False),
+            ("rename", lambda: b.rename("a", "b"), False),
+            ("rm", lambda: b.rm("a"), False),
+            ("pull", lambda: b.pull("img"), True),
+        ):
+            call()
+            checks[f"text mode: {verb} is {want_text}"] = (
+                rec.kwargs.get("text") is want_text)
 
         # ── DockerBackend identity + factory ────────────────────────
         checks["DockerBackend.cli_binary == 'docker'"] = (
