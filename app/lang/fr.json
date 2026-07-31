@@ -557,5 +557,17 @@
   "web_link_origin_registry": "déduit du nom de l'image — page d'aperçu du registre, pas un changelog",
   "web_link_saved": "Lien enregistré.",
   "web_link_cleared": "Lien supprimé — la détection automatique reprend.",
-  "web_link_rejected": "Lien refusé : seules les URL complètes http:// ou https:// sont acceptées, sans espaces ni guillemets."
+  "web_link_rejected": "Lien refusé : seules les URL complètes http:// ou https:// sont acceptées, sans espaces ni guillemets.",
+  "web_healthcheck_max_starting": "Délai du healthcheck (secondes)",
+  "web_healthcheck_max_starting_hint": "Temps maximum dont dispose un conteneur mis à jour pour se déclarer « healthy » avant que la mise à jour soit considérée comme échouée et annulée.",
+  "web_docker_stop_timeout": "Délai d’arrêt (secondes)",
+  "web_docker_stop_timeout_hint": "Durée pendant laquelle « docker stop » attend qu’un conteneur s’arrête de lui-même avant de le tuer de force.",
+  "web_monitor_title": "Surveillance",
+  "web_monitor_enabled": "Surveiller l’état des conteneurs",
+  "web_monitor_hint": "Surveille les conteneurs en cours d’exécution et envoie une alerte lorsqu’un conteneur s’arrête, plante ou devient unhealthy.",
+  "web_monitor_interval": "Intervalle de vérification (secondes)",
+  "web_monitor_interval_hint": "Fréquence d’échantillonnage de l’état des conteneurs. Minimum 15 secondes.",
+  "web_password_label": "Mot de passe de l’interface web",
+  "web_password_placeholder": "laisser vide = inchangé",
+  "web_password_hint": "Mot de passe pour l’authentification HTTP Basic de cette interface. Laissez vide pour conserver l’actuel ; un nouveau mot de passe prend effet immédiatement."
 }

@@ -241,12 +241,27 @@ def main():
     checks["line: says where to change it"] = "Settings › General" in line
     checks["line: names settings.json"] = c.settings_file in line
 
-    # A key with no Web UI field of its own must not send the user to a
-    # tab that doesn't have it.
+    # docker_stop_timeout used to have no Web UI field of its own and so
+    # got the settings.json-only wording. It now lives on the Updates tab
+    # (v1.58.x), so the line has to send the user there instead.
     c = build({"DOCKER_STOP_TIMEOUT": "90"}, {"docker_stop_timeout": 60})
     line = c.env_override_lines()[0]
-    checks["line: field-less key points at settings.json only"] = (
-        "Settings ›" not in line and "docker_stop_timeout" in line)
+    checks["line: docker_stop_timeout points at Settings › Updates"] = (
+        "Settings › Updates" in line and "docker_stop_timeout" in line)
+
+    # The five keys that gained a field (v1.58.x) all carry a tab now — the
+    # settings.json-only wording must not appear for any of them.
+    FIELD_TABS = {
+        "web_password": ("WEB_PASSWORD", "General"),
+        "healthcheck_max_starting": ("HEALTHCHECK_MAX_STARTING", "Updates"),
+        "docker_stop_timeout": ("DOCKER_STOP_TIMEOUT", "Updates"),
+        "monitor_enabled": ("MONITOR", "Notifications"),
+        "monitor_interval_seconds": ("MONITOR_INTERVAL", "Notifications"),
+    }
+    from config import PERSISTENT_SETTINGS_TAB
+    for key, (var, tab) in FIELD_TABS.items():
+        checks[f"tab map: {key} -> {tab}"] = (
+            PERSISTENT_SETTINGS_TAB.get(key) == tab)
 
     # ── several at once, and non-bool types ───────────────────
     # LANGUAGE=fr, not "en" — "en" is the default and would be filtered.

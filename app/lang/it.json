@@ -557,5 +557,17 @@
   "web_link_origin_registry": "dedotto dal nome dell'immagine — pagina panoramica del registry, non un changelog",
   "web_link_saved": "Link salvato.",
   "web_link_cleared": "Link rimosso — torna valido il rilevamento automatico.",
-  "web_link_rejected": "Link rifiutato: sono accettati solo URL http:// o https:// completi, senza spazi né virgolette."
+  "web_link_rejected": "Link rifiutato: sono accettati solo URL http:// o https:// completi, senza spazi né virgolette.",
+  "web_healthcheck_max_starting": "Timeout dell’healthcheck (secondi)",
+  "web_healthcheck_max_starting_hint": "Tempo massimo entro cui un container aggiornato deve risultare «healthy» prima che l’aggiornamento venga considerato fallito e annullato.",
+  "web_docker_stop_timeout": "Timeout di arresto (secondi)",
+  "web_docker_stop_timeout_hint": "Per quanto tempo «docker stop» attende che un container si arresti da solo prima di forzarne la chiusura.",
+  "web_monitor_title": "Monitoraggio",
+  "web_monitor_enabled": "Monitora lo stato dei container",
+  "web_monitor_hint": "Controlla i container in esecuzione e invia un avviso quando uno si ferma, va in crash o diventa unhealthy.",
+  "web_monitor_interval": "Intervallo di controllo (secondi)",
+  "web_monitor_interval_hint": "Con quale frequenza viene campionato lo stato dei container. Minimo 15 secondi.",
+  "web_password_label": "Password dell’interfaccia web",
+  "web_password_placeholder": "lascia vuoto = invariato",
+  "web_password_hint": "Password per l’autenticazione HTTP Basic di questa interfaccia. Lascia vuoto per mantenere quella attuale; una nuova password ha effetto immediatamente."
 }

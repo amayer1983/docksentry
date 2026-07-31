@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.59.0] - 2026-07-31
+
+### Added
+- **Five settings that could only be set by env var are now editable in the Web UI.** They live in `PERSISTENT_KEYS`, so once anything was saved in Settings they froze at their then-current value with no way back except hand-editing `settings.json`. They each have a field now: the Web UI password (Settings › General, as a change field — blank leaves it as-is, the stored value is never shown), the healthcheck and stop timeouts (Settings › Updates), and container-state monitoring on/off plus its poll interval (Settings › Notifications, under a new "Monitoring" heading). Each field carries the same `env` marker as the rest, so you can see when an environment variable is overriding the saved value.
+
+### Fixed
+- **A Web UI password change now takes effect immediately, without a restart.** The password was hashed once at startup and that hash was compared on every request, so changing it — previously only possible by env var and restart, now via the new field — wouldn't apply until the process restarted. Auth now hashes the current password fresh per request (still constant-time via `hmac.compare_digest`), so a change in Settings applies on the next request.
+
 ## [1.58.1] - 2026-07-31
 
 ### Changed

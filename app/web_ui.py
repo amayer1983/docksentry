@@ -292,20 +292,28 @@ def _validate_webhook_url(url, kind="generic"):
 def create_handler(config, checker, bot, store, password=None):
     """Create a request handler with access to app components."""
 
-    # Pre-compute password hash if set
-    pw_hash = hashlib.sha256(password.encode()).hexdigest() if password else None
-
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress default logging
 
         def _check_auth(self):
-            """Check Basic Auth if password is configured.
+            """Check Basic Auth against the currently configured password.
 
-            Uses hmac.compare_digest for the hash comparison to avoid the
-            theoretical timing-side-channel that comes with `==` on bytes.
+            Reads `config.web_password` fresh on every request rather than
+            a hash cached at startup, so a password changed in Settings ›
+            General takes effect immediately — no restart. (The `password`
+            argument to create_handler is just the startup value of the
+            same field; config is the source of truth.) One SHA-256 per
+            request is nothing. Uses hmac.compare_digest to avoid the
+            timing side-channel of `==` on the hashes.
             """
-            if not pw_hash:
+            # getattr, not config.web_password directly: the real Config
+            # always carries it (a constructor arg), so this is a no-op in
+            # production — but it keeps auth from 500-ing a request on a
+            # config that somehow lacks the attribute, degrading to the
+            # documented "no password set → open" instead of crashing.
+            current = getattr(config, "web_password", "") or ""
+            if not current:
                 return True
             auth = self.headers.get("Authorization", "")
             if not auth.startswith("Basic "):
@@ -314,7 +322,8 @@ def create_handler(config, checker, bot, store, password=None):
                 decoded = base64.b64decode(auth[6:]).decode()
                 user, pw = decoded.split(":", 1)
                 submitted = hashlib.sha256(pw.encode()).hexdigest()
-                return hmac.compare_digest(submitted, pw_hash)
+                expected = hashlib.sha256(current.encode()).hexdigest()
+                return hmac.compare_digest(submitted, expected)
             except Exception:
                 return False
 
@@ -1130,6 +1139,46 @@ def create_handler(config, checker, bot, store, password=None):
                     # concern at that size but a runaway label would be
                     # cosmetic noise on every notification.
                     config.bot_label = params["bot_label"][0].strip()[:32]
+
+                # Update / recreate timeouts (Updates tab). Positive
+                # seconds; the healthcheck grace has a higher floor than the
+                # stop grace but both just need to stay above zero.
+                if "healthcheck_max_starting" in params:
+                    try:
+                        v = int(params["healthcheck_max_starting"][0].strip())
+                        config.healthcheck_max_starting = max(30, min(v, 3600))
+                    except (ValueError, IndexError):
+                        pass
+                if "docker_stop_timeout" in params:
+                    try:
+                        v = int(params["docker_stop_timeout"][0].strip())
+                        config.docker_stop_timeout = max(1, min(v, 3600))
+                    except (ValueError, IndexError):
+                        pass
+
+                # Container-state monitoring (Notifications tab).
+                config.monitor_enabled = "monitor_enabled" in params
+                if "monitor_interval_seconds" in params:
+                    try:
+                        v = int(params["monitor_interval_seconds"][0].strip())
+                        # Floor of 15s mirrors the Config constructor — the
+                        # monitor loop refuses to poll tighter than that.
+                        config.monitor_interval_seconds = max(15, min(v, 86400))
+                    except (ValueError, IndexError):
+                        pass
+
+                # Web UI password change. Only a non-empty submission counts:
+                # an empty field means "leave it as it is", never "clear it".
+                # Stored verbatim — _check_auth hashes config.web_password
+                # fresh on each request and compares, so the plaintext here is
+                # exactly what the auth path expects, and the change takes
+                # effect on the very next request (no restart). The value is
+                # never rendered back into the form or logged (it is not on
+                # LOGGABLE_PERSISTENT_KEYS).
+                if "web_password" in params:
+                    new_pw = params["web_password"][0]
+                    if new_pw:
+                        config.web_password = new_pw
 
                 # Persist all changes
                 config.save_persistent()
@@ -3358,6 +3407,11 @@ def create_handler(config, checker, bot, store, password=None):
   </div>
   <label>{t("web_excluded")} {help_(t("web_excluded_help"))}{env_("exclude_containers")}</label>
   <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
+  <!-- Web UI password. The stored value is NEVER rendered back into the
+       field (it is a secret, not on LOGGABLE_PERSISTENT_KEYS) — the box
+       always starts empty and an empty submit means "leave unchanged". -->
+  <label>{t("web_password_label")} {help_(t("web_password_hint"))}{env_("web_password")}</label>
+  <input type="password" name="web_password" value="" placeholder="{_e(t('web_password_placeholder'))}" autocomplete="new-password">
   <!-- NOT adv-only. It used to be, and that closed the last door: DEBUG
        from the environment can be overruled by settings.json, and the
        only other way to switch debug on was a checkbox that simple mode
@@ -3375,6 +3429,17 @@ def create_handler(config, checker, bot, store, password=None):
   <div class="form-checkbox-row">
     <input type="checkbox" name="auto_selfupdate" id="cb-auto-su" {cb(config.auto_selfupdate)}>
     <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}{env_("auto_selfupdate")}</label>
+  </div>
+
+  <div class="grid adv-only">
+    <div>
+      <label>{t("web_healthcheck_max_starting")} {help_(t("web_healthcheck_max_starting_hint"))}{env_("healthcheck_max_starting")}</label>
+      <input type="number" name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" min="30" max="3600">
+    </div>
+    <div>
+      <label>{t("web_docker_stop_timeout")} {help_(t("web_docker_stop_timeout_hint"))}{env_("docker_stop_timeout")}</label>
+      <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600">
+    </div>
   </div>
   <p class="form-help">{t("web_updates_tab_hint")}</p>
 </div>
@@ -3455,6 +3520,20 @@ def create_handler(config, checker, bot, store, password=None):
       <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23">
     </div>
   </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_monitor_title")}</h3>
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="monitor_enabled" id="cb-monitor" {cb(config.monitor_enabled)}>
+    <label for="cb-monitor">{t("web_monitor_enabled")} {help_(t("web_monitor_hint"))}{env_("monitor_enabled")}</label>
+  </div>
+  <div class="grid">
+    <div>
+      <label>{t("web_monitor_interval")} {help_(t("web_monitor_interval_hint"))}{env_("monitor_interval_seconds")}</label>
+      <input type="number" name="monitor_interval_seconds" value="{_e(config.monitor_interval_seconds)}" min="15" max="86400">
+    </div>
   </div>
 </div>
 

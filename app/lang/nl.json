@@ -557,5 +557,17 @@
   "web_link_origin_registry": "afgeleid uit de imagenaam — overzichtspagina van het register, geen changelog",
   "web_link_saved": "Link opgeslagen.",
   "web_link_cleared": "Link verwijderd — de automatische detectie geldt weer.",
-  "web_link_rejected": "Link geweigerd: alleen volledige http://- of https://-URL's worden geaccepteerd, zonder spaties of aanhalingstekens."
+  "web_link_rejected": "Link geweigerd: alleen volledige http://- of https://-URL's worden geaccepteerd, zonder spaties of aanhalingstekens.",
+  "web_healthcheck_max_starting": "Healthcheck-time-out (seconden)",
+  "web_healthcheck_max_starting_hint": "Maximale tijd waarin een bijgewerkte container «healthy» moet melden voordat de update als mislukt geldt en wordt teruggedraaid.",
+  "web_docker_stop_timeout": "Stop-time-out (seconden)",
+  "web_docker_stop_timeout_hint": "Hoelang «docker stop» wacht tot een container zelf stopt voordat deze geforceerd wordt afgesloten.",
+  "web_monitor_title": "Monitoring",
+  "web_monitor_enabled": "Containerstatus monitoren",
+  "web_monitor_hint": "Bewaakt draaiende containers en stuurt een melding wanneer er een stopt, crasht of unhealthy wordt.",
+  "web_monitor_interval": "Controle-interval (seconden)",
+  "web_monitor_interval_hint": "Hoe vaak de containerstatus wordt uitgelezen. Minimaal 15 seconden.",
+  "web_password_label": "Wachtwoord webinterface",
+  "web_password_placeholder": "leeg laten = ongewijzigd",
+  "web_password_hint": "Wachtwoord voor HTTP Basic Auth op deze interface. Laat leeg om het huidige te behouden; een nieuw wachtwoord werkt onmiddellijk."
 }

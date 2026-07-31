@@ -557,5 +557,17 @@
   "web_link_origin_registry": "イメージ名からの推測 — レジストリの概要ページであり、変更履歴ではありません",
   "web_link_saved": "リンクを保存しました。",
   "web_link_cleared": "リンクを削除しました — 自動検出が再び有効になります。",
-  "web_link_rejected": "リンクを拒否しました: 空白や引用符を含まない完全な http:// または https:// の URL のみ受け付けます。"
+  "web_link_rejected": "リンクを拒否しました: 空白や引用符を含まない完全な http:// または https:// の URL のみ受け付けます。",
+  "web_healthcheck_max_starting": "ヘルスチェックのタイムアウト（秒）",
+  "web_healthcheck_max_starting_hint": "更新されたコンテナが「healthy」と報告するまでの最大時間。これを超えると更新は失敗と見なされ、ロールバックされます。",
+  "web_docker_stop_timeout": "停止タイムアウト（秒）",
+  "web_docker_stop_timeout_hint": "「docker stop」がコンテナの自発的な停止を待つ時間。これを過ぎると強制終了します。",
+  "web_monitor_title": "モニタリング",
+  "web_monitor_enabled": "コンテナの状態を監視する",
+  "web_monitor_hint": "実行中のコンテナを監視し、停止・クラッシュ・unhealthy になった際にアラートを送信します。",
+  "web_monitor_interval": "チェック間隔（秒）",
+  "web_monitor_interval_hint": "コンテナの状態を確認する頻度。最小 15 秒。",
+  "web_password_label": "Web UI のパスワード",
+  "web_password_placeholder": "空欄 = 変更なし",
+  "web_password_hint": "このインターフェースの HTTP Basic 認証用パスワード。現在のパスワードを保持するには空欄のままにします。新しいパスワードはすぐに有効になります。"
 }

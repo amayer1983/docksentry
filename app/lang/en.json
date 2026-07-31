@@ -557,5 +557,17 @@
   "web_link_origin_registry": "guessed from the image name — registry overview page, not a changelog",
   "web_link_saved": "Link saved.",
   "web_link_cleared": "Link removed — auto-detection applies again.",
-  "web_link_rejected": "Link rejected: only complete http:// or https:// URLs are accepted, without spaces or quotes."
+  "web_link_rejected": "Link rejected: only complete http:// or https:// URLs are accepted, without spaces or quotes.",
+  "web_healthcheck_max_starting": "Healthcheck timeout (seconds)",
+  "web_healthcheck_max_starting_hint": "Maximum time an updated container has to report healthy before the update counts as failed and is rolled back.",
+  "web_docker_stop_timeout": "Stop timeout (seconds)",
+  "web_docker_stop_timeout_hint": "How long docker stop waits for a container to exit on its own before it is force-killed.",
+  "web_monitor_title": "Monitoring",
+  "web_monitor_enabled": "Monitor container state",
+  "web_monitor_hint": "Watch running containers and send an alert when one stops, dies or turns unhealthy.",
+  "web_monitor_interval": "Check interval (seconds)",
+  "web_monitor_interval_hint": "How often the container state is sampled. Minimum 15 seconds.",
+  "web_password_label": "Web UI password",
+  "web_password_placeholder": "leave empty = unchanged",
+  "web_password_hint": "Password for HTTP Basic Auth on this interface. Leave empty to keep the current one; a new password takes effect immediately."
 }

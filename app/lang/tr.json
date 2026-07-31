@@ -557,5 +557,17 @@
   "web_link_origin_registry": "imaj adından tahmin edildi — registry genel bakış sayfası, changelog değil",
   "web_link_saved": "Bağlantı kaydedildi.",
   "web_link_cleared": "Bağlantı kaldırıldı — otomatik algılama yeniden geçerli.",
-  "web_link_rejected": "Bağlantı reddedildi: yalnızca boşluk ve tırnak içermeyen tam http:// veya https:// adresleri kabul edilir."
+  "web_link_rejected": "Bağlantı reddedildi: yalnızca boşluk ve tırnak içermeyen tam http:// veya https:// adresleri kabul edilir.",
+  "web_healthcheck_max_starting": "Healthcheck zaman aşımı (saniye)",
+  "web_healthcheck_max_starting_hint": "Güncellenen bir konteynerin, güncelleme başarısız sayılıp geri alınmadan önce «healthy» bildirmesi için gereken en fazla süre.",
+  "web_docker_stop_timeout": "Durdurma zaman aşımı (saniye)",
+  "web_docker_stop_timeout_hint": "«docker stop» komutunun, konteyner kendiliğinden durmadan önce onu beklediği süre; ardından zorla sonlandırılır.",
+  "web_monitor_title": "İzleme",
+  "web_monitor_enabled": "Konteyner durumunu izle",
+  "web_monitor_hint": "Çalışan konteynerleri izler ve biri durduğunda, çöktüğünde veya unhealthy olduğunda uyarı gönderir.",
+  "web_monitor_interval": "Kontrol aralığı (saniye)",
+  "web_monitor_interval_hint": "Konteyner durumunun ne sıklıkta örneklendiği. En az 15 saniye.",
+  "web_password_label": "Web arayüzü parolası",
+  "web_password_placeholder": "boş bırak = değişmez",
+  "web_password_hint": "Bu arayüzdeki HTTP Basic kimlik doğrulaması için parola. Mevcut parolayı korumak için boş bırakın; yeni parola hemen etkinleşir."
 }

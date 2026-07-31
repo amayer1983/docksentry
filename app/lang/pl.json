@@ -557,5 +557,17 @@
   "web_link_origin_registry": "odgadnięte z nazwy obrazu — strona przeglądowa rejestru, nie changelog",
   "web_link_saved": "Link zapisany.",
   "web_link_cleared": "Link usunięty — znowu działa wykrywanie automatyczne.",
-  "web_link_rejected": "Link odrzucony: akceptowane są tylko pełne adresy http:// lub https://, bez spacji i cudzysłowów."
+  "web_link_rejected": "Link odrzucony: akceptowane są tylko pełne adresy http:// lub https://, bez spacji i cudzysłowów.",
+  "web_healthcheck_max_starting": "Limit czasu healthcheck (sekundy)",
+  "web_healthcheck_max_starting_hint": "Maksymalny czas, w jakim zaktualizowany kontener musi zgłosić stan „healthy”, zanim aktualizacja zostanie uznana za nieudaną i wycofana.",
+  "web_docker_stop_timeout": "Limit czasu zatrzymania (sekundy)",
+  "web_docker_stop_timeout_hint": "Jak długo „docker stop” czeka na samodzielne zatrzymanie kontenera, zanim zostanie on przymusowo zabity.",
+  "web_monitor_title": "Monitorowanie",
+  "web_monitor_enabled": "Monitoruj stan kontenerów",
+  "web_monitor_hint": "Obserwuje działające kontenery i wysyła alert, gdy któryś się zatrzyma, ulegnie awarii lub stanie się unhealthy.",
+  "web_monitor_interval": "Interwał sprawdzania (sekundy)",
+  "web_monitor_interval_hint": "Jak często odpytywany jest stan kontenerów. Minimum 15 sekund.",
+  "web_password_label": "Hasło interfejsu web",
+  "web_password_placeholder": "puste = bez zmian",
+  "web_password_hint": "Hasło do uwierzytelniania HTTP Basic tego interfejsu. Pozostaw puste, aby zachować obecne; nowe hasło zacznie działać natychmiast."
 }

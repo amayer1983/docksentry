@@ -557,5 +557,17 @@
   "web_link_origin_registry": "이미지 이름에서 추정 — 레지스트리 개요 페이지이며 변경 이력이 아닙니다",
   "web_link_saved": "링크를 저장했습니다.",
   "web_link_cleared": "링크를 삭제했습니다 — 자동 감지가 다시 적용됩니다.",
-  "web_link_rejected": "링크가 거부되었습니다: 공백과 따옴표가 없는 완전한 http:// 또는 https:// URL만 허용됩니다."
+  "web_link_rejected": "링크가 거부되었습니다: 공백과 따옴표가 없는 완전한 http:// 또는 https:// URL만 허용됩니다.",
+  "web_healthcheck_max_starting": "헬스체크 제한 시간(초)",
+  "web_healthcheck_max_starting_hint": "업데이트된 컨테이너가 「healthy」로 보고해야 하는 최대 시간이며, 이를 초과하면 업데이트가 실패로 간주되어 롤백됩니다.",
+  "web_docker_stop_timeout": "중지 제한 시간(초)",
+  "web_docker_stop_timeout_hint": "「docker stop」이 컨테이너가 스스로 종료되기를 기다리는 시간이며, 이후에는 강제로 종료합니다.",
+  "web_monitor_title": "모니터링",
+  "web_monitor_enabled": "컨테이너 상태 모니터링",
+  "web_monitor_hint": "실행 중인 컨테이너를 감시하고 컨테이너가 중지, 비정상 종료되거나 unhealthy 상태가 되면 알림을 보냅니다.",
+  "web_monitor_interval": "확인 간격(초)",
+  "web_monitor_interval_hint": "컨테이너 상태를 확인하는 빈도입니다. 최소 15초.",
+  "web_password_label": "웹 UI 비밀번호",
+  "web_password_placeholder": "비우면 = 변경 없음",
+  "web_password_hint": "이 인터페이스의 HTTP Basic 인증 비밀번호입니다. 현재 비밀번호를 유지하려면 비워 두세요. 새 비밀번호는 즉시 적용됩니다."
 }

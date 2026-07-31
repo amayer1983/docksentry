@@ -557,5 +557,17 @@
   "web_link_origin_registry": "根据镜像名推测 — registry 概览页，并非更新日志",
   "web_link_saved": "链接已保存。",
   "web_link_cleared": "链接已删除 — 重新使用自动识别。",
-  "web_link_rejected": "链接被拒绝：只接受完整的 http:// 或 https:// 地址，且不能含空格或引号。"
+  "web_link_rejected": "链接被拒绝：只接受完整的 http:// 或 https:// 地址，且不能含空格或引号。",
+  "web_healthcheck_max_starting": "健康检查超时（秒）",
+  "web_healthcheck_max_starting_hint": "更新后的容器报告「healthy」的最长时间，超过则视为更新失败并回滚。",
+  "web_docker_stop_timeout": "停止超时（秒）",
+  "web_docker_stop_timeout_hint": "「docker stop」等待容器自行退出的时长，超时后将强制终止。",
+  "web_monitor_title": "监控",
+  "web_monitor_enabled": "监控容器状态",
+  "web_monitor_hint": "监视运行中的容器，当有容器停止、崩溃或变为 unhealthy 时发送警报。",
+  "web_monitor_interval": "检查间隔（秒）",
+  "web_monitor_interval_hint": "采样容器状态的频率。最少 15 秒。",
+  "web_password_label": "Web UI 密码",
+  "web_password_placeholder": "留空 = 不修改",
+  "web_password_hint": "此界面 HTTP Basic 认证的密码。留空以保留当前密码；新密码将立即生效。"
 }

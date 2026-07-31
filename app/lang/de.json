@@ -557,5 +557,17 @@
   "web_link_origin_registry": "aus dem Image-Namen erraten — Registry-Übersichtsseite, kein Changelog",
   "web_link_saved": "Link gespeichert.",
   "web_link_cleared": "Link entfernt — die automatische Erkennung greift wieder.",
-  "web_link_rejected": "Link abgelehnt: akzeptiert werden nur vollständige http://- oder https://-URLs, ohne Leerzeichen und Anführungszeichen."
+  "web_link_rejected": "Link abgelehnt: akzeptiert werden nur vollständige http://- oder https://-URLs, ohne Leerzeichen und Anführungszeichen.",
+  "web_healthcheck_max_starting": "Healthcheck-Zeitlimit (Sekunden)",
+  "web_healthcheck_max_starting_hint": "Maximale Zeit, in der ein aktualisierter Container „healthy“ melden muss, bevor das Update als fehlgeschlagen gilt und zurückgerollt wird.",
+  "web_docker_stop_timeout": "Stop-Zeitlimit (Sekunden)",
+  "web_docker_stop_timeout_hint": "Wie lange „docker stop“ auf das eigenständige Beenden eines Containers wartet, bevor er hart beendet wird.",
+  "web_monitor_title": "Überwachung",
+  "web_monitor_enabled": "Container-Status überwachen",
+  "web_monitor_hint": "Laufende Container beobachten und einen Alarm senden, wenn einer stoppt, abstürzt oder unhealthy wird.",
+  "web_monitor_interval": "Prüfintervall (Sekunden)",
+  "web_monitor_interval_hint": "Wie oft der Container-Status abgefragt wird. Minimum 15 Sekunden.",
+  "web_password_label": "Web-UI-Passwort",
+  "web_password_placeholder": "leer lassen = unverändert",
+  "web_password_hint": "Passwort für die HTTP-Basic-Auth dieser Oberfläche. Leer lassen, um das aktuelle beizubehalten; ein neues Passwort wird sofort wirksam."
 }

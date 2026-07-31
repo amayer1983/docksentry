@@ -147,15 +147,17 @@ LOGGABLE_PERSISTENT_KEYS = {
 
 # Which Settings tab a key is edited on. Only meaningful for keys that
 # actually have a field in the Web UI form — a warning that doesn't say
-# where to go isn't worth printing. Keys with no field of their own
-# (web_password, monitor_*, docker_stop_timeout, healthcheck_max_starting)
-# are absent and get the settings.json-only wording instead.
+# where to go isn't worth printing. Keys with no field of their own are
+# absent and get the settings.json-only wording instead.
 PERSISTENT_SETTINGS_TAB = {
     "language": "General",
     "cron_schedule": "General",
     "exclude_containers": "General",
     "debug": "General",
+    "web_password": "General",
     "auto_selfupdate": "Updates",
+    "healthcheck_max_starting": "Updates",
+    "docker_stop_timeout": "Updates",
     "auto_cleanup": "Cleanup",
     "cleanup_grace_hours": "Cleanup",
     "cleanup_backup_days": "Cleanup",
@@ -167,6 +169,8 @@ PERSISTENT_SETTINGS_TAB = {
     "weekly_report_enabled": "Notifications",
     "weekly_report_weekday": "Notifications",
     "weekly_report_hour": "Notifications",
+    "monitor_enabled": "Notifications",
+    "monitor_interval_seconds": "Notifications",
     "telegram_topic_id": "Channels",
     "telegram_allowed_users": "Channels",
     "bot_label": "Channels",

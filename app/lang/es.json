@@ -557,5 +557,17 @@
   "web_link_origin_registry": "deducido del nombre de la imagen — página general del registro, no un changelog",
   "web_link_saved": "Enlace guardado.",
   "web_link_cleared": "Enlace eliminado — vuelve a aplicarse la detección automática.",
-  "web_link_rejected": "Enlace rechazado: solo se aceptan URLs completas http:// o https://, sin espacios ni comillas."
+  "web_link_rejected": "Enlace rechazado: solo se aceptan URLs completas http:// o https://, sin espacios ni comillas.",
+  "web_healthcheck_max_starting": "Tiempo límite de healthcheck (segundos)",
+  "web_healthcheck_max_starting_hint": "Tiempo máximo que un contenedor actualizado tiene para informar como «healthy» antes de que la actualización se considere fallida y se revierta.",
+  "web_docker_stop_timeout": "Tiempo límite de parada (segundos)",
+  "web_docker_stop_timeout_hint": "Cuánto espera «docker stop» a que un contenedor se detenga por sí solo antes de forzar su cierre.",
+  "web_monitor_title": "Monitorización",
+  "web_monitor_enabled": "Monitorizar el estado de los contenedores",
+  "web_monitor_hint": "Vigila los contenedores en ejecución y envía una alerta cuando uno se detiene, muere o pasa a estado unhealthy.",
+  "web_monitor_interval": "Intervalo de comprobación (segundos)",
+  "web_monitor_interval_hint": "Con qué frecuencia se consulta el estado de los contenedores. Mínimo 15 segundos.",
+  "web_password_label": "Contraseña de la interfaz web",
+  "web_password_placeholder": "dejar vacío = sin cambios",
+  "web_password_hint": "Contraseña para la autenticación HTTP básica de esta interfaz. Déjalo vacío para mantener la actual; una nueva contraseña se aplica de inmediato."
 }
