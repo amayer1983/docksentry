@@ -11,6 +11,7 @@ import sys, os, types, subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
+from container_backend import get_backend
 
 NAMES = ["ds_ctf-a-even", "ds_ctf-b-even", "ds_ctf-a-odd"]
 
@@ -21,7 +22,9 @@ def _rm(*names):
 
 
 def main():
-    stub = types.SimpleNamespace()
+    # _match_glob lists containers through the container backend seam, so
+    # the stub needs one just like a real bot has.
+    stub = types.SimpleNamespace(backend=get_backend(None))
     stub._match_glob = types.MethodType(TelegramBot._match_glob, stub)
     is_glob = TelegramBot._is_glob
 

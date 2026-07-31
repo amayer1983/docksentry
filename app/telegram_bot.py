@@ -69,6 +69,11 @@ _BOT_COMMANDS = [
 class TelegramBot:
     def __init__(self, config, container_store, engine=None):
         self.config = config
+        # Container CLI seam — the bot's own container reads/lifecycle
+        # commands go through it, same as the update core. Self-update is
+        # deliberately NOT migrated yet (helper container + sh -c script).
+        import container_backend as _cb
+        self.backend = _cb.get_backend(config)
         self.store = container_store
         self.running = True
         # Update-orchestration state (the mutex guarding ALL update flows
@@ -376,10 +381,8 @@ class TelegramBot:
         restart_policy. All values are strings (already formatted for
         display). Returns None if inspect fails."""
         try:
-            r = subprocess.run(
-                ["docker", "inspect", name],
-                capture_output=True, text=True, timeout=10,
-            )
+            r = self.backend.run(
+                ["inspect", name], timeout=10)
             if r.returncode != 0:
                 return None
             cfg = json.loads(r.stdout)[0]
@@ -443,12 +446,10 @@ class TelegramBot:
         # selfupdate). The image can't lie about itself; the container can.
         version = ""
         if image_id:
-            r = subprocess.run(
-                ["docker", "image", "inspect", "--format",
+            r = self.backend.run(
+                ["image", "inspect", "--format",
                  '{{index .Config.Labels "org.opencontainers.image.version"}}',
-                 image_id],
-                capture_output=True, text=True, timeout=10,
-            )
+                 image_id], timeout=10)
             if r.returncode == 0:
                 version = r.stdout.strip()
         if not version:
@@ -505,10 +506,8 @@ class TelegramBot:
 
         if action == "start":
             try:
-                r = subprocess.run(
-                    ["docker", "start", name],
-                    capture_output=True, text=True, timeout=30,
-                )
+                r = self.backend.run(
+                    ["start", name], timeout=30)
                 if r.returncode == 0:
                     return True, self.t("lifecycle_started", name=name)
                 return False, self.t("lifecycle_start_failed", name=name,
@@ -520,10 +519,8 @@ class TelegramBot:
             # docker restart is graceful stop + start; use generous
             # timeout because some apps (gitlab, gluetun) take a while.
             try:
-                r = subprocess.run(
-                    ["docker", "restart", "--time", "30", name],
-                    capture_output=True, text=True, timeout=120,
-                )
+                r = self.backend.run(
+                    ["restart", "--time", "30", name], timeout=120)
                 if r.returncode == 0:
                     return True, self.t("lifecycle_restarted", name=name)
                 return False, self.t("lifecycle_restart_failed", name=name,
@@ -552,10 +549,12 @@ class TelegramBot:
         picker. Specific callers that genuinely need running-only can
         opt out via `include_stopped=False`.
         """
-        cmd = ["docker", "ps", "--format", "{{.Names}}"]
+        # argv without the CLI name — the backend prepends it, so the
+        # "-a" insert index shifts down by one accordingly.
+        cmd = ["ps", "--format", "{{.Names}}"]
         if include_stopped:
-            cmd.insert(2, "-a")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd.insert(1, "-a")
+        result = self.backend.run(cmd)
         all_names = [
             n.strip() for n in result.stdout.strip().split("\n")
             if n.strip() and not n.strip().endswith("_old")
@@ -584,10 +583,12 @@ class TelegramBot:
         `[...]`), case-insensitively — running + stopped, minus our `_old`
         rollback leftovers. Empty list if nothing matches (#40, @LeeNX)."""
         import fnmatch
-        cmd = ["docker", "ps", "--format", "{{.Names}}"]
+        # argv without the CLI name — the backend prepends it, so the
+        # "-a" insert index shifts down by one accordingly.
+        cmd = ["ps", "--format", "{{.Names}}"]
         if include_stopped:
-            cmd.insert(2, "-a")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd.insert(1, "-a")
+        result = self.backend.run(cmd)
         names = [n.strip() for n in result.stdout.strip().split("\n")
                  if n.strip() and not n.strip().endswith("_old")]
         pl = pattern.lower()
@@ -1265,8 +1266,7 @@ class TelegramBot:
     def _running_names(self):
         """Set of currently-running container names (one docker call)."""
         try:
-            r = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
-                               capture_output=True, text=True, timeout=10)
+            r = self.backend.run(["ps", "--format", "{{.Names}}"], timeout=10)
             if r.returncode == 0:
                 return set(r.stdout.split())
         except (subprocess.SubprocessError, OSError):
@@ -2424,17 +2424,13 @@ class TelegramBot:
             # not append `(healthy)` to the Status field — that's a Docker CLI
             # cosmetic — but State.Health.Status is consistently provided by
             # both. Reported by LeeNX in #28 for podman-compose containers.
-            ids_p = subprocess.run(
-                ["docker", "ps", "-q"],
-                capture_output=True, text=True
-            )
+            ids_p = self.backend.run(
+                ["ps", "-q"])
             ids = [i for i in ids_p.stdout.strip().split("\n") if i]
             inspected = []
             if ids:
-                ins_p = subprocess.run(
-                    ["docker", "inspect", *ids],
-                    capture_output=True, text=True
-                )
+                ins_p = self.backend.run(
+                    ["inspect", *ids])
                 try:
                     inspected = json.loads(ins_p.stdout) or []
                 except (json.JSONDecodeError, ValueError):
@@ -2717,10 +2713,8 @@ class TelegramBot:
                 return
             # Get the image ref for the registry fallback
             try:
-                ir = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.Config.Image}}", resolved],
-                    capture_output=True, text=True, timeout=5,
-                )
+                ir = self.backend.run(
+                    ["inspect", "--format", "{{.Config.Image}}", resolved], timeout=5)
                 image_ref = ir.stdout.strip() if ir.returncode == 0 else ""
             except subprocess.SubprocessError:
                 image_ref = ""
@@ -3042,10 +3036,8 @@ class TelegramBot:
                 self.send_message(err)
                 return
             try:
-                r = subprocess.run(
-                    ["docker", "inspect", name],
-                    capture_output=True, text=True, timeout=10,
-                )
+                r = self.backend.run(
+                    ["inspect", name], timeout=10)
                 if r.returncode != 0:
                     self.send_message(self.t("audit_inspect_failed", name=name))
                     return
@@ -3134,10 +3126,8 @@ class TelegramBot:
             if err:
                 self.send_message(err)
                 return
-            result = subprocess.run(
-                ["docker", "logs", "--tail", "30", name],
-                capture_output=True, text=True, timeout=10
-            )
+            result = self.backend.run(
+                ["logs", "--tail", "30", name], timeout=10)
             output = result.stdout or result.stderr
             if output.strip():
                 # Telegram message limit is 4096, truncate if needed

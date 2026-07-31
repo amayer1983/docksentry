@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
 from container_store import ContainerStore
 from update_checker import UpdateChecker
+from container_backend import get_backend
 from i18n import get_translator
 
 NAME = "ds_protect_test"
@@ -36,7 +37,10 @@ def main():
     store = ContainerStore(cfg)
     checker = UpdateChecker(cfg)
 
-    bot = types.SimpleNamespace(store=store, t=get_translator("en"))
+    # _lifecycle_action issues start/restart through the container backend
+    # seam, so the stub carries one like a real bot does.
+    bot = types.SimpleNamespace(store=store, t=get_translator("en"),
+                                backend=get_backend(None))
     # _lifecycle_action now resolves stop-protection via _is_protected (label
     # override + store fallback, #42) — bind the real method so the stub
     # exercises the actual path (the throwaway container has no docksentry.*

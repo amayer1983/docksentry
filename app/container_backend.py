@@ -167,9 +167,21 @@ class ContainerBackend:
         """`docker kill NAME`. Text mode — callers read stderr."""
         return self.run(["kill", name], timeout=timeout)
 
-    def start(self, name, *, timeout=None):
-        """`docker start NAME`."""
-        return self.run(["start", name], timeout=timeout, text=False)
+    def start(self, name, *, timeout=None, text=False):
+        """`docker start NAME`.
+
+        `text` defaults to False (the rollback path discards the output);
+        pass text=True where the caller reads `.stderr` as a str.
+        """
+        return self.run(["start", name], timeout=timeout, text=text)
+
+    def restart(self, name, *, time=None, timeout=None):
+        """`docker restart [--time N] NAME`. Text mode — callers read stderr."""
+        args = ["restart"]
+        if time is not None:
+            args += ["--time", str(time)]
+        args.append(name)
+        return self.run(args, timeout=timeout)
 
     def rename(self, src, dst, *, timeout=None):
         """`docker rename SRC DST`."""
