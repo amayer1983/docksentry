@@ -60,8 +60,44 @@ def kinds(events):
     return [(k, n) for k, n, _ in events]
 
 
+def _mem_checks(checks):
+    """The 'who did this to me?' diagnostics (#2, @NotRetarded).
+
+    A container squeezed out by a neighbour frequently dies WITHOUT the
+    kernel OOM-killing it, so attaching the memory snapshot to OOM alone
+    meant the one alert that could point at the neighbour stayed silent in
+    the commonest case. Host memory comes first because it answers the
+    prior question: was the machine under pressure at all? Without it a
+    top-consumers list invites blaming whoever is largest even when there
+    were gigabytes free.
+    """
+    import inspect as _i
+    src = _i.getsource(ContainerMonitor._notify)
+    for kind in ("oom", "crash_restart", "exited"):
+        checks[f"memory diagnostics attach to {kind}"] = (
+            f'"{kind}"' in src.split("_memory_snapshot")[0].rsplit("if kind in", 1)[-1])
+    checks["a recovery message stays clean"] = (
+        '"recovered"' not in src.split("_memory_snapshot")[0].rsplit("if kind in", 1)[-1])
+    # Host memory is read from /proc/meminfo, which inside a container
+    # still reports the HOST's figures — that's the point.
+    import types as _t
+    local = ContainerMonitor.__new__(ContainerMonitor)
+    local.backend = _t.SimpleNamespace(name="local")
+    out = local._host_memory()
+    checks["host memory reads as a human string"] = (out == "" or "GB" in out)
+    checks["host memory carries no translatable words"] = not any(
+        w in out for w in ("used", "total", "free"))
+    # A monitor bound to a remote endpoint must stay silent: /proc/meminfo
+    # describes THIS box, and printing it under a remote container's name
+    # sends the reader hunting on the wrong machine.
+    remote = ContainerMonitor.__new__(ContainerMonitor)
+    remote.backend = _t.SimpleNamespace(name="nas", endpoint="ssh://nas")
+    checks["remote monitor reports no host memory"] = remote._host_memory() == ""
+
+
 def main():
     checks = {}
+    _mem_checks(checks)
     diff = ContainerMonitor.diff
 
     # ── health transitions (debounced, #2 @famewolf) ──

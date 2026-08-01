@@ -43,6 +43,7 @@
   "web_events_empty": "No events recorded",
   "web_events_empty_hint": "Health flips, non-zero exits, OOM kills and crash-restarts will show up here.",
   "monitor_top_memory": "Top memory at event time: {list}",
+  "monitor_host_memory": "Memoria dell'host (usata/totale): {state}",
   "events_header": "🩺 Last {count} container events:",
   "events_empty": "🩺 No container events recorded yet. Health flips, non-zero exits, OOM kills and crash-restarts will show up here.",
   "help_events": "Recent container events (crashes, OOM, health flips)",

@@ -45,6 +45,7 @@
   "web_events_empty": "Keine Ereignisse aufgezeichnet",
   "web_events_empty_hint": "Health-Wechsel, Exits mit Fehlercode, OOM-Kills und Crash-Restarts erscheinen hier.",
   "monitor_top_memory": "Top-Speicherverbrauch zum Ereigniszeitpunkt: {list}",
+  "monitor_host_memory": "Arbeitsspeicher des Hosts (belegt/gesamt): {state}",
   "events_header": "🩺 Letzte {count} Container-Ereignisse:",
   "events_empty": "🩺 Noch keine Container-Ereignisse aufgezeichnet. Health-Wechsel, Exits mit Fehlercode, OOM-Kills und Crash-Restarts erscheinen hier.",
   "help_events": "Letzte Container-Ereignisse (Crashes, OOM, Health-Wechsel)",

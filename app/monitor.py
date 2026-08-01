@@ -357,11 +357,74 @@ class ContainerMonitor:
                     return 0
         return 0
 
+    def _host_memory(self):
+        """This machine's memory as `6.2/11.4 GB · Swap 3.1/4.0 GB` — or
+        "" if unreadable or if this monitor is watching a REMOTE host.
+
+        That last condition is the important one. `/proc/meminfo` describes
+        the machine Docksentry is running on; a monitor bound to a remote
+        endpoint would happily print the local box's figures under a remote
+        container's name and send someone hunting on the wrong machine.
+        Wrong numbers are worse than none, so remote monitors get none.
+        (Locality has bitten this project three times — HostScopedStore,
+        default_backend(), the platform cache — so it is checked here
+        rather than assumed from "the monitor is local today".)
+
+        This answers the question that comes *before* "which container was
+        the culprit": was the machine under memory pressure at all? Without
+        it, a list of the biggest consumers invites the reader to blame
+        whoever is at the top, even when there were 8 GB free and memory had
+        nothing to do with it (#2, @NotRetarded).
+
+        `/proc/meminfo` inside a container reports the HOST's figures — the
+        kernel namespaces processes, not memory accounting — which is
+        exactly what we want here. Costs a file read, so unlike the stats
+        snapshot it is free.
+        """
+        backend = getattr(self, "backend", None)
+        if backend is None or getattr(backend, "endpoint", None):
+            # Remote, or locality unknown. Either way: say nothing. Wrong
+            # numbers here are worse than none.
+            return ""
+        try:
+            vals = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    key, _, rest = line.partition(":")
+                    num = rest.strip().split(" ")[0]
+                    if num.isdigit():
+                        vals[key] = int(num) * 1024      # kB → bytes
+        except OSError:
+            return ""
+        total = vals.get("MemTotal", 0)
+        avail = vals.get("MemAvailable", vals.get("MemFree", 0))
+        if not total:
+            return ""
+        used = total - avail
+        gb = 1024 ** 3
+        # No words in the value — a live test showed "6.2/11.4 GB used"
+        # sitting inside an otherwise German sentence. Everything
+        # translatable belongs in the key; the value stays numbers plus
+        # units, and used/total is carried by the slash.
+        out = f"{used / gb:.1f}/{total / gb:.1f} GB"
+        swap_total = vals.get("SwapTotal", 0)
+        if swap_total:
+            swap_used = swap_total - vals.get("SwapFree", 0)
+            out += f" · Swap {swap_used / gb:.1f}/{swap_total / gb:.1f} GB"
+        return out
+
     def _memory_snapshot(self, top=3):
-        """Top memory consumers RIGHT NOW, as a one-line summary — taken
-        only when an OOM event fires (#2, @NotRetarded's Sencho case: the
-        OOM alert names the victim, this names the culprit). One
-        `docker stats --no-stream` at event time; no idle polling."""
+        """Top memory consumers RIGHT NOW, as a one-line summary.
+
+        Attached to any death — OOM, a crash-restart, or a plain non-zero
+        exit — because "which container did this to me?" is the same
+        question in all three, and a container squeezed out by a neighbour
+        does not necessarily get killed by the kernel's OOM killer (#2,
+        @NotRetarded: his Unifi container died from a neighbour without an
+        OOM flag, so the snapshot that could have named the culprit never
+        fired). One `docker stats --no-stream` at event time — about two
+        seconds on twenty containers, which is why it hangs off an event
+        and never off a poll."""
         try:
             r = self.backend.stats(fmt="{{.Name}}|{{.MemUsage}}", timeout=30)
             if r.returncode != 0:
@@ -397,9 +460,15 @@ class ContainerMonitor:
         else:
             msg = t("monitor_exited", name=name, code=detail.get("code", "?"))
 
-        # OOM: name the culprit, not just the victim — one stats snapshot
-        # at event time shows who was actually eating the memory.
-        if kind == "oom":
+        # Name the culprit, not just the victim. This used to fire for OOM
+        # only, which missed the commonest shape of the problem: a
+        # container squeezed out by a neighbour often dies without the
+        # kernel OOM-killing it, so the one alert that could have pointed
+        # at the neighbour stayed silent.
+        if kind in ("oom", "crash_restart", "exited"):
+            host_mem = self._host_memory()
+            if host_mem:
+                msg += "\n" + t("monitor_host_memory", state=host_mem)
             snap = self._memory_snapshot()
             if snap:
                 msg += "\n" + t("monitor_top_memory", list=snap)
