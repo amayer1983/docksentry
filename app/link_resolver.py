@@ -28,6 +28,37 @@ import subprocess
 import urllib.parse
 
 
+#: Hostname markers for Gitea / its fork Forgejo, whose URL layout
+#: matches GitHub's closely enough that `/releases/latest` resolves
+#: (@LeeNX showed the 303 from gitea.com). These are overwhelmingly
+#: self-hosted, so there is no fixed host list to check against.
+_FORGE_NAMES = ("gitea", "forgejo")
+_FORGE_HOSTS = ("codeberg.org",)
+#: The `git.example.com` convention. Matched on a whole DNS LABEL, not as
+#: a substring: `"git." in host` also matches `digit.example.com` and
+#: `legit.io`, which have nothing to do with it.
+_FORGE_LABEL = "git"
+
+
+def _looks_like_forge(host):
+    """True when `host` looks like a Gitea/Forgejo instance.
+
+    Deliberately a heuristic — guessing wrong costs a 404 on a link the
+    user can ignore, while not guessing costs every self-hosted Gitea
+    user the feature. But it matches on label boundaries so it stays a
+    heuristic about names rather than about coincidental letters.
+    """
+    host = (host or "").lower().strip(".")
+    if not host:
+        return False
+    if host in _FORGE_HOSTS or any(host.endswith("." + h) for h in _FORGE_HOSTS):
+        return False if host not in _FORGE_HOSTS else True
+    labels = host.split(".")
+    if labels and labels[0] == _FORGE_LABEL:
+        return True
+    return any(n in labels_part for n in _FORGE_NAMES for labels_part in labels)
+
+
 class LinkResolver:
     def __init__(self, store, config):
         # `store` supplies the manual /setlink override (get_link); `config`
@@ -207,6 +238,15 @@ class LinkResolver:
             return f"https://github.com/{owner}/{repo}/releases/latest"
         if host in ("gitlab.com", "www.gitlab.com"):
             return f"https://gitlab.com/{owner}/{repo}/-/releases"
+        # Gitea and its fork Forgejo mimic GitHub's URL layout, including
+        # the `/releases/latest` redirect (@LeeNX showed the 303 from
+        # gitea.com). Self-hosted instances are the common case for both,
+        # so this can't be a host allow-list — it keys off the hostname
+        # looking like one, which is a guess, but a cheap and safe one: a
+        # host that isn't Gitea simply 404s a link the user then ignores,
+        # exactly as a repo with no releases already does.
+        if _looks_like_forge(host):
+            return f"https://{p.netloc}/{owner}/{repo}/releases/latest"
         return url
 
     @staticmethod

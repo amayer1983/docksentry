@@ -40,11 +40,14 @@ for u in (
     checks[f"deeper/1-seg left alone: {u[:48]}"] = f(u) == u
 
 # ── Left ALONE: other hosts, product homepages, junk ────────────────
+# NOTE: `gitea.example.com` used to live in this list. It moved to the
+# rewritten set when Gitea/Forgejo support landed — that host IS a
+# forge, and treating it as "some other host" was the old behaviour,
+# not a rule worth keeping.
 for u in (
     "https://vaultwarden.example.com",
     "https://hub.docker.com/_/redis",
     "https://example.com/owner/repo",         # 2 segments but not github/gitlab
-    "https://gitea.example.com/owner/repo",   # self-hosted, not gitlab.com
     "ftp://github.com/owner/repo",            # wrong scheme
     "not a url",
     "",
@@ -53,6 +56,30 @@ for u in (
 
 # github.com/owner/repo where the "already releases/latest" idempotency holds
 checks["idempotent on an already-rewritten url"] = f(GH) == GH
+
+
+# ── Gitea / Forgejo (#52, @LeeNX) ────────────────────────────────────
+# They mimic GitHub's layout, including the /releases/latest redirect —
+# @LeeNX showed the 303 from gitea.com. Mostly self-hosted, so the match
+# is a hostname heuristic rather than a fixed list.
+checks["gitea.com bare repo -> releases/latest"] = (
+    f("https://gitea.com/gitea/runner")
+    == "https://gitea.com/gitea/runner/releases/latest")
+checks["codeberg (forgejo) rewritten"] = (
+    f("https://codeberg.org/o/r") == "https://codeberg.org/o/r/releases/latest")
+checks["self-hosted git.example.com rewritten"] = (
+    f("https://git.example.com/o/r")
+    == "https://git.example.com/o/r/releases/latest")
+checks["a host merely containing 'gitea' rewritten"] = (
+    f("https://mygitea.net/o/r") == "https://mygitea.net/o/r/releases/latest")
+# The heuristic matches DNS LABELS, not letters that happen to line up.
+# `"git." in host` would have caught both of these.
+for host in ("digit.example.com", "legit.io"):
+    u = f"https://{host}/o/r"
+    checks[f"not a forge, left alone: {host}"] = f(u) == u
+# …and a deeper path is still left alone on a forge too.
+deep = "https://gitea.com/o/r/releases/tag/v1.2.3"
+checks["gitea deep link left alone"] = f(deep) == deep
 
 
 def main():
