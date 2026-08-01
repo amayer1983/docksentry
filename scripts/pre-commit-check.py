@@ -207,6 +207,24 @@ for blk in _js_blocks:
 if js_problem_total == 0:
     check(True, "no raw control chars inside _BASE_JS string literals")
 
+# 3b. Release safety: a pre-release must never move the `latest` tag.
+#     Everyone running `docksentry:latest` with AUTO_SELFUPDATE on would be
+#     pulled onto an rc/beta overnight, without a click and without being
+#     asked. This is a crude presence check on the workflow rather than a
+#     YAML parse — it exists so the guard can't be deleted unnoticed, which
+#     is the realistic failure, not someone rewriting it cleverly.
+print("\n=== RELEASE SAFETY ===")
+_wf = os.path.join(os.path.dirname(__file__), "..", ".github", "workflows",
+                   "docker-publish.yml")
+try:
+    with open(_wf) as _f:
+        _wf_text = _f.read()
+    _has_guard = ('*-*' in _wf_text and 'PRERELEASE' in _wf_text)
+    check(_has_guard,
+          "pre-releases (x.y.z-rc.N) do not get tagged :latest")
+except OSError as _e:
+    check(False, f"publish workflow unreadable: {_e}")
+
 # 4. Contract lint — return-arity drift + cross-class doppelgangers
 #    (the v1.37.1 _wait_healthy crash class). Pure stdlib AST.
 print("\n=== CONTRACT LINT ===")

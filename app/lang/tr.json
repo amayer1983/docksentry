@@ -38,7 +38,7 @@
   "monitor_recovered": "💚 {name} is healthy again.",
   "monitor_exited": "💥 {name} exited with code {code}.",
   "monitor_oom": "🧠 {name} was OOM-killed (exit code {code}) — it ran out of memory. Consider raising its memory limit.",
-  "monitor_crash_restart": "🔁 {name} crashed and was restarted by its restart policy (restart #{count}).",
+  "monitor_crash_restart": "🔁 {name} çöktü (çıkış {code}) ve {when} itibarıyla yeniden başlatma politikası tarafından yeniden başlatıldı (yeniden başlatma #{count}).",
   "web_events": "Container Events",
   "web_events_empty": "No events recorded",
   "web_events_empty_hint": "Health flips, non-zero exits, OOM kills and crash-restarts will show up here.",

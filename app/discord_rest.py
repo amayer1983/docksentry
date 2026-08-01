@@ -20,6 +20,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+#: NOTE — this module depends on `main.py` having forced IPv4-only
+#: resolution (it patches `socket.getaddrinfo` at import, unless
+#: `DOCKSENTRY_IPV6=true`). That is not a nicety here: on a host without
+#: working IPv6 routing, Python tries the AAAA record first and each call
+#: costs ~5 seconds before falling back. Discord kills an unacknowledged
+#: interaction after **three**, so every command would fail with
+#: "Unknown interaction" (10062) while every other part of Docksentry
+#: merely felt slow. Import this module through the app, not standalone,
+#: or apply the same patch — a test harness that skips `main.py`
+#: reproduces exactly that failure.
 API_BASE = "https://discord.com/api/v10"
 
 #: Discord asks for a descriptive User-Agent and can throttle generic

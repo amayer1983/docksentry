@@ -31,6 +31,25 @@ import subprocess
 import time
 
 
+def _clock(iso):
+    """`HH:MM:SS` from Docker's RFC3339 timestamp, or "" when absent.
+
+    Only the time of day: the alert lands within a minute of the event, so
+    a date adds noise, and a full RFC3339 string with nanoseconds is
+    unreadable in a chat message. Anything unparseable degrades to empty
+    rather than printing a raw timestamp at the user.
+    """
+    if not iso or not isinstance(iso, str):
+        return ""
+    # "2026-08-01T16:19:25.123456789Z" → the time part, seconds precision.
+    try:
+        t = iso.split("T", 1)[1]
+        return t.split(".", 1)[0].rstrip("Z")[:8]
+    except (IndexError, AttributeError):
+        return ""
+
+
+
 class ContainerMonitor:
     COOLDOWN_SECONDS = 1800
 
@@ -82,6 +101,11 @@ class ContainerMonitor:
                 "exit_code": state.get("ExitCode", 0),
                 "oom": bool(state.get("OOMKilled")),
                 "restarts": cfg.get("RestartCount", 0) or 0,
+                # When the container last came up, per Docker — NOT when we
+                # noticed. The monitor samples every 60s, so "now" would put
+                # a timestamp on the alert that can be a minute off and
+                # invites the reader to line it up with the wrong action.
+                "started_at": state.get("StartedAt", "") or "",
                 "labels": (cfg.get("Config") or {}).get("Labels") or {},
             }
         return snap
@@ -133,8 +157,18 @@ class ContainerMonitor:
                 if now["oom"]:
                     events.append(("oom", name, {"code": now["exit_code"]}))
                 else:
+                    # The exit code and the restart time are what let the
+                    # reader tell "this was me" from "this happened on its
+                    # own". Without them a crash-restart alert that arrives
+                    # while someone is shutting containers down looks like a
+                    # false positive, and they go hunting for a bug in the
+                    # detector instead of in their stack (#2, @famewolf).
+                    # `exit_code` is the PREVIOUS run's — the one that died —
+                    # because the container is up again by the time we look.
                     events.append(("crash_restart", name,
-                                   {"count": now["restarts"]}))
+                                   {"count": now["restarts"],
+                                    "code": before.get("exit_code", 0),
+                                    "when": _clock(now.get("started_at"))}))
             # One-time death, count UNCHANGED: running -> exited. A container
             # that crashes then STAYS down (no restart policy, or the policy
             # gave up) lands here on the pass its status settles to exited with
@@ -353,7 +387,13 @@ class ContainerMonitor:
         elif kind == "oom":
             msg = t("monitor_oom", name=name, code=detail.get("code", "?"))
         elif kind == "crash_restart":
-            msg = t("monitor_crash_restart", name=name, count=detail.get("count", "?"))
+            # `code`/`when` are extra format kwargs: a translation that
+            # hasn't picked them up yet simply ignores them, so no language
+            # can break on this.
+            msg = t("monitor_crash_restart", name=name,
+                    count=detail.get("count", "?"),
+                    code=detail.get("code", "?"),
+                    when=detail.get("when", "") or "?")
         else:
             msg = t("monitor_exited", name=name, code=detail.get("code", "?"))
 

@@ -59,12 +59,29 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
+            # A pre-release (2.0.0-rc.1, 1.63.0-beta.2 — anything with a
+            # hyphen, per semver) must NOT move `latest`. Everyone running
+            # `docksentry:latest` with AUTO_SELFUPDATE on would be pulled
+            # onto it overnight, without a click and without being asked —
+            # which is the opposite of what a pre-release is for. Those get
+            # their version tag only, so trying one is a deliberate act:
+            # pin the tag.
+            if [[ "$VERSION" == *-* ]]; then
+              PRERELEASE=true
+            else
+              PRERELEASE=false
+            fi
+            echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
             echo "tags<<EOF" >> $GITHUB_OUTPUT
             if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
-              echo "${{ env.DOCKERHUB_IMAGE }}:latest" >> $GITHUB_OUTPUT
+              if [[ "$PRERELEASE" == "false" ]]; then
+                echo "${{ env.DOCKERHUB_IMAGE }}:latest" >> $GITHUB_OUTPUT
+              fi
               echo "${{ env.DOCKERHUB_IMAGE }}:$VERSION" >> $GITHUB_OUTPUT
             fi
-            echo "${{ env.GHCR_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            if [[ "$PRERELEASE" == "false" ]]; then
+              echo "${{ env.GHCR_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            fi
             echo "${{ env.GHCR_IMAGE }}:$VERSION" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           else

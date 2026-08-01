@@ -25,9 +25,11 @@ from monitor import ContainerMonitor
 from update_checker import UpdateChecker
 
 
-def c(status="running", health="", code=0, oom=False, restarts=0, labels=None):
+def c(status="running", health="", code=0, oom=False, restarts=0, labels=None,
+      started_at=""):
     return {"status": status, "health": health, "exit_code": code,
-            "oom": oom, "restarts": restarts, "labels": labels or {}}
+            "oom": oom, "restarts": restarts, "labels": labels or {},
+            "started_at": started_at}
 
 
 def make_monitor(update_running=False, exclude=None):
@@ -217,7 +219,8 @@ def main():
 
     # ── crash + auto-restart ──
     ev = diff({"a": c(restarts=2)}, {"a": c(restarts=3)})
-    checks["restart count increase fires"] = ev == [("crash_restart", "a", {"count": 3})]
+    checks["restart count increase fires"] = (
+        kinds(ev) == [("crash_restart", "a")] and ev[0][2]["count"] == 3)
     ev = diff({"a": c(restarts=3)}, {"a": c(restarts=0)})
     checks["count reset (recreate) is silent"] = ev == []
 
@@ -229,13 +232,32 @@ def main():
     ev = diff({"a": c(status="restarting", restarts=4)},
               {"a": c(status="restarting", restarts=5)})
     checks["crash loop caught 'restarting' fires crash_restart"] = (
-        ev == [("crash_restart", "a", {"count": 5})])
+        kinds(ev) == [("crash_restart", "a")] and ev[0][2]["count"] == 5)
     # (b) caught as "exited" (Podman between attempts) with the count up ->
     #     crash_restart, NOT a plain "exited", because the count climbed.
     ev = diff({"a": c(status="exited", restarts=4)},
               {"a": c(status="exited", code=1, restarts=5)})
     checks["crash loop caught 'exited' + count up fires crash_restart"] = (
-        ev == [("crash_restart", "a", {"count": 5})])
+        kinds(ev) == [("crash_restart", "a")] and ev[0][2]["count"] == 5)
+    # ── what the crash-restart alert has to CARRY ──
+    # A crash-restart that only says "restart #1" is unreadable next to a
+    # shutdown someone did by hand: it names no exit code and no time, so
+    # the reader can't tell whether it describes their own action or
+    # something that happened on its own. @famewolf spent an exchange on
+    # exactly that. The exit code is the DYING run's — by the time we
+    # sample, the container is up again and its own code is 0.
+    ev = diff({"a": c(restarts=2, code=1)},
+              {"a": c(restarts=3, started_at="2026-08-01T16:19:25.123456789Z")})
+    detail = ev[0][2]
+    checks["crash alert carries the exit code of the run that died"] = (
+        detail["code"] == 1)
+    checks["crash alert carries the restart time"] = detail["when"] == "16:19:25"
+    checks["crash alert still carries the count"] = detail["count"] == 3
+    # Docker not giving us a timestamp must not put junk in the message.
+    ev = diff({"a": c(restarts=2, code=1)}, {"a": c(restarts=3)})
+    checks["a missing timestamp degrades to empty, not to garbage"] = (
+        ev[0][2]["when"] == "")
+
     # a genuine one-shot non-zero exit with the count UNCHANGED still fires the
     # plain "exited" (not reclassified as a crash loop).
     ev = diff({"a": c(status="running", restarts=2)},

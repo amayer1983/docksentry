@@ -40,7 +40,7 @@
   "monitor_recovered": "💚 {name} ist wieder healthy.",
   "monitor_exited": "💥 {name} hat sich mit Exit-Code {code} beendet.",
   "monitor_oom": "🧠 {name} wurde OOM-gekillt (Exit-Code {code}) — der Speicher reichte nicht. Memory-Limit ggf. erhöhen.",
-  "monitor_crash_restart": "🔁 {name} ist abgestürzt und wurde per Restart-Policy neu gestartet (Restart #{count}).",
+  "monitor_crash_restart": "🔁 {name} ist abgestürzt (Exit {code}) und wurde um {when} von seiner Restart-Policy neu gestartet (Neustart #{count}).",
   "web_events": "Container-Ereignisse",
   "web_events_empty": "Keine Ereignisse aufgezeichnet",
   "web_events_empty_hint": "Health-Wechsel, Exits mit Fehlercode, OOM-Kills und Crash-Restarts erscheinen hier.",
