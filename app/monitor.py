@@ -262,6 +262,35 @@ class ContainerMonitor:
 
     # ── tick ────────────────────────────────────────────────────
 
+    def _with_real_exit_code(self, event):
+        """Replace a crash-restart's exit code with the one the event
+        stream saw.
+
+        `docker inspect` cannot supply it. A container that crashed and was
+        restarted by its policy is *running* again by the time the poller
+        looks, and a running container reports `ExitCode: 0` — measured, and
+        true of the previous sweep as well, since it was running then too.
+        So every crash-restart alert has been quoting a 0 that means
+        "no information", right where a reader needs the number most: it is
+        what distinguishes "this happened on its own" from "this was my own
+        `docker stop`" (#2, @famewolf).
+
+        The `die` event carries the real code. Where there is no watcher the
+        old value stands, which is no worse than before.
+        """
+        kind, name, detail = event
+        if kind != "crash_restart":
+            return event
+        watcher = getattr(self, "watcher", None)
+        if not watcher:
+            return event
+        code = watcher.exit_code(name)
+        if code is None:
+            return event
+        detail = dict(detail)
+        detail["code"] = code
+        return kind, name, detail
+
     def _ensure_watcher(self):
         """Start the event stream once, on the first tick.
 
@@ -330,6 +359,7 @@ class ContainerMonitor:
             for kind, name, detail in raw
             if self._monitored(name, cur.get(name) or {})
         ]
+        events = [self._with_real_exit_code(e) for e in events]
         self._prev = cur
 
         sent = []

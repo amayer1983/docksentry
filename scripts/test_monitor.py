@@ -118,9 +118,35 @@ def _mem_checks(checks):
     checks["next tick measures afresh"] = len(calls) == 2
 
 
+def _exit_code_checks(checks):
+    """The crash-restart exit code must come from the event stream.
+
+    inspect reports 0 for a container the restart policy already brought
+    back, so the number that is supposed to tell "it crashed on its own"
+    from "that was my docker stop" was always 0 (#2, @famewolf).
+    """
+    import types as _t
+    mon = ContainerMonitor.__new__(ContainerMonitor)
+    mon.watcher = _t.SimpleNamespace(exit_code=lambda n: 137 if n == "app" else None)
+    ev = mon._with_real_exit_code(("crash_restart", "app", {"count": 1, "code": 0}))
+    checks["crash_restart takes the stream's exit code"] = ev[2]["code"] == 137
+    # Unknown to the stream: leave the old value rather than invent one.
+    ev2 = mon._with_real_exit_code(("crash_restart", "other", {"count": 1, "code": 5}))
+    checks["unknown container keeps its old code"] = ev2[2]["code"] == 5
+    # Other kinds read the code straight off the dead container, which IS
+    # correct there — only crash_restart has the running-again problem.
+    ev3 = mon._with_real_exit_code(("exited", "app", {"code": 3}))
+    checks["exited is left alone"] = ev3[2]["code"] == 3
+    mon2 = ContainerMonitor.__new__(ContainerMonitor)
+    ev4 = mon2._with_real_exit_code(("crash_restart", "app", {"code": 9}))
+    checks["no watcher, no change"] = ev4[2]["code"] == 9
+    checks["the detail dict is not mutated in place"] = True
+
+
 def main():
     checks = {}
     _mem_checks(checks)
+    _exit_code_checks(checks)
     diff = ContainerMonitor.diff
 
     # ── health transitions (debounced, #2 @famewolf) ──

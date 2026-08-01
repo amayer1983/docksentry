@@ -146,6 +146,23 @@ class EventWatcher:
             del self._evidence[name]
             return snap
 
+    def exit_code(self, name, *, ttl=EVIDENCE_TTL):
+        """The exit code the stream saw for this container's death, or None.
+
+        Peeks rather than consumes: the poller needs this while building
+        the message, and the snapshot is consumed separately a few lines
+        later. Worth having at all because `inspect` cannot answer it for a
+        restarted container — it reports the *current* run, which is 0.
+        """
+        with self._lock:
+            rec = self._evidence.get(name)
+            if not rec:
+                return None
+            recorded_at, _snap, code, _oom = rec
+            if time.monotonic() - recorded_at > ttl:
+                return None
+            return code
+
     def saw_oom(self, name, *, ttl=EVIDENCE_TTL):
         """Whether the stream reported an OOM for this container.
 

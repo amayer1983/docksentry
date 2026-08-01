@@ -111,6 +111,21 @@ def main():
     checks["die does not erase the oom flag"] = w4.saw_oom("dsoom")
     checks["saw_oom peeks, does not consume"] = w4.evidence("dsoom") == "SNAP"
 
+    # ── the exit code inspect cannot give ─────────────────────────
+    # A crash-restarted container is RUNNING again when the poller looks,
+    # and a running container reports ExitCode 0 — measured, and true of
+    # the previous sweep too. The stream is the only source of the real
+    # number, and that number is what tells "it crashed" from "I stopped
+    # it".
+    w9 = EventWatcher(FakeBackend([]), lambda: "SNAP")
+    w9._handle(DOCKER_DIE)
+    checks["exit code comes from the stream"] = w9.exit_code("dsev") == 137
+    checks["exit code peeks, does not consume"] = w9.evidence("dsev") == "SNAP"
+    checks["no event, no exit code"] = w9.exit_code("never-died") is None
+    w10 = EventWatcher(FakeBackend([]), lambda: "SNAP")
+    w10._handle(PODMAN_DIE)
+    checks["podman exit code arrives as an int"] = w10.exit_code("dslat") == 3
+
     # ── burst sharing ─────────────────────────────────────────────
     calls = []
     w5 = EventWatcher(FakeBackend([]), lambda: calls.append(1) or "SNAP")
