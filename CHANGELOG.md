@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.63.0] - 2026-08-01
+
+### Added
+- **An interactive Discord bot** (experimental). Set `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID` and `DISCORD_GUILD_ID` and you get slash commands for the things you'd otherwise open the Web UI for: `/status`, `/check`, `/update`, `/restart`, `/logs`, `/pin`, `/history` and a dozen more, across every managed host. This is a second front-end onto the *same* update engine the Telegram bot and the Web UI use — one update lock, one set of rules, so the three can't drift apart. Destructive commands (`/stop`, `/updateall`) ask with a button first, replies are visible only to the person who ran the command, and `DISCORD_GUILD_ID` is required: it restricts the bot to your server, and without it the bot refuses to start. `DISCORD_ALLOWED_USERS` narrows it further. Note this needs a bot *token*, which is a different thing from the `DISCORD_WEBHOOK` used for notifications.
+- **Three more notification channels**, each one file: **Gotify** (self-hosted push; failed updates go out at high priority so they cut through quiet hours), **Matrix** (plain text *and* HTML, so every client renders something sensible), and **Apprise** — which is the interesting one, because a single Apprise container fans out to Pushover, Signal, Rocket.Chat, Mattermost and around a hundred other services that Docksentry has no code for.
+- **The Web UI can act on any host**, not just the local one. Every button a local row has, a remote row now has too, and a dropdown filters the table to one host.
+
+### Changed
+- **Crash-restart alerts now say what exited and when.** They used to read "🔁 name crashed and was restarted (restart #1)" — no exit code, no time — which is indistinguishable from your own `docker stop` if you happen to be shutting things down at the time. It now reads "crashed (exit 1) and was restarted by its restart policy at 16:19:25", so you can tell at a glance whether it's describing something you did. Reported by @famewolf in #2.
+- **A pre-release will never move the `latest` tag.** Previously any `v*` tag published `:latest`, which means an `rc` or `beta` would have been pulled by everyone running `docksentry:latest` with auto-self-update — overnight, without being asked. Trying a pre-release is now a deliberate act: pin the version tag.
+
 ## [1.62.0] - 2026-08-01
 
 ### Added
