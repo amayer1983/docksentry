@@ -7,3 +7,9 @@ docker-compose.dev.yml
 
 # Local notes — private, never pushed
 IDEAS.md
+
+# Local maintainer stats — pull counts and the script that fetches them.
+# Deliberately never pushed: the individual figures are public on Docker
+# Hub, but an hourly history builds a growth curve that exists nowhere
+# else, and this repo is public.
+.stats/
