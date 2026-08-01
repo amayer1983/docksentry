@@ -144,11 +144,16 @@ The log line `Compose file not found: <path> — falling back to standalone` is 
 
 **Registry diagnostics (debug).** With `DEBUG=true` the update check also explains itself instead of just printing a verdict — see [Update Workflow → Why didn't it see my new release?](docs/updates.md#why-didnt-it-see-my-new-release) for the full annotated log. Short version: the URL it asked, the status and content type it got back, any redirect, the auth method (category only — never the token), full digests with their repository prefix, the version a digest resolves to, and one line naming the host platform, the daemon's registry mirrors and every proxy in the path. All of it is DEBUG-only: without it the log stays exactly as short as it was.
 
-### Experimental: Podman support
+### Podman support
 
-Docksentry has **no Podman-specific code**, but Podman implements the Docker REST API — so for many setups, pointing Docksentry at a Podman socket Just Works™. This is **experimental**: we don't test against Podman in CI and we don't have a Podman test bed. Surfaced by [@LeeNX in #23](https://github.com/amayer1983/docksentry/issues/23).
+Since v1.61.0 Docksentry can drive `podman` directly — set `CONTAINER_CLI=podman` and checks, updates, recreates, rollback, start/restart, `podman compose` and image cleanup all go through it. No aliasing needed. Originally surfaced by [@LeeNX in #23](https://github.com/amayer1983/docksentry/issues/23), with the recreate-level fixes in [#43](https://github.com/amayer1983/docksentry/issues/43), [#48](https://github.com/amayer1983/docksentry/issues/48), [#49](https://github.com/amayer1983/docksentry/issues/49) and [#50](https://github.com/amayer1983/docksentry/issues/50).
 
-The trick: mount the Podman socket at the path Docksentry expects the Docker socket. No env var changes, no different image.
+Two caveats worth knowing up front:
+
+- **Self-update still needs `docker` to resolve.** It launches a `docker:cli` helper container, because it can't run inside the container it's replacing. Everything else uses the CLI you picked.
+- **There's still no Podman test bed here** and no Podman in CI, so the fixes above were made from bug reports rather than a machine I can try things on. If something misbehaves, please open an issue — that's genuinely how all of them got found.
+
+The older route still works too, and is what you want if you'd rather not set anything: Podman implements the Docker REST API, so mounting the Podman socket where Docksentry expects the Docker one is enough. No env var changes, no different image.
 
 #### Rootful Podman
 
