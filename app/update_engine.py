@@ -23,6 +23,8 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 import subprocess
 import threading
 
+from container_store import LOCAL_HOST
+
 
 class UpdateEngine:
     def __init__(self, config, store, link_resolver=None):
@@ -395,9 +397,15 @@ class UpdateEngine:
         "Auto-update complete", "Update Result", history etc.
         """
         url = u.get("source_url") if isinstance(u, dict) else None
-        if url:
-            return f"[{u['name']}]({url})"
-        return f"`{u['name']}`"
+        name = f"[{u['name']}]({url})" if url else f"`{u['name']}`"
+        # With several hosts managed (#7), say WHICH one — otherwise two
+        # boxes both running `nginx` produce identical lines. Only remote
+        # hosts get the marker: a single-host install tags everything
+        # "local" and its messages stay exactly as they always were.
+        host = u.get("host") if isinstance(u, dict) else None
+        if host and host != LOCAL_HOST:
+            return f"{name} @{host}"
+        return name
 
     @staticmethod
     def _version_badge(u):
