@@ -68,6 +68,18 @@ class ContainerBackend:
     # are unaffected.
     default_timeout = 60
 
+    def build(self, args):
+        """The argv this backend would run for `args`.
+
+        Split out of `run()` so that a caller which cannot use `run()` —
+        `event_watcher`, which needs a long-lived `Popen` reading a stream
+        rather than a call that returns — still goes through the same
+        construction. A second place assembling argv is exactly how the
+        remote endpoint flag would come to be missing from one code path
+        and present in another.
+        """
+        return [self.cli_binary] + list(self.global_args) + list(args)
+
     def run(self, args, *, timeout=None, text=True, input=None,
             capture_output=True):
         """The one and only call into `subprocess` for this backend.
@@ -82,7 +94,7 @@ class ContainerBackend:
         capture_output=True) this is byte-identical to the historical
         ``subprocess.run(argv, capture_output=True, text=True)``.
         """
-        argv = [self.cli_binary] + list(self.global_args) + list(args)
+        argv = self.build(args)
         if timeout is None:
             timeout = self.default_timeout
         return subprocess.run(

@@ -64,6 +64,13 @@ class ContainerMonitor:
             from container_backend import get_backend
             backend = get_backend(config)
         self.backend = backend
+        # Live event stream. It never alerts — it only records the memory
+        # picture at the *instant* of a death, which this poller then uses
+        # instead of taking one up to 60 seconds too late (#2,
+        # @NotRetarded). Started lazily on the first tick so construction
+        # stays cheap and a disabled watcher costs nothing.
+        self.watcher = None
+        self._watcher_tried = False
         self._prev = None          # name -> state dict; None = no baseline yet
         self._last_sent = {}       # (name, kind) -> monotonic ts
         # Health debounce (#2, @famewolf): a healthy->unhealthy flip is held
@@ -255,11 +262,38 @@ class ContainerMonitor:
 
     # ── tick ────────────────────────────────────────────────────
 
+    def _ensure_watcher(self):
+        """Start the event stream once, on the first tick.
+
+        Lazy rather than in `__init__` because the constructor runs in the
+        scheduler's start-up path, and a thread spawned there would be
+        harder to reason about than one started by the loop that uses it.
+        Tried exactly once: a runtime whose CLI has no `events` subcommand
+        should cost one failed attempt, not one per minute forever.
+        """
+        if getattr(self, "_watcher_tried", False) or getattr(self, "watcher", None):
+            return
+        self._watcher_tried = True
+        if not getattr(self.config, "monitor_events_enabled", True):
+            return
+        try:
+            from event_watcher import EventWatcher
+            w = EventWatcher(self.backend, self._memory_snapshot,
+                             log=lambda m: print(m))
+            w.start()
+            self.watcher = w
+        except Exception as e:
+            # The poller alone is exactly the pre-v1.65 behaviour, so a
+            # watcher that cannot start degrades to "as before" rather
+            # than to "broken".
+            print(f"Event watcher unavailable, polling only: {e}")
+
     def tick(self):
         """One monitoring pass. Returns the list of notified events (for
         tests); [] when skipped or quiet."""
         if not getattr(self.config, "monitor_enabled", True):
             return []
+        self._ensure_watcher()
         # Containers bounce legitimately while updates run — skip, and
         # also drop the baseline: diffing across an update window would
         # read every recreate as a crash.
@@ -484,7 +518,16 @@ class ContainerMonitor:
             host_mem = self._host_memory()
             if host_mem:
                 msg += "\n" + t("monitor_host_memory", state=host_mem)
-            snap = self._memory_snapshot()
+            # Evidence from the event stream first: it was taken at the
+            # moment of death, while the culprit still held the memory.
+            # Falling back to a fresh snapshot keeps the old behaviour
+            # wherever the watcher is off, unavailable, or too late.
+            snap = ""
+            watcher = getattr(self, "watcher", None)
+            if watcher:
+                snap = watcher.evidence(name)
+            if not snap:
+                snap = self._memory_snapshot()
             if snap:
                 msg += "\n" + t("monitor_top_memory", list=snap)
 
