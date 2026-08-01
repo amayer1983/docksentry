@@ -13,13 +13,16 @@ it; the typed read-methods build the argv and hand it to `run()`.
 byte-for-byte what the old call sites produced — the behaviour is
 definitionally unchanged, and the argv-mocking tests stay green.
 
-Scope: the READ operations came first; the update/lifecycle core (pull,
-compose, stop/kill/rm/rename/start, recreate, housekeeping) is migrating
-in small serial slices behind the same seam. Read call sites inside
-`update_checker.py` are deliberately still on direct `subprocess` calls —
-several tests patch `update_checker.subprocess.run`, so rerouting those
-would silently bypass the mocks and leave the tests green while testing
-nothing. That wave needs the mocks moved first.
+Everything in the update core now goes through here — reads, pull,
+compose, the lifecycle verbs, recreate and housekeeping. The only argv
+literals left that still name the CLI are three list constructions whose
+first element is stripped before it reaches `run()` (the compose base, the
+`docker run` builder whose output tests assert on, and network connect);
+`run()` prepends the configured binary in every case.
+
+Still deliberately outside: the self-update path in `telegram_bot.py`. It
+launches a helper container to replace the process, so it cannot run
+through the process it is replacing.
 
 Pure standard library — the project's core promise.
 """

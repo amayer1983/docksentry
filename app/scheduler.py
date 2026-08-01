@@ -113,13 +113,16 @@ class Scheduler:
     def _checkers(self):
         """(checker, host_name) for every managed host, local first.
 
-        Falls back to the single checker when no registry was handed in, so
-        a single-host install walks a one-item list and behaves exactly as
-        before — the host name is empty there, which keeps log lines free of
-        a label that would only be noise.
+        The name is deliberately blank while only one host is managed, so
+        log lines stay exactly as they were instead of gaining a "on local"
+        that says nothing. main.py always passes a registry, so keying this
+        off `self.hosts` alone would have changed every single-host log
+        line — check `is_multi`, not mere presence.
         """
         if not self.hosts:
             return [(self.checker, "")]
+        if not getattr(self.hosts, "is_multi", False):
+            return [(self.hosts.local.checker, "")]
         return [(h.checker, h.name) for h in self.hosts]
 
     def start(self):

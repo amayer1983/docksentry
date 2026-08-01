@@ -1159,14 +1159,41 @@ class UpdateChecker:
         }
 
     def _get_pinned(self):
-        """Get list of pinned (frozen) container names."""
+        """Pinned (frozen) container names **on this checker's host**.
+
+        `pinned_containers.json` is one flat list holding every managed
+        host's pins, keyed `nas/nginx` for remote hosts and left bare for
+        the local one (#7 — see `container_store.host_key`). Reading it raw
+        and matching bare names, as this did, meant a remote host's pins
+        were invisible to it while the local host's pins silently applied
+        everywhere. The checker knows which host it is — its backend does —
+        so it filters to its own entries and hands back plain names, which
+        is what `get_running_containers` compares against.
+
+        Still a direct file read rather than a `ContainerStore` call: the
+        checker is constructed with a `config` only and has never owned a
+        store. `split_host_key` is the same function the store uses, so the
+        two cannot drift apart on what a key means.
+        """
+        from container_store import LOCAL_HOST, split_host_key
+        raw = []
         if os.path.exists(self.config.pinned_file):
             try:
                 with open(self.config.pinned_file) as f:
-                    return json.load(f)
+                    raw = json.load(f)
             except (json.JSONDecodeError, IOError):
-                pass
-        return []
+                raw = []
+        if not isinstance(raw, list):
+            return []
+        mine = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
+        out = []
+        for key in raw:
+            if not isinstance(key, str):
+                continue
+            host, name = split_host_key(key)
+            if host == mine:
+                out.append(name)
+        return out
 
     def _save_history(self, name, image, success, detail=""):
         """Append an entry to the update history file."""

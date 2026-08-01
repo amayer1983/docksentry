@@ -46,6 +46,9 @@ checks["duplicate names dropped"] = len(p("a:ssh://1, a:ssh://2")) == 1
 checks["first duplicate wins"] = p("a:ssh://1, a:ssh://2")[0]["endpoint"] == "ssh://1"
 for reserved in RESERVED_HOST_NAMES:
     checks[f"reserved name rejected: {reserved}"] = p(f"{reserved}:ssh://h") == []
+# `all` in particular: `@all` means "every host" in commands, so a host
+# named `all` could be configured but never addressed on its own.
+checks["'all' is reserved"] = "all" in RESERVED_HOST_NAMES
 
 # ── a checker can be pointed at another host ─────────────────────────
 sent = []

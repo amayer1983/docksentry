@@ -335,7 +335,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `SMTP_TO` | | Recipient(s), comma-separated |
 | `SMTP_TLS` | `starttls` | `starttls`, `ssl`, or `none` |
 | `TZ` | `Europe/Berlin` | Timezone |
-| `DOCKER_HOSTS` | | **Multi-host (experimental, unreleased).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped; it won't stall the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
+| `DOCKER_HOSTS` | | **Multi-host (experimental, unreleased).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
 | `CONTAINER_CLI` | `auto` | Which container CLI to drive: `auto`, `docker` or `podman`. `auto` uses `docker` whenever that command exists — including the usual `docker`→`podman` alias — and only falls back to `podman` when `docker` genuinely isn't there, so existing setups are unaffected. Set `podman` to call `podman` directly, no alias needed. One caveat: Docksentry's **self-update** still shells out to `docker` and launches a `docker:cli` helper container (it can't run inside the container it's replacing), so on Podman that one path still needs `docker` to resolve. Everything else — checks, updates, recreates, rollback, lifecycle, cleanup — goes through the selected CLI. Env-only. |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
@@ -455,7 +455,7 @@ The machine Docksentry runs on is always managed and is **not** listed. Leave `D
 ```
 /check @pve1        check just that host
 /update sonarr @nas update sonarr on nas
-/update @all        update everywhere, deliberately
+/update * @all      update everywhere, deliberately
 ```
 
 The default when you *don't* say `@`:
@@ -467,7 +467,7 @@ The default when you *don't* say `@`:
 
 A write command that stayed local says so in its reply and points at `@<host>` / `@all`, so the rule is visible without reading this.
 
-**What it does not do yet:** the Web UI lists every host's containers but its buttons only act on the local one, and self-update is local-only by design — Docksentry updates the instance it runs in, not the ones on your other boxes. A host that can't be reached is reported and skipped; it won't stall the others.
+**What it does not do yet:** the Web UI lists every host's containers but its buttons only act on the local one, and self-update is local-only by design — Docksentry updates the instance it runs in, not the ones on your other boxes. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others.
 
 ## Web UI
 

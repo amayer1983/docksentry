@@ -102,16 +102,18 @@ def main():
         sys.exit(1)
 
     store = ContainerStore(config)
-    # Update orchestration lives on a neutral engine (v2 groundwork); build
-    # it once and hand it to the bot so both share the one update mutex.
-    engine = UpdateEngine(config, store)
     # Every managed host (#7): the machine we run on, plus anything in
     # DOCKER_HOSTS. With none configured this is a one-item registry whose
     # single entry is the local host, so nothing about a single-host
-    # install changes. Built before the bot so the bot can be handed the
-    # registry — that's what makes `/check @nas` and friends resolvable.
+    # install changes. Built before the engine and the bot so BOTH can be
+    # handed the registry — that's what makes `/check @nas` resolvable and
+    # what keeps `nas`'s pins, cooldowns and groups out of the local host's
+    # state (and vice versa).
     from hosts import build_hosts
     host_registry = build_hosts(config, store)
+    # Update orchestration lives on a neutral engine (v2 groundwork); build
+    # it once and hand it to the bot so both share the one update mutex.
+    engine = UpdateEngine(config, store, hosts=host_registry)
     bot = TelegramBot(config, store, engine, hosts=host_registry)
     notifier = Notifier(config)
     bot.notifier = notifier

@@ -524,6 +524,22 @@ def split_host_key(key):
     return host, name
 
 
+def entry_host(entry):
+    """The managed host an update / pending-update dict is about.
+
+    `UpdateChecker.check_all` stamps every entry it writes with a `host`
+    key. Entries written by a version older than #7 have none, and those
+    are the local host — the only host such a version knew about. That one
+    rule is why the pending file needed no migration and why a single-host
+    install resolves every entry to `local` and keeps behaving identically.
+
+    Lives here, next to `host_key`/`split_host_key`, so the orchestration
+    (`UpdateEngine`) and the front ends (`TelegramBot`) cannot drift apart
+    on what "which host is this about" means.
+    """
+    return (entry.get("host") or LOCAL_HOST) if isinstance(entry, dict) else LOCAL_HOST
+
+
 class HostScopedStore:
     """A `ContainerStore` view bound to one host.
 

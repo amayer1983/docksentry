@@ -35,7 +35,9 @@ def _env(key, default=""):
 
 #: Host names we won't accept from config — `local` always means the
 #: machine Docksentry itself runs on and can't be reassigned.
-RESERVED_HOST_NAMES = ("local",)
+RESERVED_HOST_NAMES = ("local", "all")
+#: `all` is reserved too: `@all` is the "every host" target in commands,
+#: so a host actually named `all` could never be addressed individually.
 
 
 def parse_docker_hosts(raw):
@@ -71,8 +73,10 @@ def parse_docker_hosts(raw):
                   f"alphanumeric (plus - and _)")
             continue
         if name in RESERVED_HOST_NAMES:
-            print(f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved "
-                  f"for the machine Docksentry runs on")
+            why = ("means the machine Docksentry runs on" if name == "local"
+                   else "means every host, as in `/check @all`")
+            print(f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "
+                  f"it {why}")
             continue
         if name in seen:
             print(f"DOCKER_HOSTS: skipping duplicate host {name!r}")

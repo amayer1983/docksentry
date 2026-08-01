@@ -23,13 +23,61 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 import subprocess
 import threading
 
-from container_store import LOCAL_HOST
+from container_store import LOCAL_HOST, HostScopedStore, entry_host
+
+
+def host_name_of(host):
+    """The host NAME for `host`, which may be a `ManagedHost`, a plain
+    name, or None (→ the local host)."""
+    if host is None:
+        return LOCAL_HOST
+    if isinstance(host, str):
+        return host or LOCAL_HOST
+    return getattr(host, "name", None) or LOCAL_HOST
+
+
+def host_store(owner, host):
+    """The container-state view `owner` must use for `host` (#7).
+
+    `owner` is anything carrying a `.store` and (optionally) a `.hosts`
+    registry — the `UpdateEngine`, the `TelegramBot`, or one of the
+    duck-typed stand-ins the tests drive the shared orchestration with.
+    A free function rather than a method precisely because of that: the
+    orchestration runs with several different kinds of `self`, and none
+    of them should have to grow a resolver method to take part.
+
+    **Single-host installs get the RAW store back**, not a
+    `HostScopedStore(store, "local")`. The two are equivalent for keys —
+    local keys are unprefixed either way — but not for reads: the scoped
+    view *filters* lists and drops member-less groups. Handing back the
+    raw object is what makes "a one-host install behaves exactly as it
+    did, byte for byte" a structural property instead of a promise.
+
+    With several hosts managed the registry's own per-host view is used
+    (that is what `hosts.build_hosts` built it for); a host the registry
+    doesn't know — a stale `pending_updates.json` entry naming a host
+    that has since left `DOCKER_HOSTS` — still gets a correctly scoped
+    view rather than silently writing to another host's keys.
+    """
+    store = owner.store
+    registry = getattr(owner, "hosts", None)
+    if registry is None or not getattr(registry, "is_multi", False):
+        return store
+    name = host_name_of(host)
+    managed = registry.get(name)
+    scoped = getattr(managed, "store", None) if managed is not None else None
+    return scoped if scoped is not None else HostScopedStore(store, name)
 
 
 class UpdateEngine:
-    def __init__(self, config, store, link_resolver=None):
+    def __init__(self, config, store, link_resolver=None, hosts=None):
         self.config = config
         self.store = store
+        # Every managed host (#7). None — or a registry holding only the
+        # local host — means single-host, and then `_store_for` hands back
+        # the raw store for every lookup, so not one byte of what this
+        # engine reads or writes changes.
+        self.hosts = hosts
         # Neutral repo/changelog link resolution (#52). The engine owns the
         # single LinkResolver so its `_enrich_with_source_url` and the bot's
         # direct link calls resolve through the SAME instance — the bot sets
@@ -60,6 +108,12 @@ class UpdateEngine:
         # main.py after init (bot.notifier = Notifier(config), which writes
         # through to here). Defensive default so the attribute always exists.
         self.notifier = None
+
+    def _store_for(self, host):
+        """Container state scoped to `host` (a `ManagedHost`, a host name,
+        or None for the local one). See `host_store` for why single-host
+        installs deliberately get the raw store back."""
+        return host_store(self, host)
 
     @property
     def update_running(self):
@@ -198,12 +252,22 @@ class UpdateEngine:
         if outcome != "healthy":
             print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — fixing dependents anyway")
 
+        backend = getattr(checker, "backend", None)
+        if backend is None:
+            import container_backend as _cb
+            backend = _cb.default_backend()
+
         recreated, restarted, failed = [], [], []
         for dep in dependents:
             try:
-                nm = subprocess.run(
-                    ["docker", "inspect", "-f", "{{.HostConfig.NetworkMode}}", dep],
-                    capture_output=True, text=True, timeout=10,
+                # Through the checker's OWN backend, not a hardcoded `docker`:
+                # this runs against whichever CLI and whichever host that
+                # checker drives. Hardcoding it meant a Podman install
+                # (CONTAINER_CLI=podman) called a binary it may not have, and
+                # a group on a remote host had its dependents restarted on
+                # the LOCAL machine instead.
+                nm = backend.inspect(
+                    dep, fmt="{{.HostConfig.NetworkMode}}", timeout=10,
                 ).stdout.strip()
                 if nm.startswith("container:"):
                     ok, _detail = checker.recreate_dependent(dep, head_name)
@@ -211,8 +275,7 @@ class UpdateEngine:
                     if not ok:
                         print(f"Failed to recreate netns dependent {dep}: {_detail}")
                 else:
-                    r = subprocess.run(["docker", "restart", dep],
-                                       capture_output=True, text=True, timeout=30)
+                    r = backend.restart(dep, timeout=30)
                     (restarted if r.returncode == 0 else failed).append(dep)
                     if r.returncode != 0:
                         print(f"Failed to restart dependent {dep}: {r.stderr.strip()[:200]}")
@@ -228,14 +291,17 @@ class UpdateEngine:
         verb = "recreated/restarted" if recreated else "restarted"
         return f"🔁 `{head_name}` dependents {verb}: {ok_str}"
 
-    def _maybe_cooldown(self, name, more_remaining):
+    def _maybe_cooldown(self, name, more_remaining, host=None):
         """After recreating `name`, pause for its configured update cooldown
         before the next container in the batch — but only when more updates
         follow. Lets a heavy (GPU/RAM) container's load peak settle so the
-        next recreate doesn't contend for memory (#2, @famewolf)."""
+        next recreate doesn't contend for memory (#2, @famewolf).
+
+        `host` picks whose cooldown applies (#7): two boxes may both run a
+        `plex`, and only one of them is the one with 16 GB of RAM."""
         if not more_remaining:
             return
-        cd = self.store.get_cooldown(name)
+        cd = host_store(self, host).get_cooldown(name)
         if cd > 0:
             import time as _time
             print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
@@ -257,19 +323,51 @@ class UpdateEngine:
 
         `updates` is mutated in place (sorted, enriched, `netns_name` added).
         Returns (results, success_count, major_pending), where major_pending
-        is a list of (name, old_version, new_version) deferred for the
+        is a list of (name, old_version, new_version, host) deferred for the
         confirmation prompt.
+
+        Every piece of state read here — groups, ask-before-major,
+        pending-major, cooldowns — is resolved for the host the individual
+        update belongs to (#7), taken from its `host` key. An entry without
+        one (written by a pre-#7 version) is the local host, which is also
+        why a single-host install resolves everything to the raw store and
+        behaves exactly as before.
         """
         import time as _time
         self._enrich_with_source_url(updates)
 
-        groups = self.store.get_groups() or {}
-        group_position = {}  # container_name → (group_id, position)
-        for gid, g in groups.items():
-            for pos, cname in enumerate(g.get("containers") or []):
-                group_position[cname] = (gid, pos)
-        updates.sort(key=lambda u: (0,) + group_position[u["name"]]
-                     if u["name"] in group_position else (1, "", 0))
+        _host_of = entry_host
+        _stores = {}
+
+        def _store_of(u):
+            h = _host_of(u)
+            if h not in _stores:
+                _stores[h] = host_store(self, h)
+            return _stores[h]
+
+        _groups_cache = {}
+
+        def _groups_of(u):
+            """That host's groups. Groups don't span hosts (#7), so the
+            member lists here are always about one box."""
+            h = _host_of(u)
+            if h not in _groups_cache:
+                _groups_cache[h] = _store_of(u).get_groups() or {}
+            return _groups_cache[h]
+
+        # (host, container_name) → (group_id, position). Keyed by host as
+        # well as name because two hosts may each have a `plex`, in their
+        # own groups, at their own positions.
+        group_position = {}
+        for u in updates:
+            for gid, g in _groups_of(u).items():
+                for pos, cname in enumerate(g.get("containers") or []):
+                    group_position[(_host_of(u), cname)] = (gid, pos)
+
+        def _gp(u):
+            return group_position.get((_host_of(u), u["name"]))
+
+        updates.sort(key=lambda u: (0,) + _gp(u) if _gp(u) else (1, "", 0))
 
         # Snapshot netns owners by NAME *before* any recreate (#2): a group
         # head recreated earlier in the batch changes ID, so sidecars still
@@ -280,26 +378,38 @@ class UpdateEngine:
             if tn:
                 u["netns_name"] = tn
 
-        ask_major_list = self.store.get_ask_before_major() if auto else set()
-        batch_names = {u["name"] for u in updates}
+        _ask_cache = {}
+
+        def _ask_major_list(u):
+            h = _host_of(u)
+            if h not in _ask_cache:
+                _ask_cache[h] = _store_of(u).get_ask_before_major()
+            return _ask_cache[h]
+
+        batch_names = {(_host_of(u), u["name"]) for u in updates}
         results = []
         success_count = 0
         major_pending = []
-        group_aborted = set()  # group_ids whose remaining members are skipped
+        # (host, group_id) pairs whose remaining members are skipped — a
+        # failure on one host must not abort a same-named group on another.
+        group_aborted = set()
         prev_group = None
 
         for idx, u in enumerate(updates):
-            gp = group_position.get(u["name"])
+            gp = _gp(u)
+            u_host = _host_of(u)
             cur_group = gp[0] if gp else None
+            abort_key = (u_host, cur_group)
+            groups = _groups_of(u)
 
             # Skip the rest of a group whose earlier member already failed.
-            if cur_group and cur_group in group_aborted:
+            if cur_group and abort_key in group_aborted:
                 results.append(
                     f"⏭ {self._display_name(u)}: skipped (group `{cur_group}` aborted earlier)")
                 continue
 
             # Inter-container wait when staying inside the same group.
-            if cur_group and cur_group == prev_group:
+            if cur_group and abort_key == prev_group:
                 wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
                 if wait_s > 0:
                     _time.sleep(wait_s)
@@ -314,20 +424,21 @@ class UpdateEngine:
                         checker.get_container_labels(u["name"]), "ask-major")
                 except Exception:
                     ask_lab = None
-            ask_this = ask_lab if ask_lab is not None else (u["name"] in ask_major_list)
+            ask_this = (ask_lab if ask_lab is not None
+                        else (auto and u["name"] in _ask_major_list(u)))
             if auto and ask_this:
                 is_major, old_ver, new_ver = self._is_major_bump(u, checker)
                 if is_major:
-                    self.store.add_pending_major(u["name"], {
+                    _store_of(u).add_pending_major(u["name"], {
                         "image": u["image"],
                         "old_version": old_ver,
                         "new_version": new_ver,
                         "compose": {k: u[k] for k in u if k.startswith("compose_")},
                     })
-                    major_pending.append((u["name"], old_ver, new_ver))
+                    major_pending.append((u["name"], old_ver, new_ver, u_host))
                     results.append(
                         f"⏸ {self._display_name(u)}: major bump {old_ver} → {new_ver} — confirmation required")
-                    prev_group = cur_group
+                    prev_group = abort_key
                     continue
 
             try:
@@ -352,7 +463,8 @@ class UpdateEngine:
                     # head's new name through the netns snapshot above), so
                     # only out-of-batch sidecars need the explicit kick.
                     if is_head:
-                        deps = [d for d in members[1:] if d not in batch_names]
+                        deps = [d for d in members[1:]
+                                if (u_host, d) not in batch_names]
                         if deps:
                             wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
                             results.append(self._restart_group_dependents(
@@ -364,7 +476,7 @@ class UpdateEngine:
                     # only restored the head — kick ALL dependents (incl. the
                     # in-batch ones the group-abort gate would otherwise skip)
                     # so they re-attach to the rolled-back head (#27).
-                    group_aborted.add(cur_group)
+                    group_aborted.add(abort_key)
                     if is_head:
                         wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)
                         results.append("🔁 head rollback — dependents kicked: " +
@@ -373,12 +485,13 @@ class UpdateEngine:
             except Exception as e:
                 results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
                 if cur_group:
-                    group_aborted.add(cur_group)
+                    group_aborted.add(abort_key)
                 if self.notifier:
                     self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
                                                      source_url=u.get("source_url", ""))
-            prev_group = cur_group
-            self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1)
+            prev_group = abort_key
+            self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1,
+                                 host=u_host)
 
         return results, success_count, major_pending
 

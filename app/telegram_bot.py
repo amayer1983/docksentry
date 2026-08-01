@@ -66,6 +66,41 @@ _BOT_COMMANDS = [
 ]
 
 
+def pending_host(entry):
+    """The managed host a pending-update / update dict is about (#7).
+
+    Delegates to `container_store.entry_host` — one definition of the rule
+    for the store, the engine and the bot. Kept as a free function here
+    (rather than a method) so the orchestration paths can call it with
+    whatever kind of `self` they were handed: the bot, the engine, or one
+    of the duck-typed stand-ins the tests drive them with.
+    """
+    from container_store import entry_host
+    return entry_host(entry)
+
+
+def pending_key(entry):
+    """`(host, name)` — the identity of one pending-update entry.
+
+    The pending file is a single flat list holding EVERY managed host's
+    entries, so this pair, not the name alone, is what removals have to
+    match on: two boxes may each run an `nginx`."""
+    return pending_host(entry), entry.get("name")
+
+
+def read_pending(path):
+    """`pending_updates.json` as a list. Empty when missing or corrupt —
+    same tolerance every other reader of this file applies."""
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
 class TelegramBot:
     def __init__(self, config, container_store, engine=None, hosts=None):
         self.config = config
@@ -92,7 +127,14 @@ class TelegramBot:
         # `engine=None` fallback builds one so callers/tests that still do
         # `TelegramBot(config, store)` don't break.
         from update_engine import UpdateEngine
-        self.engine = engine or UpdateEngine(config, container_store)
+        self.engine = engine or UpdateEngine(config, container_store,
+                                             hosts=hosts)
+        # The engine resolves per-host state the same way the bot does, so
+        # it needs the same registry. main.py passes it at construction;
+        # this covers embedders that built the engine before the registry
+        # existed. Never overwrites a registry the engine already has.
+        if hosts is not None and getattr(self.engine, "hosts", None) is None:
+            self.engine.hosts = hosts
         # Per-notification snapshots of the "Updates Available" container
         # list, keyed by a short token carried in the "Update all"
         # button's callback_data (v1.23.3). Before this, "Update all"
@@ -346,8 +388,12 @@ class TelegramBot:
         return True
 
     # Thin wrappers around ContainerStore — kept for backwards compatibility
-    # with internal call sites in this file. New code should use self.store
-    # directly.
+    # with internal call sites in this file. They read the store WHOLE, i.e.
+    # every managed host's keys at once, which is what the two remaining
+    # callers want (the `/settings` dump and the `/status` counters, both of
+    # which are about the instance rather than about one host). Anything
+    # acting on a container must go through `self._store_for(host)` instead
+    # — writing through these was the #7 state-collision bug.
     def _get_pinned(self):
         return self.store.get_pinned()
 
@@ -360,17 +406,22 @@ class TelegramBot:
     def _save_autoupdate(self, containers):
         self.store.save_autoupdate(containers)
 
-    def _is_protected(self, name, checker):
+    def _is_protected(self, name, checker, store=None):
         """True if `name` is protected from /stop. A `docksentry.protect`
         container label overrides the stored toggle when present (#42,
         @LeeNX) — GitOps-style config in the compose file; otherwise the
         bot/Web-UI toggle (#38) applies. Label failures fall back to the
-        toggle so a flaky inspect can never accidentally unprotect."""
+        toggle so a flaky inspect can never accidentally unprotect.
+
+        `store` is the state view of the host `name` lives on (#7);
+        omitted it is this instance's own — i.e. the local host."""
         try:
             lab = checker.label_bool(checker.get_container_labels(name), "protect")
         except Exception:
             lab = None
-        return lab if lab is not None else self.store.is_protect_stop(name)
+        if lab is not None:
+            return lab
+        return (store if store is not None else self.store).is_protect_stop(name)
 
     @staticmethod
     def _help_alias(text):
@@ -480,7 +531,7 @@ class TelegramBot:
             "running": bool(state.get("Running")),
         }
 
-    def _lifecycle_action(self, action, name, checker, backend=None):
+    def _lifecycle_action(self, action, name, checker, backend=None, host=None):
         """Execute a lifecycle action (stop/start/restart) on a resolved
         container. Returns (ok: bool, message: str — already i18n'd).
 
@@ -493,7 +544,10 @@ class TelegramBot:
         managed host. Both default to the local machine's; the default is
         resolved only in the branches that actually run a command, so the
         guards below still refuse without touching a backend at all.
+        `host` completes the set: it picks whose stop-protection list the
+        refusal below is read from.
         """
+        from update_engine import host_store
         if action in ("stop", "restart") and checker._would_kill_self(name):
             return False, self.t("lifecycle_refused_self", action=action, name=name)
 
@@ -511,7 +565,8 @@ class TelegramBot:
         # stopped (e.g. the VPN/tunnel carrying their remote access).
         # Restart stays allowed — brief downtime during update/rollback is
         # acceptable, a permanent stop is the dangerous one.
-        if action == "stop" and self._is_protected(name, checker):
+        if action == "stop" and self._is_protected(name, checker,
+                                                   host_store(self, host)):
             return False, self.t("lifecycle_refused_protected", name=name)
 
         if action == "stop":
@@ -691,6 +746,30 @@ class TelegramBot:
         _, target = split_host_target(arg_text)
         return "" if target else "\n\n" + self.t("host_local_only_hint")
 
+    def _state_targets(self, text):
+        """`(args, targets, error)` for a state-changing command (#7).
+
+        Shared by /pin, /unpin, /autoupdate, /cooldown, /protect and
+        /setlink. They all write per-container state, so — like every
+        other write — they act on the LOCAL host unless an `@host` /
+        `@all` token aims them elsewhere. Without that, turning on
+        auto-update for `nginx` turned it on for every host's `nginx`,
+        which is the whole bug this family of helpers closes.
+
+        `targets` is None on a single-host install; call sites walk that
+        as the single pseudo-host `None`, which resolves to the bot's own
+        backend, the raw store, no host tag and no hint — i.e. byte-for-
+        byte the replies these commands always sent.
+        """
+        parts = text.split(maxsplit=1)
+        raw_arg = parts[1].strip() if len(parts) > 1 else ""
+        return self._resolve_targets(raw_arg, write=True)
+
+    def _host_hint_for(self, text):
+        """`_host_hint` for a whole command line rather than its args."""
+        parts = text.split(maxsplit=1)
+        return self._host_hint(parts[1].strip() if len(parts) > 1 else "")
+
     def _backend_for(self, host):
         """Backend to act through for `host`. The local host keeps the bot's
         own object, so nothing about the local code path changes."""
@@ -699,6 +778,28 @@ class TelegramBot:
     def _checker_for(self, host, checker):
         """Checker for `host` — the caller's own for the local host."""
         return checker if (host is None or host.is_local) else host.checker
+
+    def _host_by_name(self, name):
+        """The `ManagedHost` called `name`, or None. Also None whenever a
+        single host is managed — which is exactly the value `_backend_for`
+        / `_checker_for` / `_store_for` treat as "the local, unchanged
+        path", so callback payloads resolve to pre-#7 behaviour there."""
+        if not self._multi():
+            return None
+        return self.hosts.get(name)
+
+    def _store_for(self, host):
+        """Container state (pins, auto-update, cooldowns, groups, notes,
+        links, windows, deferred majors) scoped to `host` — the third
+        member of the `_backend_for` / `_checker_for` family, and the one
+        that was missing: without it every command wrote one host's flag
+        into every host's list at once.
+
+        `host` may be a `ManagedHost`, a host name, or None for the local
+        one. On a single-host install this is the raw store, unchanged and
+        unprefixed — see `update_engine.host_store`."""
+        from update_engine import host_store
+        return host_store(self, host)
 
     @staticmethod
     def _host_tag(host):
@@ -893,6 +994,26 @@ class TelegramBot:
             "reply_markup": json.dumps(keyboard)
         })
 
+    def _update_one_key(self, entry):
+        """The `update_one:` / `confirm_major:` payload identifying ONE
+        container on ONE host (#7).
+
+        Reuses `container_store.host_key`, so it is `nginx` for the local
+        host and `nas/nginx` for a remote one — a `/` cannot occur in a
+        container name, which is what makes the two unambiguous. Callback
+        data on a single-host install is therefore the bare name it has
+        always been, and every existing button keeps working."""
+        from container_store import host_key
+        return host_key(self._pending_host(entry), entry["name"])
+
+    def _entry_host_tag(self, entry):
+        """` @nas` for an entry from a remote host, empty for the local
+        one — so two boxes' identically-named containers don't produce two
+        identical-looking buttons. Empty on a single-host install."""
+        from container_store import LOCAL_HOST
+        host = self._pending_host(entry)
+        return "" if host == LOCAL_HOST else f" @{host}"
+
     def _rebuild_keyboard_without(self, callback_data):
         """Rebuild keyboard marking the clicked container as done."""
         if not os.path.exists(self.config.pending_file):
@@ -903,13 +1024,15 @@ class TelegramBot:
 
         keyboard = []
         for u in updates:
-            btn_data = f"update_one:{u['name']}"
+            btn_data = f"update_one:{self._update_one_key(u)}"
+            label = u["name"] + self._entry_host_tag(u)
             if btn_data == callback_data:
-                keyboard.append([{"text": f"✅ {u['name']}", "callback_data": "noop"}])
+                keyboard.append([{"text": f"✅ {label}", "callback_data": "noop"}])
             else:
-                keyboard.append([{"text": f"🔄 {u['name']}", "callback_data": btn_data}])
+                keyboard.append([{"text": f"🔄 {label}", "callback_data": btn_data}])
 
-        remaining = [u for u in updates if f"update_one:{u['name']}" != callback_data]
+        remaining = [u for u in updates
+                     if f"update_one:{self._update_one_key(u)}" != callback_data]
         if remaining:
             keyboard.append([
                 {"text": self.t("update_all_btn"), "callback_data": "update_all"},
@@ -918,8 +1041,18 @@ class TelegramBot:
 
         return {"inline_keyboard": keyboard}
 
-    def _run_single_update(self, checker, container_name):
-        """Update a single container."""
+    def _run_single_update(self, checker, container_key):
+        """Update a single container.
+
+        `container_key` is the `update_one:` payload: a bare container name
+        for the local host, `nas/nginx` for a remote one (#7). It has to
+        carry the host — the pending file holds every host's entries and
+        two of them may both list an `nginx`, so a name alone would update
+        (and then delete) whichever happened to come first."""
+        from container_store import split_host_key
+        host_name, container_name = split_host_key(container_key)
+        host = self._host_by_name(host_name)
+        checker = self._checker_for(host, checker)
         # Claim the shared update mutex — before v1.23.1 this path took
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
@@ -934,7 +1067,9 @@ class TelegramBot:
             with open(self.config.pending_file) as f:
                 updates = json.load(f)
 
-            target = next((u for u in updates if u["name"] == container_name), None)
+            target = next((u for u in updates
+                           if self._pending_key(u) == (host_name, container_name)),
+                          None)
             if not target:
                 self.send_message(self.t("container_not_in_list", name=container_name))
                 return
@@ -960,8 +1095,10 @@ class TelegramBot:
                     self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
                                                      source_url=target.get("source_url", ""))
 
-            # Remove from pending list (atomic write — v1.22.1)
-            remaining = [u for u in updates if u["name"] != container_name]
+            # Remove from pending list (atomic write — v1.22.1). Matched on
+            # (host, name): another host's same-named entry must survive.
+            remaining = [u for u in updates
+                         if self._pending_key(u) != (host_name, container_name)]
             from container_store import atomic_write_json
             atomic_write_json(self.config.pending_file, remaining)
 
@@ -995,11 +1132,21 @@ class TelegramBot:
     def _policy_decision(self, *a, **k):
         return self.engine._policy_decision(*a, **k)
 
-    def _confirm_major_update(self, checker, name):
+    def _confirm_major_update(self, checker, container_key):
         """Resume an update that was held back by the major-confirmation gate.
         Reads metadata from the pending-major store, runs update_container,
-        clears the pending entry on success."""
-        pending = self.store.get_pending_major().get(name)
+        clears the pending entry on success.
+
+        `container_key` is a host key (#7) — a bare name for the local host,
+        `nas/plex` for a remote one. That is exactly how the entry is keyed
+        in `major_confirmations.json`, so the Web UI (which iterates the raw
+        keys) can pass one straight through."""
+        from container_store import split_host_key
+        host_name, name = split_host_key(container_key)
+        host = self._host_by_name(host_name)
+        checker = self._checker_for(host, checker)
+        store = self._store_for(host_name)
+        pending = store.get_pending_major().get(name)
         if not pending:
             self.send_message(f"⚠️ No pending major update for `{name}`.")
             return
@@ -1013,18 +1160,20 @@ class TelegramBot:
             image = pending.get("image", "")
             compose = pending.get("compose", {}) or {}
             # Resolve link once for both Telegram + Discord/webhook surfaces
-            source_url = self.link_resolver.resolve_container_link(name, image)
+            source_url = self.link_resolver.resolve_container_link(
+                name, image, host=host_name)
             try:
                 success, msg = checker.update_container(name, image, **compose)
             except Exception as e:
                 success, msg = False, str(e)[:200]
             status = "✅" if success else "❌"
             display = f"[{name}]({source_url})" if source_url else f"`{name}`"
+            display += self._entry_host_tag({"host": host_name})
             self.send_message(f"{status} {display}: {msg}")
             if self.notifier:
                 self.notifier.send_update_result(name, image, success, msg, source_url=source_url)
             if success:
-                self.store.remove_pending_major(name)
+                store.remove_pending_major(name)
         finally:
             self._update_lock.release()
             self._run_queued_selfupdate()
@@ -1052,11 +1201,32 @@ class TelegramBot:
         engine (#2) — this method only does the auto-specific scaffolding:
         candidate selection (auto-list + maintenance windows), the mutex
         claim, pending-file bookkeeping, and the notification framing.
-        """
-        from update_window import is_window_open
 
-        auto_list = self._get_autoupdate()
-        windows = self.store.get_update_windows()
+        The scheduler calls this once per managed host with that host's
+        `updates` (#7), so the auto-update list and the maintenance windows
+        consulted here are that host's — turning auto-update on for `nginx`
+        on the NAS must not start auto-updating the local `nginx` too.
+        """
+        from update_engine import host_store
+        from update_window import is_window_open
+        from container_store import LOCAL_HOST
+
+        _host_of = pending_host
+
+        # One scheduler tick = one host, but resolve per entry rather than
+        # assume it: the cost is one cached lookup and it stays correct if
+        # a caller ever hands over a mixed batch.
+        _state = {}
+
+        def _state_of(u):
+            """(auto-update list, maintenance windows) for this update's host."""
+            h = _host_of(u)
+            if h not in _state:
+                s = host_store(self, h)
+                _state[h] = (s.get_autoupdate(), s.get_update_windows())
+            return _state[h]
+
+        batch_hosts = {_host_of(u) for u in updates} or {LOCAL_HOST}
 
         # AUTO_UPDATE_ALL (#45, @NotRetarded): treat *every* checked container
         # as auto-update, not just the per-container opt-ins. Pinned/excluded
@@ -1081,12 +1251,12 @@ class TelegramBot:
                     lab = None
             if lab is not None:
                 return lab
-            return all_auto or u["name"] in auto_list
+            return all_auto or u["name"] in _state_of(u)[0]
 
         auto_candidates = [u for u in updates if _effective_auto(u)]
         # Filter out containers whose maintenance window is closed right now
         skipped_window = [u for u in auto_candidates
-                          if not is_window_open(windows.get(u["name"]))]
+                          if not is_window_open(_state_of(u)[1].get(u["name"]))]
         auto_updates = [u for u in auto_candidates if u not in skipped_window]
 
         # Per-container update policy (v1.53.0, roadmap #2 —
@@ -1137,12 +1307,22 @@ class TelegramBot:
                 # entries stay in pending so the user can also act on them via
                 # the Web UI Update buttons; the dedicated confirm flow uses the
                 # major-pending store independently.
-                major_names = {p[0] for p in major_pending_now}
-                processed = {a["name"] for a in auto_updates if a["name"] not in major_names}
-                remaining = [u for u in updates if u["name"] not in processed]
-                # Atomic write — v1.22.1
+                major_names = {(p[3], p[0]) for p in major_pending_now}
+                processed = {(_host_of(a), a["name"]) for a in auto_updates
+                             if (_host_of(a), a["name"]) not in major_names}
+                remaining = [u for u in updates
+                             if (_host_of(u), u["name"]) not in processed]
+                # `updates` is ONE host's worth, so writing it as the whole
+                # file used to delete every other host's pending entries —
+                # and with them their Web UI badges and buttons (#7). Carry
+                # the foreign entries over verbatim, exactly the way
+                # UpdateChecker.check_all merges its own result in. On a
+                # single-host install nothing is foreign, so this writes
+                # byte-for-byte what it always wrote.
                 from container_store import atomic_write_json
-                atomic_write_json(self.config.pending_file, remaining)
+                others = [e for e in read_pending(self.config.pending_file)
+                          if _host_of(e) not in batch_hosts]
+                atomic_write_json(self.config.pending_file, others + remaining)
         finally:
             # Release the update mutex if we claimed it for this batch.
             # try/finally guarantees release even if a send_message /
@@ -1170,14 +1350,19 @@ class TelegramBot:
                 auto=True,
             )
 
-        # Major-confirm queue: send confirmation prompt(s)
-        for name, old_ver, new_ver in major_pending_now:
+        # Major-confirm queue: send confirmation prompt(s). The callback
+        # payload carries the host (#7) so confirming the NAS's `plex` can't
+        # resolve to the local one; it stays the bare name for local
+        # containers, which is every container on a single-host install.
+        for name, old_ver, new_ver, host_name in major_pending_now:
+            key = self._update_one_key({"name": name, "host": host_name})
             keyboard = {"inline_keyboard": [[
-                {"text": "✅ Confirm", "callback_data": f"confirm_major:{name}"},
-                {"text": "❌ Skip", "callback_data": f"reject_major:{name}"},
+                {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
+                {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
             ]]}
             self.send_message(
-                f"⚠️ *Major update for* `{name}`\n"
+                f"⚠️ *Major update for* `{name}`"
+                f"{self._entry_host_tag({'host': host_name})}\n"
                 f"  {old_ver} → *{new_ver}*\n\n"
                 f"Major version bumps can break configs. Confirm to proceed.",
                 reply_markup=keyboard,
@@ -1221,13 +1406,29 @@ class TelegramBot:
         # @famewolf in #2: with a Gluetun+dependents stack, gluetun was
         # showing up LAST in the notification, making cascade-debugging
         # harder. Mirrors the existing sort in handle_autoupdates.
-        groups = self.store.get_groups() or {}
-        group_position = {}  # container_name → (group_id, position)
-        for gid, g in groups.items():
-            for pos, cname in enumerate(g.get("containers") or []):
-                group_position[cname] = (gid, pos)
+        # Groups belong to a host (#7), so the position table is keyed by
+        # (host, container): the NAS's `plex` must not inherit the local
+        # `plex`'s group slot. One store read per host, cached.
+        _groups_cache = {}
+
+        def _groups_of(u):
+            host = self._pending_host(u)
+            if host not in _groups_cache:
+                _groups_cache[host] = self._store_for(host).get_groups() or {}
+            return _groups_cache[host]
+
+        group_position = {}  # (host, container_name) → (group_id, position)
+        for u in updates:
+            host = self._pending_host(u)
+            for gid, g in _groups_of(u).items():
+                for pos, cname in enumerate(g.get("containers") or []):
+                    group_position[(host, cname)] = (gid, pos)
+
+        def _gp_of(u):
+            return group_position.get((self._pending_host(u), u["name"]))
+
         def _sort_key(u):
-            gp = group_position.get(u["name"])
+            gp = _gp_of(u)
             if gp is None:
                 return (1, "", 0)  # orphans after groups
             return (0, gp[0], gp[1])
@@ -1243,10 +1444,10 @@ class TelegramBot:
             # when the user has at least two members in the group —
             # single-container groups have no HEAD semantics.
             head_badge = ""
-            gp = group_position.get(u["name"])
+            gp = _gp_of(u)
             if gp and gp[1] == 0:
                 gid = gp[0]
-                if len(((groups.get(gid) or {}).get("containers") or [])) > 1:
+                if len(((_groups_of(u).get(gid) or {}).get("containers") or [])) > 1:
                     head_badge = " 👑"
             # Container name becomes a markdown link when we have a
             # source URL — Telegram's parse_mode=Markdown renders
@@ -1275,7 +1476,8 @@ class TelegramBot:
         for u in updates:
             size = u.get('size', '?')
             keyboard.append([
-                {"text": f"🔄 {u['name']} ({size})", "callback_data": f"update_one:{u['name']}"}
+                {"text": f"🔄 {u['name']}{self._entry_host_tag(u)} ({size})",
+                 "callback_data": f"update_one:{self._update_one_key(u)}"}
             ])
         keyboard.append([
             {"text": self.t("update_all_btn"), "callback_data": f"update_all:{token}"},
@@ -1340,13 +1542,22 @@ class TelegramBot:
         restarted, and major-version jumps that would prompt confirmation.
         Performs no changes (roadmap dry-run, #2)."""
         self._enrich_with_source_url(updates)
-        groups = self.store.get_groups() or {}
-        # container_name → (group_id, position, members, restart_dependents)
+        # (host, container_name) → (group_id, position, members,
+        # restart_dependents). Groups belong to a host (#7), so the local
+        # `plex`'s group must not describe the NAS's `plex`.
+        from update_engine import host_store
         group_for = {}
-        for gid, g in groups.items():
-            conts = g.get("containers") or []
-            for pos, cname in enumerate(conts):
-                group_for[cname] = (gid, pos, conts, bool(g.get("restart_dependents")))
+        _seen_hosts = set()
+        for u in updates:
+            uhost = pending_host(u)
+            if uhost in _seen_hosts:
+                continue
+            _seen_hosts.add(uhost)
+            for gid, g in (host_store(self, uhost).get_groups() or {}).items():
+                conts = g.get("containers") or []
+                for pos, cname in enumerate(conts):
+                    group_for[(uhost, cname)] = (
+                        gid, pos, conts, bool(g.get("restart_dependents")))
 
         lines = [self.t("dryrun_title")]
         for u in updates:
@@ -1368,7 +1579,7 @@ class TelegramBot:
                 block.append("  " + self.t("dryrun_path_standalone"))
             # Dependents — only the HEAD (position 0) of a multi-member group
             # with restart_dependents triggers the cascade.
-            gp = group_for.get(name)
+            gp = group_for.get((pending_host(u), name))
             if gp and gp[1] == 0 and gp[3] and len(gp[2]) > 1:
                 deps = ", ".join(f"`{d}`" for d in gp[2][1:])
                 block.append("  " + self.t("dryrun_dependents", deps=deps))
@@ -1384,12 +1595,16 @@ class TelegramBot:
         lines.append("\n" + self.t("dryrun_footer"))
         return "\n".join(lines)
 
-    def _resolve_group(self, arg):
+    def _resolve_group(self, arg, store=None):
         """Resolve a /groups argument to (group_id, group_dict). Matches the
         opaque slug or the display name, case-insensitively, then falls back
         to a unique partial match. Returns (None, None) if nothing matches or
-        the partial is ambiguous."""
-        groups = self.store.get_groups() or {}
+        the partial is ambiguous.
+
+        `store` is the host's state view (#7) — groups belong to a host, so
+        looking one up has to say which. Omitted it is this instance's own,
+        i.e. the local host / the whole store on a single-host install."""
+        groups = (store if store is not None else self.store).get_groups() or {}
         if not groups:
             return None, None
         if arg in groups:
@@ -1402,19 +1617,22 @@ class TelegramBot:
                    if al in gid.lower() or al in (g.get("name", "") or "").lower()]
         return partial[0] if len(partial) == 1 else (None, None)
 
-    def _running_names(self):
-        """Set of currently-running container names (one docker call)."""
+    def _running_names(self, backend=None):
+        """Set of currently-running container names (one docker call).
+        `backend` picks the host to ask (#7); default is the local one."""
         try:
-            r = self.backend.run(["ps", "--format", "{{.Names}}"], timeout=10)
+            r = (backend or self.backend).run(
+                ["ps", "--format", "{{.Names}}"], timeout=10)
             if r.returncode == 0:
                 return set(r.stdout.split())
         except (subprocess.SubprocessError, OSError):
             pass
         return set()
 
-    def _build_groups_list(self):
-        """Read-only overview of all Container Groups (#2 roadmap /groups)."""
-        groups = self.store.get_groups() or {}
+    def _build_groups_list(self, store=None):
+        """Read-only overview of all Container Groups (#2 roadmap /groups).
+        `store` scopes it to one host (#7); default is this instance's."""
+        groups = (store if store is not None else self.store).get_groups() or {}
         if not groups:
             return self.t("groups_none")
         lines = [self.t("groups_title")]
@@ -1431,15 +1649,25 @@ class TelegramBot:
         lines.append("\n" + self.t("groups_list_hint"))
         return "\n".join(lines)
 
-    def _build_group_detail(self, arg):
+    def _build_group_detail(self, arg, store=None, host=None):
         """Detail for one group + an optional restart-dependents button.
-        Returns (text, reply_markup)."""
-        gid, g = self._resolve_group(arg)
+        Returns (text, reply_markup).
+
+        `store`/`host` name the managed host the group belongs to (#7).
+        Both default to the local one, which is the only one a single-host
+        install has."""
+        gid, g = self._resolve_group(arg, store)
         if not g:
             return self.t("groups_not_found", name=arg), None
         members = g.get("containers") or []
         rd = bool(g.get("restart_dependents"))
-        running = self._running_names()
+        # Ask the group's own host which members are up. Resolved only for a
+        # genuinely remote host so the local call stays the zero-argument one
+        # it has always been.
+        if host is not None and not getattr(host, "is_local", False):
+            running = self._running_names(host.backend)
+        else:
+            running = self._running_names()
         lines = [self.t("group_detail_title", name=g.get("name", gid))]
         lines.append(self.t("group_detail_rd_on") if rd else self.t("group_detail_rd_off"))
         lines.append("")
@@ -1448,7 +1676,13 @@ class TelegramBot:
             crown = " 👑" if i == 0 and len(members) > 1 else ""
             lines.append(f"{icon} `{m}`{crown}")
         markup = None
-        if rd and len(members) > 1:
+        # The cascade behind this button (`_restart_group_dependents`) still
+        # shells out to a literal local `docker`, so only a local group gets
+        # one — offering it for a remote group would restart whatever happens
+        # to carry that name here. Single-host installs are all local, so the
+        # button appears exactly where it always did.
+        is_remote = host is not None and not getattr(host, "is_local", False)
+        if rd and len(members) > 1 and not is_remote:
             markup = {"inline_keyboard": [[
                 {"text": self.t("group_restart_deps_btn"),
                  "callback_data": f"restart_deps:{gid}"}]]}
@@ -2139,8 +2373,9 @@ class TelegramBot:
 
             if from_snapshot:
                 # Remove only the processed containers from pending —
-                # the file may hold others the snapshot didn't include.
-                self._remove_from_pending([u["name"] for u in updates])
+                # the file may hold others the snapshot didn't include,
+                # including same-named ones on other hosts (#7).
+                self._remove_from_pending([pending_key(u) for u in updates])
             else:
                 try:
                     os.remove(pending_file)
@@ -2152,9 +2387,30 @@ class TelegramBot:
             self._update_lock.release()
             self._run_queued_selfupdate()
 
-    def _remove_from_pending(self, names):
-        """Drop the given container names from pending_updates.json
-        (atomic). No-op if the file is missing or unreadable."""
+    # ── pending_updates.json, keyed by (host, container) ───────────────
+    # The file holds EVERY managed host's pending updates in one flat list
+    # (#7), each entry carrying a `host` key. Anything that removes from it
+    # must therefore match on the pair, not on the name alone: two boxes may
+    # each run an `nginx`, and updating one of them must not make the other's
+    # pending entry — its Web UI badge, its update button — disappear.
+    # Entries written before #7 have no `host` key and mean the local host,
+    # which is also why a single-host install matches exactly as it always
+    # did: every entry is `("local", name)` on both sides of the comparison.
+
+    # Both are module-level functions, aliased here for the call sites that
+    # read better with a `self.`: the update orchestration runs with several
+    # kinds of `self` (the bot, the engine, a test stand-in) and none of them
+    # should need a method just to answer "which host is this entry about".
+    _pending_host = staticmethod(pending_host)
+    _pending_key = staticmethod(pending_key)
+
+    def _remove_from_pending(self, keys):
+        """Drop the given entries from pending_updates.json (atomic). No-op
+        if the file is missing or unreadable.
+
+        `keys` are `(host, name)` pairs; a bare string is accepted and read
+        as the local host, so older/simple callers keep working."""
+        from container_store import LOCAL_HOST
         pending_file = self.config.pending_file
         if not os.path.exists(pending_file):
             return
@@ -2163,8 +2419,9 @@ class TelegramBot:
                 pending = json.load(f)
         except (OSError, json.JSONDecodeError):
             return
-        name_set = set(names)
-        remaining = [u for u in pending if u.get("name") not in name_set]
+        wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)
+                  for k in keys}
+        remaining = [u for u in pending if self._pending_key(u) not in wanted]
         from container_store import atomic_write_json
         if remaining:
             atomic_write_json(pending_file, remaining)
@@ -2366,28 +2623,38 @@ class TelegramBot:
             except OSError:
                 pass
         elif data.startswith("update_one:"):
-            container_name = data.split(":", 1)[1]
+            # The payload is a host key (#7): `nginx` locally, `nas/nginx`
+            # for a remote host. `_run_single_update` splits it; only the
+            # user-facing name is echoed back here.
+            from container_store import split_host_key
+            container_key = data.split(":", 1)[1]
+            container_name = split_host_key(container_key)[1]
             self.answer_callback(callback["id"], f"Update {container_name}...")
             # Remove only this button, keep the rest
             if msg_id and chat_id:
                 self._remove_single_button(chat_id, msg_id, data)
-            t = threading.Thread(target=self._run_single_update, args=(checker, container_name))
+            t = threading.Thread(target=self._run_single_update, args=(checker, container_key))
             t.start()
         elif data.startswith("confirm_major:"):
-            name = data.split(":", 1)[1]
+            from container_store import split_host_key
+            key = data.split(":", 1)[1]
+            name = split_host_key(key)[1]
             self.answer_callback(callback["id"], f"Confirming major update for {name}...")
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             t = threading.Thread(target=self._confirm_major_update,
-                                 args=(checker, name))
+                                 args=(checker, key))
             t.start()
         elif data.startswith("reject_major:"):
-            name = data.split(":", 1)[1]
+            from container_store import split_host_key
+            key = data.split(":", 1)[1]
+            host_name, name = split_host_key(key)
             self.answer_callback(callback["id"], f"Skipped major update for {name}.")
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
-            self.store.remove_pending_major(name)
-            self.send_message(f"⏭ Major update for `{name}` skipped.")
+            self._store_for(host_name).remove_pending_major(name)
+            tag = self._entry_host_tag({"host": host_name})
+            self.send_message(f"⏭ Major update for `{name}`{tag} skipped.")
 
         elif data.startswith("lifecycle:"):
             # Inline-button action under /status <name>. Format:
@@ -2412,7 +2679,10 @@ class TelegramBot:
         elif data.startswith("restart_deps:"):
             # Manual restart-dependents cascade from /groups <name>.
             gid = data.split(":", 1)[1]
-            g = self.store.get_group(gid)
+            # Local-host groups only — that is the only place the button is
+            # offered (see `_build_group_detail`), and the cascade behind it
+            # runs local `docker` commands.
+            g = self._store_for(None).get_group(gid)
             members = (g or {}).get("containers") or []
             if not g or len(members) < 2:
                 self.answer_callback(callback["id"], "No dependents")
@@ -2583,7 +2853,9 @@ class TelegramBot:
                         # Stop hidden for protected containers (#38). The callback is
                         # also guarded in _lifecycle_action, so a stale button can't
                         # slip a stop through either.
-                        if not self._is_protected(resolved, self._checker_for(host, checker)):
+                        if not self._is_protected(resolved,
+                                                  self._checker_for(host, checker),
+                                                  self._store_for(host)):
                             buttons.append({"text": self.t("lifecycle_btn_stop"),
                                             "callback_data": f"lifecycle:stop:{resolved}"})
                     else:
@@ -3156,7 +3428,7 @@ class TelegramBot:
                     for nm in names:
                         ok, msg = self._lifecycle_action(
                             action, nm, self._checker_for(host, checker),
-                            backend=backend)
+                            backend=backend, host=host)
                         lines.append(("✅ " if ok else "❌ ") + msg
                                      + self._host_tag(host))
                     self.send_message("\n".join(lines) + hint)
@@ -3176,7 +3448,7 @@ class TelegramBot:
                 resolved_any = True
                 ok, msg = self._lifecycle_action(
                     action, resolved, self._checker_for(host, checker),
-                    backend=backend)
+                    backend=backend, host=host)
                 self.send_message(msg + self._host_tag(host) + hint)
             if not resolved_any:
                 self.send_message(first_err + hint)
@@ -3224,119 +3496,173 @@ class TelegramBot:
             self.send_message(self.t("history_empty"))
 
         elif text.startswith("/pin"):
-            parts = text.split()
-            if len(parts) < 2:
-                pinned = self._get_pinned()
-                if pinned:
-                    names = [f"• `{n}`" for n in pinned]
-                    self.send_message(self.t("pin_list") + "\n" + "\n".join(names))
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    pinned = self._store_for(host).get_pinned()
+                    tag = self._host_tag(host)
+                    if pinned:
+                        names = [f"• `{n}`{tag}" for n in pinned]
+                        self.send_message(self.t("pin_list") + "\n" + "\n".join(names) + hint)
+                    else:
+                        self.send_message(self.t("pin_empty") + tag + hint)
+                return
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                pinned = store.get_pinned()
+                if name not in pinned:
+                    pinned.append(name)
+                    store.save_pinned(pinned)
+                    self.send_message(self.t("pin_added", name=name) + tag + hint)
                 else:
-                    self.send_message(self.t("pin_empty"))
-                return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
-                return
-            pinned = self._get_pinned()
-            if name not in pinned:
-                pinned.append(name)
-                self._save_pinned(pinned)
-                self.send_message(self.t("pin_added", name=name))
-            else:
-                self.send_message(self.t("pin_already", name=name))
+                    self.send_message(self.t("pin_already", name=name) + tag + hint)
 
         elif text.startswith("/unpin"):
-            parts = text.split()
-            if len(parts) < 2:
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            if not argv:
                 self.send_message(self.t("unpin_usage"))
                 return
+            hint = self._host_hint_for(text)
             # For unpin, match against pinned list too
-            partial = parts[1]
-            pinned = self._get_pinned()
-            matches = [n for n in pinned if n.lower().startswith(partial.lower())]
-            if partial in pinned:
-                name = partial
-            elif len(matches) == 1:
-                name = matches[0]
-            elif len(matches) > 1:
-                self.send_message(self.t("resolve_multiple", names=", ".join(f"`{m}`" for m in matches)))
-                return
-            else:
-                self.send_message(self.t("unpin_not_found", name=partial))
-                return
-            pinned.remove(name)
-            self._save_pinned(pinned)
-            self.send_message(self.t("unpin_removed", name=name))
+            partial = argv[0]
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                pinned = store.get_pinned()
+                matches = [n for n in pinned if n.lower().startswith(partial.lower())]
+                if partial in pinned:
+                    name = partial
+                elif len(matches) == 1:
+                    name = matches[0]
+                elif len(matches) > 1:
+                    self.send_message(self.t("resolve_multiple", names=", ".join(f"`{m}`" for m in matches)) + tag + hint)
+                    continue
+                else:
+                    self.send_message(self.t("unpin_not_found", name=partial) + tag + hint)
+                    continue
+                pinned.remove(name)
+                store.save_pinned(pinned)
+                self.send_message(self.t("unpin_removed", name=name) + tag + hint)
 
         elif text.startswith("/autoupdate"):
-            parts = text.split()
-            if len(parts) < 2:
-                auto_list = self._get_autoupdate()
-                if auto_list:
-                    names = [f"• `{n}`" for n in auto_list]
-                    self.send_message(self.t("autoupdate_list") + "\n" + "\n".join(names))
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    auto_list = self._store_for(host).get_autoupdate()
+                    tag = self._host_tag(host)
+                    if auto_list:
+                        names = [f"• `{n}`{tag}" for n in auto_list]
+                        self.send_message(self.t("autoupdate_list") + "\n" + "\n".join(names) + hint)
+                    else:
+                        self.send_message(self.t("autoupdate_empty") + tag + hint)
+                return
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                auto_list = store.get_autoupdate()
+                if name in auto_list:
+                    auto_list.remove(name)
+                    store.save_autoupdate(auto_list)
+                    self.send_message(self.t("autoupdate_off", name=name) + tag + hint)
                 else:
-                    self.send_message(self.t("autoupdate_empty"))
-                return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
-                return
-            auto_list = self._get_autoupdate()
-            if name in auto_list:
-                auto_list.remove(name)
-                self._save_autoupdate(auto_list)
-                self.send_message(self.t("autoupdate_off", name=name))
-            else:
-                auto_list.append(name)
-                self._save_autoupdate(auto_list)
-                self.send_message(self.t("autoupdate_on", name=name))
+                    auto_list.append(name)
+                    store.save_autoupdate(auto_list)
+                    self.send_message(self.t("autoupdate_on", name=name) + tag + hint)
 
         elif text.startswith("/cooldown"):
-            parts = text.split()
-            if len(parts) < 2:
-                cds = self.store.get_cooldowns()
-                if cds:
-                    lines = [f"• `{n}`: {s}s" for n, s in cds.items()]
-                    self.send_message(self.t("cooldown_list") + "\n" + "\n".join(lines))
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    cds = self._store_for(host).get_cooldowns()
+                    tag = self._host_tag(host)
+                    if cds:
+                        lines = [f"• `{n}`{tag}: {s}s" for n, s in cds.items()]
+                        self.send_message(self.t("cooldown_list") + "\n" + "\n".join(lines) + hint)
+                    else:
+                        self.send_message(self.t("cooldown_empty") + tag + hint)
+                return
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                if len(argv) < 2:
+                    self.send_message(self.t("cooldown_current", name=name,
+                                             seconds=store.get_cooldown(name)) + tag + hint)
+                    continue
+                try:
+                    secs = int(argv[1])
+                except ValueError:
+                    self.send_message(self.t("cooldown_bad_value"))
+                    return
+                applied = store.set_cooldown(name, secs)
+                if applied:
+                    self.send_message(self.t("cooldown_set", name=name, seconds=applied) + tag + hint)
                 else:
-                    self.send_message(self.t("cooldown_empty"))
-                return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
-                return
-            if len(parts) < 3:
-                self.send_message(self.t("cooldown_current", name=name,
-                                         seconds=self.store.get_cooldown(name)))
-                return
-            try:
-                secs = int(parts[2])
-            except ValueError:
-                self.send_message(self.t("cooldown_bad_value"))
-                return
-            applied = self.store.set_cooldown(name, secs)
-            if applied:
-                self.send_message(self.t("cooldown_set", name=name, seconds=applied))
-            else:
-                self.send_message(self.t("cooldown_cleared", name=name))
+                    self.send_message(self.t("cooldown_cleared", name=name) + tag + hint)
 
         elif text.startswith("/protect"):
-            parts = text.split()
-            if len(parts) < 2:
-                names = self.store.get_protect_stop()
-                if names:
-                    self.send_message(self.t("protect_list") + "\n"
-                                      + "\n".join(f"• `{n}`" for n in names))
-                else:
-                    self.send_message(self.t("protect_empty"))
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
                 return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    names = self._store_for(host).get_protect_stop()
+                    tag = self._host_tag(host)
+                    if names:
+                        self.send_message(self.t("protect_list") + "\n"
+                                          + "\n".join(f"• `{n}`{tag}" for n in names) + hint)
+                    else:
+                        self.send_message(self.t("protect_empty") + tag + hint)
                 return
-            now_on = self.store.toggle_protect_stop(name)
-            self.send_message(self.t("protect_on" if now_on else "protect_off", name=name))
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                now_on = store.toggle_protect_stop(name)
+                self.send_message(
+                    self.t("protect_on" if now_on else "protect_off", name=name)
+                    + tag + hint)
 
         elif text.startswith("/audit"):
             # /audit <container> — run UpdateChecker._audit_inspect_coverage
@@ -3393,32 +3719,62 @@ class TelegramBot:
             # The URL replaces the auto-resolved OCI source URL in both
             # the update-notification repo link AND /changelog output —
             # they share `container_store.get_link()`.
-            parts = text.split(maxsplit=2)
-            if len(parts) < 2:
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split(maxsplit=1)
+            if not argv:
                 self.send_message(self.t("setlink_usage"))
                 return
-            partial = parts[1].strip()
-            url = parts[2].strip() if len(parts) > 2 else ""
-            name, err = self._resolve_container(partial)
-            if err:
-                self.send_message(err)
-                return
-            ok = self.store.set_link(name, url)
-            if not ok:
-                self.send_message(self.t("setlink_invalid"))
-                return
-            if url:
-                self.send_message(self.t("setlink_set", name=name, url=url))
-            else:
-                self.send_message(self.t("setlink_cleared", name=name))
+            hint = self._host_hint_for(text)
+            partial = argv[0].strip()
+            url = argv[1].strip() if len(argv) > 1 else ""
+            for host in (targets or [None]):
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    partial, backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                ok = self._store_for(host).set_link(name, url)
+                if not ok:
+                    self.send_message(self.t("setlink_invalid"))
+                    return
+                if url:
+                    self.send_message(self.t("setlink_set", name=name, url=url) + tag + hint)
+                else:
+                    self.send_message(self.t("setlink_cleared", name=name) + tag + hint)
 
         elif text.startswith("/groups ") and len(text.split(maxsplit=1)) > 1:
-            arg = text.split(maxsplit=1)[1].strip()
-            body, markup = self._build_group_detail(arg)
-            self.send_message(body, markup)
+            raw_arg, targets, host_err = self._resolve_targets(
+                text.split(maxsplit=1)[1].strip(), write=False)
+            if host_err:
+                self.send_message(host_err)
+                return
+            arg = raw_arg.strip()
+            if not arg:
+                # `/groups @nas` — a host but no group name: that's the list.
+                for host in (targets or [None]):
+                    self.send_message(self._build_groups_list(self._store_for(host))
+                                      + self._host_tag(host))
+                return
+            found = False
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                if not self._resolve_group(arg, store)[1]:
+                    continue
+                found = True
+                body, markup = self._build_group_detail(arg, store, host=host)
+                self.send_message(body + self._host_tag(host), markup)
+            if not found:
+                self.send_message(self.t("groups_not_found", name=arg))
 
         elif text == "/groups":
-            self.send_message(self._build_groups_list())
+            _, targets, _ = self._resolve_targets("", write=False)
+            for host in (targets or [None]):
+                self.send_message(self._build_groups_list(self._store_for(host))
+                                  + self._host_tag(host))
 
         elif text == "/settings":
             debug_status = self.t("debug_on") if self.config.debug else self.t("debug_off")

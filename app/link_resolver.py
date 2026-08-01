@@ -84,14 +84,14 @@ class LinkResolver:
         except Exception:
             return ""
 
-    def resolve_container_link(self, name, image="", checker=None):
+    def resolve_container_link(self, name, image="", checker=None, host=None):
         """Return the URL that should wrap `name` in update
         notifications, or empty string when no link is available.
         Thin wrapper around `resolve_link_with_kind` for the many call
         sites that only care about the URL itself."""
-        return self.resolve_link_with_kind(name, image, checker)[0]
+        return self.resolve_link_with_kind(name, image, checker, host)[0]
 
-    def resolve_link_with_kind(self, name, image="", checker=None):
+    def resolve_link_with_kind(self, name, image="", checker=None, host=None):
         """(url, kind) for a container's repo/changelog link.
 
         Priority order:
@@ -114,13 +114,20 @@ class LinkResolver:
         Reuses the v1.18.3 `/changelog <container>` helpers so the
         notification-link feature gets the same coverage as that
         command (~67 % auto-detection rate without any user setup).
+
+        `host` names the managed host the container runs on (#7). It only
+        affects step 1: `container_links.json` is keyed per host, so the
+        NAS's `nginx` gets the link you set for the NAS's `nginx`. Omitted
+        — and on every single-host install — the key is the bare container
+        name it has always been.
         """
         # 0. Container label
         labelled = self.label_link(name, checker)
         if labelled:
             return labelled, "label"
         # 1. Manual override
-        manual = self.store.get_link(name)
+        from container_store import host_key
+        manual = self.store.get_link(host_key(host, name))
         if manual:
             return manual, "manual"
         # 2 + 3. OCI labels
@@ -237,4 +244,5 @@ class LinkResolver:
         share the same resolved URL.
         """
         for u in updates:
-            u["source_url"] = self.resolve_container_link(u["name"], u.get("image", ""))
+            u["source_url"] = self.resolve_container_link(
+                u["name"], u.get("image", ""), host=u.get("host"))
