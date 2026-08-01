@@ -1972,9 +1972,36 @@ class UpdateChecker:
                         _vlog(f"    remote :{tag} version could not be read")
 
         # Save pending updates — atomic write (v1.22.1)
-        from container_store import atomic_write_json
+        from container_store import atomic_write_json, LOCAL_HOST
+        # Which host these updates are about (#7). Single-host installs
+        # tag everything "local", which is also what an entry written by
+        # an older version (no `host` key at all) is read as — so the file
+        # format is unchanged in practice and needs no migration.
+        host_name = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
+        for u in updates:
+            u["host"] = host_name
+
+        def _host_of(entry):
+            return entry.get("host") or LOCAL_HOST
+
+        def _read_pending():
+            if not os.path.exists(self.config.pending_file):
+                return []
+            try:
+                with open(self.config.pending_file) as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                return []
+            return data if isinstance(data, list) else []
+
         if only is None:
-            atomic_write_json(self.config.pending_file, updates)
+            # A full scan is authoritative for THIS host only. With several
+            # hosts managed, each one scans on its own schedule, so wiping
+            # the whole file here would delete the other hosts' pending
+            # updates — and with them their Web UI badges and buttons.
+            others = [u for u in _read_pending()
+                      if isinstance(u, dict) and _host_of(u) != host_name]
+            atomic_write_json(self.config.pending_file, others + updates)
         else:
             # A scoped run only knows about the containers it actually
             # checked. Writing `updates` wholesale here would wipe every
@@ -1984,17 +2011,12 @@ class UpdateChecker:
             # untouched. A missing/corrupt file is treated as empty, same
             # as everywhere else that reads this file.
             checked = {c["name"] for c in containers}
-            existing = []
-            if os.path.exists(self.config.pending_file):
-                try:
-                    with open(self.config.pending_file) as f:
-                        existing = json.load(f)
-                except (OSError, json.JSONDecodeError):
-                    existing = []
-            if not isinstance(existing, list):
-                existing = []
-            merged = [u for u in existing
-                      if isinstance(u, dict) and u.get("name") not in checked]
+            # Only OUR host's entries for the checked names get replaced —
+            # another host may legitimately run a container of the same name.
+            merged = [u for u in _read_pending()
+                      if isinstance(u, dict)
+                      and not (_host_of(u) == host_name
+                               and u.get("name") in checked)]
             merged.extend(updates)
             atomic_write_json(self.config.pending_file, merged)
         self._debug(f"Found {len(updates)} updates.")

@@ -84,6 +84,56 @@ finally:
     container_backend.subprocess = real
 
 
+# ── pending updates are per host: one scan must not wipe another's ───
+# The most dangerous multi-host bug would be silent: host A finishes its
+# scan and deletes host B's open updates, so B's badges and update buttons
+# vanish until B happens to scan again.
+import json                                   # noqa: E402
+import tempfile                               # noqa: E402
+
+real2 = container_backend.subprocess
+container_backend.subprocess = types.SimpleNamespace(
+    run=lambda argv, **kw: (sent.append(argv), _CP())[1],
+    SubprocessError=real2.SubprocessError, TimeoutExpired=real2.TimeoutExpired,
+    CalledProcessError=real2.CalledProcessError,
+    PIPE=real2.PIPE, DEVNULL=real2.DEVNULL)
+try:
+    with tempfile.TemporaryDirectory() as d:
+        pending = os.path.join(d, "pending_updates.json")
+        # Pre-existing file: one entry per host, plus a legacy entry with no
+        # `host` key at all (what an older Docksentry wrote).
+        with open(pending, "w") as f:
+            json.dump([
+                {"name": "legacy", "image": "a:1"},                 # → local
+                {"name": "onlocal", "image": "b:1", "host": "local"},
+                {"name": "onnas", "image": "c:1", "host": "nas"},
+            ], f)
+
+        cfg2 = types.SimpleNamespace(
+            debug=False, container_cli="docker", pending_file=pending,
+            exclude_containers=[], data_dir=d)
+        nas_backend = container_backend.RemoteBackend("tcp://nas:2375", name="nas")
+        nas_chk = UpdateChecker(cfg2, backend=nas_backend)
+        # No containers come back (stubbed subprocess → empty stdout), so a
+        # full scan produces zero updates for nas.
+        nas_chk.check_all()
+        after = json.load(open(pending))
+        names = sorted(u["name"] for u in after)
+        checks["nas scan drops only nas entries"] = names == ["legacy", "onlocal"]
+        checks["legacy entry (no host key) survives a remote scan"] = (
+            "legacy" in names)
+
+        local_chk = UpdateChecker(cfg2)
+        local_chk.check_all()
+        after = json.load(open(pending))
+        # Now local's scan clears local's entries — including the legacy one,
+        # which reads as local — and leaves nas alone (nothing left of it here).
+        checks["local scan clears local entries"] = (
+            [u["name"] for u in after] == [])
+finally:
+    container_backend.subprocess = real2
+
+
 def main():
     ok = True
     for desc, passed in checks.items():
