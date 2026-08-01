@@ -624,11 +624,30 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return (f'<a{pre} href="{_e(url)}" target="_blank" '
                     f'rel="noopener noreferrer" title="{_e(title)}">{text}</a>')
 
-        def _get_pending(self):
-            if os.path.exists(config.pending_file):
+        def _get_pending(self, host=None):
+            """Pending updates for ONE host — the local one by default.
+
+            The file holds every managed host's entries (#7). The Web UI
+            acts exclusively on the machine Docksentry runs on, so handing
+            it the whole file made a *local* row light up with an Update
+            button because a *remote* host had an update for a container of
+            the same name — and clicking it recreated the local container
+            from the remote entry's image. Filtering here fixes the badge,
+            the detail-page button and the update action in one place.
+            """
+            from container_store import LOCAL_HOST, entry_host
+            if not os.path.exists(config.pending_file):
+                return []
+            try:
                 with open(config.pending_file) as f:
-                    return json.load(f)
-            return []
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                return []
+            if not isinstance(data, list):
+                return []
+            wanted = host or LOCAL_HOST
+            return [u for u in data
+                    if isinstance(u, dict) and entry_host(u) == wanted]
 
         def _render_page(self, content, active="status"):
             from version import VERSION
@@ -3859,13 +3878,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             lock closes that divergence; the notifier fan-out and Telegram
             summary now match the bot path exactly."""
             engine = bot.engine
-            if not os.path.exists(config.pending_file):
-                return
-            try:
-                with open(config.pending_file) as f:
-                    updates = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return
+            # LOCAL entries only (#7). The Web UI's buttons act on the machine
+            # Docksentry runs on; matching a remote host's entry by bare name
+            # would recreate the local container from the remote one's image.
+            updates = self._get_pending()
             name_set = set(names)
             targets = [u for u in updates if u.get("name") in name_set]
             if not targets:

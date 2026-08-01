@@ -2097,6 +2097,29 @@ class UpdateChecker:
         # ~40 % coverage across real-world stacks.
         old_version = self._get_image_version_label(image)
 
+        # Compose is LOCAL-ONLY, deliberately (#7).
+        #
+        # `docker compose -f <path>` parses the file on the machine running
+        # the CLI and applies the result to the target daemon. For a remote
+        # host the path in the container's labels describes THAT host's
+        # filesystem, which we can't see. Two ways that goes wrong: the path
+        # doesn't exist here and we'd silently drop to a standalone recreate,
+        # or — far worse — a file happens to exist at the same path locally
+        # (`/opt/stacks/...` is hardly unique) and we'd deploy OUR service
+        # definition onto someone else's box.
+        #
+        # So a remote container is recreated from its own inspect data
+        # instead, which is the same fallback used when a local compose file
+        # isn't mounted. It loses compose-only metadata, and that is a
+        # documented limitation rather than a silent wrong-file deploy.
+        from container_store import LOCAL_HOST
+        host_name = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
+        if host_name != LOCAL_HOST:
+            self._debug(f"  {name} is compose-managed on {host_name}; compose "
+                        f"files are only readable on the local host — "
+                        f"recreating from inspect data instead")
+            return self._update_standalone(name, image, netns_name=netns_name)
+
         # Check if compose file is accessible
         if not os.path.isfile(config_file):
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")

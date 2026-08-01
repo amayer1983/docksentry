@@ -467,7 +467,7 @@ The default when you *don't* say `@`:
 
 A write command that stayed local says so in its reply and points at `@<host>` / `@all`, so the rule is visible without reading this.
 
-**What it does not do yet:** the Web UI lists every host's containers but its buttons only act on the local one, and self-update is local-only by design — Docksentry updates the instance it runs in, not the ones on your other boxes. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others.
+**Limitations worth knowing:** Compose-managed containers on a remote host are recreated from their inspect data rather than through `docker compose` — the compose file lives on that host's filesystem and `docker compose -f` would parse a *local* path, so at best it wouldn't find the file and at worst it would deploy your local file's definition onto the other box. The standalone recreate preserves almost everything (see [Compose-managed containers](#compose-managed-containers)) but loses compose-only metadata. Beyond that: the Web UI lists every host's containers but its buttons only act on the local one, and self-update is local-only by design — Docksentry updates the instance it runs in, not the ones on your other boxes. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others.
 
 ## Web UI
 
