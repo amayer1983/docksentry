@@ -48,6 +48,23 @@ class ContainerBackend:
     # multi-host uses to key state and to say WHICH box a message is about.
     name = "local"
 
+    # Upper bound for any call that doesn't name its own timeout.
+    #
+    # This is a safety net, not a tuning knob. Without it a call inherits
+    # subprocess's "wait forever", and a container CLI CAN wait forever: a
+    # remote endpoint whose TCP session is dead-but-established, or an ssh
+    # host that blackholes packets, never returns and never errors. The
+    # Telegram bot dispatches commands inline in its long-poll loop, so one
+    # such call doesn't fail one command — it stops the bot answering
+    # anything, with no log line, until someone restarts the container.
+    # Bounding it here rather than at each call site means a call site
+    # added later can't reintroduce the hang by forgetting a keyword.
+    #
+    # Operations that legitimately take longer (pull, compose up, recreate,
+    # stop with a grace period) all pass an explicit timeout already and
+    # are unaffected.
+    default_timeout = 60
+
     def run(self, args, *, timeout=None, text=True, input=None,
             capture_output=True):
         """The one and only call into `subprocess` for this backend.
@@ -63,6 +80,8 @@ class ContainerBackend:
         ``subprocess.run(argv, capture_output=True, text=True)``.
         """
         argv = [self.cli_binary] + list(self.global_args) + list(args)
+        if timeout is None:
+            timeout = self.default_timeout
         return subprocess.run(
             argv,
             capture_output=capture_output,
@@ -283,6 +302,11 @@ class RemoteBackend(ContainerBackend):
     NOT for self-update: Docksentry updates the instance it runs in, which
     is by definition local. Self-update stays on the local backend.
     """
+
+    #: Remote calls fail faster than local ones: an unreachable host should
+    #: give the caller its turn back quickly, and no healthy remote read
+    #: takes anywhere near this long.
+    default_timeout = 30
 
     def __init__(self, endpoint, *, name=None, cli_binary="docker"):
         self.endpoint = endpoint

@@ -18,7 +18,7 @@ import types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import container_backend
-from container_backend import DockerBackend, get_backend
+from container_backend import ContainerBackend, DockerBackend, get_backend
 
 
 class _Rec:
@@ -148,9 +148,10 @@ def main():
         checks["run defaults capture_output=True"] = (
             rec.kwargs.get("capture_output") is True)
         checks["run defaults text=True"] = rec.kwargs.get("text") is True
-        b.ps(quiet=True)
-        checks["run leaves timeout=None when unset"] = (
-            rec.kwargs.get("timeout") is None)
+        # NOTE: an unset timeout no longer means "wait forever" — see the
+        # default_timeout checks below. That changed deliberately: an
+        # unbounded call against a silent remote endpoint hangs the bot's
+        # dispatch loop permanently.
 
         # ── text mode per lifecycle verb ────────────────────────────
         # NOT uniform, deliberately: it mirrors what each historical call
@@ -168,6 +169,24 @@ def main():
             call()
             checks[f"text mode: {verb} is {want_text}"] = (
                 rec.kwargs.get("text") is want_text)
+
+        # ── nothing may run without an upper bound ──────────────────
+        # An unbounded call against a silent remote endpoint never returns
+        # and never raises; the bot dispatches commands inline in its poll
+        # loop, so that stops it answering anything at all.
+        b.ps()
+        checks["a call without a timeout still gets one"] = (
+            rec.kwargs.get("timeout") == ContainerBackend.default_timeout)
+        b.ps(timeout=5)
+        checks["an explicit timeout still wins"] = rec.kwargs.get("timeout") == 5
+        rb_t = container_backend.RemoteBackend("tcp://h:1")
+        rb_t.ps()
+        checks["remote fails faster than local"] = (
+            rec.kwargs.get("timeout") == container_backend.RemoteBackend.default_timeout
+            < ContainerBackend.default_timeout)
+        b.pull("img", timeout=1800)
+        checks["long operations keep their own timeout"] = (
+            rec.kwargs.get("timeout") == 1800)
 
         # ── DockerBackend identity + factory ────────────────────────
         checks["DockerBackend.cli_binary == 'docker'"] = (
