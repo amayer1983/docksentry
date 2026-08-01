@@ -288,8 +288,8 @@ class PodmanBackend(ContainerBackend):
 class RemoteBackend(ContainerBackend):
     """A container CLI pointed at ANOTHER host.
 
-    Both CLIs can drive a remote daemon with a global `-H` endpoint:
-    `docker -H ssh://user@box ps`, `docker -H tcp://box:2375 ps`. Because
+    Both CLIs can drive a remote daemon from a global endpoint flag:
+    `docker -H ssh://user@box ps`, `podman --url tcp://box:2375 ps`. Because
     that flag lives in `global_args`, every command Docksentry issues —
     reads, updates, recreates, rollback, compose — goes to that host with
     no call site aware of it. That is the whole point of having spent the
@@ -311,10 +311,18 @@ class RemoteBackend(ContainerBackend):
     #: takes anywhere near this long.
     default_timeout = 30
 
+    #: Which global flag names the endpoint, per CLI. Docker documents `-H`.
+    #: Podman documents `--url` — it happens to accept `-H` as an
+    #: undocumented alias (verified on 4.9.3), but an alias that isn't in
+    #: `--help` is not something to build on, so we emit what each CLI
+    #: actually documents.
+    ENDPOINT_FLAG = {"docker": "-H", "podman": "--url"}
+
     def __init__(self, endpoint, *, name=None, cli_binary="docker"):
         self.endpoint = endpoint
         self.cli_binary = cli_binary
-        self.global_args = ("-H", endpoint)
+        flag = self.ENDPOINT_FLAG.get(cli_binary, "-H")
+        self.global_args = (flag, endpoint)
         self.name = name or endpoint
 
 

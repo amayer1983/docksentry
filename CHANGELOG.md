@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.62.0] - 2026-08-01
+
+### Added
+- **Multi-host: one Docksentry, several Docker hosts** (#7). Point it at your other machines with `DOCKER_HOSTS=pve1:tcp://pve1:2375, nas:ssh://root@nas` and it checks, updates, recreates and reports across all of them. The endpoint is whatever the container CLI takes for `-H`, so a TCP socket / socket proxy works as well as SSH — a socket proxy is the simpler route if you'd rather not maintain keys. Aim a command at one box with `@host` (`/check @pve1`, `/update sonarr @nas`) or at everything with `@all`. Looking around (`/check`, `/status`, `/updates`) covers every host by default; anything that *changes* something stays on the local host unless you say otherwise, and says so in its reply. The Web UI gains a Host column listing every host's containers. Marked experimental: it hasn't run on real multi-host hardware yet.
+- **Podman is now actually tested**, not just supported on paper: the suite drives a real `podman` and a remote Podman service over TCP. That immediately paid for itself — Podman documents `--url` for remote endpoints and *not* `-H`, which is what Docksentry was about to send. It accepts `-H` as an undocumented alias today, so this would have worked until some future Podman quietly dropped it.
+- Leave `DOCKER_HOSTS` unset and **nothing changes** — no host column, no `@` anywhere, same state files, same messages, byte for byte.
+
+### Fixed
+- **Container groups worked only on Docker.** The restart-dependents cascade shelled out to `docker` by name instead of going through the configured CLI, so with `CONTAINER_CLI=podman` it called a binary that may not exist. Affects anyone on Podman using a container group with `restart_dependents`.
+- **Every container CLI call is now time-bounded.** Calls without an explicit timeout inherited "wait forever", which a dead-but-established remote connection can trigger — and since Telegram commands are dispatched inline, one such call could stop the bot answering anything at all.
+- The Podman documentation still claimed Docksentry had no Podman-specific code, which stopped being true in v1.61.0.
+- Replaced the Web UI screenshots, which were several versions out of date and showed the old name and theme.
+
 ## [1.61.0] - 2026-07-31
 
 ### Added

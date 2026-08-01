@@ -151,7 +151,7 @@ Since v1.61.0 Docksentry can drive `podman` directly — set `CONTAINER_CLI=podm
 Two caveats worth knowing up front:
 
 - **Self-update still needs `docker` to resolve.** It launches a `docker:cli` helper container, because it can't run inside the container it's replacing. Everything else uses the CLI you picked.
-- **There's still no Podman test bed here** and no Podman in CI, so the fixes above were made from bug reports rather than a machine I can try things on. If something misbehaves, please open an issue — that's genuinely how all of them got found.
+- **There's now a Podman test bed**, added in v1.62.0 — `scripts/test_podman_live.py` runs the backend against a real `podman`, including a remote Podman service over TCP. Everything before that was fixed from bug reports rather than a machine to try things on, so if something still misbehaves please open an issue; that's genuinely how all of them got found. Podman isn't in CI yet, only in the local suite.
 
 The older route still works too, and is what you want if you'd rather not set anything: Podman implements the Docker REST API, so mounting the Podman socket where Docksentry expects the Docker one is enough. No env var changes, no different image.
 
@@ -335,7 +335,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `SMTP_TO` | | Recipient(s), comma-separated |
 | `SMTP_TLS` | `starttls` | `starttls`, `ssl`, or `none` |
 | `TZ` | `Europe/Berlin` | Timezone |
-| `DOCKER_HOSTS` | | **Multi-host (experimental, unreleased).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
+| `DOCKER_HOSTS` | | **Multi-host (experimental).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
 | `CONTAINER_CLI` | `auto` | Which container CLI to drive: `auto`, `docker` or `podman`. `auto` uses `docker` whenever that command exists — including the usual `docker`→`podman` alias — and only falls back to `podman` when `docker` genuinely isn't there, so existing setups are unaffected. Set `podman` to call `podman` directly, no alias needed. One caveat: Docksentry's **self-update** still shells out to `docker` and launches a `docker:cli` helper container (it can't run inside the container it's replacing), so on Podman that one path still needs `docker` to resolve. Everything else — checks, updates, recreates, rollback, lifecycle, cleanup — goes through the selected CLI. Env-only. |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
@@ -437,7 +437,7 @@ This is a stepping stone, not a replacement for v2.0 multi-host: you still maint
 
 ### Experimental: real multi-host
 
-*Unreleased — in the repo, not in a tagged image yet.*
+*New in v1.62.0, and marked experimental on purpose: it's had no run on real multi-host hardware yet. Leave `DOCKER_HOSTS` unset and nothing about your install changes.*
 
 One Docksentry, several hosts. Point it at the others with `DOCKER_HOSTS`:
 

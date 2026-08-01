@@ -236,10 +236,19 @@ def main():
         checks["remote carries its host name"] = rb.name == "box"
         checks["remote defaults name to the endpoint"] = (
             container_backend.RemoteBackend("tcp://h:2375").name == "tcp://h:2375")
-        # Podman speaks the same global flag.
+        # Podman names the endpoint differently. `podman --help` documents
+        # `--url` and `-c/--connection`, NOT `-H` — it accepts `-H` as an
+        # undocumented alias (checked against 4.9.3), which is exactly the
+        # kind of thing a later release drops without notice. So we send
+        # what each CLI documents. scripts/test_podman_live.py proves the
+        # flag we send is one a real podman answers on.
         rpb = container_backend.RemoteBackend("tcp://h:2375", cli_binary="podman")
-        checks["argv: remote podman"] = (
-            argv(lambda: rpb.ps()) == ["podman", "-H", "tcp://h:2375", "ps"])
+        checks["argv: remote podman uses --url"] = (
+            argv(lambda: rpb.ps()) == ["podman", "--url", "tcp://h:2375", "ps"])
+        checks["argv: remote docker still uses -H"] = (
+            argv(lambda: container_backend.RemoteBackend(
+                "tcp://h:2375", cli_binary="docker").ps())
+            == ["docker", "-H", "tcp://h:2375", "ps"])
         # …and the local backends must be untouched by all of this.
         checks["local backend emits no global args"] = (
             argv(lambda: b.ps()) == ["docker", "ps"])
