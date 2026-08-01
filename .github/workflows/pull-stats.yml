@@ -1,0 +1,67 @@
+name: Pull stats
+
+# An hourly snapshot of Docker Hub's pull counter, appended to an orphan
+# `stats` branch, so the hourly commits never touch `main`'s history.
+#
+# What it buys: the delta between snapshots is real download volume (our
+# own update-check traffic does not move that counter — measured), and at
+# hourly resolution the hours after a release show the *shape* of the
+# adoption curve, not just its total. That curve is a lower bound on the
+# instances with auto-selfupdate on. It is NOT an installed base; see the
+# docstring in scripts/collect_pull_stats.py before drawing conclusions.
+
+on:
+  schedule:
+    # Hourly. GitHub delays scheduled runs under load and skips them
+    # outright when it is busy, so the series will have gaps — the script
+    # records the real span between snapshots rather than assuming one
+    # hour, so a rate computed from it stays correct across a gap.
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pull-stats
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Switch to the stats branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin stats >/dev/null 2>&1; then
+            git checkout stats
+          else
+            # First ever run: an orphan branch, so the stats history never
+            # carries the source tree with it.
+            git checkout --orphan stats
+            git rm -rf --cached . >/dev/null
+            find . -maxdepth 1 ! -name . ! -name .git -exec rm -rf {} +
+          fi
+
+      - name: Collect
+        run: |
+          set -euo pipefail
+          git show origin/main:scripts/collect_pull_stats.py > /tmp/collect.py
+          python3 /tmp/collect.py
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "nothing changed — the fetch must have failed, leaving a gap"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pulls.csv tags.jsonl
+          git commit -m "stats: $(date -u +%Y-%m-%d)"
+          git push origin stats
