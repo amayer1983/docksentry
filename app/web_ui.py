@@ -654,7 +654,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                               ("org.opencontainers.image.url", "url")):
                 v = _lab(key)
                 if v and is_safe_link(v):
-                    return v, kind
+                    # Point a bare repo URL at its releases page, exactly
+                    # as the bot's resolver does. This was MISSING here:
+                    # the Web UI keeps its own copy of the priority chain
+                    # (to avoid one `docker inspect` per table row) and
+                    # that copy skipped the rewrite — so the same
+                    # container linked to /releases/latest in Telegram
+                    # and to the repo front page in the Web UI. Reported
+                    # by @LeeNX in #52, who noticed it on Docksentry's own
+                    # row. Only auto-detected links are rewritten; a
+                    # `docksentry.link` label or a manual /setlink returns
+                    # above this point and is never touched.
+                    return LinkResolver.prefer_release_url(v), kind
             # 4. Registry-overview heuristic. `guess_registry_overview_url`
             #    is a pure string mapping on LinkResolver; reused rather
             #    than copied so bot and Web UI can never drift apart.

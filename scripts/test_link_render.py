@@ -44,7 +44,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import web_ui                       # noqa: E402
 import telegram_bot                 # noqa: E402
-import link_resolver                # noqa: E402
+import link_resolver
+from link_resolver import LinkResolver                # noqa: E402
 import container_backend            # noqa: E402
 from container_store import ContainerStore   # noqa: E402
 
@@ -317,6 +318,25 @@ def restore(bundle, tmpdir):
 
 def main():
     checks = {}
+    # ── the Web UI must rewrite repo links exactly like the bot (#52) ────
+    # The Web UI keeps its OWN copy of the link priority chain, to avoid one
+    # `docker inspect` per table row. That copy silently skipped the
+    # releases-page rewrite, so the same container linked to
+    # /releases/latest in Telegram and to the repo front page in the browser.
+    # @LeeNX spotted it on Docksentry's own row. This pins the two together.
+    import re as _re                                        # noqa: E402
+    import inspect as _inspect                              # noqa: E402
+    _src = _inspect.getsource(web_ui.create_handler)
+    _row_link_src = _src[_src.find("def _row_link"):]
+    _row_link_src = _row_link_src[:_row_link_src.find("def _link_anchor")]
+    checks["web UI applies prefer_release_url to auto-detected links"] = (
+        "prefer_release_url" in _row_link_src)
+    # …and only to the auto-detected ones: an explicit label or /setlink is
+    # the user's decision and must come back untouched.
+    _before_oci = _row_link_src[:_row_link_src.find("org.opencontainers.image.source")]
+    checks["web UI leaves an explicit link alone"] = (
+        "prefer_release_url" not in _before_oci)
+
 
     # ── 1. A javascript: value in the store never becomes an href ──────
     # This is the whole reason link rendering was held back until the
@@ -357,8 +377,11 @@ def main():
         render_status([c("nginx", labels={
             "org.opencontainers.image.source": OCI_SOURCE})],
             links={"nginx": EVIL}), "nginx")
+    # The OCI link is auto-detected, so it arrives rewritten to the
+    # releases page — same as the bot does. What this asserts is the
+    # FALLTHROUGH, not the exact string.
     checks["rejected store value falls through to the OCI label"] = (
-        f'href="{OCI_SOURCE}"' in fall)
+        f'href="{LinkResolver.prefer_release_url(OCI_SOURCE)}"' in fall)
 
     # ── 2. A valid link renders exactly one safe anchor ────────────────
     ok_status = render_status([c("nginx")], links={"nginx": GOOD})
@@ -412,7 +435,8 @@ def main():
         render_status([c("nginx", labels={
             "org.opencontainers.image.source": OCI_SOURCE,
             "org.opencontainers.image.url": OCI_URL})]), "nginx")
-    checks["order: OCI source beats OCI url"] = f'href="{OCI_SOURCE}"' in row_src
+    checks["order: OCI source beats OCI url"] = (
+        f'href="{LinkResolver.prefer_release_url(OCI_SOURCE)}"' in row_src)
     checks["order: OCI source origin named"] = (
         "org.opencontainers.image.source" in row_src)
 
