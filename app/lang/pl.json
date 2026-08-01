@@ -43,6 +43,7 @@
   "web_events_empty": "No events recorded",
   "web_events_empty_hint": "Health flips, non-zero exits, OOM kills and crash-restarts will show up here.",
   "monitor_top_memory": "Top memory at event time: {list}",
+  "monitor_top_cpu": "Najwyższe użycie CPU w chwili zdarzenia: {list}",
   "monitor_host_memory": "Pamięć hosta (użyta/łącznie): {state}",
   "events_header": "🩺 Last {count} container events:",
   "events_empty": "🩺 No container events recorded yet. Health flips, non-zero exits, OOM kills and crash-restarts will show up here.",

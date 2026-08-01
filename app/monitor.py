@@ -307,7 +307,7 @@ class ContainerMonitor:
             return
         try:
             from event_watcher import EventWatcher
-            w = EventWatcher(self.backend, self._memory_snapshot,
+            w = EventWatcher(self.backend, self._event_snapshot,
                              log=lambda m: print(m))
             w.start()
             self.watcher = w
@@ -485,40 +485,104 @@ class ContainerMonitor:
             out += f" · Swap {swap_used / gb:.1f}/{swap_total / gb:.1f} GB"
         return out
 
-    def _memory_snapshot(self, top=3):
-        """Top memory consumers RIGHT NOW, as a one-line summary.
+    def _stats_rows(self):
+        """One `docker stats` at event time → `[(mem_bytes, cpu_pct, name,
+        mem_str)]`, sorted by memory.
 
-        Attached to any death — OOM, a crash-restart, or a plain non-zero
-        exit — because "which container did this to me?" is the same
-        question in all three, and a container squeezed out by a neighbour
-        does not necessarily get killed by the kernel's OOM killer (#2,
+        Both readings come from the same call because they answer two
+        halves of the same question, and the two mechanisms are otherwise
+        indistinguishable from the outside. Measured 2026-08-01: a
+        container starved to 0.5% of a core failed to answer SIGTERM
+        inside its grace period and was SIGKILLed — **exit 137,
+        OOMKilled false**, byte-identical to a kernel OOM kill. The same
+        container on a full CPU exited 0. So an alert that reports only
+        memory can point at the wrong resource entirely (#2,
+        @NotRetarded, who saw CPU spikes and no memory pressure).
+
+        Shared across a tick; see `_snap_cache`.
+        """
+        rows = getattr(self, "_snap_cache", None)
+        if rows is not None:
+            return rows
+        rows = []
+        backend = getattr(self, "backend", None)
+        if backend is None:
+            self._snap_cache = rows
+            return rows
+        try:
+            r = backend.stats(
+                fmt="{{.Name}}|{{.MemUsage}}|{{.CPUPerc}}", timeout=30)
+            if r.returncode == 0:
+                for line in r.stdout.strip().split("\n"):
+                    parts = line.split("|")
+                    if len(parts) < 3:
+                        continue
+                    cname, usage, cpu = parts[0], parts[1], parts[2]
+                    used = usage.split("/")[0].strip()
+                    try:
+                        pct = float(cpu.strip().rstrip("%"))
+                    except ValueError:
+                        pct = 0.0
+                    rows.append((self._mem_to_bytes(used), pct,
+                                 cname.strip(), used))
+                rows.sort(reverse=True)
+        except (subprocess.SubprocessError, OSError):
+            rows = []
+        # Cached even when empty: a daemon that just refused one stats
+        # call will refuse the next nineteen too, and a burst of events
+        # should not turn into a burst of doomed subprocesses.
+        self._snap_cache = rows
+        return rows
+
+    def _memory_snapshot(self, top=3):
+        """Top memory consumers at the moment of the event.
+
+        Attached to any death — OOM, crash-restart, plain non-zero exit —
+        because "which container did this to me?" is the same question in
+        all three, and a container squeezed out by a neighbour does not
+        necessarily get killed by the kernel's OOM killer (#2,
         @NotRetarded: his Unifi container died from a neighbour without an
         OOM flag, so the snapshot that could have named the culprit never
-        fired). One `docker stats --no-stream` at event time — about two
-        seconds on twenty containers, which is why it hangs off an event
-        and never off a poll."""
-        rows = getattr(self, "_snap_cache", None)
-        if rows is None:
-            rows = []
-            try:
-                r = self.backend.stats(fmt="{{.Name}}|{{.MemUsage}}",
-                                       timeout=30)
-                if r.returncode == 0:
-                    for line in r.stdout.strip().split("\n"):
-                        if "|" not in line:
-                            continue
-                        cname, usage = line.split("|", 1)
-                        used = usage.split("/")[0].strip()
-                        rows.append(
-                            (self._mem_to_bytes(used), cname.strip(), used))
-                    rows.sort(reverse=True)
-            except (subprocess.SubprocessError, OSError):
-                rows = []
-            # Cached even when empty: a daemon that just refused one stats
-            # call will refuse the next nineteen too, and a burst of events
-            # should not turn into a burst of doomed subprocesses.
-            self._snap_cache = rows
-        return " · ".join(f"{cname} {used}" for _, cname, used in rows[:top])
+        fired).
+        """
+        rows = self._stats_rows()
+        return " · ".join(f"{name} {used}" for _, _, name, used in rows[:top])
+
+    #: A container has to be using at least half a core before it is worth
+    #: naming. Below that the line is noise on an idle box — and the whole
+    #: point of the CPU reading is contention, which does not exist at 3%.
+    CPU_FLOOR = 50.0
+
+    #: And below this, a container is not worth *listing* even once the
+    #: line has been earned. Without it the line reads "hog 198% · gitlab
+    #: 1% · redis 0%", where two thirds of it is filler that dilutes the
+    #: one name that matters.
+    CPU_LIST_FLOOR = 5.0
+
+    def _cpu_snapshot(self, top=3):
+        """Top CPU consumers at the moment of the event, or "".
+
+        Reported only when something is actually eating CPU, because the
+        failure mode this catches is *contention*: a container starved of
+        CPU misses its SIGTERM window and gets SIGKILLed with exit 137,
+        which reads exactly like an out-of-memory kill. Printing a CPU
+        line on an idle host would bury that signal in noise.
+        """
+        rows = sorted(self._stats_rows(), key=lambda r: r[1], reverse=True)
+        if not rows or rows[0][1] < self.CPU_FLOOR:
+            return ""
+        return " · ".join(f"{name} {pct:.0f}%"
+                          for _, pct, name, _ in rows[:top]
+                          if pct >= self.CPU_LIST_FLOOR)
+
+    def _event_snapshot(self):
+        """Both readings as one opaque record, for the event watcher.
+
+        The watcher stores whatever this returns without looking inside —
+        it is the monitor that knows how to render it. That keeps the
+        watcher free of message formatting, which is the poller's job.
+        """
+        return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot()}
 
     def _notify(self, kind, name, detail):
         t = self.bot.t
@@ -552,14 +616,20 @@ class ContainerMonitor:
             # moment of death, while the culprit still held the memory.
             # Falling back to a fresh snapshot keeps the old behaviour
             # wherever the watcher is off, unavailable, or too late.
-            snap = ""
+            rec = None
             watcher = getattr(self, "watcher", None)
             if watcher:
-                snap = watcher.evidence(name)
-            if not snap:
-                snap = self._memory_snapshot()
-            if snap:
-                msg += "\n" + t("monitor_top_memory", list=snap)
+                rec = watcher.evidence(name) or None
+            if not rec:
+                rec = self._event_snapshot()
+            if rec.get("mem"):
+                msg += "\n" + t("monitor_top_memory", list=rec["mem"])
+            # CPU only when something is actually contending for it. A
+            # container starved of CPU misses its SIGTERM window and is
+            # SIGKILLed with exit 137 — indistinguishable from an OOM kill
+            # unless the alert says who was holding the processor.
+            if rec.get("cpu"):
+                msg += "\n" + t("monitor_top_cpu", list=rec["cpu"])
 
         # The first question after any death or health flip is "why?" —
         # attach the same log tail the update failures carry. Recovery

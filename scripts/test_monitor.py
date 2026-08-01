@@ -94,6 +94,38 @@ def _mem_checks(checks):
     remote.backend = _t.SimpleNamespace(name="nas", endpoint="ssh://nas")
     checks["remote monitor reports no host memory"] = remote._host_memory() == ""
 
+    # ── CPU: the other way a container dies looking like an OOM ──
+    # Measured 2026-08-01: same container, same shutdown handler, same
+    # `docker stop -t 5`. On a full core it exited 0; starved to 0.5% of a
+    # core it missed its SIGTERM window and was SIGKILLed — exit 137,
+    # OOMKilled false, byte-identical to a kernel OOM kill. An alert that
+    # reports only memory points at the wrong resource (#2, @NotRetarded,
+    # who saw CPU spikes and no memory pressure).
+    class _R:
+        returncode = 0
+        stdout = ("hog|900MiB / 8GiB|198.40%\n"
+                  "db|2GiB / 8GiB|3.10%\n"
+                  "idle|10MiB / 8GiB|0.00%")
+
+    cpu = ContainerMonitor.__new__(ContainerMonitor)
+    cpu.backend = _t.SimpleNamespace(name="local", stats=lambda **kw: _R())
+    cpu._snap_cache = None
+    checks["cpu line names the hog"] = cpu._cpu_snapshot() == "hog 198%"
+    checks["memory ranking survives the cpu column"] = (
+        cpu._memory_snapshot() == "db 2GiB · hog 900MiB · idle 10MiB")
+    checks["one stats call feeds both readings"] = len(cpu._stats_rows()) == 3
+
+    class _Idle:
+        returncode = 0
+        stdout = "a|1GiB / 8GiB|2.00%\nb|2GiB / 8GiB|1.00%"
+
+    quiet = ContainerMonitor.__new__(ContainerMonitor)
+    quiet.backend = _t.SimpleNamespace(name="local", stats=lambda **kw: _Idle())
+    quiet._snap_cache = None
+    # Contention is the whole point; a CPU line on an idle host would bury
+    # the signal it exists to carry.
+    checks["idle host gets no cpu line"] = quiet._cpu_snapshot() == ""
+
     # A host that loses twenty containers at once produces twenty events in
     # one tick, and the snapshot costs ~2s each. Serialised, that delays the
     # very alerts it decorates — so all events in a sweep share one picture.
@@ -101,7 +133,8 @@ def _mem_checks(checks):
 
     class _Stats:
         returncode = 0
-        stdout = "a|100MiB / 1GiB\nb|50MiB / 1GiB"
+        # Three columns since the snapshot reads CPU from the same call.
+        stdout = "a|100MiB / 1GiB|4.00%\nb|50MiB / 1GiB|1.00%"
 
     burst = ContainerMonitor.__new__(ContainerMonitor)
     burst.backend = _t.SimpleNamespace(
