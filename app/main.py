@@ -263,7 +263,8 @@ def main():
     if config.web_ui:
         from web_ui import WebUI
         web = WebUI(config, checker, bot, store, config.web_port,
-                    config.web_password, backend=backend)
+                    config.web_password, backend=backend,
+                    hosts=host_registry)
         web.start()
 
     # Version + debug state up front — the container log is often the only

@@ -290,7 +290,8 @@ def _validate_webhook_url(url, kind="generic"):
     return True, None
 
 
-def create_handler(config, checker, bot, store, password=None, backend=None):
+def create_handler(config, checker, bot, store, password=None, backend=None,
+                   hosts=None):
     """Create a request handler with access to app components."""
 
     # Container CLI seam (v2 groundwork). Resolved here once so the read
@@ -299,6 +300,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
     if backend is None:
         from container_backend import get_backend
         backend = get_backend(config)
+
+    # Multi-host registry (#7), DISPLAY ONLY for now: the status table
+    # lists every managed host, every action still runs against `backend`
+    # — i.e. the local host. `hosts is None` (render tests, embedders) and
+    # the single-host case are the same thing here: nothing extra renders.
+    def _multi_hosts():
+        """The registry when it actually manages more than the local host.
+
+        Returns None otherwise, so every caller can gate on one truthy
+        check and single-host output stays byte-for-byte what it was.
+        """
+        try:
+            return hosts if (hosts is not None and hosts.is_multi) else None
+        except Exception:
+            return None
 
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -1994,6 +2010,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 
             t = _web_translator(config.language)
 
+            # Multi-host (#7) — DISPLAY ONLY. With more than the local host
+            # managed, the table gains a Host column and lists every host's
+            # containers. Actions stay local: `multi` is None for single-host
+            # installs and every fragment below collapses to "", so their HTML
+            # is byte-for-byte what it was.
+            multi = _multi_hosts()
+            host_th = f'<th>{t("web_host")}</th>' if multi else ""
+            host_cols = 7 if multi else 6
+            local_host_td = (f'\n<td class="host-cell">{_e(multi.local.name)}</td>'
+                             if multi else "")
+
             rows = ""
             from update_checker import UpdateChecker as _UC
             for c in containers:
@@ -2248,12 +2275,54 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 
                 rows += f"""<tr>
 <td><input type="checkbox" class="bulk-cb" value="{name_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
-<td><a href="/container/{name_attr}" class="container-link">{_e(c['name'])}</a>{badges}</td>
+<td><a href="/container/{name_attr}" class="container-link">{_e(c['name'])}</a>{badges}</td>{local_host_td}
 <td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
 <td>{status_badge}</td>
 <td>{auto_cell}</td>
 <td class="actions-cell">{actions}</td>
 </tr>"""
+
+            # Remote hosts (#7): listed, never acted on. No checkbox and no
+            # buttons on these rows — /api/update, /api/pin, /api/lifecycle &
+            # co. all run against the local backend, so a button here would
+            # quietly do the right thing to the wrong machine. The Auto and
+            # Actions cells therefore render a muted dash.
+            remote_count = 0
+            for _host in (multi or ()):
+                if _host.is_local:
+                    continue
+                try:
+                    # Probe before listing: get_running_containers() swallows
+                    # a non-zero exit and would report a dead host as "no
+                    # containers running". The timeout is the other half —
+                    # an endpoint that never answers must not hang the page.
+                    _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
+                    if _probe.returncode != 0:
+                        raise OSError((_probe.stderr or "").strip() or "ps failed")
+                    _remote = _host.checker.get_running_containers()
+                except Exception:
+                    # One dead host is a line in the table, not a broken page.
+                    rows += (
+                        f'<tr class="host-unreachable">'
+                        f'<td colspan="{host_cols}" class="muted">'
+                        f'{_e(t("web_host_unreachable", host=_host.name))}</td>'
+                        f'</tr>'
+                    )
+                    continue
+                for rc in _remote:
+                    remote_count += 1
+                    rows += f"""<tr>
+<td></td>
+<td>{_e(rc.get("name", ""))}</td>
+<td class="host-cell">{_e(_host.name)}</td>
+<td class="image-cell"><code>{_e(rc.get("image", ""))}</code></td>
+<td><span class="badge badge-blue">running</span></td>
+<td><span class="muted">—</span></td>
+<td class="actions-cell"><span class="muted">—</span></td>
+</tr>"""
+            # Single-host: remote_count is 0, so every count below is the
+            # exact expression it was before multi-host existed.
+            total_count = len(containers) + remote_count
 
             major_banner = ""
             if major_pending:
@@ -2324,7 +2393,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 {major_banner}
 <div class="stat-grid">
 <div class="card stat">
-    <div class="num">{len(containers)}</div>
+    <div class="num">{total_count}</div>
     <div class="label">{t("web_containers")}</div>
 </div>
 <div class="card stat">
@@ -2346,7 +2415,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 </div>
 <div class="toolbar-row">
 <input type="text" id="containerSearch" class="search-input" placeholder="{_e(t('web_search_placeholder'))}">
-<span class="row-info" id="containerCount">{t("web_containers_running", count=len(containers))}</span>
+<span class="row-info" id="containerCount">{t("web_containers_running", count=total_count)}</span>
 </div>
 <form id="bulkForm" method="POST" action="/api/bulk" class="bulk-bar">
 <input type="hidden" name="action" id="bulkAction" value="">
@@ -2360,7 +2429,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
 <table id="ctbl">
-<thead><tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th class="sortable" onclick="sortByName()" title="{t('web_sort_name')}" style="cursor:pointer;user-select:none">{t("web_name")} <span id="nameSortArrow"></span></th><th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_autoupdate_badge")}</th><th>{t("web_actions")}</th></tr></thead>
+<thead><tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th class="sortable" onclick="sortByName()" title="{t('web_sort_name')}" style="cursor:pointer;user-select:none">{t("web_name")} <span id="nameSortArrow"></span></th>{host_th}<th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_autoupdate_badge")}</th><th>{t("web_actions")}</th></tr></thead>
 <tbody id="ctblBody">
 {rows}
 </tbody>
@@ -2448,7 +2517,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
             const total = allRows.length;
             countInfo.textContent = q
                 ? visible + ' / ' + total + ' {t("web_containers_match")}'
-                : '{t("web_containers_running_short", count=len(containers))}';
+                : '{t("web_containers_running_short", count=total_count)}';
         }}
     }}
     if (searchEl) {{
@@ -3987,11 +4056,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None):
 
 class WebUI:
     def __init__(self, config, checker, bot, store, port=8080, password="",
-                 backend=None):
+                 backend=None, hosts=None):
         self.config = config
         self.port = port
         self.handler = create_handler(config, checker, bot, store,
-                                      password or None, backend)
+                                      password or None, backend, hosts)
         self.server = None
         self.thread = None
 

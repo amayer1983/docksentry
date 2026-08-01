@@ -168,6 +168,8 @@
   "web_check_updates": "🔍 Check Updates",
   "web_name": "Name",
   "web_image": "Image",
+  "web_host": "Host",
+  "web_host_unreachable": "{host}: unreachable",
   "web_status": "Status",
   "web_containers_running": "{count} containers running",
   "web_settings": "Settings",

@@ -86,6 +86,8 @@
   "web_check_updates": "🔍 Controlla",
   "web_name": "Nome",
   "web_image": "Immagine",
+  "web_host": "Host",
+  "web_host_unreachable": "{host}: non raggiungibile",
   "web_status": "Stato",
   "web_containers_running": "{count} contenitori attivi",
   "web_settings": "Impostazioni",

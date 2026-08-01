@@ -86,6 +86,8 @@
   "web_check_updates": "🔍 Buscar",
   "web_name": "Nombre",
   "web_image": "Imagen",
+  "web_host": "Host",
+  "web_host_unreachable": "{host}: inaccesible",
   "web_status": "Estado",
   "web_containers_running": "{count} contenedores activos",
   "web_settings": "Configuración",

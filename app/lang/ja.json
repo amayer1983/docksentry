@@ -86,6 +86,8 @@
   "web_check_updates": "🔍 更新を確認",
   "web_name": "名前",
   "web_image": "イメージ",
+  "web_host": "ホスト",
+  "web_host_unreachable": "{host}: 到達できません",
   "web_status": "ステータス",
   "web_containers_running": "{count} 個のコンテナが実行中",
   "web_settings": "設定",

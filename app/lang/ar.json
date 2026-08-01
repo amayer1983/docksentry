@@ -86,6 +86,8 @@
   "web_check_updates": "🔍 تحقق",
   "web_name": "الاسم",
   "web_image": "الصورة",
+  "web_host": "المضيف",
+  "web_host_unreachable": "{host}: غير قابل للوصول",
   "web_status": "الحالة",
   "web_containers_running": "{count} حاوية قيد التشغيل",
   "web_settings": "الإعدادات",
