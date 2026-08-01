@@ -396,6 +396,7 @@
   "web_stat_hours_ago": "vor {n}h",
   "web_stat_days_ago": "vor {n}T",
   "web_stat_disk_usage": "Speicher belegt ({free} frei)",
+  "web_stat_memory_usage": "Arbeitsspeicher belegt · {free} frei",
   "web_container_not_found": "Container nicht gefunden",
   "web_container_not_found_hint": "Er wurde möglicherweise entfernt oder umbenannt. Zurück zur Status-Seite.",
   "web_tab_overview": "Übersicht",

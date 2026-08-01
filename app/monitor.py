@@ -434,6 +434,44 @@ class ContainerMonitor:
                     return 0
         return 0
 
+    @staticmethod
+    def host_memory_parts():
+        """`(used_gb, total_gb, percent)` for this machine, or None.
+
+        The numeric form behind `_host_memory`, for the Web UI, which needs
+        a percentage to colour a card rather than a sentence. Both read the
+        same `/proc/meminfo`, so the page and the alert can never disagree
+        about how full the machine is.
+        """
+        vals = ContainerMonitor._meminfo()
+        total = vals.get("MemTotal", 0)
+        if not total:
+            return None
+        avail = vals.get("MemAvailable", vals.get("MemFree", 0))
+        gb = 1024 ** 3
+        used = total - avail
+        return used / gb, total / gb, used / total * 100
+
+    @staticmethod
+    def _meminfo():
+        """`/proc/meminfo` as `{key: bytes}`, or `{}` if unreadable.
+
+        Inside a container this still reports the HOST's figures — the
+        kernel namespaces processes, not memory accounting — which is
+        exactly what both callers want.
+        """
+        vals = {}
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    key, _, rest = line.partition(":")
+                    num = rest.strip().split(" ")[0]
+                    if num.isdigit():
+                        vals[key] = int(num) * 1024      # kB → bytes
+        except OSError:
+            return {}
+        return vals
+
     def _host_memory(self):
         """This machine's memory as `6.2/11.4 GB · Swap 3.1/4.0 GB` — or
         "" if unreadable or if this monitor is watching a REMOTE host.
@@ -463,16 +501,7 @@ class ContainerMonitor:
             # Remote, or locality unknown. Either way: say nothing. Wrong
             # numbers here are worse than none.
             return ""
-        try:
-            vals = {}
-            with open("/proc/meminfo") as f:
-                for line in f:
-                    key, _, rest = line.partition(":")
-                    num = rest.strip().split(" ")[0]
-                    if num.isdigit():
-                        vals[key] = int(num) * 1024      # kB → bytes
-        except OSError:
-            return ""
+        vals = self._meminfo()
         total = vals.get("MemTotal", 0)
         avail = vals.get("MemAvailable", vals.get("MemFree", 0))
         if not total:

@@ -295,6 +295,7 @@
   "web_stat_hours_ago": "{n}h ago",
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
+  "web_stat_memory_usage": "메모리 사용 중 · {free} 여유",
   "web_container_not_found": "Container not found",
   "web_container_not_found_hint": "It may have been removed or renamed. Return to the status page.",
   "web_tab_overview": "Overview",

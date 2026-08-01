@@ -2676,6 +2676,31 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception:
                 disk_stat = ""
 
+            # Host memory, next to host storage. @NotRetarded asked for this
+            # in #2 while chasing a container that kept dying: he could see
+            # disk at a glance but had to leave Docksentry to find out
+            # whether the machine was under memory pressure at all — which
+            # is the question that comes BEFORE "which container did it".
+            #
+            # `/proc/meminfo` inside a container reports the HOST's figures,
+            # which is what is wanted here. Local only: that file describes
+            # the machine Docksentry runs on, so showing it on a page
+            # scoped to a remote host would be a plain lie.
+            mem_stat = ""
+            try:
+                from monitor import ContainerMonitor
+                mem = ContainerMonitor.host_memory_parts()
+                if mem:
+                    used_gb, total_gb, pct = mem
+                    mem_color = "var(--danger)" if pct >= 90 else (
+                        "var(--warn)" if pct >= 80 else "var(--accent)")
+                    mem_stat = f"""<div class="card stat">
+    <div class="num" style="color:{mem_color}">{pct:.0f}%</div>
+    <div class="label">{t("web_stat_memory_usage", free=f"{total_gb - used_gb:.1f}G")}</div>
+</div>"""
+            except Exception:
+                mem_stat = ""
+
             content = f"""
 {major_banner}
 <div class="stat-grid">
@@ -2692,6 +2717,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <div class="label">{t("web_stat_last_update")}</div>
 </div>
 {disk_stat}
+{mem_stat}
 </div>"""
             content += f"""
 
