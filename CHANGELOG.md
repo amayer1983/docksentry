@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.64.0] - 2026-08-01
+
+### Changed
+- **Container deaths now come with the memory picture, not just the exit code.** The snapshot naming the biggest memory consumers used to fire only when Docker flagged an out-of-memory kill — which misses the commonest shape of the problem. A container squeezed out by a greedy neighbour frequently dies *without* that flag: it comes from the container's own cgroup, so a kill made under host-wide pressure need not land there. Exactly the case @NotRetarded hit in #2 — his Unifi container was taken down by an app he'd just installed, and the alert arrived with nothing about memory in it. Crash-restarts and non-zero exits now carry it too, with the host's own state ahead of the list:
+
+  ```
+  🔁 Unifi-OS-Server crashed (exit 137) and was restarted by its restart policy at 16:14:47 (restart #1).
+  Host memory (used/total): 14.8/15.6 GB · Swap 3.9/4.0 GB
+  Top memory at event time: some-new-app 9.1GiB · unifi-os 2.2GiB · postgres 890MiB
+  ```
+
+  The host line goes first on purpose. A top-consumers list on its own invites you to blame whoever is at the top, and if there were 8 GB free that's just your biggest container minding its own business — the line above it tells you whether memory was the story at all. Nothing polls in the background for this: it costs one `docker stats` at the moment of the event, shared across every event in the same sweep, plus a read of `/proc/meminfo`. Monitors watching a *remote* host print no host line, since that file describes the machine Docksentry runs on and wrong numbers are worse than none.
+
 ## [1.63.1] - 2026-08-01
 
 ### Fixed
