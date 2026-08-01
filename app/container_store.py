@@ -560,6 +560,11 @@ class HostScopedStore:
         self.store = store
         self.host = host or LOCAL_HOST
 
+    # Every method here returns the SAME SHAPE as the ContainerStore
+    # method it wraps — list where the store returns a list, dict where it
+    # returns a dict. A view that quietly hands back a set instead works
+    # for `in` and then breaks the first caller that indexes, sorts or
+    # JSON-serialises it, on multi-host installs only.
     # ── key translation ───────────────────────────────────────
     def _k(self, name):
         return host_key(self.host, name)
@@ -632,7 +637,7 @@ class HostScopedStore:
 
     # ── per-container toggles ─────────────────────────────────
     def get_ask_before_major(self):
-        return set(self._mine(self.store.get_ask_before_major()))
+        return self._mine(self.store.get_ask_before_major())
 
     def is_ask_before_major(self, name):
         return self.store.is_ask_before_major(self._k(name))
@@ -641,7 +646,7 @@ class HostScopedStore:
         return self.store.toggle_ask_before_major(self._k(name))
 
     def get_trust_running(self):
-        return set(self._mine(self.store.get_trust_running()))
+        return self._mine(self.store.get_trust_running())
 
     def is_trust_running(self, name):
         return self.store.is_trust_running(self._k(name))
@@ -650,7 +655,7 @@ class HostScopedStore:
         return self.store.toggle_trust_running(self._k(name))
 
     def get_protect_stop(self):
-        return set(self._mine(self.store.get_protect_stop()))
+        return self._mine(self.store.get_protect_stop())
 
     def is_protect_stop(self, name):
         return self.store.is_protect_stop(self._k(name))

@@ -106,6 +106,26 @@ with tempfile.TemporaryDirectory() as d:
         nas_hit[1]["containers"] == ["gluetun", "sonarr"])
 
 
+# ── the view must return the SAME SHAPES as the store it wraps ───────
+# A view that hands back a set where the store returns a list works for
+# `in` and then breaks the first caller that sorts, indexes or serialises
+# it — and only on multi-host installs, which is the worst place to find
+# out.
+with tempfile.TemporaryDirectory() as d:
+    raw2 = ContainerStore(_cfg(d))
+    view = HostScopedStore(raw2, "nas")
+    for meth in ("get_pinned", "get_autoupdate", "get_ask_before_major",
+                 "get_trust_running", "get_protect_stop"):
+        a = type(getattr(raw2, meth)())
+        b = type(getattr(view, meth)())
+        checks[f"{meth} returns the same type as the store"] = a is b
+    for meth in ("get_update_windows", "get_cooldowns", "get_pending_major",
+                 "get_notes", "get_links", "get_groups"):
+        a = type(getattr(raw2, meth)())
+        b = type(getattr(view, meth)())
+        checks[f"{meth} returns the same type as the store"] = a is b
+
+
 def main():
     ok = True
     for desc, passed in checks.items():
