@@ -53,7 +53,7 @@ def _clock(iso):
 class ContainerMonitor:
     COOLDOWN_SECONDS = 1800
 
-    def __init__(self, config, checker, bot, backend=None):
+    def __init__(self, config, checker, bot, backend=None, host_name=""):
         self.config = config
         self.checker = checker
         self.bot = bot
@@ -64,6 +64,11 @@ class ContainerMonitor:
             from container_backend import get_backend
             backend = get_backend(config)
         self.backend = backend
+        #: Empty for the local host, the host's name for a remote one. Only
+        #: ever used to LABEL a message — never to key state, which each
+        #: monitor keeps to itself. Local stays unlabelled so single-host
+        #: installs read exactly as they always did.
+        self.host_name = host_name
         # Live event stream. It never alerts — it only records the memory
         # picture at the *instant* of a death, which this poller then uses
         # instead of taking one up to 60 seconds too late (#2,
@@ -378,7 +383,7 @@ class ContainerMonitor:
             if now_ts - last < self.COOLDOWN_SECONDS:
                 continue
             self._last_sent[key] = now_ts
-            self._record(kind, name, detail)
+            self._record(kind, self._label(name), detail)
             self._notify(kind, name, detail)
             sent.append((kind, name, detail))
         return sent
@@ -575,6 +580,25 @@ class ContainerMonitor:
                           for _, pct, name, _ in rows[:top]
                           if pct >= self.CPU_LIST_FLOOR)
 
+    def _label(self, name):
+        """How this container is named in a message.
+
+        `nas/nginx` on a remote host, plain `nginx` locally. Without the
+        prefix a fleet running the same stack on two machines produces two
+        identical alerts and no way to tell which box is on fire (#7).
+
+        Delegates to `container_store.host_key` rather than formatting the
+        prefix here. That function already owns the rule that the local
+        host stays unprefixed — a second copy of it is how the same
+        container comes to be called two different things depending on
+        which subsystem is talking.
+        """
+        host = getattr(self, "host_name", "")
+        if not host:
+            return name
+        from container_store import host_key
+        return host_key(host, name)
+
     def _event_snapshot(self):
         """Both readings as one opaque record, for the event watcher.
 
@@ -586,22 +610,26 @@ class ContainerMonitor:
 
     def _notify(self, kind, name, detail):
         t = self.bot.t
+        # `name` stays raw for the watcher lookup below — the event stream
+        # reports the container's own name, unaware of which registry entry
+        # it belongs to. Only the text the reader sees carries the host.
+        shown = self._label(name)
         if kind == "unhealthy":
-            msg = t("monitor_unhealthy", name=name, prev=detail.get("prev", "?"))
+            msg = t("monitor_unhealthy", name=shown, prev=detail.get("prev", "?"))
         elif kind == "recovered":
-            msg = t("monitor_recovered", name=name)
+            msg = t("monitor_recovered", name=shown)
         elif kind == "oom":
-            msg = t("monitor_oom", name=name, code=detail.get("code", "?"))
+            msg = t("monitor_oom", name=shown, code=detail.get("code", "?"))
         elif kind == "crash_restart":
             # `code`/`when` are extra format kwargs: a translation that
             # hasn't picked them up yet simply ignores them, so no language
             # can break on this.
-            msg = t("monitor_crash_restart", name=name,
+            msg = t("monitor_crash_restart", name=shown,
                     count=detail.get("count", "?"),
                     code=detail.get("code", "?"),
                     when=detail.get("when", "") or "?")
         else:
-            msg = t("monitor_exited", name=name, code=detail.get("code", "?"))
+            msg = t("monitor_exited", name=shown, code=detail.get("code", "?"))
 
         # Name the culprit, not just the victim. This used to fire for OOM
         # only, which missed the commonest shape of the problem: a

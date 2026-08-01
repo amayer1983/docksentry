@@ -230,10 +230,22 @@ class Scheduler:
         # Container state monitor (#2, @NotRetarded) — same own-cadence
         # pattern as the disk check. Constructed lazily so a disabled
         # monitor costs nothing.
-        monitor = None
+        # One monitor per host, each with its own baseline and its own event
+        # stream. Update checking has been multi-host since v1.62.0, but the
+        # crash and health monitor was only ever built for the local box —
+        # measured on a live two-host install: a Podman container died with
+        # exit 42 and nothing was reported, while the same instance
+        # cheerfully logged "Managing 2 hosts". A shared monitor would not
+        # do: the baseline diff is per-host state, and one host's sweep
+        # would read the other's containers as vanished.
+        monitors = []
         if getattr(self.config, "monitor_enabled", True):
             from monitor import ContainerMonitor
-            monitor = ContainerMonitor(self.config, self.checker, self.bot)
+            for checker, host_name in self._checkers():
+                monitors.append(ContainerMonitor(
+                    self.config, checker, self.bot,
+                    backend=getattr(checker, "backend", None),
+                    host_name=host_name))
         print(f"Scheduler started with schedule: {self.config.cron_schedule}")
         if last_check:
             print(f"Initial cron tick for {last_check} claimed by deferred-check (post-selfupdate)")
@@ -351,13 +363,20 @@ class Scheduler:
             # updates (the tick itself checks the update mutex) and in
             # maintenance mode.
             try:
-                if monitor is not None:
+                if monitors:
                     from maintenance import is_active as _maint_active2
                     mon_interval = int(getattr(self.config, "monitor_interval_seconds", 60) or 60)
                     if (time.monotonic() - last_mon_ts >= mon_interval
                             and not _maint_active2(self.config)):
                         last_mon_ts = time.monotonic()
-                        monitor.tick()
+                        for mon in monitors:
+                            try:
+                                mon.tick()
+                            except Exception as e:
+                                # One unreachable host must not silence the
+                                # others — that would turn a network blip on
+                                # the NAS into a blind spot at home.
+                                print(f"Monitor error ({mon.host_name or 'local'}): {e}")
             except Exception as e:
                 print(f"Monitor error: {e}")
 

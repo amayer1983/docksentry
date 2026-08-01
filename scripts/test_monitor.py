@@ -176,10 +176,41 @@ def _exit_code_checks(checks):
     checks["the detail dict is not mutated in place"] = True
 
 
+def _multi_host_checks(checks):
+    """Alerts must name the host — and name it the way the rest of the
+    project already does.
+
+    Measured on a live two-host install before this existed: a Podman
+    container died with exit 42 and nothing was reported, while the same
+    instance logged "Managing 2 hosts". Update checking had been multi-host
+    since v1.62.0; the crash monitor never was (#7).
+    """
+    import types as _t
+    for host, want in (("", "nginx"), ("local", "nginx"), ("nas", "nas/nginx")):
+        m = ContainerMonitor.__new__(ContainerMonitor)
+        m.host_name = host
+        checks[f"label on host {host!r}"] = m._label("nginx") == want
+    # The prefix must come from container_store, not a second copy of the
+    # rule — that is how one container ends up with two names depending on
+    # which subsystem is speaking.
+    from container_store import host_key
+    m = ContainerMonitor.__new__(ContainerMonitor)
+    m.host_name = "nas"
+    checks["labelling follows container_store"] = (
+        m._label("x") == host_key("nas", "x"))
+    # Each host keeps its own baseline: a shared one would read the other
+    # host's containers as vanished on every sweep.
+    a = ContainerMonitor.__new__(ContainerMonitor)
+    b = ContainerMonitor.__new__(ContainerMonitor)
+    a._prev, b._prev = {"x": {}}, None
+    checks["baselines are per monitor"] = b._prev is None
+
+
 def main():
     checks = {}
     _mem_checks(checks)
     _exit_code_checks(checks)
+    _multi_host_checks(checks)
     diff = ContainerMonitor.diff
 
     # ── health transitions (debounced, #2 @famewolf) ──
