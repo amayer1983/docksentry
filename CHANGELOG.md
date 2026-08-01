@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.63.1] - 2026-08-01
+
+### Fixed
+- **On a mixed-architecture fleet, every host after the first was checked against the wrong platform.** The daemon's architecture was cached once per process rather than per host, so an arm64 box sitting next to an x86 one — an ordinary homelab — had its multi-arch images compared against amd64 digests and got the wrong answer every time. Only affects multi-host setups. Raised by @LeeNX in #7 before anyone had actually run one that way. While fixing it: a platform string with more than one slash used to fall through to the amd64 default instead of being parsed, which is worse than saying nothing.
+- **The Web UI linked to a project's front page where the bot linked to its releases page.** The Web UI keeps its own copy of the link priority chain so it doesn't have to inspect every container just to draw the table, and that copy was missing the rewrite. Same container, two different links depending on where you looked. Spotted by @LeeNX in #52, on Docksentry's own row.
+- **Gitea and Forgejo repo links now point at the release too.** They mirror GitHub's layout closely enough that `/releases/latest` resolves — @LeeNX proved it with the redirect. Covers gitea.com, Codeberg and self-hosted instances; a manual `docksentry.link` or `/setlink` is still never rewritten.
+
 ## [1.63.0] - 2026-08-01
 
 ### Added

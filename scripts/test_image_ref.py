@@ -40,6 +40,42 @@ def main():
         "registry:5000", "team/app", "1.2.3")
     checks["localhost registry"] = p("localhost/app:dev") == ("localhost", "app", "dev")
 
+    # ── platform is per HOST, not per process (#7, @LeeNX) ──────────
+    # This cache used to be one process-wide value. Fine with one daemon,
+    # silently wrong with two: the first host to ask cached its arch and
+    # every other host reused it, so an arm64 box in a mixed fleet got
+    # compared against amd64 digests and the wrong verdict on every
+    # multi-arch image.
+    import types as _t
+    from update_checker import UpdateChecker as _UC
+
+    class _CP:
+        def __init__(self, out):
+            self.returncode, self.stdout, self.stderr = 0, out, ""
+
+    _outs = {"x86": "linux/amd64", "pi": "linux/arm64", "quiet": ""}
+
+    class _B:
+        def __init__(self, k):
+            self.name = k
+
+        def run(self, args, **kw):
+            return _CP(_outs[self.name])
+
+    _cfg = _t.SimpleNamespace(debug=False, container_cli="docker")
+    _UC._host_platform_cache = {}
+    _x = _UC(_cfg, backend=_B("x86"))._host_platform()
+    _p = _UC(_cfg, backend=_B("pi"))._host_platform()
+    checks["platform: each host gets its own"] = _x != _p
+    checks["platform: amd64 host reads amd64"] = _x == ("linux", "amd64")
+    checks["platform: arm64 host reads arm64"] = _p == ("linux", "arm64")
+    checks["platform: still cached per host"] = (
+        _UC(_cfg, backend=_B("pi"))._host_platform() is _p)
+    # A daemon that says nothing still falls back rather than crashing.
+    checks["platform: silent daemon falls back"] = (
+        _UC(_cfg, backend=_B("quiet"))._host_platform() == ("linux", "amd64"))
+    _UC._host_platform_cache = {}
+
     # ── host platform: sane shape, cached, daemon-agreeing when available ──
     plat = uc._host_platform()
     checks["platform is (os, arch) pair"] = (

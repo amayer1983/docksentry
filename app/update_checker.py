@@ -356,29 +356,48 @@ class UpdateChecker:
         text = str(text or "")
         return text if len(text) <= limit else text[:limit - 3] + "..."
 
-    _host_platform_cache = None
+    #: Platform per host, keyed by the backend's host name. This used to be
+    #: one process-wide value, which was fine while there was one daemon and
+    #: silently wrong the moment there were two: the first host to ask
+    #: cached its architecture and every other host reused it. On a mixed
+    #: fleet — an amd64 box and an arm64 Pi, which is a completely ordinary
+    #: homelab — the Pi would then be compared against amd64 digests and get
+    #: the wrong verdict on every multi-arch image. Asked by @LeeNX in #7
+    #: before anyone had run it that way.
+    _host_platform_cache = {}
 
     def _host_platform(self):
         """The DAEMON's (os, architecture) — the platform images are pulled
         for — via ``docker version``. Asking the daemon (not Python's
         ``platform`` module) matters because Docksentry itself runs in a
         container: the daemon may sit on a different host than us (socket
-        proxy setups). Cached per process; falls back to linux/amd64 when
-        the daemon can't say.
+        proxy setups, and every remote host in a multi-host setup).
+
+        Cached per host for the process lifetime; falls back to
+        linux/amd64 when the daemon can't say.
         """
-        if UpdateChecker._host_platform_cache is None:
+        key = getattr(self.backend, "name", "") or "local"
+        cached = UpdateChecker._host_platform_cache.get(key)
+        if cached is None:
             os_name, arch = "linux", "amd64"
             try:
                 r = self.backend.run(
                     ["version", "--format",
                      "{{.Server.Os}}/{{.Server.Arch}}"], timeout=10)
-                parts = r.stdout.strip().split("/")
+                # Split on the FIRST slash only: a value like
+                # `linux/arm/v7` is three fields, and requiring exactly two
+                # made it fall through to the amd64 default — silently
+                # comparing an ARM host against amd64 digests. Falling back
+                # is right when the daemon says nothing; it is wrong when
+                # the daemon answered and we merely failed to parse it.
+                parts = r.stdout.strip().split("/", 1)
                 if r.returncode == 0 and len(parts) == 2 and all(parts):
                     os_name, arch = parts
             except (subprocess.SubprocessError, OSError):
                 pass
-            UpdateChecker._host_platform_cache = (os_name, arch)
-        return UpdateChecker._host_platform_cache
+            cached = (os_name, arch)
+            UpdateChecker._host_platform_cache[key] = cached
+        return cached
 
     _cgroup_version_cache = None
 
