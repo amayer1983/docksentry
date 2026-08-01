@@ -67,8 +67,14 @@ _BOT_COMMANDS = [
 
 
 class TelegramBot:
-    def __init__(self, config, container_store, engine=None):
+    def __init__(self, config, container_store, engine=None, hosts=None):
         self.config = config
+        # Every managed host (#7). None on a single-host install — and for
+        # every caller that doesn't pass one (tests, older embedders) — in
+        # which case NOTHING below routes anywhere: `_multi()` stays False,
+        # every command keeps its pre-#7 code path and no reply grows a
+        # host label it never had.
+        self.hosts = hosts
         # Container CLI seam — the bot's own container reads/lifecycle
         # commands go through it, same as the update core. Self-update is
         # deliberately NOT migrated yet (helper container + sh -c script).
@@ -375,13 +381,17 @@ class TelegramBot:
             return "/help " + text.split()[0].lstrip("/")
         return text
 
-    def _container_state(self, name):
+    def _container_state(self, name, backend=None):
         """Return a dict with current state of `name` for the per-container
         status output. Keys: state, health, uptime, image, ports, volumes,
         restart_policy. All values are strings (already formatted for
-        display). Returns None if inspect fails."""
+        display). Returns None if inspect fails.
+
+        `backend` picks the host to inspect on (#7); the default is the
+        bot's own — i.e. the local machine, exactly as before."""
+        backend = backend or self.backend
         try:
-            r = self.backend.run(
+            r = backend.run(
                 ["inspect", name], timeout=10)
             if r.returncode != 0:
                 return None
@@ -446,7 +456,7 @@ class TelegramBot:
         # selfupdate). The image can't lie about itself; the container can.
         version = ""
         if image_id:
-            r = self.backend.run(
+            r = backend.run(
                 ["image", "inspect", "--format",
                  '{{index .Config.Labels "org.opencontainers.image.version"}}',
                  image_id], timeout=10)
@@ -470,13 +480,19 @@ class TelegramBot:
             "running": bool(state.get("Running")),
         }
 
-    def _lifecycle_action(self, action, name, checker):
+    def _lifecycle_action(self, action, name, checker, backend=None):
         """Execute a lifecycle action (stop/start/restart) on a resolved
         container. Returns (ok: bool, message: str — already i18n'd).
 
         Reuses the v1.17.7 _would_kill_self guard for stop/restart so
         the bot can't stop / restart itself by accident (PID 1 would
         die before the recreate, same class of bug as #16).
+
+        `checker` and `backend` together say WHICH host to act on (#7) —
+        they have to agree, so callers pass the pair belonging to one
+        managed host. Both default to the local machine's; the default is
+        resolved only in the branches that actually run a command, so the
+        guards below still refuse without touching a backend at all.
         """
         if action in ("stop", "restart") and checker._would_kill_self(name):
             return False, self.t("lifecycle_refused_self", action=action, name=name)
@@ -506,7 +522,7 @@ class TelegramBot:
 
         if action == "start":
             try:
-                r = self.backend.run(
+                r = (backend or self.backend).run(
                     ["start", name], timeout=30)
                 if r.returncode == 0:
                     return True, self.t("lifecycle_started", name=name)
@@ -519,7 +535,7 @@ class TelegramBot:
             # docker restart is graceful stop + start; use generous
             # timeout because some apps (gitlab, gluetun) take a while.
             try:
-                r = self.backend.run(
+                r = (backend or self.backend).run(
                     ["restart", "--time", "30", name], timeout=120)
                 if r.returncode == 0:
                     return True, self.t("lifecycle_restarted", name=name)
@@ -530,7 +546,7 @@ class TelegramBot:
 
         return False, f"unknown action: {action}"
 
-    def _resolve_container(self, partial, include_stopped=True):
+    def _resolve_container(self, partial, include_stopped=True, backend=None):
         """Resolve a partial container name. Returns (full_name, error_msg).
 
         Looks at `docker ps -a` by default (running + stopped) — almost
@@ -548,13 +564,15 @@ class TelegramBot:
         leftovers from failed updates) so they never surface in the
         picker. Specific callers that genuinely need running-only can
         opt out via `include_stopped=False`.
+
+        `backend` picks the host to look on (#7); default is the local one.
         """
         # argv without the CLI name — the backend prepends it, so the
         # "-a" insert index shifts down by one accordingly.
         cmd = ["ps", "--format", "{{.Names}}"]
         if include_stopped:
             cmd.insert(1, "-a")
-        result = self.backend.run(cmd)
+        result = (backend or self.backend).run(cmd)
         all_names = [
             n.strip() for n in result.stdout.strip().split("\n")
             if n.strip() and not n.strip().endswith("_old")
@@ -578,35 +596,156 @@ class TelegramBot:
         """True if `s` looks like a glob pattern (vs. a plain/partial name)."""
         return any(c in s for c in "*?[")
 
-    def _match_glob(self, pattern, include_stopped=True):
+    def _match_glob(self, pattern, include_stopped=True, backend=None):
         """Return sorted container names matching a glob pattern (`*`, `?`,
         `[...]`), case-insensitively — running + stopped, minus our `_old`
-        rollback leftovers. Empty list if nothing matches (#40, @LeeNX)."""
+        rollback leftovers. Empty list if nothing matches (#40, @LeeNX).
+        `backend` picks the host to match on (#7); default is the local one."""
         import fnmatch
         # argv without the CLI name — the backend prepends it, so the
         # "-a" insert index shifts down by one accordingly.
         cmd = ["ps", "--format", "{{.Names}}"]
         if include_stopped:
             cmd.insert(1, "-a")
-        result = self.backend.run(cmd)
+        result = (backend or self.backend).run(cmd)
         names = [n.strip() for n in result.stdout.strip().split("\n")
                  if n.strip() and not n.strip().endswith("_old")]
         pl = pattern.lower()
         return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
 
-    def _select_containers(self, arg):
+    def _select_containers(self, arg, backend=None):
         """Resolve a /check or /update argument to a list of container names.
         Glob (`*?[`) → all matches; plain → single partial-resolved name.
-        Returns (names, error_msg); error_msg is None on success (#40)."""
+        Returns (names, error_msg); error_msg is None on success (#40).
+        `backend` picks the host to select on (#7); default is the local one."""
         if self._is_glob(arg):
-            names = self._match_glob(arg)
+            names = self._match_glob(arg, backend=backend)
             if not names:
                 return [], self.t("glob_no_match", pattern=arg)
             return names, None
-        resolved, err = self._resolve_container(arg)
+        resolved, err = self._resolve_container(arg, backend=backend)
         if err:
             return [], err
         return [resolved], None
+
+    # ── Multi-host command targeting (#7) ──────────────────────────────
+    # One instance, N hosts: a command may be aimed at one of them with a
+    # trailing `@name`, at all of them with `@all`, or at neither — in
+    # which case the DEFAULT depends on what the command does. Reads
+    # (/check, /status, /updates) look at every managed host; writes
+    # (/update, /start, /stop, /restart) act on the local one only.
+    # Looking around everywhere is convenient; changing things everywhere
+    # by accident is not.
+    #
+    # All of it is inert on a single-host install: `_multi()` is False
+    # whenever no registry was handed to the bot or the registry holds
+    # only the local host, and then `_resolve_targets` hands back
+    # `targets=None`, which every call site walks as the single pseudo-host
+    # `None` → the bot's own backend/checker and an empty host tag. Same
+    # calls, same order, same text as before #7.
+
+    def _multi(self):
+        """True once more than the local host is managed."""
+        return self.hosts is not None and self.hosts.is_multi
+
+    def _resolve_targets(self, arg_text, *, write):
+        """Which hosts a command should act on. Returns
+        `(cleaned_text, targets, error)`:
+
+          * `cleaned_text` — the arguments with the `@host` token removed,
+          * `targets` — the `ManagedHost`s to act on, or **None** on a
+            single-host install (nothing to route; callers keep their
+            pre-#7 path and their output verbatim),
+          * `error` — a ready-to-send message when the name is unknown.
+            The caller sends it and does nothing else: silently falling
+            back to "all" or to local would act on the wrong box.
+
+        `write=True` marks the intervening commands, whose no-token
+        default is the local host; reads default to every host.
+        """
+        if not self._multi():
+            return arg_text, None, None
+        from hosts import ALL_HOSTS, split_host_target
+        cleaned, target = split_host_target(arg_text)
+        if target is None:
+            return cleaned, ([self.hosts.local] if write
+                             else list(self.hosts)), None
+        if target == ALL_HOSTS:
+            return cleaned, list(self.hosts), None
+        host = self.hosts.get(target)
+        if host is None:
+            return cleaned, None, self.t(
+                "host_unknown", name=target,
+                hosts=", ".join(f"`{n}`" for n in self.hosts.names))
+        return cleaned, [host], None
+
+    def _host_hint(self, arg_text):
+        """The line appended to a *write* command's reply when it defaulted
+        to the local host — otherwise "act on everything" would be a rule
+        people only discover by not finding it. Empty on a single-host
+        install and whenever the user did aim explicitly, so the only
+        people who ever see it are the ones it can help."""
+        if not self._multi():
+            return ""
+        from hosts import split_host_target
+        _, target = split_host_target(arg_text)
+        return "" if target else "\n\n" + self.t("host_local_only_hint")
+
+    def _backend_for(self, host):
+        """Backend to act through for `host`. The local host keeps the bot's
+        own object, so nothing about the local code path changes."""
+        return self.backend if (host is None or host.is_local) else host.backend
+
+    def _checker_for(self, host, checker):
+        """Checker for `host` — the caller's own for the local host."""
+        return checker if (host is None or host.is_local) else host.checker
+
+    @staticmethod
+    def _host_tag(host):
+        """` @nas` for a remote host, empty for the local one — the same
+        marker `UpdateEngine._display_name` puts on remote containers, so
+        results from several hosts read the same way everywhere."""
+        return "" if (host is None or host.is_local) else f" @{host.name}"
+
+    def _run_full_check(self, checker, targets):
+        """The arg-less `/check`: a full scan of every targeted host.
+
+        `targets=None` (single host) walks exactly one checker — the one
+        the caller passed — in exactly the original order, so a one-host
+        install sends precisely the messages it always did. With several
+        hosts each one gets its own "Updates Available" notification;
+        the container lines carry the `@host` marker via `_display_name`.
+        """
+        self.send_message(self.t("checking_updates"))
+        found = False
+        for host in (targets or [None]):
+            try:
+                updates = self._checker_for(host, checker).check_all(bot=self)
+            except Exception as e:
+                if not self._multi():
+                    raise
+                # One unreachable host must not stop the others from being
+                # reported — same rule the scheduler follows (#7).
+                self.send_message(self.t("host_check_failed",
+                                         host=host.name, error=str(e)[:200]))
+                continue
+            if updates:
+                found = True
+                self.notify_updates(updates)
+        if not found:
+            self.notify_no_updates()
+        # Docksentry-selfupdate hint (#2, @famewolf): the regular
+        # `check_all` filters us out (get_running_containers → "Skipped
+        # (self)") because auto-updating via the normal flow can't work
+        # (PID 1 can't replace its own container). So checking the
+        # updates list for our own name never matched — the hint hasn't
+        # been surfacing since the self-filter existed. Ask the checker
+        # directly (registry digest compare, no pull) and, if newer, tell
+        # the user to run /selfupdate and hint at /changelog for preview.
+        # Docksentry runs on the local host, so this stays the local
+        # checker's question no matter which hosts were scanned.
+        if checker.has_selfupdate_available():
+            self.send_message(self.t("docksentry_update_hint"))
 
     @staticmethod
     def _is_timeout(exc):
@@ -2343,98 +2482,152 @@ class TelegramBot:
         # /help path.
         text = self._help_alias(text)
 
+        # The hosts a /status is aimed at (#7). Stays None on a single-host
+        # install and until the argument has been parsed, which is what the
+        # arg-less branch below reads it as ("not resolved yet").
+        status_targets = None
         # `/status <name>` — per-container detail with inline action
         # buttons. The arg-less `/status` keeps the overview behaviour.
         if text.startswith("/status ") and len(text.split(maxsplit=1)) > 1:
             partial = text.split(maxsplit=1)[1].strip()
-            # Glob → a compact one-line-per-match overview (#40, @LeeNX).
-            # Read-only, so no action buttons; use /status <name> for the
-            # full single-container detail.
-            if self._is_glob(partial):
-                names = self._match_glob(partial)
-                if not names:
-                    self.send_message(self.t("glob_no_match", pattern=partial))
-                    return
-                lines = [self.t("glob_status_header", count=len(names), pattern=partial)]
-                for nm in names:
-                    si = self._container_state(nm)
-                    if not si:
-                        continue
-                    icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
-                    health = f" ({si['health']})" if si["health"] else ""
-                    lines.append(f"{icon} `{nm}` — {si['state']}{health}")
-                self.send_message("\n".join(lines))
+            # `@host` narrows, `@all` widens; without a token a read like
+            # this looks at every managed host (#7).
+            partial, status_targets, host_err = self._resolve_targets(
+                partial, write=False)
+            if host_err:
+                self.send_message(host_err)
                 return
-            resolved, err = self._resolve_container(partial)
-            if not resolved:
-                self.send_message(err)
-                return
-            info = self._container_state(resolved)
-            if not info:
-                self.send_message(self.t("resolve_not_found", name=resolved))
-                return
-            # State / health label with color icon
-            state_icon = "✅" if info["running"] else ("⏸" if info["state"] == "paused" else "⏹")
-            state_text = info["state"]
-            if info["health"]:
-                state_text += f" ({info['health']})"
-            uptime_line = f"⏱ *Uptime:* {info['uptime']}" if info["running"] else ""
-
-            lines = [
-                f"📊 *{info['name']}*  {state_icon}",
-                f"*State:* `{state_text}`",
-            ]
-            if uptime_line:
-                lines.append(uptime_line)
-            lines.append(f"*Image:* `{info['image']}`")
-            if info.get("version"):
-                lines.append(f"*Version:* `{info['version']}`")
-            if info.get("short_id"):
-                lines.append(f"*Image ID:* `{info['short_id']}`")
-            lines.extend([
-                f"*Ports:* {info['ports']}",
-                f"*Volumes:* {info['volumes']}",
-                f"*Restart policy:* `{info['restart_policy']}`",
-            ])
-
-            # Build inline keyboard based on current state.
-            buttons = []
-            if info["running"]:
-                buttons.append({"text": self.t("lifecycle_btn_restart"),
-                                "callback_data": f"lifecycle:restart:{resolved}"})
-                # Stop hidden for protected containers (#38). The callback is
-                # also guarded in _lifecycle_action, so a stale button can't
-                # slip a stop through either.
-                if not self._is_protected(resolved, checker):
-                    buttons.append({"text": self.t("lifecycle_btn_stop"),
-                                    "callback_data": f"lifecycle:stop:{resolved}"})
+            if not partial:
+                # `/status @nas` — a host was named but no container, so
+                # this is the overview for that host. Fall through to the
+                # arg-less branch below, which picks up `status_targets`.
+                text = "/status"
             else:
-                buttons.append({"text": self.t("lifecycle_btn_start"),
-                                "callback_data": f"lifecycle:start:{resolved}"})
+                # A container the user asks about lives on ONE host as a
+                # rule, so a host that doesn't have it stays quiet and only
+                # a sweep that found nothing anywhere answers "not found"
+                # — otherwise every /status would drag a tail of misses
+                # behind it (#7).
+                shown = False
+                first_err = None
+                for host in (status_targets or [None]):
+                    backend = self._backend_for(host)
+                    tag = self._host_tag(host)
+                    # Glob → a compact one-line-per-match overview (#40, @LeeNX).
+                    # Read-only, so no action buttons; use /status <name> for the
+                    # full single-container detail.
+                    if self._is_glob(partial):
+                        names = self._match_glob(partial, backend=backend)
+                        if not names:
+                            first_err = first_err or self.t("glob_no_match",
+                                                            pattern=partial)
+                            continue
+                        shown = True
+                        lines = [self.t("glob_status_header", count=len(names), pattern=partial)]
+                        for nm in names:
+                            si = self._container_state(nm, backend=backend)
+                            if not si:
+                                continue
+                            icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
+                            health = f" ({si['health']})" if si["health"] else ""
+                            lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
+                        self.send_message("\n".join(lines))
+                        continue
+                    resolved, err = self._resolve_container(partial, backend=backend)
+                    if not resolved:
+                        first_err = first_err or err
+                        continue
+                    info = self._container_state(resolved, backend=backend)
+                    if not info:
+                        first_err = first_err or self.t("resolve_not_found",
+                                                        name=resolved)
+                        continue
+                    shown = True
+                    # State / health label with color icon
+                    state_icon = "✅" if info["running"] else ("⏸" if info["state"] == "paused" else "⏹")
+                    state_text = info["state"]
+                    if info["health"]:
+                        state_text += f" ({info['health']})"
+                    uptime_line = f"⏱ *Uptime:* {info['uptime']}" if info["running"] else ""
 
-            self.send_message(
-                "\n".join(lines),
-                reply_markup={"inline_keyboard": [buttons]},
-            )
-            return
+                    lines = [
+                        f"📊 *{info['name']}*{tag}  {state_icon}",
+                        f"*State:* `{state_text}`",
+                    ]
+                    if uptime_line:
+                        lines.append(uptime_line)
+                    lines.append(f"*Image:* `{info['image']}`")
+                    if info.get("version"):
+                        lines.append(f"*Version:* `{info['version']}`")
+                    if info.get("short_id"):
+                        lines.append(f"*Image ID:* `{info['short_id']}`")
+                    lines.extend([
+                        f"*Ports:* {info['ports']}",
+                        f"*Volumes:* {info['volumes']}",
+                        f"*Restart policy:* `{info['restart_policy']}`",
+                    ])
+
+                    # Build inline keyboard based on current state. Only for
+                    # the local host: the lifecycle callbacks carry a bare
+                    # container name and act locally, so a Stop button under
+                    # a remote container would stop the wrong box's
+                    # container. Remote detail stays read-only until the
+                    # callbacks learn about hosts.
+                    if host is not None and not host.is_local:
+                        self.send_message("\n".join(lines))
+                        continue
+                    buttons = []
+                    if info["running"]:
+                        buttons.append({"text": self.t("lifecycle_btn_restart"),
+                                        "callback_data": f"lifecycle:restart:{resolved}"})
+                        # Stop hidden for protected containers (#38). The callback is
+                        # also guarded in _lifecycle_action, so a stale button can't
+                        # slip a stop through either.
+                        if not self._is_protected(resolved, self._checker_for(host, checker)):
+                            buttons.append({"text": self.t("lifecycle_btn_stop"),
+                                            "callback_data": f"lifecycle:stop:{resolved}"})
+                    else:
+                        buttons.append({"text": self.t("lifecycle_btn_start"),
+                                        "callback_data": f"lifecycle:start:{resolved}"})
+
+                    self.send_message(
+                        "\n".join(lines),
+                        reply_markup={"inline_keyboard": [buttons]},
+                    )
+                if not shown:
+                    self.send_message(first_err)
+                return
 
         if text == "/status":
+            if status_targets is None:
+                # Bare `/status` — every managed host (#7); None on a
+                # single-host install, i.e. just the local machine.
+                _, status_targets, _ = self._resolve_targets("", write=False)
             # Use docker inspect (not docker ps Status-string parsing) so health
             # detection works on both Docker and Podman. Podman's REST API does
             # not append `(healthy)` to the Status field — that's a Docker CLI
             # cosmetic — but State.Health.Status is consistently provided by
             # both. Reported by LeeNX in #28 for podman-compose containers.
-            ids_p = self.backend.run(
-                ["ps", "-q"])
-            ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+            #
+            # One (host, inspect-dict) pair per running container, hosts in
+            # registry order (#7). `status_targets` is None on a single-host
+            # install → exactly one pseudo-host whose backend is the bot's
+            # own and whose tag is empty, i.e. the original two calls.
             inspected = []
-            if ids:
-                ins_p = self.backend.run(
+            for _host in (status_targets or [None]):
+                _b = self._backend_for(_host)
+                ids_p = _b.run(
+                    ["ps", "-q"])
+                ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+                if not ids:
+                    continue
+                ins_p = _b.run(
                     ["inspect", *ids])
                 try:
-                    inspected = json.loads(ins_p.stdout) or []
+                    _cfgs = json.loads(ins_p.stdout) or []
                 except (json.JSONDecodeError, ValueError):
-                    inspected = []
+                    _cfgs = []
+                inspected.extend((_host, _c) for _c in _cfgs)
             total = len(inspected)
             healthy = 0
             unhealthy = 0
@@ -2443,7 +2636,7 @@ class TelegramBot:
 
             from datetime import datetime as _dt, timezone as _tz
 
-            for cfg in inspected:
+            for _host, cfg in inspected:
                 name = (cfg.get("Name") or "?").lstrip("/")
                 image = (cfg.get("Config") or {}).get("Image", "?")
                 state = cfg.get("State") or {}
@@ -2484,7 +2677,8 @@ class TelegramBot:
                     icon = "⚪"
                     running += 1
 
-                containers.append(f"{icon} `{name}`\n     ⏱ {uptime} · 📦 `{image}`")
+                containers.append(f"{icon} `{name}`{self._host_tag(_host)}"
+                                  f"\n     ⏱ {uptime} · 📦 `{image}`")
 
             # Summary line
             summary = f"📊 *{total}* {self.t('status_containers')}"
@@ -2559,28 +2753,65 @@ class TelegramBot:
                 self.send_message(self.t("update_already_running"))
                 return
             arg = text.split(maxsplit=1)[1].strip()
-            names, err = self._select_containers(arg)
-            if err:
-                self.send_message(err)
+            # `@host` / `@all` targeting (#7). A read with no token looks at
+            # every managed host; targets is None on a single-host install,
+            # which walks the single pseudo-host below.
+            arg, targets, host_err = self._resolve_targets(arg, write=False)
+            if host_err:
+                self.send_message(host_err)
+                return
+            if not arg:
+                # `/check @nas` — a host but no container: that's the
+                # arg-less full check, aimed at the named host(s).
+                self._run_full_check(checker, targets)
+                return
+            # Resolve the names on every targeted host BEFORE announcing the
+            # check, so a name that matches nowhere still answers with the
+            # plain "not found" and nothing else — exactly as before.
+            selections = []
+            first_err = None
+            for host in (targets or [None]):
+                names, err = self._select_containers(
+                    arg, backend=self._backend_for(host))
+                if err:
+                    first_err = first_err or err
+                    continue
+                selections.append((host, names))
+            if not selections:
+                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
-            nameset = set(names)
-            # Scope the check to the matched containers via `only=` (#53,
-            # @LeeNX) instead of checking everything and filtering after.
-            # A glob that hits nothing never reaches here — _select_containers
-            # already returned glob_no_match — so `nameset` is non-empty.
-            # Deliberate behaviour change: a scoped check no longer refreshes
-            # the pending state of the *other* containers as a side effect.
-            # That's intended — targeted means we only touch what was named —
-            # and the scheduled full check updates the rest anyway. check_all
-            # merges the scoped result into pending_updates.json rather than
-            # overwriting it, so the untouched entries stay put.
-            updates = checker.check_all(bot=self, only=nameset)
-            if updates:
-                self.notify_updates(updates)
-            else:
+            matched = sum(len(n) for _, n in selections)
+            found = False
+            for host, names in selections:
+                nameset = set(names)
+                # Scope the check to the matched containers via `only=` (#53,
+                # @LeeNX) instead of checking everything and filtering after.
+                # A glob that hits nothing never reaches here — _select_containers
+                # already returned glob_no_match — so `nameset` is non-empty.
+                # Deliberate behaviour change: a scoped check no longer refreshes
+                # the pending state of the *other* containers as a side effect.
+                # That's intended — targeted means we only touch what was named —
+                # and the scheduled full check updates the rest anyway. check_all
+                # merges the scoped result into pending_updates.json rather than
+                # overwriting it, so the untouched entries stay put.
+                try:
+                    updates = self._checker_for(host, checker).check_all(
+                        bot=self, only=nameset)
+                except Exception as e:
+                    if not self._multi():
+                        raise
+                    # One unreachable host must not swallow the others'
+                    # results — same rule the scheduler follows.
+                    self.send_message(self.t("host_check_failed",
+                                             host=host.name, error=str(e)[:200]))
+                    continue
+                if updates:
+                    found = True
+                    self.notify_updates(updates)
+            if not found:
                 self.send_message(self.t("check_scoped_uptodate",
-                                         count=len(names), pattern=arg))
+                                         count=matched, pattern=arg))
 
         elif text == "/update" or (text.startswith("/update ") and len(text.split(maxsplit=1)) > 1):
             # /update <name|glob> — check then update only the matching
@@ -2594,32 +2825,80 @@ class TelegramBot:
             if self.update_running:
                 self.send_message(self.t("update_already_running"))
                 return
-            arg = parts[1].strip()
-            names, err = self._select_containers(arg)
-            if err:
-                self.send_message(err)
+            raw_arg = parts[1].strip()
+            # `/update` changes things, so with no `@host` token it stays on
+            # the local machine (#7) — and says so, see `_host_hint`.
+            # `@<name>` / `@all` aim it elsewhere deliberately.
+            arg, targets, host_err = self._resolve_targets(raw_arg, write=True)
+            if host_err:
+                self.send_message(host_err)
+                return
+            if not arg:
+                # `/update @nas` — a host but nothing to update. `/update`
+                # has always required a name or glob; `/update * @nas` is
+                # the "everything on nas" form.
+                self.send_message(self.t("update_usage"))
+                return
+            selections = []
+            first_err = None
+            for host in (targets or [None]):
+                names, err = self._select_containers(
+                    arg, backend=self._backend_for(host))
+                if err:
+                    first_err = first_err or err
+                    continue
+                selections.append((host, names))
+            if not selections:
+                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
-            nameset = set(names)
-            # Scope the check to the matched containers via `only=` (#53,
-            # @LeeNX) instead of checking everything and filtering after.
-            # A glob that hits nothing never reaches here — _select_containers
-            # already returned glob_no_match — so `nameset` is non-empty.
-            # Deliberate behaviour change: a scoped check no longer refreshes
-            # the pending state of the *other* containers as a side effect.
-            # That's intended — targeted means we only touch what was named —
-            # and the scheduled full check updates the rest anyway. The
-            # returned `updates` already contains only the matched containers
-            # that have a pending update, so run_updates below acts on exactly
-            # them, unchanged.
-            updates = checker.check_all(bot=self, only=nameset)
-            if not updates:
-                self.send_message(self.t("update_scoped_none", pattern=arg))
+            batches = []
+            for host, names in selections:
+                nameset = set(names)
+                # Scope the check to the matched containers via `only=` (#53,
+                # @LeeNX) instead of checking everything and filtering after.
+                # A glob that hits nothing never reaches here — _select_containers
+                # already returned glob_no_match — so `nameset` is non-empty.
+                # Deliberate behaviour change: a scoped check no longer refreshes
+                # the pending state of the *other* containers as a side effect.
+                # That's intended — targeted means we only touch what was named —
+                # and the scheduled full check updates the rest anyway. The
+                # returned `updates` already contains only the matched containers
+                # that have a pending update, so run_updates below acts on exactly
+                # them, unchanged.
+                host_checker = self._checker_for(host, checker)
+                try:
+                    updates = host_checker.check_all(bot=self, only=nameset)
+                except Exception as e:
+                    if not self._multi():
+                        raise
+                    self.send_message(self.t("host_check_failed",
+                                             host=host.name, error=str(e)[:200]))
+                    continue
+                if updates:
+                    batches.append((host_checker, updates))
+            if not batches:
+                self.send_message(self.t("update_scoped_none", pattern=arg)
+                                  + self._host_hint(raw_arg))
                 return
+            total = sum(len(u) for _, u in batches)
             self.send_message(self.t("update_scoped_starting",
-                                     count=len(updates), pattern=arg))
-            threading.Thread(target=self.run_updates,
-                             args=(checker,), kwargs={"updates": updates}).start()
+                                     count=total, pattern=arg)
+                              + self._host_hint(raw_arg))
+            if len(batches) == 1:
+                host_checker, updates = batches[0]
+                threading.Thread(target=self.run_updates,
+                                 args=(host_checker,),
+                                 kwargs={"updates": updates}).start()
+            else:
+                # Several hosts: one after the other, in registry order.
+                # run_updates takes the single update mutex for the length
+                # of each batch, so they cannot overlap anyway — doing it
+                # in one thread just makes that explicit.
+                def _run_batches(batches=batches):
+                    for host_checker, updates in batches:
+                        self.run_updates(host_checker, updates=updates)
+                threading.Thread(target=_run_batches).start()
 
         elif text == "/check":
             # Don't run a check while a manual update is in progress —
@@ -2633,22 +2912,10 @@ class TelegramBot:
             if self.update_running:
                 self.send_message(self.t("update_already_running"))
                 return
-            self.send_message(self.t("checking_updates"))
-            updates = checker.check_all(bot=self)
-            if updates:
-                self.notify_updates(updates)
-            else:
-                self.notify_no_updates()
-            # Docksentry-selfupdate hint (#2, @famewolf): the regular
-            # `check_all` filters us out (get_running_containers → "Skipped
-            # (self)") because auto-updating via the normal flow can't work
-            # (PID 1 can't replace its own container). So checking the
-            # updates list for our own name never matched — the hint hasn't
-            # been surfacing since the self-filter existed. Ask the checker
-            # directly (registry digest compare, no pull) and, if newer, tell
-            # the user to run /selfupdate and hint at /changelog for preview.
-            if checker.has_selfupdate_available():
-                self.send_message(self.t("docksentry_update_hint"))
+            # Every managed host (#7) — a look-around costs nothing but
+            # time, so the wide default is the useful one here.
+            _, targets, _ = self._resolve_targets("", write=False)
+            self._run_full_check(checker, targets)
 
         elif text == "/changelog":
             from version import VERSION
@@ -2749,12 +3016,33 @@ class TelegramBot:
                     name=resolved,
                 ))
 
-        elif text == "/updates":
+        # `/updates [@host]` — the `@host` form only exists with several
+        # hosts managed, so on a single-host install the condition is
+        # literally the old `text == "/updates"` and `/updates foo` keeps
+        # falling through to wherever it fell through before.
+        elif text == "/updates" or (self._multi() and text.startswith("/updates ")):
+            parts = text.split(maxsplit=1)
+            _, targets, host_err = self._resolve_targets(
+                parts[1].strip() if len(parts) > 1 else "", write=False)
+            if host_err:
+                self.send_message(host_err)
+                return
             if os.path.exists(self.config.pending_file):
                 with open(self.config.pending_file) as f:
                     pending = json.load(f)
+                if targets is not None:
+                    # The pending file holds every host's entries (#7);
+                    # show the ones belonging to the targeted hosts, and
+                    # say which host each is on via _display_name.
+                    from container_store import LOCAL_HOST
+                    wanted = {h.name for h in targets}
+                    pending = [u for u in pending if isinstance(u, dict)
+                               and (u.get("host") or LOCAL_HOST) in wanted]
                 if pending:
-                    names = [f"• `{u['name']}`" for u in pending]
+                    if targets is None:
+                        names = [f"• `{u['name']}`" for u in pending]
+                    else:
+                        names = [f"• {self._display_name(u)}" for u in pending]
                     self.send_message(self.t("pending_title") + "\n" + "\n".join(names))
                     return
             self.send_message(self.t("no_pending"))
@@ -2839,30 +3127,59 @@ class TelegramBot:
                 self.send_message(self.t("lifecycle_usage"))
                 return
             action = parts[0][1:]  # strip leading "/"
-            arg = parts[1].strip()
+            raw_arg = parts[1].strip()
+            # Lifecycle commands intervene, so with no `@host` token they
+            # stay on the local machine (#7) — stopping the wrong box's
+            # container because you forgot where you were is exactly the
+            # accident this default prevents.
+            arg, targets, host_err = self._resolve_targets(raw_arg, write=True)
+            if host_err:
+                self.send_message(host_err)
+                return
+            if not arg:
+                self.send_message(self.t("lifecycle_usage"))
+                return
+            hint = self._host_hint(raw_arg)
             # Glob → bulk action on every match (#40). Each goes through the
             # same _lifecycle_action, so the self-kill and protect-from-stop
             # guards still apply per container; results are aggregated.
             if self._is_glob(arg):
-                names = self._match_glob(arg)
-                if not names:
-                    self.send_message(self.t("glob_no_match", pattern=arg))
-                    return
-                lines = [self.t("glob_action_header", action=action,
-                                count=len(names), pattern=arg)]
-                for nm in names:
-                    ok, msg = self._lifecycle_action(action, nm, checker)
-                    lines.append(("✅ " if ok else "❌ ") + msg)
-                self.send_message("\n".join(lines))
+                matched_any = False
+                for host in (targets or [None]):
+                    backend = self._backend_for(host)
+                    names = self._match_glob(arg, backend=backend)
+                    if not names:
+                        continue
+                    matched_any = True
+                    lines = [self.t("glob_action_header", action=action,
+                                    count=len(names), pattern=arg)]
+                    for nm in names:
+                        ok, msg = self._lifecycle_action(
+                            action, nm, self._checker_for(host, checker),
+                            backend=backend)
+                        lines.append(("✅ " if ok else "❌ ") + msg
+                                     + self._host_tag(host))
+                    self.send_message("\n".join(lines) + hint)
+                if not matched_any:
+                    self.send_message(self.t("glob_no_match", pattern=arg) + hint)
                 return
             # include_stopped is now the default — see _resolve_container
             # docstring for rationale (#25).
-            resolved, err = self._resolve_container(arg)
-            if not resolved:
-                self.send_message(err)
-                return
-            ok, msg = self._lifecycle_action(action, resolved, checker)
-            self.send_message(msg)
+            resolved_any = False
+            first_err = None
+            for host in (targets or [None]):
+                backend = self._backend_for(host)
+                resolved, err = self._resolve_container(arg, backend=backend)
+                if not resolved:
+                    first_err = first_err or err
+                    continue
+                resolved_any = True
+                ok, msg = self._lifecycle_action(
+                    action, resolved, self._checker_for(host, checker),
+                    backend=backend)
+                self.send_message(msg + self._host_tag(host) + hint)
+            if not resolved_any:
+                self.send_message(first_err + hint)
 
         elif text == "/selfupdate":
             self._handle_selfupdate()
@@ -3175,11 +3492,20 @@ class TelegramBot:
                     continue
                 seen.add(help_key)
                 command_lines.append(self.t(help_key))
+            # Multi-host block (#7) — only with more than one host managed.
+            # A single-host install has no `@host` to type and gets the
+            # exact help text it got before.
+            hosts_block = ""
+            if self._multi():
+                hosts_block = self.t(
+                    "help_hosts",
+                    hosts=", ".join(f"`{n}`" for n in self.hosts.names)) + "\n\n"
             self.send_message(
                 self.t("help_title", version=VERSION) + "\n\n"
                 + self.t("help_autocomplete_hint") + "\n\n"
                 + self.t("help_commands") + "\n"
                 + "\n".join(command_lines) + "\n\n"
+                + hosts_block
                 + self.t("help_per_command_hint") + "\n\n"
                 + self.t("help_docs_footer")
             )

@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Как часто опрашивается состояние контейнеров. Минимум 15 секунд.",
   "web_password_label": "Пароль веб-интерфейса",
   "web_password_placeholder": "оставьте пустым = без изменений",
-  "web_password_hint": "Пароль для HTTP Basic Auth этого интерфейса. Оставьте пустым, чтобы сохранить текущий; новый пароль вступит в силу немедленно."
+  "web_password_hint": "Пароль для HTTP Basic Auth этого интерфейса. Оставьте пустым, чтобы сохранить текущий; новый пароль вступит в силу немедленно.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Con qué frecuencia se consulta el estado de los contenedores. Mínimo 15 segundos.",
   "web_password_label": "Contraseña de la interfaz web",
   "web_password_placeholder": "dejar vacío = sin cambios",
-  "web_password_hint": "Contraseña para la autenticación HTTP básica de esta interfaz. Déjalo vacío para mantener la actual; una nueva contraseña se aplica de inmediato."
+  "web_password_hint": "Contraseña para la autenticación HTTP básica de esta interfaz. Déjalo vacío para mantener la actual; una nueva contraseña se aplica de inmediato.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

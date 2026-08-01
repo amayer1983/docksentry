@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Hoe vaak de containerstatus wordt uitgelezen. Minimaal 15 seconden.",
   "web_password_label": "Wachtwoord webinterface",
   "web_password_placeholder": "leeg laten = ongewijzigd",
-  "web_password_hint": "Wachtwoord voor HTTP Basic Auth op deze interface. Laat leeg om het huidige te behouden; een nieuw wachtwoord werkt onmiddellijk."
+  "web_password_hint": "Wachtwoord voor HTTP Basic Auth op deze interface. Laat leeg om het huidige te behouden; een nieuw wachtwoord werkt onmiddellijk.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

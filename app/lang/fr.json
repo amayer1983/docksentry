@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Fréquence d’échantillonnage de l’état des conteneurs. Minimum 15 secondes.",
   "web_password_label": "Mot de passe de l’interface web",
   "web_password_placeholder": "laisser vide = inchangé",
-  "web_password_hint": "Mot de passe pour l’authentification HTTP Basic de cette interface. Laissez vide pour conserver l’actuel ; un nouveau mot de passe prend effet immédiatement."
+  "web_password_hint": "Mot de passe pour l’authentification HTTP Basic de cette interface. Laissez vide pour conserver l’actuel ; un nouveau mot de passe prend effet immédiatement.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

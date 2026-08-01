@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Jak często odpytywany jest stan kontenerów. Minimum 15 sekund.",
   "web_password_label": "Hasło interfejsu web",
   "web_password_placeholder": "puste = bez zmian",
-  "web_password_hint": "Hasło do uwierzytelniania HTTP Basic tego interfejsu. Pozostaw puste, aby zachować obecne; nowe hasło zacznie działać natychmiast."
+  "web_password_hint": "Hasło do uwierzytelniania HTTP Basic tego interfejsu. Pozostaw puste, aby zachować obecne; nowe hasło zacznie działać natychmiast.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

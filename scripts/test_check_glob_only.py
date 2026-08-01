@@ -66,6 +66,19 @@ def _make_bot():
     # Real logic under test — the dispatch + the glob→only plumbing.
     stub._handle_message = types.MethodType(TelegramBot._handle_message, stub)
     stub._select_containers = types.MethodType(TelegramBot._select_containers, stub)
+    # Multi-host targeting (#7) rides along in the dispatch. No registry
+    # here, so `_multi()` is False and all of it is a no-op: `_resolve_targets`
+    # hands back the argument untouched and `targets=None`.
+    stub.hosts = None
+    # `_backend_for(None)` hands back this — never used, because the only
+    # container lookup this test reaches is the stubbed `_match_glob`.
+    stub.backend = None
+    for _m in ("_multi", "_resolve_targets", "_host_hint", "_backend_for",
+               "_checker_for"):
+        setattr(stub, _m, types.MethodType(getattr(TelegramBot, _m), stub))
+    stub._host_tag = staticmethod(TelegramBot._host_tag.__func__
+                                  if hasattr(TelegramBot._host_tag, "__func__")
+                                  else TelegramBot._host_tag)
     # Static helpers: keep them static so `self._is_glob(arg)` doesn't bind self.
     stub._is_glob = staticmethod(TelegramBot._is_glob.__func__
                                  if hasattr(TelegramBot._is_glob, "__func__")
@@ -76,7 +89,8 @@ def _make_bot():
 
     # Faked-out edges: no Docker, no network, no Telegram.
     stub._check_auth = lambda chat_id, user_id, kind="message": True
-    stub._match_glob = lambda pattern, include_stopped=True: list(MATCHED)
+    stub._match_glob = (lambda pattern, include_stopped=True, backend=None:
+                        list(MATCHED))
     stub.t = lambda key, **kw: key
     stub.send_message = lambda text, **kw: stub.sent.append(text)
     stub.notify_updates = lambda updates, auto=False: setattr(stub, "notified", updates)

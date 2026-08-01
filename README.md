@@ -430,6 +430,40 @@ Common pattern: broadcast `/selfupdate` so all hosts update together; target `/s
 
 This is a stepping stone, not a replacement for v2.0 multi-host: you still maintain N bot tokens, N Docksentry containers, N updates. But it makes "single chat, all hosts" usable today.
 
+### Experimental: real multi-host
+
+*Unreleased — in the repo, not in a tagged image yet.*
+
+One Docksentry, several hosts. Point it at the others with `DOCKER_HOSTS`:
+
+```yaml
+environment:
+  - DOCKER_HOSTS=pve1:tcp://pve1:2375, nas:ssh://root@nas
+```
+
+Each entry is `name:endpoint`, and the endpoint is whatever the container CLI takes for `-H`. A **TCP socket / [socket proxy](docs/security.md) is the simplest option** — the same pattern you'd use locally, no keys to manage. SSH endpoints work too and lean on the CLI's own SSH handling, so key-based login has to already succeed non-interactively for the user Docksentry runs as.
+
+The machine Docksentry runs on is always managed and is **not** listed. Leave `DOCKER_HOSTS` unset and everything behaves exactly as a single-host install — no host column, no `@` anywhere.
+
+**Aiming a command at a host** — append `@<host>`:
+
+```
+/check @pve1        check just that host
+/update sonarr @nas update sonarr on nas
+/update @all        update everywhere, deliberately
+```
+
+The default when you *don't* say `@`:
+
+| | without `@` | why |
+|---|---|---|
+| **Looking** — `/check`, `/status`, `/updates` | every host | you almost always want the whole picture |
+| **Changing** — `/update`, `/start`, `/stop`, `/restart` | local host only | so a habit from single-host days can't restart something three boxes away |
+
+A write command that stayed local says so in its reply and points at `@<host>` / `@all`, so the rule is visible without reading this.
+
+**What it does not do yet:** the Web UI lists every host's containers but its buttons only act on the local one, and self-update is local-only by design — Docksentry updates the instance it runs in, not the ones on your other boxes. A host that can't be reached is reported and skipped; it won't stall the others.
+
 ## Web UI
 
 Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, a Container Events history (the same crash/OOM/health-flip log you get from `/events`), and full settings management — all in a dark-themed, mobile-responsive interface.

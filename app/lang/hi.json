@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "कंटेनर स्थिति कितनी बार जाँची जाती है। न्यूनतम 15 सेकंड।",
   "web_password_label": "वेब UI पासवर्ड",
   "web_password_placeholder": "खाली छोड़ें = अपरिवर्तित",
-  "web_password_hint": "इस इंटरफ़ेस पर HTTP Basic प्रमाणीकरण के लिए पासवर्ड। वर्तमान बनाए रखने के लिए खाली छोड़ें; नया पासवर्ड तुरंत प्रभावी होगा।"
+  "web_password_hint": "इस इंटरफ़ेस पर HTTP Basic प्रमाणीकरण के लिए पासवर्ड। वर्तमान बनाए रखने के लिए खाली छोड़ें; नया पासवर्ड तुरंत प्रभावी होगा।",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

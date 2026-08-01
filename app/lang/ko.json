@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "컨테이너 상태를 확인하는 빈도입니다. 최소 15초.",
   "web_password_label": "웹 UI 비밀번호",
   "web_password_placeholder": "비우면 = 변경 없음",
-  "web_password_hint": "이 인터페이스의 HTTP Basic 인증 비밀번호입니다. 현재 비밀번호를 유지하려면 비워 두세요. 새 비밀번호는 즉시 적용됩니다."
+  "web_password_hint": "이 인터페이스의 HTTP Basic 인증 비밀번호입니다. 현재 비밀번호를 유지하려면 비워 두세요. 새 비밀번호는 즉시 적용됩니다.",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

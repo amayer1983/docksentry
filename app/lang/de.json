@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "Wie oft der Container-Status abgefragt wird. Minimum 15 Sekunden.",
   "web_password_label": "Web-UI-Passwort",
   "web_password_placeholder": "leer lassen = unverändert",
-  "web_password_hint": "Passwort für die HTTP-Basic-Auth dieser Oberfläche. Leer lassen, um das aktuelle beizubehalten; ein neues Passwort wird sofort wirksam."
+  "web_password_hint": "Passwort für die HTTP-Basic-Auth dieser Oberfläche. Leer lassen, um das aktuelle beizubehalten; ein neues Passwort wird sofort wirksam.",
+  "host_unknown": "❌ Unbekannter Host `{name}`. Verwaltete Hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Nur der lokale Host — mit `@<host>` oder `@all` erreichst du die anderen.",
+  "host_check_failed": "⚠️ Host `{host}` konnte nicht geprüft werden: {error}",
+  "help_hosts": "🖥 *Mehrere Hosts:* `@<host>` richtet einen Befehl an einen bestimmten Host, `@all` an alle — z.B. `/check @nas` oder `/update sonarr @nas`.\nOhne `@`: `/check`, `/status` und `/updates` schauen auf allen Hosts nach; `/update`, `/start`, `/stop` und `/restart` wirken nur auf dem lokalen Host.\nVerwaltete Hosts: {hosts}"
 }

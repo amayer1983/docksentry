@@ -571,5 +571,9 @@
   "web_monitor_interval_hint": "采样容器状态的频率。最少 15 秒。",
   "web_password_label": "Web UI 密码",
   "web_password_placeholder": "留空 = 不修改",
-  "web_password_hint": "此界面 HTTP Basic 认证的密码。留空以保留当前密码；新密码将立即生效。"
+  "web_password_hint": "此界面 HTTP Basic 认证的密码。留空以保留当前密码；新密码将立即生效。",
+  "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
+  "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
+  "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
+  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }
