@@ -3662,7 +3662,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     detail = _strip_md(h.get('detail', '').replace('📅', '🗓️'))
                     rows += f"""<tr>
 <td>{_e(h.get('timestamp', ''))}</td>
-<td>{_e(h.get('container', ''))}</td>
+<td>{_e(h.get('container', ''))}{(' <span class="muted">@' + _e(h['host']) + '</span>') if h.get('host') else ''}</td>
 <td>{icon}</td>
 <td style="font-size:12px">{_e(detail)}</td>
 </tr>"""

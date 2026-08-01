@@ -2618,10 +2618,29 @@ class TelegramBot:
                 self.remove_buttons(chat_id, msg_id)
             self.answer_callback(callback["id"], self.t("ok_manual_cb"))
             self.send_message(self.t("manual_message"))
-            try:
-                os.remove(self.config.pending_file)
-            except OSError:
-                pass
+            # "I'll do it manually" dismisses the notification the user is
+            # looking at — not every host's queue. Deleting the whole file
+            # here silently cleared pending updates for boxes the user
+            # never saw, and they only reappeared on that host's next scan
+            # (#7). Without a registry there is exactly one host and this
+            # is the old behaviour.
+            if self.hosts and getattr(self.hosts, "is_multi", False):
+                from container_store import LOCAL_HOST as _LOCAL
+                keep = [u for u in read_pending(self.config.pending_file)
+                        if pending_host(u) != _LOCAL]
+                if keep:
+                    from container_store import atomic_write_json
+                    atomic_write_json(self.config.pending_file, keep)
+                else:
+                    try:
+                        os.remove(self.config.pending_file)
+                    except OSError:
+                        pass
+            else:
+                try:
+                    os.remove(self.config.pending_file)
+                except OSError:
+                    pass
         elif data.startswith("update_one:"):
             # The payload is a host key (#7): `nginx` locally, `nas/nginx`
             # for a remote host. `_run_single_update` splits it; only the

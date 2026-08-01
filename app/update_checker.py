@@ -1197,6 +1197,7 @@ class UpdateChecker:
 
     def _save_history(self, name, image, success, detail=""):
         """Append an entry to the update history file."""
+        from container_store import LOCAL_HOST as _LOCAL
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "container": name,
@@ -1204,6 +1205,13 @@ class UpdateChecker:
             "success": success,
             "detail": detail,
         }
+        # Which box this happened on (#7). Only written for remote hosts:
+        # an entry without the key reads as local, so every history file
+        # written before multi-host stays valid and the Web UI's history
+        # page needs no migration.
+        _host = getattr(self.backend, "name", _LOCAL) or _LOCAL
+        if _host != _LOCAL:
+            entry["host"] = _host
         history = []
         if os.path.exists(self.config.history_file):
             try:
