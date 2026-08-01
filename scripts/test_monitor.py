@@ -94,6 +94,29 @@ def _mem_checks(checks):
     remote.backend = _t.SimpleNamespace(name="nas", endpoint="ssh://nas")
     checks["remote monitor reports no host memory"] = remote._host_memory() == ""
 
+    # A host that loses twenty containers at once produces twenty events in
+    # one tick, and the snapshot costs ~2s each. Serialised, that delays the
+    # very alerts it decorates — so all events in a sweep share one picture.
+    calls = []
+
+    class _Stats:
+        returncode = 0
+        stdout = "a|100MiB / 1GiB\nb|50MiB / 1GiB"
+
+    burst = ContainerMonitor.__new__(ContainerMonitor)
+    burst.backend = _t.SimpleNamespace(
+        name="local",
+        stats=lambda **kw: (calls.append(1), _Stats())[1])
+    burst._snap_cache = None
+    first = burst._memory_snapshot()
+    burst._memory_snapshot(); burst._memory_snapshot()
+    checks["a burst of events shares one stats call"] = len(calls) == 1
+    checks["cached snapshot still renders"] = "a 100MiB" in first
+    # A new tick must measure afresh, not reprint a stale picture.
+    burst._snap_cache = None
+    burst._memory_snapshot()
+    checks["next tick measures afresh"] = len(calls) == 2
+
 
 def main():
     checks = {}

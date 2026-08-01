@@ -300,6 +300,14 @@ class ContainerMonitor:
 
         sent = []
         now_ts = time.monotonic()
+        # One `stats` call per tick at most. A host that loses twenty
+        # containers at once produces twenty events in this loop, and the
+        # snapshot costs ~2s each — serialised, that would delay the very
+        # alerts it is decorating by the better part of a minute. All those
+        # events happened in the same sweep anyway, so they share one
+        # picture. Cleared here rather than kept, so the next tick measures
+        # afresh instead of reporting a stale snapshot.
+        self._snap_cache = None
         for kind, name, detail in events:
             key = (name, kind)
             last = self._last_sent.get(key, 0)
@@ -425,21 +433,28 @@ class ContainerMonitor:
         fired). One `docker stats --no-stream` at event time — about two
         seconds on twenty containers, which is why it hangs off an event
         and never off a poll."""
-        try:
-            r = self.backend.stats(fmt="{{.Name}}|{{.MemUsage}}", timeout=30)
-            if r.returncode != 0:
-                return ""
+        rows = getattr(self, "_snap_cache", None)
+        if rows is None:
             rows = []
-            for line in r.stdout.strip().split("\n"):
-                if "|" not in line:
-                    continue
-                cname, usage = line.split("|", 1)
-                used = usage.split("/")[0].strip()
-                rows.append((self._mem_to_bytes(used), cname.strip(), used))
-            rows.sort(reverse=True)
-            return " · ".join(f"{cname} {used}" for _, cname, used in rows[:top])
-        except (subprocess.SubprocessError, OSError):
-            return ""
+            try:
+                r = self.backend.stats(fmt="{{.Name}}|{{.MemUsage}}",
+                                       timeout=30)
+                if r.returncode == 0:
+                    for line in r.stdout.strip().split("\n"):
+                        if "|" not in line:
+                            continue
+                        cname, usage = line.split("|", 1)
+                        used = usage.split("/")[0].strip()
+                        rows.append(
+                            (self._mem_to_bytes(used), cname.strip(), used))
+                    rows.sort(reverse=True)
+            except (subprocess.SubprocessError, OSError):
+                rows = []
+            # Cached even when empty: a daemon that just refused one stats
+            # call will refuse the next nineteen too, and a burst of events
+            # should not turn into a burst of doomed subprocesses.
+            self._snap_cache = rows
+        return " · ".join(f"{cname} {used}" for _, cname, used in rows[:top])
 
     def _notify(self, kind, name, detail):
         t = self.bot.t
