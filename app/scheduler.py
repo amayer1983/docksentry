@@ -91,10 +91,16 @@ def cron_next_ticks(expr, count=3, after=None, max_minutes=60 * 24 * 366):
 
 
 class Scheduler:
-    def __init__(self, config, checker, bot):
+    def __init__(self, config, checker, bot, hosts=None):
         self.config = config
+        # The local host's checker. Disk space, cleanup and the monitor are
+        # about the machine Docksentry runs on, so they stay on this one
+        # even when several hosts are managed.
         self.checker = checker
         self.bot = bot
+        # Every managed host (#7). None → single-host, and the loop below
+        # runs exactly once against `checker`, i.e. unchanged behaviour.
+        self.hosts = hosts
         self.running = False
         self.thread = None
         # In-memory fallbacks so a failed state-file write (e.g. a full disk —
@@ -103,6 +109,18 @@ class Scheduler:
         # reset on restart. See _run / _check_disk_space.
         self._weekly_sent_date = None
         self._disk_warned_at = None
+
+    def _checkers(self):
+        """(checker, host_name) for every managed host, local first.
+
+        Falls back to the single checker when no registry was handed in, so
+        a single-host install walks a one-item list and behaves exactly as
+        before — the host name is empty there, which keeps log lines free of
+        a label that would only be noise.
+        """
+        if not self.hosts:
+            return [(self.checker, "")]
+        return [(h.checker, h.name) for h in self.hosts]
 
     def start(self):
         self.running = True
@@ -178,9 +196,14 @@ class Scheduler:
                 notifier = getattr(self.bot, "notifier", None)
                 if notifier and notifier.has_channels():
                     notifier.send_message(resumed_msg)
-                updates = self.checker.check_all()
-                if updates:
-                    self.bot.handle_autoupdates(updates, self.checker)
+                for host_checker, host_name in self._checkers():
+                    try:
+                        updates = host_checker.check_all()
+                        if updates:
+                            self.bot.handle_autoupdates(updates, host_checker)
+                    except Exception as e:
+                        where = f" on {host_name}" if host_name else ""
+                        print(f"Deferred check error{where}: {e}")
             except Exception as e:
                 print(f"Deferred check error: {e}")
 
@@ -269,13 +292,19 @@ class Scheduler:
                         print(f"Auto selfupdate error: {e}")
 
                 auto_updated = 0
-                try:
-                    updates = self.checker.check_all()
-                    if updates:
-                        auto_updated = self.bot.handle_autoupdates(updates, self.checker) or 0
-                    # If no updates, stay quiet (--quiet behavior)
-                except Exception as e:
-                    print(f"Scheduled check error: {e}")
+                for host_checker, host_name in self._checkers():
+                    try:
+                        updates = host_checker.check_all()
+                        if updates:
+                            auto_updated += self.bot.handle_autoupdates(
+                                updates, host_checker) or 0
+                        # If no updates, stay quiet (--quiet behavior)
+                    except Exception as e:
+                        # One unreachable or misbehaving host must not stop
+                        # the others from being checked (#7) — report it and
+                        # carry on down the list.
+                        where = f" on {host_name}" if host_name else ""
+                        print(f"Scheduled check error{where}: {e}")
 
                 # Auto cleanup after successful auto-updates. The grace-hours
                 # filter (default 24h) in cleanup_images() prevents removing
