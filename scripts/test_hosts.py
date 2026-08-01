@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import container_backend                       # noqa: E402
 from container_store import ContainerStore, LOCAL_HOST   # noqa: E402
 from config import parse_docker_hosts          # noqa: E402
-from hosts import build_hosts                  # noqa: E402
+from hosts import build_hosts, split_host_target, ALL_HOSTS   # noqa: E402
 
 checks = {}
 
@@ -107,6 +107,29 @@ try:
         checks["remote inherits the podman CLI"] = sent[-1][0] == "podman"
 finally:
     container_backend.subprocess = real
+
+
+# ── @host command targeting ──────────────────────────────────────────
+# `/check @pve1` aims one command at one host; `@all` aims it at every
+# host. The token may sit anywhere in the arguments because people write
+# it both ways.
+sh = split_host_target
+checks["no @token → no target"] = sh("sonarr") == ("sonarr", None)
+checks["empty input"] = sh("") == ("", None)
+checks["@host alone"] = sh("@pve1") == ("", "pve1")
+checks["@host after the name"] = sh("sonarr @nas") == ("sonarr", "nas")
+checks["@host before the name"] = sh("@nas sonarr") == ("sonarr", "nas")
+checks["@host in the middle"] = sh("a @nas b") == ("a b", "nas")
+checks["@all is a distinct target"] = sh("@all") == ("", ALL_HOSTS)
+checks["@all is not a host named 'all'"] = ALL_HOSTS != "all"
+checks["host names are case-normalised"] = sh("@NAS")[1] == "nas"
+# A bare "@" is a typo, not a target — leave it in the text rather than
+# silently swallowing an argument.
+checks["bare @ is left alone"] = sh("@") == ("@", None)
+checks["only the first @token is consumed"] = sh("x @a @b") == ("x @b", "a")
+# Telegram's own group addressing is `/check@botname` — no space before
+# the @, handled elsewhere, and never reaches this function as a target.
+checks["glob arguments survive"] = sh("ds_* @nas") == ("ds_*", "nas")
 
 
 def main():

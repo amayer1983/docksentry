@@ -122,3 +122,33 @@ def build_hosts(config, store):
             endpoint=endpoint,
         ))
     return HostRegistry(hosts)
+
+
+#: Sentinel returned by `split_host_target` for an explicit `@all`.
+ALL_HOSTS = "\x00all"
+
+
+def split_host_target(text):
+    """Pull an `@host` token out of a command's argument text (#7).
+
+    `/check @pve1` targets one host; `@all` targets every managed host.
+    Returns `(remaining_text, target)` where target is a host name,
+    `ALL_HOSTS`, or None when no `@token` was given.
+
+    Only the FIRST `@token` is consumed and it may sit anywhere in the
+    arguments, so `/update @nas sonarr` and `/update sonarr @nas` both
+    work — people write it either way and neither is wrong.
+
+    Deliberately NOT applied to the command word itself: Telegram's own
+    group addressing is `/check@botname`, handled earlier and separately.
+    That one has no space before the `@`, this one always does, so the
+    two can't be confused.
+    """
+    parts = (text or "").split()
+    for i, part in enumerate(parts):
+        if not part.startswith("@") or len(part) < 2:
+            continue
+        name = part[1:].strip().lower()
+        target = ALL_HOSTS if name == "all" else name
+        return " ".join(parts[:i] + parts[i + 1:]).strip(), target
+    return (text or "").strip(), None
