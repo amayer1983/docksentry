@@ -87,6 +87,7 @@
   "web_name": "Имя",
   "web_image": "Образ",
   "web_host": "Хост",
+  "web_host_filter_all": "Все хосты",
   "web_host_unreachable": "{host}: недоступен",
   "web_status": "Статус",
   "web_containers_running": "{count} контейнеров запущено",

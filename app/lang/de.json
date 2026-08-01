@@ -169,6 +169,7 @@
   "web_name": "Name",
   "web_image": "Image",
   "web_host": "Host",
+  "web_host_filter_all": "Alle Hosts",
   "web_host_unreachable": "{host}: nicht erreichbar",
   "web_status": "Status",
   "web_containers_running": "{count} Container aktiv",

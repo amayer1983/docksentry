@@ -87,6 +87,7 @@
   "web_name": "Naam",
   "web_image": "Image",
   "web_host": "Host",
+  "web_host_filter_all": "Alle hosts",
   "web_host_unreachable": "{host}: niet bereikbaar",
   "web_status": "Status",
   "web_containers_running": "{count} containers actief",

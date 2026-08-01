@@ -540,6 +540,19 @@ body.mode-advanced .simple-hint { display: none; }
 }
 .row-info { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 tr.is-hidden { display: none; }
+/* Host filter next to the search box (multi-host only). Deliberately NOT
+   .search-input: that class paints a magnifying glass into its padding-left,
+   which on a dropdown reads as "type here" next to an arrow that says the
+   opposite. Same height and metrics, no icon, and no growing — the search
+   field keeps the leftover width. */
+.host-filter {
+    margin: 0;
+    width: auto;
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--bg);
+}
 
 /* ── Mobile responsive ──────────────────────────────────────── */
 @media (max-width: 700px) {

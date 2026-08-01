@@ -35,6 +35,8 @@ Live overview of all running containers with:
 - **Bulk actions bar** — multi-select containers via checkboxes, then apply one of: Update / Pin / Unpin / Auto-update on / Auto-update off in a single click
 - **Major-update banner** — when a major bump is held back by `⚠ on`, a yellow banner at the top lists pending containers with **Confirm** / **Skip** buttons
 
+With `DOCKER_HOSTS` set, the table also gets a **Host** column, a host dropdown next to the search box that narrows the list to one host, and every button acts on the host of the row it sits on — updating `nginx` on the NAS never touches the local `nginx`. Deferred major bumps are listed per host too. A host that can't be reached shows up as a single line instead of taking the page down. The per-container detail page (click a container's name) is local-only, so remote rows aren't linked to it. Without `DOCKER_HOSTS` none of this renders and the page is exactly what it always was.
+
 ### Logs
 
 View container logs directly in the browser:

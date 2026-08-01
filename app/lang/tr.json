@@ -87,6 +87,7 @@
   "web_name": "Ad",
   "web_image": "İmaj",
   "web_host": "Sunucu",
+  "web_host_filter_all": "Tüm ana makineler",
   "web_host_unreachable": "{host}: erişilemiyor",
   "web_status": "Durum",
   "web_containers_running": "{count} konteyner çalışıyor",

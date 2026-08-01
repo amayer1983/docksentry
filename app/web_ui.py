@@ -290,6 +290,22 @@ def _validate_webhook_url(url, kind="generic"):
     return True, None
 
 
+class _StoreScope:
+    """The two attributes `update_engine.host_store` reads to decide which
+    view of the container state a host gets (#7).
+
+    `host_store` is deliberately a free function taking an "owner" rather
+    than a method, so the update orchestration can run with several kinds
+    of `self`. The Web UI has no such object — the handler is a class, not
+    an instance, at the point the store has to be resolved — so it brings
+    the smallest possible one.
+    """
+
+    def __init__(self, store, hosts):
+        self.store = store
+        self.hosts = hosts
+
+
 def create_handler(config, checker, bot, store, password=None, backend=None,
                    hosts=None):
     """Create a request handler with access to app components."""
@@ -301,10 +317,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
         from container_backend import get_backend
         backend = get_backend(config)
 
-    # Multi-host registry (#7), DISPLAY ONLY for now: the status table
-    # lists every managed host, every action still runs against `backend`
-    # — i.e. the local host. `hosts is None` (render tests, embedders) and
-    # the single-host case are the same thing here: nothing extra renders.
+    # Multi-host registry (#7). The status table lists every managed host
+    # and every action runs against the host its row belongs to, resolved
+    # through the registry by `_resolve_host` below. `hosts is None`
+    # (render tests, embedders) and the single-host case are the same thing
+    # here: nothing extra renders and nothing extra resolves.
     def _multi_hosts():
         """The registry when it actually manages more than the local host.
 
@@ -315,6 +332,60 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return hosts if (hosts is not None and hosts.is_multi) else None
         except Exception:
             return None
+
+    def _resolve_host(name):
+        """The `(name, backend, checker, store)` an action must act through.
+
+        `name` comes out of `container_store.split_host_key` on the `name`
+        field of a request — deliberately the SAME key shape the Telegram
+        callbacks use (`nginx` local, `nas/nginx` remote), so there is one
+        identifier format in the project and not two. A bare name splits to
+        the local host, which is what every bookmarked POST, every
+        single-host form and every hand-rolled client sends.
+
+        Two rules do the actual safety work here:
+
+          * a request that names no host is LOCAL. Never "guess from the
+            container name" — two boxes may both run an `nginx` and the
+            page that offered the button knows perfectly well which one it
+            meant.
+          * a request naming a host this instance does not manage resolves
+            to **None**, and the caller must then do nothing at all. A
+            refused action is a click the user repeats; an action applied
+            to the wrong machine is not recoverable.
+
+        The local host always gets back the very objects `create_handler`
+        was constructed with, so no single-host code path is even reachable
+        by the registry.
+        """
+        from container_store import LOCAL_HOST
+        name = (name or "").strip().lower()
+        if not name or name == LOCAL_HOST:
+            return LOCAL_HOST, backend, checker, _store_for(LOCAL_HOST)
+        multi = _multi_hosts()
+        if multi is None:
+            return None
+        host = multi.get(name)
+        if host is None:
+            return None
+        if host.is_local:
+            return LOCAL_HOST, backend, checker, _store_for(LOCAL_HOST)
+        return host.name, host.backend, host.checker, host.store
+
+    #: The `.store` / `.hosts` pair `update_engine.host_store` resolves
+    #: against — built once, since neither ever changes for a handler.
+    _scope = _StoreScope(store, hosts)
+
+    def _store_for(host_name):
+        """Container state scoped to one host — see `update_engine.host_store`
+        for why a single-host install deliberately gets the RAW store back
+        rather than a `HostScopedStore(store, "local")`."""
+        from update_engine import host_store
+        return host_store(_scope, host_name)
+
+    # The one host every request means when it names none. Bound here so
+    # the comparisons below read as prose rather than as a string literal.
+    from container_store import LOCAL_HOST as _LOCAL_HOST
 
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -413,16 +484,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return urlparse(self.path).path
 
         def _get_containers(self):
+            """Every running container on the LOCAL host.
+
+            Kept as a zero-argument method: it is the seam the render tests
+            replace, and `_containers_on` below is the same code with the
+            backend as a parameter so a remote host's rows can be built from
+            exactly the same data (health, labels, OCI version, image id) as
+            the local ones.
+            """
+            return self._containers_on(backend)
+
+        def _containers_on(self, be, timeout=None):
             # Use docker inspect (not docker ps Status-string parsing) so health
             # detection works on both Docker and Podman. Podman's REST API does
             # not append `(healthy)` to the Status field — that's a Docker CLI
             # cosmetic — but State.Health.Status is consistently provided by
             # both. Reported by LeeNX in #28 for podman-compose containers.
-            ids_p = backend.ps(quiet=True)
+            #
+            # `timeout=None` is what every call passed before this took a
+            # parameter, and the backend then applies its own default — so
+            # the local path issues byte-identical argv with identical
+            # semantics. Remote callers pass a short one: an endpoint that
+            # answers slowly must not hold the status page.
+            ids_p = be.ps(quiet=True, timeout=timeout)
             ids = [i for i in ids_p.stdout.strip().split("\n") if i]
             if not ids:
                 return []
-            ins_p = backend.inspect(ids)
+            ins_p = be.inspect(ids, timeout=timeout)
             try:
                 inspected = json.loads(ins_p.stdout) or []
             except (json.JSONDecodeError, ValueError):
@@ -444,7 +532,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             })
             image_info = {}  # image_ref -> {"version": "...", "short_id": "abcd1234"}
             if unique_images:
-                img_p = backend.image_inspect(unique_images)
+                img_p = be.image_inspect(unique_images, timeout=timeout)
                 try:
                     img_data = json.loads(img_p.stdout) or []
                 except (json.JSONDecodeError, ValueError):
@@ -623,6 +711,55 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             pre = f" {attrs}" if attrs else ""
             return (f'<a{pre} href="{_e(url)}" target="_blank" '
                     f'rel="noopener noreferrer" title="{_e(title)}">{text}</a>')
+
+        def _action_target(self, params, field="name"):
+            """Who an action request is about: `(host, name, backend,
+            checker, store)`, or **None** when it must not run (#7).
+
+            The `name` field of every action POST is a HOST KEY — `nginx`
+            for the local host, `nas/nginx` for a remote one — which is the
+            same identifier `container_store.host_key` writes into the
+            state files and the same one the Telegram callbacks carry. One
+            format, three surfaces.
+
+            Two ways to get None, and both mean "do nothing":
+
+              * an empty name, as before;
+              * a host this instance does not manage — a form from before
+                a `DOCKER_HOSTS` edit, or a hand-rolled POST. Falling back
+                to the local host there is precisely the wrong-host bug
+                this whole feature has to not have.
+
+            A name with no host in it is the LOCAL host, always. That is
+            what every bookmarked POST, every single-host form and every
+            older client sends, so they all keep working untouched.
+            """
+            from container_store import split_host_key
+            raw = (params.get(field, [""])[0] or "").strip()
+            if not raw:
+                return None
+            host_name, name = split_host_key(raw)
+            if not name:
+                return None
+            resolved = _resolve_host(host_name)
+            if resolved is None:
+                return None
+            hname, hbackend, hchecker, hstore = resolved
+            return hname, name, hbackend, hchecker, hstore
+
+        def _back_to_container(self, target):
+            """Where a per-container form returns to after it saved.
+
+            The detail view answers for the local host, so a remote target
+            goes back to the status table instead of to a URL that would
+            describe a different machine's container of the same name.
+            `None` — nothing was done — also lands on the table, which is
+            what the old `if name else "/"` did.
+            """
+            if target is None:
+                return "/"
+            return (f"/container/{target[1]}" if target[0] == _LOCAL_HOST
+                    else "/")
 
         def _get_pending(self, host=None):
             """Pending updates for ONE host — the local one by default.
@@ -1223,9 +1360,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0]
-                if name:
-                    threading.Thread(target=self._api_update, args=(name,)).start()
+                key = params.get("name", [""])[0].strip()
+                if key:
+                    threading.Thread(target=self._api_update, args=(key,)).start()
                 self._send_redirect("/")
             elif path == "/api/check_one":
                 # Per-container update check from the Status table (#50).
@@ -1237,8 +1374,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
-                response = self._api_check_one(name)
+                target = self._action_target(params)
+                response = ({"ok": False, "error": "missing name"}
+                            if target is None
+                            else self._api_check_one(target[1], target[3]))
                 payload = json.dumps(response).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1249,25 +1388,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0]
-                if name:
-                    store.pin(name)
+                target = self._action_target(params)
+                if target is not None:
+                    # That host's store view, so pinning `nginx` on the NAS
+                    # cannot pin the local `nginx` too (#7).
+                    target[4].pin(target[1])
                 self._send_redirect("/")
             elif path == "/api/unpin":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0]
-                if name:
-                    store.unpin(name)
+                target = self._action_target(params)
+                if target is not None:
+                    target[4].unpin(target[1])
                 self._send_redirect("/")
             elif path == "/api/autoupdate":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0]
-                if name and not self._is_own_container(name):
-                    store.toggle_auto(name)
+                target = self._action_target(params)
+                # The self-guard is about THIS process, which only ever runs
+                # on the local host — a remote box's container that happens
+                # to be called `docksentry` is somebody else's instance and
+                # its toggle is a perfectly ordinary one.
+                if target is not None and not (
+                        target[0] == _LOCAL_HOST
+                        and self._is_own_container(target[1])):
+                    target[4].toggle_auto(target[1])
                 # else: our own container. Auto-update for Docksentry is
                 # AUTO_SELFUPDATE (Settings › Updates), never the per-container
                 # opt-in list — the update flow skips self, and main.py strips
@@ -1282,18 +1429,27 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0]
+                target = self._action_target(params)
                 action = params.get("action", [""])[0]
-                if name and action in ("start", "stop", "restart"):
-                    if action in ("stop", "restart") and checker._would_kill_self(name):
+                if target is not None and action in ("start", "stop", "restart"):
+                    _h, name, _be, _ck, _st = target
+                    # Self-detection resolves the container THIS process runs
+                    # in, which is by definition local — running it against a
+                    # remote host would refuse a legitimate action on a
+                    # same-named container over there.
+                    if (action in ("stop", "restart") and _h == _LOCAL_HOST
+                            and checker._would_kill_self(name)):
                         # Silently no-op — the Web UI shouldn't have shown
                         # the button in the first place, but defense in depth.
                         pass
                     else:
                         # Reuse the bot's lifecycle helper for consistent
-                        # behaviour (graceful timeout, error reporting).
+                        # behaviour (graceful timeout, error reporting). The
+                        # checker/backend/host triple has to describe ONE
+                        # machine, so all three come from the same target.
                         try:
-                            bot._lifecycle_action(action, name, checker)
+                            bot._lifecycle_action(action, name, _ck,
+                                                  backend=_be, host=_h)
                         except Exception as e:
                             print(f"Lifecycle action failed: {e}")
                 ref = self.headers.get("Referer", "/")
@@ -1309,10 +1465,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
+                target = self._action_target(params)
                 note = params.get("note", [""])[0]
-                if name:
-                    store.set_note(name, note)
+                if target is not None:
+                    target[4].set_note(target[1], note)
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)
@@ -1384,11 +1540,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
+                target = self._action_target(params)
                 url = params.get("url", [""])[0].strip()
                 outcome = ""
-                if name:
-                    ok = store.set_link(name, url)
+                if target is not None:
+                    ok = target[4].set_link(target[1], url)
                     if not url:
                         outcome = "cleared"
                     else:
@@ -1762,10 +1918,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
+                target = self._action_target(params)
+                name = target[1] if target is not None else ""
+                wstore = target[4] if target is not None else store
                 action = params.get("action", ["save"])[0]
                 if name and action == "delete":
-                    store.clear_update_window(name)
+                    wstore.clear_update_window(name)
                 elif name and action == "save":
                     start = params.get("start", [""])[0].strip()
                     end = params.get("end", [""])[0].strip()
@@ -1775,67 +1933,74 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     import re as _re
                     if (_re.match(r"^([01][0-9]|2[0-3]):[0-5][0-9]$", start)
                             and _re.match(r"^([01][0-9]|2[0-3]):[0-5][0-9]$", end)):
-                        store.set_update_window(name, start, end, weekdays)
+                        wstore.set_update_window(name, start, end, weekdays)
                 self._send_redirect("/settings#windows")
             elif path == "/api/ask_major":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
-                if name:
-                    store.toggle_ask_before_major(name)
+                target = self._action_target(params)
+                if target is not None:
+                    target[4].toggle_ask_before_major(target[1])
                 self._send_redirect("/")
             elif path == "/api/trust_running":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
-                if name:
-                    store.toggle_trust_running(name)
+                target = self._action_target(params)
+                if target is not None:
+                    target[4].toggle_trust_running(target[1])
                 self._send_redirect("/")
             elif path == "/api/protect":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
-                if name:
-                    store.toggle_protect_stop(name)
-                self._send_redirect(f"/container/{name}" if name else "/")
+                target = self._action_target(params)
+                if target is not None:
+                    target[4].toggle_protect_stop(target[1])
+                self._send_redirect(self._back_to_container(target))
             elif path == "/api/cooldown":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
+                target = self._action_target(params)
                 seconds = params.get("seconds", ["0"])[0].strip()
-                if name:
-                    store.set_cooldown(name, seconds)
-                self._send_redirect(f"/container/{name}" if name else "/")
+                if target is not None:
+                    target[4].set_cooldown(target[1], seconds)
+                self._send_redirect(self._back_to_container(target))
             elif path == "/api/major_confirm":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
-                name = params.get("name", [""])[0].strip()
+                raw = params.get("name", [""])[0].strip()
+                target = self._action_target(params)
                 action = params.get("action", [""])[0]
-                if name and action == "confirm":
+                if target is not None and action == "confirm":
+                    # `_confirm_major_update` takes the host key itself and
+                    # resolves the checker for that host — the same call the
+                    # Telegram button makes, so both surfaces resume the
+                    # update on the machine it was deferred on.
                     threading.Thread(target=bot._confirm_major_update,
-                                     args=(checker, name)).start()
-                elif name and action == "reject":
-                    store.remove_pending_major(name)
+                                     args=(checker, raw)).start()
+                elif target is not None and action == "reject":
+                    target[4].remove_pending_major(target[1])
                 self._send_redirect("/")
             elif path == "/api/bulk":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
                 action = params.get("action", [""])[0]
-                names = params.get("names", [])
+                keys = params.get("names", [])
                 # Form sends a single comma-separated value (from JS join);
                 # fall back to multi-value POST if browser sends repeated key.
-                if len(names) == 1 and "," in names[0]:
-                    names = [n.strip() for n in names[0].split(",") if n.strip()]
-                names = [n for n in names if n.strip()]
-                if action and names:
+                # The values are HOST KEYS (bare names for the local host),
+                # exactly like the single-container forms.
+                if len(keys) == 1 and "," in keys[0]:
+                    keys = [n.strip() for n in keys[0].split(",") if n.strip()]
+                keys = [n for n in keys if n.strip()]
+                if action and keys:
                     threading.Thread(
-                        target=self._api_bulk, args=(action, names)
+                        target=self._api_bulk, args=(action, keys)
                     ).start()
                 self._send_redirect("/")
             else:
@@ -2001,13 +2166,362 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </script>"""
             self._send_html(self._render_page(content, "status"))
 
+        def _status_view(self, host_name, hstore, containers, own_name):
+            """Everything ONE host's rows get rendered from, read once.
+
+            A single-host install builds exactly one of these — for the
+            local host, out of the very objects this handler was
+            constructed with (`_store_for("local")` hands back the raw
+            store there) — so every value in it is what the old inline
+            code read, in the same shape.
+
+            `own_name` is empty for every remote host on purpose: a box
+            elsewhere may well run a container called `docksentry`, but it
+            is somebody else's, not the process rendering this page, and
+            the self-guards must not fire on it.
+            """
+            # container_name → (group_id, group_name)
+            groups_lookup = {}
+            for gid, g in (hstore.get_groups() or {}).items():
+                gname = g.get("name", gid)
+                for cname in g.get("containers") or []:
+                    groups_lookup[cname] = (gid, gname)
+            pending = self._get_pending(host_name)
+            return {
+                "host": host_name,
+                "store": hstore,
+                "containers": containers,
+                "own_name": own_name,
+                "pending": pending,
+                "pending_names": [u["name"] for u in pending],
+                "pinned": hstore.get_pinned(),
+                "auto_list": hstore.get_autoupdate(),
+                "ask_major": hstore.get_ask_before_major(),
+                "groups": groups_lookup,
+                "notes": hstore.get_notes(),
+                # One read for the whole table (#52) — `_row_link` takes the
+                # dict, so a 50-container page still touches the store once.
+                "links": hstore.get_links(),
+                "major": hstore.get_pending_major() or {},
+            }
+
+        def _status_row(self, c, view, t, multi):
+            """One `<tr>` of the status table, for the host `view` is about.
+
+            Local and remote rows go through this one function — that is
+            what makes "a remote row has the same buttons" true by
+            construction rather than by two lists of features drifting
+            apart. Every form it emits carries the container's HOST KEY
+            (`container_store.host_key`: `nginx` locally, `nas/nginx`
+            remotely) in the `name` field, which is the identifier the
+            Telegram callbacks already use. On a single-host install that
+            key IS the bare name, so the markup below is unchanged to the
+            byte.
+            """
+            from update_checker import UpdateChecker as _UC
+            from container_store import LOCAL_HOST, host_key
+            host_name = view["host"]
+            hstore = view["store"]
+            own_name = view["own_name"]
+            pending_names = view["pending_names"]
+            pinned = view["pinned"]
+            auto_list = view["auto_list"]
+            ask_major = view["ask_major"]
+            groups_lookup = view["groups"]
+            notes_lookup = view["notes"]
+            links_lookup = view["links"]
+            host_td = (f'\n<td class="host-cell">{_e(host_name)}</td>'
+                       if multi else "")
+            row_open = (f'<tr data-host="{_e(host_name)}">' if multi
+                        else "<tr>")
+            # Are we looking at our own row? Determined up front because
+            # the Auto column, the badges and the action buttons all need
+            # it. `own_name` is empty on hosts where self-detection can't
+            # resolve a name (QNAP/Podman corner cases, see
+            # scripts/test_self_detection.py) — the `own_name and` guard
+            # keeps that case on exactly the old behaviour instead of
+            # matching every container against "".
+            is_self = bool(own_name) and c["name"] == own_name
+            health = c.get("health", "")
+            if health == "healthy":
+                status_badge = '<span class="badge badge-green">healthy</span>'
+            elif health == "unhealthy":
+                status_badge = '<span class="badge badge-red">unhealthy</span>'
+            elif health == "starting":
+                status_badge = '<span class="badge badge-yellow">starting</span>'
+            else:
+                status_badge = '<span class="badge badge-blue">running</span>'
+
+            # Effective states: a docksentry.* label overrides the
+            # stored toggle (#42, @LeeNX) — the table must show what
+            # actually applies, not just what was clicked in the UI.
+            # The 🏷 marker tells the user a label is authoritative
+            # (LeeNX's follow-up: make that visible), and the matching
+            # toggle buttons are disabled — a click couldn't override
+            # the label anyway, pretending otherwise would be a lie.
+            _lab_auto = _UC.label_bool(c.get("labels"), "auto")
+            _lab_pin = _UC.label_bool(c.get("labels"), "pin")
+            _lab_protect = _UC.label_bool(c.get("labels"), "protect")
+            if is_self:
+                # Our own updates are governed by AUTO_SELFUPDATE and by
+                # nothing else (#51, @LeeNX): the opt-in list is skipped
+                # for ourselves by the update flow, and main.py strips our
+                # name from it on every boot. _lab_auto is IGNORED here on
+                # purpose — a docksentry.auto label on the Docksentry
+                # container describes how *another* instance would treat
+                # this container, and no such instance is watching us.
+                # Letting it win over AUTO_SELFUPDATE would show a state
+                # that never applies; that mix-up is the heart of #51.
+                is_auto = bool(config.auto_selfupdate)
+            else:
+                is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
+            is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
+            _protected_c = (_lab_protect if _lab_protect is not None
+                            else hstore.is_protect_stop(c["name"]))
+            _lab_mark = (f' <span class="label-mark" '
+                         f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
+            # Our own row gets its own marker — NOT 🏷. That one says
+            # "a compose label decides this, you can't change it here";
+            # here a setting decides it, and it very much is changeable,
+            # just under Settings › Updates.
+            _self_mark = (f' <span class="self-mark" '
+                          f'title="{_e(t("web_selfupdate_marker_tt"))}">⚙</span>')
+
+            # Badges (compact, only show what's "different" from default)
+            badges = ""
+            if c["name"] in pending_names:
+                badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
+            if is_pinned_c:
+                badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
+                if _lab_pin is not None:
+                    badges += _lab_mark
+            if _protected_c:
+                badges += f' <span class="badge badge-blue" title="{_e(t("web_protect_stop"))}">🛡</span>'
+                if _lab_protect is not None:
+                    badges += _lab_mark
+            # Auto-update now has its own table column (#2, @NotRetarded) —
+            # no longer a name-cell badge that wrapped under long names.
+            if c["name"] in ask_major:
+                badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["alert"]}</span>'
+            if c["name"] in groups_lookup:
+                gid, gname = groups_lookup[c["name"]]
+                badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">{_icon_label("package", _e(gname))}</span>'
+            if c["name"] in notes_lookup:
+                note_text = notes_lookup[c["name"]]
+                badges += f' <span class="note-icon" title="{_e(note_text)}">📝</span>'
+            # Repo / changelog link (#52, @LeeNX): "Not all my
+            # Docksentry instances have Telegram or webhook
+            # integration" — so the URL that notifications wrap
+            # around the name has to be reachable from the table
+            # too. Resolved from labels already in hand, no extra
+            # docker call; see _row_link.
+            _link_url, _link_kind = self._row_link(c, links_lookup)
+            # …but only where the URL actually leads somewhere the
+            # user asked for. `registry` is our own guess at an
+            # overview page derived from the image reference — a
+            # Docker Hub landing page, not a changelog. On this host
+            # that guess covers 12 of 19 containers, so showing it
+            # would put an icon on nearly every row and have most of
+            # them lead somewhere LeeNX didn't ask to go. The table
+            # is also the exact place he's twice asked us to keep
+            # quieter (#37, #46). The guess still stands in Telegram
+            # and on the container page, where there's room to
+            # explain it.
+            if _link_kind == "registry":
+                _link_url = ""
+            # Styled inline instead of via a CSS class: the same
+            # discreet look as .note-icon, minus its `cursor: help`
+            # (this one is genuinely clickable) and minus the
+            # default link underline.
+            _link_a = self._link_anchor(
+                t, _link_url, _link_kind,
+                attrs='class="row-link" style="opacity:.65;margin-left:4px;'
+                      'font-size:12px;text-decoration:none"')
+            if _link_a:
+                badges += f' {_link_a}'
+
+            # Action buttons — icon-only with tooltips. Container name is
+            # escaped for safe use in HTML attributes.
+            #
+            # `name_attr` stays the plain container name — it is what the
+            # user reads and what the /container/ URL uses. `key_attr` is
+            # the HOST KEY every action form and the bulk checkbox carry,
+            # so the endpoint on the other side knows which machine the
+            # click was about without ever guessing from the name. The two
+            # are the same string for the local host, which is why a
+            # single-host page is unchanged to the byte.
+            name_attr = _e(c["name"])
+            key_attr = _e(host_key(host_name, c["name"]))
+            # Dedicated Auto column (#2, @NotRetarded): a clear on/off cell
+            # instead of a name-cell badge that wrapped under long names.
+            # Our own row reads AUTO_SELFUPDATE, so the tooltip has to
+            # say so — "runs on the next scheduled tick" is true, but
+            # the user needs to know *which* switch produced this value.
+            auto_cell = (
+                f'<span class="badge badge-purple" '
+                f'title="{_e(t("web_selfupdate_marker_tt") if is_self else t("web_badge_auto_tt"))}">'
+                f'{t("web_autoupdate_badge")}</span>'
+                if is_auto else '<span class="muted">—</span>')
+            if is_self:
+                # Marker in both states: "—" on our own row means
+                # "self-update is manual", not "nobody clicked the toggle".
+                auto_cell += _self_mark
+            elif _lab_auto is not None:
+                auto_cell += _lab_mark
+            is_askm = c["name"] in ask_major
+            # Per-container check (#50). Not a form — it talks to
+            # /api/check_one via fetch and reports back with a toast,
+            # because a redirect would land the user on the same stale
+            # page the global check already leaves them on. All labels
+            # ride along as data-* attributes; app.js has no translator.
+            check_btn = (
+                f'<button type="button" class="btn-icon" '
+                f'onclick="dsCheckOne(this)" data-name="{key_attr}" '
+                f'data-msg-found="{_e(t("web_check_one_found", name=c["name"]))}" '
+                f'data-msg-none="{_e(t("web_check_one_none", name=c["name"]))}" '
+                f'data-msg-busy="{_e(t("web_check_one_busy"))}" '
+                f'data-msg-error="{_e(t("web_check_one_error"))}" '
+                f'title="{_e(t("web_check_one_tt"))}">{_ICONS["search"]}</button>'
+            )
+            update_btn = (
+                f'<form method="POST" action="/api/update" class="inline-form">'
+                f'<input type="hidden" name="name" value="{key_attr}">'
+                f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
+                f'</form>'
+            ) if c["name"] in pending_names else ''
+            pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
+            _pin_disabled = ' disabled' if _lab_pin is not None else ''
+            _pin_title = (t("web_label_authoritative") if _lab_pin is not None
+                          else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt")))
+            pin_btn = (
+                f'<form method="POST" action="{pin_form_action}" class="inline-form">'
+                f'<input type="hidden" name="name" value="{key_attr}">'
+                f'<button type="submit"{_pin_disabled} class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
+                f'title="{_e(_pin_title)}">{_ICONS["pin"]}</button>'
+                f'</form>'
+            )
+            if is_self:
+                # No toggle on our own row (#51). It used to render fully
+                # active, and a click wrote our name into the opt-in file
+                # — where the update flow ignores it (self is skipped) and
+                # the migration in main.py silently drops it on the next
+                # boot. A button that promises something and then forgets
+                # it is worse than no button: link to the switch that
+                # actually works instead.
+                auto_btn = (
+                    f'<a href="/settings#updates" class="btn-icon" '
+                    f'title="{_e(t("web_selfupdate_settings_tt"))}">{_ICONS["settings"]}</a>'
+                )
+            else:
+                _auto_disabled = ' disabled' if _lab_auto is not None else ''
+                _auto_title = (t("web_label_authoritative") if _lab_auto is not None
+                               else (t("web_autoupdate_disable") if is_auto
+                                     else t("web_autoupdate_enable")))
+                auto_btn = (
+                    f'<form method="POST" action="/api/autoupdate" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{key_attr}">'
+                    f'<button type="submit"{_auto_disabled} class="btn-icon{" is-active" if is_auto else ""}" '
+                    f'title="{_e(_auto_title)}">{_ICONS["settings"]}</button>'
+                    f'</form>'
+                )
+            ask_btn = (
+                f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
+                f'<input type="hidden" name="name" value="{key_attr}">'
+                f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
+                f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
+                f'</form>'
+            )
+            # Lifecycle buttons (#17). Hidden for our own container —
+            # stopping ourselves would kill PID 1 (#16 territory).
+            # Restart is shown in both UI modes (low-risk, reversible);
+            # Stop is advanced-only because it leaves the container
+            # offline until someone starts it back up.
+            if is_self:
+                restart_btn = ""
+                stop_btn = ""
+            else:
+                restart_btn = (
+                    f'<form method="POST" action="/api/lifecycle" class="inline-form">'
+                    f'<input type="hidden" name="name" value="{key_attr}">'
+                    f'<input type="hidden" name="action" value="restart">'
+                    f'<button type="submit" class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
+                    f'</form>'
+                )
+                # Stop hidden for protected containers (#38) — restart
+                # stays. Effective state: docksentry.protect label wins
+                # over the stored toggle (#46, @LeeNX — label-protected
+                # containers still showed the Stop button).
+                if _protected_c:
+                    stop_btn = ""
+                else:
+                    stop_btn = (
+                        f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
+                        f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
+                        # Heading and button label of the confirm modal —
+                        # emoji-stripped like everything else the browser
+                        # renders as plain text (#46): "🟥 Stop" was
+                        # showing up raw in the dialog.
+                        f'data-confirm-title="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
+                        f'data-confirm-label="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
+                        f'data-confirm-danger="1">'
+                        f'<input type="hidden" name="name" value="{key_attr}">'
+                        f'<input type="hidden" name="action" value="stop">'
+                        f'<button type="submit" class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
+                        f'</form>'
+                    )
+            actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
+
+            # Version / hash badge after image — requested in #32 by
+            # @LeeNX so you can tell at a glance whether a container
+            # is on `v30.0.1` vs `v30.0.2` of an upstream image, when
+            # the tag itself (often `latest`) is uninformative. Read
+            # from `org.opencontainers.image.version`; falls back to
+            # short image ID (12 hex) when the label is absent.
+            version_label = c.get("version", "")
+            short_id = c.get("short_id", "")
+            if version_label:
+                version_html = (
+                    f'<span class="badge badge-blue" title="OCI image.version label">'
+                    f'v{_e(version_label.lstrip("v"))}</span>'
+                )
+            elif short_id:
+                version_html = (
+                    f'<span class="badge badge-blue" title="Image short ID (no OCI version label)">'
+                    f'<code style="font-size:11px">{_e(short_id)}</code></span>'
+                )
+            else:
+                version_html = ""
+
+            # The detail page (/container/<name>) reads the LOCAL daemon,
+            # so only local rows link into it. A remote row shows its name
+            # as plain text rather than a link that would quietly describe
+            # a different machine's container of the same name.
+            name_cell = (f'<a href="/container/{name_attr}" '
+                         f'class="container-link">{_e(c["name"])}</a>'
+                         if host_name == LOCAL_HOST else _e(c["name"]))
+            return f"""{row_open}
+<td><input type="checkbox" class="bulk-cb" value="{key_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
+<td>{name_cell}{badges}</td>{host_td}
+<td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
+<td>{status_badge}</td>
+<td>{auto_cell}</td>
+<td class="actions-cell">{actions}</td>
+</tr>"""
+
         def _page_status(self):
-            containers = self._get_containers()
-            pending = self._get_pending()
-            pending_names = [u["name"] for u in pending]
-            pinned = store.get_pinned()
-            auto_list = store.get_autoupdate()
-            ask_major = store.get_ask_before_major()
+            from container_store import LOCAL_HOST, host_key
+            t = _web_translator(config.language)
+
+            # Multi-host (#7). With more than the local host managed the
+            # table gains a Host column plus a host filter, lists every
+            # host's containers, and every button on a row acts on THAT
+            # row's host. `multi` is None for single-host installs and
+            # every fragment below collapses to "" — so their HTML stays
+            # byte-for-byte what it was.
+            multi = _multi_hosts()
+            host_th = f'<th>{t("web_host")}</th>' if multi else ""
+            host_cols = 7 if multi else 6
+
             # Resolve our own container name once per render so we can
             # suppress the Stop/Restart buttons on the row representing
             # ourselves (clicking them would kill the bot — #16).
@@ -2015,354 +2529,97 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 own_name = checker._own_container_name()
             except Exception:
                 own_name = ""
-            # Build a quick lookup container_name → (group_id, group_name)
-            groups_lookup = {}
-            for gid, g in store.get_groups().items():
-                gname = g.get("name", gid)
-                for cname in g.get("containers") or []:
-                    groups_lookup[cname] = (gid, gname)
-            notes_lookup = store.get_notes()
-            # One read for the whole table (#52) — `_row_link` takes the
-            # dict, so a 50-container page still touches the store once.
-            links_lookup = store.get_links()
-            major_pending = store.get_pending_major() or {}
 
-            t = _web_translator(config.language)
-
-            # Multi-host (#7) — DISPLAY ONLY. With more than the local host
-            # managed, the table gains a Host column and lists every host's
-            # containers. Actions stay local: `multi` is None for single-host
-            # installs and every fragment below collapses to "", so their HTML
-            # is byte-for-byte what it was.
-            multi = _multi_hosts()
-            host_th = f'<th>{t("web_host")}</th>' if multi else ""
-            host_cols = 7 if multi else 6
-            local_host_td = (f'\n<td class="host-cell">{_e(multi.local.name)}</td>'
-                             if multi else "")
-
-            rows = ""
-            from update_checker import UpdateChecker as _UC
-            for c in containers:
-                # Are we looking at our own row? Determined up front because
-                # the Auto column, the badges and the action buttons all need
-                # it. `own_name` is empty on hosts where self-detection can't
-                # resolve a name (QNAP/Podman corner cases, see
-                # scripts/test_self_detection.py) — the `own_name and` guard
-                # keeps that case on exactly the old behaviour instead of
-                # matching every container against "".
-                is_self = bool(own_name) and c["name"] == own_name
-                health = c.get("health", "")
-                if health == "healthy":
-                    status_badge = '<span class="badge badge-green">healthy</span>'
-                elif health == "unhealthy":
-                    status_badge = '<span class="badge badge-red">unhealthy</span>'
-                elif health == "starting":
-                    status_badge = '<span class="badge badge-yellow">starting</span>'
-                else:
-                    status_badge = '<span class="badge badge-blue">running</span>'
-
-                # Effective states: a docksentry.* label overrides the
-                # stored toggle (#42, @LeeNX) — the table must show what
-                # actually applies, not just what was clicked in the UI.
-                # The 🏷 marker tells the user a label is authoritative
-                # (LeeNX's follow-up: make that visible), and the matching
-                # toggle buttons are disabled — a click couldn't override
-                # the label anyway, pretending otherwise would be a lie.
-                _lab_auto = _UC.label_bool(c.get("labels"), "auto")
-                _lab_pin = _UC.label_bool(c.get("labels"), "pin")
-                _lab_protect = _UC.label_bool(c.get("labels"), "protect")
-                if is_self:
-                    # Our own updates are governed by AUTO_SELFUPDATE and by
-                    # nothing else (#51, @LeeNX): the opt-in list is skipped
-                    # for ourselves by the update flow, and main.py strips our
-                    # name from it on every boot. _lab_auto is IGNORED here on
-                    # purpose — a docksentry.auto label on the Docksentry
-                    # container describes how *another* instance would treat
-                    # this container, and no such instance is watching us.
-                    # Letting it win over AUTO_SELFUPDATE would show a state
-                    # that never applies; that mix-up is the heart of #51.
-                    is_auto = bool(config.auto_selfupdate)
-                else:
-                    is_auto = _lab_auto if _lab_auto is not None else (c["name"] in auto_list)
-                is_pinned_c = _lab_pin if _lab_pin is not None else (c["name"] in pinned)
-                _protected_c = (_lab_protect if _lab_protect is not None
-                                else store.is_protect_stop(c["name"]))
-                _lab_mark = (f' <span class="label-mark" '
-                             f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
-                # Our own row gets its own marker — NOT 🏷. That one says
-                # "a compose label decides this, you can't change it here";
-                # here a setting decides it, and it very much is changeable,
-                # just under Settings › Updates.
-                _self_mark = (f' <span class="self-mark" '
-                              f'title="{_e(t("web_selfupdate_marker_tt"))}">⚙</span>')
-
-                # Badges (compact, only show what's "different" from default)
-                badges = ""
-                if c["name"] in pending_names:
-                    badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
-                if is_pinned_c:
-                    badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
-                    if _lab_pin is not None:
-                        badges += _lab_mark
-                if _protected_c:
-                    badges += f' <span class="badge badge-blue" title="{_e(t("web_protect_stop"))}">🛡</span>'
-                    if _lab_protect is not None:
-                        badges += _lab_mark
-                # Auto-update now has its own table column (#2, @NotRetarded) —
-                # no longer a name-cell badge that wrapped under long names.
-                if c["name"] in ask_major:
-                    badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["alert"]}</span>'
-                if c["name"] in groups_lookup:
-                    gid, gname = groups_lookup[c["name"]]
-                    badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">{_icon_label("package", _e(gname))}</span>'
-                if c["name"] in notes_lookup:
-                    note_text = notes_lookup[c["name"]]
-                    badges += f' <span class="note-icon" title="{_e(note_text)}">📝</span>'
-                # Repo / changelog link (#52, @LeeNX): "Not all my
-                # Docksentry instances have Telegram or webhook
-                # integration" — so the URL that notifications wrap
-                # around the name has to be reachable from the table
-                # too. Resolved from labels already in hand, no extra
-                # docker call; see _row_link.
-                _link_url, _link_kind = self._row_link(c, links_lookup)
-                # …but only where the URL actually leads somewhere the
-                # user asked for. `registry` is our own guess at an
-                # overview page derived from the image reference — a
-                # Docker Hub landing page, not a changelog. On this host
-                # that guess covers 12 of 19 containers, so showing it
-                # would put an icon on nearly every row and have most of
-                # them lead somewhere LeeNX didn't ask to go. The table
-                # is also the exact place he's twice asked us to keep
-                # quieter (#37, #46). The guess still stands in Telegram
-                # and on the container page, where there's room to
-                # explain it.
-                if _link_kind == "registry":
-                    _link_url = ""
-                # Styled inline instead of via a CSS class: the same
-                # discreet look as .note-icon, minus its `cursor: help`
-                # (this one is genuinely clickable) and minus the
-                # default link underline.
-                _link_a = self._link_anchor(
-                    t, _link_url, _link_kind,
-                    attrs='class="row-link" style="opacity:.65;margin-left:4px;'
-                          'font-size:12px;text-decoration:none"')
-                if _link_a:
-                    badges += f' {_link_a}'
-
-                # Action buttons — icon-only with tooltips. Container name is
-                # escaped for safe use in HTML attributes.
-                name_attr = _e(c["name"])
-                # Dedicated Auto column (#2, @NotRetarded): a clear on/off cell
-                # instead of a name-cell badge that wrapped under long names.
-                # Our own row reads AUTO_SELFUPDATE, so the tooltip has to
-                # say so — "runs on the next scheduled tick" is true, but
-                # the user needs to know *which* switch produced this value.
-                auto_cell = (
-                    f'<span class="badge badge-purple" '
-                    f'title="{_e(t("web_selfupdate_marker_tt") if is_self else t("web_badge_auto_tt"))}">'
-                    f'{t("web_autoupdate_badge")}</span>'
-                    if is_auto else '<span class="muted">—</span>')
-                if is_self:
-                    # Marker in both states: "—" on our own row means
-                    # "self-update is manual", not "nobody clicked the toggle".
-                    auto_cell += _self_mark
-                elif _lab_auto is not None:
-                    auto_cell += _lab_mark
-                is_askm = c["name"] in ask_major
-                # Per-container check (#50). Not a form — it talks to
-                # /api/check_one via fetch and reports back with a toast,
-                # because a redirect would land the user on the same stale
-                # page the global check already leaves them on. All labels
-                # ride along as data-* attributes; app.js has no translator.
-                check_btn = (
-                    f'<button type="button" class="btn-icon" '
-                    f'onclick="dsCheckOne(this)" data-name="{name_attr}" '
-                    f'data-msg-found="{_e(t("web_check_one_found", name=c["name"]))}" '
-                    f'data-msg-none="{_e(t("web_check_one_none", name=c["name"]))}" '
-                    f'data-msg-busy="{_e(t("web_check_one_busy"))}" '
-                    f'data-msg-error="{_e(t("web_check_one_error"))}" '
-                    f'title="{_e(t("web_check_one_tt"))}">{_ICONS["search"]}</button>'
-                )
-                update_btn = (
-                    f'<form method="POST" action="/api/update" class="inline-form">'
-                    f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
-                    f'</form>'
-                ) if c["name"] in pending_names else ''
-                pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
-                _pin_disabled = ' disabled' if _lab_pin is not None else ''
-                _pin_title = (t("web_label_authoritative") if _lab_pin is not None
-                              else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt")))
-                pin_btn = (
-                    f'<form method="POST" action="{pin_form_action}" class="inline-form">'
-                    f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit"{_pin_disabled} class="btn-icon{" is-pinned" if is_pinned_c else ""}" '
-                    f'title="{_e(_pin_title)}">{_ICONS["pin"]}</button>'
-                    f'</form>'
-                )
-                if is_self:
-                    # No toggle on our own row (#51). It used to render fully
-                    # active, and a click wrote our name into the opt-in file
-                    # — where the update flow ignores it (self is skipped) and
-                    # the migration in main.py silently drops it on the next
-                    # boot. A button that promises something and then forgets
-                    # it is worse than no button: link to the switch that
-                    # actually works instead.
-                    auto_btn = (
-                        f'<a href="/settings#updates" class="btn-icon" '
-                        f'title="{_e(t("web_selfupdate_settings_tt"))}">{_ICONS["settings"]}</a>'
-                    )
-                else:
-                    _auto_disabled = ' disabled' if _lab_auto is not None else ''
-                    _auto_title = (t("web_label_authoritative") if _lab_auto is not None
-                                   else (t("web_autoupdate_disable") if is_auto
-                                         else t("web_autoupdate_enable")))
-                    auto_btn = (
-                        f'<form method="POST" action="/api/autoupdate" class="inline-form">'
-                        f'<input type="hidden" name="name" value="{name_attr}">'
-                        f'<button type="submit"{_auto_disabled} class="btn-icon{" is-active" if is_auto else ""}" '
-                        f'title="{_e(_auto_title)}">{_ICONS["settings"]}</button>'
-                        f'</form>'
-                    )
-                ask_btn = (
-                    f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
-                    f'<input type="hidden" name="name" value="{name_attr}">'
-                    f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
-                    f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
-                    f'</form>'
-                )
-                # Lifecycle buttons (#17). Hidden for our own container —
-                # stopping ourselves would kill PID 1 (#16 territory).
-                # Restart is shown in both UI modes (low-risk, reversible);
-                # Stop is advanced-only because it leaves the container
-                # offline until someone starts it back up.
-                if is_self:
-                    restart_btn = ""
-                    stop_btn = ""
-                else:
-                    restart_btn = (
-                        f'<form method="POST" action="/api/lifecycle" class="inline-form">'
-                        f'<input type="hidden" name="name" value="{name_attr}">'
-                        f'<input type="hidden" name="action" value="restart">'
-                        f'<button type="submit" class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
-                        f'</form>'
-                    )
-                    # Stop hidden for protected containers (#38) — restart
-                    # stays. Effective state: docksentry.protect label wins
-                    # over the stored toggle (#46, @LeeNX — label-protected
-                    # containers still showed the Stop button).
-                    if _protected_c:
-                        stop_btn = ""
-                    else:
-                        stop_btn = (
-                            f'<form method="POST" action="/api/lifecycle" class="inline-form adv-only" '
-                            f'data-confirm="{_e(t("web_lifecycle_confirm_stop", name=c["name"]))}" '
-                            # Heading and button label of the confirm modal —
-                            # emoji-stripped like everything else the browser
-                            # renders as plain text (#46): "🟥 Stop" was
-                            # showing up raw in the dialog.
-                            f'data-confirm-title="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
-                            f'data-confirm-label="{_e(_strip_emoji(t("lifecycle_btn_stop")))}" '
-                            f'data-confirm-danger="1">'
-                            f'<input type="hidden" name="name" value="{name_attr}">'
-                            f'<input type="hidden" name="action" value="stop">'
-                            f'<button type="submit" class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
-                            f'</form>'
-                        )
-                actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
-
-                # Version / hash badge after image — requested in #32 by
-                # @LeeNX so you can tell at a glance whether a container
-                # is on `v30.0.1` vs `v30.0.2` of an upstream image, when
-                # the tag itself (often `latest`) is uninformative. Read
-                # from `org.opencontainers.image.version`; falls back to
-                # short image ID (12 hex) when the label is absent.
-                version_label = c.get("version", "")
-                short_id = c.get("short_id", "")
-                if version_label:
-                    version_html = (
-                        f'<span class="badge badge-blue" title="OCI image.version label">'
-                        f'v{_e(version_label.lstrip("v"))}</span>'
-                    )
-                elif short_id:
-                    version_html = (
-                        f'<span class="badge badge-blue" title="Image short ID (no OCI version label)">'
-                        f'<code style="font-size:11px">{_e(short_id)}</code></span>'
-                    )
-                else:
-                    version_html = ""
-
-                rows += f"""<tr>
-<td><input type="checkbox" class="bulk-cb" value="{name_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
-<td><a href="/container/{name_attr}" class="container-link">{_e(c['name'])}</a>{badges}</td>{local_host_td}
-<td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
-<td>{status_badge}</td>
-<td>{auto_cell}</td>
-<td class="actions-cell">{actions}</td>
-</tr>"""
-
-            # Remote hosts (#7): listed, never acted on. No checkbox and no
-            # buttons on these rows — /api/update, /api/pin, /api/lifecycle &
-            # co. all run against the local backend, so a button here would
-            # quietly do the right thing to the wrong machine. The Auto and
-            # Actions cells therefore render a muted dash.
-            remote_count = 0
+            # One view per managed host, local first. A single-host install
+            # builds exactly one, from `self._get_containers()` and the raw
+            # store — the same two reads the page always did.
+            views = [self._status_view(LOCAL_HOST, _store_for(LOCAL_HOST),
+                                       self._get_containers(), own_name)]
             for _host in (multi or ()):
                 if _host.is_local:
                     continue
                 try:
-                    # Probe before listing: get_running_containers() swallows
-                    # a non-zero exit and would report a dead host as "no
-                    # containers running". The timeout is the other half —
-                    # an endpoint that never answers must not hang the page.
+                    # Probe before listing: a `ps` that exits non-zero comes
+                    # back as an empty list, and reporting a dead host as
+                    # "no containers running" is worse than saying nothing.
+                    # The timeout is the other half — an endpoint that never
+                    # answers must not hang the page.
                     _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
                     if _probe.returncode != 0:
                         raise OSError((_probe.stderr or "").strip() or "ps failed")
-                    _remote = _host.checker.get_running_containers()
+                    _remote = self._containers_on(_host.backend, timeout=10)
                 except Exception:
                     # One dead host is a line in the table, not a broken page.
+                    views.append({"unreachable": _host.name})
+                    continue
+                views.append(self._status_view(_host.name, _host.store,
+                                               _remote, ""))
+
+            rows = ""
+            for view in views:
+                if view.get("unreachable"):
                     rows += (
-                        f'<tr class="host-unreachable">'
+                        f'<tr class="host-unreachable" '
+                        f'data-host="{_e(view["unreachable"])}">'
                         f'<td colspan="{host_cols}" class="muted">'
-                        f'{_e(t("web_host_unreachable", host=_host.name))}</td>'
+                        f'{_e(t("web_host_unreachable", host=view["unreachable"]))}</td>'
                         f'</tr>'
                     )
                     continue
-                for rc in _remote:
-                    remote_count += 1
-                    rows += f"""<tr>
-<td></td>
-<td>{_e(rc.get("name", ""))}</td>
-<td class="host-cell">{_e(_host.name)}</td>
-<td class="image-cell"><code>{_e(rc.get("image", ""))}</code></td>
-<td><span class="badge badge-blue">running</span></td>
-<td><span class="muted">—</span></td>
-<td class="actions-cell"><span class="muted">—</span></td>
-</tr>"""
-            # Single-host: remote_count is 0, so every count below is the
-            # exact expression it was before multi-host existed.
-            total_count = len(containers) + remote_count
+                for c in view["containers"]:
+                    rows += self._status_row(c, view, t, multi)
+
+            # Single-host: `views` holds exactly one entry, so both counts
+            # are the expressions they were before multi-host existed.
+            total_count = sum(len(v.get("containers") or ()) for v in views)
+            pending_count = sum(len(v.get("pending") or ()) for v in views)
+
+            # Host filter (#7). Same client-side idea as the search box
+            # right next to it: it hides rows, it does not reload. Rendered
+            # only when there is more than one host to choose between.
+            host_filter = ""
+            host_filter_js = ""
+            if multi:
+                _opts = "".join(
+                    f'<option value="{_e(h.name)}">{_e(h.name)}</option>'
+                    for h in multi)
+                host_filter = (
+                    f'<select id="hostFilter" class="host-filter" '
+                    f'title="{_e(t("web_host"))}" '
+                    f'aria-label="{_e(t("web_host"))}">'
+                    f'<option value="">{_e(t("web_host_filter_all"))}</option>'
+                    f'{_opts}</select>')
+                host_filter_js = self._host_filter_js(t, total_count)
 
             major_banner = ""
-            if major_pending:
-                rows_mp = ""
-                for n, info in major_pending.items():
+            rows_mp = ""
+            for view in views:
+                if view.get("unreachable"):
+                    continue
+                for n, info in (view["major"] or {}).items():
+                    # Same host key as everywhere else — the confirm button
+                    # has to resume the update on the box it was held back
+                    # on, and `_confirm_major_update` splits exactly this.
+                    _mp_key = _e(host_key(view["host"], n))
+                    _mp_tag = (f' <span class="muted">@{_e(view["host"])}</span>'
+                               if multi else "")
                     rows_mp += f"""<tr>
-<td><span style="color:var(--warn);vertical-align:middle">{_ICONS["alert"]}</span> <code>{_e(n)}</code></td>
+<td><span style="color:var(--warn);vertical-align:middle">{_ICONS["alert"]}</span> <code>{_e(n)}</code>{_mp_tag}</td>
 <td><code>{_e(info.get('old_version',''))} → {_e(info.get('new_version',''))}</code></td>
 <td>
 <form method="POST" action="/api/major_confirm" class="inline-form">
-<input type="hidden" name="name" value="{_e(n)}">
+<input type="hidden" name="name" value="{_mp_key}">
 <input type="hidden" name="action" value="confirm">
 <button type="submit" class="btn-sm btn">{t("web_major_confirm")}</button>
 </form>
 <form method="POST" action="/api/major_confirm" class="inline-form" style="margin-left:6px">
-<input type="hidden" name="name" value="{_e(n)}">
+<input type="hidden" name="name" value="{_mp_key}">
 <input type="hidden" name="action" value="reject">
 <button type="submit" class="btn-sm btn-outline">{t("web_major_reject")}</button>
 </form>
 </td>
 </tr>"""
+            if rows_mp:
                 major_banner = f"""<div class="card card-warn">
 <h2>{_ICONS["alert"]} {t("web_major_pending_title")}</h2>
 <p class="card-intro">{t("web_major_pending_intro")}</p>
@@ -2416,7 +2673,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <div class="label">{t("web_containers")}</div>
 </div>
 <div class="card stat">
-    <div class="num"{' style="color:var(--warn)"' if pending else ''}>{len(pending)}</div>
+    <div class="num"{' style="color:var(--warn)"' if pending_count else ''}>{pending_count}</div>
     <div class="label">{t("web_updates_available")}</div>
 </div>
 <div class="card stat">
@@ -2434,7 +2691,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </div>
 <div class="toolbar-row">
 <input type="text" id="containerSearch" class="search-input" placeholder="{_e(t('web_search_placeholder'))}">
-<span class="row-info" id="containerCount">{t("web_containers_running", count=total_count)}</span>
+{host_filter}<span class="row-info" id="containerCount">{t("web_containers_running", count=total_count)}</span>
 </div>
 <form id="bulkForm" method="POST" action="/api/bulk" class="bulk-bar">
 <input type="hidden" name="action" id="bulkAction" value="">
@@ -2552,9 +2809,69 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     }};
     refresh();
 }})();
-</script>"""
+</script>{host_filter_js}"""
 
             self._send_html(self._render_page(content, "status"))
+
+        def _host_filter_js(self, t, total_count):
+            """The host `<select>`'s behaviour — a SEPARATE script block,
+            emitted only when more than one host is managed (#7).
+
+            Deliberately not folded into the table script above: that one
+            ships on every install, and touching it would change the bytes
+            a single-host page sends. This block registers its own `input`
+            listener on the same search field; because it is parsed later
+            it also runs later, so its verdict (host AND text must match)
+            is the one that sticks on the container rows. Rows belonging
+            to other tables on the page are none of its business, hence
+            the `#ctblBody` scope.
+            """
+            return f"""
+<script>
+(function() {{
+    const sel = document.getElementById('hostFilter');
+    const searchEl = document.getElementById('containerSearch');
+    const countInfo = document.getElementById('containerCount');
+    const rows = Array.from(document.querySelectorAll('#ctblBody tr'));
+    if (!sel) return;
+    // A hidden row must never stay selected: "filter to nas, select all,
+    // bulk update" would otherwise update the local containers too, which
+    // is the wrong-host accident the whole feature has to not have.
+    function dropHidden() {{
+        rows.forEach(r => {{
+            if (!r.classList.contains('is-hidden')) return;
+            r.querySelectorAll('.bulk-cb').forEach(cb => {{
+                if (cb.checked) {{
+                    cb.checked = false;
+                    cb.dispatchEvent(new Event('change', {{bubbles: true}}));
+                }}
+            }});
+        }});
+    }}
+    function apply() {{
+        const host = sel.value;
+        const q = (searchEl && searchEl.value || '').toLowerCase().trim();
+        let visible = 0;
+        rows.forEach(r => {{
+            const rh = r.getAttribute('data-host') || '';
+            const match = (!host || rh === host)
+                       && (!q || r.textContent.toLowerCase().includes(q));
+            r.classList.toggle('is-hidden', !match);
+            if (match) visible++;
+        }});
+        if (countInfo) {{
+            countInfo.textContent = (host || q)
+                ? visible + ' / ' + rows.length + ' {t("web_containers_match")}'
+                : '{t("web_containers_running_short", count=total_count)}';
+        }}
+        dropHidden();
+    }}
+    sel.addEventListener('change', apply);
+    if (searchEl) searchEl.addEventListener('input', apply);
+    const selectAll = document.getElementById('bulkSelectAll');
+    if (selectAll) selectAll.addEventListener('change', dropHidden);
+}})();
+</script>"""
 
         def _page_container(self, name):
             """Per-container detail view: Overview / History / Logs / Settings.
@@ -3865,8 +4182,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             self._send_html(self._render_page(content, "logs"))
 
-        def _run_web_update_batch(self, names):
-            """Run the pending updates for `names` through the SAME engine as
+        def _run_web_update_batch(self, keys):
+            """Run the pending updates for `keys` through the SAME engine as
             every other update flow (v1.60.5). Web UI updates used to bypass
             the shared update core: they called checker.update_container in a
             bare loop, so a Web-triggered update skipped the group ordering,
@@ -3876,14 +4193,48 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             collide with a running batch or a self-update swap. Routing both
             Web handlers through engine._process_update_batch under the shared
             lock closes that divergence; the notifier fan-out and Telegram
-            summary now match the bot path exactly."""
+            summary now match the bot path exactly.
+
+            `keys` are host keys (#7) — bare names for the local host,
+            `nas/nginx` for a remote one. Each host's entries come from ITS
+            slice of the pending file and are updated through ITS checker;
+            matching a remote host's entry by bare name would recreate the
+            local container from the remote one's image, which is exactly
+            the accident this indirection exists to prevent.
+
+            There is still exactly ONE lock, held across every host: two
+            hosts' recreates may be independent, but the pending file, the
+            history file and the self-update swap they all touch are not.
+            """
+            from container_store import split_host_key
             engine = bot.engine
-            # LOCAL entries only (#7). The Web UI's buttons act on the machine
-            # Docksentry runs on; matching a remote host's entry by bare name
-            # would recreate the local container from the remote one's image.
-            updates = self._get_pending()
-            name_set = set(names)
-            targets = [u for u in updates if u.get("name") in name_set]
+            # host → the names asked for on it, in first-seen order so a
+            # single-host batch keeps the order it always had.
+            wanted, order = {}, []
+            for key in keys:
+                host_name, name = split_host_key(key)
+                if not name:
+                    continue
+                if host_name not in wanted:
+                    wanted[host_name] = set()
+                    order.append(host_name)
+                wanted[host_name].add(name)
+
+            batches = []          # (host, checker, [pending entries])
+            targets = []
+            for host_name in order:
+                resolved = _resolve_host(host_name)
+                if resolved is None:
+                    # A host we don't manage. Skipped in full — never
+                    # retried against the local one.
+                    print(f"Web UI update: unknown host {host_name!r} — skipped")
+                    continue
+                hname, _be, hchecker, _st = resolved
+                entries = [u for u in self._get_pending(hname)
+                           if u.get("name") in wanted[host_name]]
+                if entries:
+                    batches.append((hname, hchecker, entries))
+                    targets.extend(entries)
             if not targets:
                 return
             # Atomic claim of the shared update mutex — same one the bot's
@@ -3897,10 +4248,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # snapshot, update, cascade, cooldown, notifier results) runs
                 # in the shared engine. auto=False: no ask-before-major gate —
                 # clicking Update in the Web UI is the explicit "do it now".
-                results, _sc, _mp = engine._process_update_batch(targets, checker, auto=False)
+                # One call per host: the engine resolves per-host STATE from
+                # each entry's `host` key, but the checker that actually
+                # recreates a container is a single parameter, so a batch
+                # must not mix hosts.
+                results = []
+                for hname, hchecker, entries in batches:
+                    r, _sc, _mp = engine._process_update_batch(
+                        entries, hchecker, auto=False)
+                    results.extend(r)
                 # Drop the processed containers from pending (atomic); the file
-                # may hold others this action didn't touch.
-                bot._remove_from_pending([u["name"] for u in targets])
+                # may hold others this action didn't touch — including another
+                # host's entry for a container of the same name, hence the
+                # (host, name) pairs.
+                bot._remove_from_pending(
+                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets])
                 if bot.enabled:
                     bot.send_message(bot.t("update_result") + "\n\n" + "\n".join(results))
             except Exception as e:
@@ -3909,10 +4271,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 engine._update_lock.release()
                 bot._run_queued_selfupdate()
 
-        def _api_update(self, name):
+        def _api_update(self, key):
             """Trigger update for a single container from Web UI. Runs through
-            the shared engine batch under the update lock (v1.60.5)."""
-            self._run_web_update_batch([name])
+            the shared engine batch under the update lock (v1.60.5). `key` is
+            the host key the row's form carried."""
+            self._run_web_update_batch([key])
 
         def _api_check(self):
             # The race guard the Telegram /check branch has had since #26,
@@ -3941,7 +4304,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             finally:
                 _CHECK_LOCK.release()
 
-        def _api_check_one(self, name):
+        def _api_check_one(self, name, hchecker=None):
             """Check a single container and return a JSON-able result dict.
 
             Runs inline instead of in a thread: one registry HEAD request is
@@ -3950,7 +4313,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             the user saw the stale numbers and got feedback only via
             bot.notify_updates — which does nothing on an install without
             Telegram, Discord or a webhook. That's the whole complaint in #50.
+
+            `hchecker` is the checker of the host the row belongs to (#7);
+            it defaults to the local one, which is the only checker a
+            single-host install has. `check_all` stamps its results with
+            that checker's host and merges them into the pending file
+            per host, so a scoped remote check can't wipe local entries.
             """
+            hchecker = hchecker if hchecker is not None else checker
             if not name:
                 return {"ok": False, "error": "missing name"}
             if bot.update_running:
@@ -3960,7 +4330,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             try:
                 own_name = ""
                 try:
-                    own_name = checker._own_container_name()
+                    # Only meaningful for the local host — this process runs
+                    # nowhere else, so a remote container of the same name is
+                    # an ordinary container, not us.
+                    if hchecker is checker:
+                        own_name = checker._own_container_name()
                 except Exception:
                     pass
                 if own_name and name == own_name:
@@ -3973,7 +4347,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     result = {"ok": True, "name": name,
                               "found": bool(found), "selfupdate": True}
                 else:
-                    updates = checker.check_all(only={name})
+                    updates = hchecker.check_all(only={name})
                     result = {"ok": True, "name": name,
                               "found": any(u.get("name") == name for u in updates),
                               "selfupdate": False}
@@ -3987,7 +4361,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # carries registry hosts and repository paths, and on a private
             # registry that's not something to hand out by default.
             if config.debug:
-                result["debug"] = list(checker.debug_log)
+                result["debug"] = list(getattr(hchecker, "debug_log", ()) or ())
             return result
 
         def _api_cleanup(self):
@@ -4029,41 +4403,66 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(f"❌ Selfupdate failed: {e}")
 
-        def _api_bulk(self, action, names):
+        def _api_bulk(self, action, keys):
             """Apply a bulk action to a list of containers.
 
             Supported actions: pin, unpin, autoupdate_on, autoupdate_off,
             update. Update walks through the pending-updates list and runs
             each matching update sequentially.
+
+            `keys` are host keys (#7) — the checkbox values from the status
+            table. A selection may span hosts, so the names are grouped by
+            host first and each group is applied through that host's own
+            store view. A key naming a host we don't manage is dropped, not
+            retried locally.
             """
+            from container_store import split_host_key
+            by_host = {}
+            for key in keys:
+                host_name, name = split_host_key(key)
+                if name:
+                    by_host.setdefault(host_name, []).append(name)
             try:
-                if action == "pin":
-                    for n in names:
-                        store.pin(n)
-                elif action == "unpin":
-                    for n in names:
-                        store.unpin(n)
-                elif action == "autoupdate_on":
-                    auto = store.get_autoupdate()
-                    for n in names:
-                        # Same self-guard as /api/autoupdate (#51): our own
-                        # name in the opt-in list does nothing and gets wiped
-                        # on the next boot.
-                        if n not in auto and not self._is_own_container(n):
-                            auto.append(n)
-                    store.save_autoupdate(auto)
-                elif action == "autoupdate_off":
-                    auto = store.get_autoupdate()
-                    auto = [a for a in auto if a not in names]
-                    store.save_autoupdate(auto)
-                elif action == "update":
+                if action == "update":
                     # Route through the shared engine batch under the update
                     # lock — same path as single-update and the bot (v1.60.5),
                     # so bulk gets group ordering, netns, cascade, cooldown and
                     # mutex protection instead of a bare update_container loop.
-                    self._run_web_update_batch(names)
-                else:
+                    # It does its own host resolution, on the raw keys.
+                    self._run_web_update_batch(keys)
+                    return
+                if action not in ("pin", "unpin", "autoupdate_on",
+                                  "autoupdate_off"):
                     print(f"Web UI bulk: unknown action {action!r}")
+                    return
+                for host_name, names in by_host.items():
+                    resolved = _resolve_host(host_name)
+                    if resolved is None:
+                        print(f"Web UI bulk: unknown host {host_name!r} — skipped")
+                        continue
+                    hname, _be, _ck, hstore = resolved
+                    if action == "pin":
+                        for n in names:
+                            hstore.pin(n)
+                    elif action == "unpin":
+                        for n in names:
+                            hstore.unpin(n)
+                    elif action == "autoupdate_on":
+                        auto = hstore.get_autoupdate()
+                        for n in names:
+                            # Same self-guard as /api/autoupdate (#51): our own
+                            # name in the opt-in list does nothing and gets wiped
+                            # on the next boot. Local host only — see there.
+                            if n in auto:
+                                continue
+                            if hname == _LOCAL_HOST and self._is_own_container(n):
+                                continue
+                            auto.append(n)
+                        hstore.save_autoupdate(auto)
+                    elif action == "autoupdate_off":
+                        auto = hstore.get_autoupdate()
+                        auto = [a for a in auto if a not in names]
+                        hstore.save_autoupdate(auto)
             except Exception as e:
                 print(f"Web UI bulk error: {e}")
 
