@@ -26,6 +26,7 @@ Config (env-only — an access token is a credential):
     given, but the ID is stable and cheaper.
 """
 
+import html
 import json
 import os
 import time
@@ -33,7 +34,22 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from container_store import is_safe_link
+
 from .base import BaseNotifier
+
+
+def _esc(value):
+    """Anything user- or registry-controlled that ends up inside
+    `formatted_body`.
+
+    Matrix's HTML variant is real HTML, and everything interesting here
+    comes from outside: container names, image references, and a `detail`
+    that is often a raw docker error. One `<` in any of them mangles the
+    markup for every client in the room, and the failure mode of the
+    others is worse than cosmetic.
+    """
+    return html.escape("" if value is None else str(value), quote=True)
 
 
 def _homeserver():
@@ -142,24 +158,33 @@ class MatrixNotifier(BaseNotifier):
             where = f" @{host}" if host and host != "local" else ""
             lines.append(f"• {u['name']}{where} ({u['image']})"
                          f"{self.version_str(u)}")
-            html_lines.append(f"<li><b>{u['name']}</b>{where} "
-                              f"<code>{u['image']}</code></li>")
+            html_lines.append(f"<li><b>{_esc(u['name'])}</b>{_esc(where)} "
+                              f"<code>{_esc(u['image'])}</code></li>")
         self._send(head + "\n" + "\n".join(lines),
-                   f"<b>{head}</b><ul>{''.join(html_lines)}</ul>")
+                   f"<b>{_esc(head)}</b><ul>{''.join(html_lines)}</ul>")
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
         mark = "✅" if success else "❌"
         head = self._prefix(f"{mark} {name} "
                             f"{'updated' if success else 'FAILED'}")
         plain = f"{head}\n{image}"
-        html = f"<b>{head}</b><br/><code>{image}</code>"
+        rich = f"<b>{_esc(head)}</b><br/><code>{_esc(image)}</code>"
         if detail:
             plain += f"\n{detail}"
-            html += f"<br/>{detail}"
+            rich += f"<br/>{_esc(detail)}"
         if source_url:
             plain += f"\n{source_url}"
-            html += f'<br/><a href="{source_url}">changelog</a>'
-        self._send(plain, html)
+            # The href is the one place escaping alone is not enough:
+            # `html.escape` leaves the SCHEME untouched, so a
+            # `javascript:` target survives it intact. `is_safe_link` is
+            # the project's rule for what may be rendered as a link (the
+            # Web UI and the `docksentry.link` label use the same one);
+            # anything it rejects is shown as text instead of linked.
+            if is_safe_link(source_url):
+                rich += f'<br/><a href="{_esc(source_url)}">changelog</a>'
+            else:
+                rich += f"<br/>{_esc(source_url)}"
+        self._send(plain, rich)
 
     def send_message(self, text):
         self._send(self._prefix(text))

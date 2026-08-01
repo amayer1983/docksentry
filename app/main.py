@@ -158,6 +158,12 @@ def main():
         # Resolved at call time, so it's fine that the Discord bot is
         # built further down — by the time a signal arrives it exists (or
         # is still None, which this tolerates).
+        #
+        # This one BLOCKS, briefly and on purpose: its `stop()` waits for
+        # any command still running (bounded by DiscordBot.SHUTDOWN_GRACE)
+        # before returning. A SIGTERM landing in the middle of a
+        # Discord-triggered /update used to kill the process between
+        # `docker stop` and `docker run`, leaving the container down.
         if _discord_ref.get("bot"):
             _discord_ref["bot"].stop()
         if web:
@@ -279,8 +285,12 @@ def main():
     discord_bot = None
     try:
         from discord_bot import DiscordBot
+        # `telegram=bot` is only used to hand a queued self-update on
+        # after a Discord-triggered update releases the shared lock —
+        # the same handoff the Web UI does. No Discord command reaches
+        # into the Telegram bot for anything else.
         discord_bot = DiscordBot(config, store, engine, hosts=host_registry,
-                                 checker=checker)
+                                 checker=checker, telegram=bot)
         if discord_bot.enabled:
             if discord_bot.start():
                 _discord_ref["bot"] = discord_bot

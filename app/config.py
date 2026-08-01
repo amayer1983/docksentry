@@ -252,7 +252,8 @@ class Config:
                  monitor_enabled=True, monitor_interval_seconds=60,
                  telegram_polling=True, debug=False, update_policy="all",
                  container_cli="auto", docker_hosts="",
-                 discord_bot_token="", discord_app_id="", discord_guild_id=""):
+                 discord_bot_token="", discord_app_id="", discord_guild_id="",
+                 discord_allowed_users=None):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -303,6 +304,15 @@ class Config:
         self.discord_bot_token = (discord_bot_token or "").strip()
         self.discord_app_id = (discord_app_id or "").strip()
         self.discord_guild_id = (discord_guild_id or "").strip()
+        # Who may drive the Discord bot. Empty means "anyone in the
+        # configured guild" — which is already a real restriction, since
+        # the guild itself is required. Set this when the server has
+        # members who shouldn't be able to stop your containers.
+        raw = discord_allowed_users
+        if isinstance(raw, str):
+            raw = [p for p in raw.replace(";", ",").split(",")]
+        self.discord_allowed_users = [str(u).strip() for u in (raw or [])
+                                      if str(u).strip()]
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -656,6 +666,7 @@ class Config:
             discord_bot_token=_env("DISCORD_BOT_TOKEN", ""),
             discord_app_id=_env("DISCORD_APP_ID", ""),
             discord_guild_id=_env("DISCORD_GUILD_ID", ""),
+            discord_allowed_users=_env("DISCORD_ALLOWED_USERS", ""),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),

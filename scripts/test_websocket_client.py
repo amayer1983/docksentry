@@ -183,6 +183,170 @@ except WebSocketError:
 bad.close()
 
 
+# ── the status LINE is parsed, not searched for "101" ────────────────
+# `"101" not in lines[0]` accepts `HTTP/1.1 500 Error 101` — a reason
+# phrase is free text and an intercepting proxy writes whatever it likes
+# there. Anything but a real 101 has to be refused.
+def _serve_status(line):
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+
+    def _go():
+        conn, _ = s.accept()
+        req = b""
+        while b"\r\n\r\n" not in req:
+            part = conn.recv(4096)
+            if not part:
+                return
+            req += part
+        key = ""
+        for ln in req.decode("latin-1").split("\r\n"):
+            if ln.lower().startswith("sec-websocket-key:"):
+                key = ln.split(":", 1)[1].strip()
+        acc = base64.b64encode(
+            hashlib.sha1((key + GUID).encode()).digest()).decode()
+        conn.sendall((f"{line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                      f"Sec-WebSocket-Accept: {acc}\r\n\r\n").encode())
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+    threading.Thread(target=_go, daemon=True).start()
+    return s
+
+
+for _desc, _line, _want_ok in (
+        ("a 500 whose reason phrase contains 101 is refused",
+         "HTTP/1.1 500 Error 101", False),
+        ("a genuine 101 is still accepted",
+         "HTTP/1.1 101 Switching Protocols", True)):
+    _s = _serve_status(_line)
+    _port = _s.getsockname()[1]
+    try:
+        WebSocketClient(f"ws://127.0.0.1:{_port}/", timeout=10).connect()
+        checks[_desc] = _want_ok is True
+    except WebSocketError:
+        checks[_desc] = _want_ok is False
+    _s.close()
+
+
+# ── fragment reassembly survives a timeout between fragments ─────────
+# The gateway drives its heartbeat off a socket timeout, so a timeout can
+# land BETWEEN two fragments of one message. Keeping `chunks` in a local
+# threw the first half away and the next call died with "continuation
+# without a start frame" — losing a whole interaction on any message
+# unlucky enough to straddle a heartbeat tick.
+frag = socket.socket()
+frag.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+frag.bind(("127.0.0.1", 0))
+frag.listen(1)
+fport = frag.getsockname()[1]
+_go_on = threading.Event()
+
+
+def _serve_split():
+    conn, _ = frag.accept()
+    req = b""
+    while b"\r\n\r\n" not in req:
+        req += conn.recv(4096)
+    key = ""
+    for ln in req.decode("latin-1").split("\r\n"):
+        if ln.lower().startswith("sec-websocket-key:"):
+            key = ln.split(":", 1)[1].strip()
+    acc = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
+    conn.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                  f"Connection: Upgrade\r\nSec-WebSocket-Accept: {acc}\r\n\r\n"
+                  ).encode())
+    # First half only, then nothing at all until the client has timed out.
+    conn.sendall(_server_frame(b'{"op":0,"t":"INTERACT', fin=False))
+    _go_on.wait(10)
+    conn.sendall(_server_frame(b'ION_CREATE"}', opcode=0x0, fin=True))
+    conn.sendall(_server_frame(struct.pack("!H", 4004), opcode=OP_CLOSE))
+    try:
+        conn.close()
+    except OSError:
+        pass
+
+
+threading.Thread(target=_serve_split, daemon=True).start()
+fws = WebSocketClient(f"ws://127.0.0.1:{fport}/", timeout=10).connect()
+fws.sock.settimeout(0.3)
+try:
+    fws.recv()
+    checks["a timeout mid-message does not return a partial message"] = False
+except socket.timeout:
+    checks["a timeout mid-message does not return a partial message"] = True
+except WebSocketError:
+    # The old code raised here instead of timing out — also a failure.
+    checks["a timeout mid-message does not return a partial message"] = False
+_go_on.set()
+fws.sock.settimeout(10)
+try:
+    _resumed = fws.recv()
+except WebSocketError as e:
+    _resumed = f"<{e}>"
+checks["recv() resumes the message it was in the middle of"] = (
+    _resumed == b'{"op":0,"t":"INTERACTION_CREATE"}')
+
+# ── the close code is surfaced, not thrown away ──────────────────────
+# 4004 means "bad token, stop"; 1000 means "see you in a second". recv()
+# returns None for both, so the code is the only thing that tells them
+# apart — and re-IDENTIFYing on 4004 gets an application flagged.
+checks["a close still ends the stream"] = fws.recv() is None
+checks["the close status code is kept"] = fws.close_code == 4004
+fws.close()
+frag.close()
+
+# ── a peer that never sets FIN cannot grow us without limit ──────────
+# Each FRAME was capped already; the reassembled MESSAGE was not, so an
+# endless stream of fin=0 fragments grew the process until it died.
+cap = WebSocketClient("ws://127.0.0.1:1/", timeout=1)
+
+
+CHUNK = 65536
+#: Enough headroom past the cap to prove we stopped because of the cap and
+#: not because the peer ran out — and a hard stop, so an uncapped client
+#: fails this test instead of running until the machine notices.
+_PATIENCE = (MAX_FRAME_BYTES // CHUNK) + 64
+
+
+class _Overrun(Exception):
+    pass
+
+
+class _CannedSocket:
+    """Hands out 64 KiB continuation frames, and never a FIN."""
+
+    def __init__(self):
+        self.sent = 0
+
+    def recv(self, _n):
+        self.sent += 1
+        if self.sent > _PATIENCE:
+            raise _Overrun(f"client swallowed {self.sent * CHUNK} bytes "
+                           "of one message without complaining")
+        opcode = OP_TEXT if self.sent == 1 else 0x0
+        return _server_frame(b"x" * CHUNK, opcode=opcode, fin=False)
+
+    def sendall(self, _data):
+        return None
+
+
+cap.sock = _CannedSocket()
+try:
+    cap.recv()
+    checks["an endless fragment stream is refused"] = False
+except WebSocketError as e:
+    checks["an endless fragment stream is refused"] = "exceeds" in str(e)
+except _Overrun:
+    checks["an endless fragment stream is refused"] = False
+checks["…and it gives up near the frame cap, not gigabytes later"] = (
+    cap.sock.sent <= (MAX_FRAME_BYTES // CHUNK) + 2)
+
+
 def main():
     ok = True
     for desc, passed in checks.items():

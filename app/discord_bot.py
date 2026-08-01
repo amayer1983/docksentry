@@ -18,12 +18,51 @@ Two Discord constraints shape everything here:
   internal hosts and services. Broadcasting that to a channel because
   someone typed `/status` is a privacy leak by default, so replies are
   visible only to the person who asked unless a command opts out.
+
+The commands that CHANGE something add two more constraints:
+
+* **Fifteen minutes.** A deferred interaction token dies after 15
+  minutes, and an "update all" over a dozen containers can outlive that.
+  An answer that can no longer be delivered as an edit is posted into the
+  channel instead — see `_deliver`. Silently losing the result of a
+  twenty-minute update is the one outcome that isn't acceptable.
+* **Ask first.** `/stop` and `/updateall` don't act on the first
+  invocation: they hand back a button, and only the button press does
+  anything. Discord makes a slash command a single keystroke away from
+  the wrong container.
 """
 
+import secrets
 import threading
+import time
 
 from discord_gateway import DiscordGateway
 from discord_rest import DiscordREST, DiscordRESTError
+
+#: Discord-side gating, applied to every command below by
+#: `_harden_commands()`. Two flags, and they are defence in depth — the
+#: real check is `_authorized()`, because these can be overridden by a
+#: server admin and say nothing about *which* server:
+#:
+#: * `default_member_permissions: "0"` — visible only to members with
+#:   Administrator, until a server admin deliberately grants it further.
+#:   Without it Discord's default is `@everyone`.
+#: * `dm_permission: False` — never usable in a DM. A DM has no guild, so
+#:   `_authorized()` would refuse it anyway; this stops it being offered
+#:   in the first place.
+DEFAULT_PERMISSIONS = "0"
+
+
+def _harden_commands(commands):
+    """Return `commands` with the Discord-side gating applied to each."""
+    out = []
+    for c in commands:
+        c = dict(c)
+        c.setdefault("default_member_permissions", DEFAULT_PERMISSIONS)
+        c.setdefault("dm_permission", False)
+        out.append(c)
+    return out
+
 
 #: Slash-command definitions, registered on startup. `type: 1` is a
 #: CHAT_INPUT command; option `type: 3` is a string.
@@ -122,6 +161,57 @@ COMMANDS = [
      "type": 1},
     {"name": "settings", "description": "Show the effective settings",
      "type": 1},
+    # ── the commands that change things ───────────────────────────
+    # Same rule as above: required options first, or the whole bulk
+    # registration is rejected and the bot ends up with no commands.
+    # `host` is optional on all of them and defaults to the LOCAL host,
+    # never to "all of them" — see `_write_hosts_for`.
+    {"name": "update",
+     "description": "Update one container that has a pending update",
+     "type": 1,
+     "options": [
+         {"name": "container", "description": "Container to update",
+          "type": 3, "required": True},
+         {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "updateall",
+     "description": "Update every container with a pending update (asks first)",
+     "type": 1,
+     "options": [
+         {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "restart", "description": "Restart a container", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container to restart",
+          "type": 3, "required": True},
+         {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "stop", "description": "Stop a container (asks first)",
+     "type": 1,
+     "options": [
+         {"name": "container", "description": "Container to stop",
+          "type": 3, "required": True},
+         {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "start", "description": "Start a stopped container", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container to start",
+          "type": 3, "required": True},
+         {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "cleanup", "description": "Remove unused images and build cache",
+     "type": 1},
+    {"name": "checkimages",
+     "description": "How much space /cleanup would free (dry-run)", "type": 1,
+     "options": [
+         {"name": "host", "description": "Limit to one host",
+          "type": 3, "required": False},
+     ]},
 ]
 
 #: `/logs` tail bounds. Discord's 2000-character ceiling makes anything
@@ -129,6 +219,64 @@ COMMANDS = [
 #: pull a gigabyte of log text through the container CLI.
 LOG_LINES_DEFAULT = 30
 LOG_LINES_MAX = 200
+
+#: Commands whose work is measured in minutes rather than seconds. They
+#: get a "this may take a while" edit as soon as the worker thread starts,
+#: so the user isn't looking at a spinner with no explanation — and so the
+#: warning about the 15-minute window arrives BEFORE it's relevant.
+SLOW_COMMANDS = ("update", "updateall", "cleanup")
+
+#: How long a confirmation button stays pressable. Deliberately the same
+#: 15 minutes Discord gives the interaction token: past that the button is
+#: dead on Discord's side anyway, and a stale "are you sure?" that still
+#: works an hour later is its own hazard.
+CONFIRM_TTL = 15 * 60
+
+#: Life of a deferred interaction token, and the safety margin we keep
+#: from it. Past `DEFER_TOKEN_TTL - DEFER_TOKEN_MARGIN` seconds we don't
+#: even try to edit — the PATCH would 401 and the answer would be lost.
+DEFER_TOKEN_TTL = 15 * 60
+DEFER_TOKEN_MARGIN = 60
+
+#: How many interactions may be in flight at once.
+#:
+#: Every command runs on its own thread and most of them shell out to the
+#: container CLI, so "one thread per interaction, no cap" means a burst of
+#: slash commands becomes a burst of concurrent `docker` subprocesses —
+#: on a small box that is the whole machine. Four is comfortably more than
+#: a household Discord server ever needs concurrently and small enough
+#: that the worst case is still a working host.
+MAX_COMMAND_WORKERS = 4
+
+#: Threads reserved for saying "busy" to interactions that found no worker
+#: slot. Separate from the pool above on purpose: the refusal is one HTTP
+#: POST and must not queue behind a twenty-minute `/updateall`, and it has
+#: its own bound so a flood cannot spawn threads through the back door.
+MAX_REFUSAL_WORKERS = 8
+
+#: How long `stop()` waits for in-flight commands before giving up on
+#: them. A SIGTERM during a Discord-triggered `/update` used to kill the
+#: process mid-recreate, because every worker was a daemon thread and
+#: nothing joined it. Bounded, because a shutdown that never finishes is
+#: its own failure — the container runtime will SIGKILL us regardless.
+SHUTDOWN_GRACE = 15.0
+
+
+class Reply(str):
+    """A command answer that may carry Discord message components.
+
+    It IS a string — every caller that just wants the text (`_clip`, the
+    2000-character assertions, the whole read-command surface) keeps
+    working unchanged, and only `_deliver` looks for `.components`. The
+    alternative, making `_dispatch` return a pair, would have rippled
+    through every existing command and every test for the sake of the two
+    commands that need a button.
+    """
+
+    def __new__(cls, text, components=None):
+        obj = super().__new__(cls, text)
+        obj.components = list(components or [])
+        return obj
 
 
 class DiscordBot:
@@ -139,13 +287,36 @@ class DiscordBot:
     """
 
     def __init__(self, config, store, engine, hosts=None, checker=None,
-                 log=print):
+                 log=print, telegram=None):
         self.config = config
         self.store = store
         self.engine = engine
         self.hosts = hosts
         self.checker = checker
         self.log = log
+        #: The Telegram bot, when one is running. Used for exactly one
+        #: thing: handing a queued self-update on to its runner after we
+        #: release the shared update lock, the same way the Web UI does
+        #: (`bot._run_queued_selfupdate()`). Without it a /selfupdate
+        #: queued behind a Discord-triggered update would sit there until
+        #: some other front-end happened to release the lock next.
+        self.telegram = telegram
+        #: Pending confirmations, token → record. Written on `/stop` and
+        #: `/updateall`, claimed by the button press. A plain dict: the
+        #: single-use property comes from `dict.pop`, which is atomic
+        #: under the GIL — no second lock, and nothing here may ever be
+        #: confused with the one update mutex the engine owns.
+        self._confirmations = {}
+        #: The interaction worker pool. These are NOT the update mutex and
+        #: never touch it: `UpdateEngine._update_lock` remains the one lock
+        #: in the process that serialises updates, and a worker that wants
+        #: it takes that one. What lives here is the pool's own
+        #: bookkeeping — how many workers may run, and which are running so
+        #: `stop()` can wait for them.
+        self._worker_sem = threading.BoundedSemaphore(MAX_COMMAND_WORKERS)
+        self._refusal_sem = threading.BoundedSemaphore(MAX_REFUSAL_WORKERS)
+        self._workers = set()
+        self._workers_lock = threading.Lock()
         self.token = getattr(config, "discord_bot_token", "") or ""
         self.application_id = getattr(config, "discord_app_id", "") or ""
         self.guild_id = getattr(config, "discord_guild_id", "") or ""
@@ -163,6 +334,17 @@ class DiscordBot:
     def start(self):
         if not self.enabled:
             return False
+        if not (self.guild_id or "").strip():
+            # Refusing to start is the honest behaviour. Connecting would
+            # register commands globally and then reject every single one
+            # in `_authorized`, which looks exactly like "the bot is
+            # broken" — and if the app is Public in Discord's portal, the
+            # commands would still be invitable elsewhere.
+            self.log("Discord bot disabled: DISCORD_GUILD_ID is not set. "
+                     "It is required — it is what restricts the bot to your "
+                     "server. Copy it from Discord (Developer Mode on, "
+                     "right-click the server name → Copy Server ID).")
+            return False
         try:
             me = self.rest.me()
             self.log(f"Discord bot authenticated as {me.get('username', '?')}")
@@ -172,7 +354,8 @@ class DiscordBot:
             self.log(f"Discord bot disabled: token rejected ({e})")
             return False
         try:
-            self.rest.register_commands(self.application_id, COMMANDS,
+            self.rest.register_commands(self.application_id,
+                                        _harden_commands(COMMANDS),
                                         guild_id=self.guild_id or None)
             where = f"guild {self.guild_id}" if self.guild_id else "globally"
             self.log(f"Discord slash commands registered {where}")
@@ -188,43 +371,442 @@ class DiscordBot:
         self._thread.start()
         return True
 
-    def stop(self):
+    def stop(self, timeout=SHUTDOWN_GRACE):
+        """Stop listening, then wait (briefly) for work already running.
+
+        The gateway goes first so nothing new arrives. Then we wait for
+        the in-flight command workers, because SIGTERM landing in the
+        middle of a Discord-triggered `/update` used to kill the process
+        between `docker stop` and `docker run` — the container simply
+        stayed down. The wait is bounded: past `timeout` we say what is
+        still running and let the shutdown continue, since the runtime's
+        own kill timer is not negotiable.
+        """
         if self.gateway:
             self.gateway.stop()
+        deadline = self._now() + timeout
+        while True:
+            with self._workers_lock:
+                live = [t for t in self._workers if t.is_alive()]
+            if not live:
+                return
+            remaining = deadline - self._now()
+            if remaining <= 0:
+                self.log(f"Discord: {len(live)} command(s) still running after "
+                         f"{timeout:.0f}s — shutting down anyway")
+                return
+            live[0].join(timeout=min(remaining, 0.5))
+
+    # ── the interaction worker pool ───────────────────────────────
+    def _start_worker(self, fn, *args):
+        """Run `fn(*args)` on a pooled thread, or return None when every
+        slot is taken. The caller has to answer the interaction itself in
+        that case — see `_refuse_busy`."""
+        if not self._worker_sem.acquire(blocking=False):
+            return None
+        thread = threading.Thread(target=self._worker_body, args=(fn, args),
+                                  daemon=True)
+        with self._workers_lock:
+            self._workers.add(thread)
+        thread.start()
+        return thread
+
+    def _worker_body(self, fn, args):
+        try:
+            fn(*args)
+        except Exception as e:                      # never lose a slot
+            self.log(f"Discord worker crashed: {e}")
+        finally:
+            with self._workers_lock:
+                self._workers.discard(threading.current_thread())
+            self._worker_sem.release()
+
+    _BUSY_WORKERS = ("⏳ Docksentry is already running as many commands as it "
+                     "can at once. **Nothing was started** — try again in a "
+                     "moment.")
+
+    def _refuse_busy(self, data):
+        """Tell an interaction we have no capacity for it.
+
+        Answering matters: silence looks identical to a broken bot, and
+        the user has no way to know their `/update` did nothing. This is
+        an immediate (undeferred) ephemeral reply, so it is one HTTP call
+        — but it is still HTTP, so it still cannot happen on the gateway
+        loop, hence a thread. Those are bounded too; if even the refusal
+        pool is saturated the interaction times out on Discord's side,
+        which at least is not a lie about having done something.
+        """
+        if not self._refusal_sem.acquire(blocking=False):
+            self.log("Discord: no capacity left even to refuse an "
+                     "interaction — it will time out")
+            return
+
+        def _say():
+            try:
+                self.rest.interaction_response(data["id"], data["token"],
+                                               self._BUSY_WORKERS,
+                                               ephemeral=True)
+            except Exception as e:
+                self.log(f"Discord: could not refuse an interaction: {e}")
+            finally:
+                self._refusal_sem.release()
+
+        threading.Thread(target=_say, daemon=True).start()
 
     # ── events ────────────────────────────────────────────────────
+    #: Injectable clock. Everything that measures elapsed time here uses
+    #: it, so a test can exercise the 15-minute expiry path without
+    #: sitting out fifteen minutes.
+    _now = staticmethod(time.monotonic)
+
+    def _authorized(self, data):
+        """May this interaction drive Docksentry?
+
+        Two layers, mirroring the Telegram front-end (`_check_auth`), for
+        the simple reason that both drive the same engine and it would be
+        indefensible for one to be locked down and the other open:
+
+        1. **Guild match.** The interaction must come from the configured
+           `DISCORD_GUILD_ID`. This is REQUIRED — with no guild set the
+           bot refuses everything. That is deliberate and fail-closed:
+           without it, commands are registered globally, and if the
+           application is left "Public" in Discord's portal *anyone* can
+           invite the bot to their own server and drive these containers
+           from it. There is no safe "unset" for this.
+
+        2. **Optional user allow-list.** With `DISCORD_ALLOWED_USERS` set,
+           the invoking user's id must be in it. Lets the bot live in a
+           shared server while only a few people can stop a database.
+
+        Denials are silent unless debug is on: an unauthorised stranger
+        learns nothing, and a busy shared server doesn't fill the log.
+        """
+        want_guild = (self.guild_id or "").strip()
+        if not want_guild:
+            if getattr(self.config, "debug", False):
+                self.log("Discord: interaction refused — DISCORD_GUILD_ID is "
+                         "not set, so no interaction can be trusted")
+            return False
+        if str(data.get("guild_id") or "") != want_guild:
+            if getattr(self.config, "debug", False):
+                self.log(f"Discord: interaction refused — guild "
+                         f"{data.get('guild_id')} != {want_guild}")
+            return False
+
+        allowed = getattr(self.config, "discord_allowed_users", None) or []
+        if not allowed:
+            return True
+        # In a guild the invoker is `member.user`; the `user` key only
+        # appears in DMs, which we refuse anyway. Read both so a future
+        # DM path can't silently bypass the list.
+        member = data.get("member") or {}
+        user = member.get("user") or data.get("user") or {}
+        uid = str(user.get("id") or "")
+        if uid and uid in [str(a) for a in allowed]:
+            return True
+        if getattr(self.config, "debug", False):
+            self.log(f"Discord: interaction refused — user {uid or '?'} not in "
+                     f"DISCORD_ALLOWED_USERS")
+        return False
+
     def _on_event(self, name, data):
         if name != "INTERACTION_CREATE":
             return
-        # type 2 = APPLICATION_COMMAND. Everything else (buttons, modals)
-        # is not wired up yet and is better ignored than half-answered.
-        if data.get("type") != 2:
+        kind = data.get("type")
+        # 2 = APPLICATION_COMMAND (a slash command), 3 = MESSAGE_COMPONENT
+        # (our confirmation buttons). Everything else — modals,
+        # autocomplete — is not wired up and is better ignored than
+        # half-answered.
+        if kind not in (2, 3):
+            return
+        if kind == 3 and not self._is_ours(data):
+            # A component we never sent. Not acknowledging it is the
+            # honest answer: it isn't ours to claim.
+            return
+        # Authorisation, before anything else happens with this
+        # interaction — including acknowledging it. An unauthorised
+        # interaction gets no reply at all: answering would confirm the
+        # bot is listening and tell a stranger which server it serves.
+        if not self._authorized(data):
             return
         # Acknowledge inside the three-second window, then do the work on
         # another thread. The gateway loop must not block: heartbeats go
         # out from it, and a stalled loop reads to Discord as a dead
-        # client.
+        # client. The clock for the token's 15-minute life starts HERE,
+        # not when the worker gets around to running.
+        started = self._now()
+        # The acknowledgement is an HTTP call, so it does NOT belong on
+        # this loop either. `interaction_response` retries and honours a
+        # 429 `retry_after` of up to a minute — worst case it blocks here
+        # for longer than Discord's ~41 s heartbeat interval, and the
+        # connection we are trying to answer on gets dropped underneath
+        # us. Hand the whole thing over, ack included, and return
+        # immediately so the next heartbeat goes out on time.
+        worker = self._run_command if kind == 2 else self._run_component
+        # Bounded: one thread per interaction with no cap turns a flood of
+        # commands into a flood of concurrent container-CLI subprocesses.
+        if self._start_worker(self._ack_then, worker, data, started) is None:
+            self._refuse_busy(data)
+
+    def _ack_then(self, worker, data, started):
+        """Acknowledge the interaction, then run it. Off the gateway loop.
+
+        The three-second deadline still applies, but a thread start is
+        microseconds — the budget is spent on the HTTP round trip either
+        way, and here it costs nobody a heartbeat.
+        """
         try:
             self.rest.interaction_response(data["id"], data["token"],
                                            deferred=True)
         except DiscordRESTError as e:
             self.log(f"Discord: could not acknowledge interaction: {e}")
             return
-        threading.Thread(target=self._run_command, args=(data,),
-                         daemon=True).start()
+        worker(data, started)
 
-    def _run_command(self, data):
-        token = data["token"]
+    @staticmethod
+    def _is_ours(data):
+        """True for a component interaction carrying one of our own
+        custom_ids. Anything else in the channel belongs to another bot."""
+        cid = (data.get("data") or {}).get("custom_id") or ""
+        return str(cid).startswith("ds:")
+
+    def _run_command(self, data, started=None):
+        started = self._now() if started is None else started
+        name = (data.get("data") or {}).get("name")
+        if name in SLOW_COMMANDS:
+            self._warn_slow(data)
         try:
             text = self._dispatch(data)
         except Exception as e:
             self.log(f"Discord command error: {e}")
             text = f"Something went wrong: {str(e)[:200]}"
+        self._deliver(data, started, text)
+
+    def _run_component(self, data, started=None):
+        """Handle a button press. Same shape as a slash command: work on
+        a thread, answer through this interaction's own token — which is
+        freshly minted, so a confirmed update gets a full new 15 minutes
+        rather than what was left of the original command's."""
+        started = self._now() if started is None else started
+        cid = str((data.get("data") or {}).get("custom_id") or "")
+        action = cid.split(":")[1] if cid.count(":") >= 2 else ""
+        if action in SLOW_COMMANDS:
+            self._warn_slow(data)
         try:
-            self.rest.edit_original_response(self.application_id, token,
-                                             text or "(no output)")
+            text = self._on_component(cid, data)
+        except Exception as e:
+            self.log(f"Discord component error: {e}")
+            text = f"Something went wrong: {str(e)[:200]}"
+        self._deliver(data, started, text)
+
+    _SLOW_NOTE = ("⏳ Working on it — this can take a few minutes.\n"
+                  "If it runs past Discord's 15-minute reply window I'll "
+                  "post the result in the channel instead.")
+
+    def _warn_slow(self, data):
+        """Fill the deferred answer in with a heads-up before the slow
+        work starts. Best effort: failing to say "this takes a while" must
+        never stop the thing that takes a while."""
+        try:
+            self.rest.edit_original_response(self.application_id,
+                                             data["token"], self._SLOW_NOTE)
         except DiscordRESTError as e:
-            self.log(f"Discord: could not deliver the answer: {e}")
+            self.log(f"Discord: could not post the progress note: {e}")
+        except Exception:
+            pass
+
+    def _deliver(self, data, started, text):
+        """Deliver `text` as the answer to `data`'s interaction.
+
+        Normally that's an edit of the deferred response. But the token
+        behind it is only valid for 15 minutes, and `/updateall` over a
+        dozen containers can take longer than that — the PATCH then fails
+        and the entire result is lost, which is the worst possible
+        outcome for the command that just recreated your containers. So
+        past the window (or if the edit fails anyway) the answer goes
+        into the channel as a normal message addressed to whoever asked.
+
+        That message is NOT ephemeral — it can't be, an interaction is
+        the only thing Discord lets us answer privately. Losing the
+        result outright is the worse of the two, and it only happens on
+        the runs that genuinely took a quarter of an hour.
+
+        Which is exactly why the public fallback is reserved for a token
+        that is genuinely gone. Falling back on *any* edit failure means
+        a transient 500 on a `/logs` reply publishes a log tail to
+        everyone in the channel — the reply was ephemeral because its
+        contents are nobody else's business, and a Discord hiccup is not
+        a reason to change that. Anything other than an expired token is
+        logged and dropped.
+        """
+        body = str(text) or "(no output)"
+        if self._now() - started < DEFER_TOKEN_TTL - DEFER_TOKEN_MARGIN:
+            try:
+                self.rest.edit_original_response(
+                    self.application_id, data["token"], body,
+                    components=getattr(text, "components", None) or [])
+                return
+            except DiscordRESTError as e:
+                if not self._token_expired(e):
+                    self.log(f"Discord: could not deliver the answer ({e}); "
+                             "it was a private reply, so it is dropped "
+                             "rather than posted to the channel")
+                    return
+                self.log(f"Discord: the interaction token is no longer valid "
+                         f"({e}) — answering in the channel instead")
+        else:
+            self.log("Discord: interaction token expired mid-command — "
+                     "answering in the channel instead")
+        self._post_to_channel(data, body)
+
+    @staticmethod
+    def _token_expired(err):
+        """True when `err` says the interaction token itself is dead, as
+        opposed to Discord merely having refused this one request.
+
+        Discord answers an expired webhook token with 401 (error 50027,
+        "Invalid Webhook Token"), and 404/10015 once the webhook is gone
+        entirely. Everything else — 429, 5xx, a network error — is
+        transient or is our own bug, and neither is a reason to make a
+        private answer public. Unrecognised shapes count as NOT expired:
+        the failure mode of guessing wrong here is a leak.
+        """
+        import json
+        status = getattr(err, "status", None)
+        if status == 401:
+            return True
+        if status != 404:
+            return False
+        try:
+            code = json.loads(getattr(err, "body", "") or "").get("code")
+        except (ValueError, AttributeError, TypeError):
+            return False
+        return code in (10015, 50027)
+
+    _LATE_NOTE = ("(this ran past Discord's 15-minute reply window, so "
+                  "here's the result as a normal message)")
+
+    def _post_to_channel(self, data, body):
+        channel = data.get("channel_id") or (data.get("channel") or {}).get("id")
+        if not channel:
+            self.log("Discord: no channel to fall back to — answer lost:\n"
+                     + body[:500])
+            return
+        user = self._invoker(data)
+        prefix = f"<@{user}> " if user else ""
+        try:
+            self.rest.create_message(
+                channel, self._clip(f"{prefix}{self._LATE_NOTE}\n{body}"))
+        except DiscordRESTError as e:
+            self.log(f"Discord: channel fallback failed too: {e}")
+
+    @staticmethod
+    def _invoker(data):
+        """The user id behind an interaction. Guild interactions carry it
+        under `member`, DMs under `user`."""
+        member = data.get("member") or {}
+        user = member.get("user") or data.get("user") or {}
+        return user.get("id")
+
+    # ── confirmations ─────────────────────────────────────────────
+    # `/stop` and `/updateall` are one keystroke away from stopping the
+    # wrong database or updating a box you weren't looking at, so neither
+    # acts on the first invocation: they park the resolved parameters
+    # under a token and hand back a button carrying it. Only the press
+    # runs anything, and only once — `dict.pop` claims the token.
+
+    def _new_confirmation(self, action, params, data):
+        now = self._now()
+        for tok, rec in list(self._confirmations.items()):
+            if now - rec["created"] > CONFIRM_TTL:
+                self._confirmations.pop(tok, None)
+        token = secrets.token_hex(8)
+        self._confirmations[token] = {
+            "action": action,
+            "params": params,
+            "user": self._invoker(data),
+            # The original interaction's token, so the press can strip the
+            # buttons off the message it came from.
+            "origin": data.get("token"),
+            "created": now,
+        }
+        return token
+
+    @staticmethod
+    def _confirm_components(action, token, label):
+        """One danger button and one cancel, in an action row. Style 4 is
+        DANGER (red), 2 is SECONDARY."""
+        return [{"type": 1, "components": [
+            {"type": 2, "style": 4, "label": label,
+             "custom_id": f"ds:{action}:{token}"},
+            {"type": 2, "style": 2, "label": "Cancel",
+             "custom_id": f"ds:cancel:{token}"},
+        ]}]
+
+    _CONFIRM_GONE = ("That confirmation has expired or was already used — "
+                     "run the command again if you still want it.")
+
+    def _on_component(self, custom_id, data):
+        """Resolve a button press to an action, or explain why not.
+
+        Everything is re-derived from the stored parameters rather than
+        from a captured closure: minutes can pass between the question
+        and the answer, and the host registry or the pending list may
+        have moved on. An unknown host still errors here, exactly as it
+        would have on the command itself.
+        """
+        parts = str(custom_id).split(":", 2)
+        if len(parts) != 3 or parts[0] != "ds":
+            return "I don't recognise that button."
+        _, action, token = parts
+        if action == "cancel":
+            self._confirmations.pop(token, None)
+            return "Cancelled — nothing was changed."
+        rec = self._confirmations.get(token)
+        if rec is None or rec["action"] != action:
+            return self._CONFIRM_GONE
+        # Bind to the asker before claiming the token: a failed identity
+        # check must leave the confirmation pressable by its owner.
+        #
+        # Fail CLOSED. The old `rec["user"] and who and who != ...` skipped
+        # the whole check whenever either id was missing, which is the one
+        # case where it matters: an interaction we cannot attribute is
+        # precisely the one that must not be allowed to stop a database.
+        # Both ids have to be present and equal.
+        who = self._invoker(data)
+        if not who or not rec.get("user") or who != rec["user"]:
+            return "Only the person who ran the command can confirm it."
+        if self._now() - rec["created"] > CONFIRM_TTL:
+            self._confirmations.pop(token, None)
+            return self._CONFIRM_GONE
+        # Claim it. From here the button is spent whatever happens —
+        # a press that fails is not an invitation to press again.
+        rec = self._confirmations.pop(token, None)
+        if rec is None:
+            return self._CONFIRM_GONE
+        self._retire_buttons(rec)
+        if action == "stop":
+            return self._do_stop(rec["params"])
+        if action == "updateall":
+            return self._do_updateall(rec["params"])
+        return self._CONFIRM_GONE
+
+    def _retire_buttons(self, rec):
+        """Strip the buttons off the message that asked the question, so
+        a spent confirmation doesn't sit there looking pressable. Best
+        effort — the original token may already have expired, and that
+        must not stop the action the user just confirmed."""
+        origin = rec.get("origin")
+        if not origin:
+            return
+        try:
+            self.rest.edit_original_response(
+                self.application_id, origin, "⏳ Confirmed — working on it…",
+                components=[])
+        except DiscordRESTError as e:
+            self.log(f"Discord: could not retire the confirmation: {e}")
+        except Exception:
+            pass
 
     # ── commands ──────────────────────────────────────────────────
     @staticmethod
@@ -347,6 +929,16 @@ class DiscordBot:
             return self._cmd_groups()
         if name == "settings":
             return self._cmd_settings()
+        if name == "update":
+            return self._cmd_update(opts)
+        if name == "updateall":
+            return self._cmd_updateall(opts, data)
+        if name in ("restart", "stop", "start"):
+            return self._cmd_lifecycle(name, opts, data)
+        if name == "cleanup":
+            return self._cmd_cleanup()
+        if name == "checkimages":
+            return self._cmd_checkimages(opts)
         return f"Unknown command `{name}`."
 
     def _cmd_hosts(self):
@@ -755,6 +1347,455 @@ class DiscordBot:
             active = False
         lines.append(f"🔧 Maintenance: {on_off(active)}")
         return self._clip("\n".join(lines))
+
+    # ── the commands that change things ───────────────────────────
+    # Everything below either holds the engine's update mutex while it
+    # works, or refuses to work because something else holds it. There is
+    # exactly ONE such lock in the process — `UpdateEngine._update_lock`,
+    # the same object `TelegramBot.run_updates` and the Web UI's update
+    # button claim — and nothing in this file ever constructs another. A
+    # second lock would put a Discord `/update` and a scheduled
+    # auto-update inside the same container's recreate at the same time,
+    # which is the #53 window all over again.
+    #
+    # And when the lock is held we say so and stop. No queue, no wait: a
+    # slash command that silently sits on a mutex for six minutes and
+    # then acts is worse than one that tells you to try again.
+
+    _BUSY = ("⏳ An update is already running — nothing was started. "
+             "Try again once it finishes.")
+
+    def _lock(self):
+        return self.engine._update_lock
+
+    def _release_lock(self):
+        """Release the shared mutex, then hand on any self-update that
+        queued up behind us — the same two-step every other front-end
+        does (`web_ui`: release, then `bot._run_queued_selfupdate()`).
+        Without the handoff a `/selfupdate` queued behind a
+        Discord-triggered update would sit there until some other
+        front-end happened to release the lock next."""
+        self._lock().release()
+        runner = getattr(self.telegram, "_run_queued_selfupdate", None)
+        if runner is None:
+            return
+        try:
+            runner()
+        except Exception as e:
+            self.log(f"Discord: queued self-update handoff failed: {e}")
+
+    # ── pending_updates.json ──────────────────────────────────────
+    # The file holds every managed host's entries in one flat list, each
+    # carrying its `host` key, so everything here matches on the
+    # (host, name) PAIR — two boxes may both have an `nginx` pending and
+    # updating one must not make the other's entry disappear.
+
+    def _pending(self):
+        import json
+        import os
+        path = getattr(self.config, "pending_file", "")
+        if not path or not os.path.exists(path):
+            return []
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, list):
+            return []
+        return [u for u in data if isinstance(u, dict) and u.get("name")]
+
+    def _drop_pending(self, keys):
+        """Remove the given `(host, name)` pairs from the pending file
+        (atomic write; the file is deleted when nothing is left, which is
+        what every other reader treats as "nothing pending")."""
+        import json
+        import os
+        from container_store import atomic_write_json, entry_host
+        path = getattr(self.config, "pending_file", "")
+        if not path or not os.path.exists(path):
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return
+        if not isinstance(data, list):
+            return
+        wanted = {tuple(k) for k in keys}
+        remaining = [u for u in data
+                     if not isinstance(u, dict)
+                     or (entry_host(u), u.get("name")) not in wanted]
+        if remaining:
+            atomic_write_json(path, remaining)
+        else:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def _pending_for(self, host):
+        from container_store import entry_host
+        from update_engine import host_name_of
+        name = host_name_of(host)
+        return [u for u in self._pending() if entry_host(u) == name]
+
+    # ── /update ───────────────────────────────────────────────────
+    def _cmd_update(self, opts):
+        """Update one container that has a pending update.
+
+        The name is matched against the PENDING LIST rather than against
+        `docker ps`: `/update` only ever means "apply the update we
+        already found", so a container that has none should say so
+        instead of resolving fine and then doing nothing.
+        """
+        from update_engine import host_name_of
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return "Usage: `/update <container>`"
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        # Resolve everything BEFORE claiming the lock. An unknown host or
+        # an unmatched name must not hold the mutex for the time it takes
+        # to find that out — and must leave the containers untouched.
+        jobs, errors = [], []
+        for host in targets:
+            tag = self._label(host)
+            entries = self._pending_for(host)
+            if not entries:
+                errors.append(f"No pending updates{tag or ' on this host'}.")
+                continue
+            name = self._match_in(arg, [u["name"] for u in entries])
+            if name.startswith("!"):
+                errors.append(name[1:] + tag)
+                continue
+            jobs.append((host, next(u for u in entries if u["name"] == name)))
+        if not jobs:
+            return self._clip("\n".join(errors)
+                              or f"No pending update for `{arg}`.")
+        if not self._lock().acquire(blocking=False):
+            return self._BUSY
+        try:
+            lines = list(errors)
+            for host, target in jobs:
+                checker = self._checker_for(host)
+                if checker is None:
+                    lines.append("No checker available" + self._label(host))
+                    continue
+                # Through the shared batch engine, not a bare
+                # update_container: the group cascade, the netns snapshot
+                # and the notifier results all live there, and a
+                # front-end that bypassed it would quietly behave
+                # differently from the other two.
+                results, _ok, _major = self.engine._process_update_batch(
+                    [target], checker, auto=False)
+                lines.extend(results)
+                self._drop_pending([(host_name_of(host), target["name"])])
+        finally:
+            self._release_lock()
+        return self._clip("**Update**\n" + "\n".join(lines))
+
+    # ── /updateall ────────────────────────────────────────────────
+    def _cmd_updateall(self, opts, data):
+        """Ask before updating everything pending. The confirmation is
+        the whole point: this recreates every container on the host, and
+        a slash command is one keystroke."""
+        from update_engine import host_name_of
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        preview, approved = [], []
+        for host in targets:
+            for u in self._pending_for(host):
+                preview.append(f"• `{u['name']}`{self._label(host)} — "
+                               f"{u.get('image', '?')}")
+                # What the user is being shown is what the press may act
+                # on — nothing else. Minutes can pass before the button
+                # is pressed and a scheduled check runs in that window.
+                approved.append((host_name_of(host), u["name"]))
+        if not preview:
+            return "No pending updates."
+        token = self._new_confirmation("updateall",
+                                       {"host": opts.get("host"),
+                                        "approved": approved}, data)
+        where = self._label(targets[0]).strip() or "this host"
+        prompt = (f"⚠ Update **{len(preview)}** container(s) on {where}?\n"
+                  + "\n".join(preview)
+                  + "\n\nEach one is pulled and recreated. Press the button "
+                    "to go ahead.")
+        return Reply(self._clip(prompt),
+                     self._confirm_components(
+                         "updateall", token,
+                         f"Update {len(preview)} container(s)"[:80]))
+
+    def _do_updateall(self, params):
+        """Run the update the user actually approved.
+
+        NOT "whatever is pending now". The prompt listed N containers and
+        that list is what was agreed to; the pending file is re-read here
+        because entries can DISAPPEAR (another front-end updated one), but
+        anything that appeared since — a scheduled check finding four more
+        while the question sat unanswered — was never approved and is not
+        touched. Approving 3 and getting 9 is not a confirmation.
+        """
+        from update_engine import host_name_of
+        targets = self._write_hosts_for(params.get("host"))
+        if targets is None:
+            return self._unknown_host(params.get("host"))
+        approved = params.get("approved")
+        approved_set = {tuple(k) for k in approved} if approved else None
+        batches, skipped = [], 0
+        for host in targets:
+            entries = self._pending_for(host)
+            if approved_set is not None:
+                keep = [u for u in entries
+                        if (host_name_of(host), u["name"]) in approved_set]
+                skipped += len(entries) - len(keep)
+                entries = keep
+            if entries:
+                batches.append((host, entries))
+        gone = 0
+        if approved_set is not None:
+            still_there = sum(len(e) for _h, e in batches)
+            gone = len(approved_set) - still_there
+        if not batches:
+            if approved_set:
+                return ("Nothing left to update — every container you "
+                        "approved has already been updated or is no longer "
+                        "pending.")
+            return "No pending updates."
+        note = ""
+        if gone > 0:
+            note = (f"\nℹ {gone} of the {len(approved_set)} container(s) you "
+                    "approved were no longer pending and were skipped.")
+        if skipped > 0:
+            note += (f"\nℹ {skipped} newly pending container(s) appeared after "
+                     "you were asked and were NOT updated — run `/updateall` "
+                     "again for those.")
+        if not self._lock().acquire(blocking=False):
+            return self._BUSY
+        try:
+            lines = []
+            for host, entries in batches:
+                checker = self._checker_for(host)
+                if checker is None:
+                    lines.append("No checker available" + self._label(host))
+                    continue
+                # One call per host: the engine resolves per-host STATE
+                # from each entry's `host` key, but the checker that
+                # actually recreates is a single parameter — a batch must
+                # not mix hosts.
+                results, _ok, _major = self.engine._process_update_batch(
+                    entries, checker, auto=False)
+                lines.extend(results)
+                self._drop_pending([(host_name_of(host), u["name"])
+                                    for u in entries])
+        finally:
+            self._release_lock()
+        # The note goes at the TOP, not after the results: `_clip` cuts the
+        # tail, and "I did not update the four that turned up while you were
+        # deciding" is the part that must survive a long answer.
+        return self._clip("**Update all**" + note + "\n" + "\n".join(lines))
+
+    # ── /start, /stop, /restart ───────────────────────────────────
+    def _cmd_lifecycle(self, action, opts, data):
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return f"Usage: `/{action} <container>`"
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        if action != "stop":
+            return self._run_lifecycle(action, arg, targets)
+        # `/stop` asks first. Resolve and run the refusals BEFORE
+        # offering the button: being asked "are you sure?" about a
+        # container that is stop-protected — and then refused — is a
+        # worse answer than being told straight away.
+        # A write always resolves to exactly one host (that is what
+        # `_write_hosts_for` is for), so there is one thing to confirm.
+        host = targets[0]
+        tag = self._label(host)
+        name, err = self._resolve_container(arg, self._backend_for(host))
+        if err:
+            return self._clip(err + tag)
+        checker = self._checker_for(host)
+        if self._is_protected(name, checker, self._store_for(host)):
+            return self._clip(self._protected_msg(name) + tag)
+        token = self._new_confirmation(
+            "stop", {"host": opts.get("host"), "container": name}, data)
+        return Reply(
+            self._clip(f"⚠ Stop `{name}`{tag}? It stays down until "
+                       "something starts it again."),
+            self._confirm_components("stop", token, f"Stop {name}"[:80]))
+
+    def _do_stop(self, params):
+        targets = self._write_hosts_for(params.get("host"))
+        if targets is None:
+            return self._unknown_host(params.get("host"))
+        return self._run_lifecycle("stop", params.get("container") or "",
+                                   targets)
+
+    def _run_lifecycle(self, action, arg, targets):
+        lines = []
+        for host in targets:
+            tag = self._label(host)
+            backend = self._backend_for(host)
+            name, err = self._resolve_container(arg, backend)
+            if err:
+                lines.append(err + tag)
+                continue
+            ok, msg = self._lifecycle_action(action, name,
+                                             self._checker_for(host), backend,
+                                             self._store_for(host))
+            lines.append(("✅ " if ok else "❌ ") + msg + tag)
+        return self._clip("\n".join(lines) or "Nothing to do.")
+
+    @staticmethod
+    def _protected_msg(name):
+        return (f"`{name}` is protected from being stopped. "
+                "Lift it with `/protect` first.")
+
+    def _is_protected(self, name, checker, store):
+        """True if `name` must not be stopped. A `docksentry.protect`
+        container label wins over the stored toggle, exactly as it does
+        on the Telegram and Web UI sides; a failing inspect falls back to
+        the toggle, so a flaky host can never accidentally unprotect."""
+        try:
+            lab = checker.label_bool(checker.get_container_labels(name),
+                                     "protect")
+        except Exception:
+            lab = None
+        if lab is not None:
+            return lab
+        if store is None:
+            return False
+        return store.is_protect_stop(name)
+
+    def _lifecycle_action(self, action, name, checker, backend, store):
+        """Run stop/start/restart on an already-resolved container.
+        Returns `(ok, message)` — same contract as the Telegram bot's
+        method of the same name, and deliberately the same three
+        refusals in the same order:
+
+        * never stop or restart Docksentry itself (PID 1 dies before the
+          recreate — #16),
+        * nothing while an update flow runs, because a stop during the
+          post-update health wait reads as unhealthy and triggers a bogus
+          rollback of a good update,
+        * never stop a stop-protected container (#38).
+
+        This does NOT take the update lock. It doesn't need it — it
+        checks that no update is running and then issues one CLI call —
+        and taking it would let a `/restart` block the scheduler.
+        """
+        if checker is None or backend is None:
+            return False, f"No container backend available for `{name}`."
+        if action in ("stop", "restart") and checker._would_kill_self(name):
+            return False, (f"Refusing to {action} `{name}` — that is "
+                           "Docksentry itself.")
+        if self.engine.update_running:
+            return False, (f"An update is running — `{action}` is refused "
+                           "until it finishes.")
+        if action == "stop" and self._is_protected(name, checker, store):
+            return False, self._protected_msg(name)
+        if action == "stop":
+            ok, detail = checker._stop_container(name)
+            if ok:
+                return True, f"Stopped `{name}`."
+            return False, f"Could not stop `{name}`: {str(detail)[:120]}"
+        if action == "start":
+            try:
+                r = backend.run(["start", name], timeout=30)
+            except Exception as e:
+                return False, f"Could not start `{name}`: {str(e)[:120]}"
+            if r.returncode == 0:
+                return True, f"Started `{name}`."
+            return False, (f"Could not start `{name}`: "
+                           f"{(r.stderr or '').strip()[:120]}")
+        if action == "restart":
+            # Graceful stop + start, with a generous timeout: gitlab and
+            # gluetun both take their time coming down.
+            try:
+                r = backend.run(["restart", "--time", "30", name], timeout=120)
+            except Exception as e:
+                return False, f"Could not restart `{name}`: {str(e)[:120]}"
+            if r.returncode == 0:
+                return True, f"Restarted `{name}`."
+            return False, (f"Could not restart `{name}`: "
+                           f"{(r.stderr or '').strip()[:120]}")
+        return False, f"Unknown action `{action}`."
+
+    # ── /cleanup, /checkimages ────────────────────────────────────
+    def _cmd_cleanup(self):
+        """Guarded image cleanup on the local host.
+
+        `image prune -a` filters on image CREATION time, so an image
+        built upstream days ago but pulled seconds ago is fair game —
+        pruning inside an update's pull→run window would delete the image
+        that update is about to run. Hence the same mutex, and hence
+        "busy" means skip rather than wait: the next cleanup simply runs
+        it. No host option, because cleanup is a write and writes stay
+        local.
+        """
+        host = (self._write_hosts_for(None) or [None])[0]
+        checker = self._checker_for(host)
+        if checker is None:
+            return "No container backend available."
+        if not self._lock().acquire(blocking=False):
+            return ("🧹 An update is running right now — cleanup skipped. "
+                    "The next one will pick it up.")
+        try:
+            ok, msg = checker.cleanup_images()
+        finally:
+            self._release_lock()
+        if ok and "Nothing" in str(msg):
+            return "🧹 Nothing to clean up."
+        return self._clip(("✅ " if ok else "❌ ") + str(msg))
+
+    @staticmethod
+    def _human_size(num):
+        """GB from ~1 GB up, MB below — "512 MB" reads better than
+        "0.5 GB", same rule the Telegram reply uses."""
+        gib = num / (1024 ** 3)
+        if gib >= 1.0:
+            return f"{gib:.1f} GB"
+        return f"{num / (1024 ** 2):.0f} MB"
+
+    def _cmd_checkimages(self, opts):
+        """Dry-run counterpart to `/cleanup`: how much it would free
+        right now, plus whether auto-cleanup is on. A read, so with no
+        host given it answers for every host."""
+        targets = self._hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        lines = []
+        total = 0
+        for host in targets:
+            checker = self._checker_for(host)
+            if checker is None:
+                continue
+            tag = self._label(host) or " (local)"
+            try:
+                reclaim = int(checker.reclaimable_bytes() or 0)
+            except Exception as e:
+                lines.append(f"⚠ `{getattr(host, 'name', 'local')}` check "
+                             f"failed: {str(e)[:80]}")
+                continue
+            total += reclaim
+            if reclaim <= 0:
+                lines.append(f"🧹{tag} — nothing to reclaim.")
+            else:
+                lines.append(f"🧹{tag} — {self._human_size(reclaim)} "
+                             "reclaimable.")
+        if not lines:
+            return "No container backend available."
+        if total > 0:
+            if getattr(self.config, "disk_warn_auto_cleanup", False):
+                lines.append("Auto-cleanup is **on** — this happens by itself.")
+            else:
+                lines.append("Run `/cleanup` to free it.")
+        return self._clip("**Reclaimable image space**\n" + "\n".join(lines))
 
     def _unknown_host(self, name):
         known = ", ".join(f"`{n}`" for n in self.hosts.names) if self.hosts else ""

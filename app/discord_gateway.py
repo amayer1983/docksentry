@@ -34,6 +34,7 @@ import json
 import random
 import socket
 import time
+from urllib.parse import urlparse
 
 from websocket_client import WebSocketClient, WebSocketError
 
@@ -60,10 +61,39 @@ FATAL_CLOSE_CODES = {
     4014,  # disallowed intents (privileged intent not enabled in the portal)
 }
 
+#: What to tell the operator when one of the above ends the bot. A close
+#: code alone sends people to Discord's docs; the sentence says what to go
+#: and change.
+FATAL_CLOSE_REASONS = {
+    4004: "the bot token was rejected — check DISCORD_BOT_TOKEN",
+    4010: "invalid shard",
+    4011: "this bot is in too many servers to run unsharded",
+    4012: "invalid API version",
+    4013: "invalid intents",
+    4014: "disallowed intents — enable them in the Discord developer portal",
+}
+
+#: Close codes that mean "this session is gone, start a new one". They are
+#: NOT fatal — reconnecting is exactly right — but RESUMing again with the
+#: same session id and sequence number is not: Discord already said that
+#: pair is no good, so retrying it loops forever. Clear the session and
+#: IDENTIFY clean instead.
+STALE_SESSION_CLOSE_CODES = {
+    4007,  # invalid seq — our sequence number is not one they recognise
+    4009,  # session timed out
+}
+
 #: We only need to be told about interactions, which arrive regardless of
 #: intents. Requesting none is deliberate: message content and member
 #: lists are privileged, need portal opt-in, and we don't read either.
 DEFAULT_INTENTS = 0
+
+#: How long a connection has to have been up (measured from READY) before
+#: we call it healthy and forgive the reconnect penalty. Without this the
+#: backoff only ever climbs: every real disconnect leaves `_connect_once`
+#: by raising, so a handful of unrelated drops over a week turn a routine
+#: Discord deploy into minutes of silence.
+HEALTHY_AFTER = 60.0
 
 
 class DiscordGateway:
@@ -75,18 +105,29 @@ class DiscordGateway:
     """
 
     def __init__(self, token, *, intents=DEFAULT_INTENTS, on_event=None,
-                 url=GATEWAY_URL, log=print):
+                 url=GATEWAY_URL, log=print, sleep=time.sleep,
+                 healthy_after=HEALTHY_AFTER):
         self.token = token
         self.intents = intents
         self.on_event = on_event
         self.url = url
         self.log = log
+        #: Injectable so tests don't sit out a real backoff.
+        self._sleep = sleep
+        self._healthy_after = healthy_after
 
         self.ws = None
         self.session_id = None
         self.resume_url = None
         self.seq = None
         self.running = False
+        #: Current reconnect penalty, on the instance so the reset is
+        #: observable (and so `stop()` leaves it inspectable).
+        self.backoff = 1.0
+        #: When READY last landed on this connection, or None if it never
+        #: did. `_was_healthy()` reads it to decide whether the connection
+        #: that just died had earned a clean slate.
+        self._ready_at = None
         #: Set when a heartbeat goes out, cleared by its ACK. If one is
         #: still outstanding when the next is due, the connection is a
         #: "zombie" — TCP is up but Discord isn't listening — and the only
@@ -129,12 +170,12 @@ class DiscordGateway:
         outage turns into a thundering herd on recovery.
         """
         self.running = True
-        backoff = 1.0
+        self.backoff = 1.0
         while self.running:
             try:
                 resuming = bool(self.session_id and self.seq is not None)
                 self._connect_once(resuming)
-                backoff = 1.0        # a clean session resets the penalty
+                self.backoff = 1.0   # a clean exit resets the penalty
             except _FatalGatewayError as e:
                 self.log(f"Discord gateway refused the connection: {e}")
                 self.running = False
@@ -142,20 +183,36 @@ class DiscordGateway:
             except Exception as e:
                 if not self.running:
                     return
+                # A connection that came up, said READY and then stayed up
+                # was not a failing connection — whatever ended it (a
+                # deploy, a load shed, an op 7) is a fresh event and starts
+                # from a fresh penalty. Only back-to-back failures compound.
+                if self._was_healthy():
+                    self.backoff = 1.0
                 self.log(f"Discord gateway disconnected ({e}); "
-                         f"reconnecting in {backoff:.0f}s")
-                time.sleep(backoff * (0.8 + 0.4 * random.random()))
-                backoff = min(backoff * 2, max_backoff)
+                         f"reconnecting in {self.backoff:.0f}s")
+                self._sleep(self.backoff * (0.8 + 0.4 * random.random()))
+                self.backoff = min(self.backoff * 2, max_backoff)
             finally:
                 self._close_socket()
+
+    def _was_healthy(self):
+        """True when the connection that just ended had been READY for
+        long enough to count as working rather than as another failure."""
+        started = self._ready_at
+        return (started is not None
+                and (time.monotonic() - started) >= self._healthy_after)
 
     def _connect_once(self, resuming):
         url = self.resume_url if (resuming and self.resume_url) else self.url
         self.ws = WebSocketClient(url).connect()
         self._awaiting_ack = False
+        self._ready_at = None
 
         hello = self._recv_json()
-        if hello is None or hello.get("op") != OP_HELLO:
+        if hello is None:
+            self._closed(resuming)
+        if hello.get("op") != OP_HELLO:
             raise WebSocketError(f"expected HELLO, got {hello}")
         self._heartbeat_interval = hello["d"]["heartbeat_interval"] / 1000.0
         # Discord asks for the first beat after interval * jitter so that
@@ -180,8 +237,42 @@ class DiscordGateway:
                 self._heartbeat()
                 continue
             if msg is None:
-                raise WebSocketError("gateway closed the connection")
+                self._closed(resuming)
             self._handle(msg)
+
+    def _closed(self, resuming):
+        """The gateway closed the socket. Always raises — the only
+        question is which kind of raise, and that is decided by the close
+        code the peer sent with the CLOSE frame.
+
+        Three outcomes:
+
+        * a code in `FATAL_CLOSE_CODES` — bad token, disallowed intents,
+          a shard configuration Discord will never accept. Reconnecting
+          cannot fix any of them and re-IDENTIFYing on 4004 is how an
+          application gets flagged, so this stops the loop for good.
+        * 4007/4009 while RESUMing — the session or sequence we resumed
+          with is not one Discord recognises. Retrying the same RESUME
+          loops forever, so drop the session and let the next attempt
+          IDENTIFY clean.
+        * anything else — an ordinary drop. Reconnect and, where we can,
+          resume.
+        """
+        code = getattr(self.ws, "close_code", None)
+        if code is not None and classify_close(code):
+            raise _FatalGatewayError(
+                f"close code {code} — {FATAL_CLOSE_REASONS.get(code, 'refused')}")
+        if code in STALE_SESSION_CLOSE_CODES:
+            self.session_id = None
+            self.seq = None
+            self.resume_url = None
+            raise WebSocketError(
+                f"gateway rejected the session (close code {code}) — "
+                "the next attempt will identify fresh")
+        where = "while resuming" if resuming else "while connecting"
+        raise WebSocketError(
+            f"gateway closed the connection {where}"
+            + (f" (close code {code})" if code is not None else ""))
 
     def _recv_json(self):
         raw = self.ws.recv()
@@ -202,7 +293,9 @@ class DiscordGateway:
                 # Resuming has to go to the URL READY handed us, not the
                 # generic gateway — the session lives on that specific
                 # server and the generic endpoint would reject it.
-                self.resume_url = data.get("resume_gateway_url") or self.url
+                self.resume_url = self._safe_resume_url(
+                    data.get("resume_gateway_url"))
+                self._ready_at = time.monotonic()
                 user = (data.get("user") or {}).get("username", "?")
                 self.log(f"Discord bot connected as {user}")
             if self.on_event:
@@ -226,8 +319,34 @@ class DiscordGateway:
             if not msg.get("d"):
                 self.session_id = None
                 self.seq = None
-            time.sleep(1 + 4 * random.random())
+                self.resume_url = None
+            self._sleep(1 + 4 * random.random())
             raise WebSocketError("gateway invalidated the session")
+
+    def _safe_resume_url(self, url):
+        """Pin the server-supplied resume URL to TLS.
+
+        `resume_gateway_url` arrives over the wire and decides where the
+        next connection goes — and `WebSocketClient` picks TLS purely from
+        the scheme. A `ws://` value would therefore send the bot token in
+        cleartext to whatever host it names, so anything that isn't
+        `wss://` is refused and the configured URL is used instead. The
+        configured one is ours, so a loopback `ws://` test gateway still
+        works; only the *server's* say-so is distrusted.
+        """
+        if not url:
+            return self.url
+        scheme = ""
+        try:
+            scheme = (urlparse(url).scheme or "").lower()
+        except ValueError:
+            scheme = ""
+        if scheme != "wss":
+            self.log(f"Discord gateway offered a non-wss resume URL "
+                     f"({url!r}); ignoring it and reconnecting to the "
+                     "configured gateway instead")
+            return self.url
+        return url
 
     def _close_socket(self):
         if self.ws is not None:

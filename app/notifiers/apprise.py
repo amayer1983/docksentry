@@ -96,12 +96,17 @@ class AppriseNotifier(BaseNotifier):
             with urllib.request.urlopen(req, timeout=15) as r:
                 return r.status
         except urllib.error.HTTPError as e:
-            detail = ""
-            try:
-                detail = e.read().decode("utf-8", "replace")[:200]
-            except Exception:
-                pass
-            print(f"Apprise notification failed: HTTP {e.code} {detail}")
+            # Deliberately NOT the response body. The request that
+            # produced this error carried APPRISE_URLS, and Apprise echoes
+            # the URLs it could not parse straight back in its error
+            # message — those embed tokens (`pover://user@token`,
+            # `mailto://user:password@host`). Printing them puts a
+            # credential in `docker logs` and in every log aggregator
+            # downstream of it. The status code says what went wrong;
+            # Apprise's own log says the rest, on the box that owns them.
+            hint = " — check APPRISE_URL and APPRISE_URLS" if e.code < 500 else ""
+            print(f"Apprise notification failed: HTTP {e.code}{hint} "
+                  "(response body withheld: it can echo APPRISE_URLS)")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             print(f"Apprise notification failed: {e}")
         return None

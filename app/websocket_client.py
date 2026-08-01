@@ -94,6 +94,20 @@ class WebSocketClient:
         self.timeout = timeout
         self.sock = None
         self._buf = b""
+        #: The status code from the peer's CLOSE frame, once one has been
+        #: received. `recv()` returns None on close and the code is the
+        #: only thing that says *why* — Discord answers a bad token with
+        #: 4004 and re-IDENTIFYing on that gets an application flagged, so
+        #: the caller has to be able to tell it from a routine 1000.
+        self.close_code = None
+        #: Fragment reassembly state, on the INSTANCE and not in `recv()`.
+        #: The gateway drives its heartbeat off a socket timeout, so a
+        #: timeout can land between two fragments of one message; locals
+        #: would drop everything read so far and the next call would see a
+        #: continuation with no start frame. Here `recv()` simply resumes.
+        self._frag_chunks = []
+        self._frag_op = None
+        self._frag_bytes = 0
 
     # ── connection ────────────────────────────────────────────────
     def connect(self):
@@ -147,8 +161,15 @@ class WebSocketClient:
         self._buf = rest
 
         lines = head.decode("latin-1").split("\r\n")
-        if not lines or "101" not in lines[0]:
-            raise WebSocketError(f"expected HTTP 101, got {lines[0] if lines else '<empty>'!r}")
+        status = lines[0] if lines else ""
+        # Parse the status LINE, don't scan it for "101". A substring test
+        # accepts `HTTP/1.1 500 Error 101` — and worse, anything whose
+        # reason phrase happens to contain those digits — which is exactly
+        # the sort of thing an intercepting proxy returns.
+        parts = status.split(None, 2)
+        if (len(parts) < 2 or not parts[0].upper().startswith("HTTP/")
+                or parts[1] != "101"):
+            raise WebSocketError(f"expected HTTP 101, got {status or '<empty>'!r}")
         headers = {}
         for line in lines[1:]:
             name, _, value = line.partition(":")
@@ -160,30 +181,61 @@ class WebSocketClient:
             raise WebSocketError("Sec-WebSocket-Accept mismatch")
 
     # ── framing ───────────────────────────────────────────────────
-    def _read_exactly(self, n):
+    def _fill(self, n):
+        """Ensure the buffer holds at least `n` bytes. Does NOT consume.
+
+        Consuming here was a real bug: a read that timed out after the
+        header had already been taken out of the buffer left the payload
+        behind, and the next call parsed those payload bytes as a header
+        (`unknown opcode 0xb`). Since the gateway drives its heartbeat off
+        a socket timeout, that happened on any message unlucky enough to
+        land on a heartbeat tick. Whatever arrives before the timeout
+        stays in the buffer, so the next attempt continues where this one
+        stopped.
+        """
         while len(self._buf) < n:
             chunk = self.sock.recv(65536)
             if not chunk:
                 raise WebSocketError("connection closed")
             self._buf += chunk
-        out, self._buf = self._buf[:n], self._buf[n:]
-        return out
 
     def _read_frame(self):
-        """One raw frame → (fin, opcode, payload)."""
-        b1, b2 = self._read_exactly(2)
+        """One raw frame → (fin, opcode, payload).
+
+        Atomic with respect to the buffer: the header is parsed by
+        peeking, and the buffer only advances once the WHOLE frame is
+        present. A timeout part-way through therefore costs nothing but
+        time — call again and it resumes.
+        """
+        self._fill(2)
+        b1, b2 = self._buf[0], self._buf[1]
         fin = bool(b1 & 0x80)
         opcode = b1 & 0x0F
         masked = bool(b2 & 0x80)
         length = b2 & 0x7F
+        offset = 2
         if length == 126:
-            length = struct.unpack("!H", self._read_exactly(2))[0]
+            self._fill(4)
+            length = struct.unpack("!H", self._buf[2:4])[0]
+            offset = 4
         elif length == 127:
-            length = struct.unpack("!Q", self._read_exactly(8))[0]
+            self._fill(10)
+            length = struct.unpack("!Q", self._buf[2:10])[0]
+            offset = 10
         if length > MAX_FRAME_BYTES:
             raise WebSocketError(f"frame of {length} bytes exceeds cap")
-        key = self._read_exactly(4) if masked else None
-        payload = self._read_exactly(length) if length else b""
+        # RFC 6455 §5.5: control frames carry at most 125 bytes and may
+        # not be fragmented. Enforcing it stops a peer turning a PING into
+        # a 16 MB payload we would dutifully echo back.
+        if opcode >= 0x8 and (length > 125 or not fin):
+            raise WebSocketError(f"malformed control frame (op {opcode:#x})")
+        key_len = 4 if masked else 0
+        total = offset + key_len + length
+        self._fill(total)
+        key = self._buf[offset:offset + key_len] if masked else None
+        payload = self._buf[offset + key_len:total]
+        # Only now, with a complete frame in hand, does the buffer move.
+        self._buf = self._buf[total:]
         if key:
             payload = bytes(b ^ key[i % 4] for i, b in enumerate(payload))
         return fin, opcode, payload
@@ -191,16 +243,23 @@ class WebSocketClient:
     def recv(self):
         """Next complete application message as bytes, or None when the
         peer closed. Ping is answered and control frames are handled here
-        so callers only ever see data."""
-        chunks = []
-        msg_op = None
+        so callers only ever see data.
+
+        Partial messages survive a timeout: the fragments read so far live
+        on the instance, so a `socket.timeout` raised between two
+        fragments costs nothing but time — call again and the message
+        finishes assembling.
+        """
         while True:
             fin, opcode, payload = self._read_frame()
             if opcode == OP_CLOSE:
+                if len(payload) >= 2:
+                    self.close_code = struct.unpack("!H", payload[:2])[0]
                 try:
                     self.send(payload[:2], opcode=OP_CLOSE)
                 except Exception:
                     pass
+                self._reset_fragments()
                 return None
             if opcode == OP_PING:
                 # Must echo the payload back (§5.5.3) — the gateway uses
@@ -210,16 +269,33 @@ class WebSocketClient:
             if opcode == OP_PONG:
                 continue
             if opcode in (OP_TEXT, OP_BINARY):
-                msg_op = opcode
-                chunks = [payload]
+                self._frag_op = opcode
+                self._frag_chunks = [payload]
+                self._frag_bytes = len(payload)
             elif opcode == OP_CONTINUATION:
-                chunks.append(payload)
+                if self._frag_op is None:
+                    self._reset_fragments()
+                    raise WebSocketError("continuation without a start frame")
+                self._frag_chunks.append(payload)
+                self._frag_bytes += len(payload)
             else:
                 raise WebSocketError(f"unknown opcode {opcode:#x}")
+            # Each FRAME is capped in `_read_frame`, but a message is not:
+            # a peer that never sets FIN can hand us unlimited 1 MB
+            # fragments and watch the process grow. Cap the total too.
+            if self._frag_bytes > MAX_FRAME_BYTES:
+                self._reset_fragments()
+                raise WebSocketError(
+                    f"reassembled message exceeds {MAX_FRAME_BYTES} bytes")
             if fin:
-                if msg_op is None:
-                    raise WebSocketError("continuation without a start frame")
-                return b"".join(chunks)
+                message = b"".join(self._frag_chunks)
+                self._reset_fragments()
+                return message
+
+    def _reset_fragments(self):
+        self._frag_chunks = []
+        self._frag_op = None
+        self._frag_bytes = 0
 
     def send(self, payload, opcode=OP_TEXT):
         if self.sock is None:

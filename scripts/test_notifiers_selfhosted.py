@@ -11,10 +11,13 @@ What it deliberately does check is the stuff that silently breaks:
 severity mapping (a failed update must be loud), host labels surviving
 into the message, and the config shapes users actually paste in.
 """
+import contextlib
+import io
 import json
 import os
 import sys
 import types
+import urllib.error
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
@@ -97,6 +100,33 @@ checks["apprise: stateless targets are passed through"] = (
 del os.environ["APPRISE_URLS"]
 a.send_message("hi")
 checks["apprise: stateful sends no urls"] = "urls" not in sent.last["body"]
+
+# The error path used to print up to 200 bytes of Apprise's response body.
+# The request that produced it carried APPRISE_URLS, and Apprise echoes
+# the URLs it could not parse straight back — those embed tokens. That
+# lands in `docker logs` and in every aggregator downstream of it.
+os.environ["APPRISE_URLS"] = "pover://user@sup3rs3cr3ttoken"
+
+
+def _boom(req, timeout=None):
+    raise urllib.error.HTTPError(
+        req.full_url, 400, "Bad Request", {},
+        io.BytesIO(b'{"error": "invalid urls: pover://user@sup3rs3cr3ttoken"}'))
+
+
+apprise_mod.urllib.request.urlopen = _boom
+_out = io.StringIO()
+with contextlib.redirect_stdout(_out):
+    a.send_message("hi")
+_printed = _out.getvalue()
+checks["apprise: a failing send never prints the token in APPRISE_URLS"] = (
+    "sup3rs3cr3ttoken" not in _printed)
+checks["apprise: …nor the response body it came in"] = (
+    "invalid urls" not in _printed)
+checks["apprise: …but it still says the send failed, with the status"] = (
+    "failed" in _printed and "400" in _printed)
+del os.environ["APPRISE_URLS"]
+
 del os.environ["APPRISE_URL"]
 checks["apprise: unset → not configured"] = a.configured() is False
 apprise_mod.urllib.request.urlopen = _real
@@ -163,6 +193,46 @@ checks["matrix: HTML variant is offered"] = (
 checks["matrix: remote host is labelled"] = "@nas" in body["body"]
 m.send_update_result("nginx", "nginx:1.27", False, "rolled back")
 checks["matrix: a failure is marked in the text"] = "❌" in sent.last["body"]["body"]
+
+# ── formatted_body is real HTML, and everything in it comes from outside
+# A container name, an image reference and a docker error all reach it
+# unescaped; one `<` in any of them mangles the markup for every client in
+# the room, and `source_url` lands inside an href.
+m.send_update_result("web<script>alert(1)</script>",
+                     "img:1&2", False,
+                     'failed: cannot mount "<vol>" & died',
+                     "https://example.com/notes?a=1&b=2")
+_fb = sent.last["body"]["formatted_body"]
+checks["matrix: a container name is escaped into the HTML body"] = (
+    "<script>" not in _fb and "&lt;script&gt;" in _fb)
+checks["matrix: a docker error is escaped too"] = (
+    "<vol>" not in _fb and "&lt;vol&gt;" in _fb)
+checks["matrix: an ampersand in an image ref is escaped"] = "img:1&amp;2" in _fb
+checks["matrix: the plain body is left alone (it is not HTML)"] = (
+    "<script>" in sent.last["body"]["body"])
+checks["matrix: a safe changelog URL is still a link"] = (
+    'href="https://example.com/notes?a=1&amp;b=2"' in _fb)
+
+# A link target survives `html.escape` with its scheme intact, so escaping
+# alone is not enough — `is_safe_link` is the project's rule for what may
+# be rendered as a link, and the Web UI and `docksentry.link` use the same
+# one.
+m.send_update_result("nginx", "nginx:1", True, "",
+                     "javascript:alert(document.cookie)")
+_fb = sent.last["body"]["formatted_body"]
+checks["matrix: a javascript: changelog URL is never made into an href"] = (
+    "href=" not in _fb)
+checks["matrix: …and it is still shown, as text"] = "javascript:alert" in _fb
+m.send_update_result("nginx", "nginx:1", True, "",
+                     'https://ok.example/" onmouseover="alert(1)')
+checks["matrix: a URL that would break out of the attribute is not linked"] = (
+    "href=" not in sent.last["body"]["formatted_body"])
+
+m.send_updates_available([{"name": "web<b>", "image": "img<1>", "host": "nas"}])
+_fb = sent.last["body"]["formatted_body"]
+checks["matrix: the update LIST escapes names and images too"] = (
+    "<b>web<b>" not in _fb and "&lt;b&gt;" in _fb and "img&lt;1&gt;" in _fb)
+
 for k in ("MATRIX_HOMESERVER", "MATRIX_TOKEN", "MATRIX_ROOM"):
     del os.environ[k]
 checks["matrix: unset → not configured"] = m.configured() is False
