@@ -251,7 +251,8 @@ class Config:
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
                  telegram_polling=True, debug=False, update_policy="all",
-                 container_cli="auto", docker_hosts=""):
+                 container_cli="auto", docker_hosts="",
+                 discord_bot_token="", discord_app_id="", discord_guild_id=""):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -295,6 +296,13 @@ class Config:
         # implicit "local" host, so an unset DOCKER_HOSTS means exactly
         # today's single-host behaviour.
         self.docker_hosts = parse_docker_hosts(docker_hosts)
+        # Interactive Discord bot (v2.0). Distinct from DISCORD_WEBHOOK,
+        # which only pushes notifications one way — a bot token lets
+        # Docksentry receive slash commands. Env-only: a bot token is a
+        # credential and has no business in the settings file on disk.
+        self.discord_bot_token = (discord_bot_token or "").strip()
+        self.discord_app_id = (discord_app_id or "").strip()
+        self.discord_guild_id = (discord_guild_id or "").strip()
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -645,6 +653,9 @@ class Config:
             update_policy=_env("UPDATE_POLICY", "all"),
             container_cli=_env("CONTAINER_CLI", "auto"),
             docker_hosts=_env("DOCKER_HOSTS", ""),
+            discord_bot_token=_env("DISCORD_BOT_TOKEN", ""),
+            discord_app_id=_env("DISCORD_APP_ID", ""),
+            discord_guild_id=_env("DISCORD_GUILD_ID", ""),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),

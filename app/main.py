@@ -130,6 +130,11 @@ def main():
     web = None
 
     # Graceful shutdown
+    # Filled in once the Discord bot exists; the signal handler below is
+    # defined before it and reads through this rather than closing over a
+    # name that doesn't exist yet.
+    _discord_ref = {}
+
     def shutdown(sig, frame):
         # Record the exit cause *first* — before stopping services, so the
         # marker survives even if Docker escalates to SIGKILL after the stop
@@ -150,6 +155,11 @@ def main():
         print("Shutting down...")
         scheduler.stop()
         bot.stop()
+        # Resolved at call time, so it's fine that the Discord bot is
+        # built further down — by the time a signal arrives it exists (or
+        # is still None, which this tolerates).
+        if _discord_ref.get("bot"):
+            _discord_ref["bot"].stop()
         if web:
             web.stop()
 
@@ -261,6 +271,24 @@ def main():
 
     # Start scheduler in background
     scheduler.start()
+
+    # Interactive Discord bot (v2.0) — a second front-end onto the same
+    # update engine. Only starts when DISCORD_BOT_TOKEN and
+    # DISCORD_APP_ID are set; a failure here is never fatal, because a
+    # Discord problem must not take down update checking.
+    discord_bot = None
+    try:
+        from discord_bot import DiscordBot
+        discord_bot = DiscordBot(config, store, engine, hosts=host_registry,
+                                 checker=checker)
+        if discord_bot.enabled:
+            if discord_bot.start():
+                _discord_ref["bot"] = discord_bot
+            else:
+                discord_bot = None
+    except Exception as e:
+        print(f"Discord bot failed to start (non-fatal): {e}")
+        discord_bot = None
 
     # Start Web UI if enabled
     if config.web_ui:
