@@ -86,8 +86,9 @@ def main():
         # every registered class is a BaseNotifier and appears once
         discovered = notifiers.discover()
         checks["registry: expected channel set"] = \
-            sorted(c.name for c in discovered) == ["apprise", "discord", "ntfy",
-                                                   "smtp", "webhook"]
+            sorted(c.name for c in discovered) == ["apprise", "discord", "gotify",
+                                                   "matrix", "ntfy", "smtp",
+                                                   "webhook"]
 
         # 2. a raising channel doesn't stop the others ─────────────────
         n = Notifier(_cfg(discord_webhook="x", webhook_url="y"))
