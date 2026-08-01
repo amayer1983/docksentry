@@ -490,3 +490,229 @@ class ContainerStore:
                 os.unlink(path + ".tmp")
             except OSError:
                 pass
+
+
+# ── Multi-host: one store, container names keyed per host (#7) ─────────
+
+#: Separator between host name and container name in stored keys.
+#: `/` can't occur in a Docker container name, so it can't collide with a
+#: real name — and an unprefixed key therefore unambiguously means "local".
+HOST_KEY_SEP = "/"
+
+#: The implicit host: the machine Docksentry itself runs on. Its containers
+#: are stored UNPREFIXED, which is why every existing data file stays valid
+#: with no migration — a single-host install's state is already "local".
+LOCAL_HOST = "local"
+
+
+def host_key(host, name):
+    """Storage key for `name` on `host` — `nas/nginx`, or plain `nginx`
+    for the local host. Two hosts can each run an `nginx`; the flat lists
+    in this module key on the container name alone, so without this they
+    would collide."""
+    if not host or host == LOCAL_HOST:
+        return name
+    return f"{host}{HOST_KEY_SEP}{name}"
+
+
+def split_host_key(key):
+    """Inverse of `host_key`: `nas/nginx` → `("nas", "nginx")`, and a bare
+    `nginx` → `("local", "nginx")`."""
+    host, sep, name = key.partition(HOST_KEY_SEP)
+    if not sep:
+        return LOCAL_HOST, key
+    return host, name
+
+
+class HostScopedStore:
+    """A `ContainerStore` view bound to one host.
+
+    Every container name going in is prefixed with the host, and every name
+    coming out has the prefix stripped — so callers keep passing and seeing
+    plain container names and never think about hosts. The per-host update
+    engine and checker each get one of these; the local host's view is a
+    no-op wrapper, so its keys stay exactly what they've always been.
+
+    Deliberately explicit rather than a magic __getattr__ proxy: which
+    arguments are container names differs per method (some take a name,
+    some a list, `save_group` takes an id AND a list), and getting that
+    wrong would silently write to the wrong key. Anything not listed here
+    is host-independent and reached straight through `.store`.
+    """
+
+    def __init__(self, store, host=LOCAL_HOST):
+        self.store = store
+        self.host = host or LOCAL_HOST
+
+    # ── key translation ───────────────────────────────────────
+    def _k(self, name):
+        return host_key(self.host, name)
+
+    def _mine(self, keys):
+        """Only this host's entries, with the prefix stripped."""
+        out = []
+        for key in keys:
+            host, name = split_host_key(key)
+            if host == self.host:
+                out.append(name)
+        return out
+
+    def _mine_dict(self, data):
+        out = {}
+        for key, value in (data or {}).items():
+            host, name = split_host_key(key)
+            if host == self.host:
+                out[name] = value
+        return out
+
+    def _foreign(self, keys):
+        """Everything that is NOT this host's — preserved verbatim on save
+        so writing one host's list can't wipe another's."""
+        return [k for k in keys if split_host_key(k)[0] != self.host]
+
+    # ── pinned ────────────────────────────────────────────────
+    def get_pinned(self):
+        return self._mine(self.store.get_pinned())
+
+    def save_pinned(self, names):
+        self.store.save_pinned(self._foreign(self.store.get_pinned())
+                               + [self._k(n) for n in names])
+
+    def is_pinned(self, name):
+        return self.store.is_pinned(self._k(name))
+
+    def pin(self, name):
+        return self.store.pin(self._k(name))
+
+    def unpin(self, name):
+        return self.store.unpin(self._k(name))
+
+    # ── auto-update ───────────────────────────────────────────
+    def get_autoupdate(self):
+        return self._mine(self.store.get_autoupdate())
+
+    def save_autoupdate(self, names):
+        self.store.save_autoupdate(self._foreign(self.store.get_autoupdate())
+                                   + [self._k(n) for n in names])
+
+    def is_auto(self, name):
+        return self.store.is_auto(self._k(name))
+
+    def toggle_auto(self, name):
+        return self.store.toggle_auto(self._k(name))
+
+    # ── update windows ────────────────────────────────────────
+    def get_update_windows(self):
+        return self._mine_dict(self.store.get_update_windows())
+
+    def get_update_window(self, name):
+        return self.store.get_update_window(self._k(name))
+
+    def set_update_window(self, name, start, end, weekdays):
+        return self.store.set_update_window(self._k(name), start, end, weekdays)
+
+    def clear_update_window(self, name):
+        return self.store.clear_update_window(self._k(name))
+
+    # ── per-container toggles ─────────────────────────────────
+    def get_ask_before_major(self):
+        return set(self._mine(self.store.get_ask_before_major()))
+
+    def is_ask_before_major(self, name):
+        return self.store.is_ask_before_major(self._k(name))
+
+    def toggle_ask_before_major(self, name):
+        return self.store.toggle_ask_before_major(self._k(name))
+
+    def get_trust_running(self):
+        return set(self._mine(self.store.get_trust_running()))
+
+    def is_trust_running(self, name):
+        return self.store.is_trust_running(self._k(name))
+
+    def toggle_trust_running(self, name):
+        return self.store.toggle_trust_running(self._k(name))
+
+    def get_protect_stop(self):
+        return set(self._mine(self.store.get_protect_stop()))
+
+    def is_protect_stop(self, name):
+        return self.store.is_protect_stop(self._k(name))
+
+    def toggle_protect_stop(self, name):
+        return self.store.toggle_protect_stop(self._k(name))
+
+    # ── cooldowns ─────────────────────────────────────────────
+    def get_cooldowns(self):
+        return self._mine_dict(self.store.get_cooldowns())
+
+    def get_cooldown(self, name):
+        return self.store.get_cooldown(self._k(name))
+
+    def set_cooldown(self, name, seconds):
+        return self.store.set_cooldown(self._k(name), seconds)
+
+    # ── deferred major updates ────────────────────────────────
+    def get_pending_major(self):
+        return self._mine_dict(self.store.get_pending_major())
+
+    def add_pending_major(self, name, payload):
+        return self.store.add_pending_major(self._k(name), payload)
+
+    def remove_pending_major(self, name):
+        return self.store.remove_pending_major(self._k(name))
+
+    # ── notes and links ───────────────────────────────────────
+    def get_notes(self):
+        return self._mine_dict(self.store.get_notes())
+
+    def get_note(self, name):
+        return self.store.get_note(self._k(name))
+
+    def set_note(self, name, text):
+        return self.store.set_note(self._k(name), text)
+
+    def get_links(self):
+        return self._mine_dict(self.store.get_links())
+
+    def get_link(self, name):
+        return self.store.get_link(self._k(name))
+
+    def set_link(self, name, url):
+        return self.store.set_link(self._k(name), url)
+
+    # ── groups ────────────────────────────────────────────────
+    # A group's *members* are container names and get prefixed; the group
+    # id and its label don't. Groups deliberately do NOT span hosts (#7,
+    # design question 4) — a group belongs to the host its members live on.
+    def get_groups(self):
+        out = {}
+        for gid, group in (self.store.get_groups() or {}).items():
+            members = self._mine(group.get("containers") or [])
+            if members:
+                out[gid] = dict(group, containers=members)
+        return out
+
+    def get_group(self, group_id):
+        return self.get_groups().get(group_id)
+
+    def get_group_for_container(self, container_name):
+        """(group_id, group) for this host's container, else (None, None) —
+        same shape as the underlying store. The group comes back with plain
+        member names, like `get_group` does."""
+        gid, group = self.store.get_group_for_container(self._k(container_name))
+        if not gid:
+            return None, None
+        return gid, dict(group, containers=self._mine(group.get("containers") or []))
+
+    def save_group(self, group_id, name, containers, wait_seconds=30, **kw):
+        return self.store.save_group(group_id, name,
+                                     [self._k(c) for c in containers],
+                                     wait_seconds, **kw)
+
+    def delete_group(self, group_id):
+        return self.store.delete_group(group_id)
+
+    def reorder_group_container(self, group_id, container_name, direction):
+        return self.store.reorder_group_container(
+            group_id, self._k(container_name), direction)
