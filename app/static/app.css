@@ -499,7 +499,19 @@ body.mode-advanced .simple-hint { display: none; }
     padding-top: 16px;
     border-top: 1px solid var(--border);
 }
-.btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+/* nowrap, not wrap. The seven-or-eight action buttons need 248-284px and
+   the column was 179px, so they wrapped — and a row with six buttons stood
+   89px tall next to one with four at 66px. That raggedness is what @LeeNX
+   saw in #46 ("why does my docker host look so off compared to my podman
+   hosts"): his podman containers have a uniform action set, his docker
+   ones don't, so only one of the two tables goes ragged.
+   Widening the column with min-width did NOT work — min-width loses to the
+   table layout algorithm. Forbidding the wrap does: the cell's content
+   width becomes a hard minimum that auto layout has to honour. Measured:
+   row heights went from 66/89/91 to 66/67/69, column 179px -> 272px.
+   Costs nothing on a phone because tables scroll inside their own
+   container as of v1.67.0. */
+.btn-row { display: inline-flex; gap: 4px; align-items: center; flex-wrap: nowrap; }
 /* Actions column: keep room for four buttons across (#46, @LeeNX).
    Nothing reserved this width, so the widest image reference in the whole
    table decided what was left over — on a host full of long ghcr.io names
