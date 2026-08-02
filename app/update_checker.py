@@ -117,6 +117,7 @@ class UpdateChecker:
         # Per-run scratch state. Cleared at the top of check_all so a long
         # running process never serves stale data from an earlier sweep.
         self._repo_digest_cache = {}
+        self._tag_list_cache = {}
         self._token_cache = {}
         self._auth_kind = "anonymous"
 
@@ -875,11 +876,32 @@ class UpdateChecker:
 
     def _list_remote_tags(self, registry, repository):
         """GET /v2/<repo>/tags/list with Bearer token negotiation. Returns
-        a list of tag strings, or [] on failure. No pagination support yet —
-        most registries return at least the first ~100 tags inline, which is
-        enough for SemVer Major-detection in practice."""
+        a list of tag strings, or [] on failure.
+
+        Paginated via the `Link: rel="next"` header. The docstring used to
+        say the first ~100 tags were "enough in practice", and on Docker Hub
+        that holds — it answers with everything (1385 for `library/postgres`).
+        On a registry that paginates it is simply false, and silently so:
+        `ghcr.io/home-assistant/home-assistant` returns exactly 100 tags,
+        all from 2021, whose highest parseable version is `2021.7.1` while
+        the project is on 2025.x. Every major-bump decision there was made
+        against a four-year-old view, so the confirmation gate the operator
+        opted into never fired. Works on Hub, silently truncates elsewhere —
+        which is why it survived. (diun#43, diun#518, diun#653.)
+        """
         host = "registry-1.docker.io" if "docker.io" in registry else registry
         url = f"https://{host}/v2/{repository}/tags/list"
+
+        # One crawl per repository per run. A compose stack with five
+        # containers from the same image would otherwise walk 44 pages five
+        # times over. Cleared at the top of check_all with the other
+        # per-run scratch state, so a long-running process never answers
+        # from a sweep an hour ago.
+        cache = getattr(self, "_tag_list_cache", None)
+        if cache is None:
+            cache = self._tag_list_cache = {}
+        if url in cache:
+            return cache[url]
 
         def _attempt(token=None):
             req = urllib.request.Request(url)
@@ -887,9 +909,12 @@ class UpdateChecker:
                 req.add_header("Authorization", f"Bearer {token}")
             return urllib.request.urlopen(req, timeout=15)
 
+        last_resp_headers = None
+        last_token = None
         try:
             with _attempt() as resp:
                 data = json.loads(resp.read())
+                last_resp_headers = resp.headers
         except urllib.error.HTTPError as e:
             if e.code != 401:
                 self._debug(f"  Tag list error: HTTP {e.code} {e.reason}")
@@ -898,16 +923,82 @@ class UpdateChecker:
             token = self._negotiate_token(www_auth, registry, repository)
             if not token:
                 return []
+            last_token = token
             try:
                 with _attempt(token) as resp:
                     data = json.loads(resp.read())
+                    last_resp_headers = resp.headers
             except Exception as e2:
                 self._debug(f"  Tag list error after auth: {e2}")
                 return []
         except Exception as e:
             self._debug(f"  Tag list error: {e}")
             return []
-        return data.get("tags") or []
+        tags = list(data.get("tags") or [])
+
+        # Follow `Link: rel="next"` until the registry stops offering one.
+        # Bounded, but not tightly: registries hand out the OLDEST tags
+        # first, so a low cap truncates at exactly the end that matters.
+        # Measured on `ghcr.io/home-assistant/home-assistant` — 44 pages,
+        # 4379 tags, 15 seconds — and only the full crawl reaches the
+        # current version. A ten-page cap stopped at 2023.5.4 while the
+        # project was on 2026.7.4, which is barely better than the single
+        # page it replaced. 60 pages leaves headroom over the largest repo
+        # found and still stops a runaway or looping registry.
+        #
+        # The cost is bounded by when this runs: tag listing feeds the
+        # major-bump gate, which only fires for a container that actually
+        # has an update — not on every check of every container.
+        seen_urls = {url}
+        page_url, pages = self._next_tag_page(last_resp_headers, host), 0
+        while page_url and pages < 60:
+            if page_url in seen_urls:
+                break
+            seen_urls.add(page_url)
+            pages += 1
+            try:
+                req = urllib.request.Request(page_url)
+                if last_token:
+                    req.add_header("Authorization", f"Bearer {last_token}")
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    page = json.loads(resp.read())
+                    tags.extend(page.get("tags") or [])
+                    page_url = self._next_tag_page(resp.headers, host)
+            except Exception as e:
+                # A failed continuation is not a failed lookup — keep what
+                # we have rather than throwing away the first page too.
+                self._debug(f"  Tag list pagination stopped: {e}")
+                break
+        if pages:
+            self._vdebug(f"  Tag list: {len(tags)} tags over {pages + 1} pages")
+        cache[url] = tags
+        return tags
+
+    @staticmethod
+    def _next_tag_page(headers, host):
+        """The absolute URL from a `Link: </v2/...>; rel="next"` header.
+
+        Registries send a path, not a URL, so it has to be joined onto the
+        host we asked. Returns None when there is no next page or the header
+        is not the shape we expect — an odd Link header should end
+        pagination, never redirect the crawl somewhere else.
+        """
+        try:
+            link = headers.get("Link") or ""
+        except AttributeError:
+            return None
+        if 'rel="next"' not in link:
+            return None
+        start = link.find("<")
+        end = link.find(">", start + 1)
+        if start < 0 or end < 0:
+            return None
+        path = link[start + 1:end].strip()
+        if path.startswith("https://"):
+            return path if path.startswith(f"https://{host}/") else None
+        if not path.startswith("/"):
+            return None
+        return f"https://{host}{path}"
 
     def get_highest_semver_tag(self, registry, repository, current_tag):
         """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
@@ -1937,6 +2028,7 @@ class UpdateChecker:
         """
         self.debug_log = []
         self._repo_digest_cache = {}
+        self._tag_list_cache = {}
         self._token_cache = {}
         diag = self._diag_on()
         # Resolving a digest to its version means GETting 2-3 manifests plus
