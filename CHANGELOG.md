@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.72.0] - 2026-08-03
+
+Three of the most-requested things across the tools surveyed, built together because they only make sense together.
+
+### Added
+- **Container cards on narrow screens.** Below 700px a five-column table is a compromise even inside a scroll container: you swipe sideways to find the buttons, and the columns that matter are the ones off-screen. Each container is a card instead, with everything on one screen and finger-sized actions. Built from the same locals as the table row in the same function — a row and a card that drift apart is the failure this project has already had twice.
+- **`MIN_IMAGE_AGE_DAYS` — don't be the guinea pig.** Hold auto-updates back until the image has been public for N days, per container with `docksentry.min-age`. Two independent reasons people ask for it, and the second is what makes it more than a preference: risk deferral, and supply chain — a compromised image is usually noticed within days, so not being first to pull it is a real defence. It was the one gap in an otherwise complete safety chain. The auto path only; pressing the button always works, and the update stays pending so it applies by itself once the image has aged. Fails open when the registry exposes no build date, because a gate that cannot see cannot judge. Four of five projects surveyed had the request.
+- **`/metrics` and `GET /api/status`, behind API tokens.** The highest-reacted issue in two of the five corpora — around 120 reactions on the one idea in diun alone, with four community PRs over four years, none merged. The motive that generalises best: people who will not allow unattended updates run the tool in report-only mode, and for them the metric *is* the product. So it reports what is pending, per host and per container, not just that the process is alive. Output validates clean under `promtool`.
+
+  Tokens come with it rather than after it, because the endpoint is unusable without them: a scraper cannot log in, and the shared Web UI password would let a monitoring job stop containers. `API_TOKENS=prom:xxx,grafana:yyy` — named so one can be revoked alone, compared in constant time, and consulted for exactly two GET paths so a token cannot reach anything that changes state. A token that is presented and *wrong* is rejected rather than falling through to the password check: on an instance with no `WEB_PASSWORD` that check answers 200, so a revoked token would have appeared to keep working.
+
 ## [1.71.0] - 2026-08-02
 
 ### Added
