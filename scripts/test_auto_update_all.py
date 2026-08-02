@@ -38,6 +38,10 @@ def run(all_auto, auto_list):
     bot._resolve_update_policy = lambda n, c: UpdateEngine._resolve_update_policy(bot, n, c)
     bot._policy_allows_level = UpdateEngine._policy_allows_level
     bot._policy_decision = lambda u, c: UpdateEngine._policy_decision(bot, u, c)
+    # Same shape as the policy gate beside it: the auto path consults both,
+    # and a stub missing one takes the whole decision down with an
+    # AttributeError rather than testing anything.
+    bot._age_decision = lambda u, c: UpdateEngine._age_decision(bot, u, c)
 
     def fake_batch(updates, checker, *, auto):
         cap["auto"] = [u["name"] for u in updates]

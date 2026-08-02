@@ -1132,6 +1132,9 @@ class TelegramBot:
     def _policy_decision(self, *a, **k):
         return self.engine._policy_decision(*a, **k)
 
+    def _age_decision(self, *a, **k):
+        return self.engine._age_decision(*a, **k)
+
     def _confirm_major_update(self, checker, container_key):
         """Resume an update that was held back by the major-confirmation gate.
         Reads metadata from the pending-major store, runs update_container,
@@ -1280,7 +1283,7 @@ class TelegramBot:
             # only, and the update stays pending rather than being
             # discarded — it applies on a later tick once the image has
             # aged, without anyone doing anything.
-            age = self.engine._age_decision(u, checker)
+            age = self._age_decision(u, checker)
             if age is not None:
                 age_blocked.append((u, age[0], age[1]))
                 continue
