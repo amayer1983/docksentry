@@ -275,6 +275,33 @@ def main():
     except Exception as e:
         print(f"Self-autoupdate migration check failed (non-fatal): {e}")
 
+    # Labels on OUR OWN container that describe how another instance would
+    # treat us — and that therefore do nothing here. Say so out loud.
+    #
+    # @LeeNX in #51: "I am not a fan of things that get ignored, it's a
+    # pattern that you don't know you might be doing something wrong and
+    # things look like they're just breaking." He is right, and the silent
+    # ignore was mine: the #51 fix made `docksentry.auto` on our own
+    # container inert without telling anyone. Inert-and-silent is the same
+    # class of defect the issue was about, one layer down.
+    try:
+        own_name = checker._own_container_name()
+        if own_name:
+            own_labels = checker.get_container_labels(own_name) or {}
+            for key, instead in (
+                    ("auto", "AUTO_SELFUPDATE (or Settings › Updates)"),
+                    ("enable", "AUTO_SELFUPDATE (or Settings › Updates)"),
+                    ("exclude", "AUTO_SELFUPDATE (or Settings › Updates)"),
+            ):
+                if f"docksentry.{key}" in own_labels:
+                    print(f"NOTE: docksentry.{key} is set on Docksentry's own "
+                          f"container and has NO effect there — that label "
+                          f"tells another instance how to treat this "
+                          f"container, and no other instance is watching us. "
+                          f"Self-update is governed by {instead}.")
+    except Exception as e:
+        print(f"Own-label check failed (non-fatal): {e}")
+
     # Start scheduler in background
     scheduler.start()
 
