@@ -298,7 +298,13 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
-| `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude |
+| `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude — wildcards allowed (`systemd-*`) |
+| `MONITOR_ONLY_CONTAINERS` | | Watch and report these, never update them. Wildcards allowed. For containers something else owns — quadlets, Portainer stacks, anything deployed by Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `EXCLUDE_CONTAINERS` they stay visible and still report updates. The label `docksentry.monitor-only=true` does the same per container |
+| `INSECURE_REGISTRIES` | | Registries to reach over plain HTTP instead of HTTPS, comma-separated, wildcards allowed. Only hosts named here — never guessed, and never a fallback when TLS fails |
+| `NTFY_TOKEN` | | ntfy access token for a protected topic |
+| `NTFY_USER` / `NTFY_PASSWORD` | | ntfy credentials, if you use basic auth rather than a token |
+| `SMTP_TLS_VERIFY` | `true` | Verify the mail server's certificate. Set `false` only for an internal server with a self-signed certificate — it sends the password to whatever answers |
+| `MONITOR_EVENTS` | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
 | `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
 | `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container **(auto-updating your other containers, not Docksentry itself)** — Watchtower-style, not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
 | `UPDATE_POLICY` | `all` | Global default cap on which semver bump levels **auto-updates** apply: `all` (every bump), `minor` (minor+patch, hold back majors) or `patch` (patch only). The per-container `docksentry.policy` label overrides it. Manual `/update` and Bulk update always apply. An update whose version can't be classified is allowed. This caps *by bump level only* — it does **not** make Docksentry follow or switch semver tags (it never rewrites `:1.2.3` → `:1.2.4`); that's a separate future capability. Env-only. |

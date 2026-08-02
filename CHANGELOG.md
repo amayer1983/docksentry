@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.70.0] - 2026-08-02
+
+The last of the findings from mining comparable tools. Three of these made a whole class of setup silently unusable while `docker pull` kept working — which is a confusing pair of facts to be handed.
+
+### Added
+- **`INSECURE_REGISTRIES`** — registries to reach over plain HTTP, comma-separated, wildcards allowed. `https://` was hardcoded in every registry URL, so a local or internal HTTP-only registry reported "unreachable / unauthorized" on every cycle and there was no setting to change it. Only hosts named here, never guessed and never a fallback when TLS fails: a tool that quietly retries over HTTP hands credentials to whoever answers. (watchtower#277/#497/#767)
+- **Basic-auth registries work.** The stock `registry:2` behind htpasswd answers `WWW-Authenticate: Basic`, and the parser returned nothing for any non-Bearer challenge — so the credentials already sitting in `config.json` were never sent. Verified end to end against a real registry:2 with htpasswd over HTTP: digest fetched, tags listed. Both this and `INSECURE_REGISTRIES` were needed to reach that setup at all, which is why they land together. (diun#357, diun#5, wud#797)
+- **`NTFY_TOKEN`, or `NTFY_USER` + `NTFY_PASSWORD`.** No `Authorization` was ever sent, so a self-hosted ntfy with `auth-default-access: deny` — or any reserved topic on ntfy.sh — rejected every push with one log line and nothing to reach for. Measured against a real protected server: 403 without, 200 with. (wud#951)
+
+### Fixed
+- **Discord dropped the notification entirely above 25 updates.** Discord rejects an embed with more than 25 fields, with a 400, so the message was lost rather than truncated — someone back from a holiday to 30 pending updates got silence. Split into messages of 25 now, numbered when there is more than one. (dc#255, dc#185)
+- **A rate-limited notification was thrown away.** Every channel treated HTTP 429 as terminal. It is the one status that is explicitly transient and carries `Retry-After` — so the notification was being discarded at exactly the moment the service was busiest, which is when a "3 containers failed to update" message matters most.
+- **The daemon's cgroup version was cached once per process, not per host.** It feeds the arguments used when recreating a container, so on a mixed fleet whichever host was asked first decided for all of them — and knobs like `memory.swappiness` are cgroup-v1-only, so getting it wrong either drops a setting the container had or emits one the daemon rejects. Measured on a live two-host install: local reports cgroup 2, the Podman host reports 1. Third time a per-process cache has been a multi-host trap here.
+
 ## [1.69.0] - 2026-08-02
 
 Three more from the same sweep, each reproduced before being fixed. All three are the same shape: the tool was quietly not doing what you thought.
