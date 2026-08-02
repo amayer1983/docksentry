@@ -509,7 +509,15 @@ body.mode-advanced .simple-hint { display: none; }
    buttons at two rows, which is what he asked for. The image cell yields
    instead: it can wrap or ellipsise, buttons can't. */
 .actions-cell { min-width: 168px; }
-.inline-form { display: inline; }
+/* Forms carry a UA default top margin (8px in Chrome). Inside .btn-row —
+   a flex container — that margin makes each form's margin box 40px tall
+   against the bare check button's 32px, so the flex line is sized to 40
+   and align-items:center puts the button 4px from the top while the forms
+   sit 8px down. Measured in-browser: the check button rendered at 572.5,
+   every form-wrapped button at 576.5. That is the "force recheck button
+   always seems a little higher than the rest" @LeeNX reported in #46.
+   `display: inline` here was always dead — a flex item is blockified. */
+.inline-form { display: inline; margin: 0; }
 .btn-compact {
     text-decoration: none;
     font-size: 13px;
