@@ -137,6 +137,14 @@ nav a:hover { color: var(--text); background: var(--bg-elev-2); }
 nav a.active { color: var(--accent); background: var(--accent-bg); }
 
 .content { max-width: 900px; margin: 24px auto; padding: 0 24px; }
+/* The 900px cap exists so prose stays at a readable line length. A data
+   table is not prose, and the cap was making it scroll sideways on screens
+   with room to spare: measured at 1440, 1920 AND 2560px wide, the card
+   stayed 852px while the table wanted 858 — 48px of scrolling with 1700px
+   of monitor sitting empty (#46, @LeeNX: "even though my desktop has more
+   than enough width"). Only the status page gets this; the settings and
+   group pages are text and keep the narrower measure. */
+.content.wide { max-width: 1400px; }
 
 /* ── Cards ──────────────────────────────────────────────────── */
 .card {

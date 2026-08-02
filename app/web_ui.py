@@ -897,7 +897,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </div>
 <div class="nav-wrap"><nav>{nav_html}</nav></div>
 </div>
-{maint_banner}<div class="content">
+{maint_banner}<div class="content{" wide" if active == "status" else ""}">
 {content}
 </div>
 <div class="footer">
