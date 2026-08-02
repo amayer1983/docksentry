@@ -133,9 +133,59 @@ class UpdateChecker:
             return
         self._debug(msg)
 
+    def _labels_for(self, names):
+        """`{name: {label: value}}` for several containers, in one call.
+
+        NOT parsed out of `docker ps --format {{.Labels}}`, which is what
+        this replaces, because that flat format loses data in two ways and
+        both were measured:
+
+          * a label VALUE containing a newline truncates the `ps` line, so
+            the whole rest of that container's labels vanishes. A container
+            carrying `docksentry.pin=true` alongside a multi-line
+            description parsed to just the description — the explicit pin
+            was silently ignored and the container stayed updatable.
+          * a label value containing `, key=value` parses as two labels. So
+            `LABEL description="Handy tool, docksentry.enable=false"` in
+            somebody else's image sets a docksentry flag on their behalf —
+            baked into the image, not chosen by the operator.
+
+        `docker inspect` takes many refs at once and answers in JSON, so
+        this costs one extra call per sweep rather than one per container.
+        (wud#1113, wud#921.)
+        """
+        names = [n for n in names if n]
+        if not names:
+            return {}
+        try:
+            r = self.backend.inspect(names, timeout=60)
+            if r.returncode != 0:
+                self._debug(f"  Label read failed (rc={r.returncode}) — "
+                            f"docksentry.* labels will not apply this sweep")
+                return {}
+            data = json.loads(r.stdout)
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
+            # Loud, not silent: labels failing to load means every
+            # label-based pin and exclusion stops applying, which is
+            # exactly the kind of quiet fail-open this change is about.
+            self._debug(f"  Label read failed ({e}) — docksentry.* labels "
+                        f"will not apply this sweep")
+            return {}
+        out = {}
+        for entry in data if isinstance(data, list) else []:
+            cfg = (entry or {}).get("Config") or {}
+            nm = ((entry or {}).get("Name") or "").lstrip("/")
+            if nm:
+                out[nm] = cfg.get("Labels") or {}
+        return out
+
     def get_running_containers(self):
+        # `{{.Labels}}` deliberately dropped from this format string — see
+        # `_labels_for`. Names and image references cannot contain a
+        # newline, so without it a `ps` line can no longer be truncated
+        # mid-container either.
         result = self.backend.run(
-            ["ps", "--format", "{{.Names}}|{{.Image}}|{{.Labels}}"])
+            ["ps", "--format", "{{.Names}}|{{.Image}}"])
         # Get own container name to exclude self. Robust detection: tries
         # HOSTNAME env first, falls back to /proc/self/cgroup if that's
         # missing or doesn't resolve. The old HOSTNAME-only path silently
@@ -144,15 +194,19 @@ class UpdateChecker:
         # killing PID 1 (#16).
         own_name = self._own_container_name()
 
-        containers = []
+        rows = []
         for line in result.stdout.strip().split("\n"):
             if not line:
                 continue
-            parts = line.split("|", 2)
+            parts = line.split("|", 1)
             if len(parts) < 2:
                 continue
-            name, image = parts[0], parts[1]
-            labels = self._parse_ps_labels(parts[2] if len(parts) > 2 else "")
+            rows.append((parts[0], parts[1]))
+        all_labels = self._labels_for([n for n, _ in rows])
+
+        containers = []
+        for name, image in rows:
+            labels = all_labels.get(name) or {}
             # Skip self
             if own_name and name == own_name:
                 self._debug(f"  Skipped (self): {name}")
