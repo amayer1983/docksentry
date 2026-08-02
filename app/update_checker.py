@@ -52,6 +52,20 @@ def _auth_host(entry):
 
 
 
+
+class ContainerListUnavailable(Exception):
+    """`docker ps` did not answer, so we do not know what is running.
+
+    Deliberately an exception rather than an empty list. The two states —
+    "this host runs nothing" and "this host could not be reached" — look
+    identical downstream, and treating the second as the first is what made
+    an unreachable daemon report zero updates, wipe that host's pending
+    list and send "everything up to date" (wud#570, wud#711). A caller that
+    forgets to handle this gets a traceback; one that returns [] gets a
+    quiet lie.
+    """
+
+
 def name_matches(name, patterns):
     """Whether `name` matches any of `patterns`.
 
@@ -186,6 +200,15 @@ class UpdateChecker:
         # mid-container either.
         result = self.backend.run(
             ["ps", "--format", "{{.Names}}|{{.Image}}"])
+        # A failing `ps` — daemon down, socket-proxy denial, remote host
+        # unreachable — produced empty stdout and therefore an empty list,
+        # which is indistinguishable from a host that genuinely runs
+        # nothing. The monitor has checked this since it was written; the
+        # update path never did.
+        if result.returncode != 0:
+            err = (getattr(result, "stderr", "") or "").strip()[:200]
+            raise ContainerListUnavailable(
+                f"could not list containers (rc={result.returncode}): {err}")
         # Get own container name to exclude self. Robust detection: tries
         # HOSTNAME env first, falls back to /proc/self/cgroup if that's
         # missing or doesn't resolve. The old HOSTNAME-only path silently
@@ -1942,6 +1965,10 @@ class UpdateChecker:
                         f"requested container(s) are running")
         self._debug(f"Checking {len(containers)} containers for updates...")
         updates = []
+        #: Containers whose registry check could not be completed this run.
+        #: Their previously-known pending entries are carried over rather
+        #: than dropped — see the write below.
+        failed_checks = set()
 
         for c in containers:
             image = c["image"]
@@ -2079,6 +2106,14 @@ class UpdateChecker:
                 # manifest with no Docker-Content-Digest header) is a failure
                 # too, not a real digest that would spuriously mismatch.
                 self._debug("  → Check FAILED (registry unreachable / unauthorized)")
+                # Remember it. A full scan rewrites this host's slice of the
+                # pending file from `updates` alone, so a container whose
+                # check failed silently LOSES an update we already knew
+                # about — the Web UI badge and the update button vanish and
+                # the next report says everything is current. Being unable
+                # to check is not evidence that nothing is pending
+                # (wud#116, wud#419, wud#945).
+                failed_checks.add(c["name"])
                 continue
 
             if remote_digest not in local_digests:
@@ -2162,9 +2197,22 @@ class UpdateChecker:
             # hosts managed, each one scans on its own schedule, so wiping
             # the whole file here would delete the other hosts' pending
             # updates — and with them their Web UI badges and buttons.
-            others = [u for u in _read_pending()
+            prev = _read_pending()
+            others = [u for u in prev
                       if isinstance(u, dict) and _host_of(u) != host_name]
-            atomic_write_json(self.config.pending_file, others + updates)
+            # Carry over what we could not re-verify. Without this, one 429
+            # from Docker Hub is enough to make a real pending update
+            # disappear from the UI until the next successful sweep.
+            found = {u.get("name") for u in updates}
+            carried = [u for u in prev
+                       if isinstance(u, dict) and _host_of(u) == host_name
+                       and u.get("name") in failed_checks
+                       and u.get("name") not in found]
+            if carried:
+                self._debug(f"  Kept {len(carried)} pending update(s) whose "
+                            f"check could not be completed this run")
+            atomic_write_json(self.config.pending_file,
+                              others + updates + carried)
         else:
             # A scoped run only knows about the containers it actually
             # checked. Writing `updates` wholesale here would wipe every
