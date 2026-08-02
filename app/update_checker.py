@@ -2504,9 +2504,23 @@ class UpdateChecker:
                 dst = mount.get("Destination", "")
                 if not (src and dst):
                     continue
-                bind = f"{src}:{dst}"
+                opts = []
                 if not mount.get("RW", True):
-                    bind += ":ro"
+                    opts.append("ro")
+                # Mount propagation. Without this a `:rslave` bind comes
+                # back as `rprivate`, and the container silently stops
+                # seeing host mounts that appear later — the classic
+                # symptom being a media stack that no longer notices a
+                # disk mounted after it started. `rprivate` is Docker's
+                # default, so emitting it would be noise; everything else
+                # was asked for explicitly and has to be replayed.
+                # Measured before fixing: `-v /tmp:/host:ro,rslave` came
+                # back out as `-v /tmp:/host:ro`. (watchtower#221,
+                # ouroboros#1-#5 — both sweeps found it independently.)
+                prop = (mount.get("Propagation") or "").strip()
+                if prop and prop != "rprivate":
+                    opts.append(prop)
+                bind = f"{src}:{dst}" + (":" + ",".join(opts) if opts else "")
                 args.extend(["-v", bind])
             elif mtype == "volume":
                 vol = mount.get("Name") or ""

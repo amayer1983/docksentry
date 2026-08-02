@@ -96,6 +96,33 @@ def main():
     checks["a partly-missing split is not trusted"] = (
         f(f"{a},{d}/does-not-exist.yml") == [f"{a},{d}/does-not-exist.yml"])
 
+    # ── mount propagation survives a recreate ────────────────────
+    # Measured before the fix: `-v /tmp:/host:ro,rslave` came back out of
+    # _build_run_args as `-v /tmp:/host:ro`. A bind that loses `rslave`
+    # silently stops seeing host mounts that appear later — the classic
+    # symptom is a media stack that no longer notices a disk mounted after
+    # it started. Found independently by two sweeps (watchtower#221,
+    # ouroboros#1-#5).
+    cfg = {"Mounts": [
+        {"Type": "bind", "Source": "/tmp", "Destination": "/host",
+         "RW": False, "Propagation": "rslave"},
+        {"Type": "bind", "Source": "/var/tmp", "Destination": "/shared",
+         "RW": True, "Propagation": "rshared"},
+        {"Type": "bind", "Source": "/etc/hostname", "Destination": "/hn",
+         "RW": False, "Propagation": "rprivate"},
+        {"Type": "volume", "Name": "vol", "Destination": "/data",
+         "RW": True, "Propagation": ""},
+    ], "Config": {}, "HostConfig": {}, "NetworkSettings": {}}
+    args = UpdateChecker._build_run_args(cfg, "img", "c", {}, netns_name=None,
+                                         inherited={}, cgroup_version=2)
+    vols = [args[i + 1] for i, a in enumerate(args) if a == "-v"]
+    checks["read-only bind keeps its propagation"] = "/tmp:/host:ro,rslave" in vols
+    checks["writable bind keeps its propagation"] = "/var/tmp:/shared:rshared" in vols
+    # rprivate is Docker's default; emitting it would be noise on every
+    # ordinary bind mount.
+    checks["rprivate is not emitted"] = "/etc/hostname:/hn:ro" in vols
+    checks["volumes are unaffected"] = "vol:/data" in vols
+
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
         print(f"  {'PASS' if v else 'FAIL'} {k}")
