@@ -101,6 +101,7 @@ PERSISTENT_KEYS = [
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
+    "api_tokens",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -142,6 +143,7 @@ PERSISTENT_ENV_VARS = {
     "insecure_registries": "INSECURE_REGISTRIES",
     "registry_mirrors": "REGISTRY_MIRRORS",
     "min_image_age_days": "MIN_IMAGE_AGE_DAYS",
+    "api_tokens": "API_TOKENS",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -190,6 +192,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "insecure_registries": [],
     "registry_mirrors": [],
     "min_image_age_days": 0,
+    "api_tokens": [],
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -270,6 +273,7 @@ class Config:
                  monitor_events_enabled=True, smtp_tls_verify=True,
                  monitor_only_containers=None, insecure_registries=None,
                  registry_mirrors=None, min_image_age_days=0,
+                 api_tokens=None,
                  telegram_polling=True, debug=False, update_policy="all",
                  container_cli="auto", docker_hosts="",
                  discord_bot_token="", discord_app_id="", discord_guild_id="",
@@ -345,6 +349,7 @@ class Config:
             self.min_image_age_days = max(0, int(min_image_age_days or 0))
         except (TypeError, ValueError):
             self.min_image_age_days = 0
+        self.api_tokens = api_tokens or []
         try:
             self.monitor_interval_seconds = max(15, int(monitor_interval_seconds))
         except (TypeError, ValueError):
@@ -703,6 +708,7 @@ class Config:
             insecure_registries=[x.strip() for x in _env("INSECURE_REGISTRIES", "").split(",") if x.strip()],
             registry_mirrors=[x.strip() for x in _env("REGISTRY_MIRRORS", "").split(",") if x.strip()],
             min_image_age_days=_env("MIN_IMAGE_AGE_DAYS", "0"),
+            api_tokens=[x.strip() for x in _env("API_TOKENS", "").split(",") if x.strip()],
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),

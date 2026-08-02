@@ -123,6 +123,20 @@ def _strip_md(text):
     return text
 
 
+def _metric_label(value):
+    """Escape a Prometheus label value.
+
+    Backslash, double quote and newline are the three the exposition format
+    requires escaping — and a container name is user-controlled text, so an
+    unescaped quote would produce a malformed line that costs the scraper
+    the whole response, not just that metric.
+    """
+    return (str(value or "")
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", ""))
+
+
 def _web_translator(language):
     """`get_translator`, minus the Telegram markdown.
 
@@ -390,6 +404,215 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress default logging
+
+        def _host_views(self, multi=None, store_for=None, own_name=""):
+            """One view per managed host, local first.
+
+            Extracted from the status page so `/metrics` and `/api/status`
+            report exactly what the page shows, rather than gathering the
+            same numbers a second way. Two places asking the same question
+            differently is how this project ended up with a Web UI that
+            linked somewhere else than Telegram, and a container page that
+            disagreed with its own table.
+            """
+            from container_store import LOCAL_HOST
+            if store_for is None:
+                store_for = lambda h: store  # noqa: E731 — local store only
+            if multi is None:
+                multi = hosts if (hosts and getattr(hosts, "is_multi", False)) else None
+            views = [self._status_view(LOCAL_HOST, store_for(LOCAL_HOST),
+                                       self._get_containers(), own_name)]
+            for _host in (multi or ()):
+                if _host.is_local:
+                    continue
+                try:
+                    # Probe before listing: a `ps` that exits non-zero comes
+                    # back as an empty list, and reporting a dead host as
+                    # "no containers running" is worse than saying nothing.
+                    # The timeout is the other half — an endpoint that never
+                    # answers must not hang the page.
+                    _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
+                    if _probe.returncode != 0:
+                        raise OSError((_probe.stderr or "").strip() or "ps failed")
+                    _remote = self._containers_on(_host.backend, timeout=10)
+                except Exception:
+                    # One dead host is a line in the table, not a broken page.
+                    views.append({"unreachable": _host.name})
+                    continue
+                views.append(self._status_view(_host.name, _host.store,
+                                               _remote, ""))
+            return views
+
+        def _machine_state(self):
+            """The numbers both machine endpoints report, gathered once.
+
+            Deliberately reads the same files the Web UI reads rather than
+            re-running a check: an endpoint that triggered work would let
+            anyone with a scrape interval drive the update loop.
+            """
+            from container_store import LOCAL_HOST
+            state = {"containers": 0, "pending": 0, "hosts": {}, "per_host": {}}
+            try:
+                views = self._host_views()
+            except Exception:
+                views = []
+            for v in views or []:
+                host = v.get("host") or LOCAL_HOST
+                if v.get("unreachable"):
+                    state["hosts"][host] = 0
+                    continue
+                state["hosts"][host] = 1
+                cs = v.get("containers") or []
+                pend = v.get("pending") or []
+                state["containers"] += len(cs)
+                state["pending"] += len(pend)
+                state["per_host"][host] = {
+                    "containers": len(cs),
+                    "pending": len(pend),
+                    "names": sorted(u.get("name", "") for u in pend),
+                }
+            return state
+
+        def _serve_metrics(self):
+            """Prometheus text exposition.
+
+            The motive that generalises best, from the projects surveyed:
+            people who will not allow unattended updates run the tool in
+            report-only mode — and for them the metric IS the product. So
+            this reports what is pending, not just that the process is
+            alive.
+            """
+            st = self._machine_state()
+            from version import VERSION
+            lines = [
+                "# HELP docksentry_up Whether Docksentry is responding.",
+                "# TYPE docksentry_up gauge",
+                "docksentry_up 1",
+                "# HELP docksentry_build_info Version, as a label.",
+                "# TYPE docksentry_build_info gauge",
+                f'docksentry_build_info{{version="{VERSION}"}} 1',
+                # Not `_total`: Prometheus reserves that suffix for
+                # counters, and this is a gauge. promtool rejects the
+                # mismatch, which is how it was caught before shipping.
+                "# HELP docksentry_containers Containers being watched.",
+                "# TYPE docksentry_containers gauge",
+                f"docksentry_containers {st['containers']}",
+                "# HELP docksentry_updates_pending Updates found and not yet applied.",
+                "# TYPE docksentry_updates_pending gauge",
+                f"docksentry_updates_pending {st['pending']}",
+                "# HELP docksentry_host_up Whether a managed host answered.",
+                "# TYPE docksentry_host_up gauge",
+            ]
+            for host, up in sorted(st["hosts"].items()):
+                lines.append(f'docksentry_host_up{{host="{_metric_label(host)}"}} {up}')
+            lines += [
+                "# HELP docksentry_host_containers Containers per host.",
+                "# TYPE docksentry_host_containers gauge",
+            ]
+            for host, d in sorted(st["per_host"].items()):
+                lines.append(f'docksentry_host_containers{{host="{_metric_label(host)}"}} '
+                             f'{d["containers"]}')
+            lines += [
+                "# HELP docksentry_host_updates_pending Pending updates per host.",
+                "# TYPE docksentry_host_updates_pending gauge",
+            ]
+            for host, d in sorted(st["per_host"].items()):
+                lines.append(f'docksentry_host_updates_pending{{host="{_metric_label(host)}"}} '
+                             f'{d["pending"]}')
+            # Per container, so an alert can name the thing that needs
+            # attention rather than only a count.
+            lines += [
+                "# HELP docksentry_container_update_available 1 when this container has an update.",
+                "# TYPE docksentry_container_update_available gauge",
+            ]
+            for host, d in sorted(st["per_host"].items()):
+                for name in d["names"]:
+                    if not name:
+                        continue
+                    lines.append(
+                        f'docksentry_container_update_available'
+                        f'{{host="{_metric_label(host)}",container="{_metric_label(name)}"}} 1')
+            body = ("\n".join(lines) + "\n").encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_status_json(self):
+            """The same numbers as JSON, for anything that is not Prometheus."""
+            from version import VERSION
+            st = self._machine_state()
+            payload = json.dumps({
+                "version": VERSION,
+                "containers": st["containers"],
+                "updates_pending": st["pending"],
+                "hosts": [
+                    {"name": h,
+                     "reachable": bool(st["hosts"].get(h)),
+                     "containers": st["per_host"].get(h, {}).get("containers", 0),
+                     "updates_pending": st["per_host"].get(h, {}).get("pending", 0),
+                     "pending": st["per_host"].get(h, {}).get("names", [])}
+                    for h in sorted(st["hosts"])
+                ],
+            }, indent=2).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _api_token_supplied(self):
+            """Whether the request presented a token at all, right or wrong.
+
+            The difference matters: no token is a browser and may fall
+            through to the password; a wrong token is a failed
+            authentication and must be told so.
+            """
+            if self.headers.get("Authorization", "").startswith("Bearer "):
+                return True
+            from urllib.parse import urlparse, parse_qs
+            return bool((parse_qs(urlparse(self.path).query).get("token") or [""])[0].strip())
+
+        def _api_token_name(self):
+            """The name of the API token this request carries, or "".
+
+            Read-only endpoints (`/metrics`, `/api/status`) accept a token
+            instead of the Web UI password, because a Prometheus scraper
+            cannot log in and a shared browser password is the wrong thing
+            to hand a scraper anyway. `API_TOKENS=prom:xxx,grafana:yyy`
+            names them so one can be revoked without disturbing the other.
+
+            Bearer header preferred; `?token=` accepted because several
+            scrapers cannot set headers, and refusing them would push
+            people towards leaving the endpoint open instead. A token in a
+            query string does end up in access logs, which is a real cost —
+            documented rather than hidden.
+
+            Compared with `hmac.compare_digest`: these are secrets, and a
+            plain `==` leaks their length and prefix through timing.
+            """
+            import hmac as _hmac
+            configured = getattr(config, "api_tokens", []) or []
+            if not configured:
+                return ""
+            supplied = ""
+            auth = self.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                supplied = auth[7:].strip()
+            if not supplied:
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                supplied = (q.get("token") or [""])[0].strip()
+            if not supplied:
+                return ""
+            for entry in configured:
+                name, _, token = entry.partition(":")
+                if not token:
+                    continue
+                if _hmac.compare_digest(token.strip(), supplied):
+                    return name.strip() or "token"
+            return ""
 
         def _check_auth(self):
             """Check Basic Auth against the currently configured password.
@@ -927,9 +1150,35 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             self.wfile.write(data)
 
         def do_GET(self):
+            path = self._get_path()
+            # Read-only machine endpoints, checked BEFORE the browser
+            # password. A scraper cannot log in, and handing it the shared
+            # Web UI password would give a monitoring job the ability to
+            # stop containers. These two do nothing but read, so a token
+            # that reaches them can do nothing but read — which is the
+            # read-only role, without a user model behind it.
+            if path.split("?")[0] in ("/metrics", "/api/status"):
+                who = self._api_token_name()
+                if who:
+                    return (self._serve_metrics() if path.startswith("/metrics")
+                            else self._serve_status_json())
+                if self._api_token_supplied():
+                    # A token was presented and it was wrong. Falling
+                    # through to the password check would answer 200 on an
+                    # instance with no WEB_PASSWORD, so a revoked token
+                    # would appear to keep working — the operator would
+                    # believe they had cut access and they would not have.
+                    self.send_error(401, "Invalid API token")
+                    return
+                # No token at all: fall through to the password check, so a
+                # logged-in human can open these in a browser and see
+                # exactly what their scraper will get.
             if not self._check_auth():
                 return self._send_auth_required()
-            path = self._get_path()
+            if path.split("?")[0] == "/metrics":
+                return self._serve_metrics()
+            if path.split("?")[0] == "/api/status":
+                return self._serve_status_json()
             # Static assets (CSS/JS extracted from Python literals → real
             # files). Served before the setup gate so the wizard is styled.
             if path in ("/static/app.css", "/static/app.js",
@@ -2602,30 +2851,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception:
                 own_name = ""
 
-            # One view per managed host, local first. A single-host install
-            # builds exactly one, from `self._get_containers()` and the raw
-            # store — the same two reads the page always did.
-            views = [self._status_view(LOCAL_HOST, _store_for(LOCAL_HOST),
-                                       self._get_containers(), own_name)]
-            for _host in (multi or ()):
-                if _host.is_local:
-                    continue
-                try:
-                    # Probe before listing: a `ps` that exits non-zero comes
-                    # back as an empty list, and reporting a dead host as
-                    # "no containers running" is worse than saying nothing.
-                    # The timeout is the other half — an endpoint that never
-                    # answers must not hang the page.
-                    _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
-                    if _probe.returncode != 0:
-                        raise OSError((_probe.stderr or "").strip() or "ps failed")
-                    _remote = self._containers_on(_host.backend, timeout=10)
-                except Exception:
-                    # One dead host is a line in the table, not a broken page.
-                    views.append({"unreachable": _host.name})
-                    continue
-                views.append(self._status_view(_host.name, _host.store,
-                                               _remote, ""))
+            views = self._host_views(multi, _store_for, own_name)
 
             rows = ""
             tiles = ""
