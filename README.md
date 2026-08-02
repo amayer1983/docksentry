@@ -300,6 +300,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
 | `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude — wildcards allowed (`systemd-*`) |
 | `MONITOR_ONLY_CONTAINERS` | | Watch and report these, never update them. Wildcards allowed. For containers something else owns — quadlets, Portainer stacks, anything deployed by Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `EXCLUDE_CONTAINERS` they stay visible and still report updates. The label `docksentry.monitor-only=true` does the same per container |
+| `REGISTRY_MIRRORS` | | `origin=mirror` pairs, comma-separated (`docker.io=mirror.internal`). Applies to update **checks** only — those go straight to the registry over HTTPS and otherwise ignore the daemon's own `registry-mirrors`, so on a network where only the mirror is reachable Docksentry could not check at all. Pulling still goes through the daemon with the container's own image reference; use `registry-mirrors` in `daemon.json` for that side |
 | `INSECURE_REGISTRIES` | | Registries to reach over plain HTTP instead of HTTPS, comma-separated, wildcards allowed. Only hosts named here — never guessed, and never a fallback when TLS fails |
 | `NTFY_TOKEN` | | ntfy access token for a protected topic |
 | `NTFY_USER` / `NTFY_PASSWORD` | | ntfy credentials, if you use basic auth rather than a token |

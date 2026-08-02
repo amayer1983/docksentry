@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.71.0] - 2026-08-02
+
+### Added
+- **`REGISTRY_MIRRORS` — check against a mirror.** Update checks go out over HTTPS straight to the registry named in the image reference, which means they ignore the daemon's own `registry-mirrors` completely. On a network where only the mirror is reachable — air-gapped, or behind a proxy that allows one host — `docker pull` worked while Docksentry reported "unreachable" on every cycle, which is the same confusing pair of facts as the HTTP-only registries fixed in v1.70.0. `REGISTRY_MIRRORS=docker.io=mirror.internal` sends lookups there instead. Verified against a real pull-through cache. Requested by @LeeNX in #34.
+
+  Lookups **only**, deliberately. Pulling still hands the container's own image reference to the daemon: pulling from somewhere else would rewrite that reference — `nginx:1.25` becoming `mirror.internal/nginx:1.25` — and then the container no longer matches its own compose file, and the next check compares against something different again. Docker's `registry-mirrors` in `daemon.json` is the right place for the pull side, and covers every pull on the host rather than only ours.
+
+### Fixed
+- **Unlimited swap did not survive a recreate.** `MemorySwap: -1` was skipped alongside 0 on the assumption that omitting the flag was a no-op — the comment said as much, and it was wrong. Measured: `--memory=256m --memory-swap=-1` inspects as -1, while `--memory=256m` alone inspects as 536870912, Docker's 2× default. So a container explicitly given unlimited swap quietly acquired a swap cap on its first update and could be OOM-killed afterwards where it was not before.
+- **One slow `docker` call discarded the whole sweep.** `_get_image_created` calls the backend unguarded and the backend raises on timeout; nothing wrapped the container loop, so a single slow `docker image inspect` took every result with it — including containers already checked — and the pending file was never written. Each container is its own try now, and a failure is treated like a failed registry check: the container keeps whatever pending entry it had, because being unable to look is not evidence that nothing is pending. (wud#490, wud#422, wud#551, wud#658)
+
 ## [1.70.0] - 2026-08-02
 
 The last of the findings from mining comparable tools. Three of these made a whole class of setup silently unusable while `docker pull` kept working — which is a confusing pair of facts to be handed.

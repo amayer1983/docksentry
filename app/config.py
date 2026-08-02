@@ -100,6 +100,7 @@ PERSISTENT_KEYS = [
     "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
+    "registry_mirrors",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -139,6 +140,7 @@ PERSISTENT_ENV_VARS = {
     "smtp_tls_verify": "SMTP_TLS_VERIFY",
     "monitor_only_containers": "MONITOR_ONLY_CONTAINERS",
     "insecure_registries": "INSECURE_REGISTRIES",
+    "registry_mirrors": "REGISTRY_MIRRORS",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -185,6 +187,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "smtp_tls_verify": True,
     "monitor_only_containers": [],
     "insecure_registries": [],
+    "registry_mirrors": [],
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -203,6 +206,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
+    "registry_mirrors",
 }
 # NOT loggable, for the record: web_password, discord_webhook, webhook_url
 # (credentials / tokenised URLs) and telegram_topic_id +
@@ -263,6 +267,7 @@ class Config:
                  monitor_enabled=True, monitor_interval_seconds=60,
                  monitor_events_enabled=True, smtp_tls_verify=True,
                  monitor_only_containers=None, insecure_registries=None,
+                 registry_mirrors=None,
                  telegram_polling=True, debug=False, update_policy="all",
                  container_cli="auto", docker_hosts="",
                  discord_bot_token="", discord_app_id="", discord_guild_id="",
@@ -333,6 +338,7 @@ class Config:
         self.smtp_tls_verify = smtp_tls_verify
         self.monitor_only_containers = monitor_only_containers or []
         self.insecure_registries = insecure_registries or []
+        self.registry_mirrors = registry_mirrors or []
         try:
             self.monitor_interval_seconds = max(15, int(monitor_interval_seconds))
         except (TypeError, ValueError):
@@ -689,6 +695,7 @@ class Config:
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),
             monitor_only_containers=[x.strip() for x in _env("MONITOR_ONLY_CONTAINERS", "").split(",") if x.strip()],
             insecure_registries=[x.strip() for x in _env("INSECURE_REGISTRIES", "").split(",") if x.strip()],
+            registry_mirrors=[x.strip() for x in _env("REGISTRY_MIRRORS", "").split(",") if x.strip()],
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),

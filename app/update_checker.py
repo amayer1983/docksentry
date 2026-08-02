@@ -66,6 +66,46 @@ class ContainerListUnavailable(Exception):
     """
 
 
+def parse_mirrors(entries):
+    """`["docker.io=mirror.internal", ...]` -> `{"docker.io": "mirror.internal"}`.
+
+    Malformed entries are dropped rather than guessed at: a mirror map with
+    a typo should lose that one line, not silently redirect lookups to
+    something the operator did not write.
+    """
+    out = {}
+    for e in entries or []:
+        e = (e or "").strip()
+        if "=" not in e:
+            continue
+        origin, mirror = e.split("=", 1)
+        origin, mirror = origin.strip(), mirror.strip()
+        if origin and mirror:
+            out[origin] = mirror
+    return out
+
+
+def mirror_host(host, mirrors):
+    """The host to ASK about `host`, which may be a mirror of it.
+
+    Only affects lookups. Pulling still goes through the daemon with the
+    container's own image reference, which is deliberate — see the note on
+    `_effective_host`.
+
+    Docker Hub answers to several names, so a mirror written for any of
+    them applies to the canonical one the lookup code uses.
+    """
+    if not mirrors:
+        return host
+    if host in mirrors:
+        return mirrors[host]
+    if host == "registry-1.docker.io":
+        for alias in ("docker.io", "index.docker.io", "registry.hub.docker.com"):
+            if alias in mirrors:
+                return mirrors[alias]
+    return host
+
+
 def registry_scheme(host, insecure_list):
     """`"https"` or `"http"` for a registry host.
 
@@ -762,6 +802,29 @@ class UpdateChecker:
         return registry_scheme(
             host, getattr(self.config, "insecure_registries", []))
 
+    def _effective_host(self, host):
+        """The host to ASK about `host` — itself, or a configured mirror.
+
+        Checks go out over urllib, straight to the registry named in the
+        image reference, and therefore ignore the daemon's own
+        `registry-mirrors` entirely. On a network where only the mirror is
+        reachable — air-gapped, or behind a proxy that allows one host —
+        `docker pull` works and Docksentry reports "unreachable" forever,
+        which is the same confusing pair of facts as the HTTP-only
+        registries (#34, @LeeNX).
+
+        Deliberately lookups ONLY. Pulling still hands the container's own
+        image reference to the daemon, because pulling from somewhere else
+        would rewrite that reference — `nginx:1.25` becomes
+        `mirror.internal/nginx:1.25` — and then the container no longer
+        matches its own compose file and the next check compares against
+        something different again. Docker's `registry-mirrors` in
+        daemon.json is the right place for the pull side: it covers every
+        pull on the host rather than only ours.
+        """
+        return mirror_host(
+            host, parse_mirrors(getattr(self.config, "registry_mirrors", [])))
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -784,6 +847,7 @@ class UpdateChecker:
             host = "registry-1.docker.io"
         else:
             host = registry
+        host = self._effective_host(host)
         scheme = self._scheme_for(host)
         url = f"{scheme}://{host}/v2/{repository}/manifests/{tag}"
         self._auth_kind = "anonymous"
@@ -838,6 +902,7 @@ class UpdateChecker:
 
         Unlike the HEAD of the base check, these GETs DO count against Docker
         Hub's anonymous pull budget — see the gate in check_all."""
+        host = self._effective_host(host)
         scheme = self._scheme_for(host)
         url = f"{scheme}://{host}/v2/{repository}/{path}"
         self._auth_kind = "anonymous"
@@ -993,6 +1058,7 @@ class UpdateChecker:
         which is why it survived. (diun#43, diun#518, diun#653.)
         """
         host = "registry-1.docker.io" if "docker.io" in registry else registry
+        host = self._effective_host(host)
         scheme = self._scheme_for(host)
         url = f"{scheme}://{host}/v2/{repository}/tags/list"
 

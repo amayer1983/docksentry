@@ -95,6 +95,35 @@ def main():
     DiscordNotifier.send_updates_available(n, [{"name": "a", "image": "x:1"}])
     checks["a single message has no part number"] = "(1/1)" not in posts[0]["embeds"][0]["title"]
 
+    # ── registry mirrors, for lookups only ───────────────────────
+    # Checks go out over urllib, straight to the registry named in the
+    # image reference, so they ignore the daemon's own `registry-mirrors`
+    # entirely. On a network where only the mirror is reachable,
+    # `docker pull` works and Docksentry reports "unreachable" forever
+    # (#34, @LeeNX).
+    from update_checker import mirror_host, parse_mirrors
+    m = parse_mirrors(["docker.io=mirror.internal", "ghcr.io=ghcr.mirror"])
+    checks["a pair is parsed"] = m == {"docker.io": "mirror.internal",
+                                       "ghcr.io": "ghcr.mirror"}
+    # A typo should lose that one line, not silently redirect lookups
+    # somewhere the operator did not write.
+    checks["a malformed entry is dropped"] = parse_mirrors(["nonsense"]) == {}
+    checks["a half-empty entry is dropped"] = parse_mirrors(["a=", "=b"]) == {}
+
+    # Docker Hub answers to several names; a mirror written for any of them
+    # has to apply to the canonical one the lookup code actually uses.
+    checks["hub alias reaches the canonical host"] = mirror_host(
+        "registry-1.docker.io", m) == "mirror.internal"
+    checks["an exact host matches"] = mirror_host("ghcr.io", m) == "ghcr.mirror"
+    checks["an unmapped host is untouched"] = mirror_host("quay.io", m) == "quay.io"
+    checks["no map, no change"] = mirror_host("ghcr.io", {}) == "ghcr.io"
+
+    # Lookups only. Pulling still hands the container's own reference to
+    # the daemon — pulling from elsewhere would rewrite that reference and
+    # the container would stop matching its own compose file.
+    src3 = _i.getsource(UpdateChecker._effective_host)
+    checks["the pull side is explicitly out of scope"] = "daemon.json" in src3
+
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
         print(f"  {'PASS' if v else 'FAIL'} {k}")
