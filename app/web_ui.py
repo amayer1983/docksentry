@@ -3026,6 +3026,38 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # this dict (#52). A second get_container_labels() call would
             # be a second `docker inspect` for data we already have.
             det_labels = checker.get_container_labels(name) or {}
+            # Labels outrank the stored toggles — the status table has read
+            # them since #42, this page never did. Measured on a live
+            # container carrying `docksentry.auto=true`: the status row
+            # showed "auto 🏷" while this page showed the box UNCHECKED and
+            # still clickable. Clicking it wrote to the store, changed
+            # nothing because the label wins, and left the two pages
+            # contradicting each other — the same "a control that shows a
+            # state it does not have" defect @LeeNX reported in #51, on a
+            # different page.
+            _det_lab = {} if det_is_self else {
+                k: _UC2.label_bool(det_labels, k)
+                for k in ("auto", "ask-major", "trust-running")
+            }
+            if _det_lab.get("auto") is not None:
+                is_auto = _det_lab["auto"]
+            if _det_lab.get("ask-major") is not None:
+                is_askm = _det_lab["ask-major"]
+            if _det_lab.get("trust-running") is not None:
+                is_trust_c = _det_lab["trust-running"]
+
+            def _lab_lock(key):
+                """`(disabled-attr, marker)` for a label-governed control.
+
+                A locked control is disabled rather than merely marked: a
+                click that silently does nothing is what this whole class
+                of bug is made of.
+                """
+                if _det_lab.get(key) is None:
+                    return "", ""
+                return (' disabled',
+                        f'<span class="label-mark" '
+                        f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
             _det_lab_protect = _UC2.label_bool(det_labels, "protect")
             is_protect_c = (_det_lab_protect if _det_lab_protect is not None
                             else store.is_protect_stop(name))
@@ -3279,8 +3311,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 """
             else:
                 auto_block = f"""<div class="form-checkbox-row">
-  <input type="checkbox" id="cb-detail-auto" {'checked' if is_auto else ''} onchange="document.getElementById('frm-detail-auto').submit()">
-  <label for="cb-detail-auto">{t("web_autoupdate_enable")}</label>
+  <input type="checkbox" id="cb-detail-auto" {'checked' if is_auto else ''}{_lab_lock("auto")[0]} onchange="document.getElementById('frm-detail-auto').submit()">
+  <label for="cb-detail-auto">{t("web_autoupdate_enable")}{_lab_lock("auto")[1]}</label>
 </div>
 <form id="frm-detail-auto" method="POST" action="/api/autoupdate" class="inline-form">
 <input type="hidden" name="name" value="{_e(name)}">
@@ -3290,8 +3322,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             settings_html = f"""{auto_block}
 
 <div class="form-checkbox-row">
-  <input type="checkbox" id="cb-detail-major" {'checked' if is_askm else ''} onchange="document.getElementById('frm-detail-major').submit()">
-  <label for="cb-detail-major">{t("web_ask_major_on")}</label>
+  <input type="checkbox" id="cb-detail-major" {'checked' if is_askm else ''}{_lab_lock("ask-major")[0]} onchange="document.getElementById('frm-detail-major').submit()">
+  <label for="cb-detail-major">{t("web_ask_major_on")}{_lab_lock("ask-major")[1]}</label>
 </div>
 <form id="frm-detail-major" method="POST" action="/api/ask_major" class="inline-form">
 <input type="hidden" name="name" value="{_e(name)}">
@@ -3299,8 +3331,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <p class="form-help">{t("web_detail_major_hint")}</p>
 
 <div class="form-checkbox-row">
-  <input type="checkbox" id="cb-detail-trust" {'checked' if is_trust_c else ''} onchange="document.getElementById('frm-detail-trust').submit()">
-  <label for="cb-detail-trust">{t("web_trust_running")}</label>
+  <input type="checkbox" id="cb-detail-trust" {'checked' if is_trust_c else ''}{_lab_lock("trust-running")[0]} onchange="document.getElementById('frm-detail-trust').submit()">
+  <label for="cb-detail-trust">{t("web_trust_running")}{_lab_lock("trust-running")[1]}</label>
 </div>
 <form id="frm-detail-trust" method="POST" action="/api/trust_running" class="inline-form">
 <input type="hidden" name="name" value="{_e(name)}">
@@ -3412,7 +3444,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
         def _container_window_form(self, t, name, window):
             """Render the per-container update-window editor (subset of the
             global Update-Windows section, scoped to one container)."""
-            wd_full = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            # Not hardcoded English: this list is rendered next to the
+            # update-window controls in whatever language the UI is set to,
+            # and "Mon Tue Wed" in a German page is the same locale leak the
+            # cron preview had.
+            _wd = t("web_weekdays_short").split(",")
+            wd_full = ([w.strip() for w in _wd] if len(_wd) == 7
+                       else ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
             wd_set = set((window or {}).get("weekdays") or [])
             wd_html = ""
             for i, label in enumerate(wd_full):
@@ -4163,7 +4201,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             options = "".join(f'<option value="{_e(n)}">{_e(n)}</option>'
                               for n in container_names)
-            wd_full = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            # Not hardcoded English: this list is rendered next to the
+            # update-window controls in whatever language the UI is set to,
+            # and "Mon Tue Wed" in a German page is the same locale leak the
+            # cron preview had.
+            _wd = t("web_weekdays_short").split(",")
+            wd_full = ([w.strip() for w in _wd] if len(_wd) == 7
+                       else ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
             wd_html = ""
             for i, label in enumerate(wd_full):
                 wd_html += (f'<label style="display:inline-block;margin-right:10px;font-size:13px">'
