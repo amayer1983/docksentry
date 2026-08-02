@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.69.0] - 2026-08-02
+
+Three more from the same sweep, each reproduced before being fixed. All three are the same shape: the tool was quietly not doing what you thought.
+
+### Fixed
+- **An emoji in `BOT_LABEL` silently dropped every ntfy notification.** Python encodes HTTP header values as latin-1, so one emoji in the title raises `UnicodeEncodeError` inside `urlopen` — swallowed by the notifier's broad handler, one log line, push gone. The README recommends `BOT_LABEL=🖥 pve1`, so following our own documentation and using ntfy was enough to receive nothing and be told nothing. Titles are RFC 2047 encoded when they need it, verified against a real ntfy server. Note the condition is "not ASCII", not "not latin-1": an umlaut passes the latin-1 test but ntfy reads the header as UTF-8, and `Grün Größe` sent raw arrived as `Gr<?>n Gr<?>e` — quietly mangled rather than dropped, which is harder to notice. (dc#120)
+- **Only the first page of a registry's tag list was read.** Registries hand out the oldest tags first, so this truncated at exactly the end that matters. Measured on `ghcr.io/home-assistant/home-assistant`: 100 tags returned, all from 2021, highest parseable version 2021.7.1 — while the project is on 2026.7.4. Every major-bump decision there was made against a four-year-old view, so the confirmation gate you opted into never fired. Docker Hub answers with everything, which is why "the first hundred are enough in practice" held there and was silently false elsewhere. The full crawl now reaches the current version (44 pages, 4379 tags, ~15s) and is cached per run, so a compose stack with five containers from one image walks it once. Only runs for a container that actually has an update. (diun#43, diun#518, diun#653)
+- **Every registry failure said the same thing.** "Check FAILED (registry unreachable / unauthorized)" covered a rate limit, a deleted tag, a 500, a TLS failure and a DNS miss alike, which sends people hunting for an auth problem they do not have. The detail existed but went only to the debug log. The reason now reaches the visible line — `rate limited by the registry (HTTP 429)`, `tag or repository not found (HTTP 404)`, `TLS error (…)` — and is reset per container so one failure cannot inherit another's explanation. (diun#94, diun#245, wud#419)
+
 ## [1.68.0] - 2026-08-02
 
 Findings from mining the bug histories of comparable tools, each reproduced here before being fixed — plus a feature that came out of the same conversation.
