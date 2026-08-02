@@ -272,6 +272,7 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_monitor_only_tt": "Лише спостереження: Docksentry стежить за контейнером і повідомляє про оновлення, але ніколи його не оновлює.",
   "web_env_override_tt": "Середовище задає {var}={value}, але перемагає значення, збережене тут. Змініть це поле та збережіть, щоб перезаписати його, або вилучіть ключ із settings.json, щоб знову діяло середовище.",
   "web_env_override_secret_tt": "Середовище задає {var}, але перемагає значення, збережене тут. Змініть це поле та збережіть, щоб перезаписати його, або вилучіть ключ із settings.json, щоб знову діяло середовище.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",

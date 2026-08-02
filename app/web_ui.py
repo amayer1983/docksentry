@@ -2295,6 +2295,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             _lab_auto = _UC.label_bool(c.get("labels"), "auto")
             _lab_pin = _UC.label_bool(c.get("labels"), "pin")
             _lab_protect = _UC.label_bool(c.get("labels"), "protect")
+            # Monitor-only: watched and reported, never updated (#55,
+            # @LeeNX — podman quadlets, where systemd owns the container).
+            # Every action that would CHANGE the container is disabled;
+            # the check button stays live, because knowing an update
+            # exists is the entire point of still watching it.
+            _monitor_only = False
+            try:
+                _monitor_only = checker.is_monitor_only(c["name"], c.get("labels"))
+            except Exception:
+                pass
+            _mo_off = ' disabled' if _monitor_only else ''
+            _mo_title = t("web_monitor_only_tt") if _monitor_only else ''
+            _mo_mark = (f'<span class="label-mark" title="{_e(_mo_title)}">👁</span>'
+                        if _monitor_only else '')
             if is_self:
                 # Our own updates are governed by AUTO_SELFUPDATE and by
                 # nothing else (#51, @LeeNX): the opt-in list is skipped
@@ -2419,11 +2433,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             update_btn = (
                 f'<form method="POST" action="/api/update" class="inline-form">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
-                f'<button type="submit" class="btn-icon is-active" title="{_e(t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
+                f'<button type="submit"{_mo_off} class="btn-icon is-active" '
+                f'title="{_e(_mo_title or t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
                 f'</form>'
             ) if c["name"] in pending_names else ''
             pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
-            _pin_disabled = ' disabled' if _lab_pin is not None else ''
+            _pin_disabled = ' disabled' if (_lab_pin is not None or _monitor_only) else ''
             _pin_title = (t("web_label_authoritative") if _lab_pin is not None
                           else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt")))
             pin_btn = (
@@ -2446,10 +2461,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'title="{_e(t("web_selfupdate_settings_tt"))}">{_ICONS["settings"]}</a>'
                 )
             else:
-                _auto_disabled = ' disabled' if _lab_auto is not None else ''
-                _auto_title = (t("web_label_authoritative") if _lab_auto is not None
-                               else (t("web_autoupdate_disable") if is_auto
-                                     else t("web_autoupdate_enable")))
+                _auto_disabled = (' disabled' if (_lab_auto is not None
+                                                  or _monitor_only) else '')
+                _auto_title = (_mo_title if _monitor_only
+                               else (t("web_label_authoritative") if _lab_auto is not None
+                                     else (t("web_autoupdate_disable") if is_auto
+                                           else t("web_autoupdate_enable"))))
                 auto_btn = (
                     f'<form method="POST" action="/api/autoupdate" class="inline-form">'
                     f'<input type="hidden" name="name" value="{key_attr}">'
@@ -2460,7 +2477,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             ask_btn = (
                 f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
-                f'<button type="submit" class="btn-icon{" is-warn" if is_askm else ""}" '
+                f'<button type="submit"{_mo_off} class="btn-icon{" is-warn" if is_askm else ""}" '
                 f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
                 f'</form>'
             )
@@ -2477,7 +2494,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<form method="POST" action="/api/lifecycle" class="inline-form">'
                     f'<input type="hidden" name="name" value="{key_attr}">'
                     f'<input type="hidden" name="action" value="restart">'
-                    f'<button type="submit" class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
+                    f'<button type="submit"{_mo_off} class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
                     f'</form>'
                 )
                 # Stop hidden for protected containers (#38) — restart
@@ -2499,7 +2516,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         f'data-confirm-danger="1">'
                         f'<input type="hidden" name="name" value="{key_attr}">'
                         f'<input type="hidden" name="action" value="stop">'
-                        f'<button type="submit" class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
+                        f'<button type="submit"{_mo_off} class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
                         f'</form>'
                     )
             actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
@@ -2534,7 +2551,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                          if host_name == LOCAL_HOST else _e(c["name"]))
             return f"""{row_open}
 <td><input type="checkbox" class="bulk-cb" value="{key_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
-<td>{name_cell}{badges}</td>{host_td}
+<td>{name_cell}{_mo_mark}{badges}</td>{host_td}
 <td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
 <td>{status_badge}</td>
 <td>{auto_cell}</td>

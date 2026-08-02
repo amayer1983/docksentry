@@ -272,6 +272,7 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_monitor_only_tt": "Solo monitoraggio: Docksentry osserva questo container e segnala gli aggiornamenti, ma non lo aggiorna mai.",
   "web_env_override_tt": "L'ambiente imposta {var}={value}, ma vince il valore salvato qui. Modifica questo campo e salva per sovrascriverlo, oppure rimuovi la chiave da settings.json per seguire di nuovo l'ambiente.",
   "web_env_override_secret_tt": "L'ambiente imposta {var}, ma vince il valore salvato qui. Modifica questo campo e salva per sovrascriverlo, oppure rimuovi la chiave da settings.json per seguire di nuovo l'ambiente.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",

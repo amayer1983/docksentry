@@ -272,6 +272,7 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_monitor_only_tt": "仅监控：Docksentry 会观察此容器并报告更新，但绝不更新它。",
   "web_env_override_tt": "环境变量设置了 {var}={value}，但此处保存的值优先生效。修改本字段并保存即可覆盖；若想重新使用环境变量，请从 settings.json 中删除该键。",
   "web_env_override_secret_tt": "环境变量设置了 {var}，但此处保存的值优先生效。修改本字段并保存即可覆盖；若想重新使用环境变量，请从 settings.json 中删除该键。",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",

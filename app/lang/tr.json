@@ -272,6 +272,7 @@
   "web_badge_pinned_tt": "Pinned — excluded from update checks.",
   "web_badge_auto_tt": "Auto-update enabled — runs on the next scheduled tick.",
   "web_label_authoritative": "Controlled by a docksentry.* label in the compose file — remove the label there to change this.",
+  "web_monitor_only_tt": "Yalnızca izleme: Docksentry bu konteyneri izler ve güncellemeleri bildirir, ancak asla güncellemez.",
   "web_env_override_tt": "Ortam {var}={value} olarak ayarlıyor, ancak burada kayıtlı değer geçerli. Bu alanı değiştirip kaydederek üzerine yazın veya ortamın yeniden geçerli olması için anahtarı settings.json dosyasından silin.",
   "web_env_override_secret_tt": "Ortam {var} değişkenini ayarlıyor, ancak burada kayıtlı değer geçerli. Bu alanı değiştirip kaydederek üzerine yazın veya ortamın yeniden geçerli olması için anahtarı settings.json dosyasından silin.",
   "web_badge_major_tt": "Major-update confirmation enabled — major version bumps require manual confirm.",

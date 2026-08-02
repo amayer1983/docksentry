@@ -51,6 +51,30 @@ def _auth_host(entry):
 
 
 
+
+def name_matches(name, patterns):
+    """Whether `name` matches any of `patterns`.
+
+    Shell-style wildcards (`*`, `?`, `[abc]`) via `fnmatch`, not regex.
+    Deliberate: the thing people reach for is `systemd-*`, and a regex that
+    silently matches more than intended is a bad failure mode for a setting
+    whose whole job is to stop Docksentry touching a container. A pattern
+    with no wildcard in it behaves exactly like the exact-name matching
+    this replaces, so existing EXCLUDE_CONTAINERS values keep working
+    unchanged (#55, @LeeNX).
+    """
+    if not patterns:
+        return False
+    from fnmatch import fnmatchcase
+    for p in patterns:
+        p = (p or "").strip()
+        if not p:
+            continue
+        if p == name or fnmatchcase(name, p):
+            return True
+    return False
+
+
 class UpdateChecker:
     @property
     def backend(self):
@@ -144,7 +168,7 @@ class UpdateChecker:
                 else:
                     self._debug(f"  Skipped (image ID): {name} ({image})")
                     continue
-            if name in self.config.exclude_containers:
+            if name_matches(name, self.config.exclude_containers):
                 self._debug(f"  Skipped (excluded): {name}")
                 continue
             if name in self._get_pinned():
@@ -2117,6 +2141,29 @@ class UpdateChecker:
 
         return updates
 
+    def is_monitor_only(self, name, labels=None):
+        """Whether this container is watched but must never be updated.
+
+        Quadlets and other systemd-managed containers are the case that
+        prompted it (#55, @LeeNX): systemd owns them, and recreating one
+        behind its back leaves two things with an opinion about what should
+        be running. The existing exits all mean "stop looking" — `pin`,
+        `enable=false` and `exclude` drop the container from the scan
+        entirely, so you lose the version and update information that is
+        the whole reason for watching it. This one means "look, report,
+        never touch".
+
+        `MONITOR_ONLY_CONTAINERS` takes wildcard patterns for people who
+        cannot easily add labels — a quadlet unit file can carry `Label=`,
+        but "edit every unit file" is no answer for a fleet. The
+        `docksentry.monitor-only` label wins where it is set, matching how
+        every other `docksentry.*` label behaves.
+        """
+        lab = self.label_bool(labels, "monitor-only") if labels else None
+        if lab is not None:
+            return lab
+        return name_matches(name, getattr(self.config, "monitor_only_containers", []))
+
     def update_container(self, name, image, compose_project=None, compose_service=None,
                          compose_file=None, compose_dir=None, **kwargs):
         # FINAL BACKSTOP against self-kill (#16). `get_running_containers`
@@ -2132,6 +2179,32 @@ class UpdateChecker:
             msg = "Refused: this is the running Docksentry container — use /selfupdate (or set AUTO_SELFUPDATE=true)"
             self._save_history(name, image, False, msg)
             return False, msg
+
+        # Second backstop, same shape and for the same reason: every caller
+        # passes through here, so one check covers the scheduler, the Web UI
+        # button, the bots and anything added later. A monitor-only
+        # container must not be updated by ANY route — not automatically,
+        # not by someone clicking. "Never automatically" would be a
+        # half-exception, and the update is wrong no matter who asks for it
+        # (#55, @LeeNX).
+        try:
+            if self.is_monitor_only(name, self.get_container_labels(name)):
+                msg = ("Refused: this container is monitor-only "
+                       "(MONITOR_ONLY_CONTAINERS or docksentry.monitor-only) "
+                       "— Docksentry watches it but never updates it")
+                self._debug(f"  REFUSED: {name} is monitor-only")
+                self._save_history(name, image, False, msg)
+                return False, msg
+        except Exception as e:
+            # A failure to read labels must not silently ALLOW an update
+            # that the operator asked to be impossible — but neither should
+            # it break updates for everyone else, so fall back to the
+            # pattern list alone, which needs no daemon call.
+            self._debug(f"  monitor-only label check failed ({e}); using patterns only")
+            if self.is_monitor_only(name):
+                msg = "Refused: this container is monitor-only"
+                self._save_history(name, image, False, msg)
+                return False, msg
 
         # Netns owner resolved to a stable NAME by the batch orchestrator
         # (before the owner was recreated) — threaded into the standalone
