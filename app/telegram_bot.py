@@ -2055,12 +2055,28 @@ class TelegramBot:
             f"docker rename {qname}_old {qname} 2>/dev/null; "
             f"docker start {qname}"
         )
+        # Two failure points, not one. The rollback above covers a failed
+        # `docker run`. It does NOT cover a failed `docker rename`, and that
+        # is the more dangerous of the two: `rename` fails when `_old`
+        # already exists from an interrupted run, the `&&` chain then stops
+        # BEFORE the `run`, and the `||` rollback hangs off the run — so it
+        # never executes. Docksentry is left stopped, unrenamed, with
+        # nothing to bring it back. Dead until someone notices.
+        #
+        # So: clear any stale backup first, which removes the cause; and if
+        # the rename fails anyway, start back up what we just stopped
+        # rather than leaving the chain to die quietly. Same defect and the
+        # same fix as the container recreate path (watchtower#1101,
+        # ouroboros#19/#20).
         return (
-            f"sleep 3 && "
+            f"sleep 3; "
+            f"docker rm -f {qname}_old >/dev/null 2>&1; "
             f"docker stop {qname} && "
-            f"docker rename {qname} {qname}_old && "
-            f"( docker run -d {run_parts} {qimage} || "
-            f"( echo 'Selfupdate recreate failed — rolling back'; {rollback}; exit 1 ) ) && "
+            f"{{ docker rename {qname} {qname}_old || "
+            f"{{ echo 'Selfupdate backup failed — restarting unchanged'; "
+            f"docker start {qname}; exit 1; }}; }} && "
+            f"{{ docker run -d {run_parts} {qimage} || "
+            f"{{ echo 'Selfupdate recreate failed — rolling back'; {rollback}; exit 1; }}; }} && "
             f"docker rm {qname}_old"
         )
 
