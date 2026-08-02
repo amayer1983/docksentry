@@ -20,6 +20,29 @@ import urllib.error
 import urllib.request
 
 
+
+def _retry_after(err):
+    """Seconds to wait from a 429, or None if the server did not say.
+
+    Both spellings: the `Retry-After` header (seconds, or an HTTP date we
+    do not attempt to parse) and Discord's JSON body, which carries a float
+    and is the more precise of the two.
+    """
+    try:
+        body = err.read()
+        if body:
+            import json as _json
+            data = _json.loads(body)
+            if isinstance(data, dict) and "retry_after" in data:
+                return float(data["retry_after"])
+    except Exception:
+        pass
+    try:
+        raw = err.headers.get("Retry-After")
+        return float(raw) if raw is not None else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
 def post_json_with_retry(url, payload, headers, channel):
     """POST a JSON body with bounded retry for transient network failures
     (timeout / connection error) — 3 attempts, 2s and 4s backoff. Same
@@ -40,9 +63,20 @@ def post_json_with_retry(url, payload, headers, channel):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return resp.status
         except urllib.error.HTTPError as e:
-            # Server responded (4xx / 5xx) — not a transient network blip,
-            # don't retry. The retry loop is meant for the case where the
-            # request never reached the server.
+            # 429 is the one status that IS transient, and it says so: the
+            # server sends `Retry-After` precisely so a client can wait.
+            # Treating it as terminal — which every channel did — dropped
+            # the notification outright at the moment the service was
+            # busiest, which is when a "3 containers failed to update"
+            # message matters most (dc#255, dc#185).
+            if e.code == 429 and attempt < 2:
+                wait = _retry_after(e)
+                if wait is not None and wait <= 60:
+                    print(f"{channel}: rate limited, waiting {wait:.1f}s")
+                    time.sleep(wait)
+                    continue
+            # Everything else: the server answered and said no. Retrying an
+            # actual 400 or 403 just repeats the same rejection.
             print(f"{channel} error: HTTP {e.code}")
             return None
         except (urllib.error.URLError, socket.timeout, TimeoutError) as e:

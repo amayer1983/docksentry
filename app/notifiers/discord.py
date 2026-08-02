@@ -51,13 +51,22 @@ class DiscordNotifier(BaseNotifier):
 
         label = self._bot_label()
         title_prefix = f"{label} · " if label else ""
-        embed = {
-            "title": f"{title_prefix}🔄 Docker Updates Available ({len(updates)})",
-            "color": 0x58a6ff,  # Blue
-            "fields": fields,
-            "footer": {"text": self._footer_text()},
-        }
-        self.post({"embeds": [embed]})
+        # Discord rejects an embed with more than 25 fields — with a 400,
+        # so the whole notification was lost rather than truncated. Anyone
+        # coming back from a holiday to 30 pending updates got silence
+        # (dc#255, dc#185). Split into messages of 25; the title carries
+        # the part number so nobody has to wonder whether they saw it all.
+        chunks = [fields[i:i + 25] for i in range(0, len(fields), 25)] or [[]]
+        for idx, chunk in enumerate(chunks, 1):
+            part = f" ({idx}/{len(chunks)})" if len(chunks) > 1 else ""
+            embed = {
+                "title": (f"{title_prefix}🔄 Docker Updates Available "
+                          f"({len(updates)}){part}"),
+                "color": 0x58a6ff,  # Blue
+                "fields": chunk,
+                "footer": {"text": self._footer_text()},
+            }
+            self.post({"embeds": [embed]})
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
         """Send update result as Discord embed."""

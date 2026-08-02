@@ -18,6 +18,8 @@ through ``config.py`` or the Web UI in this step:
 
 Set either ``NTFY_URL`` (a full topic URL, e.g. ``https://ntfy.sh/my-topic``)
 or ``NTFY_SERVER`` + ``NTFY_TOPIC`` (e.g. ``https://ntfy.sh`` + ``my-topic``).
+For a protected topic, set ``NTFY_TOKEN`` (an ntfy access token) or
+``NTFY_USER`` + ``NTFY_PASSWORD``.
 """
 
 import os
@@ -55,6 +57,31 @@ def _header_value(text):
         return text
     import base64
     return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode() + "?="
+
+
+def _auth_header():
+    """`Authorization` for a protected ntfy topic, or "" when unset.
+
+    A self-hosted ntfy with `auth-default-access: deny`, or a reserved
+    topic on ntfy.sh, needs credentials — and Docksentry had no way to send
+    any, so every push 401'd with a single log line and the user had no
+    setting to reach for. Reserved topics are the normal way to keep a
+    topic name from being guessable, so this is not an exotic setup.
+
+    `NTFY_TOKEN` (an ntfy access token, `tk_...`) is preferred and becomes
+    a Bearer header. `NTFY_USER` + `NTFY_PASSWORD` fall back to Basic,
+    which ntfy also accepts.
+    """
+    token = (os.environ.get("NTFY_TOKEN") or "").strip()
+    if token:
+        return f"Bearer {token}"
+    user = (os.environ.get("NTFY_USER") or "").strip()
+    pw = os.environ.get("NTFY_PASSWORD") or ""
+    if user:
+        import base64
+        raw = f"{user}:{pw}".encode("utf-8")
+        return "Basic " + base64.b64encode(raw).decode("ascii")
+    return ""
 
 
 def _topic_url():
@@ -96,6 +123,9 @@ class NtfyNotifier(BaseNotifier):
             "Priority": priority,
             "User-Agent": "Docksentry/1.0",
         }
+        auth = _auth_header()
+        if auth:
+            headers["Authorization"] = auth
         req = urllib.request.Request(
             url, data=(body or "").encode("utf-8"),
             headers=headers, method="POST")

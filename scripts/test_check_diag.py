@@ -257,12 +257,16 @@ def main():
         out = buf.getvalue()
     finally:
         update_checker.urllib.request.urlopen = orig_open
-    checks["auth: token returned"] = tok == "SUPERSECRET"
+    # A full `Authorization` header value, not a bare token: two schemes
+    # reach _negotiate_token now (Bearer and Basic), and letting each call
+    # site prepend "Bearer " is how one of them eventually sends Bearer in
+    # front of Basic credentials.
+    checks["auth: token returned"] = tok == "Bearer SUPERSECRET"
     checks["auth: token never printed"] = "SUPERSECRET" not in out
     checks["auth: category printed"] = "auth: bearer challenge" in out
     checks["auth: realm printed"] = "https://auth.docker.io/token" in out
     checks["auth: cached for the run (one negotiation)"] = (
-        tok2 == "SUPERSECRET" and len(negotiations) == 1)
+        tok2 == "Bearer SUPERSECRET" and len(negotiations) == 1)
     checks["auth: rejected token is forgotten"] = (
         tchk._forget_token("docker.io", "gitea/runner") is None
         and tchk._token_cache == {})

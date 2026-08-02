@@ -66,6 +66,23 @@ class ContainerListUnavailable(Exception):
     """
 
 
+def registry_scheme(host, insecure_list):
+    """`"https"` or `"http"` for a registry host.
+
+    Always https unless the operator has NAMED this host in
+    `INSECURE_REGISTRIES`. Never guessed, never a fallback-on-failure: a
+    tool that silently retries over plain HTTP when TLS fails is a tool
+    that will hand credentials to whoever answers. Docker's own client
+    takes the same position — an insecure registry has to be listed.
+
+    Without this the `https://` in every registry URL was hardcoded, so a
+    local or internal HTTP-only registry reported "unreachable /
+    unauthorized" on every cycle while `docker pull` worked, and there was
+    no setting to change it (watchtower#277/#497/#767, diun#357).
+    """
+    return "http" if name_matches(host, insecure_list or []) else "https"
+
+
 def name_matches(name, patterns):
     """Whether `name` matches any of `patterns`.
 
@@ -419,12 +436,39 @@ class UpdateChecker:
         the server doesn't include one. Uses Basic-Auth credentials from
         docker config.json if available (for private registries).
 
+        Returns a complete `Authorization` HEADER VALUE — `Bearer <tok>` or
+        `Basic <b64>` — not a bare token. Two schemes reach this function
+        now, and letting each of the three call sites prepend "Bearer "
+        itself is how one of them would eventually send `Bearer` in front
+        of Basic credentials.
+
         Tokens are cached per (registry, repository) for the rest of the run,
         honouring the `expires_in` the registry hands out (minus a safety
         margin). Without it every single registry access pays the full three
         round-trips — 401, token, retry — and get_remote_image_meta alone
         makes three accesses per container.
         """
+        # A registry can answer with `Basic` instead of `Bearer` — the
+        # stock `registry:2` behind htpasswd does exactly that, and so do
+        # Nexus and Artifactory in their simpler modes. There is no token
+        # to negotiate: the credentials go straight to the registry. Before
+        # this, `_parse_www_authenticate` returned {} for anything not
+        # Bearer, negotiation returned None, and the credentials already
+        # sitting in config.json were never sent — so the whole class of
+        # private registry was permanently uncheckable while `docker pull`
+        # worked fine, which is a confusing pair of facts to be handed
+        # (diun#357, diun#5, wud#797).
+        if (www_auth or "").strip().lower().startswith("basic"):
+            auth = self._get_docker_credentials(registry)
+            if not auth:
+                self._debug(f"  Registry wants Basic auth but no credentials "
+                            f"are configured for {registry}")
+                return None
+            self._auth_kind = "basic"
+            # A full header value, not a bare token: see the note on the
+            # return type below.
+            return f"Basic {auth}"
+
         params = self._parse_www_authenticate(www_auth)
         realm = params.get("realm")
         if not realm:
@@ -474,8 +518,10 @@ class UpdateChecker:
                 ttl = 60
             # 10s of slack so we never present a token that expires in
             # flight; a too-short TTL just costs us a renegotiation.
-            self._token_cache[key] = (token, time.time() + max(1, ttl - 10))
-        return token
+            self._token_cache[key] = (f"Bearer {token}",
+                                      time.time() + max(1, ttl - 10))
+            return f"Bearer {token}"
+        return None
 
     def _forget_token(self, registry, repository):
         """Drop a cached token after it was rejected. A registry may expire a
@@ -711,6 +757,11 @@ class UpdateChecker:
             return "DNS lookup failed"
         return text[:70] or "unknown error"
 
+    def _scheme_for(self, host):
+        """https, or http for a host the operator listed as insecure."""
+        return registry_scheme(
+            host, getattr(self.config, "insecure_registries", []))
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -733,7 +784,8 @@ class UpdateChecker:
             host = "registry-1.docker.io"
         else:
             host = registry
-        url = f"https://{host}/v2/{repository}/manifests/{tag}"
+        scheme = self._scheme_for(host)
+        url = f"{scheme}://{host}/v2/{repository}/manifests/{tag}"
         self._auth_kind = "anonymous"
         self._vdebug(f"    HEAD {url}")
 
@@ -741,7 +793,7 @@ class UpdateChecker:
             req = urllib.request.Request(url, method="HEAD")
             req.add_header("Accept", self._MANIFEST_ACCEPT)
             if token:
-                req.add_header("Authorization", f"Bearer {token}")
+                req.add_header("Authorization", token)
             return urllib.request.urlopen(req, timeout=15)
 
         try:
@@ -786,7 +838,8 @@ class UpdateChecker:
 
         Unlike the HEAD of the base check, these GETs DO count against Docker
         Hub's anonymous pull budget — see the gate in check_all."""
-        url = f"https://{host}/v2/{repository}/{path}"
+        scheme = self._scheme_for(host)
+        url = f"{scheme}://{host}/v2/{repository}/{path}"
         self._auth_kind = "anonymous"
         self._vdebug(f"    GET {url}")
 
@@ -795,7 +848,7 @@ class UpdateChecker:
             if accept:
                 req.add_header("Accept", accept)
             if token:
-                req.add_header("Authorization", f"Bearer {token}")
+                req.add_header("Authorization", token)
             return urllib.request.urlopen(req, timeout=15)
 
         try:
@@ -940,7 +993,8 @@ class UpdateChecker:
         which is why it survived. (diun#43, diun#518, diun#653.)
         """
         host = "registry-1.docker.io" if "docker.io" in registry else registry
-        url = f"https://{host}/v2/{repository}/tags/list"
+        scheme = self._scheme_for(host)
+        url = f"{scheme}://{host}/v2/{repository}/tags/list"
 
         # One crawl per repository per run. A compose stack with five
         # containers from the same image would otherwise walk 44 pages five
@@ -956,7 +1010,7 @@ class UpdateChecker:
         def _attempt(token=None):
             req = urllib.request.Request(url)
             if token:
-                req.add_header("Authorization", f"Bearer {token}")
+                req.add_header("Authorization", token)
             return urllib.request.urlopen(req, timeout=15)
 
         last_resp_headers = None
@@ -1000,7 +1054,7 @@ class UpdateChecker:
         # major-bump gate, which only fires for a container that actually
         # has an update — not on every check of every container.
         seen_urls = {url}
-        page_url, pages = self._next_tag_page(last_resp_headers, host), 0
+        page_url, pages = self._next_tag_page(last_resp_headers, host, scheme), 0
         while page_url and pages < 60:
             if page_url in seen_urls:
                 break
@@ -1009,11 +1063,11 @@ class UpdateChecker:
             try:
                 req = urllib.request.Request(page_url)
                 if last_token:
-                    req.add_header("Authorization", f"Bearer {last_token}")
+                    req.add_header("Authorization", last_token)
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     page = json.loads(resp.read())
                     tags.extend(page.get("tags") or [])
-                    page_url = self._next_tag_page(resp.headers, host)
+                    page_url = self._next_tag_page(resp.headers, host, scheme)
             except Exception as e:
                 # A failed continuation is not a failed lookup — keep what
                 # we have rather than throwing away the first page too.
@@ -1025,7 +1079,7 @@ class UpdateChecker:
         return tags
 
     @staticmethod
-    def _next_tag_page(headers, host):
+    def _next_tag_page(headers, host, scheme="https"):
         """The absolute URL from a `Link: </v2/...>; rel="next"` header.
 
         Registries send a path, not a URL, so it has to be joined onto the
@@ -1044,11 +1098,11 @@ class UpdateChecker:
         if start < 0 or end < 0:
             return None
         path = link[start + 1:end].strip()
-        if path.startswith("https://"):
-            return path if path.startswith(f"https://{host}/") else None
+        if path.startswith("http://") or path.startswith("https://"):
+            return path if path.startswith(f"{scheme}://{host}/") else None
         if not path.startswith("/"):
             return None
-        return f"https://{host}{path}"
+        return f"{scheme}://{host}{path}"
 
     def get_highest_semver_tag(self, registry, repository, current_tag):
         """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
