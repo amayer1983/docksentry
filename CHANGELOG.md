@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.67.0] - 2026-08-02
+
+A pass through the web interface page by page, looking at it rather than reading its code. Every finding below was measured in a browser before it was touched.
+
+### Fixed
+- **On a phone, the whole page scrolled sideways instead of the table.** The container table is wider than a phone and had no scroll container, so the page itself moved and the header went with it — measured overflow of 286px at 360px wide, 256px at 390px, and still 46px at 768px. Every table now sits in its own horizontal scroll container: the table scrolls, the page stays put. Verified afterwards at 360 / 390 / 768 / 1024 across all pages — no horizontal page overflow anywhere.
+- **The container page and the status table disagreed about the same container.** Measured on a live container carrying `docksentry.auto=true`: the status row showed "auto 🏷" while the container page showed the checkbox **unchecked and still clickable**. Clicking it wrote to storage, changed nothing because the label wins, and left the two pages contradicting each other — the same "a control showing a state it does not have" defect @LeeNX reported in #51, one page over. The status table has read labels since #42; this page never did. It now reads `docksentry.auto`, `.ask-major` and `.trust-running`, marks them 🏷 and disables the control. Disabled rather than merely marked, because a click that silently does nothing is what this whole class of bug is made of.
+- **The action buttons in a table row were four pixels out of line.** @LeeNX in #46: "the force recheck buttons always seems a little higher than the rest." The check button sits bare in the row while every other action is wrapped in a `<form>`, and forms carry a browser default top margin — so inside that flex row the forms' margin box was 40px against the bare button's 32px, and centring put them at different heights. Measured at 572.5 versus 576.5 before; one shared position after.
+
+### Changed
+- **The cron preview spoke English inside a German interface** — "today 18:00 · tomorrow 18:00 · Tue 18:00". Two hardcoded words, plus a weekday from `strftime("%a")`, which reads the process locale, and in the container that is C. Both go through translation keys now, in all 16 languages.
+- **The weekday picker for update windows was hardcoded English** too, in two places. Same fix.
+- **Nine German strings were word-for-word transliterations of the English**, keeping every compound noun: "Drag-and-Drop-Sortierung", "Edit-in-place", "Head-Container-Visualisierung", "persistierte Settings", "forward-compatible", "Defense-in-Depth". One was wrong as well as ugly — "Container-Gruppen *wohnen* jetzt auf einer eigenen Seite", a literal rendering of "now live" that in German is what people do. Rewritten as German.
+- **Five stat cards in a two-column grid left the fifth alone in a half-width row**, which reads as a rendering fault. It spans the row now, below 600px only — above that the grid finds room for more columns and there is no orphan.
+
+### Known, not fixed
+- Rows in the container table stand at different heights depending on how many actions a container has — 66px with four buttons, 89px with six, because six 32px buttons need 212px and the column is 179px. That raggedness is the second half of @LeeNX's #46. Widening the column to 212px did **not** help: `min-width` loses to the table layout algorithm, the buttons still wrapped, and one row grew from 91px to 108px. Backed out rather than shipped. Still open.
+
 ## [1.66.0] - 2026-08-02
 
 More findings from mining comparable tools' bug histories — this round from a complete sweep of all 684 issues in `getwud/wud`, labels ignored. Both fixes below were measured here before being written.
