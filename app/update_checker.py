@@ -666,6 +666,39 @@ class UpdateChecker:
         if final != url:
             self._vdebug(f"      redirected to {self._short(final, 120)}")
 
+    @staticmethod
+    def _describe_registry_error(exc):
+        """A short, human reason for a failed registry lookup.
+
+        The per-container line used to read "registry unreachable /
+        unauthorized" whatever had happened — a rate limit, a deleted tag, a
+        server error and a TLS failure all looked identical, which sent
+        people hunting for an auth problem they did not have. The detail was
+        logged, but only to the debug log nobody has on. Same class of
+        defect as a setting that silently does not apply: the logic was
+        right, the message was not (diun#94, diun#245, wud#419).
+        """
+        code = getattr(exc, "code", None)
+        if code == 429:
+            return "rate limited by the registry (HTTP 429)"
+        if code in (401, 403):
+            return f"not authorised (HTTP {code})"
+        if code == 404:
+            return "tag or repository not found (HTTP 404)"
+        if isinstance(code, int) and 500 <= code < 600:
+            return f"registry server error (HTTP {code})"
+        if isinstance(code, int):
+            return f"HTTP {code}"
+        text = str(exc)
+        low = text.lower()
+        if "certificate" in low or "ssl" in low:
+            return f"TLS error ({text[:60]})"
+        if "timed out" in low or "timeout" in low:
+            return "timed out"
+        if "name or service not known" in low or "nodename" in low:
+            return "DNS lookup failed"
+        return text[:70] or "unknown error"
+
     def _get_remote_digest(self, registry, repository, tag):
         """Fetch the remote manifest digest for a tag.
 
@@ -706,12 +739,14 @@ class UpdateChecker:
         except urllib.error.HTTPError as e:
             if e.code != 401:
                 self._debug(f"  Registry error: HTTP {e.code} {e.reason}")
+                self._last_registry_error = self._describe_registry_error(e)
                 return None
             # 401 — negotiate a Bearer token from the WWW-Authenticate header
             www_auth = e.headers.get("WWW-Authenticate", "")
             token = self._negotiate_token(www_auth, registry, repository)
             if not token:
                 self._debug("  Registry error: 401 (token negotiation failed)")
+                self._last_registry_error = "authentication failed"
                 return None
             try:
                 with _attempt(token) as resp:
@@ -721,12 +756,15 @@ class UpdateChecker:
                 if e2.code == 401:
                     self._forget_token(registry, repository)
                 self._debug(f"  Registry error after auth: HTTP {e2.code} {e2.reason}")
+                self._last_registry_error = self._describe_registry_error(e2)
                 return None
             except Exception as e2:
                 self._debug(f"  Registry error after auth: {e2}")
+                self._last_registry_error = self._describe_registry_error(e2)
                 return None
         except Exception as e:
             self._debug(f"  Registry error: {e}")
+            self._last_registry_error = self._describe_registry_error(e)
             return None
 
     def _registry_get(self, host, registry, repository, path, accept=None):
@@ -2063,6 +2101,9 @@ class UpdateChecker:
         failed_checks = set()
 
         for c in containers:
+            # Reset per container: without this a later failure with no
+            # detail would inherit the previous container's reason.
+            self._last_registry_error = ""
             image = c["image"]
             registry, repository, tag = self._parse_image(image)
             if not registry:
@@ -2197,7 +2238,8 @@ class UpdateChecker:
                 # couldn't actually reach the registry. An empty string (a 200
                 # manifest with no Docker-Content-Digest header) is a failure
                 # too, not a real digest that would spuriously mismatch.
-                self._debug("  → Check FAILED (registry unreachable / unauthorized)")
+                why = getattr(self, "_last_registry_error", "") or "reason unknown"
+                self._debug(f"  → Check FAILED: {why}")
                 # Remember it. A full scan rewrites this host's slice of the
                 # pending file from `updates` alone, so a container whose
                 # check failed silently LOSES an update we already knew
