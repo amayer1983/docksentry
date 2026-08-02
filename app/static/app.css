@@ -628,6 +628,13 @@ tr.is-hidden { display: none; }
     gap: 12px;
     margin-bottom: 16px;
 }
+/* Five stat cards in a two-column grid leave the last one alone in a
+   half-width row, which reads as a rendering fault rather than a layout.
+   Only applied where the grid actually is two columns — above this width
+   auto-fit finds room for more and there is no orphan to fix. */
+@media (max-width: 600px) {
+    .stat-grid > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
 .stat { text-align: center; padding: 16px; }
 .stat .num { font-size: 32px; font-weight: bold; color: var(--accent); line-height: 1.1; }
 .stat .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
@@ -943,3 +950,16 @@ a.btn-icon { text-decoration: none; }
 /* Consistent help cursor on every hover-explained element — the 🏷 marker
    had it, the protect/pinned/... badges didn't. */
 .badge[title], .note-icon { cursor: help; }
+
+/* ── Table scroll container ─────────────────────────────────── */
+/* A table wider than the phone made the WHOLE PAGE scroll sideways —
+   measured: the status table overflowed by 286px at 360px wide, 256px at
+   390px, and still 46px at 768px, and the header scrolled off with it.
+   The table has to scroll inside its own box instead, so the page never
+   moves. `max-width: 100%` is what makes the container the constraint
+   rather than the table; without it the div just grows to fit. */
+.table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}

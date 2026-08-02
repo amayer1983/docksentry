@@ -1156,6 +1156,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             ticks = []
                             response = {"ok": False, "error": str(e)[:120]}
                         else:
+                            # The page renderer binds its own `t`; this is an
+                            # API branch and has none, so bind one here.
+                            _t = _web_translator(config.language)
                             now = _dt.now()
                             formatted = []
                             for t_dt in ticks:
@@ -1164,11 +1167,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                     # Less than 2 hours away: HH:MM only
                                     formatted.append(t_dt.strftime("%H:%M"))
                                 elif t_dt.date() == now.date():
-                                    formatted.append("today " + t_dt.strftime("%H:%M"))
+                                    formatted.append(_t("web_cron_today",
+                                                       time=t_dt.strftime("%H:%M")))
                                 elif (t_dt.date() - now.date()).days == 1:
-                                    formatted.append("tomorrow " + t_dt.strftime("%H:%M"))
+                                    formatted.append(_t("web_cron_tomorrow",
+                                                       time=t_dt.strftime("%H:%M")))
                                 elif (t_dt.date() - now.date()).days < 7:
-                                    formatted.append(t_dt.strftime("%a %H:%M"))
+                                    # NOT strftime("%a"): that reads the process
+                                    # locale, which in the container is C, so a
+                                    # German UI was showing "Tue 18:00" next to
+                                    # "today"/"tomorrow" that were hardcoded
+                                    # English in the first place.
+                                    days = _t("web_weekdays_short").split(",")
+                                    wd = days[t_dt.weekday()].strip() \
+                                        if len(days) == 7 else t_dt.strftime("%a")
+                                    formatted.append(f"{wd} {t_dt.strftime('%H:%M')}")
                                 else:
                                     formatted.append(t_dt.strftime("%Y-%m-%d %H:%M"))
                             response = {"ok": True, "ticks": formatted}
@@ -2643,7 +2656,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 major_banner = f"""<div class="card card-warn">
 <h2>{_ICONS["alert"]} {t("web_major_pending_title")}</h2>
 <p class="card-intro">{t("web_major_pending_intro")}</p>
-<table>{rows_mp}</table>
+<div class="table-scroll"><table>{rows_mp}</table></div>
 </div>"""
 
             # Last-check timestamp from update_history.json
@@ -2750,12 +2763,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
-<table id="ctbl">
+<div class="table-scroll"><table id="ctbl">
 <thead><tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th class="sortable" onclick="sortByName()" title="{t('web_sort_name')}" style="cursor:pointer;user-select:none">{t("web_name")} <span id="nameSortArrow"></span></th>{host_th}<th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_autoupdate_badge")}</th><th>{t("web_actions")}</th></tr></thead>
 <tbody id="ctblBody">
 {rows}
 </tbody>
-</table>
+</table></div>
 <!-- Legend keys: _legend_word() strips the Telegram emoji and upper-cases
      the first letter, so the row no longer mixes "Update" with a lowercase
      "auto"/"major-confirm"/"label" (#46, @LeeNX). The last two used to be
@@ -3171,7 +3184,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'{t("web_selfupdate_open_settings")}</a></td></tr>'
                 )
 
-            overview_html = f"""<table>
+            overview_html = f"""<div class="table-scroll"><table>
 <tr><td style="width:30%">{t("web_detail_image")}</td><td><code>{_e(image)}</code></td></tr>
 <tr><td>{t("web_detail_status")}</td><td>{status_badge} {badges_html}</td></tr>
 <tr><td>{t("web_detail_size")}</td><td>{_e(size_str)}</td></tr>
@@ -3182,7 +3195,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 {window_row}
 {group_row}
 {link_row}
-</table>
+</table></div>
 {note_html}"""
 
             # ── History tab ──────────────────────────────────────
@@ -3197,10 +3210,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         f'<td>{icon}</td>'
                         f'<td style="font-size:12px">{_e(detail)}</td></tr>'
                     )
-                history_html = f"""<table>
+                history_html = f"""<div class="table-scroll"><table>
 <tr><th>{t("web_date")}</th><th>{t("web_result")}</th><th>{t("web_detail")}</th></tr>
 {hist_rows}
-</table>"""
+</table></div>"""
             else:
                 history_html = f"""<div class="empty">
 <div class="empty-icon">📋</div>
@@ -3721,10 +3734,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <h2>{t("web_history")}</h2>
 {filter_form}
 {count_hint}
-<table>
+<div class="table-scroll"><table>
 <tr><th>{t("web_date")}</th><th>{t("web_name")}</th><th>{t("web_result")}</th><th>{t("web_detail")}</th></tr>
 {rows}
-</table>
+</table></div>
 </div>"""
 
             # ── Monitor events (v1.48.1) ───────────────────────────
@@ -3756,10 +3769,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </tr>"""
                 content += f"""<div class="card">
 <h2>{t("web_events")}</h2>
-<table>
+<div class="table-scroll"><table>
 <tr><th>{t("web_date")}</th><th>{t("web_name")}</th><th>{t("web_detail")}</th></tr>
 {ev_rows}
-</table>
+</table></div>
 </div>"""
             else:
                 content += f"""<div class="card">
@@ -4061,13 +4074,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
 <div class="card">
 <h2>Info</h2>
-<table>
+<div class="table-scroll"><table>
 <tr><td>Version</td><td><code>v{_e(VERSION)}</code></td></tr>
 <tr><td>Telegram</td><td><code>{telegram_status}</code></td></tr>
 <tr><td>Bot Token</td><td><code>{_e(token_masked)}</code></td></tr>
 <tr><td>Chat ID</td><td><code>{_e(chat_masked)}</code></td></tr>
 <tr><td>Data Dir</td><td><code>{_e(config.data_dir)}</code></td></tr>
-</table>
+</table></div>
 <p class="form-help" style="margin-top:8px">{t("web_info_credentials_hint")}</p>
 </div>"""
 
@@ -4157,10 +4170,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             f'<input type="checkbox" name="weekdays" value="{i}" '
                             f'style="width:auto;margin-right:4px">{label}</label>')
 
-            return f"""<table style="margin-bottom:14px">
+            return f"""<div class="table-scroll"><table style="margin-bottom:14px">
 <tr><th>{t("web_name")}</th><th>{t("web_windows_range")}</th><th>{t("web_windows_days")}</th><th>{t("web_actions")}</th></tr>
 {rows_html}
-</table>
+</table></div>
 <form method="POST" action="/api/window">
 <input type="hidden" name="action" value="save">
 <div class="grid">
