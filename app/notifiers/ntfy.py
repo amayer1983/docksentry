@@ -27,6 +27,36 @@ import urllib.request
 from .base import BaseNotifier
 
 
+def _header_value(text):
+    """An HTTP header value that survives a non-ASCII title.
+
+    Python encodes header values as latin-1, so a single emoji raises
+    `UnicodeEncodeError` inside `urlopen` — which the broad handler below
+    swallows, dropping the notification with one log line. The README
+    itself recommends `BOT_LABEL=🖥 pve1`, so anyone following the
+    documentation and using ntfy got no notifications at all and no
+    explanation. (Found by sweeping dockcheck's issue history; dc#120.)
+
+    RFC 2047 is the standard encoding for non-ASCII in a header, and ntfy
+    decodes it — verified against a real ntfy server, which returned the
+    title as `🖥 pve1`. Only pure ASCII is left alone, so the common case
+    stays readable in logs and to any proxy in between.
+
+    The test for "needs encoding" is ASCII, deliberately, and NOT "does
+    latin-1 accept it". An umlaut passes the latin-1 test — Python encodes
+    `ü` to 0xFC quite happily — but ntfy reads the header as UTF-8, where
+    0xFC alone is invalid. Measured against a live server: `Grün Größe`
+    sent raw arrived as `Gr<?>n Gr<?>e`. So a German title would have been
+    quietly mangled rather than dropped, which is the harder bug to notice
+    of the two.
+    """
+    text = text or ""
+    if text.isascii():
+        return text
+    import base64
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode() + "?="
+
+
 def _topic_url():
     """Resolve the topic URL from the environment, or "" when unset.
 
@@ -62,7 +92,7 @@ class NtfyNotifier(BaseNotifier):
         if label:
             title = f"[{label}] {title}"
         headers = {
-            "Title": title,
+            "Title": _header_value(title),
             "Priority": priority,
             "User-Agent": "Docksentry/1.0",
         }
