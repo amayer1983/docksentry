@@ -532,32 +532,44 @@ class UpdateChecker:
             UpdateChecker._host_platform_cache[key] = cached
         return cached
 
-    _cgroup_version_cache = None
+    #: host name -> "1" | "2". A dict, not a scalar: see _cgroup_version.
+    _cgroup_version_cache = {}
 
     @classmethod
-    def _cgroup_version(cls):
+    def _cgroup_version(cls, backend=None):
         """The DAEMON's cgroup version — "1" or "2" — via ``docker info``.
-        Works against both Docker and Podman over the docker-compatible
-        socket. Cached per process. On any error we assume "1", because
-        that's the conservative choice: several HostConfig knobs (e.g.
-        memory.swappiness) are cgroup-v1-only and must still be emitted
-        on real cgroup-v1 docker hosts; over-suppressing there would be
-        the regression. A classmethod so the self-update path in
-        telegram_bot (which calls _build_run_args statically) can reuse
-        it too.
+
+        Cached PER HOST, not per process. The answer feeds `_build_run_args`
+        when a container is recreated, and on a mixed fleet — a cgroup-v1
+        NAS beside a cgroup-v2 laptop, an ordinary homelab — one shared
+        cache let whichever host was asked first decide for all of them.
+        Knobs like `memory.swappiness` are v1-only, so getting it wrong
+        either drops a setting the container had or emits one the daemon
+        rejects. Third time a per-process cache has been a multi-host trap
+        here (HostScopedStore, then `_host_platform_cache`), which is why
+        the key is explicit rather than implied.
+
+        On any error we assume "1" — the conservative choice, since
+        over-suppressing v1-only knobs on a real v1 host would be the
+        regression. Still a classmethod so the self-update path in
+        telegram_bot can call it without an instance; that path is always
+        local, and omitting the argument keeps the local backend.
         """
-        if cls._cgroup_version_cache is None:
+        b = backend if backend is not None else _cb.default_backend()
+        key = getattr(b, "name", "") or "local"
+        cached = cls._cgroup_version_cache.get(key)
+        if cached is None:
             version = "1"
             try:
-                r = _cb.default_backend().run(
-                    ["info", "--format", "{{.CgroupVersion}}"], timeout=10)
+                r = b.run(["info", "--format", "{{.CgroupVersion}}"], timeout=10)
                 out = r.stdout.strip()
                 if r.returncode == 0 and out in ("1", "2"):
                     version = out
             except (subprocess.SubprocessError, OSError):
                 pass
-            cls._cgroup_version_cache = version
-        return cls._cgroup_version_cache
+            cls._cgroup_version_cache[key] = version
+            cached = version
+        return cached
 
     _daemon_net_cache = None
 
@@ -1938,7 +1950,7 @@ class UpdateChecker:
                                    self._get_image_defaults(image),
                                    netns_name=netns_name,
                                    inherited=self._image_config(config.get("Image")),
-                                   cgroup_version=self._cgroup_version())
+                                   cgroup_version=self._cgroup_version(self.backend))
         # _build_run_args keeps returning argv that starts with the CLI name
         # (tests assert on it directly); the backend prepends its own → [1:].
         run = self.backend.run(cmd[1:], timeout=120)
@@ -3563,7 +3575,7 @@ class UpdateChecker:
                     config, image, name, self._get_image_defaults(image),
                     netns_name=netns_name,
                     inherited=self._image_config(config.get("Image")),
-                    cgroup_version=self._cgroup_version(),
+                    cgroup_version=self._cgroup_version(self.backend),
                 )
                 run = self.backend.run(cmd[1:], timeout=120)
                 if run.returncode != 0:
@@ -3642,7 +3654,7 @@ class UpdateChecker:
             cmd = self._build_run_args(config, image, name, image_defaults,
                                        netns_name=netns_name,
                                        inherited=self._image_config(config.get("Image")),
-                                       cgroup_version=self._cgroup_version())
+                                       cgroup_version=self._cgroup_version(self.backend))
             self._debug(f"  Run cmd: docker run -d --name {name} ... {image}")
 
             # Create and start new container
