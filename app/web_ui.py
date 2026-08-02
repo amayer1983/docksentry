@@ -935,6 +935,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if path in ("/static/app.css", "/static/app.js",
                         "/static/manifest.webmanifest", "/static/icon.svg"):
                 return self._serve_static(path.rsplit("/", 1)[1])
+            # The page already declares its icon inline, so browser tabs
+            # have always shown it. But plenty of things still ask for
+            # /favicon.ico by convention — bookmark managers, feed readers,
+            # link previewers, older browsers — and every one of them got a
+            # 404 (#2, @NotRetarded asked for a favicon and it looked done
+            # from a tab, which is why the gap survived). Same SVG, served
+            # under the legacy name.
+            if path == "/favicon.ico":
+                return self._serve_static("icon.svg")
             # First-run gate: redirect everywhere to /setup until done.
             # /setup itself + /api/* must remain reachable (otherwise the
             # wizard couldn't submit, and the user couldn't escape).
