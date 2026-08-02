@@ -2,6 +2,25 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.65.0] - 2026-08-02
+
+### Fixed
+- **Crash-restart alerts reported the wrong exit code — always 0.** The number that is supposed to tell "this crashed on its own" from "that was my own `docker stop`" carried no information at all. `docker inspect` cannot supply it: a container the restart policy has already brought back is *running* again by the time the monitor looks, and a running container reports `ExitCode: 0`. Measured, and true of the previous sweep too, since it was running then as well. The live event stream carries the real code, so alerts now say `exit 137` where they used to say `exit 0`. Introduced in v1.63.0 with the alert itself; reported in spirit by @famewolf in #2, who needed exactly this number to tell his own shutdown from a real crash.
+- **Only the local host was being monitored for crashes and health.** Update checking has been multi-host since v1.62.0, but the container monitor was written before hosts existed and quietly kept its single local backend. On a live two-host install a Podman container died with exit 42 and nothing was reported, while the same instance logged "Managing 2 hosts" at startup. Anyone running a second host has been watching half their fleet. Alerts now carry the host — `nas/nginx` — because a fleet running the same stack on two machines otherwise produces two identical messages and no way to tell which box is on fire (#7).
+
+### Added
+- **A live watcher on the container event stream**, so the memory picture in a death alert is taken at the moment of death rather than up to a minute later. The monitor polls every 60 seconds; by the time it noticed, the container that ate the RAM may have released it, been restarted, or be the one you killed in a panic. Measured: the `die` event arrives 0 ms after the daemon stamps it, and the snapshot now lands 0.08s after death. The watcher never sends anything itself — alerting stays with the poller, which owns debouncing and cooldowns — it only records evidence the poller picks up. Turn it off with `MONITOR_EVENTS=false`; if it cannot start, Docksentry falls back to polling exactly as before. Asked for by @NotRetarded in #2.
+- **CPU alongside memory when a container dies.** @NotRetarded came back with the thing that should have made me doubt the whole memory line of work: no memory limit on the container that died, no visible memory pressure on the host, but CPU spikes. So I measured whether CPU starvation can kill a container. Directly, no — one pinned to 1% of a core ran happily. But the indirect route is real, and produces a death that cannot be told apart from an out-of-memory kill:
+
+  ```
+  same container, same shutdown handler, same `docker stop -t 5`
+  --cpus=1.0    → exit 0, clean
+  --cpus=0.005  → exit 137, OOMKilled false
+  ```
+
+  Starved of CPU it could not answer SIGTERM inside its grace period, so Docker escalated to SIGKILL — exit 137 with `OOMKilled` false, byte-identical to what the kernel's OOM killer leaves behind. An alert reporting only memory therefore points at the wrong resource in exactly that case. CPU comes from the same `docker stats` call, no extra process, and is reported only when something is actually holding the processor, because contention is the point and a CPU line on an idle host would bury the signal it exists to carry.
+- **Host memory on the status page**, next to disk. Reads the same `/proc/meminfo` the alerts use, so the page and the message can never disagree about how full the machine is. Also @NotRetarded's suggestion — he could see disk at a glance but had to leave Docksentry to find out whether the machine was under memory pressure at all, which is the question that comes before "which container did it".
+
 ## [1.64.0] - 2026-08-01
 
 ### Changed
