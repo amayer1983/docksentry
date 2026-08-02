@@ -302,6 +302,46 @@ def main():
     except Exception as e:
         print(f"Own-label check failed (non-fatal): {e}")
 
+    # UPDATE_POLICY only bites when a version can actually be read, and on
+    # most real hosts it cannot. The policy compares an old and a new
+    # version string; those come from the OCI `image.version` label, or
+    # failing that from a full `x.y.z` image tag. Almost nobody runs
+    # `:1.2.3` — they run `:latest`, `:17`, `:31-apache`, `:main` — and when
+    # nothing parses, the bump level is unknown and the update is allowed
+    # through. That fail-open is deliberate, but the operator set
+    # "patch only" and was never told it does not apply, which is the part
+    # that is wrong: a `postgres:16` → `17` jump sails past a setting whose
+    # entire purpose was to stop it. Measured on this developer's host: 0 of
+    # 14 distinct images carried a parseable version.
+    try:
+        policy = (getattr(config, "update_policy", "all") or "all").lower()
+        if policy != "all":
+            covered = uncovered = 0
+            for c in checker.get_running_containers():
+                ver = ""
+                try:
+                    ver = checker.image_version_label(c.get("image", "")) or ""
+                except Exception:
+                    ver = ""
+                if not (ver and checker._parse_semver(ver)):
+                    _, _, tag = checker._parse_image(c.get("image", ""))
+                    ver = tag if (tag and checker._parse_semver(tag)) else ""
+                if ver:
+                    covered += 1
+                else:
+                    uncovered += 1
+            if uncovered:
+                print(f"NOTE: UPDATE_POLICY={policy} can only hold back "
+                      f"{covered} of {covered + uncovered} containers. The "
+                      f"other {uncovered} carry no readable version (tags "
+                      f"like :latest, :17 or :main), so their bump size "
+                      f"cannot be judged and they update as if the policy "
+                      f"were 'all'. Use docksentry.pin, "
+                      f"docksentry.auto=false or MONITOR_ONLY_CONTAINERS to "
+                      f"hold those back.")
+    except Exception as e:
+        print(f"Update-policy coverage check failed (non-fatal): {e}")
+
     # Start scheduler in background
     scheduler.start()
 
