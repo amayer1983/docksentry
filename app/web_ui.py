@@ -3056,7 +3056,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if _det_lab.get(key) is None:
                     return "", ""
                 return (' disabled',
-                        f'<span class="label-mark" '
+                        f' <span class="label-mark" '
                         f'title="{_e(t("web_label_authoritative"))}">🏷</span>')
             _det_lab_protect = _UC2.label_bool(det_labels, "protect")
             is_protect_c = (_det_lab_protect if _det_lab_protect is not None
