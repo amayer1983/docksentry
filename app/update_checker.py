@@ -2167,77 +2167,178 @@ class UpdateChecker:
         failed_checks = set()
 
         for c in containers:
-            # Reset per container: without this a later failure with no
-            # detail would inherit the previous container's reason.
-            self._last_registry_error = ""
-            image = c["image"]
-            registry, repository, tag = self._parse_image(image)
-            if not registry:
-                reason = "pinned by digest" if "@" in image else "unparseable"
-                self._debug(f"  Skipped ({reason}): {c['name']} ({image})")
-                continue
+            # One container per try. A slow `docker image inspect`
+            # raises TimeoutExpired out of an unguarded helper, and
+            # without this it took the WHOLE sweep with it — every
+            # container already checked, results discarded, and the
+            # pending file never written. `_process_update_batch` has
+            # guarded each container since it was written; the check
+            # loop never did (wud#490, wud#422, wud#551, wud#658).
+            try:
+                # Reset per container: without this a later failure with no
+                # detail would inherit the previous container's reason.
+                self._last_registry_error = ""
+                image = c["image"]
+                registry, repository, tag = self._parse_image(image)
+                if not registry:
+                    reason = "pinned by digest" if "@" in image else "unparseable"
+                    self._debug(f"  Skipped ({reason}): {c['name']} ({image})")
+                    continue
 
-            self._debug(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")
+                self._debug(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")
 
-            # #53 (@LeeNX): compare the image the container is ACTUALLY
-            # running against the registry — NOT whatever the tag currently
-            # resolves to. When someone pulls `:latest` forward but never
-            # recreates the container, the tag and the running image drift
-            # apart: the tag-based check then reads tag==remote and reports
-            # "up to date" while the container keeps running the old image,
-            # so Docksentry stays blind to a real available update. The Web
-            # UI already keys on the running image ID (#46) — the check has
-            # to do the same. `run_id` is the container's `.Image` (a
-            # sha256:… ID); its RepoDigests are the local side of the
-            # comparison.
-            run_id = self._container_image_id(c["name"])
-            running_digests = self._get_local_digests(run_id) if run_id else []
-            if running_digests:
-                local_digests = running_digests
-                local_ref = run_id
-            else:
-                # The running image carries no RepoDigests — it was built
-                # locally, or the tag that produced it was since removed /
-                # moved so the old image is now digestless — or we couldn't
-                # read the running image ID at all.
-                #
-                # Before falling back to the tag we still catch the exact #53
-                # (@LeeNX) shape the digest check above misses: `:latest` was
-                # pulled forward to a NEW image but the container was never
-                # recreated, so the OLD image it keeps running lost its
-                # RepoDigest (it's now dangling) and can't be compared by
-                # digest. We can still compare IMAGE IDs. If the TAG is a real
-                # registry image (it has RepoDigests — so a newer image really
-                # is pullable, this isn't a locally-built tag the user rebuilds
-                # but never recreates) AND both image IDs are readable AND the
-                # container runs a DIFFERENT id than the tag now points at,
-                # then the container is simply behind the tag. The newer image
-                # is already local (the tag has it); only a recreate is
-                # missing → report the update. Old side = the running image,
-                # new side = the tag / remote.
-                tag_id = self._image_id(image)
-                tag_repo_digests = self._get_local_repo_digests(image)
-                if tag_repo_digests and run_id and tag_id and run_id != tag_id:
+                # #53 (@LeeNX): compare the image the container is ACTUALLY
+                # running against the registry — NOT whatever the tag currently
+                # resolves to. When someone pulls `:latest` forward but never
+                # recreates the container, the tag and the running image drift
+                # apart: the tag-based check then reads tag==remote and reports
+                # "up to date" while the container keeps running the old image,
+                # so Docksentry stays blind to a real available update. The Web
+                # UI already keys on the running image ID (#46) — the check has
+                # to do the same. `run_id` is the container's `.Image` (a
+                # sha256:… ID); its RepoDigests are the local side of the
+                # comparison.
+                run_id = self._container_image_id(c["name"])
+                running_digests = self._get_local_digests(run_id) if run_id else []
+                if running_digests:
+                    local_digests = running_digests
                     local_ref = run_id
-                    if self._diag_on():
-                        run_desc = (self._get_image_version_label(run_id)
+                else:
+                    # The running image carries no RepoDigests — it was built
+                    # locally, or the tag that produced it was since removed /
+                    # moved so the old image is now digestless — or we couldn't
+                    # read the running image ID at all.
+                    #
+                    # Before falling back to the tag we still catch the exact #53
+                    # (@LeeNX) shape the digest check above misses: `:latest` was
+                    # pulled forward to a NEW image but the container was never
+                    # recreated, so the OLD image it keeps running lost its
+                    # RepoDigest (it's now dangling) and can't be compared by
+                    # digest. We can still compare IMAGE IDs. If the TAG is a real
+                    # registry image (it has RepoDigests — so a newer image really
+                    # is pullable, this isn't a locally-built tag the user rebuilds
+                    # but never recreates) AND both image IDs are readable AND the
+                    # container runs a DIFFERENT id than the tag now points at,
+                    # then the container is simply behind the tag. The newer image
+                    # is already local (the tag has it); only a recreate is
+                    # missing → report the update. Old side = the running image,
+                    # new side = the tag / remote.
+                    tag_id = self._image_id(image)
+                    tag_repo_digests = self._get_local_repo_digests(image)
+                    if tag_repo_digests and run_id and tag_id and run_id != tag_id:
+                        local_ref = run_id
+                        if self._diag_on():
+                            run_desc = (self._get_image_version_label(run_id)
+                                        or self._short(run_id, 19))
+                            tag_desc = (self._get_image_version_label(image)
+                                        or self._short(tag_id, 19))
+                            self._vdebug(
+                                f"  Running image {run_desc} differs from the tag "
+                                f"image {tag_desc} and has no digest to compare — "
+                                f"container is behind the tag (not recreated after "
+                                f"the tag moved), recreate needed (#53)")
+                        # Same shape as the normal UPDATE-AVAILABLE branch below,
+                        # but keyed on the running image: size/created/version come
+                        # from what the container actually runs, the new version
+                        # from the remote's OCI metadata.
+                        size = self._get_image_size(local_ref)
+                        created = self._get_image_created(local_ref)
+                        self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
+                        c["size"] = size
+                        c["created"] = created
+                        old_v = self._get_image_version_label(local_ref)
+                        if not old_v and self._parse_semver(tag):
+                            old_v = tag
+                        c["old_version"] = old_v
+                        meta = self.get_remote_image_meta(registry, repository, tag)
+                        if meta.get("version"):
+                            c["new_version"] = meta["version"]
+                        if meta.get("created"):
+                            c["new_created"] = meta["created"]
+                        if resolve_versions:
+                            _vlog(f"    remote :{tag} is version "
+                                  f"{meta.get('version') or '?'} "
+                                  f"(built {meta.get('created') or '?'}), "
+                                  f"local is {old_v or '?'}")
+                        updates.append(c)
+                        continue
+                    # Fall back to the tag image (today's behaviour) rather than
+                    # risk a false "update available": a missing digest turning
+                    # into a phantom update would be noise for every user, strictly
+                    # worse than the status quo. This covers a locally-built tag
+                    # (no RepoDigests → nothing to pull), a container already on the
+                    # tag image (run_id == tag_id), and an unreadable image id.
+                    local_digests = self._get_local_digests(image)
+                    local_ref = image
+                    if run_id:
+                        self._vdebug(f"  Running image {self._short(run_id, 19)} has "
+                                     f"no repo digest — falling back to the tag {image} "
+                                     f"for {c['name']}")
+
+                if not local_digests:
+                    self._debug(f"  Skipped (no local digest): {c['name']}")
+                    continue
+
+                remote_digest = self._get_remote_digest(registry, repository, tag)
+
+                # Full digests, with the repository prefix Docker reports them
+                # under. Truncating to 30 chars saved a line break and cost the
+                # reader any way of checking the value against
+                # `docker manifest inspect` (#53, @LeeNX). The prefix falls back
+                # to the parsed repository if RepoDigests is unavailable.
+                local_shown = (self._get_local_repo_digests(local_ref)
+                               or [f"{repository}@{d}" for d in local_digests])
+                self._debug(f"  Local:  {', '.join(local_shown)}")
+                self._debug(f"  Remote: {remote_digest or 'FAILED'}")
+
+                # Spell out a tag/running-image divergence — the #53 failure
+                # class itself — in one human-readable line. Gated behind DEBUG
+                # (the same gate as the rest of the #53 diagnostics) and only
+                # emitted when the running image really differs from what the tag
+                # points at, so the normal case stays silent.
+                if self._diag_on() and local_ref != image:
+                    tag_digests = self._get_local_digests(image)
+                    if set(local_digests) != set(tag_digests):
+                        run_desc = (self._get_image_version_label(local_ref)
                                     or self._short(run_id, 19))
                         tag_desc = (self._get_image_version_label(image)
-                                    or self._short(tag_id, 19))
-                        self._vdebug(
-                            f"  Running image {run_desc} differs from the tag "
-                            f"image {tag_desc} and has no digest to compare — "
-                            f"container is behind the tag (not recreated after "
-                            f"the tag moved), recreate needed (#53)")
-                    # Same shape as the normal UPDATE-AVAILABLE branch below,
-                    # but keyed on the running image: size/created/version come
-                    # from what the container actually runs, the new version
-                    # from the remote's OCI metadata.
+                                    or (self._short(tag_digests[0], 19) if tag_digests else "?"))
+                        self._vdebug(f"  Container runs {run_desc}, but tag {image} "
+                                     f"points at {tag_desc} — container was not "
+                                     f"recreated after the tag moved (#53)")
+
+                if not remote_digest:
+                    # Treat unknown as unknown — don't claim "up to date" when we
+                    # couldn't actually reach the registry. An empty string (a 200
+                    # manifest with no Docker-Content-Digest header) is a failure
+                    # too, not a real digest that would spuriously mismatch.
+                    why = getattr(self, "_last_registry_error", "") or "reason unknown"
+                    self._debug(f"  → Check FAILED: {why}")
+                    # Remember it. A full scan rewrites this host's slice of the
+                    # pending file from `updates` alone, so a container whose
+                    # check failed silently LOSES an update we already knew
+                    # about — the Web UI badge and the update button vanish and
+                    # the next report says everything is current. Being unable
+                    # to check is not evidence that nothing is pending
+                    # (wud#116, wud#419, wud#945).
+                    failed_checks.add(c["name"])
+                    continue
+
+                if remote_digest not in local_digests:
+                    # Size / created / version describe the image the container
+                    # is running (local_ref) — in the #53 divergence case the tag
+                    # image is the NEW one, so reading the tag here would print
+                    # e.g. "2.3.0 → 2.3.0". In the normal case local_ref is the
+                    # tag image, so this is unchanged.
                     size = self._get_image_size(local_ref)
                     created = self._get_image_created(local_ref)
                     self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
                     c["size"] = size
                     c["created"] = created
+                    # Version info for the "Updates Available" notification (#44):
+                    # old from the local OCI label (falling back to a SemVer tag),
+                    # new from the remote image's OCI config. Best-effort, and
+                    # only for containers that actually have an update.
                     old_v = self._get_image_version_label(local_ref)
                     if not old_v and self._parse_semver(tag):
                         old_v = tag
@@ -2248,127 +2349,42 @@ class UpdateChecker:
                     if meta.get("created"):
                         c["new_created"] = meta["created"]
                     if resolve_versions:
+                        # The same line the up-to-date branch prints, so both
+                        # verdicts can be read the same way.
                         _vlog(f"    remote :{tag} is version "
                               f"{meta.get('version') or '?'} "
                               f"(built {meta.get('created') or '?'}), "
                               f"local is {old_v or '?'}")
                     updates.append(c)
-                    continue
-                # Fall back to the tag image (today's behaviour) rather than
-                # risk a false "update available": a missing digest turning
-                # into a phantom update would be noise for every user, strictly
-                # worse than the status quo. This covers a locally-built tag
-                # (no RepoDigests → nothing to pull), a container already on the
-                # tag image (run_id == tag_id), and an unreadable image id.
-                local_digests = self._get_local_digests(image)
-                local_ref = image
-                if run_id:
-                    self._vdebug(f"  Running image {self._short(run_id, 19)} has "
-                                 f"no repo digest — falling back to the tag {image} "
-                                 f"for {c['name']}")
+                else:
+                    self._debug("  → Up to date")
+                    if diag:
+                        # Local, so free: what the digest above actually is.
+                        self._vdebug(f"    local image built {self._get_image_created(local_ref)}"
+                                     f", size {self._get_image_size(local_ref)}")
+                    if resolve_versions:
+                        # THE point of #53: "up to date" reads like a claim you
+                        # have to take on faith as long as the log shows nothing
+                        # but a hash. Naming the version behind it — 66d8096… is
+                        # 2.3.0 — settles the question in one line.
+                        meta = self.get_remote_image_meta(registry, repository, tag)
+                        if meta.get("version"):
+                            _vlog(f"    remote :{tag} is version {meta['version']}"
+                                  f" (built {meta.get('created') or '?'})")
+                        elif meta.get("created"):
+                            _vlog(f"    remote :{tag} carries no version label"
+                                  f" (built {meta['created']})")
+                        else:
+                            _vlog(f"    remote :{tag} version could not be read")
 
-            if not local_digests:
-                self._debug(f"  Skipped (no local digest): {c['name']}")
-                continue
-
-            remote_digest = self._get_remote_digest(registry, repository, tag)
-
-            # Full digests, with the repository prefix Docker reports them
-            # under. Truncating to 30 chars saved a line break and cost the
-            # reader any way of checking the value against
-            # `docker manifest inspect` (#53, @LeeNX). The prefix falls back
-            # to the parsed repository if RepoDigests is unavailable.
-            local_shown = (self._get_local_repo_digests(local_ref)
-                           or [f"{repository}@{d}" for d in local_digests])
-            self._debug(f"  Local:  {', '.join(local_shown)}")
-            self._debug(f"  Remote: {remote_digest or 'FAILED'}")
-
-            # Spell out a tag/running-image divergence — the #53 failure
-            # class itself — in one human-readable line. Gated behind DEBUG
-            # (the same gate as the rest of the #53 diagnostics) and only
-            # emitted when the running image really differs from what the tag
-            # points at, so the normal case stays silent.
-            if self._diag_on() and local_ref != image:
-                tag_digests = self._get_local_digests(image)
-                if set(local_digests) != set(tag_digests):
-                    run_desc = (self._get_image_version_label(local_ref)
-                                or self._short(run_id, 19))
-                    tag_desc = (self._get_image_version_label(image)
-                                or (self._short(tag_digests[0], 19) if tag_digests else "?"))
-                    self._vdebug(f"  Container runs {run_desc}, but tag {image} "
-                                 f"points at {tag_desc} — container was not "
-                                 f"recreated after the tag moved (#53)")
-
-            if not remote_digest:
-                # Treat unknown as unknown — don't claim "up to date" when we
-                # couldn't actually reach the registry. An empty string (a 200
-                # manifest with no Docker-Content-Digest header) is a failure
-                # too, not a real digest that would spuriously mismatch.
-                why = getattr(self, "_last_registry_error", "") or "reason unknown"
-                self._debug(f"  → Check FAILED: {why}")
-                # Remember it. A full scan rewrites this host's slice of the
-                # pending file from `updates` alone, so a container whose
-                # check failed silently LOSES an update we already knew
-                # about — the Web UI badge and the update button vanish and
-                # the next report says everything is current. Being unable
-                # to check is not evidence that nothing is pending
-                # (wud#116, wud#419, wud#945).
+            except Exception as e:
+                # Treated exactly like a failed registry check: the
+                # container keeps whatever pending entry it already
+                # had, because being unable to look is not evidence
+                # that nothing is pending.
+                self._debug(f"  → Check FAILED: {e}")
                 failed_checks.add(c["name"])
                 continue
-
-            if remote_digest not in local_digests:
-                # Size / created / version describe the image the container
-                # is running (local_ref) — in the #53 divergence case the tag
-                # image is the NEW one, so reading the tag here would print
-                # e.g. "2.3.0 → 2.3.0". In the normal case local_ref is the
-                # tag image, so this is unchanged.
-                size = self._get_image_size(local_ref)
-                created = self._get_image_created(local_ref)
-                self._debug(f"  → UPDATE AVAILABLE (current: {created}, size: {size})")
-                c["size"] = size
-                c["created"] = created
-                # Version info for the "Updates Available" notification (#44):
-                # old from the local OCI label (falling back to a SemVer tag),
-                # new from the remote image's OCI config. Best-effort, and
-                # only for containers that actually have an update.
-                old_v = self._get_image_version_label(local_ref)
-                if not old_v and self._parse_semver(tag):
-                    old_v = tag
-                c["old_version"] = old_v
-                meta = self.get_remote_image_meta(registry, repository, tag)
-                if meta.get("version"):
-                    c["new_version"] = meta["version"]
-                if meta.get("created"):
-                    c["new_created"] = meta["created"]
-                if resolve_versions:
-                    # The same line the up-to-date branch prints, so both
-                    # verdicts can be read the same way.
-                    _vlog(f"    remote :{tag} is version "
-                          f"{meta.get('version') or '?'} "
-                          f"(built {meta.get('created') or '?'}), "
-                          f"local is {old_v or '?'}")
-                updates.append(c)
-            else:
-                self._debug("  → Up to date")
-                if diag:
-                    # Local, so free: what the digest above actually is.
-                    self._vdebug(f"    local image built {self._get_image_created(local_ref)}"
-                                 f", size {self._get_image_size(local_ref)}")
-                if resolve_versions:
-                    # THE point of #53: "up to date" reads like a claim you
-                    # have to take on faith as long as the log shows nothing
-                    # but a hash. Naming the version behind it — 66d8096… is
-                    # 2.3.0 — settles the question in one line.
-                    meta = self.get_remote_image_meta(registry, repository, tag)
-                    if meta.get("version"):
-                        _vlog(f"    remote :{tag} is version {meta['version']}"
-                              f" (built {meta.get('created') or '?'})")
-                    elif meta.get("created"):
-                        _vlog(f"    remote :{tag} carries no version label"
-                              f" (built {meta['created']})")
-                    else:
-                        _vlog(f"    remote :{tag} version could not be read")
-
         # Save pending updates — atomic write (v1.22.1)
         from container_store import atomic_write_json, LOCAL_HOST
         # Which host these updates are about (#7). Single-host installs
