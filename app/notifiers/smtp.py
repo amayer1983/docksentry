@@ -25,6 +25,7 @@ class SmtpNotifier(BaseNotifier):
         logs and returns on any failure, never raising into the caller —
         same contract as the Discord/webhook channels."""
         import smtplib
+        import ssl
         from email.message import EmailMessage
         c = self.config
         recipients = [r.strip() for r in c.smtp_to.replace(";", ",").split(",") if r.strip()]
@@ -36,19 +37,48 @@ class SmtpNotifier(BaseNotifier):
         msg["From"] = c.smtp_from
         msg["To"] = ", ".join(recipients)
         msg.set_content(body)
+        # Verify the server's certificate. `smtplib` without an explicit
+        # context falls back to `ssl._create_stdlib_context()`, which on
+        # this Python IS `_create_unverified_context` — measured:
+        # check_hostname False, verify_mode 0. So the SMTP password was
+        # handed to whatever answered on that host and port, with any
+        # certificate at all, and no compromise of the real mail server
+        # needed. (wud#352, found by sweeping comparable tools.)
+        #
+        # SMTP_TLS_VERIFY=false exists for internal mail servers with a
+        # self-signed certificate, which is a real and common setup — but
+        # it has to be asked for, and it says so when used, because the
+        # thing being risked is a password.
+        verify = getattr(c, "smtp_tls_verify", True)
+        if verify:
+            ctx = ssl.create_default_context()
+        else:
+            ctx = ssl._create_unverified_context()
+            print("SMTP: certificate verification is OFF "
+                  "(SMTP_TLS_VERIFY=false) — the password is sent to "
+                  "whatever answers on that address.")
         try:
             if c.smtp_tls == "ssl":
-                server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port, timeout=15)
+                server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port,
+                                          timeout=15, context=ctx)
             else:
                 server = smtplib.SMTP(c.smtp_host, c.smtp_port, timeout=15)
             try:
                 if c.smtp_tls == "starttls":
-                    server.starttls()
+                    server.starttls(context=ctx)
                 if c.smtp_user:
                     server.login(c.smtp_user, c.smtp_password)
                 server.send_message(msg, to_addrs=recipients)
             finally:
                 server.quit()
+        except ssl.SSLCertVerificationError as e:
+            # Name the escape hatch. Before this change the mail went out
+            # regardless, so anyone with a self-signed internal server sees
+            # a new failure and deserves to be told why and what to do.
+            print(f"SMTP error: the server's certificate could not be "
+                  f"verified ({e}). If this is an internal mail server with "
+                  f"a self-signed certificate, set SMTP_TLS_VERIFY=false — "
+                  f"but be aware that sends the password unverified.")
         except Exception as e:
             print(f"SMTP error: {e}")
 

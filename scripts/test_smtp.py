@@ -14,14 +14,20 @@ from notifier import Notifier
 class _FakeSMTP:
     last = None
 
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port, timeout=None, context=None):
+        # `context` is the certificate-verification context. It is a
+        # required part of the signature now: passing None here would let
+        # the unverified default back in through the test, which is the
+        # bug this fake is supposed to help prevent (wud#352).
+        self.context = context
         self.host, self.port = host, port
         self.started_tls = False
         self.login_args = None
         self.sent = None
         _FakeSMTP.last = self
 
-    def starttls(self):
+    def starttls(self, context=None):
+        self.context = context
         self.started_tls = True
 
     def login(self, u, p):

@@ -14,6 +14,31 @@ from datetime import datetime, timedelta
 _DEFERRED_CHECK_TTL = timedelta(hours=1)
 
 
+def _dow_matches_seven(pattern):
+    """Whether a day-of-week pattern matches Sunday written as `7`.
+
+    Cron accepts both `0` and `7` for Sunday. The main matcher compares
+    against 0, so this covers the other spelling — including `1-7`, which
+    means Monday-through-Sunday and would otherwise exclude the one day it
+    names explicitly.
+    """
+    pattern = (pattern or "").strip()
+    if pattern in ("*", ""):
+        return False
+    for piece in pattern.split(","):
+        piece = piece.strip().split("/")[0]
+        if piece == "7":
+            return True
+        if "-" in piece:
+            try:
+                start, end = (int(x) for x in piece.split("-", 1))
+            except (ValueError, TypeError):
+                continue
+            if start <= 7 <= end:
+                return True
+    return False
+
+
 def cron_matches(expr, now):
     """Return True if the 5-field cron `expr` would fire at the datetime
     `now` (minute-precision). Supports `*`, `*/n`, exact values, ranges
@@ -26,15 +51,28 @@ def cron_matches(expr, now):
     parts = (expr or "").split()
     if len(parts) != 5:
         return False
+    # Cron counts weekdays from SUNDAY (0=Sun … 6=Sat, and 7 is Sunday
+    # again); Python's weekday() counts from Monday. Feeding weekday()
+    # straight into the matcher shifted every day-of-week schedule one day
+    # late — `0 9 * * 1` meant Monday and fired on Tuesday, including the
+    # Web UI's own shipped "Weekly (Mondays 9 AM)" preset — and `7` never
+    # matched anything at all, so a perfectly valid Sunday schedule simply
+    # never ran. Measured across a full week before fixing. (wud#410, found
+    # by sweeping comparable tools' bug histories.)
+    dow = (now.weekday() + 1) % 7
     fields = [
         (parts[0], now.minute),
         (parts[1], now.hour),
         (parts[2], now.day),
         (parts[3], now.month),
-        (parts[4], now.weekday()),
+        (parts[4], dow),
     ]
-    for pattern, value in fields:
+    for i, (pattern, value) in enumerate(fields):
         if pattern == "*":
+            continue
+        # Sunday answers to both 0 and 7, so a pattern written either way —
+        # including inside a range like `1-7` — has to match.
+        if i == 4 and dow == 0 and _dow_matches_seven(pattern):
             continue
         try:
             if "/" in pattern and "-" in pattern.split("/")[0]:

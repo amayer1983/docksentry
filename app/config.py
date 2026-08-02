@@ -99,6 +99,7 @@ PERSISTENT_KEYS = [
     "healthcheck_max_starting",
     "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
+    "smtp_tls_verify",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -135,6 +136,7 @@ PERSISTENT_ENV_VARS = {
     "monitor_enabled": "MONITOR",
     "monitor_interval_seconds": "MONITOR_INTERVAL",
     "monitor_events_enabled": "MONITOR_EVENTS",
+    "smtp_tls_verify": "SMTP_TLS_VERIFY",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -178,6 +180,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "monitor_enabled": True,
     "monitor_interval_seconds": 60,
     "monitor_events_enabled": True,
+    "smtp_tls_verify": True,
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -195,6 +198,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "web_setup_done", "ui_mode", "language", "debug",
     "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
+    "smtp_tls_verify",
 }
 # NOT loggable, for the record: web_password, discord_webhook, webhook_url
 # (credentials / tokenised URLs) and telegram_topic_id +
@@ -253,7 +257,7 @@ class Config:
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
-                 monitor_events_enabled=True,
+                 monitor_events_enabled=True, smtp_tls_verify=True,
                  telegram_polling=True, debug=False, update_policy="all",
                  container_cli="auto", docker_hosts="",
                  discord_bot_token="", discord_app_id="", discord_guild_id="",
@@ -321,6 +325,7 @@ class Config:
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
         self.monitor_events_enabled = monitor_events_enabled
+        self.smtp_tls_verify = smtp_tls_verify
         try:
             self.monitor_interval_seconds = max(15, int(monitor_interval_seconds))
         except (TypeError, ValueError):
@@ -674,6 +679,7 @@ class Config:
             discord_allowed_users=_env("DISCORD_ALLOWED_USERS", ""),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
+            smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),
             monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),

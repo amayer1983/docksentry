@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.66.0] - 2026-08-02
+
+More findings from mining comparable tools' bug histories — this round from a complete sweep of all 684 issues in `getwud/wud`, labels ignored. Both fixes below were measured here before being written.
+
+### Fixed
+- **The SMTP password was sent over an unverified TLS connection.** `smtplib` without an explicit SSL context falls back to `ssl._create_stdlib_context()`, which on current Python *is* `_create_unverified_context` — measured: `check_hostname=False`, `verify_mode=0`. So `SMTP_USER` and `SMTP_PASSWORD` went to whatever answered on `SMTP_HOST:SMTP_PORT`, presenting any certificate at all, with no compromise of the real mail server needed. Demonstrated both ways against a local server holding a self-signed certificate for a different hostname: before, it captured `AUTH PLAIN` with the credentials in it; now it gets nothing. Certificates are verified on both transports. If you run an internal mail server with a self-signed certificate you will now see a failure — `SMTP_TLS_VERIFY=false` restores the old behaviour, the error message says so, and using it logs a line saying what it costs. (wud#352)
+- **Every day-of-week schedule fired one day late, and Sunday written as `7` never fired at all.** Cron counts weekdays from Sunday (`0`=Sun … `6`=Sat, with `7` a second spelling of Sunday); Python's `weekday()` counts from Monday. The matcher fed one straight into the other. Measured across a full week: `0 9 * * 1` ("Mondays") fired on **Tuesdays**, `0 3 * * 0` ("Sundays") on Mondays, and `0 3 * * 7` fired **never**. The Web UI's own shipped preset "Weekly (Mondays 9 AM)" is that first expression, so anyone who picked it from the dropdown has been getting Tuesdays. The "next 3 ticks" preview used the same function, so it confirmed the wrong day rather than catching it. Ranges and lists are covered too — `1-7` now means Monday through Sunday inclusive. (wud#410)
+
+### Changed
+- **A `docksentry.auto`, `.enable` or `.exclude` label on Docksentry's own container now says it does nothing.** It genuinely has no effect there — that label tells *another* instance how to treat this container, and no other instance is watching us — but silence was the wrong way to handle it. @LeeNX in #51: "I am not a fan of things that get ignored, it's a pattern that you don't know you might be doing something wrong and things look like they're just breaking." The ignore was introduced by the fix for that very issue, which makes it his point twice over. Startup now names the label and points at `AUTO_SELFUPDATE`.
+- **Bind-mount propagation survives a recreate.** A `:rslave` or `:rshared` bind came back as `rprivate`, so the container silently stopped seeing host mounts that appeared later — the classic symptom being a media stack that no longer notices a disk mounted after it started. Found independently by two separate sweeps. (watchtower#221, ouroboros#1-#5)
+
 ## [1.65.1] - 2026-08-02
 
 Found by mining the bug histories of comparable tools — Watchtower, Diun, WUD, dockcheck and Ouroboros — and reproducing each finding here before fixing it. Their backlogs are our backlog in waiting: same Docker API, same registry protocols.
