@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.65.1] - 2026-08-02
+
+Found by mining the bug histories of comparable tools — Watchtower, Diun, WUD, dockcheck and Ouroboros — and reproducing each finding here before fixing it. Their backlogs are our backlog in waiting: same Docker API, same registry protocols.
+
+### Fixed
+- **A private registry's credentials could be sent to a different registry.** The `config.json` lookup matched with `registry in key or key in registry`, so a container pulled from `gcr.io` was handed the Basic-Auth header stored for `eu.gcr.io`, and anything under `example.com` got the credentials for `myregistry.example.com`. Measured, not theorised. Hostname matching is now structural: scheme and path are stripped, the comparison is exact, and Docker Hub's four aliases fold together. That last part also fixes the case the substring hack was written for and never handled — `registry-1.docker.io` never matched `https://index.docker.io/v1/`, because neither string contains the other, so the one credential nearly everyone has was silently ignored. (watchtower#376)
+- **A leftover backup container could get promoted over your healthy one.** When `<name>_old` survived an interrupted run, the next update's rename failed, the recreate then failed on the name conflict, and the rollback — which trusts `<name>_old` to be *this* run's backup — force-removed the healthy container and started the stale one in its place. You end up running a previous generation of your container with nothing saying so. The guard already existed on the dependent-recreate path; the main path never had it. Two independent sweeps reproduced the same end state. A rename that fails now aborts before anything is destroyed. (watchtower#1101/#235, ouroboros#19/#20)
+- **Compose stacks with an override file silently stopped using compose.** Docker joins multiple compose files into one comma-separated label, so `docker-compose.yml,docker-compose.override.yml` failed the file check and the stack fell through to the standalone `docker run` recreate — losing compose semantics on exactly the setup the Compose docs recommend. Confirmed on four containers here. Each file now gets its own `-f`, in Docker's recorded order, since compose applies overrides left to right. A path containing a comma is left alone: an unresolvable split would deploy from the wrong file, which is worse than the fallback it replaces. (dockcheck#27)
+
+### Changed
+- **The README's roadmap was two releases out of date.** It still listed multi-host management and the interactive Discord bot as "v2.0, ahead" and asked people to star the repo to signal demand for them — both shipped on 1 August. Anyone comparing Docksentry against another tool read that section and concluded it couldn't do what it had been doing for a day.
+- `/favicon.ico` is served. The page has always declared its icon inline, so browser tabs showed it and the request looked satisfied — but bookmark managers, feed readers and link previewers ask for that path and all got a 404.
+
 ## [1.65.0] - 2026-08-02
 
 ### Fixed

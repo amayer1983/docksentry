@@ -541,12 +541,12 @@ Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what 
 
 **v1.x — ongoing.** Continued bug fixes and smaller features driven by user feedback in [#2](https://github.com/amayer1983/docksentry/issues/2). Recent: container groups, maintenance mode, container notes, group/topic auth, restart-dependents for VPN-sidecar stacks.
 
-**v2.0 — bigger release, ahead.** Two large items planned to land together rather than trickled out:
+**Shipped since — both of the items that used to sit under "v2.0, ahead":**
 
-- **Multi-host management** — one Docksentry instance managing several Docker hosts, with per-host pending queues, hostname-prefixed notifications, and a host selector in the Web UI.
-- **Interactive Discord bot** — slash-commands, buttons and the same control surface the Telegram bot offers today.
+- **Multi-host management** — one instance managing several Docker or Podman hosts (`DOCKER_HOSTS=name:endpoint`, TCP or SSH), with per-host pending queues, host-prefixed notifications, a host selector in the Web UI, and `@host` / `@all` command targeting. Landed in v1.62.0.
+- **Interactive Discord bot** — 27 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
 
-Both need a real release window rather than a weekend hack, so v2.0 will wait until there's enough user feedback and momentum to justify the refactor. If multi-host or the Discord bot is something you'd actually use, the most useful thing you can do is ⭐ the repo or mention Docksentry to someone who'd benefit — that's the signal I'm watching to decide when to start.
+**Next — the governance axis.** An audit trail (which operator did what, across all three front-ends), API tokens and a read-only role, and a Prometheus `/metrics` endpoint. These belong together because they answer one question: who may do what, and who can see afterwards what happened.
 
 Wishlist input and "+1"s welcome on [#2](https://github.com/amayer1983/docksentry/issues/2).
 

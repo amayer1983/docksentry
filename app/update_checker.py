@@ -16,6 +16,41 @@ from datetime import datetime, timedelta
 import container_backend as _cb
 
 
+#: The names Docker Hub answers to. `docker login` writes the legacy v1
+#: index URL, while image references resolve to `registry-1.docker.io`, so
+#: without this the one credential nearly everyone has would never be found.
+_HUB_ALIASES = {"docker.io", "index.docker.io", "registry-1.docker.io",
+                "registry.hub.docker.com"}
+
+
+def _auth_host(entry):
+    """The bare host a `config.json` auths key or a registry name refers to.
+
+    `https://index.docker.io/v1/` and `registry-1.docker.io` both mean Docker
+    Hub; `eu.gcr.io` and `gcr.io` do NOT mean each other.
+
+    That second half is the point. The previous version matched with
+    `registry in key or key in registry`, which handed `eu.gcr.io`'s
+    credentials to anyone asking about `gcr.io`, and `myregistry.example.com`'s
+    to anyone asking about `example.com` — a private registry's Basic-Auth
+    header sent to a different operator entirely. Measured, not theorised.
+    It also failed at the job the substring match was written for:
+    `registry-1.docker.io` never matched `https://index.docker.io/v1/`,
+    because neither string contains the other.
+
+    Found by sweeping Watchtower's issue history (watchtower#376), which is
+    the same class of bug as the `git.` prefix that used to match
+    `digit.example.com` in the link resolver: a hostname is a structure, not
+    a substring.
+    """
+    host = (entry or "").strip()
+    if "//" in host:
+        host = host.split("//", 1)[1]
+    host = host.split("/", 1)[0].strip().lower()
+    return "registry-1.docker.io" if host in _HUB_ALIASES else host
+
+
+
 class UpdateChecker:
     @property
     def backend(self):
@@ -248,13 +283,9 @@ class UpdateChecker:
             with open(config_file) as f:
                 cfg = json.load(f)
             auths = cfg.get("auths", {}) or {}
-            # Try exact host match first, then substring matches (handles
-            # entries like "https://index.docker.io/v1/" for "registry-1.docker.io").
+            want = _auth_host(registry)
             for key, val in auths.items():
-                if key == registry and val.get("auth"):
-                    return val["auth"]
-            for key, val in auths.items():
-                if (registry in key or key in registry) and val.get("auth"):
+                if _auth_host(key) == want and val.get("auth"):
                     return val["auth"]
         except Exception:
             pass
@@ -2114,6 +2145,35 @@ class UpdateChecker:
 
         return self._update_standalone(name, image, netns_name=netns_name)
 
+    @staticmethod
+    def _compose_files(config_file):
+        """The compose files behind `config_files`, as a list.
+
+        Docker joins multiple compose files into ONE label value separated
+        by commas — the canonical `docker-compose.yml` plus an
+        `override.yml` produces `/a/one.yml,/a/two.yml`. Treated as a single
+        path, `os.path.isfile()` says no, and the stack silently drops out
+        of the compose path into the standalone `docker run` recreate.
+        That loses compose semantics on exactly the setup the Compose docs
+        recommend. Found by sweeping dockcheck's issue history (dc#27) and
+        confirmed on four containers on this machine.
+
+        A path may legitimately contain a comma, and the label format gives
+        no way to tell that apart. So the split is only trusted when EVERY
+        piece resolves to a real file; otherwise the original string is
+        returned untouched and the caller's existing check decides. A wrong
+        split would deploy from the wrong file, which is far worse than the
+        fallback it replaces.
+        """
+        if not config_file:
+            return []
+        if "," not in config_file:
+            return [config_file]
+        parts = [p.strip() for p in config_file.split(",") if p.strip()]
+        if parts and all(os.path.isfile(p) for p in parts):
+            return parts
+        return [config_file]
+
     def _update_compose(self, name, image, project, service, config_file, working_dir, netns_name=None):
         """Update a container using Docker Compose."""
         self._debug(f"Updating (compose): {name} (project={project}, service={service})...")
@@ -2148,7 +2208,8 @@ class UpdateChecker:
             return self._update_standalone(name, image, netns_name=netns_name)
 
         # Check if compose file is accessible
-        if not os.path.isfile(config_file):
+        compose_files = self._compose_files(config_file)
+        if not compose_files or not all(os.path.isfile(f) for f in compose_files):
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
             return self._update_standalone(name, image, netns_name=netns_name)
 
@@ -2160,9 +2221,15 @@ class UpdateChecker:
         # could interpolate ${VARS} differently than the original `up` did
         # (found via lint: `working_dir` was accepted but never used; same
         # recreate-fidelity class as #27/#29).
-        compose_base = ["docker", "compose", "-f", config_file, "-p", project]
+        # One -f per file, in the order Docker recorded them — compose
+        # applies overrides left to right, so the order is not cosmetic.
+        compose_base = ["docker", "compose"]
+        for f in compose_files:
+            compose_base += ["-f", f]
+        compose_base += ["-p", project]
         if working_dir and os.path.isdir(working_dir) \
-                and os.path.realpath(working_dir) != os.path.realpath(os.path.dirname(config_file) or "."):
+                and os.path.realpath(working_dir) != os.path.realpath(
+                    os.path.dirname(compose_files[0]) or "."):
             compose_base += ["--project-directory", working_dir]
 
         # Pull new image via compose
@@ -3214,7 +3281,31 @@ class UpdateChecker:
 
             # Rename old container
             old_name = f"{name}_old"
-            self.backend.rename(name, old_name, timeout=10)
+            # Clear any stale backup from a previous interrupted run FIRST.
+            # Without this, a leftover `<name>_old` makes the rename fail;
+            # the `docker run` then fails on the name conflict, and the
+            # rollback — which trusts `<name>_old` to be this run's backup —
+            # force-removes the healthy container and promotes the stale one
+            # in its place. The user ends up running a previous generation
+            # of their container and nothing says so.
+            #
+            # `recreate_dependent` has done this since it was written; the
+            # main path never did. Two independent sweeps of Watchtower's
+            # and Ouroboros's issue histories reproduced the same end state
+            # here (watchtower#1101/#235, ouroboros#19/#20), which is what
+            # sent me looking.
+            self.backend.rm(old_name, force=True, timeout=15)
+            rename = self.backend.rename(name, old_name, timeout=10)
+            if getattr(rename, "returncode", 0) != 0:
+                # Never proceed on an unverified backup: the recreate below
+                # would run against a container that still holds the name,
+                # and the rollback would restore something that is not this
+                # run's backup. Stopping here leaves the container stopped
+                # but intact and recoverable, which beats both.
+                err = (getattr(rename, "stderr", "") or "").strip()[:200]
+                msg = f"Couldn't back up the container before recreating: {err}"
+                self._save_history(name, image, False, msg)
+                return False, msg
             self._debug(f"  Renamed to: {old_name}")
 
             # Build docker run command from inspect config — single
