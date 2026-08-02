@@ -1268,13 +1268,23 @@ class TelegramBot:
         # (auto=False) bypass policy entirely — an explicit human action
         # always wins. Fail-open: an unclassifiable bump is allowed.
         policy_blocked = []  # list of (u, level, old, new)
+        age_blocked = []     # list of (u, days_old, required)
         allowed_auto = []
         for u in auto_updates:
             dec = self._policy_decision(u, checker)
-            if dec is None:
-                allowed_auto.append(u)
-            else:
+            if dec is not None:
                 policy_blocked.append((u, dec[0], dec[1], dec[2]))
+                continue
+            # Too fresh to apply unattended (MIN_IMAGE_AGE_DAYS /
+            # docksentry.min-age). Same gate as the policy: the AUTO path
+            # only, and the update stays pending rather than being
+            # discarded — it applies on a later tick once the image has
+            # aged, without anyone doing anything.
+            age = self.engine._age_decision(u, checker)
+            if age is not None:
+                age_blocked.append((u, age[0], age[1]))
+                continue
+            allowed_auto.append(u)
         auto_updates = allowed_auto
 
         manual_updates = [u for u in updates if u not in auto_candidates]
@@ -1350,6 +1360,17 @@ class TelegramBot:
                 auto=True,
             )
 
+        # Age-held: the image exists but is younger than the operator is
+        # willing to install unattended. Same treatment as a policy hold —
+        # one message, and the update stays pending so it applies on a
+        # later tick once the image has aged, with nobody doing anything.
+        for u, days, required in age_blocked:
+            self.send_message(
+                self.t("age_held", name=u["name"], days=days,
+                       required=required, remaining=max(1, required - days)),
+                auto=True,
+            )
+
         # Major-confirm queue: send confirmation prompt(s). The callback
         # payload carries the host (#7) so confirming the NAS's `plex` can't
         # resolve to the local one; it stays the bare name for local
@@ -1373,7 +1394,8 @@ class TelegramBot:
         # scheduler — respect quiet hours). Policy-held updates ride along in
         # the "Updates Available" list so the user keeps seeing that a newer
         # version exists, alongside the dedicated "held back" note above.
-        notify_list = manual_updates + [b[0] for b in policy_blocked]
+        notify_list = (manual_updates + [b[0] for b in policy_blocked]
+                       + [b[0] for b in age_blocked])
         if notify_list:
             self.notify_updates(notify_list, auto=True)
 

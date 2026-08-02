@@ -199,6 +199,60 @@ class UpdateEngine:
         # "all" or any unrecognised policy → allow
         return True
 
+    def _age_decision(self, u, checker):
+        """Whether this update is too fresh to apply unattended.
+
+        Returns None to allow, or `(days_old, required)` to hold back.
+
+        Two independent reasons people ask for this, and the second is the
+        one that makes it more than a preference. Risk deferral — "let
+        someone else find the broken release first" — and supply chain: a
+        compromised image is usually noticed within days, so not being the
+        first to pull it is a real defence. It is the one gap in an
+        otherwise complete safety chain here, which already has approval
+        gates, semver caps, health-gated rollback, update windows and
+        maintenance mode.
+
+        The AUTO path only. A person pressing the button has decided; this
+        is about what happens while nobody is watching — the same line as
+        `docksentry.auto=false` versus monitor-only.
+
+        `new_created` comes from the remote image's OCI config blob and is
+        fetched for every container that has an update, so this costs
+        nothing extra. When it is missing the update is ALLOWED: the gate
+        cannot judge what it cannot see, and failing closed here would
+        silently stop updates for every image whose registry does not
+        expose a build date — the same trap `UPDATE_POLICY` fell into.
+        """
+        required = int(getattr(self.config, "min_image_age_days", 0) or 0)
+        try:
+            raw = (checker.get_container_labels(u["name"]) or {}).get(
+                "docksentry.min-age")
+            if raw is not None:
+                required = max(0, int(str(raw).strip()))
+        except Exception:
+            # Broad on purpose. Reading a label means talking to the daemon,
+            # and a daemon hiccup must not take the whole auto-update
+            # decision with it — the global setting still applies. Narrower
+            # catches let a RuntimeError through, which my own test found
+            # before this shipped.
+            pass
+        if required <= 0:
+            return None
+        created = (u.get("new_created") or "").strip()
+        if not created:
+            return None
+        from datetime import datetime, timezone
+        try:
+            built = datetime.strptime(created[:10], "%Y-%m-%d").replace(
+                tzinfo=timezone.utc)
+        except ValueError:
+            return None
+        days = (datetime.now(timezone.utc) - built).days
+        if days >= required:
+            return None
+        return days, required
+
     def _policy_decision(self, u, checker):
         """Decide whether the update `u` is held back by its container's
         update policy on the AUTO path (v1.53.0). Returns None when the

@@ -538,6 +538,7 @@
   "web_ui_mode_show_advanced": "In erweiterten Modus wechseln",
   "web_ui_mode_show_simple": "In einfachen Modus wechseln",
   "policy_held": "⏸ `{name}`: von der Update-Richtlinie zurückgehalten ({level} {old} → {new}). Mit /update {name} anwenden oder docksentry.policy=all setzen.",
+  "age_held": "⏳ *{name}*: Update zurückgehalten — das neue Image ist {days} Tag(e) alt, dieser Container wartet {required}. Es wird in etwa {remaining} Tag(en) von selbst angewendet. Mit /update sofort einspielen.",
   "web_check_one": "Prüfen",
   "web_check_one_tt": "Diesen Container jetzt auf Updates prüfen",
   "web_check_one_found": "{name}: Update verfügbar",
