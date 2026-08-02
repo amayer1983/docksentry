@@ -273,14 +273,29 @@ checks["single host: a one-host registry renders byte-identically to none"] = (
     one_html == noreg_html)
 checks["single host: no host column"] = "<th>Host</th>" not in one_html
 checks["single host: no host filter"] = 'id="hostFilter"' not in one_html
+
+def table_only(html):
+    """Just the container TABLE, without the card list beside it.
+
+    The status page renders every container twice — once as a table row and
+    once as a card for narrow screens, both from the same locals so they
+    cannot disagree about state. Any assertion that COUNTS occurrences has
+    to say which of the two it means, or it silently doubles.
+    """
+    start = html.find('<table id="ctbl"')
+    end = html.find("</table>", start)
+    return html[start:end] if start >= 0 else html
+
+
 checks["single host: no data-host on any row"] = "data-host=" not in one_html
 import re as _re  # noqa: E402
-_form_values = set(_re.findall(r'name="name" value="([^"]*)"', one_html))
-_cb_values = set(_re.findall(r'class="bulk-cb" value="([^"]*)"', one_html))
+_one_table = table_only(one_html)
+_form_values = set(_re.findall(r'name="name" value="([^"]*)"', _one_table))
+_cb_values = set(_re.findall(r'class="bulk-cb" value="([^"]*)"', _one_table))
 checks["single host: form fields carry the bare container name"] = (
     _form_values == {"web", "db"} and _cb_values == {"web", "db"})
 checks["single host: only the LOCAL pending entry lights a row up"] = (
-    one_html.count("/api/update") == 1)
+    _one_table.count("/api/update") == 1)
 
 # ── 2. multi-host rendering: rows, hosts, actions ─────────────────────
 
@@ -300,7 +315,7 @@ checks["multi: the host filter offers every host plus 'all'"] = (
 checks["multi: an unreachable host is one line, not a broken page"] = (
     "dead: unreachable" in html and 'class="host-unreachable"' in html)
 
-_nas_web = [c for c in html.split("<tr") if 'value="nas/web"' in c]
+_nas_web = [c for c in table_only(html).split("<tr") if 'value="nas/web"' in c]
 checks["multi: a remote row has the same actions as a local one"] = (
     len(_nas_web) == 1
     and all(a in _nas_web[0] for a in ("/api/update", "/api/pin",

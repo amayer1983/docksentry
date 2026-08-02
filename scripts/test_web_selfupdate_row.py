@@ -110,9 +110,20 @@ def render(own_name="docksentry", auto_selfupdate=False, containers=None,
 
 
 def row_for(html, name):
-    """Return the <tr> block of the row linking to /container/<name>."""
+    """Return the <tr> block of the row linking to /container/<name>.
+
+    Scoped to the TABLE. The status page renders every container twice —
+    once as a row, once as a card for narrow screens, both from the same
+    locals so their state cannot disagree. Splitting the whole page on
+    `<tr>` used to be unambiguous and no longer is: the card carries the
+    same `/container/<name>` link, so an unscoped search can return card
+    markup and assert against the wrong layout.
+    """
+    start = html.find('<table id="ctbl"')
+    end = html.find("</table>", start)
+    table = html[start:end] if start >= 0 else html
     marker = f'/container/{name}"'
-    for chunk in html.split("<tr>"):
+    for chunk in table.split("<tr>"):
         if marker in chunk:
             return chunk
     return ""

@@ -983,3 +983,38 @@ a.btn-icon { text-decoration: none; }
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
 }
+
+/* ── Container cards (narrow screens) ───────────────────────── */
+/* The table and these cards are rendered from the same locals in
+   _status_row, so they cannot disagree about a container's state — only
+   about how it is laid out. Below 700px a five-column table is a
+   compromise even inside a scroll container: you swipe sideways to find
+   the buttons. A card puts everything on one screen. */
+.tile-list { display: none; }
+@media (max-width: 700px) {
+    .table-scroll { display: none; }
+    .tile-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+}
+.tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+}
+.tile-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+/* app.css sets `input, select, textarea { width: 100% }`, with an override
+   only for .form-checkbox-row — so a checkbox anywhere else grows to fill
+   its flex line and pushes the container name out of the card. Measured
+   the hard way while mocking this up. */
+.tile-head .bulk-cb { width: auto; flex: 0 0 auto; margin: 0; }
+.tile-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+.tile-img { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere;
+            margin-bottom: 4px; }
+.tile-meta { font-size: 12px; color: var(--text-muted); display: flex;
+             flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.tile-host { font-family: ui-monospace, monospace; }
+/* Wrap here, unlike the table row: a card has no column to widen, and a
+   phone has room below but not beside. */
+.tile-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tile-actions .btn-icon { width: 34px; height: 34px; }

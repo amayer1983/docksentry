@@ -2549,14 +2549,36 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             name_cell = (f'<a href="/container/{name_attr}" '
                          f'class="container-link">{_e(c["name"])}</a>'
                          if host_name == LOCAL_HOST else _e(c["name"]))
-            return f"""{row_open}
-<td><input type="checkbox" class="bulk-cb" value="{key_attr}" data-pending="{1 if c["name"] in pending_names else 0}" data-pinned="{1 if is_pinned_c else 0}" data-auto="{1 if is_auto else 0}"></td>
+            cb_html = (f'<input type="checkbox" class="bulk-cb" '
+                       f'value="{key_attr}" '
+                       f'data-pending="{1 if c["name"] in pending_names else 0}" '
+                       f'data-pinned="{1 if is_pinned_c else 0}" '
+                       f'data-auto="{1 if is_auto else 0}">')
+            row = f"""{row_open}
+<td>{cb_html}</td>
 <td>{name_cell}{_mo_mark}{badges}</td>{host_td}
 <td class="image-cell"><code>{_e(c['image'])}</code> {version_html}</td>
 <td>{status_badge}</td>
 <td>{auto_cell}</td>
 <td class="actions-cell">{actions}</td>
 </tr>"""
+
+            # The same container as a card, for narrow screens. Built here,
+            # from the same locals as the row above, rather than in a second
+            # function — a table row and a card that drift apart is exactly
+            # the failure this project has already had twice (the Web UI's
+            # own copy of the link chain, then the container page's copy of
+            # the label rules). One place computes the state; two places
+            # only lay it out.
+            host_line = (f'<span class="tile-host">{_e(host_name)}</span> · '
+                         if multi else '')
+            tile = f"""<div class="tile"{f' data-host="{_e(host_name)}"' if multi else ''}>
+  <div class="tile-head">{cb_html}<span class="tile-name">{name_cell}</span>{_mo_mark}{status_badge}</div>
+  <div class="tile-img"><code>{_e(c['image'])}</code> {version_html}</div>
+  <div class="tile-meta">{host_line}{badges}{auto_cell}</div>
+  <div class="tile-actions">{actions}</div>
+</div>"""
+            return row, tile
 
         def _page_status(self):
             from container_store import LOCAL_HOST, host_key
@@ -2606,6 +2628,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                                _remote, ""))
 
             rows = ""
+            tiles = ""
             for view in views:
                 if view.get("unreachable"):
                     rows += (
@@ -2617,7 +2640,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     )
                     continue
                 for c in view["containers"]:
-                    rows += self._status_row(c, view, t, multi)
+                    _row, _tile = self._status_row(c, view, t, multi)
+                    rows += _row
+                    tiles += _tile
 
             # Single-host: `views` holds exactly one entry, so both counts
             # are the expressions they were before multi-host existed.
@@ -2786,6 +2811,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 {rows}
 </tbody>
 </table></div>
+<!-- The same containers as cards, for narrow screens. Both are rendered
+     and CSS shows one; the alternative — deciding server-side from a
+     user-agent string — guesses at a viewport it cannot see, and gets it
+     wrong on a tablet held sideways. The markup cost is a few KB. -->
+<div class="tile-list" id="ctblTiles">
+{tiles}
+</div>
 <!-- Legend keys: _legend_word() strips the Telegram emoji and upper-cases
      the first letter, so the row no longer mixes "Update" with a lowercase
      "auto"/"major-confirm"/"label" (#46, @LeeNX). The last two used to be
