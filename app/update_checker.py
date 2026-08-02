@@ -3038,10 +3038,22 @@ class UpdateChecker:
             ("KernelMemoryTCP", "--kernel-memory-tcp"),
         ):
             v = host.get(key, 0) or 0
-            # MemorySwap == -1 means "unlimited swap" (intentional); 0
-            # means "use the kernel default" — skip both.
+            # 0 means "use the kernel default" — nothing to say.
+            #
+            # -1 means "unlimited", and it has to be said OUT LOUD. The
+            # comment here used to call skipping it intentional, on the
+            # assumption that omitting the flag was a no-op. It is not:
+            # measured on a live container, `--memory=256m --memory-swap=-1`
+            # inspects as MemorySwap -1, while `--memory=256m` alone
+            # inspects as 536870912 — Docker's 2x default. So a container
+            # explicitly given unlimited swap quietly acquired a swap cap
+            # on its first update, and could be OOM-killed afterwards where
+            # it was not before. Only MemorySwap has an "unlimited"
+            # sentinel; the others are byte counts.
             if v and v > 0:
                 args.extend([flag, str(v)])
+            elif v == -1 and key == "MemorySwap":
+                args.extend([flag, "-1"])
         # memory.swappiness is a cgroup-v1-only control; it doesn't exist
         # on cgroup v2, so crun/podman rejects --memory-swappiness on a
         # cgroup-v2 host regardless of the value (#50). cgroup_version is
