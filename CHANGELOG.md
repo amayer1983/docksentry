@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.73.0] - 2026-08-03
+
+From @NotRetarded's interface review in #2, written on a phone while checking the previous release's mobile changes.
+
+### Changed
+- **Action buttons are emoji.** 🔎 check · 🔃 update · 📌 pin · 🛑 stop · 🔁 auto · ⚠️ major-confirm. The argument that decided it is one we made ourselves: the legend under the container table exists *because* the previous line-art set needed explaining. A 📌 does not. The trade accepted with it is that emoji render differently per platform and cannot be recoloured, so the table is louder than it was. One departure from the request: 🔊 was suggested for major-confirm, which reads as "sound"; ⚠️ says what it means. The filled button backgrounds are gone where a glyph carries the state — they existed so a monochrome icon could signal "dangerous" or "on", and 🛑 on a red button is red on red.
+- **The logs page opens on Docksentry, with 100 lines.** It used to open on nothing, rendering an empty frame until you picked a container — and the one people want first when an update failed is this one. Fifteen containers already produce more than 50 lines of its own output, so the old default cut off the part worth reading.
+- **The cron preview labels its first entry.** "18:23 · today 21:23 · tomorrow" gave no way to tell which of the three had already happened.
+
+### Fixed
+- **Half of every container's log output was silently discarded.** Every caller read logs as `result.stdout or result.stderr`, which takes stdout whenever it is non-empty and drops the other stream. Measured on a container writing 30 lines to each: Docker has 60, the Web UI showed 30 — and the discarded half was the **error** output, the half you open a log page to read. It also made `--tail 50` look like it returned fewer than 50, which is how it was reported. Merged in `backend.logs()` rather than at the four call sites that shared the bug, and in the order the container wrote them.
+
 ## [1.72.0] - 2026-08-03
 
 Three of the most-requested things across the tools surveyed, built together because they only make sense together.
