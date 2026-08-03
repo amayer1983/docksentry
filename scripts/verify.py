@@ -65,7 +65,7 @@ AREAS = [
      ("hosts", "host_scoped", "host_state", "multihost", "web_multihost")),
     ("Notifications",
      ("notifier", "ntfy", "smtp", "discord", "api_retry", "send_only",
-      "edited_message", "websocket")),
+      "edited_message", "websocket", "i18n_partial")),
     ("Web interface",
      ("icons", "form_nesting", "settings_fields", "link_", "metrics_api",
       "disabled_reasons")),

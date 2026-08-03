@@ -51,7 +51,34 @@ def get_translator(language="en"):
             try:
                 text = text.format(**kwargs)
             except (KeyError, IndexError):
-                pass
+                # One missing placeholder used to discard the whole
+                # formatting and return the template verbatim — braces and
+                # all. The stored event log is where that shows: an event
+                # written before its template grew a placeholder rendered
+                # as "🔁 {name} crashed (exit {code}) … at {when}", losing
+                # even the name and exit code it *did* have (#2,
+                # @NotRetarded). Fill what is known, mark what is not.
+                try:
+                    text = text.format_map(_Missing(kwargs))
+                except (ValueError, IndexError):
+                    # A stray brace in the string itself; nothing sensible
+                    # to substitute, so leave it exactly as before.
+                    pass
         return text
 
     return t
+
+
+class _Missing(dict):
+    """Mapping that yields a placeholder marker instead of raising.
+
+    Used only on the recovery path, so a string whose arguments are all
+    present is formatted by the normal machinery and behaves identically.
+    """
+
+    #: Deliberately not "?" — that reads as a question about the value.
+    #: An em dash is what the rest of the UI uses for "no value here".
+    MARK = "—"
+
+    def __missing__(self, key):
+        return self.MARK
