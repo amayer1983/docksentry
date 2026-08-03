@@ -148,8 +148,6 @@
   "web_nav_status": "Status",
   "web_nav_settings": "Einstellungen",
   "web_nav_groups": "Gruppen",
-  "web_groups_moved_intro": "Container-Gruppen haben eine eigene Seite. Dort lässt sich die Reihenfolge mit der Maus ziehen, ein Eintrag direkt in der Liste bearbeiten, der führende Container ist hervorgehoben, und Mitglieder, die es nicht mehr gibt, werden gemeldet. Gruppen aus Compose- oder Portainer-Stacks schlägt Docksentry von selbst vor.",
-  "web_groups_moved_button": "Gruppen-Seite öffnen",
   "web_groups_autodetect_button": "🔍 Aus Compose / Portainer erkennen",
   "web_groups_autodetect_title": "Erkannte Compose-/Portainer-Stacks",
   "web_groups_autodetect_intro": "Jede Karte ist ein erkannter Stack (Container gruppiert nach `com.docker.compose.project` oder `com.docker.stack.namespace`). Wähle die du als Docksentry-Gruppen importieren willst. Zeilen innerhalb einer Karte ziehen um Head-Reihenfolge zu setzen.",

@@ -148,8 +148,6 @@
   "web_nav_status": "Status",
   "web_nav_settings": "Settings",
   "web_nav_groups": "Groups",
-  "web_groups_moved_intro": "Container Groups now live on their own page with drag-and-drop reorder, edit-in-place, head-container visualisation, stale-member warnings, and auto-detect from Compose / Portainer stacks.",
-  "web_groups_moved_button": "Open Groups page",
   "web_groups_autodetect_button": "🔍 Auto-detect from Compose / Portainer",
   "web_groups_autodetect_title": "Auto-detected Compose / Portainer stacks",
   "web_groups_autodetect_intro": "Each card is a detected stack (containers grouped by `com.docker.compose.project` or `com.docker.stack.namespace`). Check the ones you want to import as Docksentry groups. Drag rows inside a card to set the head order before importing.",

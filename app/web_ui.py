@@ -4176,7 +4176,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <h2>{t("web_settings")}</h2>
 <p class="card-intro">{t("web_settings_intro")}</p>
 
-<form method="POST" action="/settings">
+<form method="POST" action="/settings" id="settings-form"></form>
 <div class="tabs" data-tabs="settings">
   <button type="button" class="tab-btn" data-tab-target="general">{_ICONS["settings"]}<span>{t("web_tab_general")}</span></button>
   <button type="button" class="tab-btn" data-tab-target="updates">{_ICONS["refresh"]}<span>{t("web_tab_updates")}</span></button>
@@ -4190,21 +4190,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="grid">
     <div>
       <label>{t("web_language")}{env_("language")}</label>
-      <select name="language">{lang_options}</select>
+      <select name="language" form="settings-form">{lang_options}</select>
     </div>
     <div>
       <label>{t("web_cron_schedule")} {help_(t("web_cron_help"))}{env_("cron_schedule")}</label>
-      <input type="text" name="cron_schedule" id="f-cron_schedule" value="{_e(config.cron_schedule)}" oninput="dsCronPreview()">
+      <input type="text" name="cron_schedule" id="f-cron_schedule" value="{_e(config.cron_schedule)}" oninput="dsCronPreview()" form="settings-form">
       <div id="cron-preview" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px">⏳ {_e(t("web_cron_preview_loading"))}</div>
     </div>
   </div>
   <label>{t("web_excluded")} {help_(t("web_excluded_help"))}{env_("exclude_containers")}</label>
-  <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2">
+  <input type="text" name="exclude_containers" value="{_e(', '.join(config.exclude_containers))}" placeholder="container1, container2" form="settings-form">
   <!-- Web UI password. The stored value is NEVER rendered back into the
        field (it is a secret, not on LOGGABLE_PERSISTENT_KEYS) — the box
        always starts empty and an empty submit means "leave unchanged". -->
   <label>{t("web_password_label")} {help_(t("web_password_hint"))}{env_("web_password")}</label>
-  <input type="password" name="web_password" value="" placeholder="{_e(t('web_password_placeholder'))}" autocomplete="new-password">
+  <input type="password" name="web_password" value="" placeholder="{_e(t('web_password_placeholder'))}" autocomplete="new-password" form="settings-form">
   <!-- NOT adv-only. It used to be, and that closed the last door: DEBUG
        from the environment can be overruled by settings.json, and the
        only other way to switch debug on was a checkbox that simple mode
@@ -4212,162 +4212,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
        find-in-page. Env powerless, switch unfindable, no way in at all
        (#53, @LeeNX). One toggle in the simple view is the smaller cost. -->
   <div class="form-checkbox-row">
-    <input type="checkbox" name="debug" id="cb-debug" {cb(config.debug)}>
+    <input type="checkbox" name="debug" id="cb-debug" {cb(config.debug)} form="settings-form">
     <label for="cb-debug">{t("web_debug_mode")} {help_(t("web_debug_help"))}{env_("debug")}</label>
   </div>
-</div>
-
-<!-- ── Updates ────────────────────────────────────── -->
-<div class="tab-pane" data-tab-pane="settings" data-tab-name="updates">
-  <div class="form-checkbox-row">
-    <input type="checkbox" name="auto_selfupdate" id="cb-auto-su" {cb(config.auto_selfupdate)}>
-    <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}{env_("auto_selfupdate")}</label>
-  </div>
-
-  <div class="grid adv-only">
-    <div>
-      <label>{t("web_healthcheck_max_starting")} {help_(t("web_healthcheck_max_starting_hint"))}{env_("healthcheck_max_starting")}</label>
-      <input type="number" name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" min="30" max="3600">
-    </div>
-    <div>
-      <label>{t("web_docker_stop_timeout")} {help_(t("web_docker_stop_timeout_hint"))}{env_("docker_stop_timeout")}</label>
-      <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600">
-    </div>
-  </div>
-  <p class="form-help">{t("web_updates_tab_hint")}</p>
-</div>
-
-<!-- ── Aufräumen ─────────────────────────────────── -->
-<div class="tab-pane" data-tab-pane="settings" data-tab-name="cleanup">
-  <div class="form-checkbox-row">
-    <input type="checkbox" name="auto_cleanup" id="cb-auto-cl" {cb(config.auto_cleanup)}>
-    <label for="cb-auto-cl">{t("web_auto_cleanup")}{env_("auto_cleanup")}</label>
-  </div>
-  <p class="form-help">{t("web_auto_cleanup_hint")}</p>
-
-  <div class="grid adv-only">
-    <div>
-      <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}{env_("cleanup_grace_hours")}</label>
-      <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760">
-    </div>
-    <div>
-      <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}{env_("cleanup_backup_days")}</label>
-      <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365">
-    </div>
-  </div>
-  <div class="form-checkbox-row adv-only">
-    <input type="checkbox" name="cleanup_backup_local_only" id="cb-bak-local" {cb(config.cleanup_backup_local_only)}>
-    <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}{env_("cleanup_backup_local_only")}</label>
-  </div>
-  <p class="form-help adv-only">{t("web_cleanup_backup_local_only_hint")}</p>
-</div>
-
-<!-- ── Benachrichtigungen ────────────────────────── -->
-<div class="tab-pane" data-tab-pane="settings" data-tab-name="notifs">
-  <div class="grid adv-only">
-    <div>
-      <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}{env_("disk_warn_percent")}</label>
-      <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100">
-    </div>
-    <div>
-      <div class="form-checkbox-row" style="margin-top:24px">
-        <input type="checkbox" name="disk_warn_auto_cleanup" id="cb-disk-acl" {cb(config.disk_warn_auto_cleanup)}>
-        <label for="cb-disk-acl">{t("web_disk_warn_auto_cleanup")}{env_("disk_warn_auto_cleanup")}</label>
-      </div>
-      <p class="form-help">{t("web_disk_warn_auto_cleanup_hint")}</p>
-    </div>
-  </div>
-
-  <hr class="section-divider adv-only">
-
-  <div class="grid">
-    <div>
-      <label>{t("web_quiet_hours_start")}{env_("quiet_hours_start")}</label>
-      <input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
-    </div>
-    <div>
-      <label>{t("web_quiet_hours_end")}{env_("quiet_hours_end")}</label>
-      <input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$">
-    </div>
-  </div>
-  <p class="form-help">{t("web_quiet_hours_hint")}</p>
-
-  <hr class="section-divider adv-only">
-
-  <div class="adv-only">
-  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_weekly_title")}</h3>
-  <div class="form-checkbox-row">
-    <input type="checkbox" name="weekly_report_enabled" id="cb-weekly" {cb(config.weekly_report_enabled)}>
-    <label for="cb-weekly">{t("web_weekly_enable")}{env_("weekly_report_enabled")}</label>
-  </div>
-  <p class="form-help">{t("web_weekly_hint")}</p>
-  <div class="grid">
-    <div>
-      <label>{t("web_weekly_day")}{env_("weekly_report_weekday")}</label>
-      <select name="weekly_report_weekday">
-        {''.join(f'<option value="{i}" {"selected" if int(config.weekly_report_weekday or 0)==i else ""}>{name}</option>' for i, name in enumerate([t("web_weekday_mon"), t("web_weekday_tue"), t("web_weekday_wed"), t("web_weekday_thu"), t("web_weekday_fri"), t("web_weekday_sat"), t("web_weekday_sun")]))}
-      </select>
-    </div>
-    <div>
-      <label>{t("web_weekly_hour")}{env_("weekly_report_hour")}</label>
-      <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23">
-    </div>
-  </div>
-  </div>
-
-  <hr class="section-divider">
-
-  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_monitor_title")}</h3>
-  <div class="form-checkbox-row">
-    <input type="checkbox" name="monitor_enabled" id="cb-monitor" {cb(config.monitor_enabled)}>
-    <label for="cb-monitor">{t("web_monitor_enabled")} {help_(t("web_monitor_hint"))}{env_("monitor_enabled")}</label>
-  </div>
-  <div class="grid">
-    <div>
-      <label>{t("web_monitor_interval")} {help_(t("web_monitor_interval_hint"))}{env_("monitor_interval_seconds")}</label>
-      <input type="number" name="monitor_interval_seconds" value="{_e(config.monitor_interval_seconds)}" min="15" max="86400">
-    </div>
-  </div>
-</div>
-
-<!-- ── Kanäle ────────────────────────────────────── -->
-<div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
-  <div class="adv-only">
-    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
-    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}">
-
-    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
-    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}">
-
-    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
-    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}">
-  </div>
-
-  <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
-  </div>
-
-  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
-  </div>
-</div>
-
-<div style="margin-top:16px">
-  <button type="submit" class="btn">{t("web_save")}</button>
-</div>
-</form>
-</div>
-
-<div class="card" id="groups">
-<h2>{t("web_groups_title")}</h2>
-<p class="card-intro">{t("web_groups_moved_intro")}</p>
-<p style="margin-top:8px"><a href="/groups" class="btn">📦 {t("web_groups_moved_button")}</a></p>
-</div>
-
+<!-- In General. These cards used to sit outside all five panes,
+     so switching tabs never changed them and they read as repeated
+     on every one (#2, @NotRetarded). -->
 <div class="card" id="backup">
 <h2>{t("web_backup_title")}</h2>
 <p class="card-intro">{t("web_backup_intro")}</p>
@@ -4378,19 +4228,76 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </div>
 <p class="form-help" style="margin-top:12px">{t("web_backup_hint")}</p>
 </div>
+<!-- In General, with the rest of the read-only information. -->
+<div class="card">
+<h2>Info</h2>
+<div class="table-scroll"><table>
+<tr><td>Version</td><td><code>v{_e(VERSION)}</code></td></tr>
+<tr><td>Telegram</td><td><code>{telegram_status}</code></td></tr>
+<tr><td>Bot Token</td><td><code>{_e(token_masked)}</code></td></tr>
+<tr><td>Chat ID</td><td><code>{_e(chat_masked)}</code></td></tr>
+<tr><td>Data Dir</td><td><code>{_e(config.data_dir)}</code></td></tr>
+</table></div>
+<p class="form-help" style="margin-top:8px">{t("web_info_credentials_hint")}</p>
+</div>
+</div>
 
+<!-- ── Updates ────────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="updates">
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="auto_selfupdate" id="cb-auto-su" {cb(config.auto_selfupdate)} form="settings-form">
+    <label for="cb-auto-su">{t("web_auto_selfupdate")} {help_(t("web_auto_selfupdate_help"))}{env_("auto_selfupdate")}</label>
+  </div>
+
+  <div class="grid adv-only">
+    <div>
+      <label>{t("web_healthcheck_max_starting")} {help_(t("web_healthcheck_max_starting_hint"))}{env_("healthcheck_max_starting")}</label>
+      <input type="number" name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" min="30" max="3600" form="settings-form">
+    </div>
+    <div>
+      <label>{t("web_docker_stop_timeout")} {help_(t("web_docker_stop_timeout_hint"))}{env_("docker_stop_timeout")}</label>
+      <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600" form="settings-form">
+    </div>
+  </div>
+  <p class="form-help">{t("web_updates_tab_hint")}</p>
+<!-- In Updates: an update window is an update setting. -->
 <div class="card adv-only" id="windows">
 <h2>{t("web_windows_title")}</h2>
 <p class="card-intro">{t("web_windows_intro")}</p>
 {self._windows_html(t)}
 </div>
+</div>
 
+<!-- ── Aufräumen ─────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="cleanup">
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="auto_cleanup" id="cb-auto-cl" {cb(config.auto_cleanup)} form="settings-form">
+    <label for="cb-auto-cl">{t("web_auto_cleanup")}{env_("auto_cleanup")}</label>
+  </div>
+  <p class="form-help">{t("web_auto_cleanup_hint")}</p>
+
+  <div class="grid adv-only">
+    <div>
+      <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}{env_("cleanup_grace_hours")}</label>
+      <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760" form="settings-form">
+    </div>
+    <div>
+      <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}{env_("cleanup_backup_days")}</label>
+      <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365" form="settings-form">
+    </div>
+  </div>
+  <div class="form-checkbox-row adv-only">
+    <input type="checkbox" name="cleanup_backup_local_only" id="cb-bak-local" {cb(config.cleanup_backup_local_only)} form="settings-form">
+    <label for="cb-bak-local">{t("web_cleanup_backup_local_only")}{env_("cleanup_backup_local_only")}</label>
+  </div>
+  <p class="form-help adv-only">{t("web_cleanup_backup_local_only_hint")}</p>
+<!-- In Cleanup: maintenance mode pauses the actions below. -->
 <div class="card">
 <h2>{t("web_maint_mode_title")}</h2>
 <p class="card-intro">{t("web_maint_mode_intro")}</p>
 {self._maint_mode_html(t)}
 </div>
-
+<!-- In Cleanup, beside the cleanup it runs. -->
 <div class="card">
 <h2>{t("web_maintenance_title")}</h2>
 <p class="card-intro">{t("web_maintenance_intro")}</p>
@@ -4411,18 +4318,109 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 {t("web_maintenance_explain", grace=_e(config.cleanup_grace_hours), days=_e(config.cleanup_backup_days), dir=_e(config.cleanup_backup_dir))}
 </p>
 </div>
+</div>
 
-<div class="card">
-<h2>Info</h2>
-<div class="table-scroll"><table>
-<tr><td>Version</td><td><code>v{_e(VERSION)}</code></td></tr>
-<tr><td>Telegram</td><td><code>{telegram_status}</code></td></tr>
-<tr><td>Bot Token</td><td><code>{_e(token_masked)}</code></td></tr>
-<tr><td>Chat ID</td><td><code>{_e(chat_masked)}</code></td></tr>
-<tr><td>Data Dir</td><td><code>{_e(config.data_dir)}</code></td></tr>
-</table></div>
-<p class="form-help" style="margin-top:8px">{t("web_info_credentials_hint")}</p>
-</div>"""
+<!-- ── Benachrichtigungen ────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="notifs">
+  <div class="grid adv-only">
+    <div>
+      <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}{env_("disk_warn_percent")}</label>
+      <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100" form="settings-form">
+    </div>
+    <div>
+      <div class="form-checkbox-row" style="margin-top:24px">
+        <input type="checkbox" name="disk_warn_auto_cleanup" id="cb-disk-acl" {cb(config.disk_warn_auto_cleanup)} form="settings-form">
+        <label for="cb-disk-acl">{t("web_disk_warn_auto_cleanup")}{env_("disk_warn_auto_cleanup")}</label>
+      </div>
+      <p class="form-help">{t("web_disk_warn_auto_cleanup_hint")}</p>
+    </div>
+  </div>
+
+  <hr class="section-divider adv-only">
+
+  <div class="grid">
+    <div>
+      <label>{t("web_quiet_hours_start")}{env_("quiet_hours_start")}</label>
+      <input type="text" name="quiet_hours_start" value="{_e(config.quiet_hours_start)}" placeholder="22:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$" form="settings-form">
+    </div>
+    <div>
+      <label>{t("web_quiet_hours_end")}{env_("quiet_hours_end")}</label>
+      <input type="text" name="quiet_hours_end" value="{_e(config.quiet_hours_end)}" placeholder="07:00" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$|^$" form="settings-form">
+    </div>
+  </div>
+  <p class="form-help">{t("web_quiet_hours_hint")}</p>
+
+  <hr class="section-divider adv-only">
+
+  <div class="adv-only">
+  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_weekly_title")}</h3>
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="weekly_report_enabled" id="cb-weekly" {cb(config.weekly_report_enabled)} form="settings-form">
+    <label for="cb-weekly">{t("web_weekly_enable")}{env_("weekly_report_enabled")}</label>
+  </div>
+  <p class="form-help">{t("web_weekly_hint")}</p>
+  <div class="grid">
+    <div>
+      <label>{t("web_weekly_day")}{env_("weekly_report_weekday")}</label>
+      <select name="weekly_report_weekday" form="settings-form">
+        {''.join(f'<option value="{i}" {"selected" if int(config.weekly_report_weekday or 0)==i else ""}>{name}</option>' for i, name in enumerate([t("web_weekday_mon"), t("web_weekday_tue"), t("web_weekday_wed"), t("web_weekday_thu"), t("web_weekday_fri"), t("web_weekday_sat"), t("web_weekday_sun")]))}
+      </select>
+    </div>
+    <div>
+      <label>{t("web_weekly_hour")}{env_("weekly_report_hour")}</label>
+      <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23" form="settings-form">
+    </div>
+  </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <h3 style="font-size:14px;color:var(--accent);margin-bottom:8px">{t("web_monitor_title")}</h3>
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="monitor_enabled" id="cb-monitor" {cb(config.monitor_enabled)} form="settings-form">
+    <label for="cb-monitor">{t("web_monitor_enabled")} {help_(t("web_monitor_hint"))}{env_("monitor_enabled")}</label>
+  </div>
+  <div class="grid">
+    <div>
+      <label>{t("web_monitor_interval")} {help_(t("web_monitor_interval_hint"))}{env_("monitor_interval_seconds")}</label>
+      <input type="number" name="monitor_interval_seconds" value="{_e(config.monitor_interval_seconds)}" min="15" max="86400" form="settings-form">
+    </div>
+  </div>
+</div>
+
+<!-- ── Kanäle ────────────────────────────────────── -->
+<div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
+  <div class="adv-only">
+    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
+    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="settings-form">
+
+    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
+    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="settings-form">
+
+    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
+    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="settings-form">
+  </div>
+
+  <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
+  <div style="display:flex;gap:8px">
+    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="settings-form">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+
+  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
+  <div style="display:flex;gap:8px">
+    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="settings-form">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+</div>
+
+<div style="margin-top:16px">
+  <button type="submit" class="btn" form="settings-form">{t("web_save")}</button>
+</div>
+
+</div>
+
+"""
 
             self._send_html(self._render_page(content, "settings"))
 
