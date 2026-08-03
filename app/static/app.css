@@ -1055,3 +1055,8 @@ a.btn-icon { text-decoration: none; }
 /* A disabled emoji cannot be greyed by `color`, so dim the whole glyph —
    otherwise a locked button looks identical to a live one. */
 .btn-icon:disabled .ic { opacity: 0.4; }
+
+/* Memory/CPU picture stored with a container death (#2, @NotRetarded).
+   Quieter than the event line itself: the sentence says what happened,
+   these say what the machine looked like while it happened. */
+.event-res { margin-top: 4px; opacity: .75; font-size: 11px; line-height: 1.5; }

@@ -4115,10 +4115,28 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                 **(ev.get("detail") or {}))
                     except Exception:
                         msg = f"{kind}: {ev.get('container', '?')}"
+                    # Who was holding memory and CPU when it died (#2,
+                    # @NotRetarded). The alert has carried this since
+                    # v1.65.0; the history could not, because it was
+                    # gathered after the event was written and thrown away
+                    # with the message. Same i18n keys as the alert, so
+                    # the row and the notification cannot word it
+                    # differently. Absent on older events and on kinds
+                    # where it means nothing — then this is simply empty.
+                    res = ev.get("resources") or {}
+                    extra = ""
+                    for key, tkey in (("host", "monitor_host_memory"),
+                                      ("mem", "monitor_top_memory"),
+                                      ("cpu", "monitor_top_cpu")):
+                        if res.get(key):
+                            arg = {"state": res[key]} if key == "host" else {"list": res[key]}
+                            extra += f'<div>{_e(t(tkey, **arg))}</div>'
+                    if extra:
+                        extra = f'<div class="event-res">{extra}</div>'
                     ev_rows += f"""<tr>
 <td>{_e(ev.get('timestamp', ''))}</td>
 <td>{_e(ev.get('container', ''))}</td>
-<td style="font-size:12px">{_e(msg)}</td>
+<td style="font-size:12px">{_e(msg)}{extra}</td>
 </tr>"""
                 content += f"""<div class="card">
 <h2>{t("web_events")}</h2>

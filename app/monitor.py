@@ -383,18 +383,31 @@ class ContainerMonitor:
             if now_ts - last < self.COOLDOWN_SECONDS:
                 continue
             self._last_sent[key] = now_ts
-            self._record(kind, self._label(name), detail)
-            self._notify(kind, name, detail)
+            # Gathered once, before the write, and handed to both. It used
+            # to be collected inside _notify — after the event had already
+            # been recorded — so the log could never carry it. Doing it
+            # here also means the alert and the history row cannot disagree
+            # about what the machine looked like.
+            resources = self._resources_for(kind, name)
+            self._record(kind, self._label(name), detail, resources)
+            self._notify(kind, name, detail, resources)
             sent.append((kind, name, detail))
         return sent
 
     MAX_EVENTS = 200
 
-    def _record(self, kind, name, detail):
+    def _record(self, kind, name, detail, resources=None):
         """Append to the persistent event log (shown in the Web UI's
         Events section). Telegram scrollback is no audit trail, and on
         headless installs without notification channels this file is the
         only place "what happened last night?" can be answered at all.
+        `resources` is the memory/CPU picture at the moment of death. It
+        rides along as its own key rather than inside `detail`, because
+        `detail` is what fills the message template and must keep meaning
+        exactly that. Absent on kinds where it says nothing, and absent on
+        every event written before v1.75.0 — the renderer treats missing
+        and empty the same way.
+
         Best-effort — a failed write must never break monitoring."""
         try:
             from datetime import datetime
@@ -409,12 +422,15 @@ class ContainerMonitor:
                         events = json.load(f) or []
                 except (ValueError, OSError):
                     events = []
-            events.append({
+            entry = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "kind": kind,
                 "container": name,
                 "detail": detail,
-            })
+            }
+            if resources:
+                entry["resources"] = resources
+            events.append(entry)
             atomic_write_json(path, events[-self.MAX_EVENTS:])
         except Exception as e:
             print(f"Monitor event log error: {e}")
@@ -637,7 +653,43 @@ class ContainerMonitor:
         """
         return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot()}
 
-    def _notify(self, kind, name, detail):
+    def _resources_for(self, kind, name):
+        """Who was holding memory and CPU at the moment this container died.
+
+        Split out of `_notify` so the *stored* event can carry it too. It
+        used to be gathered while building the message and then thrown away
+        with it, which left the event log — the one place that exists to
+        answer "what happened last night?" — unable to name the culprit
+        (#2, @NotRetarded). His words: the alert is how he sees "in real
+        time what CPU and Memory usage containers are using", and the
+        history could not tell him afterwards.
+
+        Returns {} for kinds where it means nothing (a recovery, a health
+        flip), so callers can treat an empty result as "nothing to show"
+        rather than "not measured".
+        """
+        if kind not in ("oom", "crash_restart", "exited"):
+            return {}
+        out = {}
+        host_mem = self._host_memory()
+        if host_mem:
+            out["host"] = host_mem
+        # Evidence from the event stream first: it was taken at the moment
+        # of death, while the culprit still held the memory. Falling back
+        # to a fresh snapshot keeps the old behaviour wherever the watcher
+        # is off, unavailable, or too late.
+        rec = None
+        watcher = getattr(self, "watcher", None)
+        if watcher:
+            rec = watcher.evidence(name) or None
+        if not rec:
+            rec = self._event_snapshot()
+        for k in ("mem", "cpu"):
+            if rec.get(k):
+                out[k] = rec[k]
+        return out
+
+    def _notify(self, kind, name, detail, resources=None):
         t = self.bot.t
         # `name` stays raw for the watcher lookup below — the event stream
         # reports the container's own name, unaware of which registry entry
@@ -665,28 +717,18 @@ class ContainerMonitor:
         # container squeezed out by a neighbour often dies without the
         # kernel OOM-killing it, so the one alert that could have pointed
         # at the neighbour stayed silent.
-        if kind in ("oom", "crash_restart", "exited"):
-            host_mem = self._host_memory()
-            if host_mem:
-                msg += "\n" + t("monitor_host_memory", state=host_mem)
-            # Evidence from the event stream first: it was taken at the
-            # moment of death, while the culprit still held the memory.
-            # Falling back to a fresh snapshot keeps the old behaviour
-            # wherever the watcher is off, unavailable, or too late.
-            rec = None
-            watcher = getattr(self, "watcher", None)
-            if watcher:
-                rec = watcher.evidence(name) or None
-            if not rec:
-                rec = self._event_snapshot()
-            if rec.get("mem"):
-                msg += "\n" + t("monitor_top_memory", list=rec["mem"])
-            # CPU only when something is actually contending for it. A
-            # container starved of CPU misses its SIGTERM window and is
-            # SIGKILLed with exit 137 — indistinguishable from an OOM kill
-            # unless the alert says who was holding the processor.
-            if rec.get("cpu"):
-                msg += "\n" + t("monitor_top_cpu", list=rec["cpu"])
+        if resources is None:
+            resources = self._resources_for(kind, name)
+        if resources.get("host"):
+            msg += "\n" + t("monitor_host_memory", state=resources["host"])
+        if resources.get("mem"):
+            msg += "\n" + t("monitor_top_memory", list=resources["mem"])
+        # CPU only when something is actually contending for it. A
+        # container starved of CPU misses its SIGTERM window and is
+        # SIGKILLed with exit 137 — indistinguishable from an OOM kill
+        # unless the alert says who was holding the processor.
+        if resources.get("cpu"):
+            msg += "\n" + t("monitor_top_cpu", list=resources["cpu"])
 
         # The first question after any death or health flip is "why?" —
         # attach the same log tail the update failures carry. Recovery
