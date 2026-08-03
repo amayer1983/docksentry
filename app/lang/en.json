@@ -398,6 +398,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "today {time}",
+  "web_cron_last": "last run {time}",
+  "web_cron_next": "next {time}",
   "web_cron_tomorrow": "tomorrow {time}",
   "web_weekdays_short": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
   "web_stat_memory_usage": "Memory used · {free} free",

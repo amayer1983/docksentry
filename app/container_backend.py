@@ -81,7 +81,7 @@ class ContainerBackend:
         return [self.cli_binary] + list(self.global_args) + list(args)
 
     def run(self, args, *, timeout=None, text=True, input=None,
-            capture_output=True):
+            capture_output=True, merge_stderr=False):
         """The one and only call into `subprocess` for this backend.
 
         Prepends `cli_binary` to `args` and runs it. The keyword handling
@@ -97,6 +97,18 @@ class ContainerBackend:
         argv = self.build(args)
         if timeout is None:
             timeout = self.default_timeout
+        if merge_stderr:
+            # Both streams into one, in the order the container wrote them.
+            # `capture_output=True` cannot express this — it is shorthand
+            # for two separate pipes.
+            return subprocess.run(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=text,
+                timeout=timeout,
+                input=input,
+            )
         return subprocess.run(
             argv,
             capture_output=capture_output,
@@ -145,12 +157,26 @@ class ContainerBackend:
         return self.run(args, timeout=timeout)
 
     def logs(self, name, *, tail=None, timeout=None):
-        """`docker logs [--tail N] NAME`."""
+        """`docker logs [--tail N] NAME`, both streams merged.
+
+        A container's output is split across stdout and stderr, and every
+        caller of this used `result.stdout or result.stderr` — which takes
+        stdout whenever it is non-empty and silently discards the other
+        half. Measured: a container writing 30 lines to each showed 30 of
+        60 in the Web UI, and the half thrown away was the ERROR output —
+        the half you open a log page to read. It also made `--tail 50`
+        appear to return fewer than 50, which is how it was reported
+        (#2, @NotRetarded).
+
+        Merged here rather than at the four call sites, so a fifth cannot
+        get it wrong, and in the order the container wrote them rather
+        than one stream after the other.
+        """
         args = ["logs"]
         if tail is not None:
             args += ["--tail", str(tail)]
         args.append(name)
-        return self.run(args, timeout=timeout)
+        return self.run(args, timeout=timeout, merge_stderr=True)
 
     def info(self, *, fmt=None, timeout=None):
         """`docker info [--format FMT]`."""

@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "اليوم {time}",
+  "web_cron_last": "الأخير {time}",
+  "web_cron_next": "التالي {time}",
   "web_cron_tomorrow": "غدًا {time}",
   "web_weekdays_short": "الإثنين,الثلاثاء,الأربعاء,الخميس,الجمعة,السبت,الأحد",
   "web_stat_memory_usage": "الذاكرة المستخدمة · {free} متاح",

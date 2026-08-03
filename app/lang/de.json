@@ -398,6 +398,8 @@
   "web_stat_days_ago": "vor {n}T",
   "web_stat_disk_usage": "Speicher belegt ({free} frei)",
   "web_cron_today": "heute {time}",
+  "web_cron_last": "zuletzt {time}",
+  "web_cron_next": "nächster {time}",
   "web_cron_tomorrow": "morgen {time}",
   "web_weekdays_short": "Mo,Di,Mi,Do,Fr,Sa,So",
   "web_stat_memory_usage": "Arbeitsspeicher belegt · {free} frei",

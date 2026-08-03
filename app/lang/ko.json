@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "오늘 {time}",
+  "web_cron_last": "이전 {time}",
+  "web_cron_next": "다음 {time}",
   "web_cron_tomorrow": "내일 {time}",
   "web_weekdays_short": "월,화,수,목,금,토,일",
   "web_stat_memory_usage": "메모리 사용 중 · {free} 여유",

@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "сьогодні {time}",
+  "web_cron_last": "останній {time}",
+  "web_cron_next": "наступний {time}",
   "web_cron_tomorrow": "завтра {time}",
   "web_weekdays_short": "пн,вт,ср,чт,пт,сб,нд",
   "web_stat_memory_usage": "Пам'ять зайнято · {free} вільно",

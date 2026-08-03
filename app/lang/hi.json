@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "आज {time}",
+  "web_cron_last": "पिछला {time}",
+  "web_cron_next": "अगला {time}",
   "web_cron_tomorrow": "कल {time}",
   "web_weekdays_short": "सोम,मंगल,बुध,गुरु,शुक्र,शनि,रवि",
   "web_stat_memory_usage": "मेमोरी उपयोग · {free} खाली",

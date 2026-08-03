@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "今天 {time}",
+  "web_cron_last": "上次 {time}",
+  "web_cron_next": "下次 {time}",
   "web_cron_tomorrow": "明天 {time}",
   "web_weekdays_short": "周一,周二,周三,周四,周五,周六,周日",
   "web_stat_memory_usage": "内存已用 · 剩余 {free}",

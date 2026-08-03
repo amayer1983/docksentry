@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "bugün {time}",
+  "web_cron_last": "son {time}",
+  "web_cron_next": "sonraki {time}",
   "web_cron_tomorrow": "yarın {time}",
   "web_weekdays_short": "Pzt,Sal,Çar,Per,Cum,Cmt,Paz",
   "web_stat_memory_usage": "Bellek kullanımı · {free} boş",

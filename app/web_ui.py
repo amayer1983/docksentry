@@ -443,6 +443,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                                _remote, ""))
             return views
 
+        def _own_container_name_safe(self):
+            """Docksentry's own container name, or "" if it cannot be found."""
+            try:
+                return checker._own_container_name() or ""
+            except Exception:
+                return ""
+
         def _machine_state(self):
             """The numbers both machine endpoints report, gathered once.
 
@@ -1410,6 +1417,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             _t = _web_translator(config.language)
                             now = _dt.now()
                             formatted = []
+                            # Label the first entry, so the row reads as a
+                            # sentence rather than three bare times. Someone
+                            # looking at "18:23 · today 21:23 · tomorrow"
+                            # cannot tell which of them already happened
+                            # (#2, @NotRetarded).
+                            first = True
                             for t_dt in ticks:
                                 delta = t_dt - now
                                 if delta.total_seconds() < 2 * 3600:
@@ -1433,6 +1446,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                     formatted.append(f"{wd} {t_dt.strftime('%H:%M')}")
                                 else:
                                     formatted.append(t_dt.strftime("%Y-%m-%d %H:%M"))
+                            if formatted:
+                                formatted[0] = _t("web_cron_next",
+                                                  time=formatted[0])
                             response = {"ok": True, "ticks": formatted}
                 payload = json.dumps(response).encode()
                 self.send_response(200)
@@ -4521,7 +4537,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             query = parse_qs(urlparse(self.path).query)
             container = query.get("container", [""])[0]
-            lines = int(query.get("lines", ["50"])[0])
+            # Open on Docksentry rather than on nothing. The page used to
+            # render an empty frame until you picked something, and the
+            # container people want first is almost always this one — it is
+            # what tells you why an update failed (#2, @NotRetarded).
+            if not container:
+                container = self._own_container_name_safe()
+            # 100, not 50. Fifteen containers already produce more than 50
+            # lines of Docksentry's own output, so the old default cut off
+            # the part worth reading.
+            try:
+                lines = max(10, min(int(query.get("lines", ["100"])[0]), 500))
+            except (TypeError, ValueError):
+                lines = 100
 
             containers = self._get_containers()
 

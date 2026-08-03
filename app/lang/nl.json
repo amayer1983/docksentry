@@ -297,6 +297,8 @@
   "web_stat_days_ago": "{n}d ago",
   "web_stat_disk_usage": "Disk used ({free} free)",
   "web_cron_today": "vandaag {time}",
+  "web_cron_last": "laatste {time}",
+  "web_cron_next": "volgende {time}",
   "web_cron_tomorrow": "morgen {time}",
   "web_weekdays_short": "ma,di,wo,do,vr,za,zo",
   "web_stat_memory_usage": "Geheugen gebruikt · {free} vrij",
