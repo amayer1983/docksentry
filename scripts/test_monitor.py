@@ -71,13 +71,24 @@ def _mem_checks(checks):
     top-consumers list invites blaming whoever is largest even when there
     were gigabytes free.
     """
-    import inspect as _i
-    src = _i.getsource(ContainerMonitor._notify)
+    # Asserted by CALLING it, not by reading the source of _notify. The
+    # earlier version scraped `_notify` for the nearest `if kind in …`,
+    # which stopped pointing at the resource gate once the gathering moved
+    # into _resources_for — from then on it was reading the log-tail
+    # condition, which happens to name the same three kinds and so kept
+    # passing for the wrong reason. It only came apart when a fourth
+    # `if kind in` was added for the healthcheck output. A behavioural
+    # check cannot drift like that.
+    import types as _t
+    probe = ContainerMonitor.__new__(ContainerMonitor)
+    probe.watcher = None
+    probe._host_memory = lambda: "9.0/16.0 GB"
+    probe._event_snapshot = lambda: {"mem": "hog 9GiB", "cpu": "hog 190%"}
     for kind in ("oom", "crash_restart", "exited"):
-        checks[f"memory diagnostics attach to {kind}"] = (
-            f'"{kind}"' in src.split("_memory_snapshot")[0].rsplit("if kind in", 1)[-1])
+        checks[f"memory diagnostics attach to {kind}"] = bool(
+            probe._resources_for(kind, "x").get("mem"))
     checks["a recovery message stays clean"] = (
-        '"recovered"' not in src.split("_memory_snapshot")[0].rsplit("if kind in", 1)[-1])
+        probe._resources_for("recovered", "x") == {})
     # Host memory is read from /proc/meminfo, which inside a container
     # still reports the HOST's figures — that's the point.
     import types as _t

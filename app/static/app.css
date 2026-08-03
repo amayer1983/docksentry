@@ -1060,3 +1060,11 @@ a.btn-icon { text-decoration: none; }
    Quieter than the event line itself: the sentence says what happened,
    these say what the machine looked like while it happened. */
 .event-res { margin-top: 4px; opacity: .75; font-size: 11px; line-height: 1.5; }
+
+/* Header and nav follow the page they sit above (#2, @NotRetarded: "align
+   the tabs under it to the left of the page"). They were fixed at 900px
+   while the status page grew to 1400 for its table (#46), so on a wide
+   screen the logo and tabs sat 250px inset from the content below them —
+   measured at 1485px viewport: header at x=293, content at x=43. Read as
+   "floating in the middle", which is exactly what it was. */
+.header-row.wide, .nav-wrap.wide { max-width: 1400px; }

@@ -61,7 +61,7 @@ AREAS = [
      ("container_backend", "dependents", "netns", "protect_stop",
       "op_coordination", "groups_cmd", "disk_", "cooldown")),
     ("Monitoring & events", ("monitor", "event_watcher", "podman_live",
-                             "event_resources")),
+                             "event_resources", "health_output")),
     ("Multi-host",
      ("hosts", "host_scoped", "host_state", "multihost", "web_multihost")),
     ("Notifications",

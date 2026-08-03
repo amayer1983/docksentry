@@ -1123,7 +1123,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </head>
 <body class="{body_class}">
 <div class="header">
-<div class="header-row">
+<div class="header-row{" wide" if active == "status" else ""}">
 <div class="header-brand">
 <img src="data:image/png;base64,{_LOGO_B64}" alt="Docksentry">
 <h1>Docksentry</h1>
@@ -1143,7 +1143,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <svg id="ds-theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 </button>
 </div>
-<div class="nav-wrap"><nav>{nav_html}</nav></div>
+<div class="nav-wrap{" wide" if active == "status" else ""}"><nav>{nav_html}</nav></div>
 </div>
 {maint_banner}<div class="content{" wide" if active == "status" else ""}">
 {content}

@@ -119,8 +119,36 @@ class ContainerMonitor:
                 # invites the reader to line it up with the wrong action.
                 "started_at": state.get("StartedAt", "") or "",
                 "labels": (cfg.get("Config") or {}).get("Labels") or {},
+                # What the healthcheck itself printed when it last failed.
+                # Free — this inspect already ran — and it is the one thing
+                # that says WHY a container turned unhealthy. `docker logs`
+                # does not: measured on a container whose probe printed
+                # "connection refused: upstream 10.0.0.5:8080", the log was
+                # completely empty (#2, @famewolf: "Normally there is a
+                # last log when a container goes unhealthy?").
+                "health_output": self._health_output(state),
             }
         return snap
+
+    @staticmethod
+    def _health_output(state):
+        """Output of the most recent FAILING healthcheck probe, trimmed.
+
+        Falls back to the last probe of any kind, because a container that
+        has just recovered still explains itself through what it said while
+        it was down. Empty when the container has no healthcheck, or when
+        the probe printed nothing.
+        """
+        log = ((state.get("Health") or {}).get("Log") or [])
+        if not log:
+            return ""
+        failing = [e for e in log if e.get("ExitCode")]
+        entry = (failing or log)[-1]
+        out = (entry.get("Output") or "").strip()
+        # Probes are usually a line or two; a curl that dumps a whole error
+        # page is the case worth capping. Kept well under the log tail's
+        # 1500 so both together stay inside Telegram's message limit.
+        return out[:500] if len(out) <= 500 else out[:500] + "…"
 
     # ── pure logic ──────────────────────────────────────────────
 
@@ -365,6 +393,12 @@ class ContainerMonitor:
             if self._monitored(name, cur.get(name) or {})
         ]
         events = [self._with_real_exit_code(e) for e in events]
+        # `_prev` becomes `cur` here, so by the time _notify runs it is no
+        # longer "previous" at all. Naming it separately rather than
+        # relying on that: a reader who sees `self._prev` in _notify and
+        # assumes it is the older snapshot would be wrong in a way nothing
+        # would catch.
+        self._latest = cur
         self._prev = cur
 
         sent = []
@@ -734,6 +768,19 @@ class ContainerMonitor:
         # attach the same log tail the update failures carry. Recovery
         # messages stay clean.
         if kind in ("unhealthy", "exited", "oom", "crash_restart"):
+            # For a health flip the probe's own output answers the question
+            # directly, and `docker logs` frequently cannot: a container
+            # that logs nothing produced an alert with no diagnostic at all
+            # (#2, @famewolf). Measured on a probe printing "connection
+            # refused: upstream 10.0.0.5:8080" — the healthcheck log had
+            # it, `docker logs` was empty. Shown as well as the tail, not
+            # instead: they answer different questions.
+            probe = ""
+            if kind in ("unhealthy", "recovered"):
+                probe = (getattr(self, "_latest", None) or {}).get(
+                    name, {}).get("health_output", "")
+            if probe:
+                msg += f"\nHealthcheck:\n```\n{probe}\n```"
             try:
                 tail = self.checker._tail_logs(name, lines=10)
             except Exception:
