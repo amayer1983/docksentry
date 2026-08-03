@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [1.74.0] - 2026-08-03
+
+### Fixed
+- **The settings cards were on every tab.** Backup, Info, the update window and both maintenance cards sat outside all five panes, so switching tabs left them where they were and they read as repeated on each one (#2, @NotRetarded). They are now in the tab they belong to: Backup and Info under General, the update window under Updates, maintenance mode next to the cleanup it pauses.
+
+  Moving them meant restructuring the form, which is the part worth knowing about. Those cards carry their own POST forms, and putting them inside a pane put them inside the settings form — nested forms are invalid HTML, and the parser does not just tolerate it: it drops the inner start tag and lets the inner `</form>` close the outer one. Measured before it went anywhere: the settings form ended after the Updates tab, and 23 fields from Cleanup, Notifications and Channels fell outside it. A checkbox that is not submitted reads as "off", so one press of Save would have turned off auto-cleanup, monitoring and the weekly report and blanked both webhooks. None of it was visible — `ast.parse` passed, the structure check passed, screenshots of all five tabs looked right. So the settings form is empty now and its 26 fields attach to it by id, which means no card can nest a form wherever it ends up.
+
+### Removed
+- **The Groups card on the settings page.** It was a signpost left behind in v1.21.1 when groups moved to their own page. "Gruppen" has been in the navigation on every page for the 52 versions since.
+
 ## [1.73.0] - 2026-08-03
 
 From @NotRetarded's interface review in #2, written on a phone while checking the previous release's mobile changes.
