@@ -39,7 +39,14 @@ def main():
     checks = {}
     rec = _Rec()
     real = container_backend.subprocess
-    container_backend.subprocess = types.SimpleNamespace(run=rec.run)
+    # PIPE/STDOUT come along because `logs()` merges the two streams —
+    # `capture_output=True` cannot express that, so it names the constants
+    # directly. A stub that omits them fails with an AttributeError deep
+    # inside the backend rather than at the assertion.
+    container_backend.subprocess = types.SimpleNamespace(
+        run=rec.run, PIPE=real.PIPE, STDOUT=real.STDOUT,
+        SubprocessError=real.SubprocessError,
+        TimeoutExpired=real.TimeoutExpired)
     try:
         b = DockerBackend()
 
