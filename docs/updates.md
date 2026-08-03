@@ -157,6 +157,36 @@ side; it covers every pull on the host rather than only ours.
 guessed, and never a fallback when TLS fails, because a tool that quietly
 retries over HTTP hands credentials to whoever answers.
 
+### A registry behind your own CA
+
+If your registry has a real certificate signed by a CA you run yourself,
+`INSECURE_REGISTRIES` is **not** the setting you want. It drops TLS
+entirely, which against a TLS-only port fails outright and against a port
+that does answer HTTP sends your Basic credentials in clear text.
+
+Point `SSL_CERT_FILE` at the CA bundle instead and TLS keeps working —
+you get verification against *your* CA rather than none at all:
+
+```yaml
+environment:
+  - SSL_CERT_FILE=/certs/my-ca.pem
+volumes:
+  - /path/to/ca.pem:/certs/my-ca.pem:ro
+```
+
+Measured against a self-signed `registry:2`: without it the check fails
+with a certificate error, with it the digest and the tag list come back
+normally. This is Python's own variable rather than something Docksentry
+invents, so it also covers a self-signed *webhook* or SMTP endpoint on the
+same bundle.
+
+Your CA alone is enough — public registries keep working alongside it.
+`SSL_CERT_FILE` replaces only the bundled CA *file*; the hashed directory
+at `/etc/ssl/certs` is still consulted, and in the Docksentry image that
+holds 119 public roots. Measured inside the running container: with
+`SSL_CERT_FILE` pointing at a private CA and nothing else, Docker Hub
+still verified. So there is no need to concatenate anything.
+
 Registries answering `WWW-Authenticate: Basic` (the stock `registry:2`
 behind htpasswd, Nexus and Artifactory in their simpler modes) work with
 the credentials already in your `config.json`; nothing extra to set.

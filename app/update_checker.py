@@ -789,6 +789,20 @@ class UpdateChecker:
             return f"HTTP {code}"
         text = str(exc)
         low = text.lower()
+        if "certificate verify failed" in low:
+            # The single most common private-registry setup: a real cert
+            # signed by the operator's own CA. It works — Python reads
+            # SSL_CERT_FILE — but nobody guesses that, and the message used
+            # to end at "TLS error", which reads as "unsupported". Worse,
+            # the setting we *do* document, INSECURE_REGISTRIES, is the
+            # wrong answer here: it downgrades to plain HTTP, so it either
+            # fails outright against a TLS-only port or sends the Basic
+            # credentials in clear text. Measured against a self-signed
+            # `registry:2`: verify failure without it, digest and tag list
+            # with it. (wud#604, wud#111, wud#52.)
+            return ("TLS certificate not trusted — if this registry uses a "
+                    "private CA, point SSL_CERT_FILE at its PEM bundle "
+                    "(INSECURE_REGISTRIES is not the fix; it drops TLS)")
         if "certificate" in low or "ssl" in low:
             return f"TLS error ({text[:60]})"
         if "timed out" in low or "timeout" in low:
