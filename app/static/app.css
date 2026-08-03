@@ -349,6 +349,14 @@ html[data-theme="light"] .toast {
 }
 /* SVG icons inside btn-icon use currentColor → inherit button text color */
 .btn-icon svg { width: 14px; height: 14px; display: block; }
+/* Emoji glyphs. Sized in their own right rather than inheriting the
+   button's text metrics, so a row of them lines up the way the old SVGs
+   did — an emoji's box varies by font and platform, and left alone they
+   sit at slightly different heights. `line-height: 1` kills the extra
+   leading that would otherwise make every button a few pixels taller. */
+.btn-icon .ic { font-size: 15px; line-height: 1; display: block; }
+.btn-icon-text .ic { font-size: 13px; line-height: 1; }
+.icon-legend .ic { font-size: 14px; line-height: 1; }
 .icon-emoji { font-size: 14px; line-height: 1; }
 /* Buttons with text + leading icon */
 .btn-icon-text {
@@ -1018,3 +1026,28 @@ a.btn-icon { text-decoration: none; }
    phone has room below but not beside. */
 .tile-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .tile-actions .btn-icon { width: 34px; height: 34px; }
+
+/* ── Emoji buttons: let the glyph carry the state ───────────────── */
+/* The filled backgrounds were built for monochrome line icons, where the
+   fill was the only way to say "this one is dangerous" or "this one is
+   on". An emoji already carries its own colour and meaning, and stacking
+   the two fights: 🛑 on a red button is red on red, which reads worse than
+   the white cross it replaced. So a button holding an emoji keeps the
+   ring, drops the fill, and lets the glyph speak. Seen in a screenshot,
+   not reasoned about. */
+.btn-icon.is-danger:has(.ic),
+.btn-icon.is-active:has(.ic),
+.btn-icon.is-warn:has(.ic) {
+    background: var(--bg-card);
+    color: var(--text);
+    box-shadow: none;
+}
+.btn-icon.is-danger:has(.ic) { border-color: var(--danger); }
+.btn-icon.is-active:has(.ic) { border-color: var(--accent); }
+.btn-icon.is-warn:has(.ic)   { border-color: var(--warn); }
+.btn-icon.is-danger:has(.ic):hover { background: rgba(248,81,73,0.14); }
+.btn-icon.is-active:has(.ic):hover { background: rgba(88,166,255,0.14); }
+.btn-icon.is-warn:has(.ic):hover   { background: rgba(210,153,34,0.16); }
+/* A disabled emoji cannot be greyed by `color`, so dim the whole glyph —
+   otherwise a locked button looks identical to a live one. */
+.btn-icon:disabled .ic { opacity: 0.4; }

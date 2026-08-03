@@ -63,22 +63,33 @@ def _e(value):
 # Inline SVG so they pick up `color` from the parent (currentColor) — we
 # want Pin to be red when active and grey when inactive, and the only way
 # to do that is *not* using a color emoji like 📌.
+#: Action-button glyphs. Emoji, not line art — and that was a decision,
+#: not a shortcut. The legend under the container table exists BECAUSE the
+#: previous SVG set needed explaining, which is the argument against it,
+#: made by us. A 📌 does not need a legend. @NotRetarded asked for the
+#: change and picked most of these (#2); the trade accepted with it is that
+#: emoji render differently per platform and cannot be recoloured, so the
+#: table is louder than it was.
+#:
+#: One departure from his list: he suggested 🔊 for major-confirm, which
+#: reads as "sound". ⚠️ says what it means.
 _ICONS = {
-    "refresh":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9c-2.4 0-4.6-.9-6.3-2.5L3 21"/><path d="M3 12a9 9 0 0 1 9-9c2.4 0 4.6.9 6.3 2.5L21 3"/><path d="M21 3v6h-6"/><path d="M3 21v-6h6"/></svg>',
-    # Single circular arrow — deliberately distinct from the two-arrow
-    # "refresh" so Update and Restart stop sharing a glyph (#46, @LeeNX).
-    "restart":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>',
-    "pin":       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 17 .003 5"/><path d="M12 17a5 5 0 0 0 5-5V8.4l1.6-1.6a1 1 0 0 0 0-1.4l-3-3a1 1 0 0 0-1.4 0L12.6 4H7a5 5 0 0 0-5 5"/><path d="M2 22 22 2"/></svg>',
-    "settings":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2"/><circle cx="12" cy="12" r="3"/></svg>',
-    "alert":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
-    "checkmark": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-    "x":         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
-    "search":    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
-    "broom":     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13 4 20"/><path d="M5 19a3 3 0 0 1 0-6"/><path d="M11 13 22 2"/><path d="M22 2v6"/><path d="m11 13 6 6"/><path d="M17 19h5"/></svg>',
-    "arrow_up":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>',
-    "calendar":  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
-    "package":   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+    "refresh":   '<span class="ic">🔃</span>',
+    "restart":   '<span class="ic">♻️</span>',
+    "pin":       '<span class="ic">📌</span>',
+    "settings":  '<span class="ic">🔁</span>',
+    "alert":     '<span class="ic">⚠️</span>',
+    "checkmark": '<span class="ic">✅</span>',
+    "x":         '<span class="ic">🛑</span>',
+    "search":    '<span class="ic">🔎</span>',
+    # Tab glyphs — these were never the confusing ones, but the set has to
+    # be complete or the tabs render an empty span.
+    "broom":     '<span class="ic">🧹</span>',
+    "calendar":  '<span class="ic">🗓️</span>',
+    "package":   '<span class="ic">📦</span>',
+    "arrow_up":  '<span class="ic">⬆️</span>',
 }
+
 
 # Inline-flex helper that pairs an SVG icon with text — used in badges
 # where we want a small icon glued to a label.
