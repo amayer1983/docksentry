@@ -90,6 +90,46 @@ docksentry.yourdomain.com {
 
 > When using a reverse proxy, don't expose port 8080 directly — remove the `-p` mapping and let the proxy handle external access.
 
+## API tokens (read-only)
+
+`/metrics` and `GET /api/status` can be reached with a token instead of the
+Web UI password:
+
+```yaml
+environment:
+  - API_TOKENS=prom:a-long-random-string,grafana:another-one
+```
+
+```
+curl -H "Authorization: Bearer a-long-random-string" http://host:8080/metrics
+curl "http://host:8080/api/status?token=a-long-random-string"
+```
+
+Why a separate credential rather than the Web UI password: a scraper cannot
+log in, and the browser password would give a monitoring job the ability to
+stop your containers. A token reaches exactly two GET endpoints and can do
+nothing else — `POST /api/update` with a valid token answers 401.
+
+Name them so one can be revoked without disturbing the others. A token that
+is presented and rejected gets a 401 rather than falling through to the
+password check, so a revoked token stops working immediately even on an
+instance with no `WEB_PASSWORD` set.
+
+`?token=` exists because several scrapers cannot set headers. It does put
+the secret in access logs — prefer the header where you can.
+
+**Without `API_TOKENS` set, these endpoints follow the same rule as every
+other page**: open if you have not set `WEB_PASSWORD`, behind it if you
+have. If your Web UI is reachable from anywhere untrusted, set a password;
+the metrics carry your container names.
+
+## Mail
+
+`SMTP_TLS_VERIFY` defaults to `true` and should stay there. Set it to
+`false` only for an internal mail server with a self-signed certificate,
+and know what it costs: the SMTP password is then sent to whatever answers
+on that address, with any certificate at all.
+
 ## Security Checklist
 
 | Measure | Priority | How |

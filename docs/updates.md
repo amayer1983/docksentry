@@ -81,6 +81,86 @@ Pinned containers (`/pin nginx` or via Web UI) are completely excluded from upda
 - Containers in the `EXCLUDE_CONTAINERS` list
 - Pinned containers
 
+## Watch but never update
+
+Some containers are not yours to recreate. A podman quadlet belongs to
+systemd; a Portainer stack belongs to Portainer; anything deployed by
+Ansible or a GitOps pipeline belongs to that. Recreating one behind its
+owner's back leaves two things with an opinion about what should be
+running.
+
+The older ways out all mean *stop looking*: `docksentry.pin`,
+`docksentry.enable=false` and `EXCLUDE_CONTAINERS` drop the container from
+the scan entirely, so you lose the version and update information that was
+the reason for watching it.
+
+```yaml
+environment:
+  - MONITOR_ONLY_CONTAINERS=systemd-*,gitea-*
+```
+
+or per container:
+
+```yaml
+labels:
+  - "docksentry.monitor-only=true"
+```
+
+Matched containers stay in the list, keep reporting updates, and are never
+updated — not on the schedule and not by pressing the button, because the
+update is wrong whoever asks for it. In the Web UI the row keeps its check
+button and loses the rest.
+
+`EXCLUDE_CONTAINERS` takes the same wildcards (`*`, `?`, `[abc]`). A
+pattern without one behaves exactly as it always did.
+
+## Don't be the guinea pig
+
+```yaml
+environment:
+  - MIN_IMAGE_AGE_DAYS=7        # or docksentry.min-age=7 per container
+```
+
+Holds automatic updates back until the image has been public for that
+long. Two reasons people want it: let someone else find the broken release
+first, and give a compromised image time to be noticed before you pull it.
+
+Auto path only — pressing the button always works. And it defers rather
+than discards: the update stays in the pending list and applies by itself
+on a later run once the image has aged.
+
+If the registry exposes no build date, the update goes through. A gate
+cannot judge what it cannot see, and blocking everything undateable would
+quietly stop updates for a large share of images.
+
+## Registries that need help being reached
+
+Checks go out over HTTPS straight to the registry named in the image
+reference. They do **not** use the daemon's `registry-mirrors`, so on a
+network where only a mirror is reachable, `docker pull` works and
+Docksentry reports "unreachable" forever.
+
+```yaml
+environment:
+  - REGISTRY_MIRRORS=docker.io=mirror.internal
+  - INSECURE_REGISTRIES=mirror.internal,10.0.0.*
+```
+
+`REGISTRY_MIRRORS` redirects **lookups** only. Pulling still hands the
+container's own image reference to the daemon — pulling from elsewhere
+would rewrite that reference (`nginx:1.25` becoming
+`mirror.internal/nginx:1.25`) and your container would stop matching your
+own compose file. Use `registry-mirrors` in `daemon.json` for the pull
+side; it covers every pull on the host rather than only ours.
+
+`INSECURE_REGISTRIES` allows plain HTTP for the hosts you name — never
+guessed, and never a fallback when TLS fails, because a tool that quietly
+retries over HTTP hands credentials to whoever answers.
+
+Registries answering `WWW-Authenticate: Basic` (the stock `registry:2`
+behind htpasswd, Nexus and Artifactory in their simpler modes) work with
+the credentials already in your `config.json`; nothing extra to set.
+
 ## Why didn't it see my new release?
 
 By default a check prints a verdict and the digests behind it:

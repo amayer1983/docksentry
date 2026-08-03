@@ -73,6 +73,26 @@ You can also configure or change the Discord webhook URL via the Web UI settings
 - **Update failed** — red embed with error details
 - **Startup message** — notification when the bot starts
 
+## ntfy
+
+Set `NTFY_URL` (a full topic URL) or `NTFY_SERVER` + `NTFY_TOPIC`.
+
+For a protected topic — a self-hosted ntfy with `auth-default-access: deny`,
+or a reserved topic on ntfy.sh:
+
+```yaml
+environment:
+  - NTFY_TOKEN=tk_...            # an ntfy access token
+  # or
+  - NTFY_USER=me
+  - NTFY_PASSWORD=...
+```
+
+Titles containing emoji or umlauts are encoded properly. If you use a
+`BOT_LABEL` like `🖥 pve1` — which the README suggests — versions before
+1.69.0 dropped every ntfy notification silently; upgrade if that sounds
+familiar.
+
 ## Generic Webhook
 
 For integration with Ntfy, Gotify, Home Assistant, or any service that accepts JSON POST requests:

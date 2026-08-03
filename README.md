@@ -355,6 +355,7 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 | `DISCORD_ALLOWED_USERS` | | Optional, comma-separated Discord user IDs. Unset means anyone in that server can run the commands; set it when the server has members who shouldn't be able to stop a database or read `/logs`. On top of this, the commands are registered Administrator-only and disabled in DMs, so a server admin can also grant them per role in Discord itself. Env-only. |
 | `CONTAINER_CLI` | `auto` | Which container CLI to drive: `auto`, `docker` or `podman`. `auto` uses `docker` whenever that command exists — including the usual `docker`→`podman` alias — and only falls back to `podman` when `docker` genuinely isn't there, so existing setups are unaffected. Set `podman` to call `podman` directly, no alias needed. One caveat: Docksentry's **self-update** still shells out to `docker` and launches a `docker:cli` helper container (it can't run inside the container it's replacing), so on Podman that one path still needs `docker` to resolve. Everything else — checks, updates, recreates, rollback, lifecycle, cleanup — goes through the selected CLI. Env-only. |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
+| `DATA_DIR` | `/data` | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Change it only if you mount the volume somewhere else; everything in it is what a backup would restore |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
 | `DOCKER_STOP_TIMEOUT` | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators). |
 | `DOCKER_USERNAME` / `DOCKER_PASSWORD` | | Docker Hub (or other registry) credentials. Bypasses the anonymous pull rate limit (100 / 6h / IP). We run `docker login` once at startup. |
@@ -538,6 +539,7 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 | Topic | Link |
 |-------|------|
 | Update Workflow & Rollback | [docs/updates.md](docs/updates.md) |
+| Container Monitoring | [docs/monitoring.md](docs/monitoring.md) |
 | Web UI | [docs/web-ui.md](docs/web-ui.md) |
 | Notification Channels | [docs/notifications.md](docs/notifications.md) |
 | Docker Compose Support | [docs/compose.md](docs/compose.md) |
@@ -555,7 +557,9 @@ Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what 
 - **Multi-host management** — one instance managing several Docker or Podman hosts (`DOCKER_HOSTS=name:endpoint`, TCP or SSH), with per-host pending queues, host-prefixed notifications, a host selector in the Web UI, and `@host` / `@all` command targeting. Landed in v1.62.0.
 - **Interactive Discord bot** — 27 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
 
-**Next — the governance axis.** An audit trail (which operator did what, across all three front-ends), API tokens and a read-only role, and a Prometheus `/metrics` endpoint. These belong together because they answer one question: who may do what, and who can see afterwards what happened.
+**Shipped since:** an audit-free read-only surface — `/metrics` in Prometheus format and `GET /api/status` as JSON, both behind `API_TOKENS` so a scraper never needs the Web UI password. Plus `MONITOR_ONLY_CONTAINERS` for containers another tool owns, `MIN_IMAGE_AGE_DAYS` so you need not be first to pull a new release, and registry mirrors for lookups.
+
+**Next.** Notification templates with per-channel routing — the one thing every comparable project's users ask for that Docksentry still builds in code. An audit trail of who did what across the three front-ends. And per-container resource figures on the status page, loaded after the page renders rather than making every load wait on `docker stats`.
 
 Wishlist input and "+1"s welcome on [#2](https://github.com/amayer1983/docksentry/issues/2).
 

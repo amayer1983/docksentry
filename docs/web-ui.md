@@ -94,6 +94,27 @@ The **Update Windows** section lets you pick a container, set a `HH:MM`–`HH:MM
 
 The **Maintenance** section provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly.
 
+## Machine-readable endpoints
+
+Two read-only endpoints, guarded by `API_TOKENS` (see
+[security.md](security.md)):
+
+- `GET /metrics` — Prometheus text format. Reports containers watched,
+  updates pending, one gauge per host, and one per container that has an
+  update — so an alert can name the thing that needs attention rather than
+  only a count.
+- `GET /api/status` — the same numbers as JSON.
+
+Both read what the status page reads. Neither triggers a check: an endpoint
+that did would let anyone with a scrape interval drive the update loop.
+
+## On a phone
+
+Below 700px the container table is replaced by one card per container —
+same data, laid out to fit a screen you hold in one hand, with the actions
+sized for a finger. Above that width the table returns. Both are built from
+the same values, so they cannot disagree about a container's state.
+
 ## Security
 
 - Password protection via Basic Auth (`WEB_PASSWORD`)
