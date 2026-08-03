@@ -79,6 +79,13 @@ _ICONS = {
     "pin":       '<span class="ic">📌</span>',
     "settings":  '<span class="ic">🔁</span>',
     "alert":     '<span class="ic">⚠️</span>',
+    # The major-confirm TOGGLE, not a warning. ⚠️ sat on every row —
+    # the button is always there and only its highlight carries state,
+    # so a full table read as "all my containers have an alert" (#2,
+    # @LeeNX, with a screenshot that makes the point better than any
+    # argument). ❓ says what the button does: ask me before a major
+    # jump. ⚠️ stays where a major update genuinely IS waiting.
+    "ask":       '<span class="ic">❓</span>',
     "checkmark": '<span class="ic">✅</span>',
     "x":         '<span class="ic">🛑</span>',
     "search":    '<span class="ic">🔎</span>',
@@ -2625,7 +2632,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # Auto-update now has its own table column (#2, @NotRetarded) —
             # no longer a name-cell badge that wrapped under long names.
             if c["name"] in ask_major:
-                badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["alert"]}</span>'
+                badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["ask"]}</span>'
             if c["name"] in groups_lookup:
                 gid, gname = groups_lookup[c["name"]]
                 badges += f' <span class="badge badge-purple" title="{_e(t("web_badge_group_tt", group=gname))}">{_icon_label("package", _e(gname))}</span>'
@@ -2760,7 +2767,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
                 f'<button type="submit"{_mo_off} class="btn-icon{" is-warn" if is_askm else ""}" '
-                f'title="{_e(_mo_title or (t("web_ask_major_off") if is_askm else t("web_ask_major_on")))}">{_ICONS["alert"]}</button>'
+                f'title="{_e(_mo_title or (t("web_ask_major_off") if is_askm else t("web_ask_major_on")))}">{_ICONS["ask"]}</button>'
                 f'</form>'
             )
             # Lifecycle buttons (#17). Hidden for our own container —
@@ -3088,7 +3095,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <span title="{_e(t("web_restart_tt"))}"><span class="btn-icon">{_ICONS["restart"]}</span> {_legend_word(t("lifecycle_btn_restart"))}</span>
 <span title="{_e(t("web_pin_tt"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
 <span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {_legend_word(t("web_autoupdate_badge"))}</span>
-<span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["alert"]}</span> {_legend_word(t("web_legend_major_confirm"))}</span>
+<span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["ask"]}</span> {_legend_word(t("web_legend_major_confirm"))}</span>
 <span title="{_e(t("web_stop_tt"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
 <span title="{_e(t("web_label_authoritative"))}">🏷 {_legend_word(t("web_legend_label"))}</span>
 <span title="{_e(t("web_selfupdate_marker_tt"))}">⚙ {_legend_word(t("web_legend_selfupdate"))}</span>
