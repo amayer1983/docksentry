@@ -17,6 +17,16 @@ from update_checker import UpdateChecker
 from container_backend import get_backend
 from i18n import get_translator
 
+# A missing container runtime is not a regression. Without this the
+# procedure goes red on a machine that simply has no Docker, which is
+# indistinguishable from a real failure — measured: five procedures did
+# exactly that before the guard, while test_multihost_live skipped
+# cleanly. CI must be able to tell the two apart.
+if __import__("subprocess").run(["docker", "info"],
+                                capture_output=True).returncode != 0:
+    print("SKIP: no Docker daemon available")
+    __import__("sys").exit(0)
+
 NAME = "ds_protect_test"
 FILE_ATTRS = ["pinned_file", "autoupdate_file", "update_windows_file",
               "ask_before_major_file", "trust_running_file", "cooldown_file",

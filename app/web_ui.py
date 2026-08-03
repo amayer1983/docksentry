@@ -2715,8 +2715,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             ) if c["name"] in pending_names else ''
             pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
             _pin_disabled = ' disabled' if (_lab_pin is not None or _monitor_only) else ''
-            _pin_title = (t("web_label_authoritative") if _lab_pin is not None
-                          else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt")))
+            # Monitor-only wins the tooltip, as it does on the auto toggle:
+            # it is the reason the button is dead, and "pin this container"
+            # on a button that cannot be clicked explains nothing (#55,
+            # @LeeNX). He reported it on pin; the same omission was on
+            # restart, stop and the major-confirm toggle.
+            _pin_title = (_mo_title if _monitor_only
+                          else (t("web_label_authoritative") if _lab_pin is not None
+                                else (t("web_unpin_tt") if is_pinned_c else t("web_pin_tt"))))
             pin_btn = (
                 f'<form method="POST" action="{pin_form_action}" class="inline-form">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
@@ -2754,7 +2760,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 f'<form method="POST" action="/api/ask_major" class="inline-form adv-only">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
                 f'<button type="submit"{_mo_off} class="btn-icon{" is-warn" if is_askm else ""}" '
-                f'title="{_e(t("web_ask_major_off") if is_askm else t("web_ask_major_on"))}">{_ICONS["alert"]}</button>'
+                f'title="{_e(_mo_title or (t("web_ask_major_off") if is_askm else t("web_ask_major_on")))}">{_ICONS["alert"]}</button>'
                 f'</form>'
             )
             # Lifecycle buttons (#17). Hidden for our own container —
@@ -2770,7 +2776,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<form method="POST" action="/api/lifecycle" class="inline-form">'
                     f'<input type="hidden" name="name" value="{key_attr}">'
                     f'<input type="hidden" name="action" value="restart">'
-                    f'<button type="submit"{_mo_off} class="btn-icon" title="{_e(t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
+                    f'<button type="submit"{_mo_off} class="btn-icon" title="{_e(_mo_title or t("web_restart_tt"))}">{_ICONS["restart"]}</button>'
                     f'</form>'
                 )
                 # Stop hidden for protected containers (#38) — restart
@@ -2792,7 +2798,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         f'data-confirm-danger="1">'
                         f'<input type="hidden" name="name" value="{key_attr}">'
                         f'<input type="hidden" name="action" value="stop">'
-                        f'<button type="submit"{_mo_off} class="btn-icon is-danger" title="{_e(t("web_stop_tt"))}">{_ICONS["x"]}</button>'
+                        f'<button type="submit"{_mo_off} class="btn-icon is-danger" title="{_e(_mo_title or t("web_stop_tt"))}">{_ICONS["x"]}</button>'
                         f'</form>'
                     )
             actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'

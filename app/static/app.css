@@ -942,7 +942,11 @@ pre {
 .muted { color: var(--text-muted); }
 
 /* docksentry.* label authority marker (#42, @LeeNX) */
-.label-mark { opacity: .75; font-size: .85em; cursor: help; }
+/* margin-left, because these markers sit immediately after a name or a
+   value and rendered flush against it (#55, @LeeNX, on the 👁 monitor-only
+   eye). The gap is on the marker rather than on what precedes it so every
+   marker gets it without touching each caller. */
+.label-mark { opacity: .75; font-size: .85em; cursor: help; margin-left: .35em; }
 /* Self-update marker (#51, @LeeNX). Deliberately NOT the 🏷 label marker:
    that one means "a compose label is authoritative, not changeable here",
    and neither half applies. AUTO_SELFUPDATE is a persisted setting, so
