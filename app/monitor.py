@@ -569,6 +569,37 @@ class ContainerMonitor:
             out += f" · Swap {swap_used / gb:.1f}/{swap_total / gb:.1f} GB"
         return out
 
+    def _host_load(self):
+        """This machine's run queue as `2.9 / 4 cores` — or "" when remote.
+
+        The CPU half of `_host_memory`, and it was missing. `docker stats`
+        reports CONTAINERS, so anything else burning the processor is
+        invisible to it: an image pull, a compose build, a backup job, a
+        host process. @NotRetarded's Unifi container died with exit 137
+        during a `docker compose install` — memory nowhere near full (4.4
+        of 7.6 GB, largest container 253 MiB) and no CPU line at all,
+        because the load was the daemon unpacking layers rather than a
+        container. The one reading that would have explained it was the one
+        we never took.
+
+        Same locality rule as the memory line: `/proc/loadavg` describes
+        the machine Docksentry runs on, so a monitor bound to a remote
+        endpoint stays silent rather than reporting the wrong box.
+
+        Free — a file read, not a `docker stats` call.
+        """
+        backend = getattr(self, "backend", None)
+        if backend is None or getattr(backend, "endpoint", None):
+            return ""
+        try:
+            with open("/proc/loadavg") as f:
+                one = float(f.read().split()[0])
+        except (OSError, ValueError, IndexError):
+            return ""
+        cores = os.cpu_count() or 0
+        # Numbers and units only; the words live in the translation key.
+        return f"{one:.2f} / {cores}" if cores else f"{one:.2f}"
+
     def _stats_rows(self):
         """One `docker stats` at event time → `[(mem_bytes, cpu_pct, name,
         mem_str)]`, sorted by memory.
@@ -708,6 +739,13 @@ class ContainerMonitor:
         host_mem = self._host_memory()
         if host_mem:
             out["host"] = host_mem
+        # Always, not gated on a floor: the question it answers is "was the
+        # machine busy at all", and a low number is as much of an answer as
+        # a high one. Gating it would repeat the mistake the top-CPU line
+        # made — silence exactly when the load is not a container's.
+        load = self._host_load()
+        if load:
+            out["load"] = load
         # Evidence from the event stream first: it was taken at the moment
         # of death, while the culprit still held the memory. Falling back
         # to a fresh snapshot keeps the old behaviour wherever the watcher
@@ -755,6 +793,8 @@ class ContainerMonitor:
             resources = self._resources_for(kind, name)
         if resources.get("host"):
             msg += "\n" + t("monitor_host_memory", state=resources["host"])
+        if resources.get("load"):
+            msg += "\n" + t("monitor_host_cpu", state=resources["load"])
         if resources.get("mem"):
             msg += "\n" + t("monitor_top_memory", list=resources["mem"])
         # CPU only when something is actually contending for it. A

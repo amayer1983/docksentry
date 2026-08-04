@@ -590,5 +590,6 @@
   "web_audit_who": "Who",
   "web_audit_what": "Action",
   "whatsnew_title": "🚀 Docksentry updated: v{old} → v{new}",
-  "whatsnew_link": "Full notes:"
+  "whatsnew_link": "Full notes:",
+  "monitor_host_cpu": "Host load (1 min / cores): {state}"
 }

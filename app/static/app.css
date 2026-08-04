@@ -329,6 +329,14 @@ hr.section-divider {
     border-color: #b88018;
     color: var(--bg);
 }
+/* Kept for anything that genuinely needs a filled danger button, but NOT
+   used by the row's Stop any more (#2, @NotRetarded). The coloured
+   treatment on an icon button now means exactly one thing — "this toggle
+   is ON" — and Stop is a momentary button, not a switch. Wearing the same
+   colour made the row read as though Stop were latched. 🛑 carries the
+   danger by itself; a red fill behind a red glyph is the same red-on-red
+   that was removed from the other buttons in v1.73.0 and this one was
+   simply missed. */
 .btn-icon.is-danger {
     color: #fff;
     background: var(--danger);

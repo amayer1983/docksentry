@@ -2890,7 +2890,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         f'data-confirm-danger="1">'
                         f'<input type="hidden" name="name" value="{key_attr}">'
                         f'<input type="hidden" name="action" value="stop">'
-                        f'<button type="submit"{_mo_off} class="btn-icon is-danger" title="{_e(_mo_title or t("web_stop_tt"))}">{_ICONS["x"]}</button>'
+                        f'<button type="submit"{_mo_off} class="btn-icon" title="{_e(_mo_title or t("web_stop_tt"))}">{_ICONS["x"]}</button>'
                         f'</form>'
                     )
             actions = f'<div class="btn-row">{check_btn}{update_btn}{pin_btn}{restart_btn}{stop_btn}{auto_btn}{ask_btn}</div>'
@@ -3181,7 +3181,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <span title="{_e(t("web_pin_tt"))}"><span class="btn-icon">{_ICONS["pin"]}</span> {_legend_word(t("web_pin"))}</span>
 <span title="{_e(t("web_badge_auto_tt"))}"><span class="btn-icon">{_ICONS["settings"]}</span> {_legend_word(t("web_autoupdate_badge"))}</span>
 <span title="{_e(t("web_badge_major_tt"))}"><span class="btn-icon">{_ICONS["ask"]}</span> {_legend_word(t("web_legend_major_confirm"))}</span>
-<span title="{_e(t("web_stop_tt"))}"><span class="btn-icon is-danger">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
+<span title="{_e(t("web_stop_tt"))}"><span class="btn-icon">{_ICONS["x"]}</span> {_legend_word(t("lifecycle_btn_stop"))}</span>
 <span title="{_e(t("web_label_authoritative"))}">🏷 {_legend_word(t("web_legend_label"))}</span>
 <span title="{_e(t("web_selfupdate_marker_tt"))}">⚙ {_legend_word(t("web_legend_selfupdate"))}</span>
 <span title="{_e(t("web_link_open_tt"))}">🔗 {_legend_word(t("web_link_title"))}</span>
@@ -4211,10 +4211,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     res = ev.get("resources") or {}
                     extra = ""
                     for key, tkey in (("host", "monitor_host_memory"),
+                                      ("load", "monitor_host_cpu"),
                                       ("mem", "monitor_top_memory"),
                                       ("cpu", "monitor_top_cpu")):
                         if res.get(key):
-                            arg = {"state": res[key]} if key == "host" else {"list": res[key]}
+                            arg = ({"state": res[key]}
+                                   if key in ("host", "load")
+                                   else {"list": res[key]})
                             extra += f'<div>{_e(t(tkey, **arg))}</div>'
                     if extra:
                         extra = f'<div class="event-res">{extra}</div>'
