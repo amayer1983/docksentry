@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.0.1] - 2026-08-04
+
+Both from @NotRetarded in #2, who caught another Unifi-OS-Server crash and
+sent the alert it produced.
+
+### Fixed
+- **Crash alerts never reported host CPU load.** His container died with exit 137 during a `docker compose install` — memory nowhere near the problem at 4.4 of 7.6 GB with the largest container at 253 MiB — and the alert carried no CPU line at all. Not a threshold set too high: `docker stats` reports *containers*, and what was burning the processor was the daemon unpacking layers. An image pull, a compose build, a backup job, any host process — all invisible to us, so the line stayed silent in exactly the situation it exists for. Memory has had the right shape since v1.65.0 (the host reading first, answering "was the machine under pressure at all", then the per-container list); CPU never got its half. `/proc/loadavg` inside a container reports the *host's* run queue, the same way `/proc/meminfo` reports host memory — measured, both identical to the values outside. Deliberately not gated on a threshold: a low number answers the question as well as a high one, and gating is what made the container-level line useless here. Same locality guard as the memory line, so a monitor bound to a remote endpoint stays silent rather than reporting the wrong machine.
+- **The Stop button looked latched.** The container row used one visual language for two meanings: Stop wore a filled red button, while the auto and major-confirm toggles use colour to mean "this switch is ON". Stop is momentary, so it read as a switch someone had left on. It has the neutral border the other momentary buttons carry now — 🛑 says what it is without help. The same red-on-red that came off every other button in v1.73.0; this one was missed.
+
 ## [2.0.0] - 2026-08-04
 
 The version number catching up with what shipped. Everything below already
