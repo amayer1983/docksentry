@@ -11,7 +11,11 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/amayer1983/docksentry"
 LABEL org.opencontainers.image.description="Docksentry — Docker container update manager with Telegram bot, Web UI, and auto-rollback"
 
-RUN apk add --no-cache docker-cli docker-cli-compose
+# openssh-client: DOCKER_HOSTS documents ssh:// endpoints and the tests
+# assert the argv for them, but the binary was never in the image — so
+# every ssh:// host failed with `exec: "ssh": executable file not found`
+# while the README said it worked. Measured, not inferred.
+RUN apk add --no-cache docker-cli docker-cli-compose openssh-client
 
 WORKDIR /app
 
