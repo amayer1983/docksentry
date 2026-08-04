@@ -411,6 +411,8 @@ class Config:
         # Last disk warning timestamp (rate-limit warnings to 1/day)
         self.disk_warn_state_file = os.path.join(data_dir, "disk_warn_state.json")
         self.monitor_events_file = os.path.join(data_dir, "monitor_events.json")
+        # Who did what, through which front end (v2.1 audit trail).
+        self.audit_file = os.path.join(data_dir, "audit.json")
         # Deferred-check marker — written when AUTO_SELFUPDATE is about to
         # restart the container during a cron tick. The freshly-booted
         # process sees the marker and runs the container-update check

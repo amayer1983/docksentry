@@ -115,6 +115,11 @@ def main():
     # it once and hand it to the bot so both share the one update mutex.
     engine = UpdateEngine(config, store, hosts=host_registry)
     bot = TelegramBot(config, store, engine, hosts=host_registry)
+    # One audit log shared by every front end (v2.1). Web UI attaches
+    # its own to the HTTP server; the bots carry it directly.
+    from audit import AuditLog
+    audit_log = AuditLog(config)
+    bot.audit = audit_log
     notifier = Notifier(config)
     bot.notifier = notifier
     checker = host_registry.local.checker
@@ -358,6 +363,7 @@ def main():
         # into the Telegram bot for anything else.
         discord_bot = DiscordBot(config, store, engine, hosts=host_registry,
                                  checker=checker, telegram=bot)
+        discord_bot.audit = audit_log
         if discord_bot.enabled:
             if discord_bot.start():
                 _discord_ref["bot"] = discord_bot

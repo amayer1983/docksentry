@@ -2785,6 +2785,21 @@ class TelegramBot:
         if not self._check_auth(chat_id, user_id, kind="message"):
             return
 
+        # Audit trail (v2.1). One seam, after the auth check so only
+        # accepted commands are recorded — same reasoning as the Web UI's
+        # single point in do_POST. Read-only commands land here too; for a
+        # trail "who looked" is as legitimate a question as "who changed".
+        if text.startswith("/"):
+            try:
+                cmd, _, rest = text.partition(" ")
+                audit = getattr(self, "audit", None)
+                if audit is not None:
+                    audit.record("telegram", user_id, cmd.strip(),
+                                 rest.strip().split(" ")[0] if rest.strip() else "",
+                                 {"args": rest.strip()} if rest.strip() else None)
+            except Exception:
+                pass
+
         # Telegram's group-multi-bot-disambiguation: in a group with
         # ≥ 2 bots, tapping a registered command in the picker sends
         # `/check@dockmox-bot` rather than `/check`. Three cases to

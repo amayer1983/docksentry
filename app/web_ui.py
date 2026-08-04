@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import html
+import io as _io
 import ipaddress
 import json
 import os
@@ -336,6 +337,36 @@ class _StoreScope:
     def __init__(self, store, hosts):
         self.store = store
         self.hosts = hosts
+
+
+class _ReplayedBody:
+    """The request body, already consumed, served back once.
+
+    Auditing needs the form parameters, and the 26 POST handlers
+    each read the body straight off `self.rfile`. Reading it here
+    would leave them with nothing. Rather than rewrite all 26 —
+    and require every future one to remember a helper — the bytes
+    are read once and handed back through this shim, which
+    delegates everything it has not buffered to the real socket so
+    keep-alive keeps working.
+    """
+
+    def __init__(self, buffered, rest):
+        self._buf = _io.BytesIO(buffered)
+        self._rest = rest
+
+    def read(self, n=-1):
+        data = self._buf.read(n)
+        if n is not None and n >= 0 and len(data) < n:
+            data += self._rest.read(n - len(data))
+        return data
+
+    def readline(self, *a):
+        line = self._buf.readline(*a)
+        return line if line else self._rest.readline(*a)
+
+    def __getattr__(self, name):
+        return getattr(self._rest, name)
 
 
 def create_handler(config, checker, bot, store, password=None, backend=None,
@@ -1488,6 +1519,51 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             else:
                 self._send_html("<h1>404</h1>", 404)
 
+        def _audit_actor(self):
+            """Who is making this request, as far as we can tell."""
+            token = self._api_token_name()
+            if token:
+                return f"token:{token}", "api"
+            hdr = self.headers.get("Authorization", "")
+            if hdr.startswith("Basic "):
+                try:
+                    import base64
+                    user = base64.b64decode(hdr[6:]).decode(
+                        "utf-8", "replace").split(":", 1)[0]
+                    if user:
+                        return user, "web"
+                except Exception:
+                    pass
+            # No password configured: the Web UI is open on the LAN and
+            # there is genuinely no identity to record. Saying "web"
+            # rather than inventing one keeps the log honest.
+            return "web", "web"
+
+        def _audit_post(self, path):
+            """Record one accepted state-changing request."""
+            audit = getattr(getattr(self, "server", None), "audit", None)
+            if audit is None:
+                return
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                length = 0
+            params = {}
+            if 0 < length <= 1_000_000:
+                body = self.rfile.read(length)
+                self.rfile = _ReplayedBody(body, self.rfile)
+                try:
+                    params = parse_qs(body.decode("utf-8", "replace"))
+                except Exception:
+                    params = {}
+            actor, source = self._audit_actor()
+            target = ""
+            for key in ("name", "container", "group", "id"):
+                if params.get(key):
+                    target = params[key][0]
+                    break
+            audit.record(source, actor, path, target, params)
+
         def do_POST(self):
             if not self._check_auth():
                 return self._send_auth_required()
@@ -1497,6 +1573,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if not self._check_csrf():
                 return self._send_forbidden("CSRF check failed")
             path = self._get_path()
+            # One seam for the whole front end (v2.1 audit trail). Placed
+            # here rather than in each handler because there are 26
+            # state-changing endpoints today: instrumenting them one by one
+            # means the 27th is added without a line, and a gap in an audit
+            # log is worse than no log at all — a missing entry reads as
+            # evidence that nothing happened. After auth and CSRF, so only
+            # accepted requests are recorded; a rejected one never reached
+            # any state to change.
+            self._audit_post(path)
             if path == "/settings":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -4155,6 +4240,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </div>
 </div>"""
 
+            # ── audit trail (v2.1) ──────────────────────────────
+            # Beside the event log on purpose: that one says what happened
+            # TO containers, this one says what people DID to them. Same
+            # page answers "what went on last night" from both directions.
+            audit = getattr(getattr(self, "server", None), "audit", None)
+            rows = audit.entries(100) if audit is not None else []
+            if rows:
+                a_rows = ""
+                for e in rows:
+                    det = e.get("detail") or {}
+                    extra = ", ".join(f"{k}={v}" for k, v in det.items()
+                                      if k not in ("name", "container"))
+                    a_rows += f"""<tr>
+<td>{_e(e.get('timestamp',''))}</td>
+<td><span class="badge badge-blue">{_e(e.get('source','?'))}</span>{'' if e.get('actor') in ('', e.get('source')) else ' ' + _e(e.get('actor'))}</td>
+<td><code>{_e(e.get('action',''))}</code>{(' ' + _e(e.get('target'))) if e.get('target') else ''}</td>
+<td style="font-size:11px;color:var(--text-muted)">{_e(extra)}</td>
+</tr>"""
+                content += f"""<div class="card">
+<h2>{t("web_audit")}</h2>
+<p class="card-intro">{t("web_audit_intro")}</p>
+<div class="table-scroll"><table>
+<tr><th>{t("web_date")}</th><th>{t("web_audit_who")}</th><th>{t("web_audit_what")}</th><th>{t("web_detail")}</th></tr>
+{a_rows}
+</table></div>
+</div>"""
+
             self._send_html(self._render_page(content, "history"))
 
         def _page_settings(self):
@@ -4927,6 +5039,11 @@ class WebUI:
 
     def start(self):
         self.server = ThreadingHTTPServer(("0.0.0.0", self.port), self.handler)
+        # Shared by every request thread; AuditLog serialises its own
+        # writes, so one instance is what we want rather than one per
+        # request racing on the same file.
+        from audit import AuditLog
+        self.server.audit = AuditLog(self.config)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         print(f"Web UI started on port {self.port}")

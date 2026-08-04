@@ -69,7 +69,7 @@ AREAS = [
       "edited_message", "websocket", "i18n_partial")),
     ("Web interface",
      ("icons", "form_nesting", "settings_fields", "link_", "metrics_api",
-      "disabled_reasons")),
+      "disabled_reasons", "audit")),
 ]
 
 #: Procedures that need something the automated run cannot assume — a live

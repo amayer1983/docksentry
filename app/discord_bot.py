@@ -899,6 +899,18 @@ class DiscordBot:
     def _dispatch(self, data):
         name = (data.get("data") or {}).get("name")
         opts = self._options(data)
+        # Audit trail (v2.1) — one seam for all 19 slash commands, so the
+        # 20th cannot be added without one.
+        try:
+            audit = getattr(self, "audit", None)
+            if audit is not None:
+                who = (((data.get("member") or {}).get("user") or {})
+                       or (data.get("user") or {}))
+                audit.record("discord",
+                             who.get("username") or who.get("id") or "?",
+                             f"/{name}", (opts or {}).get("name", ""), opts)
+        except Exception:
+            pass
         if name == "hosts":
             return self._cmd_hosts()
         if name == "status":
