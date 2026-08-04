@@ -462,6 +462,33 @@ def main():
     except Exception as e:
         print(f"Could not read selfupdate helper log (non-fatal): {e}")
 
+    # ── what changed in the version that just booted ───────────
+    # The self-update path already announces itself, but that is the
+    # minority route: most people run `docker pull` + `up -d`, and that
+    # was completely silent. Features shipped and sat unused because
+    # nobody was told they existed (#2 — the maintainer's own point).
+    #
+    # Read BEFORE the marker is written, and only announced when a
+    # PREVIOUS version was recorded. On a first-ever boot there is
+    # nothing to compare against, and "updated to v1.75.0" would be a
+    # plain untruth on a fresh install.
+    whatsnew_msg = ""
+    try:
+        import json as _json
+        _prev = ""
+        _vpath = getattr(config, "version_state_file", "")
+        if _vpath and os.path.exists(_vpath):
+            with open(_vpath) as f:
+                _prev = str((_json.load(f) or {}).get("version") or "")
+        if _prev and _prev != VERSION:
+            from whatsnew import summary as _whatsnew
+            whatsnew_msg = _whatsnew(_prev, VERSION, t)
+        if _vpath and _prev != VERSION:
+            from container_store import atomic_write_json
+            atomic_write_json(_vpath, {"version": VERSION})
+    except Exception as e:
+        print(f"Could not build the what's-new notice (non-fatal): {e}")
+
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
         if restart_signal:
@@ -470,6 +497,15 @@ def main():
             bot.send_message(startup_msg)
             if settings_missing:
                 bot.send_message(t("data_loss_alert"))
+
+    # Sent regardless of how we restarted — a self-update and a manual
+    # pull both land the user on a new version, and both deserve the note.
+    if whatsnew_msg:
+        if bot.enabled:
+            bot.send_message(whatsnew_msg)
+        if notifier.has_channels():
+            notifier.send_message(whatsnew_msg)
+        print(whatsnew_msg)
 
     # One-shot migration notice if we just stripped self from auto-update.
     if self_in_autoupdate:

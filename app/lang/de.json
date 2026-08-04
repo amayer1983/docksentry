@@ -588,5 +588,7 @@
   "web_audit": "Wer hat was getan",
   "web_audit_intro": "Zustandsändernde Aktionen aus Weboberfläche, Telegram, Discord und Zeitplan. Geheimnisse werden nie protokolliert.",
   "web_audit_who": "Wer",
-  "web_audit_what": "Aktion"
+  "web_audit_what": "Aktion",
+  "whatsnew_title": "🚀 Docksentry aktualisiert: v{old} → v{new}",
+  "whatsnew_link": "Alle Änderungen:"
 }

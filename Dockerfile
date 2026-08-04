@@ -16,6 +16,10 @@ RUN apk add --no-cache docker-cli docker-cli-compose
 WORKDIR /app
 
 COPY app/ .
+# Read at startup to tell the user what the version they just pulled
+# actually changed. Parsed rather than baked into a summary so the
+# message and the file people read on GitHub cannot drift apart.
+COPY CHANGELOG.md .
 
 RUN mkdir -p /data
 

@@ -413,6 +413,9 @@ class Config:
         self.monitor_events_file = os.path.join(data_dir, "monitor_events.json")
         # Who did what, through which front end (v2.1 audit trail).
         self.audit_file = os.path.join(data_dir, "audit.json")
+        # Last version that completed a start here — how an ordinary
+        # `docker pull` + `up -d` gets noticed at all.
+        self.version_state_file = os.path.join(data_dir, "version_state.json")
         # Deferred-check marker — written when AUTO_SELFUPDATE is about to
         # restart the container during a cron tick. The freshly-booted
         # process sees the marker and runs the container-update check

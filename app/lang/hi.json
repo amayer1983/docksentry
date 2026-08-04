@@ -588,5 +588,7 @@
   "web_audit": "Who did what",
   "web_audit_intro": "State-changing actions from the Web UI, Telegram, Discord and the scheduler. Secrets are never recorded.",
   "web_audit_who": "Who",
-  "web_audit_what": "Action"
+  "web_audit_what": "Action",
+  "whatsnew_title": "🚀 Docksentry updated: v{old} → v{new}",
+  "whatsnew_link": "Full notes:"
 }
