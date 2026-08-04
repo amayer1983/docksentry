@@ -2,6 +2,41 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.0.0] - 2026-08-04
+
+The version number catching up with what shipped. Everything below already
+works in a 1.x release — 2.0 is the line under it, drawn once the last
+thing I could verify myself was verified.
+
+### The big pieces
+
+- **Multi-host.** One instance, many machines. `DOCKER_HOSTS=pve1:tcp://pve1:2375, nas:ssh://root@nas` — the local box is always managed and is not listed. Per-host state, per-host checks, per-host monitoring, a host column in the Web UI and a `@host` token in the bots. An unreachable host is reported and skipped rather than taking the run down. Self-update stays local: Docksentry updates the instance it runs in, not the ones on your other boxes.
+
+- **Everything is a front end now.** The Web UI, an interactive Telegram bot, an interactive Discord bot with 27 slash commands, `/metrics` and a read-only JSON API behind named tokens. All four drive the same update engine behind the same single lock, so none of them can disagree about what happened.
+
+- **Notifications beyond Telegram.** Discord, ntfy, Gotify, Matrix, generic webhooks, SMTP, and Apprise — which covers around a hundred services without a line of our code.
+
+- **It watches, not just updates.** Unhealthy, recovered, exited, crash-restart and OOM, with the exit code taken from the runtime's live event stream rather than from `inspect`, which reports 0 for a container the restart policy already brought back. The memory and CPU picture is captured 0.08 s after the death instead of up to a minute later, and it names the neighbour that squeezed the container out — not just the container that died.
+
+- **An audit trail.** Who did what, through which front end, kept across restarts. Recorded at one seam per front end rather than per endpoint, so the next endpoint cannot be added without it. Secrets are redacted centrally and never reach the file.
+
+- **A Web UI worth using on a phone.** Container cards below 700px, emoji actions with a legend, and a layout measured at every width from 1024 to 4K on every page, every release.
+
+- **Registries it can actually reach.** Pull-through mirrors, plain-HTTP hosts you name, private CAs via `SSL_CERT_FILE`, `Link`-header tag pagination, and Basic-auth registries. Credentials go to the registry they belong to and no other — a substring match used to hand `eu.gcr.io`'s secret to `gcr.io`.
+
+- **Safety rails.** Update policies per container, major-version confirmation, update windows, protected containers, `MIN_IMAGE_AGE_DAYS` so you are not the first to pull a compromised image, and a rollback that will not promote a stale backup over a healthy container.
+
+### Added
+
+- **`ssh://` endpoints actually work.** The image had no `ssh` binary, so every SSH host failed with `exec: "ssh": executable file not found` while the README said it worked. Found by driving the transport for the first time rather than asserting its argv.
+- **A note on the first start after an update.** `docker pull` + `up -d` used to be silent. Now the first boot under a new version says what changed, from the same CHANGELOG you are reading, with a link to the release. Silent on a fresh install, where "updated" would be untrue.
+
+### What is verified, and what is not
+
+Multi-host now runs over real `tcp://` and `ssh://` endpoints, not the local socket wearing an `-H` flag: measured against a `docker:dind` over loopback and a real sshd with the socket mounted, both driving the whole chain. Two runtimes, Docker and Podman, are exercised on every change.
+
+What has *not* happened is anyone but me running it. @LeeNX has offered to test multi-host and expects to get to it in a couple of weeks. If you are running Docksentry across several machines, #7 is the place to say how it went.
+
 ## [1.74.0] - 2026-08-03
 
 ### Fixed
