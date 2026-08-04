@@ -103,7 +103,9 @@ def main():
     # would otherwise quietly turn every announcement into a bare link.
     from version import VERSION
     real = whatsnew.headlines(VERSION)
-    checks[f"the shipped changelog yields headlines for v{VERSION}"] = bool(real)
+    # Name kept free of the version number: embedding it would make the
+    # generated report stale on every release, for no gain.
+    checks["the shipped changelog yields headlines for the current version"] = bool(real)
     if real:
         print(f"    v{VERSION}: {'; '.join(real)[:110]}")
 
