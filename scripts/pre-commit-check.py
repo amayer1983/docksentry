@@ -144,11 +144,35 @@ if not any(ref - langs[c] or langs[c] - ref for c in langs):
 with open(README, encoding="utf-8") as f:
     readme = f.read()
 
-print("\n=== README: ENV VARS ===")
-for var in ["BOT_TOKEN", "CHAT_ID", "CRON_SCHEDULE", "EXCLUDE_CONTAINERS",
-            "AUTO_SELFUPDATE", "LANGUAGE", "WEB_UI", "WEB_PORT", "WEB_PASSWORD",
-            "DISCORD_WEBHOOK", "WEBHOOK_URL", "TZ", "DOCKER_HOST"]:
+# Derived from the code, not from a list someone has to remember to extend.
+# The old check named 13 variables by hand; a 14th could be added to
+# config.py and documented nowhere, and nothing would say so. Now every
+# variable the code actually reads must appear in the reference — which is
+# also what made it safe to move the table OUT of the README, where it had
+# grown into a 58-row wall of text between a newcomer and "how do I start
+# this".
+print("\n=== ENV VARS: every one the code reads is documented ===")
+import re as _re2
+_cfg_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                             "config.py"), encoding="utf-8").read()
+_env_vars = sorted(set(_re2.findall(r'_env\(\s*"([A-Z][A-Z0-9_]*)"', _cfg_src)))
+with open(os.path.join(os.path.dirname(__file__), "..", "docs",
+                       "configuration.md"), encoding="utf-8") as f:
+    _reference = f.read()
+_undocumented = [v for v in _env_vars if f"`{v}`" not in _reference]
+check(not _undocumented,
+      f"{len(_env_vars)} env vars in docs/configuration.md"
+      + (f" — MISSING: {', '.join(_undocumented)}" if _undocumented else ""))
+
+# The README keeps only what a first day needs; these must survive any
+# future tidy-up of it.
+print("\n=== README: the day-one variables ===")
+for var in ["WEB_UI", "WEB_PORT", "WEB_PASSWORD", "TZ", "CRON_SCHEDULE",
+            "LANGUAGE", "EXCLUDE_CONTAINERS", "AUTO_SELFUPDATE",
+            "BOT_TOKEN", "CHAT_ID", "DISCORD_WEBHOOK", "WEBHOOK_URL",
+            "DOCKER_HOST"]:
     check(var in readme, var)
+check("docs/configuration.md" in readme, "links to the full reference")
 
 print("\n=== README: COMMANDS ===")
 for cmd in ["/status", "/check", "/updates", "/cleanup", "/history",

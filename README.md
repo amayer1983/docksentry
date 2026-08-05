@@ -291,86 +291,29 @@ Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere:
 
 At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOOK_URL`, or e-mail (`SMTP_HOST`+`SMTP_FROM`+`SMTP_TO`) must be configured — otherwise Docksentry has no way to notify or be controlled.
 
-> **Quoting env values in `docker-compose.yml`**: Docker Compose passes env values literally, so `BOT_TOKEN="abc123"` lands as the string `"abc123"` (quotes included) in Docksentry — which breaks Telegram API calls, `int()` parsing on `WEB_PORT`, etc. Since v1.19.1 Docksentry strips matching outer `"…"` and `'…'` quote pairs automatically, but the cleanest fix is to leave the quotes off entirely: `BOT_TOKEN=abc123`.
+These are the ones worth knowing on the first day. **[Every variable, with its default and the full explanation, is in `docs/configuration.md`](docs/configuration.md)** — 58 of them, and you will not need most.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
-| `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
-| `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
-| `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude — wildcards allowed (`systemd-*`) |
-| `MONITOR_ONLY_CONTAINERS` | | Watch and report these, never update them. Wildcards allowed. For containers something else owns — quadlets, Portainer stacks, anything deployed by Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `EXCLUDE_CONTAINERS` they stay visible and still report updates. The label `docksentry.monitor-only=true` does the same per container |
-| `API_TOKENS` | | `name:token` pairs, comma-separated (`prom:xxx,grafana:yyy`). Grants **read-only** access to `/metrics` and `GET /api/status` without the Web UI password — a scraper cannot log in, and the browser password would let a monitoring job stop containers. Named so one can be revoked without disturbing the other. Send as `Authorization: Bearer <token>`, or `?token=<token>` for scrapers that cannot set headers (note that a query string lands in access logs) |
-| `MIN_IMAGE_AGE_DAYS` | `0` | Don't auto-update to an image younger than this many days. Two reasons people want it: let someone else find the broken release first, and give a compromised image time to be noticed before you pull it. **Auto path only** — pressing the button yourself always works, and the update stays pending so it applies by itself once the image has aged. Per container with `docksentry.min-age=7`. Off by default |
-| `REGISTRY_MIRRORS` | | `origin=mirror` pairs, comma-separated (`docker.io=mirror.internal`). Applies to update **checks** only — those go straight to the registry over HTTPS and otherwise ignore the daemon's own `registry-mirrors`, so on a network where only the mirror is reachable Docksentry could not check at all. Pulling still goes through the daemon with the container's own image reference; use `registry-mirrors` in `daemon.json` for that side |
-| `INSECURE_REGISTRIES` | | Registries to reach over plain HTTP instead of HTTPS, comma-separated, wildcards allowed. Only hosts named here — never guessed, and never a fallback when TLS fails |
-| `SSL_CERT_FILE` | | PEM bundle for a registry (or webhook / SMTP host) behind your own CA. Keeps TLS on, unlike `INSECURE_REGISTRIES`. Public roots keep working alongside it |
-| `NTFY_TOKEN` | | ntfy access token for a protected topic |
-| `NTFY_USER` / `NTFY_PASSWORD` | | ntfy credentials, if you use basic auth rather than a token |
-| `SMTP_TLS_VERIFY` | `true` | Verify the mail server's certificate. Set `false` only for an internal server with a self-signed certificate — it sends the password to whatever answers |
-| `MONITOR_EVENTS` | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
-| `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
-| `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container **(auto-updating your other containers, not Docksentry itself)** — Watchtower-style, not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
-| `UPDATE_POLICY` | `all` | Global default cap on which semver bump levels **auto-updates** apply: `all` (every bump), `minor` (minor+patch, hold back majors) or `patch` (patch only). The per-container `docksentry.policy` label overrides it. Manual `/update` and Bulk update always apply. An update whose version can't be classified is allowed. This caps *by bump level only* — it does **not** make Docksentry follow or switch semver tags (it never rewrites `:1.2.3` → `:1.2.4`); that's a separate future capability. Env-only. |
-| `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
-| `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
-| `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
-| `CLEANUP_BACKUP_DAYS` | `7` | How long backup tarballs are kept (1–365 days) |
-| `DISK_WARN_PERCENT` | `85` | Notify when disk usage exceeds this percentage (50–100) |
-| `DISK_WARN_AUTO_CLEANUP` | `false` | Automatically run cleanup when disk warning fires |
-| `MONITOR` | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
-| `MONITOR_INTERVAL` | `60` | Seconds between monitoring passes (min 15) |
-| `QUIET_HOURS_START` | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
-| `QUIET_HOURS_END` | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
-| `WEEKLY_REPORT_ENABLED` | `false` | Send a once-a-week summary report to all configured channels |
-| `WEEKLY_REPORT_WEEKDAY` | `0` | Day of week for the report (0=Mon, 6=Sun) |
-| `WEEKLY_REPORT_HOUR` | `9` | Hour of day for the report (0-23, local time) |
-| `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
-| `WEB_UI` | `false` | Enable web dashboard |
-| `WEB_PORT` | `8080` | Web UI port |
-| `WEB_PASSWORD` | | Web UI password (Basic Auth) |
-| `TELEGRAM_TOPIC_ID` | | Telegram topic/thread ID (for groups with topics) |
-| `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
-| `TELEGRAM_POLLING` | `true` | Set `false` for **send-only mode**: Docksentry sends notifications but doesn't poll for commands. Use this to share one bot token with another app (e.g. Home Assistant) — Telegram allows only one command-polling consumer per token, so let the other app own commands while Docksentry just posts. Control Docksentry via the Web UI in this mode. |
-| `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
-| `DISCORD_WEBHOOK` | | Discord webhook URL |
-| `WEBHOOK_URL` | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
-| `NTFY_URL` | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
-| `NTFY_SERVER` | | ntfy server base URL, e.g. `https://ntfy.sh` — combined with `NTFY_TOPIC` when `NTFY_URL` isn't set |
-| `NTFY_TOPIC` | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
-| `SMTP_HOST` | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications |
-| `SMTP_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain) |
-| `SMTP_USER` | | SMTP username (omit for an unauthenticated relay) |
-| `SMTP_PASSWORD` | | SMTP password |
-| `SMTP_FROM` | | Sender address, e.g. `docksentry@example.com` |
-| `SMTP_TO` | | Recipient(s), comma-separated |
-| `SMTP_TLS` | `starttls` | `starttls`, `ssl`, or `none` |
-| `TZ` | `Europe/Berlin` | Timezone |
-| `DOCKER_HOSTS` | | **Multi-host (experimental).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
-| `APPRISE_URL` | | **Apprise fan-out.** The notify endpoint of a self-hosted [Apprise API](https://github.com/caronc/apprise) container, e.g. `http://apprise:8000/notify/docksentry`. Apprise then forwards to whatever *it* is configured for — Pushover, Signal, Rocket.Chat, Mattermost, SMS gateways and ~100 more — so this one setting covers services Docksentry has no code for. Failures are sent with Apprise type `failure` so destinations that colour or prioritise by severity treat them differently. Optional `APPRISE_URLS` (comma-separated Apprise URLs) for the stateless endpoint, and `APPRISE_TAG` to route by tag. Env-only. |
-| `GOTIFY_URL` / `GOTIFY_TOKEN` | | **Gotify push.** Base URL of your [Gotify](https://gotify.net) server plus an **application** token from its Apps tab (not a client token — they look alike and only the application one may post). Failed updates are sent at priority 8, which Gotify's app treats as loud and lets through quiet hours; everything else at 5. Env-only. |
-| `MATRIX_HOMESERVER` / `MATRIX_TOKEN` / `MATRIX_ROOM` | | **Matrix room.** Homeserver base URL (`https://matrix.example.com`, *not* the server name), an access token for a dedicated sending account, and the internal room ID (`!abc:example.com`; a `#alias` also works and is resolved once). Messages carry both a plain-text and an HTML body, so formatting-capable clients render it and the rest still read fine. Env-only. |
-| `DISCORD_BOT_TOKEN` | | **Interactive Discord bot (experimental).** A bot token from the [Discord developer portal](https://discord.com/developers/applications) — this is *not* the same thing as `DISCORD_WEBHOOK`, which only pushes notifications one way. With a token, Docksentry connects to Discord and answers slash commands (`/status`, `/check`, `/updates`, `/hosts`), the same way the Telegram bot does. Needs `DISCORD_APP_ID` as well. Replies are ephemeral — only the person who ran the command sees them — because container listings name internal services. Env-only. |
-| `DISCORD_APP_ID` | | The application ID from the same portal page. Required alongside `DISCORD_BOT_TOKEN`; it's what the slash commands get registered against. Env-only. |
-| `DISCORD_GUILD_ID` | | **Required** when `DISCORD_BOT_TOKEN` is set — the bot refuses to start without it. It is what restricts the bot to *your* server: it registers the slash commands there (which also makes them appear instantly rather than after up to an hour) and every incoming command is checked against it. Without that restriction the commands are global, and a "Public" application can be invited to a stranger's server and used to drive your containers. Discord → Settings → Advanced → Developer Mode, then right-click the server name → Copy Server ID. Env-only. |
-| `DISCORD_ALLOWED_USERS` | | Optional, comma-separated Discord user IDs. Unset means anyone in that server can run the commands; set it when the server has members who shouldn't be able to stop a database or read `/logs`. On top of this, the commands are registered Administrator-only and disabled in DMs, so a server admin can also grant them per role in Discord itself. Env-only. |
-| `CONTAINER_CLI` | `auto` | Which container CLI to drive: `auto`, `docker` or `podman`. `auto` uses `docker` whenever that command exists — including the usual `docker`→`podman` alias — and only falls back to `podman` when `docker` genuinely isn't there, so existing setups are unaffected. Set `podman` to call `podman` directly, no alias needed. One caveat: Docksentry's **self-update** still shells out to `docker` and launches a `docker:cli` helper container (it can't run inside the container it's replacing), so on Podman that one path still needs `docker` to resolve. Everything else — checks, updates, recreates, rollback, lifecycle, cleanup — goes through the selected CLI. Env-only. |
-| `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
-| `DATA_DIR` | `/data` | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Change it only if you mount the volume somewhere else; everything in it is what a backup would restore |
-| `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
-| `DOCKER_STOP_TIMEOUT` | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators). |
-| `DOCKER_USERNAME` / `DOCKER_PASSWORD` | | Docker Hub (or other registry) credentials. Bypasses the anonymous pull rate limit (100 / 6h / IP). We run `docker login` once at startup. |
-| `DOCKER_AUTH_CONFIG` | | Path to an existing `config.json` with stored credentials (alternative to USERNAME/PASSWORD). Mount your host's `~/.docker/config.json` read-only and point at it. |
-| `DOCKER_REGISTRY` | `docker.io` | Registry to log into. Set to `ghcr.io`, `quay.io`, an internal Harbor, etc. when using `DOCKER_USERNAME`/`PASSWORD`. |
-| `HEALTHCHECK_MAX_STARTING` | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
-| `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
-| `DEBUG` | `false` | Seed debug mode on at startup (verbose logging, the full registry diagnostics on every update check, and the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
+| Variable | Default | What it is for |
+|----------|---------|----------------|
+| `WEB_UI` | `false` | Turn the web interface on. Set this and you can do everything from a browser. |
+| `WEB_PORT` | `8080` | Port it listens on. |
+| `WEB_PASSWORD` | | Password for the web interface. Empty means no login — fine on a trusted LAN, not otherwise. |
+| `TZ` | `UTC` | Your timezone. Worth setting: every time Docksentry prints is this clock. |
+| `CRON_SCHEDULE` | `0 18 * * *` | When it checks for updates. |
+| `LANGUAGE` | `en` | One of 16. |
+| `EXCLUDE_CONTAINERS` | | Containers to leave alone entirely, comma-separated. |
+| `AUTO_SELFUPDATE` | `false` | Whether Docksentry updates *itself* unattended. Other containers are opted in individually. |
+| `BOT_TOKEN` | | Telegram bot token — optional, set together with `CHAT_ID`. |
+| `CHAT_ID` | | Telegram chat ID — optional, set together with `BOT_TOKEN`. |
+| `DISCORD_WEBHOOK` | | Discord webhook URL, if you would rather be told there. |
+| `WEBHOOK_URL` | | Generic webhook, for anything else. |
+| `DOCKER_HOST` | | Point at a socket proxy or another daemon instead of the local socket. |
 
-> **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `/data/settings.json`, and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Note that saving *anything* in the Web UI writes all of these settings at once, so a value you never touched can end up saved too. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /data/settings.json.`, and the affected field carries a small `env` marker in the Web UI. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
-
-Only the settings that live in the Web UI (roughly: schedule, exclude list, auto-selfupdate, cleanup options, disk-warning, quiet hours, weekly report, language, Web password, Discord/webhook URLs, debug, Telegram topic/allowed-users, bot label, stop timeout, monitoring toggle/interval) can be edited there and persist across restarts. Everything else is env-only — notably `SMTP_*`, `DOCKER_USERNAME`/`PASSWORD`/`AUTH_CONFIG`/`REGISTRY`, `AUTO_UPDATE_ALL`, `UPDATE_POLICY`, `CONTAINER_CLI`, `DOCKER_HOSTS`, `APPRISE_*`, `GOTIFY_*`, `MATRIX_*`, `DISCORD_BOT_TOKEN`/`APP_ID`/`GUILD_ID`/`ALLOWED_USERS`, `TELEGRAM_POLLING`, `WEB_UI`, `WEB_PORT`, plus `BOT_TOKEN`/`CHAT_ID` — several of them (credentials especially) intentionally never touch the data volume. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
+> **Quoting env values in `docker-compose.yml`**: Docker Compose passes env values literally, so `BOT_TOKEN="abc123"` lands as the string `"abc123"` (quotes included) — which breaks Telegram API calls, `int()` parsing on `WEB_PORT`, and more. Docksentry strips matching outer quote pairs since v1.19.1, but the cleanest fix is to leave them off: `BOT_TOKEN=abc123`.
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
+
+> **Settings saved in the Web UI win over the environment.** Roughly half of these are stored in `/data/settings.json` once saved, and the saved file is applied on top of the environment on every start — so changing the compose file afterwards does nothing. Docksentry says so at startup when it happens. [The full list and both ways out are in the reference.](docs/configuration.md)
 
 ### Group / Topic setup
 
@@ -539,6 +482,7 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 
 | Topic | Link |
 |-------|------|
+| **Configuration reference** — every env var | [docs/configuration.md](docs/configuration.md) |
 | Update Workflow & Rollback | [docs/updates.md](docs/updates.md) |
 | Container Monitoring | [docs/monitoring.md](docs/monitoring.md) |
 | Web UI | [docs/web-ui.md](docs/web-ui.md) |
