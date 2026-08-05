@@ -4212,13 +4212,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     extra = ""
                     for key, tkey in (("host", "monitor_host_memory"),
                                       ("load", "monitor_host_cpu"),
+                                      ("victim", "monitor_victim_usage"),
                                       ("mem", "monitor_top_memory"),
                                       ("cpu", "monitor_top_cpu")):
                         if res.get(key):
-                            arg = ({"state": res[key]}
-                                   if key in ("host", "load")
-                                   else {"list": res[key]})
+                            if key == "victim":
+                                arg = {"state": res[key],
+                                       "name": ev.get("container", "?")}
+                            elif key in ("host", "load"):
+                                arg = {"state": res[key]}
+                            else:
+                                arg = {"list": res[key]}
                             extra += f'<div>{_e(t(tkey, **arg))}</div>'
+                    if res.get("oom_flag"):
+                        extra += f'<div>{_e(t("monitor_oom_flag_" + res["oom_flag"]))}</div>'
                     if extra:
                         extra = f'<div class="event-res">{extra}</div>'
                     ev_rows += f"""<tr>

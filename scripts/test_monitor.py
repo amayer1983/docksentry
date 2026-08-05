@@ -411,7 +411,18 @@ def main():
     detail = ev[0][2]
     checks["crash alert carries the exit code of the run that died"] = (
         detail["code"] == 1)
-    checks["crash alert carries the restart time"] = detail["when"] == "16:19:25"
+    # LOCAL time, not the raw UTC Docker hands over. This used to assert
+    # "16:19:25" — the UTC time of day, printed unconverted — which is the
+    # bug @NotRetarded reported (#2): his 23:29 arrived as 03:29. Computed
+    # here rather than hardcoded, or the test would only pass in one
+    # timezone. The conversion itself is proven across zones in
+    # test_crash_diagnostics; this one guards that the field still carries
+    # a real clock at all.
+    from datetime import datetime as _dt
+    _want = _dt.fromisoformat(
+        "2026-08-01T16:19:25+00:00").astimezone().strftime("%H:%M:%S")
+    checks["crash alert carries the restart time, in local time"] = (
+        detail["when"] == _want)
     checks["crash alert still carries the count"] = detail["count"] == 3
     # Docker not giving us a timestamp must not put junk in the message.
     ev = diff({"a": c(restarts=2, code=1)}, {"a": c(restarts=3)})

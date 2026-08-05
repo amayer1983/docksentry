@@ -591,5 +591,8 @@
   "web_audit_what": "Aktion",
   "whatsnew_title": "🚀 Docksentry aktualisiert: v{old} → v{new}",
   "whatsnew_link": "Alle Änderungen:",
-  "monitor_host_cpu": "Wirt-Last (1 Min / Kerne): {state}"
+  "monitor_host_cpu": "Wirt-Last (1 Min / Kerne): {state}",
+  "monitor_victim_usage": "{name} selbst zum Ereigniszeitpunkt: {state}",
+  "monitor_oom_flag_yes": "⚠️ Vom Kernel wegen Speichermangels beendet — es war der Speicher.",
+  "monitor_oom_flag_no": "Kein OOM-Kill — der Exit-Code kam von etwas anderem."
 }

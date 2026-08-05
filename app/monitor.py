@@ -29,24 +29,45 @@ import json
 import os
 import subprocess
 import time
+from datetime import datetime
 
 
 def _clock(iso):
-    """`HH:MM:SS` from Docker's RFC3339 timestamp, or "" when absent.
+    """`HH:MM:SS` in LOCAL time from Docker's RFC3339 timestamp.
 
     Only the time of day: the alert lands within a minute of the event, so
     a date adds noise, and a full RFC3339 string with nanoseconds is
     unreadable in a chat message. Anything unparseable degrades to empty
     rather than printing a raw timestamp at the user.
+
+    Docker stamps StartedAt in UTC — the trailing Z — and this used to slice
+    the time out and print it as-is. @NotRetarded saw a crash at 23:29 his
+    time reported as `03:29:20`: exactly his UTC-4 offset (#2). Worse, the
+    same alert carried two clocks in two zones, because the event log's own
+    timestamp comes from datetime.now() and is local. Converted here, so
+    every time Docksentry prints is the wall clock of the machine it runs
+    on — set TZ on the container and both agree.
     """
     if not iso or not isinstance(iso, str):
         return ""
-    # "2026-08-01T16:19:25.123456789Z" → the time part, seconds precision.
+    # "2026-08-01T16:19:25.123456789Z" → local HH:MM:SS.
     try:
-        t = iso.split("T", 1)[1]
-        return t.split(".", 1)[0].rstrip("Z")[:8]
-    except (IndexError, AttributeError):
-        return ""
+        head, _, rest = iso.partition("T")
+        if not rest:
+            return ""
+        # Python cannot parse nanoseconds; trim the fraction to microseconds
+        # and normalise the Z so fromisoformat accepts it on 3.10 too.
+        body = rest.rstrip("Z")
+        clock, dot, frac = body.partition(".")
+        stamp = f"{head}T{clock}" + (f".{frac[:6]}" if dot else "") + "+00:00"
+        return datetime.fromisoformat(stamp).astimezone().strftime("%H:%M:%S")
+    except (IndexError, AttributeError, ValueError):
+        # An unexpected shape must not cost the whole alert its timestamp:
+        # the raw UTC time of day is still better than nothing.
+        try:
+            return iso.split("T", 1)[1].split(".", 1)[0].rstrip("Z")[:8]
+        except (IndexError, AttributeError):
+            return ""
 
 
 
@@ -746,20 +767,57 @@ class ContainerMonitor:
         load = self._host_load()
         if load:
             out["load"] = load
+        watcher = getattr(self, "watcher", None)
+        # Asked BEFORE evidence(), which consumes the record.
+        #
+        # Three-valued on purpose (#2, @NotRetarded: "is there a way to add
+        # the true or false flag on the code exit"). Exit 137 with the OOM
+        # flag set means memory; without it, something else — and that is
+        # the single most useful bit in the whole alert. But a bare "false"
+        # that actually means "we never looked" would send him hunting in
+        # the wrong direction, so it is only stated when the event stream
+        # was there to see it. `inspect` is not consulted for this: it
+        # reports the CURRENT run of a restarted container, and it was
+        # measured false on rootless Podman for a container the kernel
+        # really did kill.
+        if watcher is not None and watcher.exit_code(name) is not None:
+            out["oom_flag"] = "yes" if watcher.saw_oom(name) else "no"
+
+        # What the container that DIED was using. The top-N list often does
+        # not contain it — it released everything on the way out — so a
+        # reader who knows their container is normally the biggest consumer
+        # sees a list without it and cannot tell whether it had grown or
+        # vanished (#2, @NotRetarded, whose Unifi normally sits at 1.5-1.7
+        # GB and appeared nowhere). Absent when the container was already
+        # gone by the time stats ran, which is itself the answer.
+        own = self._own_usage(name)
+        if own:
+            out["victim"] = own
+
         # Evidence from the event stream first: it was taken at the moment
         # of death, while the culprit still held the memory. Falling back
         # to a fresh snapshot keeps the old behaviour wherever the watcher
         # is off, unavailable, or too late.
-        rec = None
-        watcher = getattr(self, "watcher", None)
-        if watcher:
-            rec = watcher.evidence(name) or None
+        rec = watcher.evidence(name) if watcher else ""
         if not rec:
             rec = self._event_snapshot()
         for k in ("mem", "cpu"):
             if rec.get(k):
                 out[k] = rec[k]
         return out
+
+    def _own_usage(self, name):
+        """`1.6GiB · 12%` for one container, or "" when it is not in stats.
+
+        Reads the shared per-tick snapshot, so it costs nothing beyond the
+        `docker stats` the memory list already pays for. The name arrives
+        unprefixed here — the host label is added later, for display only.
+        """
+        short = name.split("/", 1)[-1]
+        for _, cpu, row_name, used in self._stats_rows():
+            if row_name == short:
+                return f"{used} · {cpu:.0f}%"
+        return ""
 
     def _notify(self, kind, name, detail, resources=None):
         t = self.bot.t
@@ -795,6 +853,14 @@ class ContainerMonitor:
             msg += "\n" + t("monitor_host_memory", state=resources["host"])
         if resources.get("load"):
             msg += "\n" + t("monitor_host_cpu", state=resources["load"])
+        # The victim's own line goes ABOVE the top-N list: the reader's
+        # first question is what the container that died was doing, and a
+        # list of its neighbours answers a different one.
+        if resources.get("victim"):
+            msg += "\n" + t("monitor_victim_usage", name=shown,
+                             state=resources["victim"])
+        if resources.get("oom_flag"):
+            msg += "\n" + t("monitor_oom_flag_" + resources["oom_flag"])
         if resources.get("mem"):
             msg += "\n" + t("monitor_top_memory", list=resources["mem"])
         # CPU only when something is actually contending for it. A
