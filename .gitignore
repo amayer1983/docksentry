@@ -13,3 +13,9 @@ IDEAS.md
 # Hub, but an hourly history builds a growth curve that exists nowhere
 # else, and this repo is public.
 .stats/
+
+# Internal maintainer tooling — not part of what Docksentry ships.
+# Anything named here also stays out of the CHANGELOG, because the
+# what's-new notice builds its headlines from it and users have no use
+# for our workflow.
+scripts/issue_inbox.py

@@ -11,8 +11,6 @@ Three from @NotRetarded in #2, reading his own crash alert back to me.
 - **The container that died was missing from its own alert.** The top-N list frequently does not contain it — it releases everything on the way out. His Unifi normally sits at 1.5–1.7 GB, is the largest thing on that box, and appeared nowhere; reading that, there is no way to tell whether it had grown or had already gone. Its own line now sits above the list, and is absent rather than zero when the container was gone before `docker stats` ran.
 - **Exit 137 did not say what killed it.** With the kernel's OOM flag it was memory; without it, something else — the single most useful bit in the message, and we had it in the snapshot and never printed it. Deliberately three-valued: a bare "no" that actually meant "we never looked" would send someone hunting in the wrong direction, so it is only stated when the event stream was there to see it. `inspect` is not consulted for this — it reports the *current* run of a restarted container, and it was measured false on rootless Podman for a container the kernel really did kill.
 
-### Added
-- **`scripts/issue_inbox.py`** — what is owed a reply, derived from the maintainer's own last comment in each thread rather than from a local database. Twice a status check reported "last comment: someone else", it was noted, and no reply followed; once a reporter had to ask directly whether it had been missed. A queue that empties is harder to ignore than a table that is merely read.
 
 ## [2.0.1] - 2026-08-04
 
