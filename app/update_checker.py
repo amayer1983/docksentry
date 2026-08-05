@@ -1621,6 +1621,34 @@ class UpdateChecker:
                 out.append(name)
         return out
 
+    def _mark_inflight(self, name, old_name, image):
+        """Record that this container is between its two names.
+
+        Best-effort: a failed write must never stop the update it was
+        describing. The window it covers is short but real — stop, rename,
+        build the run arguments (which touches the registry), run.
+        """
+        try:
+            from container_store import atomic_write_json
+            path = getattr(self.config, "inflight_file", "")
+            if path:
+                atomic_write_json(path, {
+                    "name": name, "old_name": old_name, "image": image,
+                    "host": getattr(getattr(self, "backend", None), "name", ""),
+                    "ts": time.time(),
+                })
+        except Exception as e:
+            self._debug(f"  Could not journal the in-flight update: {e}")
+
+    def _clear_inflight(self):
+        """The swap landed, one way or the other."""
+        try:
+            path = getattr(self.config, "inflight_file", "")
+            if path and os.path.exists(path):
+                os.unlink(path)
+        except OSError as e:
+            self._debug(f"  Could not clear the in-flight marker: {e}")
+
     def _save_history(self, name, image, success, detail=""):
         """Append an entry to the update history file."""
         from container_store import LOCAL_HOST as _LOCAL
@@ -3792,6 +3820,17 @@ class UpdateChecker:
             # here (watchtower#1101/#235, ouroboros#19/#20), which is what
             # sent me looking.
             self.backend.rm(old_name, force=True, timeout=15)
+            # Journal the swap BEFORE it happens. The rollback that guards
+            # every other failure lives in an `except` handler, and a
+            # SIGKILL raises nothing — the process is simply gone, leaving
+            # the user's container stopped, renamed, and with nobody
+            # looking for it. @NotRetarded's Docksentry exited 137 during
+            # an update and he only learned of it from a third-party
+            # monitor (#2). Recorded rather than inferred from the `_old`
+            # suffix, because a user may legitimately have a container
+            # named that way and renaming theirs would be worse than the
+            # bug.
+            self._mark_inflight(name, old_name, image)
             rename = self.backend.rename(name, old_name, timeout=10)
             if getattr(rename, "returncode", 0) != 0:
                 # Never proceed on an unverified backup: the recreate below
@@ -3900,6 +3939,7 @@ class UpdateChecker:
 
             detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
             self._save_history(name, image, True, detail)
+            self._clear_inflight()
             return True, f"OK ({detail})"
 
         except Exception as e:
@@ -3912,4 +3952,5 @@ class UpdateChecker:
             # the original, the user's still-running container is safe.
             self._rollback_to_old(name, f"{name}_old")
             self._save_history(name, image, False, str(e)[:200])
+            self._clear_inflight()
             return False, f"Error: {str(e)[:200]}"

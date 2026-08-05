@@ -594,5 +594,10 @@
   "monitor_host_cpu": "Host load (1 min / cores): {state}",
   "monitor_victim_usage": "{name} itself at event time: {state}",
   "monitor_oom_flag_yes": "⚠️ The kernel OOM-killed it — this was memory.",
-  "monitor_oom_flag_no": "Not an OOM kill — the exit code came from something else."
+  "monitor_oom_flag_no": "Not an OOM kill — the exit code came from something else.",
+  "startup_hard_kill": "⚠️ The previous run was killed rather than stopped — no clean shutdown was recorded. Exit 137 usually means the kernel or the runtime ended it: check host memory and CPU load around that time.",
+  "recovery_restored": "🔧 An update was interrupted mid-swap. {name} was left stopped under a backup name and has been restored and started.",
+  "recovery_stale": "🔧 An update to {name} was interrupted more than a day ago and `{old}` is still there. Not touched — too old to act on safely.",
+  "recovery_failed": "⚠️ An update to {name} was interrupted and `{old}` could not be restored automatically. It needs a hand.",
+  "recovery_gone": "⚠️ An update to {name} was interrupted and neither the container nor its backup is there any more."
 }

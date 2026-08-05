@@ -194,6 +194,12 @@ def main():
     # generic "started" banner made it look self-inflicted). Absent marker =
     # first boot or an unclean kill (SIGKILL/OOM/power loss) — we don't claim
     # a cause we can't prove, so no suffix in that case.
+    # Asked BEFORE the exit marker is consumed below — the whole point is
+    # that the marker is ABSENT after a hard kill (#2, @NotRetarded, whose
+    # Docksentry exited 137 and said nothing about it).
+    from recovery import previous_run_died, recover_interrupted_update
+    hard_kill = previous_run_died(config)
+
     restart_signal = None
     try:
         if os.path.exists(config.last_exit_file):
@@ -489,6 +495,18 @@ def main():
     except Exception as e:
         print(f"Could not build the what's-new notice (non-fatal): {e}")
 
+    # An update caught mid-swap leaves a container stopped and renamed,
+    # and the rollback that guards every other failure cannot run when the
+    # process is killed outright. Repaired before anything else starts, so
+    # a service that is down comes back before the next check runs.
+    recovery_msg = ""
+    try:
+        recovery_msg = recover_interrupted_update(config, backend, t)
+        if recovery_msg:
+            print(f"Recovery: {recovery_msg}")
+    except Exception as e:
+        print(f"Recovery check failed (non-fatal): {e}")
+
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
         if restart_signal:
@@ -500,6 +518,20 @@ def main():
 
     # Sent regardless of how we restarted — a self-update and a manual
     # pull both land the user on a new version, and both deserve the note.
+    # Said even when a self-update restart suppresses the ordinary startup
+    # line: "we were killed" is never the story that message tells.
+    if hard_kill or recovery_msg:
+        parts = []
+        if hard_kill:
+            parts.append(t("startup_hard_kill"))
+        if recovery_msg:
+            parts.append(recovery_msg)
+        killed_msg = "\n".join(parts)
+        if bot.enabled:
+            bot.send_message(killed_msg)
+        if notifier.has_channels():
+            notifier.send_message(killed_msg)
+
     if whatsnew_msg:
         if bot.enabled:
             bot.send_message(whatsnew_msg)

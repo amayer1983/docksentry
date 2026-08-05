@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.1.0] - 2026-08-05
+
+@NotRetarded's Docksentry exited 137 during an update, and he learned of it from a third-party monitor rather than from us (#2). Two separate holes behind that, and the first one could cost a service its uptime.
+
+### Fixed
+- **An update interrupted mid-swap left the container down, with nobody looking for it.** A recreate goes stop → rename to `<name>_old` → build the run arguments → run. The rollback that guards every other failure lives in an `except` handler, and a SIGKILL raises nothing — the process is simply gone. The container stayed stopped under a backup name indefinitely, with no notification and no recovery. The swap is now journalled *before* the rename and finished on the next start: renamed back, started, and reported. Deliberately driven by that journal rather than by the `_old` suffix — someone may legitimately run a container called `foo_old`, and renaming theirs would be a worse bug than the one being fixed. A journal older than a day is reported and not acted on, because by then the operator has had time to intervene and a stale note describes a world that has moved on.
+- **A hard kill was never reported at all.** The exit marker is written only on SIGTERM/SIGINT, so a SIGKILL left nothing behind and the next boot said nothing. The old code read an absent marker as "first boot or unclean kill — we can't prove which" and stayed silent. That was true when it was written and stopped being true in v2.0.0, when every successful start began recording its version: a state file with no exit marker beside it is a hard kill, provably. The message names exit 137's usual causes rather than just noting the fact, since that is the next question anyone asks.
+
 ## [2.0.3] - 2026-08-05
 
 ### Fixed

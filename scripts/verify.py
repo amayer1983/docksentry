@@ -60,7 +60,7 @@ AREAS = [
       "whatsnew")),
     ("Containers & recreate",
      ("container_backend", "dependents", "netns", "protect_stop",
-      "op_coordination", "groups_cmd", "disk_", "cooldown")),
+      "op_coordination", "groups_cmd", "disk_", "cooldown", "recovery")),
     ("Monitoring & events", ("monitor", "event_watcher", "podman_live",
                              "event_resources", "health_output",
                              "crash_diagnostics")),

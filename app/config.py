@@ -416,6 +416,10 @@ class Config:
         # Last version that completed a start here — how an ordinary
         # `docker pull` + `up -d` gets noticed at all.
         self.version_state_file = os.path.join(data_dir, "version_state.json")
+        # An update that is mid-flight. Written before the container is
+        # renamed out of the way and removed when it lands, so a hard kill
+        # leaves a record the next boot can act on.
+        self.inflight_file = os.path.join(data_dir, "update_inflight.json")
         # Deferred-check marker — written when AUTO_SELFUPDATE is about to
         # restart the container during a cron tick. The freshly-booted
         # process sees the marker and runs the container-update check
