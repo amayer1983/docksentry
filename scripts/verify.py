@@ -69,7 +69,7 @@ AREAS = [
       "remote_transports")),
     ("Notifications",
      ("notifier", "ntfy", "smtp", "discord", "api_retry", "send_only",
-      "edited_message", "websocket", "i18n_partial")),
+      "edited_message", "websocket", "i18n_partial", "telegram_split")),
     ("Web interface",
      ("icons", "form_nesting", "settings_fields", "link_", "metrics_api",
       "disabled_reasons", "audit")),

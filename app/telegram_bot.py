@@ -66,6 +66,64 @@ _BOT_COMMANDS = [
 ]
 
 
+#: Telegram rejects anything over 4096 characters. Kept well under it so a
+#: BOT_LABEL prefix and a continuation marker still fit.
+TELEGRAM_LIMIT = 3900
+
+
+def split_for_telegram(text, limit=TELEGRAM_LIMIT):
+    """One message per chunk, each of which renders on its own.
+
+    `send_message` used to hand Telegram whatever it was given. Over the
+    limit, Telegram answers `ok: false`, the caller retried once WITHOUT
+    Markdown — which does nothing about length — and the failed result was
+    returned to nobody. The message simply vanished.
+
+    @LeeNX hit it with three containers rolling back in one run: the
+    updates happened, the rollbacks happened, and no notification arrived
+    at all (#56). He guessed the cause himself. Splitting lives here rather
+    than at the call site because there was already one hand-rolled split
+    inside `/status` and the path that produces the LONGEST messages — an
+    update report carrying rollback logs — did not have it. One seam, so
+    the next caller cannot forget.
+
+    Splits on line boundaries, and carries an open ``` fence across the
+    break: a chunk that ends inside a code block would otherwise render as
+    literal backticks in one message and swallow the next as code.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks, cur, fence = [], [], False
+
+    def flush():
+        if not cur:
+            return
+        body = "\n".join(cur)
+        if fence:
+            body += "\n```"
+        chunks.append(body)
+        cur.clear()
+
+    for line in text.split("\n"):
+        # A single line longer than the limit cannot be split on newlines;
+        # cut it rather than sending something Telegram will reject.
+        while len(line) > limit:
+            flush()
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if cur and sum(len(x) + 1 for x in cur) + len(line) > limit:
+            was_open = fence
+            flush()
+            if was_open:
+                cur.append("```")
+        cur.append(line)
+        if line.lstrip().startswith("```"):
+            fence = not fence
+    flush()
+    return [c for c in chunks if c.strip()]
+
+
 def pending_host(entry):
     """The managed host a pending-update / update dict is about (#7).
 
@@ -952,24 +1010,35 @@ class TelegramBot:
         if label:
             text = f"{label} · {text}"
 
-        data = {
-            "chat_id": self.config.chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": "true"
-        }
-        if self.config.telegram_topic_id:
-            data["message_thread_id"] = self.config.telegram_topic_id
-        if reply_markup:
-            data["reply_markup"] = json.dumps(reply_markup)
-        result = self.api_call("sendMessage", data)
-        # Only retry without Markdown when Telegram actively rejected the
-        # message (ok=False, typically a parse error). Don't retry when the
-        # request itself failed (None) — that's a network/timeout issue and
-        # retrying immediately won't help.
-        if result and not result.get("ok"):
-            data.pop("parse_mode", None)
+        # Over Telegram's limit the whole message is rejected and lost —
+        # measured against @LeeNX's three-container rollback report, which
+        # never arrived (#56). Split here rather than at the call sites, so
+        # a caller cannot forget; short messages take the same path they
+        # always did and are not touched.
+        parts = split_for_telegram(text)
+        result = None
+        for i, part in enumerate(parts):
+            data = {
+                "chat_id": self.config.chat_id,
+                "text": part,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": "true"
+            }
+            if self.config.telegram_topic_id:
+                data["message_thread_id"] = self.config.telegram_topic_id
+            # Buttons belong to the LAST chunk: they act on the whole
+            # report, and hanging them off a middle piece would put them
+            # above text they do not cover.
+            if reply_markup and i == len(parts) - 1:
+                data["reply_markup"] = json.dumps(reply_markup)
             result = self.api_call("sendMessage", data)
+            # Only retry without Markdown when Telegram actively rejected
+            # the message (ok=False, typically a parse error). Don't retry
+            # when the request itself failed (None) — that's a network or
+            # timeout issue and retrying immediately won't help.
+            if result and not result.get("ok"):
+                data.pop("parse_mode", None)
+                result = self.api_call("sendMessage", data)
         return result
 
     def answer_callback(self, callback_id, text):

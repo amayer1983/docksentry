@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.0.3] - 2026-08-05
+
+### Fixed
+- **A long update report never arrived at all.** Three of @LeeNX's Cloudflare tunnels updated, all three failed their healthcheck, all three rolled back cleanly — and he was told none of it (#56). Over Telegram's 4096-character limit the whole message is rejected; the code then retried once *without* Markdown, which does nothing about length, and handed the failed result back to a caller that does not look at it. Silent loss, and the worst possible one: the report you only need when something went wrong is also the longest. He worked out the cause himself. Splitting now lives in `send_message` rather than at the call sites — there was already one hand-rolled split inline in `/status`, and the path producing the longest messages did not have it. Chunks break on line boundaries and carry an open ``` fence across the break, because a chunk ending mid-fence renders as literal backticks in one message and swallows the next as code; that would turn a truncation bug into a corruption one. Buttons ride on the last chunk, since they act on the whole report.
+
 ## [2.0.2] - 2026-08-05
 
 Three from @NotRetarded in #2, reading his own crash alert back to me.
