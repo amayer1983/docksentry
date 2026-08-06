@@ -15,6 +15,14 @@ Auto-update, monitor and manage Docker containers via interactive <b>Telegram bo
   <a href="https://github.com/sponsors/amayer1983"><img src="https://img.shields.io/github/sponsors/amayer1983?label=Sponsor&logo=GitHub" alt="Sponsor"></a>
 </p>
 
+> ### ⚠️ Only these two sources are official
+>
+> **Code:** [github.com/amayer1983/docksentry](https://github.com/amayer1983/docksentry) · **Image:** [`amayer1983/docksentry`](https://hub.docker.com/r/amayer1983/docksentry) on Docker Hub, or `ghcr.io/amayer1983/docksentry`.
+>
+> Copies of this project exist on GitHub that carry my name and my MIT copyright notice, and whose README links to a **ZIP file containing a Windows executable**. Docksentry is Python running in a Linux container; it has never shipped a `.exe`, and it is not distributed as a ZIP download. One such file is listed by [Netskope Threat Labs](https://github.com/netskopeoss/NetskopeThreatLabsIOCs) as a command-and-control indicator and appears in the [URLhaus](https://urlhaus.abuse.ch/) malware feed.
+>
+> If you arrived here from a search result offering a download, you were somewhere else. Install with `docker pull` from the addresses above and nothing else.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-notification.jpg" alt="Update Notification" width="350">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-result.jpg" alt="Update Result" width="350">
