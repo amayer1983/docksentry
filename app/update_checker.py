@@ -2099,9 +2099,15 @@ class UpdateChecker:
         can see in chat what the container was last doing instead of
         having to SSH to the host."""
         try:
-            r = self.backend.run(
-                ["logs", "--tail", str(lines), name], timeout=10)
-            # docker logs interleaves stdout+stderr — combine both
+            # The comment that used to sit here said "docker logs
+            # interleaves stdout+stderr — combine both" and then
+            # concatenated the two captured streams. That is not
+            # interleaving: it is all of stdout followed by all of
+            # stderr, so a container writing to both had its diagnostic
+            # context reordered out of the sequence it happened in —
+            # exactly the wrong thing for a crash report. `backend.logs()`
+            # merges them at the pipe, in the order the container wrote.
+            r = self.backend.logs(name, tail=lines, timeout=10)
             text = (r.stdout or "") + (r.stderr or "")
             text = text.strip()
             if not text:

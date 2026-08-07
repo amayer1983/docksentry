@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.2.1] - 2026-08-07
+
+### Fixed
+- **The log page answered with nothing at all for a container that had never written a line.** Not an error page, not an empty one — the connection closed with no body. v1.73.0 merged a container's two output streams at the pipe so `/logs` stopped showing only half of them (#2, @NotRetarded); what that missed is that `subprocess` leaves `.stderr` as `None` when it has been redirected into stdout, because there is no second pipe to capture. Every caller reads `result.stdout or result.stderr`, which was right for years and now evaluated to `None` whenever stdout was empty, and the `.strip()` on the next line raised in the middle of the response. Measured against a `sleep`-only container: curl exit 52, zero bytes, `AttributeError: 'NoneType' object has no attribute 'strip'` in the log. Containers that had written something were never affected, which is why this survived the release.
+- **Telegram's `/logs`, Discord's `/logs` and the crash diagnostics never got the v1.73.0 stream merge at all.** Each built its own `["logs", …]` command line instead of calling the method that does the merging, so all three still showed one stream and silently dropped the other — and for a container that writes its errors to stderr, the dropped half is the half you opened the logs to read. The crash diagnostics attached to a health warning were worse than that: they concatenated the two captured streams, which is not interleaving but all of one followed by all of the other, so the lines arrived out of the order they happened in. All three now go through the same seam as the Web UI.
+
 ## [2.2.0] - 2026-08-07
 
 ### Added

@@ -18,6 +18,7 @@ import types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from discord_bot import DiscordBot, COMMANDS   # noqa: E402
+from container_backend import ContainerBackend   # noqa: E402
 
 checks = {}
 
@@ -52,11 +53,21 @@ class FakeREST:
         self.calls.append(("channel", channel_id, content))
 
 
-class FakeBackend:
+class FakeBackend(ContainerBackend):
     """Just enough container CLI for the resolver, `/logs` and the
     lifecycle commands. Records every argv so a test can assert what was
     actually asked for — several checks below are precisely "and nothing
-    was asked for at all"."""
+    was asked for at all".
+
+    Subclasses the real backend rather than duck-typing it. It used to
+    define `run` and nothing else, which meant it answered a call the
+    production object would have answered differently: `/logs` was
+    changed to go through `backend.logs()` — the method that merges the
+    two output streams — and this stand-in had no such method, so the
+    seven `/logs` checks failed on a stub gap rather than on anything
+    about Discord. Inheriting means the argv these checks assert on is
+    built by the same code the real bot builds it with, and a fake that
+    is missing a method now cannot pass by accident."""
 
     def __init__(self, names, log_text=None):
         self.names = list(names)

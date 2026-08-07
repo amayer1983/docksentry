@@ -101,7 +101,7 @@ class ContainerBackend:
             # Both streams into one, in the order the container wrote them.
             # `capture_output=True` cannot express this — it is shorthand
             # for two separate pipes.
-            return subprocess.run(
+            merged = subprocess.run(
                 argv,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -109,6 +109,25 @@ class ContainerBackend:
                 timeout=timeout,
                 input=input,
             )
+            # subprocess leaves `.stderr` as None when it was redirected
+            # into stdout — nothing was captured on that pipe because the
+            # pipe does not exist. Every caller here writes
+            # `result.stdout or result.stderr`, which is the idiom the
+            # whole codebase used before the merge landed, and for a
+            # container that has written nothing that expression is None.
+            # The `.strip()` on the next line then raised: the Web UI's
+            # log page answered with a closed connection and no body at
+            # all — measured as curl exit 52 against a `sleep`-only
+            # container, with the AttributeError in the container log.
+            #
+            # None and "" mean different things to subprocess (no pipe /
+            # an empty one) but the same thing to a caller: there is no
+            # separate stderr content, because all of it is in stdout.
+            # Saying that with "" is both true and safe to read, and it
+            # fixes every call site at once rather than the three that
+            # happen to exist today.
+            merged.stderr = "" if text else b""
+            return merged
         return subprocess.run(
             argv,
             capture_output=capture_output,

@@ -1282,7 +1282,10 @@ class DiscordBot:
                 errors.append(err + self._label(host))
                 continue
             try:
-                r = backend.run(["logs", "--tail", str(tail), name], timeout=10)
+                # Same seam as the Web UI and Telegram: `backend.logs()`
+                # merges stdout and stderr in write order. Building the
+                # argv here bypassed that and dropped half the output.
+                r = backend.logs(name, tail=tail, timeout=10)
             except Exception as e:
                 errors.append(f"Could not read `{name}`{self._label(host)} "
                               f"logs: {str(e)[:80]}")

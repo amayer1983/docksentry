@@ -3943,8 +3943,12 @@ class TelegramBot:
             if err:
                 self.send_message(err)
                 return
-            result = self.backend.run(
-                ["logs", "--tail", "30", name], timeout=10)
+            # `backend.logs()`, not a hand-built `["logs", …]` — the
+            # stream merge from v1.73.0 lives in that method, and this
+            # call site never got it. A container writing its errors to
+            # stderr showed half its output in `/logs` and the missing
+            # half was the half worth reading (#2, @NotRetarded).
+            result = self.backend.logs(name, tail=30, timeout=10)
             output = result.stdout or result.stderr
             if output.strip():
                 # Telegram message limit is 4096, truncate if needed
