@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "저장했지만 디스코드가 토큰을 거부했습니다.",
   "web_discord_bot_no_commands": "봇은 연결됐지만 슬래시 명령 등록에 실패했습니다. 나타나기까지 시간이 걸릴 수 있습니다.",
   "web_discord_bot_restart_needed": "저장했습니다. 적용하려면 Docksentry를 다시 시작하세요.",
-  "web_discord_bot_error": "저장했지만 봇을 시작할 수 없었습니다."
+  "web_discord_bot_error": "저장했지만 봇을 시작할 수 없었습니다.",
+  "web_nav_connections": "연결",
+  "web_connections": "연결",
+  "web_connections_intro": "Docksentry가 알림을 어디로 보내는지, 그중 어느 것이 명령을 되돌려 보낼 수 있는지. 설정은 언제 동작할지를, 이 페이지는 어디로 말할지를 정합니다.",
+  "web_conn_telegram": "텔레그램",
+  "web_conn_telegram_intro": "봇 토큰과 채팅 ID는 환경 변수로 설정합니다. 여기 있는 항목은 이미 실행 중인 봇에 적용됩니다.",
+  "web_conn_webhooks": "웹후크",
+  "web_conn_webhooks_intro": "단방향 알림입니다. 디스코드는 서식 있는 임베드를 받고, 일반 웹후크는 받아 주는 어디로든 JSON을 보냅니다."
 }

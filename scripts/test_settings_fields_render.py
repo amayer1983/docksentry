@@ -80,7 +80,13 @@ def _config():
     )
 
 
-def render():
+def render(page="settings"):
+    """Render one page's HTML. `page` is "settings" or "connections".
+
+    The channels moved to a page of their own when the Discord bot
+    arrived (#57), so this file now renders both — the token is a secret
+    and the check that it never reaches the HTML has to follow it.
+    """
     cfg = _config()
     handler_cls = web_ui.create_handler(cfg, checker=None, bot=None, store=None)
     h = handler_cls.__new__(handler_cls)
@@ -91,7 +97,7 @@ def render():
     h._render_page = lambda content, active=None: content
     h._windows_html = lambda t: ""
     h._maint_mode_html = lambda t: ""
-    h._page_settings()
+    getattr(h, f"_page_{page}")()
     return out.get("html", "")
 
 
@@ -150,34 +156,42 @@ def main():
         'name="monitor_interval_seconds" value="60"' in notifs
         and 'min="15"' in notifs)
 
-    # ── Channels tab: the interactive Discord bot (#57) ──────────────
+    # ── Connections page: the interactive Discord bot (#57) ──────────
     # @NotRetarded wrote a screenshot-by-screenshot guide for setting the
     # bot up from environment variables, then asked whether it could just
-    # be in the interface. These are the fields that answer that.
-    channels = pane(html, "channels")
-    checks["Discord bot token field is in the Channels tab"] = (
+    # be in the interface. These are the fields that answer that. They
+    # sat on the Settings page's Channels tab for one release and then
+    # moved, with the rest of the channels, to a page of their own.
+    channels = render("connections")
+    checks["Discord bot token field is on the Connections page"] = (
         'name="discord_bot_token"' in channels)
-    checks["bot token value is NOT rendered anywhere in the HTML"] = (
-        SECRET_DISCORD_TOKEN not in html)
+    # Both secrets, checked against both pages. A secret that does not
+    # leak on the page that owns it can still leak on the other one —
+    # and the token was on the Settings page one release ago.
+    checks["bot token value is NOT rendered on either page"] = (
+        SECRET_DISCORD_TOKEN not in channels
+        and SECRET_DISCORD_TOKEN not in html)
+    checks["password value is NOT rendered on either page"] = (
+        SECRET_PW not in channels and SECRET_PW not in html)
     checks["bot token field is type=password and renders empty"] = (
         'type="password" name="discord_bot_token" value=""' in channels)
     checks["a saved token is signalled by the placeholder, not the value"] = (
         "leave empty = unchanged" in channels)
     checks["a saved token offers an explicit way to remove it"] = (
         'name="discord_bot_token_clear"' in channels)
-    checks["application id is in the Channels tab, with its value"] = (
+    checks["application id is on the Connections page, with its value"] = (
         'name="discord_app_id" value="1234567890123456789"' in channels)
-    checks["server id is in the Channels tab, with its value"] = (
+    checks["server id is on the Connections page, with its value"] = (
         'name="discord_guild_id" value="9876543210987654321"' in channels)
-    checks["the allowed-user list is in the Channels tab"] = (
+    checks["the allowed-user list is on the Connections page"] = (
         'name="discord_allowed_users"' in channels)
     # Every one of them has to reach the (empty) settings form by id —
     # the trap test_form_nesting.py exists for.
     _dc_fields = ("discord_bot_token", "discord_app_id",
                   "discord_guild_id", "discord_allowed_users")
-    checks["every Discord field associates with the settings form"] = all(
+    checks["every Discord field associates with the connections form"] = all(
         f'name="{f}"' in channels
-        and 'form="settings-form"' in channels[channels.index(f'name="{f}"'):
+        and 'form="conn-form"' in channels[channels.index(f'name="{f}"'):
                                                channels.index(f'name="{f}"') + 400]
         for f in _dc_fields)
 

@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "सहेजा गया, पर डिस्कॉर्ड ने टोकन अस्वीकार कर दिया।",
   "web_discord_bot_no_commands": "बॉट जुड़ गया, पर स्लैश कमांड पंजीकृत नहीं हो सके। वे देर से दिख सकते हैं।",
   "web_discord_bot_restart_needed": "सहेजा गया। लागू करने के लिए Docksentry पुनः आरंभ करें।",
-  "web_discord_bot_error": "सहेजा गया, पर बॉट शुरू नहीं किया जा सका।"
+  "web_discord_bot_error": "सहेजा गया, पर बॉट शुरू नहीं किया जा सका।",
+  "web_nav_connections": "कनेक्शन",
+  "web_connections": "कनेक्शन",
+  "web_connections_intro": "Docksentry अपनी सूचनाएँ कहाँ भेजता है, और उनमें से कौन-सी कमांड वापस भेज सकती हैं। सेटिंग्स तय करती हैं कि Docksentry कब काम करे; यह पृष्ठ तय करता है कि वह कहाँ बोले।",
+  "web_conn_telegram": "टेलीग्राम",
+  "web_conn_telegram_intro": "बॉट टोकन और चैट ID पर्यावरण चर के रूप में सेट होते हैं। यहाँ जो है वह पहले से चल रहे बॉट पर लागू होता है।",
+  "web_conn_webhooks": "वेबहुक",
+  "web_conn_webhooks_intro": "एकतरफ़ा सूचनाएँ। डिस्कॉर्ड सजाए गए ब्लॉक लेता है; सामान्य वेबहुक किसी भी स्वीकार करने वाले को JSON भेजता है।"
 }

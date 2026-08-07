@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "保存しましたが、Discord がトークンを拒否しました。",
   "web_discord_bot_no_commands": "ボットは接続しましたが、スラッシュコマンドの登録に失敗しました。表示が遅れることがあります。",
   "web_discord_bot_restart_needed": "保存しました。適用するには Docksentry を再起動してください。",
-  "web_discord_bot_error": "保存しましたが、ボットを起動できませんでした。"
+  "web_discord_bot_error": "保存しましたが、ボットを起動できませんでした。",
+  "web_nav_connections": "接続",
+  "web_connections": "接続",
+  "web_connections_intro": "Docksentry が通知をどこへ送るか、そのうちどれがコマンドを返せるか。設定は「いつ動くか」を、このページは「どこへ話しかけるか」を決めます。",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "ボットトークンとチャット ID は環境変数で設定します。ここにあるものは、すでに動いているボットに適用されます。",
+  "web_conn_webhooks": "Webhook",
+  "web_conn_webhooks_intro": "一方向の通知です。Discord は装飾付きの埋め込みを受け取り、汎用 Webhook は受け付けるものすべてに JSON を送ります。"
 }

@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "حُفظ، لكن ديسكورد رفض الرمز.",
   "web_discord_bot_no_commands": "اتصل الروبوت، لكن تسجيل الأوامر أخفق. قد تتأخر في الظهور.",
   "web_discord_bot_restart_needed": "حُفظ. أعد تشغيل Docksentry للتطبيق.",
-  "web_discord_bot_error": "حُفظ، لكن تعذّر تشغيل الروبوت."
+  "web_discord_bot_error": "حُفظ، لكن تعذّر تشغيل الروبوت.",
+  "web_nav_connections": "الاتصالات",
+  "web_connections": "الاتصالات",
+  "web_connections_intro": "إلى أين يرسل Docksentry إشعاراته، وأيها يمكنه إعادة إرسال الأوامر. الإعدادات تقرر متى يتصرف Docksentry؛ وهذه الصفحة تقرر أين يتكلم.",
+  "web_conn_telegram": "تيليجرام",
+  "web_conn_telegram_intro": "رمز الروبوت ومعرّف المحادثة يُضبطان كمتغيرات بيئة. ما هنا ينطبق على الروبوت العامل بالفعل.",
+  "web_conn_webhooks": "الويب هوك",
+  "web_conn_webhooks_intro": "إشعارات في اتجاه واحد. ديسكورد يقبل بطاقات منسّقة؛ والويب هوك العام يرسل JSON إلى أي شيء يقبله."
 }

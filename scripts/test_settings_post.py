@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Saving the settings form: clearing a field, and the Discord bot.
+"""Saving a settings form: clearing a field, and the Discord bot.
 
 Two things, one of which had been broken since the settings page existed.
+
+Both forms are covered — Settings and the Connections page the notification
+channels moved to. They share the shape (validate, write once, then act) and
+they shared the bug.
 
 **No text field on the settings page could be emptied.** `parse_qs` drops
 `name=` with an empty value unless you ask it not to, and every branch in
@@ -64,13 +68,18 @@ class FakeConfig(types.SimpleNamespace):
         self.saves += 1
 
 
-def post(cfg, body, restart=None):
-    """Drive do_POST for /settings and return the redirect target."""
+def post(cfg, body, restart=None, path="/connections"):
+    """Drive do_POST for `path` and return the redirect target.
+
+    Defaults to /connections: the channels moved off the Settings page
+    when the Discord bot arrived, and the clearing bug this file exists
+    for is theirs. Pass path="/settings" for the fields that stayed.
+    """
     handler_cls = web_ui.create_handler(
         cfg, checker=None, bot=types.SimpleNamespace(t=None),
         store=None, restart_discord=restart)
     h = handler_cls.__new__(handler_cls)
-    h.path = "/settings"
+    h.path = path
     h.headers = {"Content-Length": str(len(body)), "Host": "x",
                  "Origin": "http://x"}
     h.rfile = types.SimpleNamespace(read=lambda n: body.encode())
@@ -81,6 +90,7 @@ def post(cfg, body, restart=None):
     h._check_csrf = lambda: True
     h._audit = lambda *a, **k: None
     h._page_settings = lambda: None
+    h._page_connections = lambda: None
     h.do_POST()
     return out.get("loc", "")
 
@@ -131,7 +141,8 @@ def main():
 
     cfg = FakeConfig(discord_bot_token="T", discord_app_id="1",
                      discord_guild_id="2")
-    loc = post(cfg, "cleanup_grace_hours=48", restart=restart)
+    loc = post(cfg, "cleanup_grace_hours=48", restart=restart,
+               path="/settings")
     checks["saving another tab does not restart the bot"] = not calls
     checks["…and says nothing about Discord"] = "discord=" not in loc
 

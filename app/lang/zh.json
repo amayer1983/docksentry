@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "已保存，但 Discord 拒绝了该令牌。",
   "web_discord_bot_no_commands": "机器人已连接，但注册斜杠命令失败。它们可能要过一会儿才出现。",
   "web_discord_bot_restart_needed": "已保存。请重启 Docksentry 以生效。",
-  "web_discord_bot_error": "已保存，但无法启动机器人。"
+  "web_discord_bot_error": "已保存，但无法启动机器人。",
+  "web_nav_connections": "连接",
+  "web_connections": "连接",
+  "web_connections_intro": "Docksentry 把通知发到哪里，以及其中哪些可以把命令发回来。设置决定它何时动作；本页决定它向哪里说话。",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "机器人令牌和聊天 ID 通过环境变量设置。这里的内容适用于已经在运行的机器人。",
+  "web_conn_webhooks": "Webhook",
+  "web_conn_webhooks_intro": "单向通知。Discord 接收带格式的嵌入内容；通用 Webhook 向任何接受它的地方发送 JSON。"
 }

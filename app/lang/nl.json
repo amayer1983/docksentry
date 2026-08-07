@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "Opgeslagen, maar Discord weigerde het token.",
   "web_discord_bot_no_commands": "Bot verbonden, maar het registreren van de slash-opdrachten mislukte. Ze kunnen later verschijnen.",
   "web_discord_bot_restart_needed": "Opgeslagen. Start Docksentry opnieuw om het toe te passen.",
-  "web_discord_bot_error": "Opgeslagen, maar de bot kon niet worden gestart."
+  "web_discord_bot_error": "Opgeslagen, maar de bot kon niet worden gestart.",
+  "web_nav_connections": "Verbindingen",
+  "web_connections": "Verbindingen",
+  "web_connections_intro": "Waar Docksentry zijn meldingen heen stuurt, en welke daarvan opdrachten terug kunnen sturen. Instellingen bepaalt wanneer Docksentry handelt; deze pagina bepaalt waar het praat.",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "Het bottoken en de chat-ID worden als omgevingsvariabelen gezet. Wat hier staat geldt voor de bot die al draait.",
+  "web_conn_webhooks": "Webhooks",
+  "web_conn_webhooks_intro": "Meldingen in één richting. Discord neemt opgemaakte insluitingen; de algemene webhook stuurt JSON naar alles wat het aanneemt."
 }

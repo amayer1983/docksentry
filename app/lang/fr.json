@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "Enregistré, mais Discord a rejeté le jeton.",
   "web_discord_bot_no_commands": "Bot connecté, mais l'enregistrement des commandes slash a échoué. Elles peuvent mettre du temps à apparaître.",
   "web_discord_bot_restart_needed": "Enregistré. Redémarrez Docksentry pour appliquer.",
-  "web_discord_bot_error": "Enregistré, mais le bot n'a pas pu être démarré."
+  "web_discord_bot_error": "Enregistré, mais le bot n'a pas pu être démarré.",
+  "web_nav_connections": "Connexions",
+  "web_connections": "Connexions",
+  "web_connections_intro": "Où Docksentry envoie ses notifications, et lesquelles peuvent renvoyer des commandes. Les réglages décident quand Docksentry agit ; cette page décide où il parle.",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "Le jeton du bot et l'ID de discussion sont définis par variables d'environnement. Ce qui est ici s'applique au bot déjà en marche.",
+  "web_conn_webhooks": "Webhooks",
+  "web_conn_webhooks_intro": "Notifications à sens unique. Discord accepte des encarts enrichis ; le webhook générique poste du JSON vers tout ce qui l'accepte."
 }

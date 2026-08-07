@@ -1093,6 +1093,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 ("groups", f'📦 {t("web_nav_groups")}', "/groups"),
                 ("history", f'📋 {t("web_nav_history")}', "/history"),
                 ("logs", f'📜 {t("web_nav_logs")}', "/logs"),
+                ("connections", f'🔔 {t("web_nav_connections")}', "/connections"),
                 ("settings", f'⚙️ {t("web_nav_settings")}', "/settings"),
             ]
             nav_html = ""
@@ -1273,6 +1274,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 self._page_groups()
             elif path == "/logs":
                 self._page_logs()
+            elif path == "/connections":
+                self._page_connections()
             elif path == "/settings":
                 self._page_settings()
             elif path == "/setup":
@@ -1593,23 +1596,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 # keep_blank_values, or no text field on this page can
-                # ever be emptied. parse_qs drops `name=` with an empty
-                # value by default, so `if "discord_webhook" in params`
-                # was False for exactly the submission that meant "clear
-                # it" — the page said "saved", the field came back
-                # filled, and nothing said why. Measured: setting a
-                # Discord webhook and then clearing the field left the
-                # old URL in settings.json. Same for the webhook URL,
-                # the Telegram topic id, the allowed-user lists, the bot
-                # label and the quiet hours.
+                # ever be emptied. parse_qs drops a `name=` carrying an
+                # empty value by default, and every branch below is
+                # guarded by a membership test — so the one submission
+                # that means "clear this" was indistinguishable from the
+                # field never having been sent. The page said "saved",
+                # the field came back filled, and nothing said why.
+                # Measured on a running instance against the Discord
+                # webhook, which is on the Connections page now; the
+                # quiet hours and the exclude list had it too.
                 #
                 # Every branch below was walked before this changed.
                 # Nothing breaks on an empty string: the numeric fields
                 # already swallow the ValueError from int(""), `language`
-                # and `cron_schedule` ignore a value they cannot use,
-                # `web_password` treats empty as "unchanged" on purpose,
-                # and _validate_webhook_url("") returns ok — an empty
-                # webhook is how you turn one off.
+                # and `cron_schedule` ignore a value they cannot use, and
+                # `web_password` treats empty as "unchanged" on purpose.
                 params = parse_qs(body, keep_blank_values=True)
 
                 # --- Validate before mutating any state ---
@@ -1618,18 +1619,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     ok, err = _validate_cron(params["cron_schedule"][0].strip())
                     if not ok:
                         errors.append(f"Cron schedule: {err}")
-                if "discord_webhook" in params:
-                    ok, err = _validate_webhook_url(
-                        params["discord_webhook"][0].strip(), kind="discord"
-                    )
-                    if not ok:
-                        errors.append(f"Discord webhook: {err}")
-                if "webhook_url" in params:
-                    ok, err = _validate_webhook_url(
-                        params["webhook_url"][0].strip(), kind="generic"
-                    )
-                    if not ok:
-                        errors.append(f"Webhook URL: {err}")
                 if errors:
                     # `quote` comes from the module-level import. It used
                     # to be imported right here, which made it a local of
@@ -1716,33 +1705,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     raw = params["exclude_containers"][0].strip()
                     config.exclude_containers = [c.strip() for c in raw.split(",") if c.strip()] if raw else []
 
-                # Update Discord webhook
-                if "discord_webhook" in params:
-                    config.discord_webhook = params["discord_webhook"][0].strip()
-
-                # Update generic webhook
-                if "webhook_url" in params:
-                    config.webhook_url = params["webhook_url"][0].strip()
-
-                # Update Telegram Topic ID
-                if "telegram_topic_id" in params:
-                    config.telegram_topic_id = params["telegram_topic_id"][0].strip()
-
-                # Update Telegram allowed-users whitelist. Empty input
-                # clears the list (= "any user in the configured chat").
-                if "telegram_allowed_users" in params:
-                    raw = params["telegram_allowed_users"][0]
-                    config.telegram_allowed_users = [
-                        u.strip() for u in raw.split(",") if u.strip()
-                    ]
-
-                # Optional BOT_LABEL prefix for multi-bot setups
-                if "bot_label" in params:
-                    # Cap at 32 chars — Telegram message length isn't a
-                    # concern at that size but a runaway label would be
-                    # cosmetic noise on every notification.
-                    config.bot_label = params["bot_label"][0].strip()[:32]
-
                 # Update / recreate timeouts (Updates tab). Positive
                 # seconds; the healthcheck grace has a higher floor than the
                 # stop grace but both just need to stay above zero.
@@ -1783,21 +1745,69 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     if new_pw:
                         config.web_password = new_pw
 
+                # Persist all changes
+                config.save_persistent()
+
+                self._send_redirect("/settings?saved=1")
+            elif path == "/connections":
+                # The notification channels, moved off the Settings page
+                # when the Discord bot made its Channels tab the longest
+                # thing on it (#57). Same shape as /settings above and
+                # deliberately so: validate everything first, write once,
+                # then act on anything that needs a running service told.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                # keep_blank_values, or no field here can ever be
+                # emptied — parse_qs drops `name=` with an empty value,
+                # which is exactly the submission that means "clear it".
+                params = parse_qs(body, keep_blank_values=True)
+
+                errors = []
+                if "discord_webhook" in params:
+                    ok, err = _validate_webhook_url(
+                        params["discord_webhook"][0].strip(), kind="discord")
+                    if not ok:
+                        errors.append(f"Discord webhook: {err}")
+                if "webhook_url" in params:
+                    ok, err = _validate_webhook_url(
+                        params["webhook_url"][0].strip(), kind="generic")
+                    if not ok:
+                        errors.append(f"Webhook URL: {err}")
+                if errors:
+                    self._send_redirect(
+                        "/connections?error=" + quote(" | ".join(errors)))
+                    return
+
+                if "discord_webhook" in params:
+                    config.discord_webhook = params["discord_webhook"][0].strip()
+                if "webhook_url" in params:
+                    config.webhook_url = params["webhook_url"][0].strip()
+                if "telegram_topic_id" in params:
+                    config.telegram_topic_id = params["telegram_topic_id"][0].strip()
+                # Empty input clears the list (= "any user in the
+                # configured chat").
+                if "telegram_allowed_users" in params:
+                    raw = params["telegram_allowed_users"][0]
+                    config.telegram_allowed_users = [
+                        u.strip() for u in raw.split(",") if u.strip()
+                    ]
+                if "bot_label" in params:
+                    # Cap at 32 chars — Telegram message length isn't a
+                    # concern at that size but a runaway label would be
+                    # cosmetic noise on every notification.
+                    config.bot_label = params["bot_label"][0].strip()[:32]
+
                 # ── Interactive Discord bot (#57, @NotRetarded) ──────
-                # Setting this up used to mean editing compose and
-                # recreating the container; he wrote a screenshot guide to
-                # walk people through it before asking whether it could
-                # just live here. `_discord_changed` decides afterwards
-                # whether the bot has to be restarted, so a save on any
-                # other tab never touches a working bot.
+                # `_discord_changed` decides afterwards whether the bot
+                # has to be restarted, so saving anything else on this
+                # page never bounces a working bot.
                 _discord_before = (config.discord_bot_token,
                                    config.discord_app_id,
                                    config.discord_guild_id,
                                    list(config.discord_allowed_users or []))
                 # The token behaves like web_password: empty means "leave
                 # it as it is", never "clear it", because the field is
-                # rendered blank on every page load and a save from any
-                # other tab would otherwise wipe it. Clearing is an
+                # rendered blank on every page load. Clearing is an
                 # explicit act — the checkbox below.
                 if "discord_bot_token" in params:
                     new_token = params["discord_bot_token"][0].strip()
@@ -1820,14 +1830,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     config.discord_guild_id,
                     list(config.discord_allowed_users or []))
 
-                # Persist all changes
                 config.save_persistent()
 
                 # Restart AFTER the write, never before: if the bot fails
                 # to come up the values still have to be on disk, or the
                 # user loses what he just typed and has no way to correct
                 # a typo.
-                _q = "/settings?saved=1"
+                _q = "/connections?saved=1"
                 if _discord_changed:
                     if restart_discord is None:
                         # No callback — a handler built outside main().
@@ -4378,6 +4387,32 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             self._send_html(self._render_page(content, "history"))
 
+        # ── shared by the Settings and Connections pages ──────────
+        # Both were local closures inside _page_settings until the
+        # channels moved to a page of their own. Two copies of the env
+        # marker is exactly how one page ends up silently not warning
+        # about an overruled variable.
+        def _help(self, text):
+            return f'<span class="help" data-tt="{_e(text)}">?</span>'
+
+        def _env_mark(self, key, t):
+            """Marker for a field whose saved value overrules a set env var.
+
+            Same mechanism as the 🏷 label marker and the ⚙ self-update
+            marker — a glyph plus a title — but a third statement: the
+            env var is only the starting value, this field owns it now.
+            Empty string when nothing is being overruled (#53, @LeeNX).
+            """
+            o = config.env_override(key)
+            if not o:
+                return ""
+            # Secrets: name the variable, never its value. o["env"] is
+            # None for those (Config._display_value refuses).
+            tip = (t("web_env_override_secret_tt", var=o["var"])
+                   if o["secret"] else
+                   t("web_env_override_tt", var=o["var"], value=o["env"]))
+            return f' <span class="env-mark" title="{_e(tip)}">env</span>'
+
         def _page_settings(self):
             from i18n import available_languages
             from version import VERSION
@@ -4402,76 +4437,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             telegram_status = 'enabled' if (config.bot_token and config.chat_id) else 'disabled (headless)'
 
-            def help_(text):
-                return f'<span class="help" data-tt="{_e(text)}">?</span>'
-
-            def env_(key):
-                """Marker for a field whose saved value overrules a set env var.
-
-                Same mechanism as the 🏷 label marker and the ⚙ self-update
-                marker — a glyph plus a title — but a third statement: the
-                env var is only the starting value, this field owns it now.
-                Empty string when nothing is being overruled (#53, @LeeNX).
-                """
-                o = config.env_override(key)
-                if not o:
-                    return ""
-                # Secrets: name the variable, never its value. o["env"] is
-                # None for those (Config._display_value refuses).
-                tip = (t("web_env_override_secret_tt", var=o["var"])
-                       if o["secret"] else
-                       t("web_env_override_tt", var=o["var"], value=o["env"]))
-                return f' <span class="env-mark" title="{_e(tip)}">env</span>'
-
-            # ── What happened to the Discord bot on the last save ────
-            # The bot is started on a background thread and its failures
-            # are console output, which is exactly where nobody is looking
-            # when they have just typed a token into a web form. The POST
-            # handler puts a closed set of codes in the query string and
-            # this turns them into a sentence. `discord_detail` is
-            # whatever Discord's API actually said — untranslated on
-            # purpose, because it is a quote, and escaped like any other
-            # value that came in over the wire.
-            # getattr, because the render tests build a handler with
-            # __new__ and never give it a path — and a settings page that
-            # cannot be rendered without a live request is a page that
-            # cannot be tested.
-            _dq = parse_qs(urlparse(getattr(self, "path", "") or "").query)
-            _dcode = (_dq.get("discord", [""])[0] or "").strip()
-            _ddetail = (_dq.get("discord_detail", [""])[0] or "").strip()
-            _dstyles = {
-                "ok": ("var(--success)", t("web_discord_bot_started")),
-                "disabled": ("var(--text-muted)", t("web_discord_bot_off")),
-                "guild": ("var(--warn)", t("web_discord_bot_no_guild")),
-                "token": ("var(--danger)", t("web_discord_bot_bad_token")),
-                "register": ("var(--warn)", t("web_discord_bot_no_commands")),
-                "restart_needed": ("var(--text-muted)",
-                                   t("web_discord_bot_restart_needed")),
-                "error": ("var(--danger)", t("web_discord_bot_error")),
-            }
-            discord_bot_notice = ""
-            if _dcode in _dstyles:
-                _col, _msg = _dstyles[_dcode]
-                _extra = (f' <span style="opacity:.75">({_e(_ddetail)})</span>'
-                          if _ddetail else "")
-                discord_bot_notice = (
-                    f'<p style="font-size:13px;color:{_col};margin:0 0 8px">'
-                    f'{_e(_msg)}{_extra}</p>')
-
-            # Clearing the token needs its own act. The field is rendered
-            # blank on every load — a saved secret is never written back
-            # into HTML — so "empty means unchanged" is the only safe
-            # reading of an empty field, and that leaves no way to say
-            # "remove it". Hence the checkbox, and only when there is
-            # something to remove.
-            discord_clear_row = ""
-            if config.discord_bot_token:
-                discord_clear_row = (
-                    '<div class="form-checkbox-row">'
-                    '<input type="checkbox" name="discord_bot_token_clear" '
-                    'id="cb-discord-clear" form="settings-form">'
-                    f'<label for="cb-discord-clear">{t("web_discord_token_clear")}'
-                    f' {help_(t("web_discord_token_clear_help"))}</label></div>')
+            help_ = self._help
+            env_ = lambda key: self._env_mark(key, t)
 
             content = f"""
 <div class="card">
@@ -4484,7 +4451,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <button type="button" class="tab-btn" data-tab-target="updates">{_ICONS["refresh"]}<span>{t("web_tab_updates")}</span></button>
   <button type="button" class="tab-btn" data-tab-target="cleanup">{_ICONS["broom"]}<span>{t("web_tab_cleanup")}</span></button>
   <button type="button" class="tab-btn" data-tab-target="notifs">{_ICONS["alert"]}<span>{t("web_tab_notifications")}</span></button>
-  <button type="button" class="tab-btn" data-tab-target="channels">{_ICONS["calendar"]}<span>{t("web_tab_channels")}</span></button>
 </div>
 
 <!-- ── Allgemein ─────────────────────────────────── -->
@@ -4690,58 +4656,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   </div>
 </div>
 
-<!-- ── Kanäle ────────────────────────────────────── -->
-<div class="tab-pane" data-tab-pane="settings" data-tab-name="channels">
-  <div class="adv-only">
-    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
-    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="settings-form">
-
-    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
-    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="settings-form">
-
-    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
-    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="settings-form">
-  </div>
-
-  <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="settings-form">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
-  </div>
-
-  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="settings-form">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
-  </div>
-
-  <!-- ── Interaktiver Discord-Bot (#57) ──────────────── -->
-  <h3 style="font-size:14px;color:var(--accent);margin:16px 0 8px">{t("web_discord_bot_title")}</h3>
-  <p style="font-size:13px;color:var(--text-muted);margin:0 0 8px">{t("web_discord_bot_intro")}</p>
-  {discord_bot_notice}
-
-  <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>
-  <input type="password" name="discord_bot_token" value="" autocomplete="new-password"
-         placeholder="{_e(t('web_discord_token_set') if config.discord_bot_token else t('web_discord_token_placeholder'))}" form="settings-form">
-  {discord_clear_row}
-
-  <div class="grid">
-    <div>
-      <label>{t("web_discord_app_id")} {help_(t("web_discord_app_id_help"))}{env_("discord_app_id")}</label>
-      <input type="text" name="discord_app_id" value="{_e(config.discord_app_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="settings-form">
-    </div>
-    <div>
-      <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
-      <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="settings-form">
-    </div>
-  </div>
-
-  <div class="adv-only">
-    <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
-    <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="settings-form">
-  </div>
-</div>
-
 <div style="margin-top:16px">
   <button type="submit" class="btn" form="settings-form">{t("web_save")}</button>
 </div>
@@ -4751,6 +4665,162 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 """
 
             self._send_html(self._render_page(content, "settings"))
+
+        def _page_connections(self):
+            """Where the notification channels are configured.
+
+            These lived on the Settings page's Channels tab until the
+            interactive Discord bot arrived (#57) and made it the longest
+            tab on the page — with SMTP, ntfy, Matrix, Apprise and Gotify
+            still to come, all of which are environment-only today, it
+            would have stopped being a form and started being a wall.
+
+            Its own page also matches how people think about it: the rest
+            of Settings is about *when* Docksentry acts, this is about
+            *where it talks*. Each channel is a card that can be read on
+            its own, and a card is where a "send a test" button belongs.
+            """
+            t = _web_translator(config.language)
+            help_ = self._help
+            env_ = lambda key: self._env_mark(key, t)
+
+            # ── What happened to the Discord bot on the last save ────
+            # The bot starts on a background thread and its failures are
+            # console output, which is exactly where nobody is looking
+            # when they have just typed a token into a web form. The POST
+            # handler puts a closed set of codes in the query string and
+            # this turns them into a sentence. `discord_detail` is
+            # whatever Discord's API actually said — untranslated on
+            # purpose, because it is a quote, and escaped like any other
+            # value that arrived over the wire.
+            #
+            # getattr, because the render tests build a handler with
+            # __new__ and never give it a path — a page that cannot be
+            # rendered without a live request is a page that cannot be
+            # tested.
+            _dq = parse_qs(urlparse(getattr(self, "path", "") or "").query)
+            _dcode = (_dq.get("discord", [""])[0] or "").strip()
+            _ddetail = (_dq.get("discord_detail", [""])[0] or "").strip()
+            _dstyles = {
+                "ok": ("var(--success)", t("web_discord_bot_started")),
+                "disabled": ("var(--text-muted)", t("web_discord_bot_off")),
+                "guild": ("var(--warn)", t("web_discord_bot_no_guild")),
+                "token": ("var(--danger)", t("web_discord_bot_bad_token")),
+                "register": ("var(--warn)", t("web_discord_bot_no_commands")),
+                "restart_needed": ("var(--text-muted)",
+                                   t("web_discord_bot_restart_needed")),
+                "error": ("var(--danger)", t("web_discord_bot_error")),
+            }
+            discord_bot_notice = ""
+            if _dcode in _dstyles:
+                _col, _msg = _dstyles[_dcode]
+                _extra = (f' <span style="opacity:.75">({_e(_ddetail)})</span>'
+                          if _ddetail else "")
+                discord_bot_notice = (
+                    f'<p style="font-size:13px;color:{_col};margin:0 0 8px">'
+                    f'{_e(_msg)}{_extra}</p>')
+
+            # Clearing the token needs its own act. The field renders
+            # blank on every load — a saved secret is never written back
+            # into HTML — so "empty means unchanged" is the only safe
+            # reading of an empty field, and that leaves no way to say
+            # "remove it". Hence the checkbox, and only when there is
+            # something to remove.
+            discord_clear_row = ""
+            if config.discord_bot_token:
+                discord_clear_row = (
+                    '<div class="form-checkbox-row">'
+                    '<input type="checkbox" name="discord_bot_token_clear" '
+                    'id="cb-discord-clear" form="conn-form">'
+                    f'<label for="cb-discord-clear">{t("web_discord_token_clear")}'
+                    f' {help_(t("web_discord_token_clear_help"))}</label></div>')
+
+            # No inline "saved" line: app.js already turns `?saved=1` and
+            # `?error=` into a toast for every page, and two success
+            # messages for one save reads like something happened twice.
+            # The Discord notice above is different — it survives on the
+            # page because it can carry a failure you need to act on.
+
+            # Same construction as the Settings page: one empty form, and
+            # every control associates with it by id. Nesting a second
+            # form inside a card would silently close this one and drop
+            # every field after it — see scripts/test_form_nesting.py.
+            content = f"""
+<form method="POST" action="/connections" id="conn-form"></form>
+
+<div class="card">
+<h2>{t("web_connections")}</h2>
+<p class="card-intro">{t("web_connections_intro")}</p>
+</div>
+
+<div class="card">
+<h2>{t("web_conn_telegram")}</h2>
+<p class="card-intro">{t("web_conn_telegram_intro")}</p>
+  <div class="adv-only">
+    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
+    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="conn-form">
+
+    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
+    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
+
+    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
+    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="conn-form">
+  </div>
+</div>
+
+<div class="card">
+<h2>{t("web_conn_webhooks")}</h2>
+<p class="card-intro">{t("web_conn_webhooks_intro")}</p>
+  <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
+  <div style="display:flex;gap:8px">
+    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="conn-form">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+
+  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
+  <div style="display:flex;gap:8px">
+    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="conn-form">
+    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+</div>
+
+<div class="card">
+<h2>{t("web_discord_bot_title")}</h2>
+<p class="card-intro">{t("web_discord_bot_intro")}</p>
+{discord_bot_notice}
+
+  <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>
+  <input type="password" name="discord_bot_token" value="" autocomplete="new-password"
+         placeholder="{_e(t('web_discord_token_set') if config.discord_bot_token else t('web_discord_token_placeholder'))}" form="conn-form">
+  {discord_clear_row}
+
+  <div class="grid">
+    <div>
+      <label>{t("web_discord_app_id")} {help_(t("web_discord_app_id_help"))}{env_("discord_app_id")}</label>
+      <input type="text" name="discord_app_id" value="{_e(config.discord_app_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
+      <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
+    </div>
+  </div>
+
+  <div class="adv-only">
+    <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
+    <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
+  </div>
+</div>
+
+<!-- One Save for the whole page, outside the last card. Inside it, the
+     button reads as "save Discord" — and it does not, it saves every
+     card above as well. -->
+<div style="margin-top:16px">
+  <button type="submit" class="btn" form="conn-form">{t("web_save")}</button>
+</div>
+
+"""
+
+            self._send_html(self._render_page(content, "connections"))
 
         def _maint_mode_html(self, t):
             """Render the Maintenance-Mode quick-buttons + status."""

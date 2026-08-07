@@ -347,7 +347,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "Saved, but Discord rejected the token.",
   "web_discord_bot_no_commands": "Bot connected, but registering the slash commands failed. They may take a while to appear.",
   "web_discord_bot_restart_needed": "Saved. Restart Docksentry to apply.",
-  "web_discord_bot_error": "Saved, but the bot could not be started."
+  "web_discord_bot_error": "Saved, but the bot could not be started.",
+  "web_nav_connections": "Connections",
+  "web_connections": "Connections",
+  "web_connections_intro": "Where Docksentry sends its notifications, and which of them can send commands back. Settings decides when Docksentry acts; this page decides where it talks.",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "The bot token and chat ID are set as environment variables. What is here applies to the bot already running.",
+  "web_conn_webhooks": "Webhooks",
+  "web_conn_webhooks_intro": "One-way notifications. Discord takes rich embeds; the generic webhook posts JSON to anything that accepts it."
 }

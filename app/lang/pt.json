@@ -248,7 +248,6 @@
   "web_tab_updates": "Updates",
   "web_tab_cleanup": "Cleanup",
   "web_tab_notifications": "Notifications",
-  "web_tab_channels": "Channels",
   "web_cron_help": "5-field cron expression (minute hour day month weekday). Default 0 18 * * * = daily at 18:00.",
   "web_excluded_help": "Comma-separated list of container names to skip during checks (e.g. 'plex,nextcloud'). Useful for containers you only want to update manually.",
   "web_debug_help": "Send detailed update-check logs to Telegram on every run. Useful for diagnosing why a container is or isn't being seen.",
@@ -622,5 +621,12 @@
   "web_discord_bot_bad_token": "Guardado, mas o Discord rejeitou o token.",
   "web_discord_bot_no_commands": "Bot ligado, mas o registo dos comandos de barra falhou. Podem demorar a aparecer.",
   "web_discord_bot_restart_needed": "Guardado. Reinicie o Docksentry para aplicar.",
-  "web_discord_bot_error": "Guardado, mas não foi possível iniciar o bot."
+  "web_discord_bot_error": "Guardado, mas não foi possível iniciar o bot.",
+  "web_nav_connections": "Ligações",
+  "web_connections": "Ligações",
+  "web_connections_intro": "Para onde o Docksentry envia as notificações e quais delas podem devolver comandos. As definições decidem quando o Docksentry age; esta página decide onde ele fala.",
+  "web_conn_telegram": "Telegram",
+  "web_conn_telegram_intro": "O token do bot e o ID de conversa são definidos como variáveis de ambiente. O que está aqui aplica-se ao bot já em funcionamento.",
+  "web_conn_webhooks": "Webhooks",
+  "web_conn_webhooks_intro": "Notificações num só sentido. O Discord aceita blocos formatados; o webhook genérico envia JSON para o que quer que o aceite."
 }
