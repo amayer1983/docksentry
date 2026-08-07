@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.2.0] - 2026-08-07
+
+### Added
+- **A pinned version tag now says when a newer one exists.** A tag like `nginx:1.25.3` is immutable, so its digest never moves and the check reported "up to date" forever — including long after 1.26 shipped. True, and misleading in the same breath. @LeeNX raised exactly this in #33 and asked for it to be explained; the issue was closed answering a different question, and his actual request was never acted on. The Status page now carries a `↑ 1.26.2` badge on such containers. It is **advisory only**: Docksentry will not switch, will not offer a button, and does not count it among pending updates — pinning a version is a statement of intent, and overriding it unasked could destroy a database. Advisories live in their own file so nothing that reads pending updates can mistake one for something to apply. Costs nothing against Docker Hub's pull budget: measured, `/tags/list` returns no rate-limit headers and leaves the manifest budget untouched at 100/hour.
+
+### Fixed
+- **The tag matcher was comparing against the wrong tags, and it was already live.** `get_highest_semver_tag` filtered candidates with `if prefix and not ts.startswith(prefix)`, so a current tag beginning with a digit — the common case — produced an empty prefix and skipped the check entirely. Everything the SemVer pattern would swallow then qualified, and that pattern allows a leading `something-`. Measured against the real registry: `linuxserver/qbittorrent:4.6.5` matched `arm64v8-20.04.1` — an Ubuntu version, on the wrong architecture. This is not only used for the new advisory. `_is_major_bump` calls it, so **anyone running linuxserver images with major-confirmation enabled was being asked to confirm every ordinary patch update as a major bump.** Prefixes must now be equal, and an empty prefix is a prefix rather than the absence of one.
+- **The same defect at the other end of the tag.** Candidates carrying a suffix were dropped outright, so `nextcloud:29.0.4-apache` was compared against the plain `32.0.13` — a different image variant. Suffixes must match too: an `-apache` tag matches only `-apache` tags, and a bare tag only bare ones, which is what kept pre-releases out to begin with.
+- **A repository with two numbering schemes no longer confuses either feature.** `linuxserver/qbittorrent` tags both the application (`4.6.5`) and its Ubuntu base (`20.04.1`), and nothing in the tag text separates them. Candidates more than three majors ahead are read as a different scheme. That is a heuristic and is documented as one — it can be wrong in both directions, so it only ever suppresses an advisory or a confirmation prompt and never causes an update to be applied. A genuine major jump (radarr 5 → 6) still registers.
+
+### Documentation
+- **`docs/updates.md` now explains what "up to date" means** — the three tag cases in one table, why a pinned tag still receives security rebuilds but never a version jump, and both known limits: two-component tags like `postgres:16.3` are not covered, and the two-scheme heuristic above.
+
 ## [2.1.0] - 2026-08-05
 
 @NotRetarded's Docksentry exited 137 during an update, and he learned of it from a third-party monitor rather than from us (#2). Two separate holes behind that, and the first one could cost a service its uptime.

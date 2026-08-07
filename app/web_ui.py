@@ -2598,6 +2598,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 "pinned": hstore.get_pinned(),
                 "auto_list": hstore.get_autoupdate(),
                 "ask_major": hstore.get_ask_before_major(),
+                # "newer version exists" notes for pinned tags (#33) —
+                # advisory, never a pending update.
+                "advisories": (checker.read_advisories()
+                               if hasattr(checker, "read_advisories") else {}),
                 "groups": groups_lookup,
                 "notes": hstore.get_notes(),
                 # One read for the whole table (#52) — `_row_link` takes the
@@ -2630,6 +2634,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             ask_major = view["ask_major"]
             groups_lookup = view["groups"]
             notes_lookup = view["notes"]
+            advisories = view.get("advisories") or {}
             links_lookup = view["links"]
             host_td = (f'\n<td class="host-cell">{_e(host_name)}</td>'
                        if multi else "")
@@ -2716,6 +2721,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     badges += _lab_mark
             # Auto-update now has its own table column (#2, @NotRetarded) —
             # no longer a name-cell badge that wrapped under long names.
+            # A pinned version tag never reports an update, because its
+            # digest never moves — so "up to date" is true and misleading
+            # at once (#33, @LeeNX). Says what exists; offers nothing,
+            # because the container is running what it was told to.
+            _adv = advisories.get(c["name"])
+            if _adv and c["name"] not in pending_names:
+                badges += (f' <span class="badge badge-purple" '
+                           f'title="{_e(t("web_badge_newer_tt", current=_adv.get("current",""), newer=_adv.get("newer","")))}">'
+                           f'↑ {_e(_adv.get("newer",""))}</span>')
             if c["name"] in ask_major:
                 badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["ask"]}</span>'
             if c["name"] in groups_lookup:

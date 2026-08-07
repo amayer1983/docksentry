@@ -420,6 +420,9 @@ class Config:
         # renamed out of the way and removed when it lands, so a hard kill
         # leaves a record the next boot can act on.
         self.inflight_file = os.path.join(data_dir, "update_inflight.json")
+        # "A newer version exists" notes for pinned version tags (#33).
+        # Advisory only — never a pending update.
+        self.advisories_file = os.path.join(data_dir, "version_advisories.json")
         # Deferred-check marker — written when AUTO_SELFUPDATE is about to
         # restart the container during a cron tick. The freshly-booted
         # process sees the marker and runs the container-update check

@@ -70,6 +70,54 @@ Confirm runs the update; Skip drops the request and you'll be asked again next c
 
 > **Note:** detection requires a SemVer-parseable tag (`1.2.3`, `v1.2.3`, `redis-7.0.5`, …). Containers using `:latest` or non-numeric tags fall back to the existing digest-based update flow without major-confirm.
 
+## Tags, versions, and what "up to date" means
+
+This is the thing newcomers most often expect to work differently, so it
+is worth being exact about (#33, @LeeNX, who asked for precisely this).
+
+Docksentry compares the **digest of the tag you are running** against the
+same tag on the registry. That single sentence explains every case:
+
+| Your tag | What happens |
+|---|---|
+| `:latest`, `:stable`, `:main` | The publisher moves the tag, the digest changes, you get an update. |
+| `:1.25.3` | The tag is immutable. Its digest never changes, so there is never an update — **even when 1.26 has shipped.** |
+| `:1.25.3`, rebuilt upstream | If the publisher re-pushes the *same* tag, usually for a security fix, the digest does change and you do get an update. |
+
+So a pinned version tag still receives security rebuilds. What it never
+receives is a **version jump** — and that is deliberate. Writing
+`nginx:1.25.3` in your compose file is a statement of intent; moving you to
+1.26 without being asked would override it, and for a database it could
+destroy data.
+
+### But it tells you
+
+Since v2.2.0, a container on a pinned SemVer tag that has a newer version
+available carries a badge saying so:
+
+```
+nginx  1.25.3  ↑ 1.26.2
+```
+
+It is **advisory only**. Docksentry will not switch to it, will not offer a
+button for it, and will not count it among your pending updates. To move,
+change the tag in your compose file and redeploy — which is the same thing
+you would have done anyway, now with the information you were missing.
+
+Two limits worth knowing rather than discovering:
+
+- **Two-component tags are not covered.** `postgres:16.3` and
+  `redis:7.2-alpine` do not parse as SemVer, which needs three numbers, so
+  no advisory appears for them. They still get security rebuilds like any
+  other pinned tag.
+- **A repository with two numbering schemes can confuse it.**
+  `linuxserver/qbittorrent` tags both the application (`4.6.5`) and its
+  Ubuntu base (`20.04.1`), and nothing in the tag text separates them.
+  Candidates more than three major versions ahead are ignored as a
+  different scheme — a heuristic, and one that can be wrong in both
+  directions. It only ever suppresses an advisory or a confirmation
+  prompt; it never causes an update to be applied.
+
 ## Pinned Containers
 
 Pinned containers (`/pin nginx` or via Web UI) are completely excluded from update checks. Use this for containers you want to keep on a specific version.

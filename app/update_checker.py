@@ -1184,6 +1184,85 @@ class UpdateChecker:
             return None
         return f"{scheme}://{host}{path}"
 
+    def _save_advisories(self, advisories):
+        """Persist "a newer version exists" notes, host-scoped.
+
+        Own file rather than a flag on the pending list, because everything
+        that reads pending updates treats an entry as something to apply.
+        A pinned container is not that — it is running what it was asked to
+        run, and the note is for the reader, not for the updater.
+        """
+        path = getattr(self.config, "advisories_file", "")
+        if not path:
+            return
+        try:
+            from container_store import atomic_write_json, LOCAL_HOST
+            host = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
+            data = {}
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        data = json.load(f) or {}
+                except (OSError, ValueError):
+                    data = {}
+            if not isinstance(data, dict):
+                data = {}
+            # This host's slice is replaced wholesale; the others are left
+            # alone, since each host scans on its own schedule (#7).
+            data[host] = advisories
+            atomic_write_json(path, data)
+        except Exception as e:
+            self._debug(f"  (could not save version advisories: {e})")
+
+    def read_advisories(self):
+        """All hosts' advisories as {display_name: {...}}."""
+        path = getattr(self.config, "advisories_file", "")
+        if not path or not os.path.exists(path):
+            return {}
+        try:
+            with open(path) as f:
+                data = json.load(f) or {}
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        from container_store import host_key, LOCAL_HOST
+        out = {}
+        for host, entries in data.items():
+            for name, info in (entries or {}).items():
+                out[host_key(host, name) if host != LOCAL_HOST else name] = info
+        return out
+
+    def _newer_version_available(self, registry, repository, tag):
+        """A higher SemVer tag than the one this container is pinned to.
+
+        Returns the tag string, or "" when there is nothing to say — which
+        covers the common cases: a moving tag like `:latest` (there is no
+        "newer" for it, the digest check already answers that), a tag that
+        does not parse as SemVer, and a registry that cannot be listed.
+
+        Deliberately advisory. Nothing downstream may treat this as a
+        pending update: the container is running exactly what its compose
+        file asks for.
+        """
+        try:
+            if self._parse_semver(tag) is None:
+                return ""
+            best, best_parsed = self.get_highest_semver_tag(registry, repository, tag)
+            cur = self._parse_semver(tag)
+            if not best_parsed or best_parsed[:3] <= cur[:3]:
+                return ""
+            return best
+        except Exception as e:
+            # Never let an advisory lookup break a check that had already
+            # succeeded.
+            self._debug(f"  (newer-version lookup failed: {str(e)[:80]})")
+            return ""
+
+    #: How many major versions ahead a candidate tag may be before it is
+    #: read as a different numbering scheme rather than a newer release.
+    MAX_PLAUSIBLE_MAJOR_JUMP = 3
+
     def get_highest_semver_tag(self, registry, repository, current_tag):
         """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
         version available on the registry that uses the same naming scheme
@@ -1205,21 +1284,57 @@ class UpdateChecker:
         candidates = []
         for t in tags:
             ts = t.strip()
-            # Must share the same prefix
-            if prefix and not ts.startswith(prefix):
-                continue
             parsed = self._parse_semver(ts)
             if parsed is None:
                 continue
-            # Skip pre-release / build-metadata variants
-            if parsed[3]:
+            # Prefixes must be EQUAL, not merely a starting substring —
+            # and an empty prefix is a prefix, not an absence of one. The
+            # old test read `if prefix and not ts.startswith(prefix)`, so a
+            # tag beginning with a digit (`4.6.5`, the common case) skipped
+            # the check entirely and matched anything the SemVer regex
+            # would swallow, including `arm64v8-…` since the pattern allows
+            # a leading `something-`.
+            #
+            # Measured on linuxserver/qbittorrent:4.6.5 before the fix:
+            # the highest "matching" tag came back as arm64v8-20.04.1 —
+            # an Ubuntu version, on the wrong architecture — and
+            # _is_major_bump therefore reported major=True for every
+            # ordinary patch update. Anyone running linuxserver images with
+            # major-confirmation on was being asked to confirm each one.
+            cm = self._SEMVER_RE.match(ts)
+            if not cm or ts[:cm.start("major")] != prefix:
+                continue
+            # The suffix is the same axis as the prefix, at the other end
+            # of the tag, and it was getting the same treatment: candidates
+            # carrying one were dropped outright, so `nextcloud:29.0.4-apache`
+            # was compared against the plain `32.0.13` — a different image
+            # variant. Measured. Equality, both ways: an `-apache` tag
+            # matches only `-apache` tags, and a bare tag matches only bare
+            # ones, which is what kept pre-releases out in the first place.
+            if (parsed[3] or "") != (cur[3] or ""):
                 continue
             candidates.append((parsed, ts))
         if not candidates:
             return None, None
         candidates.sort(reverse=True)
-        best_parsed, best_tag = candidates[0]
-        return best_tag, best_parsed
+        # Some repositories carry two numbering schemes under the same
+        # shape. linuxserver/qbittorrent tags both the application version
+        # (4.6.5) and its Ubuntu base (20.04.1); nothing in the tag text
+        # tells them apart. Taking the highest would answer "4.6.5 → 20.04.1"
+        # and, worse, make _is_major_bump hold every ordinary update for
+        # confirmation — measured before this guard.
+        #
+        # A HEURISTIC, and named as one: a real release series does not
+        # leap this far at once. Genuine major jumps are +1, occasionally
+        # +2 (radarr 5 → 6 is real and must survive). Anything far beyond
+        # that is much more likely to be a second scheme in the same
+        # repository. It can be wrong in both directions, which is why it
+        # only ever suppresses an advisory or a confirmation prompt and
+        # never causes an update to be applied.
+        for parsed, tag in candidates:
+            if parsed[0] - cur[0] <= self.MAX_PLAUSIBLE_MAJOR_JUMP:
+                return tag, parsed
+        return None, None
 
     def _get_local_repo_digests(self, image):
         """RepoDigests as Docker reports them — `repo@sha256:…`, prefix and
@@ -2269,6 +2384,10 @@ class UpdateChecker:
                         f"requested container(s) are running")
         self._debug(f"Checking {len(containers)} containers for updates...")
         updates = []
+        #: name -> {"current": tag, "newer": tag}. Advisory only: a pinned
+        #: version tag is doing exactly what its compose file asks for, and
+        #: nothing downstream may promote these into pending updates.
+        advisories = {}
         #: Containers whose registry check could not be completed this run.
         #: Their previously-known pending entries are carried over rather
         #: than dropped — see the write below.
@@ -2485,6 +2604,27 @@ class UpdateChecker:
                         else:
                             _vlog(f"    remote :{tag} version could not be read")
 
+                    # A pinned version tag is immutable, so its digest never
+                    # moves and this branch is reached forever — including
+                    # long after a newer version has shipped. "Up to date"
+                    # then means "this tag has not been rebuilt", which is
+                    # not what a reader hears (#33, @LeeNX, who asked for
+                    # exactly this to be explained and was answered on a
+                    # different question).
+                    #
+                    # Reported, never acted on: pinning 1.25.3 is a
+                    # statement of intent, and jumping to 1.26 unasked would
+                    # override it. The tag listing costs nothing against
+                    # Docker Hub's pull budget — measured: /tags/list
+                    # returns no ratelimit headers at all and leaves the
+                    # manifest budget untouched at 100/hour — and is cached
+                    # per repository per run, so twenty containers from five
+                    # repositories cost five listings.
+                    newer = self._newer_version_available(registry, repository, tag)
+                    if newer:
+                        advisories[c["name"]] = {"current": tag, "newer": newer}
+                        self._debug(f"  → Up to date on :{tag}, but {newer} exists")
+
             except Exception as e:
                 # Treated exactly like a failed registry check: the
                 # container keeps whatever pending entry it already
@@ -2493,6 +2633,12 @@ class UpdateChecker:
                 self._debug(f"  → Check FAILED: {e}")
                 failed_checks.add(c["name"])
                 continue
+        # Advisories are written on a full scan only. A single-container
+        # check knows nothing about the other containers, and replacing the
+        # whole file from it would erase every other entry.
+        if only is None:
+            self._save_advisories(advisories)
+
         # Save pending updates — atomic write (v1.22.1)
         from container_store import atomic_write_json, LOCAL_HOST
         # Which host these updates are about (#7). Single-host installs

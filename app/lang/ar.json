@@ -599,5 +599,6 @@
   "recovery_restored": "🔧 An update was interrupted mid-swap. {name} was left stopped under a backup name and has been restored and started.",
   "recovery_stale": "🔧 An update to {name} was interrupted more than a day ago and `{old}` is still there. Not touched — too old to act on safely.",
   "recovery_failed": "⚠️ An update to {name} was interrupted and `{old}` could not be restored automatically. It needs a hand.",
-  "recovery_gone": "⚠️ An update to {name} was interrupted and neither the container nor its backup is there any more."
+  "recovery_gone": "⚠️ An update to {name} was interrupted and neither the container nor its backup is there any more.",
+  "web_badge_newer_tt": "Pinned to {current}. Version {newer} exists on the registry — Docksentry will not switch to it, because the tag you pinned is what it keeps running. Change the tag in your compose file to move."
 }

@@ -599,5 +599,6 @@
   "recovery_restored": "🔧 Ein Update wurde mitten im Wechsel unterbrochen. {name} lag gestoppt unter einem Sicherungsnamen und wurde zurückgeholt und gestartet.",
   "recovery_stale": "🔧 Ein Update von {name} wurde vor über einem Tag unterbrochen, `{old}` liegt noch da. Nicht angefasst — zu alt, um noch gefahrlos einzugreifen.",
   "recovery_failed": "⚠️ Ein Update von {name} wurde unterbrochen und `{old}` liess sich nicht automatisch zurückholen. Das braucht einen Handgriff.",
-  "recovery_gone": "⚠️ Ein Update von {name} wurde unterbrochen; weder der Container noch seine Sicherung sind noch da."
+  "recovery_gone": "⚠️ Ein Update von {name} wurde unterbrochen; weder der Container noch seine Sicherung sind noch da.",
+  "web_badge_newer_tt": "Auf {current} festgelegt. In der Registry gibt es {newer} — Docksentry wechselt nicht dorthin, weil der festgelegte Tag gilt. Zum Wechseln den Tag in der Compose-Datei ändern."
 }
