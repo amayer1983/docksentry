@@ -5,7 +5,7 @@
 <h1 align="center">Docksentry</h1>
 
 <p align="center">
-Auto-update, monitor and manage Docker containers via interactive <b>Telegram bot</b>, <b>Web UI</b>, <b>Discord</b>, or <b>webhooks</b>. Auto-rollback on failed updates, alerts on crashes, OOM kills and failing healthchecks. 16 languages. Telegram is optional — runs fully headless.
+Watches <b>Docker</b> and <b>Podman</b> containers for new images and updates them, rolling back automatically when the new container fails its healthcheck. One instance manages several hosts over tcp:// or ssh://; container groups keep a stack's update order, including containers that share a VPN sidecar's network; and update policy, major-version confirmation, update windows and pinning are set per container. When something dies you get the exit code from the live event stream, host memory and load, what each container was using at that moment, and whether the kernel OOM-killed it. <b>Web UI</b>, <b>Telegram bot</b>, <b>Discord bot</b>, /metrics and a read-only JSON API all drive the same update engine — 16 languages, and Telegram is optional: it runs fully headless.
 </p>
 
 <p align="center">
@@ -24,8 +24,7 @@ Auto-update, monitor and manage Docker containers via interactive <b>Telegram bo
 > If you arrived here from a search result offering a download, you were somewhere else. Install with `docker pull` from the addresses above and nothing else.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-notification.jpg" alt="Update Notification" width="350">
-  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-result.jpg" alt="Update Result" width="350">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-updates-available.png" alt="Update notification in Telegram" width="400">
 </p>
 
 ## What's different
@@ -40,21 +39,32 @@ Most Docker auto-update tools either set-and-forget like Watchtower (no human in
 - **Maintenance mode** to pause everything while you tinker with the host (`/maintenance 2h`)
 - **Multi-bot setup** for several Docker hosts in one Telegram group, each labelled so you can tell them apart
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-update-result.png" alt="Update result reported back in Telegram" width="520">
+</p>
+
 Telegram is optional — Web UI alone is plenty for a single-host setup. Discord and generic webhook channels work in parallel.
 
 ## Features
 
-- **Automatic update detection** — compares image digests on a configurable cron schedule
-- **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update
+- **Docker and Podman** — set `CONTAINER_CLI=podman` and checks, updates, recreates, rollback, `podman compose` and image cleanup all go through Podman. Mounting the Podman socket where Docksentry expects the Docker one works too
+- **Multi-host** — one instance managing several machines over `tcp://` or `ssh://`, with per-host checks and pending queues, a host column in the Web UI and `@host` / `@all` targeting in the bots
+- **Automatic update detection** — compares image digests on a configurable cron schedule. A pinned version tag, whose digest never moves, gets an advisory badge when a newer version exists — advisory only, nothing is switched behind your back
+- **Container groups** — ordered updates for a stack: database before app, or Gluetun before the containers sharing its network namespace. Those are recreated against the head's *name* rather than its dead container ID, so they come back instead of being left stopped, and a failure in the group aborts the rest of it
+- **Update policies per container** — `all` / `minor` / `patch`, major-version confirmation, per-container update windows, and `MIN_IMAGE_AGE_DAYS` so you need not be the first to pull a new image
+- **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update. Container cards instead of a table below 700px
 - **Telegram bot** *(optional)* — full interactive control with inline buttons and 20+ commands
+- **Discord bot** — 27 slash commands and the same control surface, driven by the same update engine
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Home Assistant or any HTTP endpoint
 - **Native push channels** — ntfy, Gotify, Matrix, and Apprise (which fans out to ~100 further services)
+- **`/metrics` and a read-only JSON API** — Prometheus format and `GET /api/status`, both behind named `API_TOKENS` so a scraper never needs the Web UI password
 - **Headless mode** — run without Telegram; Web UI + Discord/Webhook is enough
 - **Per-container auto-update** — selected containers update without confirmation
 - **Pin/Freeze containers** — exclude containers from updates
 - **Auto-rollback** — failed updates automatically restore the previous container
-- **Container monitoring** — transition-based alerts for unhealthy containers, non-zero exits, OOM kills and crash-restarts; disk-space warnings with reclaim preview. Every event is kept in a persistent history you can browse on the Web UI History page or recall with `/events`
+- **Container monitoring** — transition-based alerts for unhealthy containers, non-zero exits, OOM kills and crash-restarts; disk-space warnings with reclaim preview. A crash alert carries the exit code taken from the runtime's live event stream (not from `inspect`, which reports 0 for a container the restart policy already brought back), the host's memory and load, what each container was using at the moment of death, and whether the kernel OOM-killed it. Every event is kept in a persistent history you can browse on the Web UI History page or recall with `/events`
+- **Audit trail** — who did what, through which front end, kept across restarts. Secrets are redacted before anything is written
 - **Docker Compose support** — native `docker compose pull/up` for Compose stacks
 - **Self-update** — the bot can update itself automatically
 - **Persistent settings** — Web UI changes survive restarts
@@ -405,9 +415,9 @@ Common pattern: broadcast `/selfupdate` so all hosts update together; target `/s
 
 This is a stepping stone, not a replacement for v2.0 multi-host: you still maintain N bot tokens, N Docksentry containers, N updates. But it makes "single chat, all hosts" usable today.
 
-### Experimental: real multi-host
+### Real multi-host
 
-*New in v1.62.0, and marked experimental on purpose: it's had no run on real multi-host hardware yet. Leave `DOCKER_HOSTS` unset and nothing about your install changes.*
+*New in v1.62.0. Since v2.0.0 the transports are driven for real rather than asserted — measured against a `docker:dind` over loopback and a real sshd with the socket mounted. What hasn't happened is anyone but me running it across several machines; [#7](https://github.com/amayer1983/docksentry/issues/7) is the place to say how it went. Leave `DOCKER_HOSTS` unset and nothing about your install changes.*
 
 One Docksentry, several hosts. Point it at the others with `DOCKER_HOSTS`:
 
@@ -419,6 +429,10 @@ environment:
 Each entry is `name:endpoint`, and the endpoint is whatever the container CLI takes for `-H`. A **TCP socket / [socket proxy](docs/security.md) is the simplest option** — the same pattern you'd use locally, no keys to manage. SSH endpoints work too and lean on the CLI's own SSH handling, so key-based login has to already succeed non-interactively for the user Docksentry runs as.
 
 The machine Docksentry runs on is always managed and is **not** listed. Leave `DOCKER_HOSTS` unset and everything behaves exactly as a single-host install — no host column, no `@` anywhere.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-multihost.png" alt="Update notification for a remote host, containers marked @nas" width="520">
+</p>
 
 **Aiming a command at a host** — append `@<host>`:
 
@@ -441,15 +455,30 @@ A write command that stayed local says so in its reply and points at `@<host>` /
 
 ## Web UI
 
-Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, a Container Events history (the same crash/OOM/health-flip log you get from `/events`), and full settings management — all in a dark-themed, mobile-responsive interface.
+Enable with `WEB_UI=true`. Provides status dashboard, container logs, update history, a Container Events history (the same crash/OOM/health-flip log you get from `/events`), an audit trail of who did what, and full settings management. The theme follows your system's light/dark preference and there's a toggle in the header; the screenshots below are the light one.
 
-**Checking for updates.** The **Check Updates** button above the container table runs the same check as `/check` and the cron schedule: every container, results in the pending list. Each row also has its own 🔍 button that checks just that container and tells you the outcome right there — handy when you only care about one image and don't want to wait for a full sweep, and the only way to get feedback at all if you run without Telegram or a webhook. Both refuse to start while an update is in progress, and while a check is already running, so a double-click can't produce two competing results. With `DEBUG=true` the per-container check also writes its full registry log — request URLs, status codes, redirects, full digests, resolved versions — to the browser console.
+**Checking for updates.** The **Check Updates** button above the container table runs the same check as `/check` and the cron schedule: every container, results in the pending list. Each row also has its own 🔎 button that checks just that container and tells you the outcome right there — handy when you only care about one image and don't want to wait for a full sweep, and the only way to get feedback at all if you run without Telegram or a webhook. Both refuse to start while an update is in progress, and while a check is already running, so a double-click can't produce two competing results. With `DEBUG=true` the per-container check also writes its full registry log — request URLs, status codes, redirects, full digests, resolved versions — to the browser console.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-status.png" alt="Web UI Status" width="700">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-status.png" alt="Web UI status page: two hosts, version advisories, pending updates" width="700">
+</p>
+
+The `↑` badges are version advisories on pinned tags — a newer version exists, and Docksentry is telling you rather than acting on it. The `Host` column and the host filter only appear once `DOCKER_HOSTS` is set.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-history.png" alt="Web UI history page: update history, container events, audit trail" width="700">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-logs.png" alt="Web UI Logs" width="700">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-logs.png" alt="Web UI logs page" width="700">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-settings.png" alt="Web UI settings page" width="700">
+</p>
+
+Below 700px the container table becomes cards, so the actions are on screen instead of behind a sideways swipe:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/webui-mobile-cards.png" alt="Container cards on a narrow screen" width="300">
 </p>
 
 See [Web UI Documentation](docs/web-ui.md) for details.
@@ -477,14 +506,26 @@ docker ps        # should show "(healthy)" after ~3 minutes of uptime
 | Channel | Updates | Results | Interactive |
 |---------|:-:|:-:|:-:|
 | **Telegram** | buttons | detailed | full control |
-| **Discord** | rich embeds | rich embeds | via Web UI |
+| **Discord** | rich embeds | rich embeds | 27 slash commands |
 | **Webhook** | JSON | JSON | via Web UI |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/discord.png" alt="Discord Notifications" width="400">
 </p>
 
-See [Notification Setup](docs/notifications.md) for Discord and Webhook configuration.
+Updates are only half of what arrives. A container that dies gets an alert with the exit code, the host's memory and load, which container was consuming what at that moment, and — when the event stream saw it — whether the kernel was the one that killed it:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-crash-alert.png" alt="Crash alert with host memory, host load, OOM verdict and top consumers" width="520">
+</p>
+
+Health flips are reported the same way, in both directions, and the unhealthy message quotes what the healthcheck itself said — usually the fastest way to the cause:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-unhealthy-recovered.png" alt="Unhealthy alert quoting the healthcheck output, followed by the recovery message" width="520">
+</p>
+
+See [Notification Setup](docs/notifications.md) for Discord and Webhook configuration, and [Container Monitoring](docs/monitoring.md) for what triggers each alert.
 
 ## Documentation
 
@@ -510,9 +551,9 @@ Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what 
 - **Multi-host management** — one instance managing several Docker or Podman hosts (`DOCKER_HOSTS=name:endpoint`, TCP or SSH), with per-host pending queues, host-prefixed notifications, a host selector in the Web UI, and `@host` / `@all` command targeting. Landed in v1.62.0.
 - **Interactive Discord bot** — 27 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
 
-**Shipped since:** an audit-free read-only surface — `/metrics` in Prometheus format and `GET /api/status` as JSON, both behind `API_TOKENS` so a scraper never needs the Web UI password. Plus `MONITOR_ONLY_CONTAINERS` for containers another tool owns, `MIN_IMAGE_AGE_DAYS` so you need not be first to pull a new release, and registry mirrors for lookups.
+**Shipped since:** an audit-free read-only surface — `/metrics` in Prometheus format and `GET /api/status` as JSON, both behind `API_TOKENS` so a scraper never needs the Web UI password. Plus `MONITOR_ONLY_CONTAINERS` for containers another tool owns, `MIN_IMAGE_AGE_DAYS` so you need not be first to pull a new release, registry mirrors for lookups, and the audit trail of who did what across the front ends — that one landed in v2.0.0 and lives on the Web UI History page.
 
-**Next.** Notification templates with per-channel routing — the one thing every comparable project's users ask for that Docksentry still builds in code. An audit trail of who did what across the three front-ends. And per-container resource figures on the status page, loaded after the page renders rather than making every load wait on `docker stats`.
+**Next.** Notification templates with per-channel routing — the one thing every comparable project's users ask for that Docksentry still builds in code. And per-container resource figures on the status page, loaded after the page renders rather than making every load wait on `docker stats`.
 
 Wishlist input and "+1"s welcome on [#2](https://github.com/amayer1983/docksentry/issues/2).
 
