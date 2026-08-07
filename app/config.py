@@ -102,6 +102,8 @@ PERSISTENT_KEYS = [
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
     "api_tokens",
+    "discord_bot_token", "discord_app_id", "discord_guild_id",
+    "discord_allowed_users",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -144,6 +146,10 @@ PERSISTENT_ENV_VARS = {
     "registry_mirrors": "REGISTRY_MIRRORS",
     "min_image_age_days": "MIN_IMAGE_AGE_DAYS",
     "api_tokens": "API_TOKENS",
+    "discord_bot_token": "DISCORD_BOT_TOKEN",
+    "discord_app_id": "DISCORD_APP_ID",
+    "discord_guild_id": "DISCORD_GUILD_ID",
+    "discord_allowed_users": "DISCORD_ALLOWED_USERS",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -193,6 +199,10 @@ PERSISTENT_ENV_DEFAULTS = {
     "registry_mirrors": [],
     "min_image_age_days": 0,
     "api_tokens": [],
+    "discord_bot_token": "",
+    "discord_app_id": "",
+    "discord_guild_id": "",
+    "discord_allowed_users": [],
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -213,10 +223,14 @@ LOGGABLE_PERSISTENT_KEYS = {
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
 }
-# NOT loggable, for the record: web_password, discord_webhook, webhook_url
-# (credentials / tokenised URLs) and telegram_topic_id +
-# telegram_allowed_users (personal data — main.py already prints only the
-# *count* of allowed users for the same reason).
+# NOT loggable, for the record: web_password, discord_webhook, webhook_url,
+# discord_bot_token (credentials / tokenised URLs) and telegram_topic_id +
+# telegram_allowed_users + discord_allowed_users + discord_guild_id +
+# discord_app_id (personal data, or identifiers for someone's private
+# server — main.py already prints only the *count* of allowed users for the
+# same reason). The allow-list above means none of these needed adding
+# anywhere to be treated as secret; they are named here so that a later
+# reader can see the decision was made rather than missed.
 
 # Which Settings tab a key is edited on. Only meaningful for keys that
 # actually have a field in the Web UI form — a warning that doesn't say
@@ -249,6 +263,10 @@ PERSISTENT_SETTINGS_TAB = {
     "telegram_allowed_users": "Channels",
     "bot_label": "Channels",
     "discord_webhook": "Channels",
+    "discord_bot_token": "Channels",
+    "discord_app_id": "Channels",
+    "discord_guild_id": "Channels",
+    "discord_allowed_users": "Channels",
     "webhook_url": "Channels",
 }
 
@@ -323,8 +341,24 @@ class Config:
         self.docker_hosts = parse_docker_hosts(docker_hosts)
         # Interactive Discord bot (v2.0). Distinct from DISCORD_WEBHOOK,
         # which only pushes notifications one way — a bot token lets
-        # Docksentry receive slash commands. Env-only: a bot token is a
-        # credential and has no business in the settings file on disk.
+        # Docksentry receive slash commands.
+        #
+        # These were env-only until v2.3.0, on the stated grounds that "a
+        # bot token is a credential and has no business in the settings
+        # file on disk". That reasoning does not survive looking at the
+        # file: settings.json already holds web_password in plaintext and
+        # webhook URLs whose path *is* the credential, and it is written
+        # 0600 precisely because of that. The rule was never "no secrets
+        # in settings.json"; it was "no secrets in settings.json except
+        # the ones already there", which is not a rule.
+        #
+        # What the env-only stance did cost was real: setting the bot up
+        # meant editing compose and recreating the container, and
+        # @NotRetarded wrote a screenshot-by-screenshot guide (#57) to get
+        # people through it before asking whether it could just be in the
+        # interface. It can. The token is masked in the form, never
+        # rendered back into HTML, excluded from the loggable allow-list,
+        # and redacted in the audit trail.
         self.discord_bot_token = (discord_bot_token or "").strip()
         self.discord_app_id = (discord_app_id or "").strip()
         self.discord_guild_id = (discord_guild_id or "").strip()

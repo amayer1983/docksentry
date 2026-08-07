@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.3.0] - 2026-08-07
+
+### Added
+- **The Discord bot is set up in the interface now, not only in compose.** @NotRetarded wrote a screenshot-by-screenshot guide for getting the bot running from environment variables (#57) and then asked whether the settings could just live in the Web UI. They can: bot token, application ID, server ID and the allowed-user list all sit under **Settings › Channels**. Saving restarts the bot and says what happened — connected, token rejected (with what Discord actually replied), server ID missing, or slash-command registration failed. That last part is the point of the exercise: `start()` always logged its reasons, which was fine while the only way to change the credentials was editing compose and recreating the container, and useless the moment you can type a token into a form and the console is somewhere else. The token is masked in the field, never rendered back into the HTML, kept off the loggable allow-list and redacted in the audit trail; removing it is a separate checkbox, because an empty password field has always meant "unchanged" here and cannot also mean "delete". These were env-only on the stated grounds that a credential has no business in settings.json — which does not survive looking at the file, since it already holds the Web password in plaintext and webhook URLs whose path *is* the credential, and is written 0600 for exactly that reason.
+
+### Fixed
+- **No text field on the Settings page could be emptied.** Setting a Discord webhook and then clearing the field left the old URL in place: the page said "saved", the field came back filled, and nothing said why. `parse_qs` drops `name=` with an empty value unless asked not to, and every branch in the save handler is guarded by `if "field" in params` — so the one submission that means "clear this" looked exactly like the field had never been sent. The same for the generic webhook URL, the Telegram topic ID, both allowed-user lists, the bot label and the quiet hours. Found while adding the Discord fields, because a server ID that cannot be cleared is a bot that cannot be pointed at a different server.
+- **A settings save could answer with a closed connection.** `quote` was imported inside the save handler, which made it a local name for the whole function, so a second use further down raised `UnboundLocalError` unless the first branch happened to run. Two more local imports of the same shape are gone with it.
+
 ## [2.2.1] - 2026-08-07
 
 ### Fixed

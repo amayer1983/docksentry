@@ -379,12 +379,54 @@ def main():
         print(f"Discord bot failed to start (non-fatal): {e}")
         discord_bot = None
 
+    def restart_discord():
+        """Stop the running Discord bot and start one from the current
+        config. Returns `(running, code, detail)` for the Web UI.
+
+        The construction lives here rather than in `web_ui`, because this
+        is the only place that holds everything a DiscordBot needs — the
+        store, the engine, the host registry, the checker and the Telegram
+        bot it hands a queued self-update to. Handing the Web UI a
+        callback keeps it from having to learn any of that; it knows the
+        credentials changed and nothing else.
+
+        Never raises. A Discord problem must not be able to take down a
+        settings save — the same rule that makes the start-up block above
+        non-fatal, and there it matters even more: the settings are
+        already written to disk by the time this runs.
+        """
+        old = _discord_ref.pop("bot", None)
+        if old:
+            try:
+                old.stop()
+            except Exception as e:
+                print(f"Discord bot stop failed (non-fatal): {e}")
+        try:
+            fresh = DiscordBot(config, store, engine, hosts=host_registry,
+                               checker=checker, telegram=bot)
+            fresh.audit = audit_log
+            if not fresh.enabled:
+                # No token, or a token with no application id. This is
+                # also how the bot is switched OFF from the interface:
+                # clear the token, save, and nothing is left running.
+                return False, "disabled", ""
+            if fresh.start():
+                _discord_ref["bot"] = fresh
+                warn = fresh.last_warning or ("", "")
+                return True, warn[0], warn[1]
+            code, detail = fresh.last_error or ("error", "")
+            return False, code, detail
+        except Exception as e:
+            print(f"Discord bot restart failed (non-fatal): {e}")
+            return False, "error", str(e)[:200]
+
     # Start Web UI if enabled
     if config.web_ui:
         from web_ui import WebUI
         web = WebUI(config, checker, bot, store, config.web_port,
                     config.web_password, backend=backend,
-                    hosts=host_registry)
+                    hosts=host_registry,
+                    restart_discord=restart_discord)
         web.start()
 
     # Version + debug state up front — the container log is often the only

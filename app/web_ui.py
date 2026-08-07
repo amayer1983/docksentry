@@ -12,7 +12,7 @@ import os
 import subprocess
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from config import PERSISTENT_KEYS
 from link_resolver import LinkResolver
@@ -370,8 +370,17 @@ class _ReplayedBody:
 
 
 def create_handler(config, checker, bot, store, password=None, backend=None,
-                   hosts=None):
-    """Create a request handler with access to app components."""
+                   hosts=None, restart_discord=None):
+    """Create a request handler with access to app components.
+
+    `restart_discord` is supplied by `main` and is the only way this
+    module can bring the Discord bot up on new credentials. It stays a
+    callback rather than an import because building a DiscordBot needs
+    the store, the engine, the host registry, the checker and the
+    Telegram bot, and none of that belongs in a request handler. Absent
+    (render tests, anything that builds a handler directly) the settings
+    save simply writes the values and says a restart is needed.
+    """
 
     # Container CLI seam (v2 groundwork). Resolved here once so the read
     # views can go through `backend`; defaulting keeps existing callers
@@ -627,7 +636,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             """
             if self.headers.get("Authorization", "").startswith("Bearer "):
                 return True
-            from urllib.parse import urlparse, parse_qs
             return bool((parse_qs(urlparse(self.path).query).get("token") or [""])[0].strip())
 
         def _api_token_name(self):
@@ -657,7 +665,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if auth.startswith("Bearer "):
                 supplied = auth[7:].strip()
             if not supplied:
-                from urllib.parse import urlparse, parse_qs
                 q = parse_qs(urlparse(self.path).query)
                 supplied = (q.get("token") or [""])[0].strip()
             if not supplied:
@@ -1585,7 +1592,25 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if path == "/settings":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
-                params = parse_qs(body)
+                # keep_blank_values, or no text field on this page can
+                # ever be emptied. parse_qs drops `name=` with an empty
+                # value by default, so `if "discord_webhook" in params`
+                # was False for exactly the submission that meant "clear
+                # it" — the page said "saved", the field came back
+                # filled, and nothing said why. Measured: setting a
+                # Discord webhook and then clearing the field left the
+                # old URL in settings.json. Same for the webhook URL,
+                # the Telegram topic id, the allowed-user lists, the bot
+                # label and the quiet hours.
+                #
+                # Every branch below was walked before this changed.
+                # Nothing breaks on an empty string: the numeric fields
+                # already swallow the ValueError from int(""), `language`
+                # and `cron_schedule` ignore a value they cannot use,
+                # `web_password` treats empty as "unchanged" on purpose,
+                # and _validate_webhook_url("") returns ok — an empty
+                # webhook is how you turn one off.
+                params = parse_qs(body, keep_blank_values=True)
 
                 # --- Validate before mutating any state ---
                 errors = []
@@ -1606,7 +1631,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     if not ok:
                         errors.append(f"Webhook URL: {err}")
                 if errors:
-                    from urllib.parse import quote
+                    # `quote` comes from the module-level import. It used
+                    # to be imported right here, which made it a local of
+                    # do_POST for the whole function body — so a second
+                    # use further down was an UnboundLocalError until this
+                    # branch happened to run first. Measured: the settings
+                    # POST answered with a closed connection.
                     self._send_redirect("/settings?error=" + quote(" | ".join(errors)))
                     return
 
@@ -1753,10 +1783,65 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     if new_pw:
                         config.web_password = new_pw
 
+                # ── Interactive Discord bot (#57, @NotRetarded) ──────
+                # Setting this up used to mean editing compose and
+                # recreating the container; he wrote a screenshot guide to
+                # walk people through it before asking whether it could
+                # just live here. `_discord_changed` decides afterwards
+                # whether the bot has to be restarted, so a save on any
+                # other tab never touches a working bot.
+                _discord_before = (config.discord_bot_token,
+                                   config.discord_app_id,
+                                   config.discord_guild_id,
+                                   list(config.discord_allowed_users or []))
+                # The token behaves like web_password: empty means "leave
+                # it as it is", never "clear it", because the field is
+                # rendered blank on every page load and a save from any
+                # other tab would otherwise wipe it. Clearing is an
+                # explicit act — the checkbox below.
+                if "discord_bot_token" in params:
+                    new_token = params["discord_bot_token"][0].strip()
+                    if new_token:
+                        config.discord_bot_token = new_token
+                if "discord_bot_token_clear" in params:
+                    config.discord_bot_token = ""
+                if "discord_app_id" in params:
+                    config.discord_app_id = params["discord_app_id"][0].strip()
+                if "discord_guild_id" in params:
+                    config.discord_guild_id = params["discord_guild_id"][0].strip()
+                if "discord_allowed_users" in params:
+                    raw = params["discord_allowed_users"][0]
+                    config.discord_allowed_users = [
+                        u.strip() for u in raw.replace(";", ",").split(",")
+                        if u.strip()
+                    ]
+                _discord_changed = _discord_before != (
+                    config.discord_bot_token, config.discord_app_id,
+                    config.discord_guild_id,
+                    list(config.discord_allowed_users or []))
+
                 # Persist all changes
                 config.save_persistent()
 
-                self._send_redirect("/settings?saved=1")
+                # Restart AFTER the write, never before: if the bot fails
+                # to come up the values still have to be on disk, or the
+                # user loses what he just typed and has no way to correct
+                # a typo.
+                _q = "/settings?saved=1"
+                if _discord_changed:
+                    if restart_discord is None:
+                        # No callback — a handler built outside main().
+                        # Saved, but nothing here can act on it.
+                        _q += "&discord=restart_needed"
+                    else:
+                        ok, code, detail = restart_discord()
+                        if ok and not code:
+                            _q += "&discord=ok"
+                        else:
+                            _q += "&discord=" + quote(code or "error")
+                            if detail:
+                                _q += "&discord_detail=" + quote(detail[:200])
+                self._send_redirect(_q)
             elif path == "/api/update":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -4338,6 +4423,56 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                        t("web_env_override_tt", var=o["var"], value=o["env"]))
                 return f' <span class="env-mark" title="{_e(tip)}">env</span>'
 
+            # ── What happened to the Discord bot on the last save ────
+            # The bot is started on a background thread and its failures
+            # are console output, which is exactly where nobody is looking
+            # when they have just typed a token into a web form. The POST
+            # handler puts a closed set of codes in the query string and
+            # this turns them into a sentence. `discord_detail` is
+            # whatever Discord's API actually said — untranslated on
+            # purpose, because it is a quote, and escaped like any other
+            # value that came in over the wire.
+            # getattr, because the render tests build a handler with
+            # __new__ and never give it a path — and a settings page that
+            # cannot be rendered without a live request is a page that
+            # cannot be tested.
+            _dq = parse_qs(urlparse(getattr(self, "path", "") or "").query)
+            _dcode = (_dq.get("discord", [""])[0] or "").strip()
+            _ddetail = (_dq.get("discord_detail", [""])[0] or "").strip()
+            _dstyles = {
+                "ok": ("var(--success)", t("web_discord_bot_started")),
+                "disabled": ("var(--text-muted)", t("web_discord_bot_off")),
+                "guild": ("var(--warn)", t("web_discord_bot_no_guild")),
+                "token": ("var(--danger)", t("web_discord_bot_bad_token")),
+                "register": ("var(--warn)", t("web_discord_bot_no_commands")),
+                "restart_needed": ("var(--text-muted)",
+                                   t("web_discord_bot_restart_needed")),
+                "error": ("var(--danger)", t("web_discord_bot_error")),
+            }
+            discord_bot_notice = ""
+            if _dcode in _dstyles:
+                _col, _msg = _dstyles[_dcode]
+                _extra = (f' <span style="opacity:.75">({_e(_ddetail)})</span>'
+                          if _ddetail else "")
+                discord_bot_notice = (
+                    f'<p style="font-size:13px;color:{_col};margin:0 0 8px">'
+                    f'{_e(_msg)}{_extra}</p>')
+
+            # Clearing the token needs its own act. The field is rendered
+            # blank on every load — a saved secret is never written back
+            # into HTML — so "empty means unchanged" is the only safe
+            # reading of an empty field, and that leaves no way to say
+            # "remove it". Hence the checkbox, and only when there is
+            # something to remove.
+            discord_clear_row = ""
+            if config.discord_bot_token:
+                discord_clear_row = (
+                    '<div class="form-checkbox-row">'
+                    '<input type="checkbox" name="discord_bot_token_clear" '
+                    'id="cb-discord-clear" form="settings-form">'
+                    f'<label for="cb-discord-clear">{t("web_discord_token_clear")}'
+                    f' {help_(t("web_discord_token_clear_help"))}</label></div>')
+
             content = f"""
 <div class="card">
 <h2>{t("web_settings")}</h2>
@@ -4578,6 +4713,32 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div style="display:flex;gap:8px">
     <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="settings-form">
     <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+
+  <!-- ── Interaktiver Discord-Bot (#57) ──────────────── -->
+  <h3 style="font-size:14px;color:var(--accent);margin:16px 0 8px">{t("web_discord_bot_title")}</h3>
+  <p style="font-size:13px;color:var(--text-muted);margin:0 0 8px">{t("web_discord_bot_intro")}</p>
+  {discord_bot_notice}
+
+  <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>
+  <input type="password" name="discord_bot_token" value="" autocomplete="new-password"
+         placeholder="{_e(t('web_discord_token_set') if config.discord_bot_token else t('web_discord_token_placeholder'))}" form="settings-form">
+  {discord_clear_row}
+
+  <div class="grid">
+    <div>
+      <label>{t("web_discord_app_id")} {help_(t("web_discord_app_id_help"))}{env_("discord_app_id")}</label>
+      <input type="text" name="discord_app_id" value="{_e(config.discord_app_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="settings-form">
+    </div>
+    <div>
+      <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
+      <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="settings-form">
+    </div>
+  </div>
+
+  <div class="adv-only">
+    <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
+    <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="settings-form">
   </div>
 </div>
 
@@ -5053,11 +5214,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
 class WebUI:
     def __init__(self, config, checker, bot, store, port=8080, password="",
-                 backend=None, hosts=None):
+                 backend=None, hosts=None, restart_discord=None):
         self.config = config
         self.port = port
         self.handler = create_handler(config, checker, bot, store,
-                                      password or None, backend, hosts)
+                                      password or None, backend, hosts,
+                                      restart_discord=restart_discord)
         self.server = None
         self.thread = None
 

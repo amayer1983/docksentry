@@ -68,13 +68,23 @@ def main():
     # string, which is where the settings markup lives. If the form is not
     # empty the earlier checks have already said so; bail rather than
     # raising, so the report stays readable.
+    # The region starts at `def _page_settings`, not at the form tag.
+    # Some controls are assembled into a variable a few lines above the
+    # template and interpolated in — the "remove the saved Discord bot
+    # token" checkbox is one, because it is only offered when there is a
+    # token to remove. Those are as much part of the page as the ones
+    # written inline, and a region that stopped at the template start
+    # reported the checkbox as a field the handler reads and the page
+    # never sends, which was the test being short-sighted rather than
+    # the page being wrong.
     marker = 'id="settings-form"></form>'
     if marker not in src:
         checks["the settings form is empty"] = False
         region = ""
     else:
         i = src.index(marker)
-        region = src[i:src.index('"""', i)]
+        top = src.rindex("def _page_settings", 0, i)
+        region = src[top:src.index('"""', i)]
 
     # Controls belonging to one of the page's own small POST forms are
     # exempt — those submit to /api/window, /api/maintenance and friends.

@@ -31,6 +31,9 @@ MISSING = "/nonexistent/docksentry-test"
 # the HTML, the field leaked it.
 SECRET_PW = "SUPERSECRETpw-should-never-render-987"
 
+# Same for the Discord bot token, which moved into this form in v2.3.0.
+SECRET_DISCORD_TOKEN = "MTIzNDU2.SECRETdiscord-should-never-render-654"
+
 
 def _config():
     return types.SimpleNamespace(
@@ -64,6 +67,13 @@ def _config():
         bot_label="",
         discord_webhook="",
         webhook_url="",
+        # The interactive Discord bot (#57). The token is the second
+        # secret on this page and gets the same scrutiny as the
+        # password below — it is set to a value the test hunts for.
+        discord_bot_token=SECRET_DISCORD_TOKEN,
+        discord_app_id="1234567890123456789",
+        discord_guild_id="9876543210987654321",
+        discord_allowed_users=[],
         web_password=SECRET_PW,
         # env_() calls this for every field — no env overrides in the test.
         env_override=lambda key: None,
@@ -139,6 +149,37 @@ def main():
     checks["monitor_interval shows the current value with a 15s floor"] = (
         'name="monitor_interval_seconds" value="60"' in notifs
         and 'min="15"' in notifs)
+
+    # ── Channels tab: the interactive Discord bot (#57) ──────────────
+    # @NotRetarded wrote a screenshot-by-screenshot guide for setting the
+    # bot up from environment variables, then asked whether it could just
+    # be in the interface. These are the fields that answer that.
+    channels = pane(html, "channels")
+    checks["Discord bot token field is in the Channels tab"] = (
+        'name="discord_bot_token"' in channels)
+    checks["bot token value is NOT rendered anywhere in the HTML"] = (
+        SECRET_DISCORD_TOKEN not in html)
+    checks["bot token field is type=password and renders empty"] = (
+        'type="password" name="discord_bot_token" value=""' in channels)
+    checks["a saved token is signalled by the placeholder, not the value"] = (
+        "leave empty = unchanged" in channels)
+    checks["a saved token offers an explicit way to remove it"] = (
+        'name="discord_bot_token_clear"' in channels)
+    checks["application id is in the Channels tab, with its value"] = (
+        'name="discord_app_id" value="1234567890123456789"' in channels)
+    checks["server id is in the Channels tab, with its value"] = (
+        'name="discord_guild_id" value="9876543210987654321"' in channels)
+    checks["the allowed-user list is in the Channels tab"] = (
+        'name="discord_allowed_users"' in channels)
+    # Every one of them has to reach the (empty) settings form by id —
+    # the trap test_form_nesting.py exists for.
+    _dc_fields = ("discord_bot_token", "discord_app_id",
+                  "discord_guild_id", "discord_allowed_users")
+    checks["every Discord field associates with the settings form"] = all(
+        f'name="{f}"' in channels
+        and 'form="settings-form"' in channels[channels.index(f'name="{f}"'):
+                                               channels.index(f'name="{f}"') + 400]
+        for f in _dc_fields)
 
     # ── None of the five leaked into a different tab ─────────────────
     checks["password field is not on the Updates tab"] = (

@@ -323,6 +323,21 @@ class DiscordBot:
         self.rest = DiscordREST(self.token, log=log) if self.token else None
         self.gateway = None
         self._thread = None
+        #: Why the last `start()` returned False, as `(code, detail)`.
+        #: Codes are a closed set — "disabled", "guild", "token" — so the
+        #: Web UI can translate them; `detail` carries whatever the API
+        #: actually said and is shown verbatim next to the translation.
+        #:
+        #: `start()` already logged every one of these, which was enough
+        #: while the credentials could only come from the environment: you
+        #: edited compose, recreated the container, and the log was right
+        #: in front of you. Once they can be typed into the settings form
+        #: the console is somewhere else entirely, and "nothing happened"
+        #: is the worst possible answer to a mistyped token.
+        self.last_error = None
+        #: Same shape, for a start that succeeded with something worth
+        #: saying anyway — currently only a failed command registration.
+        self.last_warning = None
 
     @property
     def enabled(self):
@@ -332,7 +347,10 @@ class DiscordBot:
 
     # ── lifecycle ─────────────────────────────────────────────────
     def start(self):
+        self.last_error = None
+        self.last_warning = None
         if not self.enabled:
+            self.last_error = ("disabled", "")
             return False
         if not (self.guild_id or "").strip():
             # Refusing to start is the honest behaviour. Connecting would
@@ -344,6 +362,7 @@ class DiscordBot:
                      "It is required — it is what restricts the bot to your "
                      "server. Copy it from Discord (Developer Mode on, "
                      "right-click the server name → Copy Server ID).")
+            self.last_error = ("guild", "")
             return False
         try:
             me = self.rest.me()
@@ -352,6 +371,7 @@ class DiscordBot:
             # A bad token is a configuration problem, not a transient
             # one — say so plainly instead of reconnecting forever.
             self.log(f"Discord bot disabled: token rejected ({e})")
+            self.last_error = ("token", str(e))
             return False
         try:
             self.rest.register_commands(self.application_id,
@@ -363,6 +383,12 @@ class DiscordBot:
             # Not fatal: the commands may already be registered from a
             # previous run, and the gateway half still works.
             self.log(f"Discord command registration failed: {e}")
+            # Not an error — the gateway half still works and the commands
+            # may already be registered from a previous run — but the one
+            # case where it matters is a first-time setup, where it means
+            # the slash commands never appeared. Kept apart from
+            # `last_error` so "the bot is up" stays a straight answer.
+            self.last_warning = ("register", str(e))
 
         self.gateway = DiscordGateway(self.token, on_event=self._on_event,
                                       log=self.log)
