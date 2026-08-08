@@ -10,6 +10,7 @@ import ipaddress
 import json
 import os
 import subprocess
+import sys
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, urlparse
@@ -5282,6 +5283,53 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     return WebHandler
 
 
+#: Errors that mean "the client went away", not "Docksentry is broken".
+#: A browser produces these routinely — it abandons a request when you
+#: navigate away, cancels a speculative connection it decided not to use,
+#: or closes a tab while a response is still being written.
+_CLIENT_GONE = (ConnectionResetError, ConnectionAbortedError,
+                BrokenPipeError, TimeoutError)
+
+
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that does not shout about a client hanging up.
+
+    socketserver's `handle_error` prints a full traceback to stderr for
+    any exception out of a request thread, headed "Exception occurred
+    during processing of request from …". For a client that reset the
+    connection that is thirteen lines of Python internals describing
+    something entirely normal, and it lands in `docker logs` next to
+    everything that is actually wrong.
+
+    @NotRetarded filed it as a bug (#58) — reasonably, because it looks
+    exactly like one:
+
+        ConnectionResetError: [Errno 104] Connection reset by peer
+          File ".../http/server.py", line 408, in handle_one_request
+            self.raw_requestline = self.rfile.readline(65537)
+
+    Nothing there says "your browser closed a socket". So the traceback
+    was the defect, not the reset: a log line that sends someone to open
+    an issue about a healthy system has cost them time and told them
+    nothing. Client-gone errors now produce one line, and only in debug;
+    everything else keeps the full traceback, because anything else out
+    of a request thread IS a bug and hiding it would be worse than the
+    noise.
+    """
+
+    #: Set by WebUI.start() so the quiet line can be gated on DEBUG.
+    debug = False
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, _CLIENT_GONE):
+            if self.debug:
+                print(f"Web UI: client {client_address[0]} closed the "
+                      f"connection ({type(exc).__name__}) — harmless")
+            return
+        super().handle_error(request, client_address)
+
+
 class WebUI:
     def __init__(self, config, checker, bot, store, port=8080, password="",
                  backend=None, hosts=None, restart_discord=None):
@@ -5294,7 +5342,8 @@ class WebUI:
         self.thread = None
 
     def start(self):
-        self.server = ThreadingHTTPServer(("0.0.0.0", self.port), self.handler)
+        self.server = _QuietHTTPServer(("0.0.0.0", self.port), self.handler)
+        self.server.debug = bool(getattr(self.config, "debug", False))
         # Shared by every request thread; AuditLog serialises its own
         # writes, so one instance is what we want rather than one per
         # request racing on the same file.
