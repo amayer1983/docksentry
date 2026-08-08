@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "Надсилає JSON усьому, що його приймає — вашому скрипту, платформі автоматизації, будь-чому.",
   "web_chan_sum_active": "активно",
   "web_chan_sum_off": "вимкнено",
-  "web_chan_sum_unset": "не налаштовано"
+  "web_chan_sum_unset": "не налаштовано",
+  "web_chan_telegram_env": "BOT_TOKEN і CHAT_ID"
 }

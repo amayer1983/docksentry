@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "Posts JSON to anything that accepts it — your own script, an automation platform, whatever you have.",
   "web_chan_sum_active": "active",
   "web_chan_sum_off": "off",
-  "web_chan_sum_unset": "not set up"
+  "web_chan_sum_unset": "not set up",
+  "web_chan_telegram_env": "BOT_TOKEN and CHAT_ID"
 }

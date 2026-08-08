@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "받아 주는 어디로든 JSON을 보냅니다 — 직접 만든 스크립트, 자동화 플랫폼, 무엇이든.",
   "web_chan_sum_active": "활성",
   "web_chan_sum_off": "꺼짐",
-  "web_chan_sum_unset": "미설정"
+  "web_chan_sum_unset": "미설정",
+  "web_chan_telegram_env": "BOT_TOKEN 및 CHAT_ID"
 }

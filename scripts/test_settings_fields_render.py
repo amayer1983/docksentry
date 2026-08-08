@@ -93,6 +93,10 @@ def _config():
         smtp_to="ops@example.com",
         smtp_tls="starttls",
         smtp_tls_verify=True,
+        channel_discord_enabled=True, channel_webhook_enabled=True,
+        channel_smtp_enabled=True, channel_ntfy_enabled=True,
+        channel_gotify_enabled=True, channel_matrix_enabled=True,
+        channel_apprise_enabled=True,
         # ntfy / Gotify / Matrix / Apprise (v2.4.0) — five more secrets
         # on the same page. Each is set to a value the test hunts for.
         ntfy_url="", ntfy_server="https://ntfy.sh", ntfy_topic="ds-alerts",

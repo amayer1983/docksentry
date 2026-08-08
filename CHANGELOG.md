@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.5.1] - 2026-08-08
+
+### Fixed
+- **The channel summary said "0 active" on an instance whose Telegram notifications were working.** It counted the seven notifier plugins and not Telegram, which sits on the same page and is a notification channel to anyone reading it — it is just the bot, configured by `BOT_TOKEN` and `CHAT_ID` rather than by a plugin. Found immediately after releasing 2.5.0, on a real instance: `0 aktiv · 0 aus · 7 nicht eingerichtet`, with Telegram delivering perfectly well. A confidently wrong answer is exactly what the state lines were added to stop, so it counts now, and its card carries a state line of its own so the count and the cards agree.
+
 ## [2.5.0] - 2026-08-08
 
 ### Added

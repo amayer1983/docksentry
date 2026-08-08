@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "Kabul eden her şeye JSON gönderir — kendi betiğiniz, bir otomasyon platformu, elinizde ne varsa.",
   "web_chan_sum_active": "etkin",
   "web_chan_sum_off": "kapalı",
-  "web_chan_sum_unset": "kurulmamış"
+  "web_chan_sum_unset": "kurulmamış",
+  "web_chan_telegram_env": "BOT_TOKEN ve CHAT_ID"
 }

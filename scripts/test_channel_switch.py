@@ -149,6 +149,21 @@ def main():
     for plugin in Notifier(cfg())._plugins:
         checks[f"{plugin.name} declares the fields it owns"] = bool(plugin.OWNS)
 
+    # ── Telegram counts, even though it is not a plugin ──────────
+    # It is on the same page and is a notification channel to anyone
+    # reading it, but it is the bot — BOT_TOKEN and CHAT_ID, not a
+    # notifier. Leaving it out produced "0 active" on an instance whose
+    # Telegram notifications were working, which is the kind of
+    # confidently wrong answer the state lines exist to stop. The count
+    # lives in the page, so this asserts the condition it uses.
+    import web_ui  # noqa: E402
+    src = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                            "web_ui.py"), encoding="utf-8").read()
+    i = src.index("_tg_on = bool(")
+    seg = src[i:i + 200]
+    checks["the summary counts Telegram from its own two variables"] = (
+        "bot_token" in seg and "chat_id" in seg)
+
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
         print(f"  {'PASS' if v else 'FAIL'} {k}")

@@ -5157,9 +5157,29 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     return 1
                 return 2
 
-            _n_active = sum(1 for n in _cards if _rank(n) == 0)
+            # Telegram is on this page and is a notification channel to
+            # anyone reading it, but it is not one of the notifier
+            # plugins — it is the bot, configured by BOT_TOKEN and
+            # CHAT_ID. Leaving it out of the count produced "0 active" on
+            # an instance whose Telegram notifications were working
+            # perfectly well, which is a confidently wrong answer of
+            # exactly the kind the state lines were added to stop.
+            #
+            # It has no switch and no fields of its own here, so it only
+            # ever contributes to "active" or "not set up".
+            _tg_on = bool(getattr(config, "bot_token", "")
+                          and getattr(config, "chat_id", ""))
+
+            telegram_state = (
+                f'<span style="color:var(--success)">{_e(t("web_chan_active"))}</span>'
+                if _tg_on else
+                f'<span style="color:var(--text-muted)">'
+                f'{_e(t("web_chan_incomplete", missing=t("web_chan_telegram_env")))}'
+                f'</span>')
+
+            _n_active = sum(1 for n in _cards if _rank(n) == 0) + int(_tg_on)
             _n_off = sum(1 for n in _cards if _rank(n) == 1)
-            _n_unset = sum(1 for n in _cards if _rank(n) == 2)
+            _n_unset = sum(1 for n in _cards if _rank(n) == 2) + int(not _tg_on)
             _summary = (
                 f'<p style="margin:8px 0 0;font-size:13px">'
                 f'<b style="color:var(--success)">{_n_active}</b> '
@@ -5193,6 +5213,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                        + "</div>\n" + f"""<div class="card">
 <h2>{t("web_conn_telegram")}</h2>
 <p class="card-intro">{t("web_conn_telegram_intro")}</p>
+<div style="margin:0 0 10px">{telegram_state}</div>
   <div class="adv-only">
     <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
     <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="conn-form">

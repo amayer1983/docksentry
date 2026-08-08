@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "किसी भी स्वीकार करने वाले को JSON भेजता है — आपकी अपनी स्क्रिप्ट, कोई ऑटोमेशन प्लेटफ़ॉर्म, जो भी हो।",
   "web_chan_sum_active": "सक्रिय",
   "web_chan_sum_off": "बंद",
-  "web_chan_sum_unset": "अनकॉन्फ़िगर"
+  "web_chan_sum_unset": "अनकॉन्फ़िगर",
+  "web_chan_telegram_env": "BOT_TOKEN और CHAT_ID"
 }

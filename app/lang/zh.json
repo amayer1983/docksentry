@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "向任何接受它的地方发送 JSON —— 你自己的脚本、自动化平台，手上有什么都行。",
   "web_chan_sum_active": "已启用",
   "web_chan_sum_off": "已关闭",
-  "web_chan_sum_unset": "未配置"
+  "web_chan_sum_unset": "未配置",
+  "web_chan_telegram_env": "BOT_TOKEN 和 CHAT_ID"
 }

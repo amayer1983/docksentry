@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "يرسل JSON إلى أي شيء يقبله — سكربتك الخاص، أو منصة أتمتة، أو ما لديك.",
   "web_chan_sum_active": "نشطة",
   "web_chan_sum_off": "مُطفأة",
-  "web_chan_sum_unset": "غير مُعدّة"
+  "web_chan_sum_unset": "غير مُعدّة",
+  "web_chan_telegram_env": "BOT_TOKEN و CHAT_ID"
 }

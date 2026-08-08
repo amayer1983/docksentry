@@ -710,5 +710,6 @@
   "web_conn_webhook_intro": "Invia JSON a qualunque cosa lo accetti — un tuo script, una piattaforma di automazione, quel che hai.",
   "web_chan_sum_active": "attivi",
   "web_chan_sum_off": "spenti",
-  "web_chan_sum_unset": "non configurati"
+  "web_chan_sum_unset": "non configurati",
+  "web_chan_telegram_env": "BOT_TOKEN e CHAT_ID"
 }
