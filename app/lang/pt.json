@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Os URL de destino do Apprise, separados por vírgulas. Costumam conter credenciais, por isso são tratados como segredo e nunca reapresentados.",
   "web_apprise_urls_placeholder": "p. ex. discord://…, tgram://…",
   "web_apprise_tag": "Etiqueta",
-  "web_apprise_tag_help": "Opcional — notificar apenas os destinos com esta etiqueta."
+  "web_apprise_tag_help": "Opcional — notificar apenas os destinos com esta etiqueta.",
+  "web_chan_active": "Ativo",
+  "web_chan_off": "Desligado",
+  "web_chan_incomplete": "Não ativo — falta: {missing}",
+  "web_chan_unset": "as definições",
+  "web_chan_enable": "Enviar por este canal",
+  "web_discord_webhook": "Webhook do Discord",
+  "web_webhook_url": "URL do webhook"
 }

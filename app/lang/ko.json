@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "쉼표로 구분한 Apprise 대상 URL. 대개 자격 증명이 들어 있어 비밀로 취급하며 다시 보여 주지 않습니다.",
   "web_apprise_urls_placeholder": "예: discord://…, tgram://…",
   "web_apprise_tag": "태그",
-  "web_apprise_tag_help": "선택 사항 — 이 태그가 붙은 대상에만 알립니다."
+  "web_apprise_tag_help": "선택 사항 — 이 태그가 붙은 대상에만 알립니다.",
+  "web_chan_active": "활성",
+  "web_chan_off": "꺼짐",
+  "web_chan_incomplete": "비활성 — 누락: {missing}",
+  "web_chan_unset": "설정",
+  "web_chan_enable": "이 경로로 보내기",
+  "web_discord_webhook": "디스코드 웹후크",
+  "web_webhook_url": "웹후크 URL"
 }

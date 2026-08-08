@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "De Apprise-doel-URL's, gescheiden door komma's. Die bevatten meestal inloggegevens, dus ze gelden als geheim en worden nooit teruggetoond.",
   "web_apprise_urls_placeholder": "bijv. discord://…, tgram://…",
   "web_apprise_tag": "Label",
-  "web_apprise_tag_help": "Optioneel — alleen de doelen met dit label melden."
+  "web_apprise_tag_help": "Optioneel — alleen de doelen met dit label melden.",
+  "web_chan_active": "Actief",
+  "web_chan_off": "Uitgeschakeld",
+  "web_chan_incomplete": "Niet actief — ontbreekt: {missing}",
+  "web_chan_unset": "de instellingen",
+  "web_chan_enable": "Via dit kanaal versturen",
+  "web_discord_webhook": "Discord-webhook",
+  "web_webhook_url": "Webhook-URL"
 }

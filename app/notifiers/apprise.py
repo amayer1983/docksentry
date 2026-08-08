@@ -68,6 +68,9 @@ class AppriseNotifier(BaseNotifier):
     name = "apprise"
     order = 50
 
+    OWNS = ("apprise_url", "apprise_urls", "apprise_tag")
+    REQUIRES = (("apprise_url", "web_apprise_url"),)
+
     def configured(self):
         return bool(_endpoint(self.config))
 

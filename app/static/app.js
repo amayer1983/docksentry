@@ -166,25 +166,25 @@
 // Sends a one-off test message via the current value in the input
 // field — uses whatever the user typed even before clicking Save.
 // Reports success/failure via a small floating toast.
-function dsTestWebhook(kind) {
-    var inputId = kind === 'discord' ? 'f-discord_webhook' : 'f-webhook_url';
-    var input = document.getElementById(inputId);
-    var url = (input && input.value || '').trim();
-    if (!url) {
-        dsToast('Enter a URL first', 'warn');
-        return;
-    }
+// ── Test one notification channel (Connections page) ──────────
+// Sends through the SAVED settings, not the values currently in the
+// form: e-mail alone has seven fields, and a test that only knew the
+// one you happened to be standing in would answer about a
+// configuration that does not exist anywhere. Save, then test.
+function dsTestChannel(name) {
     var btn = event && event.target;
     if (btn) { btn.disabled = true; btn.dataset.origText = btn.textContent; btn.textContent = '…'; }
-    fetch('/api/test_webhook', {
+    fetch('/api/test_channel', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'kind=' + encodeURIComponent(kind) + '&url=' + encodeURIComponent(url),
+        body: 'name=' + encodeURIComponent(name),
     }).then(function(r) {
         return r.json().catch(function() { return {ok: false, error: 'HTTP ' + r.status}; });
     }).then(function(data) {
-        if (data.ok) {
-            dsToast('Test message sent ✓', 'success');
+        if (data.ok && data.note) {
+            dsToast('Sent \u2713 — ' + data.note, 'warn');
+        } else if (data.ok) {
+            dsToast('Test message sent \u2713', 'success');
         } else {
             dsToast('Failed: ' + (data.error || 'unknown'), 'danger');
         }

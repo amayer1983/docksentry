@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Les URL de destination Apprise, séparées par des virgules. Elles contiennent généralement des identifiants : traitées comme un secret et jamais réaffichées.",
   "web_apprise_urls_placeholder": "p. ex. discord://…, tgram://…",
   "web_apprise_tag": "Étiquette",
-  "web_apprise_tag_help": "Facultatif — ne notifier que les destinations portant cette étiquette."
+  "web_apprise_tag_help": "Facultatif — ne notifier que les destinations portant cette étiquette.",
+  "web_chan_active": "Actif",
+  "web_chan_off": "Désactivé",
+  "web_chan_incomplete": "Inactif — il manque : {missing}",
+  "web_chan_unset": "ses réglages",
+  "web_chan_enable": "Envoyer par ce canal",
+  "web_discord_webhook": "Webhook Discord",
+  "web_webhook_url": "URL du webhook"
 }

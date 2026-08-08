@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "عناوين وجهات Apprise مفصولة بفواصل. تحتوي عادة على بيانات اعتماد، لذا تُعامَل كسرّ ولا تُعرض ثانية.",
   "web_apprise_urls_placeholder": "مثل ‎discord://…، ‎tgram://…",
   "web_apprise_tag": "الوسم",
-  "web_apprise_tag_help": "اختياري — إشعار الوجهات الحاملة لهذا الوسم فقط."
+  "web_apprise_tag_help": "اختياري — إشعار الوجهات الحاملة لهذا الوسم فقط.",
+  "web_chan_active": "نشط",
+  "web_chan_off": "مُطفأ",
+  "web_chan_incomplete": "غير نشط — ينقصه: {missing}",
+  "web_chan_unset": "إعداداته",
+  "web_chan_enable": "الإرسال عبر هذه القناة",
+  "web_discord_webhook": "ويب هوك ديسكورد",
+  "web_webhook_url": "عنوان الويب هوك"
 }

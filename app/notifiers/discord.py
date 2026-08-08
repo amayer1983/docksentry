@@ -12,6 +12,9 @@ class DiscordNotifier(BaseNotifier):
     name = "discord"
     order = 10
 
+    OWNS = ("discord_webhook",)
+    REQUIRES = (("discord_webhook", "web_discord_webhook"),)
+
     def configured(self):
         return bool(self.config.discord_webhook)
 

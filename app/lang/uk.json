@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Адреси призначення Apprise через кому. Зазвичай містять облікові дані, тому вважаються таємницею і ніколи не показуються назад.",
   "web_apprise_urls_placeholder": "напр. discord://…, tgram://…",
   "web_apprise_tag": "Мітка",
-  "web_apprise_tag_help": "Необов'язково — сповіщати лише цілі з цією міткою."
+  "web_apprise_tag_help": "Необов'язково — сповіщати лише цілі з цією міткою.",
+  "web_chan_active": "Активний",
+  "web_chan_off": "Вимкнено",
+  "web_chan_incomplete": "Не активний — бракує: {missing}",
+  "web_chan_unset": "його налаштувань",
+  "web_chan_enable": "Надсилати цим каналом",
+  "web_discord_webhook": "Вебхук Discord",
+  "web_webhook_url": "Адреса вебхука"
 }

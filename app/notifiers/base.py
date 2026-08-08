@@ -149,6 +149,18 @@ class BaseNotifier:
     def __init__(self, config):
         self.config = config
 
+    #: Every config attribute this channel reads. Used to isolate one
+    #: channel for a test send, and to know what "clear it" means.
+    OWNS = ()
+
+    #: `(attribute, i18n key)` for each value the channel cannot work
+    #: without. Drives the default `missing()`, which is what the page
+    #: uses to say *why* a channel is not active instead of leaving
+    #: someone to guess. A channel whose requirement is not a flat list
+    #: — ntfy accepts a topic URL *or* a server plus a topic — overrides
+    #: `missing()` and leaves this empty.
+    REQUIRES = ()
+
     def setting(self, attr, env_var, default=""):
         """This channel's `channel_setting`, for readability in methods."""
         return channel_setting(self.config, attr, env_var, default)
@@ -157,6 +169,37 @@ class BaseNotifier:
     def configured(self):
         """True when this channel has everything it needs to send."""
         raise NotImplementedError
+
+    @property
+    def enabled(self):
+        """The switch, independent of whether the channel is complete.
+
+        Defaults to on, so an install that upgrades into this keeps every
+        channel it had. Its whole point is turning a *working* channel off
+        for a while without clearing its settings — which, for the five
+        channels whose credentials are write-only in the interface, would
+        mean fetching a token again to turn it back on.
+        """
+        return bool(getattr(self.config, f"channel_{self.name}_enabled", True))
+
+    def active(self):
+        """Switched on AND complete — the only state that sends anything.
+
+        Kept apart from `configured()` on purpose. The page has to be able
+        to say "off" and "incomplete" differently, because they need
+        different things done about them, and a single boolean answers
+        neither question.
+        """
+        return self.enabled and self.configured()
+
+    def missing(self):
+        """Attributes from REQUIRES that are empty, in declaration order."""
+        out = []
+        for attr, key in self.REQUIRES:
+            value = getattr(self.config, attr, None)
+            if value is None or not str(value).strip():
+                out.append(key)
+        return out
 
     # ── payloads (same shapes the facade has always dispatched) ──────
     def send_updates_available(self, updates):

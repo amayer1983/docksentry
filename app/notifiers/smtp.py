@@ -12,6 +12,12 @@ class SmtpNotifier(BaseNotifier):
     name = "smtp"
     order = 30
 
+    OWNS = ("smtp_host", "smtp_port", "smtp_user", "smtp_password",
+            "smtp_from", "smtp_to", "smtp_tls")
+    REQUIRES = (("smtp_host", "web_smtp_host"),
+                ("smtp_from", "web_smtp_from"),
+                ("smtp_to", "web_smtp_to"))
+
     def configured(self):
         """E-mail is active once host + from + to are all set (#2)."""
         c = self.config

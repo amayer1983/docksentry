@@ -104,6 +104,22 @@ class NtfyNotifier(BaseNotifier):
     name = "ntfy"
     order = 40
 
+    OWNS = ("ntfy_url", "ntfy_server", "ntfy_topic", "ntfy_token",
+            "ntfy_user", "ntfy_password")
+
+    def missing(self):
+        """ntfy takes a topic URL *or* a server plus a topic, so its
+        requirement is not a flat list and the default cannot express it.
+        Naming both halves would be misleading — filling in either one is
+        enough — so it names the pair the user has not started."""
+        if self.configured():
+            return []
+        if (self.setting("ntfy_server", "NTFY_SERVER") or "").strip():
+            return ["web_ntfy_topic"]
+        if (self.setting("ntfy_topic", "NTFY_TOPIC") or "").strip():
+            return ["web_ntfy_server"]
+        return ["web_ntfy_url"]
+
     def configured(self):
         return bool(_topic_url(self.config))
 

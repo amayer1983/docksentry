@@ -67,6 +67,10 @@ class FakeConfig(types.SimpleNamespace):
             gotify_url="", gotify_token="",
             matrix_homeserver="", matrix_room="", matrix_token="",
             apprise_url="", apprise_urls="", apprise_tag="",
+            channel_discord_enabled=True, channel_webhook_enabled=True,
+            channel_smtp_enabled=True, channel_ntfy_enabled=True,
+            channel_gotify_enabled=True, channel_matrix_enabled=True,
+            channel_apprise_enabled=True,
             saves=0,
         )
         base.update(kw)
@@ -205,6 +209,29 @@ def main():
     post(cfg, "conn_page=1&ntfy_topic=&matrix_room=")
     checks["an emptied plain plugin field is cleared"] = (
         cfg.ntfy_topic == "" and cfg.matrix_room == "")
+
+    # ── the per-channel switches ─────────────────────────────────
+    # A switch is only rendered for a channel that is complete, so an
+    # incomplete one is absent from the form. Reading absence as "off"
+    # there would switch a channel off at the very moment it became
+    # usable — hence the `_shown` marker, and both directions checked.
+    cfg = FakeConfig()
+    post(cfg, "conn_page=1&channel_smtp_enabled_shown=1")
+    checks["an unticked switch that WAS shown turns the channel off"] = (
+        cfg.channel_smtp_enabled is False)
+    checks["…and the others are untouched"] = (
+        cfg.channel_ntfy_enabled is True)
+
+    cfg = FakeConfig(channel_smtp_enabled=False)
+    post(cfg, "conn_page=1&channel_smtp_enabled_shown=1"
+              "&channel_smtp_enabled=on")
+    checks["ticking it turns the channel back on"] = (
+        cfg.channel_smtp_enabled is True)
+
+    cfg = FakeConfig()
+    post(cfg, "conn_page=1&smtp_host=x")
+    checks["a switch that was never shown is left alone"] = (
+        cfg.channel_smtp_enabled is True)
 
     # ── the bot is restarted only when its own fields change ─────
     calls = []

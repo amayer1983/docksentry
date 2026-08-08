@@ -60,6 +60,10 @@ class GotifyNotifier(BaseNotifier):
     name = "gotify"
     order = 45
 
+    OWNS = ("gotify_url", "gotify_token")
+    REQUIRES = (("gotify_url", "web_gotify_url"),
+                ("gotify_token", "web_gotify_token"))
+
     def configured(self):
         return bool(_message_url(self.config) and _token(self.config))
 

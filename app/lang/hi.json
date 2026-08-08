@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Apprise लक्ष्य URL, अल्पविराम से अलग। इनमें आमतौर पर क्रेडेंशियल होते हैं, इसलिए इन्हें गोपनीय माना जाता है और कभी वापस नहीं दिखाया जाता।",
   "web_apprise_urls_placeholder": "जैसे discord://…, tgram://…",
   "web_apprise_tag": "टैग",
-  "web_apprise_tag_help": "वैकल्पिक — केवल इस टैग वाले लक्ष्यों को सूचित करें।"
+  "web_apprise_tag_help": "वैकल्पिक — केवल इस टैग वाले लक्ष्यों को सूचित करें।",
+  "web_chan_active": "सक्रिय",
+  "web_chan_off": "बंद",
+  "web_chan_incomplete": "सक्रिय नहीं — अनुपस्थित: {missing}",
+  "web_chan_unset": "इसकी सेटिंग्स",
+  "web_chan_enable": "इस माध्यम से भेजें",
+  "web_discord_webhook": "डिस्कॉर्ड वेबहुक",
+  "web_webhook_url": "वेबहुक URL"
 }

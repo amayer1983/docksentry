@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "The Apprise target URLs, comma-separated. These usually contain credentials, so they are treated as a secret and never shown back.",
   "web_apprise_urls_placeholder": "e.g. discord://…, tgram://…",
   "web_apprise_tag": "Tag",
-  "web_apprise_tag_help": "Optional — only notify the configured targets carrying this tag."
+  "web_apprise_tag_help": "Optional — only notify the configured targets carrying this tag.",
+  "web_chan_active": "Active",
+  "web_chan_off": "Switched off",
+  "web_chan_incomplete": "Not active — missing: {missing}",
+  "web_chan_unset": "its settings",
+  "web_chan_enable": "Send through this channel",
+  "web_discord_webhook": "Discord webhook",
+  "web_webhook_url": "Webhook URL"
 }

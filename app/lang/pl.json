@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Docelowe adresy Apprise, oddzielone przecinkami. Zwykle zawierają dane logowania, więc traktowane są jak sekret i nigdy nie są pokazywane z powrotem.",
   "web_apprise_urls_placeholder": "np. discord://…, tgram://…",
   "web_apprise_tag": "Znacznik",
-  "web_apprise_tag_help": "Opcjonalnie — powiadamiaj tylko cele z tym znacznikiem."
+  "web_apprise_tag_help": "Opcjonalnie — powiadamiaj tylko cele z tym znacznikiem.",
+  "web_chan_active": "Aktywny",
+  "web_chan_off": "Wyłączony",
+  "web_chan_incomplete": "Nieaktywny — brakuje: {missing}",
+  "web_chan_unset": "jego ustawienia",
+  "web_chan_enable": "Wysyłaj tym kanałem",
+  "web_discord_webhook": "Webhook Discord",
+  "web_webhook_url": "Adres webhooka"
 }

@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Die Apprise-Ziel-URLs, durch Komma getrennt. Sie enthalten meist Zugangsdaten, werden deshalb als Geheimnis behandelt und nie zurück angezeigt.",
   "web_apprise_urls_placeholder": "z. B. discord://…, tgram://…",
   "web_apprise_tag": "Kennzeichen",
-  "web_apprise_tag_help": "Optional — nur die Ziele benachrichtigen, die dieses Kennzeichen tragen."
+  "web_apprise_tag_help": "Optional — nur die Ziele benachrichtigen, die dieses Kennzeichen tragen.",
+  "web_chan_active": "Aktiv",
+  "web_chan_off": "Ausgeschaltet",
+  "web_chan_incomplete": "Nicht aktiv — es fehlt: {missing}",
+  "web_chan_unset": "die Einstellungen",
+  "web_chan_enable": "Über diesen Weg senden",
+  "web_discord_webhook": "Discord-Webhook",
+  "web_webhook_url": "Webhook-URL"
 }

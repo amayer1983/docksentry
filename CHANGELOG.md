@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.5.0] - 2026-08-08
+
+### Added
+- **Every channel says whether it is actually going to send anything.** Each card on the Connections page now carries one of three states, because they need three different things done about them: *Active*, *Switched off*, or *Not active — missing: recipients*. Until now the only signal was silence, and "why is nothing arriving?" had no answer anywhere in the interface. What is missing comes from the channel itself, so it stays right when a channel's requirements change.
+- **A switch per channel.** Turning a working channel off used to mean clearing its fields — and for the five channels whose credentials are write-only in the interface, that means fetching a token again to turn it back on. Default on, so an upgrade changes nothing. The switch only appears once a channel is complete: offering to turn on something that would then do nothing is exactly how you get "I enabled it and nothing happened". A switched-off channel is still reported as complete, just off — `active()` is "on and complete" and is kept deliberately apart from `configured()`, which is "has what it needs".
+- **A test button on every channel**, not just the two webhooks. It sends through the saved settings with every other channel blanked in a copy of the config, so the answer is about the channel you pressed it on and nothing else. Quiet hours cannot swallow it, and a channel you have just switched off can still be tested — that is a question about whether it works, not whether it is on.
+
 ## [2.4.0] - 2026-08-08
 
 ### Added

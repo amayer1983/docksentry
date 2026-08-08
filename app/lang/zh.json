@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "以逗号分隔的 Apprise 目标地址。它们通常含有凭据，因此按机密处理，不会回显。",
   "web_apprise_urls_placeholder": "例如 discord://…, tgram://…",
   "web_apprise_tag": "标签",
-  "web_apprise_tag_help": "可选 —— 只通知带有该标签的目标。"
+  "web_apprise_tag_help": "可选 —— 只通知带有该标签的目标。",
+  "web_chan_active": "已启用",
+  "web_chan_off": "已关闭",
+  "web_chan_incomplete": "未启用 —— 缺少：{missing}",
+  "web_chan_unset": "它的设置",
+  "web_chan_enable": "通过此渠道发送",
+  "web_discord_webhook": "Discord Webhook",
+  "web_webhook_url": "Webhook 地址"
 }

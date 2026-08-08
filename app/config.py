@@ -120,6 +120,14 @@ PERSISTENT_KEYS = [
     "apprise_tag",
     "gotify_url",
     "gotify_token",
+    # The per-channel switches (v2.5.0).
+    "channel_discord_enabled",
+    "channel_webhook_enabled",
+    "channel_smtp_enabled",
+    "channel_ntfy_enabled",
+    "channel_gotify_enabled",
+    "channel_matrix_enabled",
+    "channel_apprise_enabled",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -187,6 +195,13 @@ PERSISTENT_ENV_VARS = {
     "apprise_tag": "APPRISE_TAG",
     "gotify_url": "GOTIFY_URL",
     "gotify_token": "GOTIFY_TOKEN",
+    "channel_discord_enabled": "CHANNEL_DISCORD_ENABLED",
+    "channel_webhook_enabled": "CHANNEL_WEBHOOK_ENABLED",
+    "channel_smtp_enabled": "CHANNEL_SMTP_ENABLED",
+    "channel_ntfy_enabled": "CHANNEL_NTFY_ENABLED",
+    "channel_gotify_enabled": "CHANNEL_GOTIFY_ENABLED",
+    "channel_matrix_enabled": "CHANNEL_MATRIX_ENABLED",
+    "channel_apprise_enabled": "CHANNEL_APPRISE_ENABLED",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -261,6 +276,13 @@ PERSISTENT_ENV_DEFAULTS = {
     "apprise_tag": "",
     "gotify_url": "",
     "gotify_token": "",
+    "channel_discord_enabled": True,
+    "channel_webhook_enabled": True,
+    "channel_smtp_enabled": True,
+    "channel_ntfy_enabled": True,
+    "channel_gotify_enabled": True,
+    "channel_matrix_enabled": True,
+    "channel_apprise_enabled": True,
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -280,6 +302,13 @@ LOGGABLE_PERSISTENT_KEYS = {
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
+    "channel_discord_enabled",
+    "channel_webhook_enabled",
+    "channel_smtp_enabled",
+    "channel_ntfy_enabled",
+    "channel_gotify_enabled",
+    "channel_matrix_enabled",
+    "channel_apprise_enabled",
 }
 # NOT loggable, for the record: web_password, discord_webhook, webhook_url,
 # discord_bot_token (credentials / tokenised URLs) and telegram_topic_id +
@@ -347,6 +376,13 @@ PERSISTENT_SETTINGS_TAB = {
     "apprise_tag": "Connections",
     "gotify_url": "Connections",
     "gotify_token": "Connections",
+    "channel_discord_enabled": "Connections",
+    "channel_webhook_enabled": "Connections",
+    "channel_smtp_enabled": "Connections",
+    "channel_ntfy_enabled": "Connections",
+    "channel_gotify_enabled": "Connections",
+    "channel_matrix_enabled": "Connections",
+    "channel_apprise_enabled": "Connections",
     "webhook_url": "Connections",
 }
 
@@ -389,7 +425,14 @@ class Config:
                  apprise_urls="",
                  apprise_tag="",
                  gotify_url="",
-                 gotify_token=""):
+                 gotify_token="",
+                 channel_discord_enabled=True,
+                 channel_webhook_enabled=True,
+                 channel_smtp_enabled=True,
+                 channel_ntfy_enabled=True,
+                 channel_gotify_enabled=True,
+                 channel_matrix_enabled=True,
+                 channel_apprise_enabled=True):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -489,6 +532,17 @@ class Config:
         self.apprise_tag = (apprise_tag or "").strip()
         self.gotify_url = (gotify_url or "").strip()
         self.gotify_token = (gotify_token or "").strip()
+        # Per-channel switch. Default on, so an install upgrading
+        # into this keeps every channel it already had — the point
+        # is turning a WORKING channel off for a while without
+        # clearing settings you would have to fetch again.
+        self.channel_discord_enabled = bool(channel_discord_enabled)
+        self.channel_webhook_enabled = bool(channel_webhook_enabled)
+        self.channel_smtp_enabled = bool(channel_smtp_enabled)
+        self.channel_ntfy_enabled = bool(channel_ntfy_enabled)
+        self.channel_gotify_enabled = bool(channel_gotify_enabled)
+        self.channel_matrix_enabled = bool(channel_matrix_enabled)
+        self.channel_apprise_enabled = bool(channel_apprise_enabled)
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -886,6 +940,13 @@ class Config:
             apprise_tag=_env("APPRISE_TAG", ""),
             gotify_url=_env("GOTIFY_URL", ""),
             gotify_token=_env("GOTIFY_TOKEN", ""),
+            channel_discord_enabled=_env("CHANNEL_DISCORD_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_webhook_enabled=_env("CHANNEL_WEBHOOK_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_smtp_enabled=_env("CHANNEL_SMTP_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_ntfy_enabled=_env("CHANNEL_NTFY_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_gotify_enabled=_env("CHANNEL_GOTIFY_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_matrix_enabled=_env("CHANNEL_MATRIX_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_apprise_enabled=_env("CHANNEL_APPRISE_ENABLED", "true").lower() not in ("false", "0", "no"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),

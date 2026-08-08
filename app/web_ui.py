@@ -1836,6 +1836,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # failure mode worth having.
                 if "conn_page" in params:
                     config.smtp_tls_verify = "smtp_tls_verify" in params
+                    # The channel switches, same rule and for the same
+                    # reason: an unchecked box submits nothing, so only a
+                    # submission that really came from this whole form
+                    # may read absence as "off".
+                    #
+                    # A switch is only rendered for a channel that is
+                    # complete, so an incomplete one is absent from the
+                    # form and must keep whatever it had — otherwise
+                    # filling in a half-configured channel would silently
+                    # switch it off at the same moment it became usable.
+                    for _chan in ("discord", "webhook", "smtp", "ntfy",
+                                  "gotify", "matrix", "apprise"):
+                        _flag = f"channel_{_chan}_enabled"
+                        if f"{_flag}_shown" in params:
+                            setattr(config, _flag, _flag in params)
 
                 # ── ntfy / Gotify / Matrix / Apprise ─────────────────
                 # Plain values first, then the credentials, which follow
@@ -2033,12 +2048,93 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)
+            elif path == "/api/test_channel":
+                # "Send test" on the Connections page, for any channel.
+                # Uses the SAVED settings: e-mail alone has seven fields,
+                # and a test built from whatever is currently in the form
+                # would answer about a configuration that exists nowhere.
+                #
+                # The channel is isolated first — every other channel
+                # blanked in a copy of config — so the message goes to
+                # the one being tested and the answer is about it. The
+                # switch is overridden too: someone testing a channel
+                # they have just turned off is asking whether it works,
+                # not whether it is on.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                name = parse_qs(body).get("name", [""])[0].strip().lower()
+
+                from notifier import Notifier
+                known = {p.name for p in Notifier(config)._plugins}
+                if name not in known:
+                    response = {"ok": False, "error": "unknown channel"}
+                else:
+                    probe = Notifier(Notifier(config).isolated_config(name))
+                    if not probe.has_channels():
+                        # Nothing to test: the channel is incomplete. Say
+                        # that rather than reporting a cheerful success
+                        # for a message that went nowhere.
+                        response = {"ok": False, "error": "not configured"}
+                    else:
+                        # The channels are best-effort by contract: they
+                        # log and return on failure and never raise. So a
+                        # bare try/except reports success for a message
+                        # that went nowhere — measured, with a deliberately
+                        # wrong webhook: the endpoint answered {"ok": true}
+                        # while the channel printed
+                        #
+                        #   Discord webhook error: HTTP 404
+                        #
+                        # A cheerful success for something that did not
+                        # happen is the whole failure mode this button
+                        # exists to prevent, so the verdict comes from
+                        # what the channel actually said. That line is its
+                        # designed signal; showing it in the toast just
+                        # saves someone the trip to `docker logs`.
+                        #
+                        # redirect_stdout is process-wide, so for the
+                        # second or two a test takes, another thread's
+                        # output would land in this buffer instead of the
+                        # log. Bounded, and only on an explicit button
+                        # press — worth it to stop reporting sends that
+                        # did not happen.
+                        import contextlib as _ctx
+                        buf = _io.StringIO()
+                        try:
+                            with _ctx.redirect_stdout(buf):
+                                probe.send_message(
+                                    f"🧪 Docksentry test message ({name})")
+                            said = buf.getvalue().strip()
+                        except Exception as e:
+                            said = f"{type(e).__name__}: {e}"
+                        last = said.splitlines()[-1].strip() if said else ""
+                        if last and any(w in last.lower() for w in
+                                        ("error", "failed", "refused",
+                                         "timed out", "rejected")):
+                            response = {"ok": False, "error": last[:200]}
+                        elif last:
+                            # Said something that is not a failure — the
+                            # SMTP "verification is OFF" warning is the
+                            # one that exists. Sent, and worth repeating.
+                            response = {"ok": True, "note": last[:200]}
+                        else:
+                            response = {"ok": True}
+
+                payload = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path == "/api/test_webhook":
                 # Settings page "Send test" buttons — verify a webhook
                 # URL is reachable before saving (#2 feedback). Uses the
                 # URL the user just typed (not the saved one) so they
                 # can debug a new value without committing it first.
-                # Returns JSON for the dsTestWebhook() JS helper.
+                # Superseded by /api/test_channel, which covers every
+                # channel and reports what the channel actually said.
+                # Kept because it is a documented endpoint and costs
+                # nothing; nothing in the interface calls it any more.
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
@@ -4812,6 +4908,60 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                              ("ssl", "web_smtp_tls_ssl"),
                              ("none", "web_smtp_tls_none")))
 
+            # ── the state of each channel, and its switch ────────────
+            # Three states, deliberately, because they need three
+            # different things done about them: sending, switched off,
+            # and incomplete. One boolean answers none of the questions
+            # someone asks when nothing is arriving.
+            from notifier import Notifier as _Notifier
+            _states = {n: (en, ok, miss)
+                       for n, en, ok, miss in _Notifier(config).channel_states()}
+
+            def channel_head(name, label=""):
+                """State line, on/off switch and test button for a card.
+
+                `label` is only passed where a card holds more than one
+                channel — the Webhooks card has two, and two unlabelled
+                state lines above two fields leave you counting rows to
+                work out which is which.
+                """
+                enabled, complete, missing = _states.get(name, (True, False, []))
+                lead = f'<b>{_e(label)}</b> ' if label else ""
+                if not complete:
+                    what = ", ".join(t(k) for k in missing) or t("web_chan_unset")
+                    state = (f'<span style="color:var(--text-muted)">'
+                             f'{lead}{_e(t("web_chan_incomplete", missing=what))}</span>')
+                elif not enabled:
+                    state = (f'<span style="color:var(--warn)">'
+                             f'{lead}{_e(t("web_chan_off"))}</span>')
+                else:
+                    state = (f'<span style="color:var(--success)">'
+                             f'{lead}{_e(t("web_chan_active"))}</span>')
+                cid = f"cb-chan-{name}"
+                # The switch is only offered once the channel could
+                # actually work. Turning something on that then does
+                # nothing is the failure this whole line exists to stop,
+                # so the control is absent rather than present-and-inert
+                # — a disabled checkbox invites clicking it and explains
+                # nothing.
+                switch = ""
+                if complete:
+                    switch = (
+                        f'<input type="hidden" '
+                        f'name="channel_{name}_enabled_shown" value="1" '
+                        f'form="conn-form">'
+                        f'<label class="form-checkbox-row" style="margin:0">'
+                        f'<input type="checkbox" name="channel_{name}_enabled" '
+                        f'id="{cid}" {"checked" if enabled else ""} '
+                        f'form="conn-form">'
+                        f'<span>{t("web_chan_enable")}</span></label>')
+                test = (f'<button type="button" class="btn-sm btn-outline" '
+                        f'onclick="dsTestChannel(\'{name}\')">'
+                        f'{t("web_test_send")}</button>' if complete else "")
+                return (f'<div style="display:flex;align-items:center;gap:14px;'
+                        f'flex-wrap:wrap;margin:0 0 10px">{state}{switch}{test}'
+                        f'</div>')
+
             def secret_field(name, label, help_text, current, placeholder):
                 """A masked credential: field, plus a way to remove it.
 
@@ -4892,22 +5042,23 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="card">
 <h2>{t("web_conn_webhooks")}</h2>
 <p class="card-intro">{t("web_conn_webhooks_intro")}</p>
+{channel_head("discord", "Discord")}
+{channel_head("webhook", "Webhook")}
   <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
   <div style="display:flex;gap:8px">
     <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="conn-form">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('discord')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
   </div>
 
   <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
   <div style="display:flex;gap:8px">
     <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="conn-form">
-    <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
   </div>
 </div>
 
 <div class="card">
 <h2>{t("web_conn_smtp")}</h2>
 <p class="card-intro">{t("web_conn_smtp_intro")}</p>
+{channel_head("smtp")}
   <div class="grid">
     <div>
       <label>{t("web_smtp_host")} {help_(t("web_smtp_host_help"))}{env_("smtp_host")}</label>
@@ -4982,6 +5133,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="card">
 <h2>{t("web_conn_ntfy")}</h2>
 <p class="card-intro">{t("web_conn_ntfy_intro")}</p>
+{channel_head("ntfy")}
   <label>{t("web_ntfy_url")} {help_(t("web_ntfy_url_help"))}{env_("ntfy_url")}</label>
   <input type="text" name="ntfy_url" value="{_e(config.ntfy_url)}" placeholder="https://ntfy.sh/my-topic" form="conn-form">
   <div class="grid">
@@ -5005,6 +5157,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="card">
 <h2>{t("web_conn_gotify")}</h2>
 <p class="card-intro">{t("web_conn_gotify_intro")}</p>
+{channel_head("gotify")}
   <label>{t("web_gotify_url")} {help_(t("web_gotify_url_help"))}{env_("gotify_url")}</label>
   <input type="text" name="gotify_url" value="{_e(config.gotify_url)}" placeholder="https://gotify.example.com" form="conn-form">
   {secret_field("gotify_token", t("web_gotify_token"), t("web_gotify_token_help"), config.gotify_token, t("web_gotify_token_placeholder"))}
@@ -5013,6 +5166,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="card">
 <h2>{t("web_conn_matrix")}</h2>
 <p class="card-intro">{t("web_conn_matrix_intro")}</p>
+{channel_head("matrix")}
   <div class="grid">
     <div>
       <label>{t("web_matrix_homeserver")} {help_(t("web_matrix_homeserver_help"))}{env_("matrix_homeserver")}</label>
@@ -5029,6 +5183,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="card">
 <h2>{t("web_conn_apprise")}</h2>
 <p class="card-intro">{t("web_conn_apprise_intro")}</p>
+{channel_head("apprise")}
   <label>{t("web_apprise_url")} {help_(t("web_apprise_url_help"))}{env_("apprise_url")}</label>
   <input type="text" name="apprise_url" value="{_e(config.apprise_url)}" placeholder="http://apprise:8000/notify" form="conn-form">
   {secret_field("apprise_urls", t("web_apprise_urls"), t("web_apprise_urls_help"), config.apprise_urls, t("web_apprise_urls_placeholder"))}

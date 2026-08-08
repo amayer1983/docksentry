@@ -12,6 +12,9 @@ class WebhookNotifier(BaseNotifier):
     name = "webhook"
     order = 20
 
+    OWNS = ("webhook_url",)
+    REQUIRES = (("webhook_url", "web_webhook_url"),)
+
     def configured(self):
         return bool(self.config.webhook_url)
 

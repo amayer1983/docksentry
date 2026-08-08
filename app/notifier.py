@@ -30,16 +30,61 @@ class Notifier:
         self._by_name = {p.name: p for p in self._plugins}
 
     def _configured_plugins(self):
-        return [p for p in self._plugins if p.configured()]
+        # `active()`, not `configured()`: a channel that is switched off
+        # still has everything it needs and must still not be sent to.
+        # The two were the same thing until the switch existed.
+        return [p for p in self._plugins if p.active()]
 
     def has_channels(self):
-        """Check if any notification channels are configured."""
-        return any(p.configured() for p in self._plugins)
+        """True when at least one channel is switched on AND complete."""
+        return any(p.active() for p in self._plugins)
+
+    def channel_states(self):
+        """`(name, enabled, configured, missing)` for every channel.
+
+        For the Connections page, which has to distinguish "off" from
+        "incomplete" — they need different things done about them, and
+        one boolean answers neither question.
+        """
+        return [(p.name, p.enabled, p.configured(), p.missing())
+                for p in self._plugins]
+
+    def isolated_config(self, name):
+        """A copy of config with every channel but `name` blanked.
+
+        What the "send a test" button needs: build a Notifier from this
+        and only the channel under test can be active, so the test says
+        something about that channel and nothing else. The list of what
+        to blank comes from each plugin's own OWNS rather than a second
+        table here, which is the table that would go stale.
+        """
+        from copy import copy as _copy
+        test_config = _copy(self.config)
+        for plugin in self._plugins:
+            if plugin.name == name:
+                continue
+            for attr in plugin.OWNS:
+                setattr(test_config, attr, "" if not isinstance(
+                    getattr(test_config, attr, ""), bool) else False)
+        # The switch must not veto a deliberate test either: someone
+        # testing a channel they have just turned off is asking whether
+        # it works, not whether it is on.
+        setattr(test_config, f"channel_{name}_enabled", True)
+        # And quiet hours must not swallow the one message the user is
+        # standing there waiting for.
+        test_config.quiet_hours_start = ""
+        test_config.quiet_hours_end = ""
+        return test_config
 
     def _smtp_configured(self):
-        """E-mail is active once host + from + to are all set (#2)."""
+        """E-mail is going to be sent: complete AND switched on (#2).
+
+        `active()`, like the dispatch list above — the callers use this to
+        decide whether to *say* an e-mail went out, and saying so about a
+        channel that is switched off would be a lie.
+        """
         p = self._by_name.get("smtp")
-        return bool(p and p.configured())
+        return bool(p and p.active())
 
     def _suppressed(self):
         """True if quiet-hours OR maintenance is active right now — skip

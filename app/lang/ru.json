@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Адреса назначения Apprise через запятую. Обычно содержат учётные данные, поэтому считаются секретом и никогда не показываются обратно.",
   "web_apprise_urls_placeholder": "напр. discord://…, tgram://…",
   "web_apprise_tag": "Метка",
-  "web_apprise_tag_help": "Необязательно — уведомлять только цели с этой меткой."
+  "web_apprise_tag_help": "Необязательно — уведомлять только цели с этой меткой.",
+  "web_chan_active": "Активен",
+  "web_chan_off": "Выключен",
+  "web_chan_incomplete": "Не активен — не хватает: {missing}",
+  "web_chan_unset": "его настроек",
+  "web_chan_enable": "Отправлять этим каналом",
+  "web_discord_webhook": "Вебхук Discord",
+  "web_webhook_url": "Адрес вебхука"
 }

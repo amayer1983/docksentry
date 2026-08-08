@@ -68,6 +68,11 @@ class MatrixNotifier(BaseNotifier):
     name = "matrix"
     order = 55
 
+    OWNS = ("matrix_homeserver", "matrix_room", "matrix_token")
+    REQUIRES = (("matrix_homeserver", "web_matrix_homeserver"),
+                ("matrix_room", "web_matrix_room"),
+                ("matrix_token", "web_matrix_token"))
+
     def __init__(self, config):
         super().__init__(config)
         #: Resolved alias → room ID, so `#alerts:example.com` costs one

@@ -698,5 +698,12 @@
   "web_apprise_urls_help": "Virgülle ayrılmış Apprise hedef adresleri. Genelde kimlik bilgisi içerdikleri için gizli sayılır ve geri gösterilmez.",
   "web_apprise_urls_placeholder": "örn. discord://…, tgram://…",
   "web_apprise_tag": "Etiket",
-  "web_apprise_tag_help": "İsteğe bağlı — yalnızca bu etiketi taşıyan hedeflere bildir."
+  "web_apprise_tag_help": "İsteğe bağlı — yalnızca bu etiketi taşıyan hedeflere bildir.",
+  "web_chan_active": "Etkin",
+  "web_chan_off": "Kapalı",
+  "web_chan_incomplete": "Etkin değil — eksik: {missing}",
+  "web_chan_unset": "ayarları",
+  "web_chan_enable": "Bu kanaldan gönder",
+  "web_discord_webhook": "Discord webhook",
+  "web_webhook_url": "Webhook adresi"
 }
