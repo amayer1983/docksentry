@@ -34,6 +34,9 @@ SECRET_PW = "SUPERSECRETpw-should-never-render-987"
 # Same for the Discord bot token, which moved into this form in v2.3.0.
 SECRET_DISCORD_TOKEN = "MTIzNDU2.SECRETdiscord-should-never-render-654"
 
+# And the SMTP password, the third secret to reach a form here.
+SECRET_SMTP_PW = "SUPERSECRETsmtp-should-never-render-321"
+
 
 def _config():
     return types.SimpleNamespace(
@@ -74,6 +77,15 @@ def _config():
         discord_app_id="1234567890123456789",
         discord_guild_id="9876543210987654321",
         discord_allowed_users=[],
+        # E-mail (v2.4.0). Third secret on the Connections page.
+        smtp_host="smtp.example.com",
+        smtp_port=587,
+        smtp_user="docksentry",
+        smtp_password=SECRET_SMTP_PW,
+        smtp_from="docksentry@example.com",
+        smtp_to="ops@example.com",
+        smtp_tls="starttls",
+        smtp_tls_verify=True,
         web_password=SECRET_PW,
         # env_() calls this for every field — no env overrides in the test.
         env_override=lambda key: None,
@@ -173,6 +185,25 @@ def main():
         and SECRET_DISCORD_TOKEN not in html)
     checks["password value is NOT rendered on either page"] = (
         SECRET_PW not in channels and SECRET_PW not in html)
+    checks["SMTP password is NOT rendered on either page"] = (
+        SECRET_SMTP_PW not in channels and SECRET_SMTP_PW not in html)
+
+    # ── E-mail card ──────────────────────────────────────────────────
+    checks["SMTP server field shows its value"] = (
+        'name="smtp_host" value="smtp.example.com"' in channels)
+    checks["SMTP port field shows its value"] = (
+        'name="smtp_port" value="587"' in channels)
+    checks["the password field is type=password and renders empty"] = (
+        'type="password" name="smtp_password" value=""' in channels)
+    checks["a saved SMTP password offers a way to remove it"] = (
+        'name="smtp_password_clear"' in channels)
+    checks["the encryption choice reflects the config"] = (
+        '<option value="starttls" selected>' in channels)
+    # Certificate verification is the one setting here that can hand a
+    # password to anything that answers — it must be visible and it must
+    # reflect the config rather than defaulting to unchecked.
+    checks["certificate verification is on the page and checked"] = (
+        'name="smtp_tls_verify" id="cb-smtp-verify" checked' in channels)
     checks["bot token field is type=password and renders empty"] = (
         'type="password" name="discord_bot_token" value=""' in channels)
     checks["a saved token is signalled by the placeholder, not the value"] = (

@@ -59,6 +59,9 @@ class FakeConfig(types.SimpleNamespace):
             discord_webhook="", webhook_url="", web_password="",
             discord_bot_token="", discord_app_id="", discord_guild_id="",
             discord_allowed_users=[], ui_mode="advanced",
+            smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
+            smtp_from="", smtp_to="", smtp_tls="starttls",
+            smtp_tls_verify=True,
             saves=0,
         )
         base.update(kw)
@@ -131,6 +134,39 @@ def main():
     post(cfg, "discord_bot_token=&discord_bot_token_clear=on&discord_app_id=1")
     checks["the clear checkbox is what removes it"] = (
         cfg.discord_bot_token == "")
+
+    # ── e-mail ──────────────────────────────────────────────────
+    cfg = FakeConfig(smtp_password="KEEP.ME", smtp_host="old.example.com")
+    post(cfg, "conn_page=1&smtp_host=smtp.example.com&smtp_port=465"
+              "&smtp_tls=ssl&smtp_from=a@b.c&smtp_to=d@e.f"
+              "&smtp_user=u&smtp_password=&smtp_tls_verify=on")
+    checks["the SMTP server is saved"] = cfg.smtp_host == "smtp.example.com"
+    checks["the port is saved as a number"] = cfg.smtp_port == 465
+    checks["the encryption choice is saved"] = cfg.smtp_tls == "ssl"
+    checks["an empty SMTP password means unchanged"] = (
+        cfg.smtp_password == "KEEP.ME")
+    post(cfg, "conn_page=1&smtp_password=&smtp_password_clear=on")
+    checks["its clear checkbox is what removes it"] = cfg.smtp_password == ""
+
+    # A nonsense transport is ignored rather than stored — smtp.py
+    # branches on exactly three values and anything else would silently
+    # fall through to no encryption at all.
+    post(cfg, "conn_page=1&smtp_tls=plaintext-please")
+    checks["an unknown encryption value is refused"] = cfg.smtp_tls == "ssl"
+    post(cfg, "conn_page=1&smtp_port=not-a-number")
+    checks["a non-numeric port is ignored, not zeroed"] = cfg.smtp_port == 465
+
+    # Certificate verification decides whether the password is handed to
+    # whatever answers. An unchecked box submits nothing, so it may only
+    # be read as "off" for a submission that really came from this form.
+    cfg = FakeConfig(smtp_tls_verify=True)
+    post(cfg, "conn_page=1&smtp_host=x")
+    checks["unticking verification on this form turns it off"] = (
+        cfg.smtp_tls_verify is False)
+    cfg = FakeConfig(smtp_tls_verify=True)
+    post(cfg, "smtp_host=x")
+    checks["a POST without the form marker cannot turn it off"] = (
+        cfg.smtp_tls_verify is True)
 
     # ── the bot is restarted only when its own fields change ─────
     calls = []

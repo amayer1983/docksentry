@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.4.0] - 2026-08-08
+
+### Added
+- **E-mail is configured on the Connections page.** Server, port, encryption, sender, recipients, user and password, all of which were environment-only. The password is masked in the field, never rendered back into the page, kept off the loggable allow-list and redacted in the audit trail; removing it is a separate checkbox, same as the Discord bot token.
+- **Certificate verification is visible now, and cannot be turned off by accident.** `SMTP_TLS_VERIFY` has existed since the unverified-context defect was fixed, but only as a variable — you had to know it was there. It is a checkbox on the E-mail card, with the reason spelled out: off, the password goes to whatever answers on that address, with any certificate at all. An unchecked box submits nothing, so "absent" normally reads as "off" — for this one flag that is not good enough, and it is only read that way when the submission carries the hidden marker proving it came from this form. A POST to the same path that simply omits it leaves verification alone.
+
+### Fixed
+- **The env-override warning pointed at a tab that no longer exists.** After the channels moved, a set `DISCORD_WEBHOOK` overruled by a saved value still said "change it under Settings › Channels". It now says the Connections page.
+
 ## [2.3.0] - 2026-08-07
 
 ### Added

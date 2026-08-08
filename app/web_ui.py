@@ -1798,6 +1798,45 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # cosmetic noise on every notification.
                     config.bot_label = params["bot_label"][0].strip()[:32]
 
+                # ── E-mail ───────────────────────────────────────────
+                if "smtp_host" in params:
+                    config.smtp_host = params["smtp_host"][0].strip()
+                if "smtp_port" in params:
+                    try:
+                        v = int(params["smtp_port"][0].strip())
+                        config.smtp_port = max(1, min(v, 65535))
+                    except (ValueError, IndexError):
+                        pass
+                if "smtp_user" in params:
+                    config.smtp_user = params["smtp_user"][0].strip()
+                # Not stripped, matching from_env() and DOCKER_PASSWORD:
+                # a password may legitimately start or end with a space.
+                # Empty means "unchanged", same as every other secret on
+                # this page; the checkbox is what removes it.
+                if "smtp_password" in params:
+                    new_pw = params["smtp_password"][0]
+                    if new_pw:
+                        config.smtp_password = new_pw
+                if "smtp_password_clear" in params:
+                    config.smtp_password = ""
+                if "smtp_from" in params:
+                    config.smtp_from = params["smtp_from"][0].strip()
+                if "smtp_to" in params:
+                    config.smtp_to = params["smtp_to"][0].strip()
+                if "smtp_tls" in params:
+                    cand = params["smtp_tls"][0].strip().lower()
+                    if cand in ("starttls", "ssl", "none"):
+                        config.smtp_tls = cand
+                # Checkbox semantics only for a submission that really came
+                # from this form — `conn_page` is the hidden marker. An
+                # unchecked box submits nothing, so absence means "off",
+                # and for the flag that decides whether the SMTP password
+                # is handed to an unverified certificate, "off because
+                # somebody POSTed something else to this path" is not a
+                # failure mode worth having.
+                if "conn_page" in params:
+                    config.smtp_tls_verify = "smtp_tls_verify" in params
+
                 # ── Interactive Discord bot (#57, @NotRetarded) ──────
                 # `_discord_changed` decides afterwards whether the bot
                 # has to be restarted, so saving anything else on this
@@ -4727,6 +4766,26 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # reading of an empty field, and that leaves no way to say
             # "remove it". Hence the checkbox, and only when there is
             # something to remove.
+            # Same reasoning as the bot token below: a saved SMTP password
+            # is never written back into the page, so an empty field can
+            # only mean "leave it alone", and removing it needs its own act.
+            smtp_clear_row = ""
+            if config.smtp_password:
+                smtp_clear_row = (
+                    '<div class="form-checkbox-row">'
+                    '<input type="checkbox" name="smtp_password_clear" '
+                    'id="cb-smtp-clear" form="conn-form">'
+                    f'<label for="cb-smtp-clear">{t("web_smtp_password_clear")}'
+                    f' {help_(t("web_smtp_password_clear_help"))}</label></div>')
+
+            _tls = (config.smtp_tls or "starttls").lower()
+            smtp_tls_options = "".join(
+                f'<option value="{v}"{" selected" if v == _tls else ""}>'
+                f'{_e(t(k))}</option>'
+                for v, k in (("starttls", "web_smtp_tls_starttls"),
+                             ("ssl", "web_smtp_tls_ssl"),
+                             ("none", "web_smtp_tls_none")))
+
             discord_clear_row = ""
             if config.discord_bot_token:
                 discord_clear_row = (
@@ -4748,6 +4807,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # every field after it — see scripts/test_form_nesting.py.
             content = f"""
 <form method="POST" action="/connections" id="conn-form"></form>
+<!-- Proof that a POST came from this whole form. An unchecked box
+     submits nothing, so `"x" in params` reads absence as "off" —
+     which is right for a page that always renders the box, and
+     wrong for any other request that happens to hit this path.
+     For a flag that decides whether an SMTP password is handed to
+     an unverified certificate, "silently off" is not a failure
+     mode worth having. -->
+<input type="hidden" name="conn_page" value="1" form="conn-form">
 
 <div class="card">
 <h2>{t("web_connections")}</h2>
@@ -4782,6 +4849,53 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div style="display:flex;gap:8px">
     <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="conn-form">
     <button type="button" class="btn-sm btn-outline" onclick="dsTestWebhook('webhook')" title="{_e(t('web_test_send'))}">{t("web_test_send")}</button>
+  </div>
+</div>
+
+<div class="card">
+<h2>{t("web_conn_smtp")}</h2>
+<p class="card-intro">{t("web_conn_smtp_intro")}</p>
+  <div class="grid">
+    <div>
+      <label>{t("web_smtp_host")} {help_(t("web_smtp_host_help"))}{env_("smtp_host")}</label>
+      <input type="text" name="smtp_host" value="{_e(config.smtp_host)}" placeholder="{_e(t('web_smtp_host_placeholder'))}" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_smtp_port")} {help_(t("web_smtp_port_help"))}{env_("smtp_port")}</label>
+      <input type="number" name="smtp_port" value="{_e(config.smtp_port)}" min="1" max="65535" form="conn-form">
+    </div>
+  </div>
+
+  <label>{t("web_smtp_tls")} {help_(t("web_smtp_tls_help"))}{env_("smtp_tls")}</label>
+  <select name="smtp_tls" form="conn-form">{smtp_tls_options}</select>
+
+  <div class="grid">
+    <div>
+      <label>{t("web_smtp_from")} {help_(t("web_smtp_from_help"))}{env_("smtp_from")}</label>
+      <input type="text" name="smtp_from" value="{_e(config.smtp_from)}" placeholder="docksentry@example.com" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_smtp_to")} {help_(t("web_smtp_to_help"))}{env_("smtp_to")}</label>
+      <input type="text" name="smtp_to" value="{_e(config.smtp_to)}" placeholder="{_e(t('web_smtp_to_placeholder'))}" form="conn-form">
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <label>{t("web_smtp_user")} {help_(t("web_smtp_user_help"))}{env_("smtp_user")}</label>
+      <input type="text" name="smtp_user" value="{_e(config.smtp_user)}" autocomplete="off" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_smtp_password")} {help_(t("web_smtp_password_help"))}{env_("smtp_password")}</label>
+      <input type="password" name="smtp_password" value="" autocomplete="new-password"
+             placeholder="{_e(t('web_smtp_password_set') if config.smtp_password else t('web_smtp_password_placeholder'))}" form="conn-form">
+    </div>
+  </div>
+  {smtp_clear_row}
+
+  <div class="form-checkbox-row adv-only">
+    <input type="checkbox" name="smtp_tls_verify" id="cb-smtp-verify" {'checked' if config.smtp_tls_verify else ''} form="conn-form">
+    <label for="cb-smtp-verify">{t("web_smtp_tls_verify")} {help_(t("web_smtp_tls_verify_help"))}{env_("smtp_tls_verify")}</label>
   </div>
 </div>
 

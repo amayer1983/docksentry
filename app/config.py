@@ -104,6 +104,8 @@ PERSISTENT_KEYS = [
     "api_tokens",
     "discord_bot_token", "discord_app_id", "discord_guild_id",
     "discord_allowed_users",
+    "smtp_host", "smtp_port", "smtp_user", "smtp_password",
+    "smtp_from", "smtp_to", "smtp_tls",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -150,6 +152,13 @@ PERSISTENT_ENV_VARS = {
     "discord_app_id": "DISCORD_APP_ID",
     "discord_guild_id": "DISCORD_GUILD_ID",
     "discord_allowed_users": "DISCORD_ALLOWED_USERS",
+    "smtp_host": "SMTP_HOST",
+    "smtp_port": "SMTP_PORT",
+    "smtp_user": "SMTP_USER",
+    "smtp_password": "SMTP_PASSWORD",
+    "smtp_from": "SMTP_FROM",
+    "smtp_to": "SMTP_TO",
+    "smtp_tls": "SMTP_TLS",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -203,6 +212,13 @@ PERSISTENT_ENV_DEFAULTS = {
     "discord_app_id": "",
     "discord_guild_id": "",
     "discord_allowed_users": [],
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "smtp_password": "",
+    "smtp_from": "",
+    "smtp_to": "",
+    "smtp_tls": "starttls",
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -259,15 +275,23 @@ PERSISTENT_SETTINGS_TAB = {
     "monitor_enabled": "Notifications",
     "monitor_events_enabled": "Notifications",
     "monitor_interval_seconds": "Notifications",
-    "telegram_topic_id": "Channels",
-    "telegram_allowed_users": "Channels",
-    "bot_label": "Channels",
-    "discord_webhook": "Channels",
-    "discord_bot_token": "Channels",
-    "discord_app_id": "Channels",
-    "discord_guild_id": "Channels",
-    "discord_allowed_users": "Channels",
-    "webhook_url": "Channels",
+    "telegram_topic_id": "Connections",
+    "telegram_allowed_users": "Connections",
+    "bot_label": "Connections",
+    "discord_webhook": "Connections",
+    "discord_bot_token": "Connections",
+    "discord_app_id": "Connections",
+    "discord_guild_id": "Connections",
+    "discord_allowed_users": "Connections",
+    "smtp_host": "Connections",
+    "smtp_port": "Connections",
+    "smtp_user": "Connections",
+    "smtp_password": "Connections",
+    "smtp_from": "Connections",
+    "smtp_to": "Connections",
+    "smtp_tls": "Connections",
+    "smtp_tls_verify": "Connections",
+    "webhook_url": "Connections",
 }
 
 
@@ -663,7 +687,14 @@ class Config:
                 what = (f"{o['var']}={o['env']} is set in the environment, but "
                         f"the saved setting {o['key']}={o['saved']} wins")
             if o["tab"]:
-                where = (f"change it under Settings › {o['tab']}, or remove "
+                # "Connections" is a page of its own, not a tab inside
+                # Settings — telling someone to look under "Settings ›
+                # Connections" sends them somewhere that does not exist,
+                # which is the whole failure mode this line exists to
+                # avoid.
+                place = ("the Connections page" if o["tab"] == "Connections"
+                         else f"Settings › {o['tab']}")
+                where = (f"change it under {place}, or remove "
                          f"\"{o['key']}\" from {self.settings_file}")
             else:
                 where = (f"remove \"{o['key']}\" from {self.settings_file} to "
