@@ -705,5 +705,10 @@
   "web_chan_unset": "ayarları",
   "web_chan_enable": "Bu kanaldan gönder",
   "web_discord_webhook": "Discord webhook",
-  "web_webhook_url": "Webhook adresi"
+  "web_webhook_url": "Webhook adresi",
+  "web_conn_discord_hook_intro": "Bir Discord kanalına biçimli kutular hâlinde güncelleme bildirimleri. Aşağıdaki komut alan bottan bağımsızdır.",
+  "web_conn_webhook_intro": "Kabul eden her şeye JSON gönderir — kendi betiğiniz, bir otomasyon platformu, elinizde ne varsa.",
+  "web_chan_sum_active": "etkin",
+  "web_chan_sum_off": "kapalı",
+  "web_chan_sum_unset": "kurulmamış"
 }

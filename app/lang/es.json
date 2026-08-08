@@ -705,5 +705,10 @@
   "web_chan_unset": "sus ajustes",
   "web_chan_enable": "Enviar por este canal",
   "web_discord_webhook": "Webhook de Discord",
-  "web_webhook_url": "URL del webhook"
+  "web_webhook_url": "URL del webhook",
+  "web_conn_discord_hook_intro": "Avisos de actualización como incrustaciones en un canal de Discord. Independiente del bot de abajo, que recibe comandos.",
+  "web_conn_webhook_intro": "Envía JSON a cualquier cosa que lo acepte: tu propio script, una plataforma de automatización, lo que tengas.",
+  "web_chan_sum_active": "activos",
+  "web_chan_sum_off": "apagados",
+  "web_chan_sum_unset": "sin configurar"
 }

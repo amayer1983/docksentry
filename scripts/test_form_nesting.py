@@ -99,7 +99,15 @@ def main():
         # short-sighted rather than the page being wrong.
         i = src.index(empty_form)
         top = src.rindex(method, 0, i)
-        region = src[top:src.index('"""', i)]
+        # …to where the method hands its page over, not to the first
+        # closing triple-quote. The Connections page is assembled from
+        # several f-strings now — one per card, so they can be ordered by
+        # state — and a region that stopped at the first of them saw one
+        # card and declared the other seven missing.
+        slug = post_path.strip("/")
+        end_at = src.index(
+            f'self._send_html(self._render_page(content, "{slug}"))', i)
+        region = src[top:end_at]
 
         # Controls belonging to one of the page's own small POST forms
         # are exempt — those submit to /api/window, /api/maintenance and

@@ -5008,54 +5008,34 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # every control associates with it by id. Nesting a second
             # form inside a card would silently close this one and drop
             # every field after it — see scripts/test_form_nesting.py.
-            content = f"""
-<form method="POST" action="/connections" id="conn-form"></form>
-<!-- Proof that a POST came from this whole form. An unchecked box
-     submits nothing, so `"x" in params` reads absence as "off" —
-     which is right for a page that always renders the box, and
-     wrong for any other request that happens to hit this path.
-     For a flag that decides whether an SMTP password is handed to
-     an unverified certificate, "silently off" is not a failure
-     mode worth having. -->
-<input type="hidden" name="conn_page" value="1" form="conn-form">
-
-<div class="card">
-<h2>{t("web_connections")}</h2>
-<p class="card-intro">{t("web_connections_intro")}</p>
-</div>
-
-<div class="card">
-<h2>{t("web_conn_telegram")}</h2>
-<p class="card-intro">{t("web_conn_telegram_intro")}</p>
-  <div class="adv-only">
-    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
-    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="conn-form">
-
-    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
-    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
-
-    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
-    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="conn-form">
-  </div>
-</div>
-
-<div class="card">
-<h2>{t("web_conn_webhooks")}</h2>
-<p class="card-intro">{t("web_conn_webhooks_intro")}</p>
-{channel_head("discord", "Discord")}
-{channel_head("webhook", "Webhook")}
+            # ── the cards, ordered by what they are doing ───────────
+            # Active first, then switched off, then the ones that are not
+            # set up. Eight cards is a lot to scroll, and the whole point
+            # of the state lines is answering "which channels are live?"
+            # at a glance — an order that buries the two that work under
+            # five that are not configured defeats it.
+            #
+            # NOT tabs, for the same reason: a tab shows one channel at a
+            # time, which is exactly the question the state lines exist to
+            # answer without clicking seven times.
+            _cards = {
+                "discord": f"""<div class="card">
+<h2>Discord</h2>
+<p class="card-intro">{t("web_conn_discord_hook_intro")}</p>
+{channel_head("discord")}
   <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="conn-form">
-  </div>
-
-  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
-  <div style="display:flex;gap:8px">
-    <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="conn-form">
-  </div>
+  <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="conn-form">
 </div>
-
-<div class="card">
+""",
+                "webhook": f"""<div class="card">
+<h2>Webhook</h2>
+<p class="card-intro">{t("web_conn_webhook_intro")}</p>
+{channel_head("webhook")}
+  <label>Webhook URL {help_(t("web_webhook_help"))}{env_("webhook_url")}</label>
+  <input type="text" name="webhook_url" id="f-webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook" style="flex:1" form="conn-form">
+</div>
+""",
+                "smtp": f"""<div class="card">
 <h2>{t("web_conn_smtp")}</h2>
 <p class="card-intro">{t("web_conn_smtp_intro")}</p>
 {channel_head("smtp")}
@@ -5102,8 +5082,130 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <label for="cb-smtp-verify">{t("web_smtp_tls_verify")} {help_(t("web_smtp_tls_verify_help"))}{env_("smtp_tls_verify")}</label>
   </div>
 </div>
+""",
+                "ntfy": f"""<div class="card">
+<h2>{t("web_conn_ntfy")}</h2>
+<p class="card-intro">{t("web_conn_ntfy_intro")}</p>
+{channel_head("ntfy")}
+  <label>{t("web_ntfy_url")} {help_(t("web_ntfy_url_help"))}{env_("ntfy_url")}</label>
+  <input type="text" name="ntfy_url" value="{_e(config.ntfy_url)}" placeholder="https://ntfy.sh/my-topic" form="conn-form">
+  <div class="grid">
+    <div>
+      <label>{t("web_ntfy_server")} {help_(t("web_ntfy_server_help"))}{env_("ntfy_server")}</label>
+      <input type="text" name="ntfy_server" value="{_e(config.ntfy_server)}" placeholder="https://ntfy.sh" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_ntfy_topic")} {help_(t("web_ntfy_topic_help"))}{env_("ntfy_topic")}</label>
+      <input type="text" name="ntfy_topic" value="{_e(config.ntfy_topic)}" placeholder="my-topic" form="conn-form">
+    </div>
+  </div>
+  {secret_field("ntfy_token", t("web_ntfy_token"), t("web_ntfy_token_help"), config.ntfy_token, t("web_ntfy_token_placeholder"))}
+  <div class="adv-only">
+    <label>{t("web_ntfy_user")} {help_(t("web_ntfy_user_help"))}{env_("ntfy_user")}</label>
+    <input type="text" name="ntfy_user" value="{_e(config.ntfy_user)}" autocomplete="off" form="conn-form">
+    {secret_field("ntfy_password", t("web_ntfy_password"), t("web_ntfy_password_help"), config.ntfy_password, t("web_ntfy_password_placeholder"))}
+  </div>
+</div>
+""",
+                "gotify": f"""<div class="card">
+<h2>{t("web_conn_gotify")}</h2>
+<p class="card-intro">{t("web_conn_gotify_intro")}</p>
+{channel_head("gotify")}
+  <label>{t("web_gotify_url")} {help_(t("web_gotify_url_help"))}{env_("gotify_url")}</label>
+  <input type="text" name="gotify_url" value="{_e(config.gotify_url)}" placeholder="https://gotify.example.com" form="conn-form">
+  {secret_field("gotify_token", t("web_gotify_token"), t("web_gotify_token_help"), config.gotify_token, t("web_gotify_token_placeholder"))}
+</div>
+""",
+                "matrix": f"""<div class="card">
+<h2>{t("web_conn_matrix")}</h2>
+<p class="card-intro">{t("web_conn_matrix_intro")}</p>
+{channel_head("matrix")}
+  <div class="grid">
+    <div>
+      <label>{t("web_matrix_homeserver")} {help_(t("web_matrix_homeserver_help"))}{env_("matrix_homeserver")}</label>
+      <input type="text" name="matrix_homeserver" value="{_e(config.matrix_homeserver)}" placeholder="https://matrix.org" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_matrix_room")} {help_(t("web_matrix_room_help"))}{env_("matrix_room")}</label>
+      <input type="text" name="matrix_room" value="{_e(config.matrix_room)}" placeholder="#docksentry:matrix.org" form="conn-form">
+    </div>
+  </div>
+  {secret_field("matrix_token", t("web_matrix_token"), t("web_matrix_token_help"), config.matrix_token, t("web_matrix_token_placeholder"))}
+</div>
+""",
+                "apprise": f"""<div class="card">
+<h2>{t("web_conn_apprise")}</h2>
+<p class="card-intro">{t("web_conn_apprise_intro")}</p>
+{channel_head("apprise")}
+  <label>{t("web_apprise_url")} {help_(t("web_apprise_url_help"))}{env_("apprise_url")}</label>
+  <input type="text" name="apprise_url" value="{_e(config.apprise_url)}" placeholder="http://apprise:8000/notify" form="conn-form">
+  {secret_field("apprise_urls", t("web_apprise_urls"), t("web_apprise_urls_help"), config.apprise_urls, t("web_apprise_urls_placeholder"))}
+  <div class="adv-only">
+    <label>{t("web_apprise_tag")} {help_(t("web_apprise_tag_help"))}{env_("apprise_tag")}</label>
+    <input type="text" name="apprise_tag" value="{_e(config.apprise_tag)}" form="conn-form">
+  </div>
+</div>
 
-<div class="card">
+""",
+            }
+
+            def _rank(name):
+                enabled, complete, _ = _states.get(name, (True, False, []))
+                if complete and enabled:
+                    return 0
+                if complete:
+                    return 1
+                return 2
+
+            _n_active = sum(1 for n in _cards if _rank(n) == 0)
+            _n_off = sum(1 for n in _cards if _rank(n) == 1)
+            _n_unset = sum(1 for n in _cards if _rank(n) == 2)
+            _summary = (
+                f'<p style="margin:8px 0 0;font-size:13px">'
+                f'<b style="color:var(--success)">{_n_active}</b> '
+                f'{_e(t("web_chan_sum_active"))} &middot; '
+                f'<b style="color:var(--warn)">{_n_off}</b> '
+                f'{_e(t("web_chan_sum_off"))} &middot; '
+                f'<b style="color:var(--text-muted)">{_n_unset}</b> '
+                f'{_e(t("web_chan_sum_unset"))}</p>')
+
+            # Stable within a rank: the declaration order above, so a
+            # channel does not jump around between two saves that changed
+            # nothing about it.
+            _ordered = "\n".join(
+                _cards[n] for n in sorted(_cards, key=lambda n:
+                                          (_rank(n), list(_cards).index(n))))
+
+            content = (f"""
+<form method="POST" action="/connections" id="conn-form"></form>
+<!-- Proof that a POST came from this whole form. An unchecked box
+     submits nothing, so `"x" in params` reads absence as "off" —
+     which is right for a page that always renders the box, and
+     wrong for any other request that happens to hit this path.
+     For a flag that decides whether an SMTP password is handed to
+     an unverified certificate, "silently off" is not a failure
+     mode worth having. -->
+<input type="hidden" name="conn_page" value="1" form="conn-form">
+""" + f"""<div class="card">
+<h2>{t("web_connections")}</h2>
+<p class="card-intro">{t("web_connections_intro")}</p>
+""" + _summary
+                       + "</div>\n" + f"""<div class="card">
+<h2>{t("web_conn_telegram")}</h2>
+<p class="card-intro">{t("web_conn_telegram_intro")}</p>
+  <div class="adv-only">
+    <label>Telegram Topic ID {help_(t("web_topic_id_help"))}{env_("telegram_topic_id")}</label>
+    <input type="text" name="telegram_topic_id" value="{_e(config.telegram_topic_id)}" placeholder="{_e(t('web_topic_id_placeholder'))}" form="conn-form">
+
+    <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
+    <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
+
+    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
+    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="conn-form">
+  </div>
+</div>
+"""
+                       + _ordered + f"""<div class="card">
 <h2>{t("web_discord_bot_title")}</h2>
 <p class="card-intro">{t("web_discord_bot_intro")}</p>
 {discord_bot_notice}
@@ -5129,78 +5231,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
   </div>
 </div>
-
-<div class="card">
-<h2>{t("web_conn_ntfy")}</h2>
-<p class="card-intro">{t("web_conn_ntfy_intro")}</p>
-{channel_head("ntfy")}
-  <label>{t("web_ntfy_url")} {help_(t("web_ntfy_url_help"))}{env_("ntfy_url")}</label>
-  <input type="text" name="ntfy_url" value="{_e(config.ntfy_url)}" placeholder="https://ntfy.sh/my-topic" form="conn-form">
-  <div class="grid">
-    <div>
-      <label>{t("web_ntfy_server")} {help_(t("web_ntfy_server_help"))}{env_("ntfy_server")}</label>
-      <input type="text" name="ntfy_server" value="{_e(config.ntfy_server)}" placeholder="https://ntfy.sh" form="conn-form">
-    </div>
-    <div>
-      <label>{t("web_ntfy_topic")} {help_(t("web_ntfy_topic_help"))}{env_("ntfy_topic")}</label>
-      <input type="text" name="ntfy_topic" value="{_e(config.ntfy_topic)}" placeholder="my-topic" form="conn-form">
-    </div>
-  </div>
-  {secret_field("ntfy_token", t("web_ntfy_token"), t("web_ntfy_token_help"), config.ntfy_token, t("web_ntfy_token_placeholder"))}
-  <div class="adv-only">
-    <label>{t("web_ntfy_user")} {help_(t("web_ntfy_user_help"))}{env_("ntfy_user")}</label>
-    <input type="text" name="ntfy_user" value="{_e(config.ntfy_user)}" autocomplete="off" form="conn-form">
-    {secret_field("ntfy_password", t("web_ntfy_password"), t("web_ntfy_password_help"), config.ntfy_password, t("web_ntfy_password_placeholder"))}
-  </div>
-</div>
-
-<div class="card">
-<h2>{t("web_conn_gotify")}</h2>
-<p class="card-intro">{t("web_conn_gotify_intro")}</p>
-{channel_head("gotify")}
-  <label>{t("web_gotify_url")} {help_(t("web_gotify_url_help"))}{env_("gotify_url")}</label>
-  <input type="text" name="gotify_url" value="{_e(config.gotify_url)}" placeholder="https://gotify.example.com" form="conn-form">
-  {secret_field("gotify_token", t("web_gotify_token"), t("web_gotify_token_help"), config.gotify_token, t("web_gotify_token_placeholder"))}
-</div>
-
-<div class="card">
-<h2>{t("web_conn_matrix")}</h2>
-<p class="card-intro">{t("web_conn_matrix_intro")}</p>
-{channel_head("matrix")}
-  <div class="grid">
-    <div>
-      <label>{t("web_matrix_homeserver")} {help_(t("web_matrix_homeserver_help"))}{env_("matrix_homeserver")}</label>
-      <input type="text" name="matrix_homeserver" value="{_e(config.matrix_homeserver)}" placeholder="https://matrix.org" form="conn-form">
-    </div>
-    <div>
-      <label>{t("web_matrix_room")} {help_(t("web_matrix_room_help"))}{env_("matrix_room")}</label>
-      <input type="text" name="matrix_room" value="{_e(config.matrix_room)}" placeholder="#docksentry:matrix.org" form="conn-form">
-    </div>
-  </div>
-  {secret_field("matrix_token", t("web_matrix_token"), t("web_matrix_token_help"), config.matrix_token, t("web_matrix_token_placeholder"))}
-</div>
-
-<div class="card">
-<h2>{t("web_conn_apprise")}</h2>
-<p class="card-intro">{t("web_conn_apprise_intro")}</p>
-{channel_head("apprise")}
-  <label>{t("web_apprise_url")} {help_(t("web_apprise_url_help"))}{env_("apprise_url")}</label>
-  <input type="text" name="apprise_url" value="{_e(config.apprise_url)}" placeholder="http://apprise:8000/notify" form="conn-form">
-  {secret_field("apprise_urls", t("web_apprise_urls"), t("web_apprise_urls_help"), config.apprise_urls, t("web_apprise_urls_placeholder"))}
-  <div class="adv-only">
-    <label>{t("web_apprise_tag")} {help_(t("web_apprise_tag_help"))}{env_("apprise_tag")}</label>
-    <input type="text" name="apprise_tag" value="{_e(config.apprise_tag)}" form="conn-form">
-  </div>
-</div>
-
-<!-- One Save for the whole page, outside the last card. Inside it, the
+"""
+                       + f"""<!-- One Save for the whole page, outside the last card. Inside it, the
      button reads as "save Discord" — and it does not, it saves every
      card above as well. -->
 <div style="margin-top:16px">
   <button type="submit" class="btn" form="conn-form">{t("web_save")}</button>
 </div>
 
-"""
+""")
 
             self._send_html(self._render_page(content, "connections"))
 

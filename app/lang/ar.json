@@ -705,5 +705,10 @@
   "web_chan_unset": "إعداداته",
   "web_chan_enable": "الإرسال عبر هذه القناة",
   "web_discord_webhook": "ويب هوك ديسكورد",
-  "web_webhook_url": "عنوان الويب هوك"
+  "web_webhook_url": "عنوان الويب هوك",
+  "web_conn_discord_hook_intro": "إشعارات التحديث كبطاقات منسّقة في قناة ديسكورد. مستقلة عن الروبوت أدناه الذي يستقبل الأوامر.",
+  "web_conn_webhook_intro": "يرسل JSON إلى أي شيء يقبله — سكربتك الخاص، أو منصة أتمتة، أو ما لديك.",
+  "web_chan_sum_active": "نشطة",
+  "web_chan_sum_off": "مُطفأة",
+  "web_chan_sum_unset": "غير مُعدّة"
 }

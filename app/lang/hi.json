@@ -705,5 +705,10 @@
   "web_chan_unset": "इसकी सेटिंग्स",
   "web_chan_enable": "इस माध्यम से भेजें",
   "web_discord_webhook": "डिस्कॉर्ड वेबहुक",
-  "web_webhook_url": "वेबहुक URL"
+  "web_webhook_url": "वेबहुक URL",
+  "web_conn_discord_hook_intro": "डिस्कॉर्ड चैनल में सजाए गए ब्लॉक के रूप में अपडेट सूचनाएँ। नीचे दिए बॉट से अलग, जो कमांड लेता है।",
+  "web_conn_webhook_intro": "किसी भी स्वीकार करने वाले को JSON भेजता है — आपकी अपनी स्क्रिप्ट, कोई ऑटोमेशन प्लेटफ़ॉर्म, जो भी हो।",
+  "web_chan_sum_active": "सक्रिय",
+  "web_chan_sum_off": "बंद",
+  "web_chan_sum_unset": "अनकॉन्फ़िगर"
 }

@@ -705,5 +705,10 @@
   "web_chan_unset": "його налаштувань",
   "web_chan_enable": "Надсилати цим каналом",
   "web_discord_webhook": "Вебхук Discord",
-  "web_webhook_url": "Адреса вебхука"
+  "web_webhook_url": "Адреса вебхука",
+  "web_conn_discord_hook_intro": "Сповіщення про оновлення оформленими блоками в каналі Discord. Окремо від бота нижче, який приймає команди.",
+  "web_conn_webhook_intro": "Надсилає JSON усьому, що його приймає — вашому скрипту, платформі автоматизації, будь-чому.",
+  "web_chan_sum_active": "активно",
+  "web_chan_sum_off": "вимкнено",
+  "web_chan_sum_unset": "не налаштовано"
 }
