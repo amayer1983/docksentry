@@ -151,17 +151,15 @@ class Scheduler:
     def _checkers(self):
         """(checker, host_name) for every managed host, local first.
 
-        The name is deliberately blank while only one host is managed, so
-        log lines stay exactly as they were instead of gaining a "on local"
-        that says nothing. main.py always passes a registry, so keying this
-        off `self.hosts` alone would have changed every single-host log
-        line — check `is_multi`, not mere presence.
+        The body of this moved to `hosts.host_checkers` once it turned out
+        that this class was the only thing in the process that knew how to
+        walk every host — so the scheduled check covered a whole estate
+        and the two manual ones covered the local machine and said
+        nothing. Kept as a method because the call sites below read better
+        for it, and because it is what the scheduler tests reach for.
         """
-        if not self.hosts:
-            return [(self.checker, "")]
-        if not getattr(self.hosts, "is_multi", False):
-            return [(self.hosts.local.checker, "")]
-        return [(h.checker, h.name) for h in self.hosts]
+        from hosts import host_checkers
+        return host_checkers(self.hosts, self.checker)
 
     def start(self):
         self.running = True

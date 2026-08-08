@@ -5219,14 +5219,34 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 print("Web UI check skipped: a check is already running")
                 return
             try:
+                # Every managed host, not just the local one. This read
+                # `checker.check_all()` — one checker, no loop — so on a
+                # multi-host install the button checked the machine
+                # Docksentry runs on and quietly ignored the rest.
+                # Measured on a two-host demo: four containers with moving
+                # tags, two of them on `nas`, and the button reported
+                # "Checking 2 containers for updates" without a word about
+                # the other host. The scheduler had always looped; only
+                # the manual paths had not.
+                #
                 # No `bot=` here: with DEBUG on, check_all pushes its whole
                 # debug log to Telegram for the requester — right for the
                 # Telegram /check command, spam for a Web UI click (the log
                 # is on the /logs page anyway). Found-updates notifications
                 # below are unaffected. (#35 feedback, @NotRetarded)
-                updates = checker.check_all()
-                if updates:
-                    bot.notify_updates(updates)
+                from hosts import host_checkers
+                found = []
+                for host_checker, host_name in host_checkers(hosts, checker):
+                    try:
+                        found.extend(host_checker.check_all())
+                    except Exception as e:
+                        # One unreachable host must not cost the others
+                        # their check — the same rule the scheduler
+                        # follows, and the reason it reports per host.
+                        where = f" on {host_name}" if host_name else ""
+                        print(f"Web UI check error{where}: {e}")
+                if found:
+                    bot.notify_updates(found)
             except Exception as e:
                 print(f"Web UI check error: {e}")
             finally:

@@ -78,6 +78,34 @@ class HostRegistry:
         single-host output free of host labels that would only be noise."""
         return len(self.hosts) > 1
 
+    def checkers(self):
+        """`(checker, host_name)` for every managed host, local first.
+
+        The name is deliberately blank while only one host is managed, so
+        single-host log lines and messages stay exactly as they were
+        instead of gaining an "on local" that says nothing. `main` always
+        passes a registry, so keying that off mere presence would have
+        changed every single-host line — it checks `is_multi`.
+
+        This lived in `Scheduler._checkers` and nowhere else, which is
+        precisely why the scheduled check walked every host and the two
+        manual ones did not. Measured on a two-host demo before it moved
+        here: the Web UI's "Check Updates" button reported
+
+            Checking 2 containers for updates...
+              Checking: nginx-proxy (…/library/nginx:latest)
+              Checking: redis-cache (…/library/redis:alpine)
+
+        — two of four, with both containers on the second host never
+        looked at and nothing anywhere saying so. A manual check that
+        silently covers half an estate is worse than one that fails,
+        because it answers.
+
+        """
+        if not self.is_multi:
+            return [(self.local.checker, "")]
+        return [(h.checker, h.name) for h in self.hosts]
+
     def get(self, name):
         """Resolve a host by name, case-insensitively. None if unknown."""
         if not name:
@@ -87,6 +115,21 @@ class HostRegistry:
             if host.name == wanted:
                 return host
         return None
+
+
+def host_checkers(hosts, fallback):
+    """`HostRegistry.checkers()`, tolerating no registry at all.
+
+    Some call sites (tests that build a Web UI handler directly, older
+    entry points) have a single checker and no registry. They still need
+    the loop shape, so they get a one-element list rather than a special
+    case of their own — a caller that has to remember to branch is a
+    caller that will forget, which is the bug this whole helper exists
+    to close.
+    """
+    if not hosts:
+        return [(fallback, "")]
+    return hosts.checkers()
 
 
 def build_hosts(config, store):

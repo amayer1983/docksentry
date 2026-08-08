@@ -3157,10 +3157,33 @@ class TelegramBot:
                 self.send_message(self.t("update_already_running"))
                 return
             self.send_message(self.t("checking_updates"))
-            updates = checker.check_all(bot=self)
-            if updates:
-                self.send_message(self._build_dry_run(updates, checker))
-            else:
+            # Every managed host, exactly like the arg-less `/check` above.
+            # This used to be a bare `checker.check_all(bot=self)` — one
+            # checker, no loop — so on a multi-host install the dry run
+            # described what would happen on the local machine and said
+            # nothing at all about the others. A dry run exists to be
+            # trusted before an update; one that silently covers half an
+            # estate is worse than none.
+            _, targets, _ = self._resolve_targets("", write=False)
+            found = False
+            for host in (targets or [None]):
+                host_checker = self._checker_for(host, checker)
+                try:
+                    updates = host_checker.check_all(bot=self)
+                except Exception as e:
+                    if not self._multi():
+                        raise
+                    # One unreachable host must not stop the others being
+                    # reported — same rule the scheduler follows (#7).
+                    self.send_message(self.t("host_check_failed",
+                                             host=host.name,
+                                             error=str(e)[:200]))
+                    continue
+                if updates:
+                    found = True
+                    self.send_message(self._build_dry_run(updates,
+                                                          host_checker))
+            if not found:
                 self.notify_no_updates()
 
         elif text.startswith("/check ") and len(text.split(maxsplit=1)) > 1:
