@@ -3039,14 +3039,46 @@ class UpdateChecker:
         # so the sidecar joins the new owner via `container:<name>`.
         if netns_name:
             network_mode = f"container:{netns_name}"
-        if network_mode and network_mode != "default":
+        # A Podman pod member looks exactly like a Gluetun-style sidecar
+        # from `NetworkMode` alone — `container:<id>` — but the id is the
+        # pod's INFRA container, and Podman refuses to let a container
+        # join it that way. Measured, podman 4.9.3:
+        #
+        #   podman run --network container:<infra-id> …
+        #   Error: container dependency <infra-id> is part of a pod, but
+        #   container is not: invalid argument
+        #
+        # So every update of a container in a pod failed. Not silently —
+        # the recreate reports the error, and the rollback restores the
+        # renamed original, still a pod member, measured and confirmed —
+        # but it could never succeed either.
+        #
+        # `Pod` carries the pod id; Docker's inspect has no such key, so
+        # this is inert on Docker. `--pod` accepts the id (verified), and
+        # a pod cannot be recreated out from under its own member the way
+        # a Gluetun head can, so there is no stale-id problem here.
+        #
+        # `netns_name` wins when set, because that is the orchestrator
+        # having resolved a head container by NAME for the sidecar case,
+        # which a pod member never is.
+        pod_id = "" if netns_name else (config.get("Pod") or "")
+        if pod_id:
+            args.extend(["--pod", pod_id])
+        elif network_mode and network_mode != "default":
             args.extend(["--network", network_mode])
         # When inheriting another container's network namespace, Docker
         # forbids the per-container network knobs (--hostname, -p,
         # --add-host, --mac-address, --dns, ...). See #11 for the long
         # explanation. We skip those flags downstream when shares_netns
         # is True.
-        shares_netns = network_mode.startswith(("container:", "service:"))
+        # A pod member is in the same position: the namespace belongs to
+        # the pod's infra container, and Podman rejects the per-container
+        # network knobs for it just as Docker does for `container:`. Its
+        # NetworkMode already starts with `container:`, so this is true
+        # either way — stated explicitly so that a later change to how
+        # pods are detected cannot quietly drop it.
+        shares_netns = bool(pod_id) or network_mode.startswith(
+            ("container:", "service:"))
 
         # ── Primary network aliases, IP, MAC, links ────────────────
         # Compose containers get a service alias (`db`, `app`, `redis`)
@@ -3290,9 +3322,20 @@ class UpdateChecker:
             if v and v not in default:
                 args.extend([flag, v])
 
-        # ── Runtime (skip Docker default `runc`) ───────────────
+        # ── Runtime (skip each CLI's own default) ──────────────
+        # Docker reports `runc`. Podman reports `oci` — which is not the
+        # name of a runtime at all but its generic label for "whatever
+        # `runtime` is configured", and feeding it back fails outright:
+        #
+        #   Error: default OCI runtime "oci" not found: invalid argument
+        #
+        # Measured, podman 4.9.3, on an ordinary container with nothing
+        # unusual about it. Passing neither is what both CLIs want when
+        # the container is on the default runtime — the flag exists for
+        # the person who deliberately picked `crun` or `kata`, and their
+        # value comes through untouched.
         runtime = host.get("Runtime", "") or ""
-        if runtime and runtime != "runc":
+        if runtime and runtime not in ("runc", "oci"):
             args.extend(["--runtime", runtime])
 
         # ── Logging driver (skip Docker default json-file/empty) ─
@@ -3529,7 +3572,27 @@ class UpdateChecker:
             elif container_cmd != image_cmd:
                 args.extend(container_cmd)
 
-        return args
+        # argv is strings, by definition — and a non-string in it does not
+        # fail here, it fails inside `subprocess.run` with
+        #
+        #   TypeError: expected str, bytes or os.PathLike object, not int
+        #
+        # raised before the CLI is ever executed, from a frame that says
+        # nothing about which field was wrong.
+        #
+        # Not hypothetical. Podman reports `Config.StopSignal` as the
+        # NUMBER 15 where Docker reports the string "SIGTERM" (measured,
+        # podman 4.9.3), so `--stop-signal 15` went into the list as an
+        # int and every recreate on Podman threw before it started —
+        # every container, not only the pod members that led here. Both
+        # CLIs accept the numeric form on the command line; it only ever
+        # needed to be a string.
+        #
+        # Coercing the whole list rather than that one field, because the
+        # next inspect difference between the two CLIs will land the same
+        # way, and a TypeError from inside subprocess is the worst place
+        # to learn about it.
+        return [a if isinstance(a, str) else str(a) for a in args]
 
     def _get_image_version_label(self, image):
         """Read & normalize `org.opencontainers.image.version` from an
