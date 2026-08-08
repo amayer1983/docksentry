@@ -41,7 +41,7 @@ import os
 import urllib.error
 import urllib.request
 
-from .base import BaseNotifier
+from .base import BaseNotifier, channel_setting
 
 #: Apprise's own severities. Mapping onto them (rather than sending
 #: everything as "info") is what makes a failed update stand out on
@@ -52,16 +52,16 @@ TYPE_WARNING = "warning"
 TYPE_FAILURE = "failure"
 
 
-def _endpoint():
-    return (os.environ.get("APPRISE_URL") or "").strip()
+def _endpoint(cfg):
+    return (channel_setting(cfg, "apprise_url", "APPRISE_URL") or "").strip()
 
 
-def _targets():
-    return (os.environ.get("APPRISE_URLS") or "").strip()
+def _targets(cfg):
+    return (channel_setting(cfg, "apprise_urls", "APPRISE_URLS") or "").strip()
 
 
-def _tag():
-    return (os.environ.get("APPRISE_TAG") or "").strip()
+def _tag(cfg):
+    return (channel_setting(cfg, "apprise_tag", "APPRISE_TAG") or "").strip()
 
 
 class AppriseNotifier(BaseNotifier):
@@ -69,7 +69,7 @@ class AppriseNotifier(BaseNotifier):
     order = 50
 
     def configured(self):
-        return bool(_endpoint())
+        return bool(_endpoint(self.config))
 
     # ── transport ────────────────────────────────────────────────────
     def _post(self, title, body, kind=TYPE_INFO):
@@ -77,15 +77,15 @@ class AppriseNotifier(BaseNotifier):
         failure rather than raising into the facade, same as every other
         channel — a broken notification must never take an update with it.
         """
-        url = _endpoint()
+        url = _endpoint(self.config)
         if not url:
             return None
         payload = {"title": title, "body": body, "type": kind, "format": "text"}
-        targets = _targets()
+        targets = _targets(self.config)
         if targets:
             # The stateless endpoint requires the destinations inline.
             payload["urls"] = targets
-        tag = _tag()
+        tag = _tag(self.config)
         if tag:
             payload["tag"] = tag
         data = json.dumps(payload).encode()

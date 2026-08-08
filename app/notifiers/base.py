@@ -14,6 +14,7 @@ live here so the plugins stay tiny and behave identically.
 """
 
 import json
+import os
 import socket
 import time
 import urllib.error
@@ -91,6 +92,30 @@ def post_json_with_retry(url, payload, headers, channel):
     return None
 
 
+def channel_setting(config, attr, env_var, default=""):
+    """A channel setting: the saved value, else the environment.
+
+    The four plugin channels (ntfy, Matrix, Apprise, Gotify) read
+    `os.environ` directly until v2.4.0 — deliberately, so that a whole
+    channel stayed one file, with the note that the reader could move
+    "when the Web UI gains an ntfy field later". This is later: they have
+    fields on the Connections page now.
+
+    `config` wins because that is where both values meet once the
+    attribute exists — `Config.from_env` seeds it from the variable and
+    `_load_persistent` lays the saved value over it, the same precedence
+    every other setting has had for years. The environment is consulted
+    only when the attribute is absent altogether: a bare namespace in a
+    test, or a caller older than this change. So nothing that worked
+    before stops working, and `None` is the signal for "nobody has heard
+    of this setting" rather than "it is empty".
+    """
+    value = getattr(config, attr, None)
+    if value is None:
+        value = os.environ.get(env_var, default)
+    return value
+
+
 def version_str(u):
     """`v_old → v_new` when both are known and differ, else the single
     known version, else "". Mirrors the Telegram badge (#44) so Discord /
@@ -123,6 +148,10 @@ class BaseNotifier:
 
     def __init__(self, config):
         self.config = config
+
+    def setting(self, attr, env_var, default=""):
+        """This channel's `channel_setting`, for readability in methods."""
+        return channel_setting(self.config, attr, env_var, default)
 
     # ── channel activation ───────────────────────────────────────────
     def configured(self):

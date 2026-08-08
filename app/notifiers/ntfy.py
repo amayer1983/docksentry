@@ -26,7 +26,7 @@ import os
 import urllib.error
 import urllib.request
 
-from .base import BaseNotifier
+from .base import BaseNotifier, channel_setting
 
 
 def _header_value(text):
@@ -59,7 +59,7 @@ def _header_value(text):
     return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode() + "?="
 
 
-def _auth_header():
+def _auth_header(cfg):
     """`Authorization` for a protected ntfy topic, or "" when unset.
 
     A self-hosted ntfy with `auth-default-access: deny`, or a reserved
@@ -72,11 +72,11 @@ def _auth_header():
     a Bearer header. `NTFY_USER` + `NTFY_PASSWORD` fall back to Basic,
     which ntfy also accepts.
     """
-    token = (os.environ.get("NTFY_TOKEN") or "").strip()
+    token = (channel_setting(cfg, "ntfy_token", "NTFY_TOKEN") or "").strip()
     if token:
         return f"Bearer {token}"
-    user = (os.environ.get("NTFY_USER") or "").strip()
-    pw = os.environ.get("NTFY_PASSWORD") or ""
+    user = (channel_setting(cfg, "ntfy_user", "NTFY_USER") or "").strip()
+    pw = channel_setting(cfg, "ntfy_password", "NTFY_PASSWORD") or ""
     if user:
         import base64
         raw = f"{user}:{pw}".encode("utf-8")
@@ -84,17 +84,17 @@ def _auth_header():
     return ""
 
 
-def _topic_url():
+def _topic_url(cfg):
     """Resolve the topic URL from the environment, or "" when unset.
 
     ``NTFY_URL`` wins; otherwise ``NTFY_SERVER`` + ``NTFY_TOPIC`` are joined.
     Read live (not cached) so the channel reflects env changes and stays
     trivially testable."""
-    url = (os.environ.get("NTFY_URL") or "").strip()
+    url = (channel_setting(cfg, "ntfy_url", "NTFY_URL") or "").strip()
     if url:
         return url
-    server = (os.environ.get("NTFY_SERVER") or "").strip().rstrip("/")
-    topic = (os.environ.get("NTFY_TOPIC") or "").strip().strip("/")
+    server = (channel_setting(cfg, "ntfy_server", "NTFY_SERVER") or "").strip().rstrip("/")
+    topic = (channel_setting(cfg, "ntfy_topic", "NTFY_TOPIC") or "").strip().strip("/")
     if server and topic:
         return f"{server}/{topic}"
     return ""
@@ -105,14 +105,14 @@ class NtfyNotifier(BaseNotifier):
     order = 40
 
     def configured(self):
-        return bool(_topic_url())
+        return bool(_topic_url(self.config))
 
     # ── transport ────────────────────────────────────────────────────
     def _post(self, title, body, priority="default"):
         """POST one message to the ntfy topic. Best-effort: logs and returns
         on any failure, never raising into the caller — same contract as the
         other channels."""
-        url = _topic_url()
+        url = _topic_url(self.config)
         if not url:
             return None
         label = self._bot_label()
@@ -123,7 +123,7 @@ class NtfyNotifier(BaseNotifier):
             "Priority": priority,
             "User-Agent": "Docksentry/1.0",
         }
-        auth = _auth_header()
+        auth = _auth_header(self.config)
         if auth:
             headers["Authorization"] = auth
         req = urllib.request.Request(

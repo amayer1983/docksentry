@@ -36,7 +36,7 @@ import urllib.request
 
 from container_store import is_safe_link
 
-from .base import BaseNotifier
+from .base import BaseNotifier, channel_setting
 
 
 def _esc(value):
@@ -52,16 +52,16 @@ def _esc(value):
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def _homeserver():
-    return (os.environ.get("MATRIX_HOMESERVER") or "").strip().rstrip("/")
+def _homeserver(cfg):
+    return (channel_setting(cfg, "matrix_homeserver", "MATRIX_HOMESERVER") or "").strip().rstrip("/")
 
 
-def _token():
-    return (os.environ.get("MATRIX_TOKEN") or "").strip()
+def _token(cfg):
+    return (channel_setting(cfg, "matrix_token", "MATRIX_TOKEN") or "").strip()
 
 
-def _room():
-    return (os.environ.get("MATRIX_ROOM") or "").strip()
+def _room(cfg):
+    return (channel_setting(cfg, "matrix_room", "MATRIX_ROOM") or "").strip()
 
 
 class MatrixNotifier(BaseNotifier):
@@ -75,22 +75,22 @@ class MatrixNotifier(BaseNotifier):
         self._room_id_cache = {}
 
     def configured(self):
-        return bool(_homeserver() and _token() and _room())
+        return bool(_homeserver(self.config) and _token(self.config) and _room(self.config))
 
     # ── transport ────────────────────────────────────────────────────
     def _request(self, method, path, body=None):
-        url = f"{_homeserver()}{path}"
+        url = f"{_homeserver(self.config)}{path}"
         req = urllib.request.Request(
             url, method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {_token()}"})
+                     "Authorization": f"Bearer {_token(self.config)}"})
         with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read() or b"{}")
 
     def _resolve_room(self):
         """Room ID for the configured room, resolving an alias if needed."""
-        room = _room()
+        room = _room(self.config)
         if not room.startswith("#"):
             return room
         if room in self._room_id_cache:

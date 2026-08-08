@@ -1837,6 +1837,32 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if "conn_page" in params:
                     config.smtp_tls_verify = "smtp_tls_verify" in params
 
+                # ── ntfy / Gotify / Matrix / Apprise ─────────────────
+                # Plain values first, then the credentials, which follow
+                # the rule every secret on this page follows: empty means
+                # "leave it alone", and `<name>_clear` is what removes it.
+                for _plain in ("ntfy_url", "ntfy_server", "ntfy_topic",
+                               "ntfy_user", "gotify_url", "matrix_homeserver",
+                               "matrix_room", "apprise_url", "apprise_tag"):
+                    if _plain in params:
+                        setattr(config, _plain, params[_plain][0].strip())
+                # Distinct loop variable on purpose: both loops using the
+                # same name made the `f"{var}_clear"` companions
+                # indistinguishable, and the symmetry check invented a
+                # `_clear` for every plain field.
+                for _key in ("ntfy_token", "ntfy_password", "gotify_token",
+                             "matrix_token", "apprise_urls"):
+                    if _key in params:
+                        # Not stripped for the password, matching every
+                        # other credential here: it may end in a space.
+                        _val = params[_key][0]
+                        if _key != "ntfy_password":
+                            _val = _val.strip()
+                        if _val:
+                            setattr(config, _key, _val)
+                    if f"{_key}_clear" in params:
+                        setattr(config, _key, "")
+
                 # ── Interactive Discord bot (#57, @NotRetarded) ──────
                 # `_discord_changed` decides afterwards whether the bot
                 # has to be restarted, so saving anything else on this
@@ -4786,6 +4812,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                              ("ssl", "web_smtp_tls_ssl"),
                              ("none", "web_smtp_tls_none")))
 
+            def secret_field(name, label, help_text, current, placeholder):
+                """A masked credential: field, plus a way to remove it.
+
+                Five channels grew one of these at once, and five
+                hand-written copies is five chances to render the stored
+                value back into `value=` by accident. The rules are the
+                same for all of them and live here: the field is always
+                blank, an empty submission means "unchanged", and the
+                clear checkbox appears only when there is something to
+                clear.
+                """
+                cid = "cb-clear-" + name.replace("_", "-")
+                ph = t("web_secret_saved") if current else placeholder
+                html_ = (
+                    f'<label>{label} {help_(help_text)}{env_(name)}</label>'
+                    f'<input type="password" name="{name}" value="" '
+                    f'autocomplete="new-password" placeholder="{_e(ph)}" '
+                    f'form="conn-form">')
+                if current:
+                    html_ += (
+                        f'<div class="form-checkbox-row">'
+                        f'<input type="checkbox" name="{name}_clear" '
+                        f'id="{cid}" form="conn-form">'
+                        f'<label for="{cid}">{t("web_secret_clear")}</label>'
+                        f'</div>')
+                return html_
+
             discord_clear_row = ""
             if config.discord_bot_token:
                 discord_clear_row = (
@@ -4923,6 +4976,65 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="adv-only">
     <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
     <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
+  </div>
+</div>
+
+<div class="card">
+<h2>{t("web_conn_ntfy")}</h2>
+<p class="card-intro">{t("web_conn_ntfy_intro")}</p>
+  <label>{t("web_ntfy_url")} {help_(t("web_ntfy_url_help"))}{env_("ntfy_url")}</label>
+  <input type="text" name="ntfy_url" value="{_e(config.ntfy_url)}" placeholder="https://ntfy.sh/my-topic" form="conn-form">
+  <div class="grid">
+    <div>
+      <label>{t("web_ntfy_server")} {help_(t("web_ntfy_server_help"))}{env_("ntfy_server")}</label>
+      <input type="text" name="ntfy_server" value="{_e(config.ntfy_server)}" placeholder="https://ntfy.sh" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_ntfy_topic")} {help_(t("web_ntfy_topic_help"))}{env_("ntfy_topic")}</label>
+      <input type="text" name="ntfy_topic" value="{_e(config.ntfy_topic)}" placeholder="my-topic" form="conn-form">
+    </div>
+  </div>
+  {secret_field("ntfy_token", t("web_ntfy_token"), t("web_ntfy_token_help"), config.ntfy_token, t("web_ntfy_token_placeholder"))}
+  <div class="adv-only">
+    <label>{t("web_ntfy_user")} {help_(t("web_ntfy_user_help"))}{env_("ntfy_user")}</label>
+    <input type="text" name="ntfy_user" value="{_e(config.ntfy_user)}" autocomplete="off" form="conn-form">
+    {secret_field("ntfy_password", t("web_ntfy_password"), t("web_ntfy_password_help"), config.ntfy_password, t("web_ntfy_password_placeholder"))}
+  </div>
+</div>
+
+<div class="card">
+<h2>{t("web_conn_gotify")}</h2>
+<p class="card-intro">{t("web_conn_gotify_intro")}</p>
+  <label>{t("web_gotify_url")} {help_(t("web_gotify_url_help"))}{env_("gotify_url")}</label>
+  <input type="text" name="gotify_url" value="{_e(config.gotify_url)}" placeholder="https://gotify.example.com" form="conn-form">
+  {secret_field("gotify_token", t("web_gotify_token"), t("web_gotify_token_help"), config.gotify_token, t("web_gotify_token_placeholder"))}
+</div>
+
+<div class="card">
+<h2>{t("web_conn_matrix")}</h2>
+<p class="card-intro">{t("web_conn_matrix_intro")}</p>
+  <div class="grid">
+    <div>
+      <label>{t("web_matrix_homeserver")} {help_(t("web_matrix_homeserver_help"))}{env_("matrix_homeserver")}</label>
+      <input type="text" name="matrix_homeserver" value="{_e(config.matrix_homeserver)}" placeholder="https://matrix.org" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_matrix_room")} {help_(t("web_matrix_room_help"))}{env_("matrix_room")}</label>
+      <input type="text" name="matrix_room" value="{_e(config.matrix_room)}" placeholder="#docksentry:matrix.org" form="conn-form">
+    </div>
+  </div>
+  {secret_field("matrix_token", t("web_matrix_token"), t("web_matrix_token_help"), config.matrix_token, t("web_matrix_token_placeholder"))}
+</div>
+
+<div class="card">
+<h2>{t("web_conn_apprise")}</h2>
+<p class="card-intro">{t("web_conn_apprise_intro")}</p>
+  <label>{t("web_apprise_url")} {help_(t("web_apprise_url_help"))}{env_("apprise_url")}</label>
+  <input type="text" name="apprise_url" value="{_e(config.apprise_url)}" placeholder="http://apprise:8000/notify" form="conn-form">
+  {secret_field("apprise_urls", t("web_apprise_urls"), t("web_apprise_urls_help"), config.apprise_urls, t("web_apprise_urls_placeholder"))}
+  <div class="adv-only">
+    <label>{t("web_apprise_tag")} {help_(t("web_apprise_tag_help"))}{env_("apprise_tag")}</label>
+    <input type="text" name="apprise_tag" value="{_e(config.apprise_tag)}" form="conn-form">
   </div>
 </div>
 

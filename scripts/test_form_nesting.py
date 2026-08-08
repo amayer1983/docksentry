@@ -146,8 +146,42 @@ def main():
         wanted = (set(re.findall(r'["\'](\w+)["\']\s*(?:in|not in)\s+params', handler))
                   | set(re.findall(r'params\[["\'](\w+)["\']\]', handler))
                   | set(re.findall(r'params\.get\(["\'](\w+)["\']', handler)))
+        # Fields handled in a loop over a tuple of names. The Connections
+        # page reads nine plain values and five credentials that way, and
+        # a scan that only understands `"x" in params` sees none of them —
+        # it reported all fourteen as rendered-but-ignored, which was the
+        # test being unable to read the handler rather than the handler
+        # being wrong.
+        #
+        # Each loop is taken on its own terms: its tuple counts only if
+        # the loop variable is membership-tested against params inside
+        # it, and an `f"{var}_clear"` test inside that same loop adds the
+        # suffixed names for THAT tuple. Blanket-suffixing every name
+        # known so far was the first attempt and it invented three dozen
+        # fields nobody reads.
+        for m in re.finditer(r"for (\w+) in \(([^)]*)\):\n", handler):
+            var, names_src = m.group(1), m.group(2)
+            body = handler[m.end():]
+            nxt = re.search(r"\n(?! {17})\S", body)
+            body = body[:nxt.start()] if nxt else body
+            if not re.search(re.escape(var) + r"\s+in params", body):
+                continue
+            names = set(re.findall(r'["\'](\w+)["\']', names_src))
+            wanted |= names
+            for suffix in re.findall(r'f"\{' + re.escape(var) + r'\}(_\w+)"',
+                                     body):
+                wanted |= {n + suffix for n in names}
+
         sent = set(re.findall(r'name="([\w]+)"[^>]*' + re.escape(form_id), region))
         sent |= set(re.findall(re.escape(form_id) + r'[^>]*name="([\w]+)"', region))
+        # Controls built by a helper rather than written out. Five
+        # credentials on the Connections page go through `secret_field`,
+        # which renders the input and its "remove this" checkbox from one
+        # call — so the literal `name="ntfy_token"` appears nowhere in
+        # the template, and a scan of the markup alone concluded the page
+        # never sends a field it very much does.
+        for m in re.finditer(r'secret_field\(\s*"(\w+)"', region):
+            sent |= {m.group(1), m.group(1) + "_clear"}
 
         checks[f"{page}: the handler reads nothing the page cannot send"] = not (wanted - sent)
         if wanted - sent:

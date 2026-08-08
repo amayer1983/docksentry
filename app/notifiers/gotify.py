@@ -30,7 +30,7 @@ import os
 import urllib.error
 import urllib.request
 
-from .base import BaseNotifier
+from .base import BaseNotifier, channel_setting
 
 #: Gotify priorities. Its Android client treats ≥8 as loud (bypasses
 #: quiet settings), which is right for a failed update and wrong for
@@ -39,12 +39,12 @@ PRIO_NORMAL = 5
 PRIO_HIGH = 8
 
 
-def _message_url():
+def _message_url(cfg):
     """Normalise whatever the user put in ``GOTIFY_URL`` to the message
     endpoint. Accepting both the base URL and the full endpoint is not
     politeness — both appear in Gotify's own docs and in every tutorial,
     so both will be pasted in."""
-    url = (os.environ.get("GOTIFY_URL") or "").strip().rstrip("/")
+    url = (channel_setting(cfg, "gotify_url", "GOTIFY_URL") or "").strip().rstrip("/")
     if not url:
         return ""
     if url.endswith("/message"):
@@ -52,8 +52,8 @@ def _message_url():
     return f"{url}/message"
 
 
-def _token():
-    return (os.environ.get("GOTIFY_TOKEN") or "").strip()
+def _token(cfg):
+    return (channel_setting(cfg, "gotify_token", "GOTIFY_TOKEN") or "").strip()
 
 
 class GotifyNotifier(BaseNotifier):
@@ -61,14 +61,14 @@ class GotifyNotifier(BaseNotifier):
     order = 45
 
     def configured(self):
-        return bool(_message_url() and _token())
+        return bool(_message_url(self.config) and _token(self.config))
 
     # ── transport ────────────────────────────────────────────────────
     def _post(self, title, message, priority=PRIO_NORMAL):
         """POST one message. Best-effort: logs and returns on failure,
         never raises into the facade."""
-        url = _message_url()
-        token = _token()
+        url = _message_url(self.config)
+        token = _token(self.config)
         if not (url and token):
             return None
         payload = {"title": title, "message": message, "priority": priority}

@@ -62,6 +62,11 @@ class FakeConfig(types.SimpleNamespace):
             smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
             smtp_from="", smtp_to="", smtp_tls="starttls",
             smtp_tls_verify=True,
+            ntfy_url="", ntfy_server="", ntfy_topic="", ntfy_token="",
+            ntfy_user="", ntfy_password="",
+            gotify_url="", gotify_token="",
+            matrix_homeserver="", matrix_room="", matrix_token="",
+            apprise_url="", apprise_urls="", apprise_tag="",
             saves=0,
         )
         base.update(kw)
@@ -167,6 +172,39 @@ def main():
     post(cfg, "smtp_host=x")
     checks["a POST without the form marker cannot turn it off"] = (
         cfg.smtp_tls_verify is True)
+
+    # ── ntfy / Gotify / Matrix / Apprise ────────────────────────
+    # Nine plain values and five credentials, all handled by two loops.
+    # The credentials follow the same rule as every other secret here.
+    cfg = FakeConfig(ntfy_token="KEEP", matrix_token="KEEP",
+                     apprise_urls="discord://keep")
+    post(cfg, "conn_page=1&ntfy_server=https://ntfy.sh&ntfy_topic=alerts"
+              "&gotify_url=https://gotify.example.com"
+              "&matrix_homeserver=https://matrix.org&matrix_room=%23a:b.c"
+              "&apprise_url=http://apprise:8000/notify"
+              "&ntfy_token=&matrix_token=&apprise_urls=")
+    checks["ntfy server and topic are saved"] = (
+        cfg.ntfy_server == "https://ntfy.sh" and cfg.ntfy_topic == "alerts")
+    checks["the Gotify URL is saved"] = (
+        cfg.gotify_url == "https://gotify.example.com")
+    checks["the Matrix room is saved"] = cfg.matrix_room == "#a:b.c"
+    checks["empty credentials mean unchanged, for all of them"] = (
+        cfg.ntfy_token == "KEEP" and cfg.matrix_token == "KEEP"
+        and cfg.apprise_urls == "discord://keep")
+
+    post(cfg, "conn_page=1&ntfy_token=new-token")
+    checks["a submitted credential replaces the old one"] = (
+        cfg.ntfy_token == "new-token")
+    post(cfg, "conn_page=1&ntfy_token=&ntfy_token_clear=on"
+              "&apprise_urls=&apprise_urls_clear=on")
+    checks["and each has its own clear checkbox"] = (
+        cfg.ntfy_token == "" and cfg.apprise_urls == ""
+        and cfg.matrix_token == "KEEP")
+
+    # An emptied plain field still clears, exactly like the others.
+    post(cfg, "conn_page=1&ntfy_topic=&matrix_room=")
+    checks["an emptied plain plugin field is cleared"] = (
+        cfg.ntfy_topic == "" and cfg.matrix_room == "")
 
     # ── the bot is restarted only when its own fields change ─────
     calls = []

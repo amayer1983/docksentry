@@ -37,6 +37,13 @@ SECRET_DISCORD_TOKEN = "MTIzNDU2.SECRETdiscord-should-never-render-654"
 # And the SMTP password, the third secret to reach a form here.
 SECRET_SMTP_PW = "SUPERSECRETsmtp-should-never-render-321"
 
+# The four plugin channels, whose credentials joined the same page.
+SECRET_NTFY = "tk_SECRETntfy-should-never-render-111"
+SECRET_NTFY_PW = "SECRETntfypw-should-never-render-222"
+SECRET_GOTIFY = "SECRETgotify-should-never-render-333"
+SECRET_MATRIX = "syt_SECRETmatrix-should-never-render-444"
+SECRET_APPRISE = "discord://SECRETapprise-should-never-render-555"
+
 
 def _config():
     return types.SimpleNamespace(
@@ -86,6 +93,15 @@ def _config():
         smtp_to="ops@example.com",
         smtp_tls="starttls",
         smtp_tls_verify=True,
+        # ntfy / Gotify / Matrix / Apprise (v2.4.0) — five more secrets
+        # on the same page. Each is set to a value the test hunts for.
+        ntfy_url="", ntfy_server="https://ntfy.sh", ntfy_topic="ds-alerts",
+        ntfy_token=SECRET_NTFY, ntfy_user="", ntfy_password=SECRET_NTFY_PW,
+        gotify_url="https://gotify.example.com", gotify_token=SECRET_GOTIFY,
+        matrix_homeserver="https://matrix.org", matrix_room="#ds:matrix.org",
+        matrix_token=SECRET_MATRIX,
+        apprise_url="http://apprise:8000/notify",
+        apprise_urls=SECRET_APPRISE, apprise_tag="",
         web_password=SECRET_PW,
         # env_() calls this for every field — no env overrides in the test.
         env_override=lambda key: None,
@@ -187,6 +203,22 @@ def main():
         SECRET_PW not in channels and SECRET_PW not in html)
     checks["SMTP password is NOT rendered on either page"] = (
         SECRET_SMTP_PW not in channels and SECRET_SMTP_PW not in html)
+    # All five plugin-channel credentials, at once. Every one of them is
+    # rendered by the same `secret_field` helper, so this is really a
+    # check on that helper — which is the point of having one.
+    _leaked = [s_ for s_ in (SECRET_NTFY, SECRET_NTFY_PW, SECRET_GOTIFY,
+                             SECRET_MATRIX, SECRET_APPRISE)
+               if s_ in channels or s_ in html]
+    checks["no plugin-channel credential is rendered"] = not _leaked
+    if _leaked:
+        print(f"    leaked: {_leaked}")
+    checks["each credential still offers a way to remove it"] = all(
+        f'name="{n}_clear"' in channels
+        for n in ("ntfy_token", "ntfy_password", "gotify_token",
+                  "matrix_token", "apprise_urls"))
+    checks["and the plain values are shown"] = (
+        'name="ntfy_topic" value="ds-alerts"' in channels
+        and 'name="matrix_room" value="#ds:matrix.org"' in channels)
 
     # ── E-mail card ──────────────────────────────────────────────────
     checks["SMTP server field shows its value"] = (

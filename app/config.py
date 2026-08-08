@@ -106,6 +106,20 @@ PERSISTENT_KEYS = [
     "discord_allowed_users",
     "smtp_host", "smtp_port", "smtp_user", "smtp_password",
     "smtp_from", "smtp_to", "smtp_tls",
+    "ntfy_url",
+    "ntfy_server",
+    "ntfy_topic",
+    "ntfy_token",
+    "ntfy_user",
+    "ntfy_password",
+    "matrix_homeserver",
+    "matrix_room",
+    "matrix_token",
+    "apprise_url",
+    "apprise_urls",
+    "apprise_tag",
+    "gotify_url",
+    "gotify_token",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -159,6 +173,20 @@ PERSISTENT_ENV_VARS = {
     "smtp_from": "SMTP_FROM",
     "smtp_to": "SMTP_TO",
     "smtp_tls": "SMTP_TLS",
+    "ntfy_url": "NTFY_URL",
+    "ntfy_server": "NTFY_SERVER",
+    "ntfy_topic": "NTFY_TOPIC",
+    "ntfy_token": "NTFY_TOKEN",
+    "ntfy_user": "NTFY_USER",
+    "ntfy_password": "NTFY_PASSWORD",
+    "matrix_homeserver": "MATRIX_HOMESERVER",
+    "matrix_room": "MATRIX_ROOM",
+    "matrix_token": "MATRIX_TOKEN",
+    "apprise_url": "APPRISE_URL",
+    "apprise_urls": "APPRISE_URLS",
+    "apprise_tag": "APPRISE_TAG",
+    "gotify_url": "GOTIFY_URL",
+    "gotify_token": "GOTIFY_TOKEN",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -219,6 +247,20 @@ PERSISTENT_ENV_DEFAULTS = {
     "smtp_from": "",
     "smtp_to": "",
     "smtp_tls": "starttls",
+    "ntfy_url": "",
+    "ntfy_server": "",
+    "ntfy_topic": "",
+    "ntfy_token": "",
+    "ntfy_user": "",
+    "ntfy_password": "",
+    "matrix_homeserver": "",
+    "matrix_room": "",
+    "matrix_token": "",
+    "apprise_url": "",
+    "apprise_urls": "",
+    "apprise_tag": "",
+    "gotify_url": "",
+    "gotify_token": "",
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -291,6 +333,20 @@ PERSISTENT_SETTINGS_TAB = {
     "smtp_to": "Connections",
     "smtp_tls": "Connections",
     "smtp_tls_verify": "Connections",
+    "ntfy_url": "Connections",
+    "ntfy_server": "Connections",
+    "ntfy_topic": "Connections",
+    "ntfy_token": "Connections",
+    "ntfy_user": "Connections",
+    "ntfy_password": "Connections",
+    "matrix_homeserver": "Connections",
+    "matrix_room": "Connections",
+    "matrix_token": "Connections",
+    "apprise_url": "Connections",
+    "apprise_urls": "Connections",
+    "apprise_tag": "Connections",
+    "gotify_url": "Connections",
+    "gotify_token": "Connections",
     "webhook_url": "Connections",
 }
 
@@ -319,7 +375,21 @@ class Config:
                  telegram_polling=True, debug=False, update_policy="all",
                  container_cli="auto", docker_hosts="",
                  discord_bot_token="", discord_app_id="", discord_guild_id="",
-                 discord_allowed_users=None):
+                 discord_allowed_users=None,
+                 ntfy_url="",
+                 ntfy_server="",
+                 ntfy_topic="",
+                 ntfy_token="",
+                 ntfy_user="",
+                 ntfy_password="",
+                 matrix_homeserver="",
+                 matrix_room="",
+                 matrix_token="",
+                 apprise_url="",
+                 apprise_urls="",
+                 apprise_tag="",
+                 gotify_url="",
+                 gotify_token=""):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -395,6 +465,30 @@ class Config:
             raw = [p for p in raw.replace(";", ",").split(",")]
         self.discord_allowed_users = [str(u).strip() for u in (raw or [])
                                       if str(u).strip()]
+
+        # ── ntfy / Matrix / Apprise / Gotify ───────────────────
+        # These four channels read os.environ directly until v2.4.0,
+        # deliberately, so that a channel stayed one file. They are
+        # here now because they have fields on the Connections page,
+        # and BaseNotifier.setting() prefers what is here over the
+        # variable. Passwords and tokens among them: settings.json is
+        # 0600 and they are off the loggable allow-list, same as the
+        # Web password and the SMTP one.
+        self.ntfy_url = (ntfy_url or "").strip()
+        self.ntfy_server = (ntfy_server or "").strip()
+        self.ntfy_topic = (ntfy_topic or "").strip()
+        self.ntfy_token = (ntfy_token or "").strip()
+        self.ntfy_user = (ntfy_user or "").strip()
+        # Not stripped — a password may legitimately end in a space.
+        self.ntfy_password = ntfy_password or ""
+        self.matrix_homeserver = (matrix_homeserver or "").strip()
+        self.matrix_room = (matrix_room or "").strip()
+        self.matrix_token = (matrix_token or "").strip()
+        self.apprise_url = (apprise_url or "").strip()
+        self.apprise_urls = (apprise_urls or "").strip()
+        self.apprise_tag = (apprise_tag or "").strip()
+        self.gotify_url = (gotify_url or "").strip()
+        self.gotify_token = (gotify_token or "").strip()
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -778,6 +872,20 @@ class Config:
             discord_app_id=_env("DISCORD_APP_ID", ""),
             discord_guild_id=_env("DISCORD_GUILD_ID", ""),
             discord_allowed_users=_env("DISCORD_ALLOWED_USERS", ""),
+            ntfy_url=_env("NTFY_URL", ""),
+            ntfy_server=_env("NTFY_SERVER", ""),
+            ntfy_topic=_env("NTFY_TOPIC", ""),
+            ntfy_token=_env("NTFY_TOKEN", ""),
+            ntfy_user=_env("NTFY_USER", ""),
+            ntfy_password=_env("NTFY_PASSWORD", ""),
+            matrix_homeserver=_env("MATRIX_HOMESERVER", ""),
+            matrix_room=_env("MATRIX_ROOM", ""),
+            matrix_token=_env("MATRIX_TOKEN", ""),
+            apprise_url=_env("APPRISE_URL", ""),
+            apprise_urls=_env("APPRISE_URLS", ""),
+            apprise_tag=_env("APPRISE_TAG", ""),
+            gotify_url=_env("GOTIFY_URL", ""),
+            gotify_token=_env("GOTIFY_TOKEN", ""),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),
