@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Telegram üzerinden gönder ve yanıtla",
   "web_chan_none_title": "Açık kanal kalmadı",
   "web_chan_none_body": "Docksentry denetlemeye ve güncellemeye devam eder, ama size bunu bildirecek hiçbir yolu kalmaz — yalnızca bu web arayüzü.",
-  "web_chan_none_ok": "Yine de kaydet"
+  "web_chan_none_ok": "Yine de kaydet",
+  "web_leftover_title": "Güncellemeden kalan yedekler",
+  "web_leftover_intro": "<ad>_old adlı {count} kapsayıcı, yarıda kesilen bir güncellemeden kalmış. Başarıyla güncellenmiş kapsayıcıların durdurulmuş kopyalarıdır — silmek güvenlidir ve burada kimse sizin yerinize silmez."
 }

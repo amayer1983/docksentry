@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "通过 Telegram 发送并回复",
   "web_chan_none_title": "没有启用的渠道了",
   "web_chan_none_body": "Docksentry 仍会检查和更新，但没有任何途径告诉你 —— 只剩这个网页界面。",
-  "web_chan_none_ok": "仍然保存"
+  "web_chan_none_ok": "仍然保存",
+  "web_leftover_title": "残留的更新备份",
+  "web_leftover_intro": "有 {count} 个名为 <name>_old 的容器是某次中断的更新遗留下来的。它们是已成功更新的容器的停止副本 —— 删除是安全的，而这里不会替你删除。"
 }

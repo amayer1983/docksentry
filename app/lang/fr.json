@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Envoyer et répondre via Telegram",
   "web_chan_none_title": "Plus aucun canal actif",
   "web_chan_none_body": "Docksentry continuera de vérifier et de mettre à jour, mais n'aura plus aucun moyen de vous le dire — seulement cette interface web.",
-  "web_chan_none_ok": "Enregistrer quand même"
+  "web_chan_none_ok": "Enregistrer quand même",
+  "web_leftover_title": "Sauvegardes de mise à jour restantes",
+  "web_leftover_intro": "{count} conteneur(s) nommés <nom>_old proviennent d'une mise à jour interrompue. Ce sont des copies arrêtées de conteneurs mis à jour avec succès — sans danger à supprimer, et rien ici ne les supprime à votre place."
 }

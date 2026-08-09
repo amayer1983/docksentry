@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Enviar e responder pelo Telegram",
   "web_chan_none_title": "Não resta nenhum canal ativo",
   "web_chan_none_body": "O Docksentry continuará a verificar e atualizar, mas não terá como lhe dizer — apenas esta interface web.",
-  "web_chan_none_ok": "Guardar mesmo assim"
+  "web_chan_none_ok": "Guardar mesmo assim",
+  "web_leftover_title": "Cópias de atualização deixadas para trás",
+  "web_leftover_intro": "{count} contentor(es) chamados <nome>_old ficaram de uma atualização interrompida. São cópias paradas de contentores atualizados com sucesso — seguras de remover, e aqui nada as remove por si."
 }

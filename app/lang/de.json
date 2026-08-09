@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Über Telegram senden und antworten",
   "web_chan_none_title": "Kein Weg mehr eingeschaltet",
   "web_chan_none_body": "Docksentry prüft und aktualisiert weiter, hat aber keine Möglichkeit mehr, dir davon zu berichten — nur noch diese Weboberfläche.",
-  "web_chan_none_ok": "Trotzdem speichern"
+  "web_chan_none_ok": "Trotzdem speichern",
+  "web_leftover_title": "Liegengebliebene Update-Sicherungen",
+  "web_leftover_intro": "{count} Container mit der Endung _old stammen aus einem Update, dessen Vorgang unterbrochen wurde. Es sind gestoppte Kopien von Containern, die erfolgreich aktualisiert wurden — gefahrlos zu entfernen, und hier entfernt sie niemand für dich."
 }

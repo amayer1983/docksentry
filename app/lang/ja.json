@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Telegram で送信し応答する",
   "web_chan_none_title": "有効な経路が残りません",
   "web_chan_none_body": "Docksentry は確認と更新を続けますが、それを伝える手段がなくなります — この Web 画面だけです。",
-  "web_chan_none_ok": "このまま保存"
+  "web_chan_none_ok": "このまま保存",
+  "web_leftover_title": "残った更新バックアップ",
+  "web_leftover_intro": "<name>_old という名前のコンテナが {count} 個、処理が中断された更新から残っています。正常に更新されたコンテナの停止済みコピーです — 削除して問題ありませんし、ここで自動的に削除することはありません。"
 }

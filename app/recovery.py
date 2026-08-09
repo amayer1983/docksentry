@@ -86,8 +86,26 @@ def recover_interrupted_update(config, backend, t=None):
 
         if live:
             # The swap completed; we died afterwards, or the container was
-            # restored by hand. Nothing to repair — and `<name>_old` is
-            # then an ordinary backup, which the cleanup grace period owns.
+            # restored by hand. Nothing to repair.
+            #
+            # The backup, though, is ours and is now certainly stale — we
+            # wrote the note that says so. This used to leave it, on the
+            # stated grounds that "the cleanup grace period owns" it,
+            # which is not true of anything: `cleanup_images` prunes
+            # images, and `_prune_old_backups` deletes backup DIRECTORIES
+            # on disk. Nothing in the process has ever removed a leftover
+            # `<name>_old` CONTAINER. So every update whose process died
+            # after the swap left one behind for good, and @LeeNX found
+            # three of them and reasonably concluded his containers were
+            # not updating (#56).
+            #
+            # Only when `name` is live: that is the proof the swap
+            # finished and the backup is not the copy someone still
+            # needs. And only the name from our own in-flight note — this
+            # never goes looking for `*_old` containers in general,
+            # because a container someone else named that way is theirs.
+            if backup:
+                backend.rm(old_name, force=True, timeout=30)
             clear_inflight(config)
             return ""
 

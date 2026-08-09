@@ -43,6 +43,7 @@ class FakeBackend:
         self.names = list(names)
         self.rename_ok = rename_ok
         self.started = []
+        self.removed = []
 
     def ps(self, **kw):
         return types.SimpleNamespace(returncode=0, stdout="\n".join(self.names))
@@ -51,6 +52,11 @@ class FakeBackend:
         if not self.rename_ok:
             return types.SimpleNamespace(returncode=1, stderr="no")
         self.names = [new if n == old else n for n in self.names]
+        return types.SimpleNamespace(returncode=0, stderr="")
+
+    def rm(self, name, **kw):
+        self.removed.append(name)
+        self.names = [n for n in self.names if n != name]
         return types.SimpleNamespace(returncode=0, stderr="")
 
     def run(self, args, **kw):
@@ -85,15 +91,34 @@ def main():
     checks["the journal is cleared"] = not os.path.exists(cfg.inflight_file)
 
     # ── the swap actually completed ──────────────────────────────
-    # We died after the rename landed, or someone fixed it by hand. The
-    # leftover backup then belongs to the cleanup grace period, not here —
-    # touching it would remove a container the user is running.
+    # We died after the rename landed, or someone fixed it by hand.
+    #
+    # This used to leave `web_old` where it was, with the comment that it
+    # "belongs to the cleanup grace period". No such thing exists for
+    # containers: `cleanup_images` prunes images and `_prune_old_backups`
+    # deletes backup DIRECTORIES. So the backup stayed for good, and
+    # @LeeNX found three of them and reasonably concluded his containers
+    # were not updating (#56).
+    #
+    # It goes now — but only the backup, only when the live container is
+    # there to prove the swap finished, and only the name from our own
+    # in-flight note. A `*_old` container somebody else named that way is
+    # theirs.
     cfg = _cfg(dict(REC))
     b = FakeBackend(["web", "web_old"])
-    checks["a live container is left alone"] = (
+    checks["a completed swap needs no repair"] = (
         recover_interrupted_update(cfg, b) == "")
-    checks["…and nothing was renamed"] = b.names == ["web", "web_old"]
+    checks["the live container is left alone"] = "web" in b.names
+    checks["…nothing was renamed"] = b.started == [] and "web" in b.names
     checks["…and nothing was started"] = b.started == []
+    checks["…but the stale backup is removed"] = (
+        b.removed == ["web_old"] and "web_old" not in b.names)
+
+    # No backup present: nothing to remove, and nothing invented.
+    cfg = _cfg(dict(REC))
+    b = FakeBackend(["web"])
+    checks["…and with no backup there, nothing is removed"] = (
+        recover_interrupted_update(cfg, b) == "" and b.removed == [])
 
     # ── nothing to restore ───────────────────────────────────────
     cfg = _cfg(dict(REC))

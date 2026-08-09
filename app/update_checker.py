@@ -4129,7 +4129,17 @@ class UpdateChecker:
                 # what the user wants), and report as a warning so the
                 # user knows to keep an eye on it.
                 tail = self._tail_logs(name, lines=10)
-                self.backend.rm(old_name, timeout=30)
+                # force, like every other place that drops this backup.
+                # Plain `rm` fails on a running container and its exit
+                # code is not read here — measured: exit 1, "container is
+                # running: stop the container before removing or force
+                # remove". _rollback_to_old had exactly this bug and was
+                # fixed; this call site was missed. The backup is stopped
+                # in the ordinary case, so this mostly buys certainty
+                # rather than a change in behaviour — but a silent rm
+                # whose failure nobody notices is how `<name>_old`
+                # containers pile up (#56, @LeeNX).
+                self.backend.rm(old_name, force=True, timeout=30)
                 detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
                 msg = (f"⚠ Updated but still 'starting' after our wait — left running. "
                        f"Docker's own healthcheck will keep checking. ({detail})")
@@ -4148,8 +4158,17 @@ class UpdateChecker:
                 self._save_history(name, image, False, msg)
                 return False, msg
 
-            # Remove old container
-            self.backend.rm(old_name, timeout=30)
+            # Remove old container — forced, like every other place that
+            # drops this backup. Plain `rm` fails on a running container
+            # and nobody reads the exit code here; measured, exit 1,
+            # "container is running: stop the container before removing
+            # or force remove". `_rollback_to_old` had the identical bug
+            # and was fixed. This is the SUCCESS path, so it is the one
+            # that runs every time an update works — and a silent `rm`
+            # whose failure nobody notices is how `<name>_old` containers
+            # accumulate until somebody concludes their containers are
+            # not updating (#56, @LeeNX).
+            self.backend.rm(old_name, force=True, timeout=30)
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
             detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"

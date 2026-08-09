@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "Send and answer through Telegram",
   "web_chan_none_title": "No channel left on",
   "web_chan_none_body": "Docksentry will keep checking and updating, but it will have no way to tell you about it — only this Web UI.",
-  "web_chan_none_ok": "Save anyway"
+  "web_chan_none_ok": "Save anyway",
+  "web_leftover_title": "Leftover update backups",
+  "web_leftover_intro": "{count} container(s) named <name>_old are left from an update whose process was interrupted. They are stopped copies of containers that updated successfully — safe to remove, and nothing here removes them for you."
 }

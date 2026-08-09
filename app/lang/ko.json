@@ -718,5 +718,7 @@
   "web_chan_enable_telegram": "텔레그램으로 보내고 응답하기",
   "web_chan_none_title": "켜진 경로가 없습니다",
   "web_chan_none_body": "Docksentry는 계속 확인하고 업데이트하지만, 그것을 알릴 방법이 없어집니다 — 이 웹 화면뿐입니다.",
-  "web_chan_none_ok": "그래도 저장"
+  "web_chan_none_ok": "그래도 저장",
+  "web_leftover_title": "남아 있는 업데이트 백업",
+  "web_leftover_intro": "<이름>_old 라는 컨테이너 {count}개가 중단된 업데이트에서 남았습니다. 정상적으로 업데이트된 컨테이너의 멈춘 사본이며 — 삭제해도 안전하고, 여기서 대신 삭제하지는 않습니다."
 }
