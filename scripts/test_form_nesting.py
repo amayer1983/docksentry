@@ -46,8 +46,12 @@ PAGES = [
     ("Settings",
      '<form method="POST" action="/settings" id="settings-form"></form>',
      'form="settings-form"', "/settings"),
+    # The Connections form carries data- attributes for the "no channel
+    # left on" confirmation, so its opening tag spans several lines. What
+    # matters is unchanged and is what this matches: it declares the id
+    # and closes immediately, holding no controls.
     ("Connections",
-     '<form method="POST" action="/connections" id="conn-form"></form>',
+     '<form method="POST" action="/connections" id="conn-form"',
      'form="conn-form"', "/connections"),
 ]
 
@@ -83,7 +87,13 @@ def main():
         method = "def _page" + post_path.replace("/", "_")
 
         # ── 2. the form is empty and carries the id ──────────────
-        checks[f"{page}: form declares its id and is empty"] = empty_form in src
+        # …and still closes with nothing inside it.
+        _open = src.find(empty_form)
+        _empty = (_open >= 0
+                  and "</form>" in src[_open:_open + 400]
+                  and not re.search(r"<(input|select|textarea|button)\b",
+                                    src[_open:src.index("</form>", _open)]))
+        checks[f"{page}: form declares its id and is empty"] = _empty
         if empty_form not in src:
             continue
 
@@ -190,6 +200,13 @@ def main():
         # never sends a field it very much does.
         for m in re.finditer(r'secret_field\(\s*"(\w+)"', region):
             sent |= {m.group(1), m.group(1) + "_clear"}
+        # Same for the per-channel state line: `channel_head("gotify")`
+        # renders that channel's switch and its `_shown` marker, with the
+        # name built from the argument, so the literal never appears in
+        # the markup either.
+        for m in re.finditer(r'channel_head\(\s*"(\w+)"', region):
+            sent |= {f"channel_{m.group(1)}_enabled",
+                     f"channel_{m.group(1)}_enabled_shown"}
 
         checks[f"{page}: the handler reads nothing the page cannot send"] = not (wanted - sent)
         if wanted - sent:

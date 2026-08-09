@@ -711,5 +711,12 @@
   "web_chan_sum_active": "активно",
   "web_chan_sum_off": "вимкнено",
   "web_chan_sum_unset": "не налаштовано",
-  "web_chan_telegram_env": "BOT_TOKEN і CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN і CHAT_ID",
+  "web_chan_send_only": "лише надсилає",
+  "web_chan_send_and_commands": "надсилає і приймає команди",
+  "web_chan_commands_only": "приймає команди",
+  "web_chan_enable_telegram": "Надсилати й відповідати через Telegram",
+  "web_chan_none_title": "Не лишилося жодного каналу",
+  "web_chan_none_body": "Docksentry продовжить перевіряти й оновлювати, але не матиме як вам про це сказати — лише цей вебінтерфейс.",
+  "web_chan_none_ok": "Усе одно зберегти"
 }

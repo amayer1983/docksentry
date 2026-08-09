@@ -992,6 +992,19 @@ class TelegramBot:
         auto=True            — auto-notification (cron-triggered: updates,
                   cleanup, disk warning). Suppressed during quiet hours.
         """
+        # The channel switch, before anything else. Off means off: no
+        # notifications and no answers to commands either, because
+        # half-off ("why is it still replying?") is the confusing state
+        # rather than the useful one.
+        #
+        # There is no way to lock yourself out through it: the switch
+        # lives on the Connections page, so anyone who can turn Telegram
+        # off can turn it back on from the same screen. Setting
+        # CHANNEL_TELEGRAM_ENABLED=false in compose alongside
+        # WEB_UI=false is a deliberate act with the same recovery as any
+        # other compose mistake.
+        if not getattr(self.config, "channel_telegram_enabled", True):
+            return None
         if auto:
             from quiet_hours import is_quiet_now
             if is_quiet_now(self.config):
@@ -2603,6 +2616,17 @@ class TelegramBot:
         # the other app's command list). sendMessage never conflicts, so
         # notifications keep flowing. Interactive commands are off — the
         # user drives Docksentry from the Web UI instead.
+        # Switched off entirely (Connections page) — no polling either,
+        # for the same reason send_message returns early: a channel that
+        # is off but still answers /status is the confusing state.
+        # TELEGRAM_POLLING is a different thing and stays what it was:
+        # send-only, for sharing a token with another app.
+        if not getattr(self.config, "channel_telegram_enabled", True):
+            print("Telegram is switched off (Connections page): no "
+                  "notifications, no commands. Turn it back on there.")
+            while self.running:
+                _time.sleep(1)
+            return
         if not getattr(self.config, "telegram_polling", True):
             print("Telegram in send-only mode (TELEGRAM_POLLING=false): "
                   "notifications on, interactive commands off. "

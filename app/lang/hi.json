@@ -711,5 +711,12 @@
   "web_chan_sum_active": "सक्रिय",
   "web_chan_sum_off": "बंद",
   "web_chan_sum_unset": "अनकॉन्फ़िगर",
-  "web_chan_telegram_env": "BOT_TOKEN और CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN और CHAT_ID",
+  "web_chan_send_only": "केवल भेजता है",
+  "web_chan_send_and_commands": "भेजता है और कमांड लेता है",
+  "web_chan_commands_only": "कमांड लेता है",
+  "web_chan_enable_telegram": "टेलीग्राम से भेजें और उत्तर दें",
+  "web_chan_none_title": "कोई माध्यम चालू नहीं बचा",
+  "web_chan_none_body": "Docksentry जाँचता और अपडेट करता रहेगा, पर आपको बताने का कोई रास्ता नहीं बचेगा — केवल यह वेब इंटरफ़ेस।",
+  "web_chan_none_ok": "फिर भी सहेजें"
 }

@@ -711,5 +711,12 @@
   "web_chan_sum_active": "etkin",
   "web_chan_sum_off": "kapalı",
   "web_chan_sum_unset": "kurulmamış",
-  "web_chan_telegram_env": "BOT_TOKEN ve CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN ve CHAT_ID",
+  "web_chan_send_only": "yalnızca gönderir",
+  "web_chan_send_and_commands": "gönderir ve komut alır",
+  "web_chan_commands_only": "komut alır",
+  "web_chan_enable_telegram": "Telegram üzerinden gönder ve yanıtla",
+  "web_chan_none_title": "Açık kanal kalmadı",
+  "web_chan_none_body": "Docksentry denetlemeye ve güncellemeye devam eder, ama size bunu bildirecek hiçbir yolu kalmaz — yalnızca bu web arayüzü.",
+  "web_chan_none_ok": "Yine de kaydet"
 }

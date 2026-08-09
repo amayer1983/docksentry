@@ -88,8 +88,16 @@ def main():
         print("ERROR: BOT_TOKEN and CHAT_ID must be set together.")
         sys.exit(1)
     telegram_on = bool(config.bot_token and config.chat_id)
+    # The startup guard has to see the switch too. Otherwise
+    # CHANNEL_TELEGRAM_ENABLED=false alongside WEB_UI=false passes it —
+    # the token is set, so it counts — and boots an instance with no way
+    # to report anything and no interface to turn the switch back on.
+    # Recoverable only by editing compose, which is exactly the state
+    # this check exists to refuse.
+    telegram_usable = telegram_on and getattr(
+        config, "channel_telegram_enabled", True)
     has_any_channel = (
-        telegram_on
+        telegram_usable
         or config.web_ui
         or config.discord_webhook
         or config.webhook_url
@@ -438,7 +446,13 @@ def main():
     print(f"Excluded: {config.exclude_containers or 'none'}")
     print(f"Auto selfupdate: {'ON' if config.auto_selfupdate else 'OFF'}")
     print(f"Language: {config.language}")
-    print(f"Telegram: {'ON' if telegram_on else 'OFF'}")
+    # "ON" meant "BOT_TOKEN and CHAT_ID are set", which stopped being the
+    # same thing as "Telegram will do anything" once it gained a switch.
+    # A boot line that says ON while the next line says it is switched
+    # off is worse than no line.
+    _tg_switch = getattr(config, "channel_telegram_enabled", True)
+    print(f"Telegram: {'ON' if telegram_on and _tg_switch else 'OFF'}"
+          + ("" if _tg_switch else " (switched off on the Connections page)"))
     if telegram_on and config.telegram_allowed_users:
         # Print count, not the IDs themselves — those are personal data.
         print(f"Telegram allowed-users whitelist: {len(config.telegram_allowed_users)} user(s)")

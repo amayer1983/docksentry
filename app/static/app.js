@@ -195,6 +195,35 @@ function dsTestChannel(name) {
     });
 }
 
+// ── Turning off the last channel (Connections page) ───────────
+// Not a block — it is your machine — but you should be told. With
+// every channel off, Docksentry still checks and still updates; it
+// just has nowhere to say so, and you find out by opening this page.
+//
+// Only switches that are RENDERED count, which is the same rule the
+// server uses: a channel with no switch is one that could not send
+// anything anyway.
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.getElementById('conn-form');
+    if (!form) return;
+    form.addEventListener('submit', function(ev) {
+        var boxes = document.querySelectorAll('input[name^="channel_"][name$="_enabled"]');
+        if (!boxes.length) return;
+        var on = 0;
+        boxes.forEach(function(b) { if (b.checked) on++; });
+        if (on > 0) return;
+        if (form.dataset.confirmedEmpty === '1') return;
+        ev.preventDefault();
+        window.dsConfirm(
+            form.dataset.chanNoneBody ||
+                'Docksentry will keep checking and updating, but it will ' +
+                'have no way to tell you about it — only this Web UI.',
+            function() { form.dataset.confirmedEmpty = '1'; form.submit(); },
+            {title: form.dataset.chanNoneTitle || 'No channel left on',
+             confirmLabel: form.dataset.chanNoneOk || 'Save anyway'});
+    });
+});
+
 // ── Per-container update check (Status page, #50) ─────────────
 // The global check button fires a thread and redirects straight back
 // to a page still showing the old numbers; the only feedback is a

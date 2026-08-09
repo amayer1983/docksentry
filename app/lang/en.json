@@ -711,5 +711,12 @@
   "web_chan_sum_active": "active",
   "web_chan_sum_off": "off",
   "web_chan_sum_unset": "not set up",
-  "web_chan_telegram_env": "BOT_TOKEN and CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN and CHAT_ID",
+  "web_chan_send_only": "sends only",
+  "web_chan_send_and_commands": "sends and takes commands",
+  "web_chan_commands_only": "takes commands",
+  "web_chan_enable_telegram": "Send and answer through Telegram",
+  "web_chan_none_title": "No channel left on",
+  "web_chan_none_body": "Docksentry will keep checking and updating, but it will have no way to tell you about it — only this Web UI.",
+  "web_chan_none_ok": "Save anyway"
 }

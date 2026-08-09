@@ -711,5 +711,12 @@
   "web_chan_sum_active": "actifs",
   "web_chan_sum_off": "désactivés",
   "web_chan_sum_unset": "non configurés",
-  "web_chan_telegram_env": "BOT_TOKEN et CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN et CHAT_ID",
+  "web_chan_send_only": "envoie seulement",
+  "web_chan_send_and_commands": "envoie et reçoit des commandes",
+  "web_chan_commands_only": "reçoit des commandes",
+  "web_chan_enable_telegram": "Envoyer et répondre via Telegram",
+  "web_chan_none_title": "Plus aucun canal actif",
+  "web_chan_none_body": "Docksentry continuera de vérifier et de mettre à jour, mais n'aura plus aucun moyen de vous le dire — seulement cette interface web.",
+  "web_chan_none_ok": "Enregistrer quand même"
 }

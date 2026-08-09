@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.6.0] - 2026-08-09
+
+### Added
+- **Telegram can be switched off too, and every card says what its channel can actually do.** The seven notifier channels got a switch in 2.5.0 and the one most people use did not, which read as a bug and was one. `CHANNEL_TELEGRAM_ENABLED` is a saved setting with a switch on its card. Off means off — no notifications **and** no answers to commands, because a channel that is off and still replies to `/status` is the confusing state, not the useful one. Distinct from `TELEGRAM_POLLING`, which keeps notifications on and only stops command polling so another app can share the token.
+- **A short note on every card saying what that way can do** — *sends only*, *sends and takes commands*, *takes commands*. "Discord" appears on two cards, the webhook and the bot, and nothing on the page previously said they were different things.
+- **Turning off the last channel now says so first.** Not a block — it is your machine — but Docksentry would keep checking and updating with no way to tell you about it, and you would find that out by opening this page. The startup check knows about the switch as well: `CHANNEL_TELEGRAM_ENABLED=false` alongside `WEB_UI=false` used to boot an instance with no way to report anything and no interface to turn the switch back on. It refuses now.
+
+### Fixed
+- **The boot line said `Telegram: ON` for a Telegram that was switched off.** It meant "BOT_TOKEN and CHAT_ID are set", which stopped being the same thing.
+
 ## [2.5.1] - 2026-08-08
 
 ### Fixed

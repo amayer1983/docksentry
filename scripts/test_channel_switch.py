@@ -159,10 +159,30 @@ def main():
     import web_ui  # noqa: E402
     src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "web_ui.py"), encoding="utf-8").read()
-    i = src.index("_tg_on = bool(")
-    seg = src[i:i + 200]
+    i = src.index("_tg_set = bool(")
+    seg = src[i:i + 300]
     checks["the summary counts Telegram from its own two variables"] = (
         "bot_token" in seg and "chat_id" in seg)
+
+    # ── Telegram's own switch ────────────────────────────────────
+    # It is not a plugin, so its switch is enforced in telegram_bot
+    # rather than by active(). Off means off — both halves — because a
+    # channel that is off and still answers /status is the confusing
+    # state. Asserted at the two places that make it true.
+    tb = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                           "telegram_bot.py"), encoding="utf-8").read()
+    i = tb.index("def send_message(self, text")
+    checks["send_message checks the Telegram switch"] = (
+        "channel_telegram_enabled" in tb[i:i + 2000])
+    checks["…and so does the command loop"] = (
+        tb.count("channel_telegram_enabled") >= 2)
+    # And it is a persistent setting, or the switch would not survive a
+    # restart — which is what BOT_TOKEN and CHAT_ID cannot do.
+    import config as _cfg
+    checks["the switch persists across restarts"] = (
+        "channel_telegram_enabled" in _cfg.PERSISTENT_KEYS)
+    checks["…while the token itself stays env-only"] = (
+        "bot_token" not in _cfg.PERSISTENT_KEYS)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

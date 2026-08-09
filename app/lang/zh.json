@@ -711,5 +711,12 @@
   "web_chan_sum_active": "已启用",
   "web_chan_sum_off": "已关闭",
   "web_chan_sum_unset": "未配置",
-  "web_chan_telegram_env": "BOT_TOKEN 和 CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN 和 CHAT_ID",
+  "web_chan_send_only": "只发送",
+  "web_chan_send_and_commands": "发送并接收命令",
+  "web_chan_commands_only": "接收命令",
+  "web_chan_enable_telegram": "通过 Telegram 发送并回复",
+  "web_chan_none_title": "没有启用的渠道了",
+  "web_chan_none_body": "Docksentry 仍会检查和更新，但没有任何途径告诉你 —— 只剩这个网页界面。",
+  "web_chan_none_ok": "仍然保存"
 }

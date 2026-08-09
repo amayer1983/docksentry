@@ -711,5 +711,12 @@
   "web_chan_sum_active": "有効",
   "web_chan_sum_off": "オフ",
   "web_chan_sum_unset": "未設定",
-  "web_chan_telegram_env": "BOT_TOKEN と CHAT_ID"
+  "web_chan_telegram_env": "BOT_TOKEN と CHAT_ID",
+  "web_chan_send_only": "送信のみ",
+  "web_chan_send_and_commands": "送信とコマンド受付",
+  "web_chan_commands_only": "コマンド受付",
+  "web_chan_enable_telegram": "Telegram で送信し応答する",
+  "web_chan_none_title": "有効な経路が残りません",
+  "web_chan_none_body": "Docksentry は確認と更新を続けますが、それを伝える手段がなくなります — この Web 画面だけです。",
+  "web_chan_none_ok": "このまま保存"
 }

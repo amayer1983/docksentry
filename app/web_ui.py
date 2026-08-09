@@ -1846,9 +1846,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # form and must keep whatever it had — otherwise
                     # filling in a half-configured channel would silently
                     # switch it off at the same moment it became usable.
-                    for _chan in ("discord", "webhook", "smtp", "ntfy",
-                                  "gotify", "matrix", "apprise"):
-                        _flag = f"channel_{_chan}_enabled"
+                    for _flag in ("channel_discord_enabled",
+                                  "channel_webhook_enabled",
+                                  "channel_smtp_enabled",
+                                  "channel_ntfy_enabled",
+                                  "channel_gotify_enabled",
+                                  "channel_matrix_enabled",
+                                  "channel_apprise_enabled",
+                                  "channel_telegram_enabled"):
                         if f"{_flag}_shown" in params:
                             setattr(config, _flag, _flag in params)
 
@@ -4958,8 +4963,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 test = (f'<button type="button" class="btn-sm btn-outline" '
                         f'onclick="dsTestChannel(\'{name}\')">'
                         f'{t("web_test_send")}</button>' if complete else "")
+                # What this way can DO, next to what it is doing. Every
+                # notifier channel is one-way: it sends and cannot be
+                # spoken to. Telegram and the Discord bot can, and they
+                # say so on their own cards. Without it, "Discord" on two
+                # different cards means two different things and nothing
+                # on the page says which.
+                can = (f'<span class="badge" style="font-weight:400">'
+                       f'{_e(t("web_chan_send_only"))}</span>')
                 return (f'<div style="display:flex;align-items:center;gap:14px;'
-                        f'flex-wrap:wrap;margin:0 0 10px">{state}{switch}{test}'
+                        f'flex-wrap:wrap;margin:0 0 10px">{state}{can}{switch}{test}'
                         f'</div>')
 
             def secret_field(name, label, help_text, current, placeholder):
@@ -5167,15 +5180,40 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             #
             # It has no switch and no fields of its own here, so it only
             # ever contributes to "active" or "not set up".
-            _tg_on = bool(getattr(config, "bot_token", "")
-                          and getattr(config, "chat_id", ""))
+            _tg_set = bool(getattr(config, "bot_token", "")
+                           and getattr(config, "chat_id", ""))
+            _tg_enabled = bool(getattr(config, "channel_telegram_enabled", True))
+            _tg_on = _tg_set and _tg_enabled
 
-            telegram_state = (
-                f'<span style="color:var(--success)">{_e(t("web_chan_active"))}</span>'
-                if _tg_on else
-                f'<span style="color:var(--text-muted)">'
-                f'{_e(t("web_chan_incomplete", missing=t("web_chan_telegram_env")))}'
-                f'</span>')
+            if not _tg_set:
+                telegram_state = (
+                    f'<span style="color:var(--text-muted)">'
+                    f'{_e(t("web_chan_incomplete", missing=t("web_chan_telegram_env")))}'
+                    f'</span>')
+            elif not _tg_enabled:
+                telegram_state = (f'<span style="color:var(--warn)">'
+                                  f'{_e(t("web_chan_off"))}</span>')
+            else:
+                telegram_state = (f'<span style="color:var(--success)">'
+                                  f'{_e(t("web_chan_active"))}</span>')
+            # Same switch as the seven plugin channels, and only once the
+            # two variables it needs are set — the rule everywhere on
+            # this page. Off means off, notifications and commands both;
+            # the label says so, because "why is it still answering
+            # /status?" is the next question otherwise.
+            telegram_state += (f'<span class="badge" style="font-weight:400;'
+                               f'margin-left:14px">'
+                               f'{_e(t("web_chan_send_and_commands"))}</span>')
+            if _tg_set:
+                telegram_state += (
+                    '<input type="hidden" name="channel_telegram_enabled_shown"'
+                    ' value="1" form="conn-form">'
+                    '<label class="form-checkbox-row" '
+                    'style="margin:0 0 0 14px;display:inline-flex">'
+                    '<input type="checkbox" name="channel_telegram_enabled" '
+                    f'id="cb-chan-telegram" {"checked" if _tg_enabled else ""} '
+                    'form="conn-form">'
+                    f'<span>{t("web_chan_enable_telegram")}</span></label>')
 
             _n_active = sum(1 for n in _cards if _rank(n) == 0) + int(_tg_on)
             _n_off = sum(1 for n in _cards if _rank(n) == 1)
@@ -5197,7 +5235,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                           (_rank(n), list(_cards).index(n))))
 
             content = (f"""
-<form method="POST" action="/connections" id="conn-form"></form>
+<form method="POST" action="/connections" id="conn-form"
+      data-chan-none-title="{_e(t("web_chan_none_title"))}"
+      data-chan-none-body="{_e(t("web_chan_none_body"))}"
+      data-chan-none-ok="{_e(t("web_chan_none_ok"))}"></form>
 <!-- Proof that a POST came from this whole form. An unchecked box
      submits nothing, so `"x" in params` reads absence as "off" —
      which is right for a page that always renders the box, and
@@ -5229,6 +5270,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                        + _ordered + f"""<div class="card">
 <h2>{t("web_discord_bot_title")}</h2>
 <p class="card-intro">{t("web_discord_bot_intro")}</p>
+<p style="margin:0 0 10px"><span class="badge" style="font-weight:400">{t("web_chan_commands_only")}</span></p>
 {discord_bot_notice}
 
   <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>

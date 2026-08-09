@@ -128,6 +128,7 @@ PERSISTENT_KEYS = [
     "channel_gotify_enabled",
     "channel_matrix_enabled",
     "channel_apprise_enabled",
+    "channel_telegram_enabled",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -202,6 +203,7 @@ PERSISTENT_ENV_VARS = {
     "channel_gotify_enabled": "CHANNEL_GOTIFY_ENABLED",
     "channel_matrix_enabled": "CHANNEL_MATRIX_ENABLED",
     "channel_apprise_enabled": "CHANNEL_APPRISE_ENABLED",
+    "channel_telegram_enabled": "CHANNEL_TELEGRAM_ENABLED",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -283,6 +285,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "channel_gotify_enabled": True,
     "channel_matrix_enabled": True,
     "channel_apprise_enabled": True,
+    "channel_telegram_enabled": True,
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -309,6 +312,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "channel_gotify_enabled",
     "channel_matrix_enabled",
     "channel_apprise_enabled",
+    "channel_telegram_enabled",
 }
 # NOT loggable, for the record: web_password, discord_webhook, webhook_url,
 # discord_bot_token (credentials / tokenised URLs) and telegram_topic_id +
@@ -383,6 +387,7 @@ PERSISTENT_SETTINGS_TAB = {
     "channel_gotify_enabled": "Connections",
     "channel_matrix_enabled": "Connections",
     "channel_apprise_enabled": "Connections",
+    "channel_telegram_enabled": "Connections",
     "webhook_url": "Connections",
 }
 
@@ -432,7 +437,8 @@ class Config:
                  channel_ntfy_enabled=True,
                  channel_gotify_enabled=True,
                  channel_matrix_enabled=True,
-                 channel_apprise_enabled=True):
+                 channel_apprise_enabled=True,
+                 channel_telegram_enabled=True):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -543,6 +549,12 @@ class Config:
         self.channel_gotify_enabled = bool(channel_gotify_enabled)
         self.channel_matrix_enabled = bool(channel_matrix_enabled)
         self.channel_apprise_enabled = bool(channel_apprise_enabled)
+        # Telegram is not a notifier plugin — it is the bot — but it
+        # is a connection like the others and gets the same switch.
+        # Off means off: no notifications AND no answers to
+        # commands, because half-off ("why is it still replying?")
+        # is the confusing state, not the useful one.
+        self.channel_telegram_enabled = bool(channel_telegram_enabled)
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -947,6 +959,7 @@ class Config:
             channel_gotify_enabled=_env("CHANNEL_GOTIFY_ENABLED", "true").lower() not in ("false", "0", "no"),
             channel_matrix_enabled=_env("CHANNEL_MATRIX_ENABLED", "true").lower() not in ("false", "0", "no"),
             channel_apprise_enabled=_env("CHANNEL_APPRISE_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_telegram_enabled=_env("CHANNEL_TELEGRAM_ENABLED", "true").lower() not in ("false", "0", "no"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),
