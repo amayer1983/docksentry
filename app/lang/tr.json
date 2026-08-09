@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry denetlemeye ve güncellemeye devam eder, ama size bunu bildirecek hiçbir yolu kalmaz — yalnızca bu web arayüzü.",
   "web_chan_none_ok": "Yine de kaydet",
   "web_leftover_title": "Güncellemeden kalan yedekler",
-  "web_leftover_intro": "<ad>_old adlı {count} kapsayıcı, yarıda kesilen bir güncellemeden kalmış. Başarıyla güncellenmiş kapsayıcıların durdurulmuş kopyalarıdır — silmek güvenlidir ve burada kimse sizin yerinize silmez."
+  "web_leftover_intro": "<ad>_old adlı {count} kapsayıcı, yarıda kesilen bir güncellemeden kalmış. Başarıyla güncellenmiş kapsayıcıların durdurulmuş kopyalarıdır — silmek güvenlidir ve burada kimse sizin yerinize silmez.",
+  "sum_updated": "{n} güncellendi",
+  "sum_failed": "{n} başarısız",
+  "sum_held": "{n} onay bekliyor",
+  "sum_skipped": "{n} atlandı",
+  "web_badge_podman_auto_tt": "Bu kapsayıcıda io.containers.autoupdate={mode} var, yani onu `podman auto-update` de yönetiyor. Tek kapsayıcıda iki güncelleyici: önce çalışan kazanır. Docksentry istediğinizde yine günceller, ama yalnız olmadığını bilmelisiniz.",
+  "web_host_contexts": "Docker bu makinede şu uç noktaları biliyor: {list} — yukarıdaki adreste yazım hatası varsa işe yarar."
 }

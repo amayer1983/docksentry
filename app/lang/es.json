@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry seguirá comprobando y actualizando, pero no tendrá forma de contártelo: solo esta interfaz web.",
   "web_chan_none_ok": "Guardar de todos modos",
   "web_leftover_title": "Copias de seguridad de actualización sobrantes",
-  "web_leftover_intro": "{count} contenedor(es) llamados <nombre>_old quedaron de una actualización interrumpida. Son copias detenidas de contenedores que se actualizaron bien: se pueden borrar sin riesgo, y aquí nadie los borra por ti."
+  "web_leftover_intro": "{count} contenedor(es) llamados <nombre>_old quedaron de una actualización interrumpida. Son copias detenidas de contenedores que se actualizaron bien: se pueden borrar sin riesgo, y aquí nadie los borra por ti.",
+  "sum_updated": "{n} actualizados",
+  "sum_failed": "{n} fallidos",
+  "sum_held": "{n} pendientes de confirmación",
+  "sum_skipped": "{n} omitidos",
+  "web_badge_podman_auto_tt": "Este contenedor lleva io.containers.autoupdate={mode}, así que `podman auto-update` también lo gestiona. Dos actualizadores sobre un contenedor: gana el que se ejecute primero. Docksentry lo sigue actualizando si se lo pides, pero conviene saber que no está solo.",
+  "web_host_contexts": "Docker conoce estos extremos en esta máquina: {list} — útil si la dirección de arriba tiene una errata."
 }

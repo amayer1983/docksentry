@@ -1396,7 +1396,19 @@ class TelegramBot:
                 self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
                 results, success_count, major_pending_now = self._process_update_batch(
                     auto_updates, checker, auto=True)
-                self.send_message(self.t("autoupdate_done") + "\n\n" + "\n".join(results), auto=True)
+                # Outcome in the first line. The lines below name every
+                # container already, but a long report is split across
+                # several messages — and then "how did it go?" is spread
+                # over all of them (#56, @LeeNX).
+                from update_engine import UpdateEngine as _UE
+                _c = _UE.count_results(results)
+                _parts = [self.t(f"sum_{k}", n=_c[k])
+                          for k in ("updated", "failed", "held", "skipped")
+                          if _c.get(k)]
+                _head = self.t("autoupdate_done")
+                if _parts:
+                    _head += " " + " · ".join(_parts)
+                self.send_message(_head + "\n\n" + "\n".join(results), auto=True)
 
                 # Remove fully-processed auto-updates from pending. Major-pending
                 # entries stay in pending so the user can also act on them via

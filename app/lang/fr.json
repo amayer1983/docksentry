@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry continuera de vérifier et de mettre à jour, mais n'aura plus aucun moyen de vous le dire — seulement cette interface web.",
   "web_chan_none_ok": "Enregistrer quand même",
   "web_leftover_title": "Sauvegardes de mise à jour restantes",
-  "web_leftover_intro": "{count} conteneur(s) nommés <nom>_old proviennent d'une mise à jour interrompue. Ce sont des copies arrêtées de conteneurs mis à jour avec succès — sans danger à supprimer, et rien ici ne les supprime à votre place."
+  "web_leftover_intro": "{count} conteneur(s) nommés <nom>_old proviennent d'une mise à jour interrompue. Ce sont des copies arrêtées de conteneurs mis à jour avec succès — sans danger à supprimer, et rien ici ne les supprime à votre place.",
+  "sum_updated": "{n} mis à jour",
+  "sum_failed": "{n} en échec",
+  "sum_held": "{n} en attente de confirmation",
+  "sum_skipped": "{n} ignorés",
+  "web_badge_podman_auto_tt": "Ce conteneur porte io.containers.autoupdate={mode}, donc `podman auto-update` le gère aussi. Deux gestionnaires sur un conteneur : le premier qui s'exécute l'emporte. Docksentry le met toujours à jour si vous le demandez, mais sachez qu'il n'est pas seul.",
+  "web_host_contexts": "Docker connaît ces points de terminaison sur cette machine : {list} — utile si l'adresse ci-dessus contient une faute de frappe."
 }

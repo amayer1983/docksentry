@@ -1015,9 +1015,22 @@ class UpdateChecker:
     # Pattern that captures SemVer in a tag: "1.2.3", "v1.2.3", "1.2.3-rc1",
     # "redis-7.0.5", "alpine-3.19.0" all match. Suffixes after the version
     # (like "-rc1") are kept in `pre`, used for ordering / filtering.
+    #: The patch component is optional, because a great many images never
+    #: publish one. `postgres` is the clearest case: 32 two-component tags
+    #: on Docker Hub and not a single three-component one — measured — so
+    #: requiring three numbers meant the advisory could never fire for the
+    #: images people pin most, which are the databases.
     _SEMVER_RE = re.compile(
-        r"^(?:.*?-)?v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<pre>[-+][\w.\-+]*)?$"
+        r"^(?:.*?-)?v?(?P<major>\d+)\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?"
+        r"(?P<pre>[-+][\w.\-+]*)?$"
     )
+
+    #: A first component this large is a year, not a major version.
+    #: Unproven precaution: none of postgres, mariadb, redis or mysql
+    #: carries a tag like `2024.11` — measured over 300 tags each. It
+    #: costs one comparison and it is the shape most likely to be
+    #: mistaken for a version now that two components parse.
+    _YEARLIKE_MAJOR = 1000
 
     @classmethod
     def _parse_semver(cls, tag):
@@ -1028,8 +1041,30 @@ class UpdateChecker:
         m = cls._SEMVER_RE.match(tag.strip())
         if not m:
             return None
-        return (int(m.group("major")), int(m.group("minor")), int(m.group("patch")),
-                m.group("pre") or "")
+        # A missing patch counts as 0, so `16.3` and `16.3.0` order and
+        # compare identically. The SHAPE is kept apart from the value —
+        # see `_semver_components` — because "same number of components"
+        # is a matching rule, not an ordering one.
+        return (int(m.group("major")), int(m.group("minor")),
+                int(m.group("patch") or 0), m.group("pre") or "")
+
+    @classmethod
+    def _semver_components(cls, tag):
+        """2 or 3 — how many numbers the tag actually spells out. None if
+        it does not parse at all.
+
+        Someone pinned to `redis:7.2` means that line, and the equivalent
+        step is `7.4`, not `7.4.1`. Comparing across shapes would answer a
+        question nobody asked, and in a repository carrying both — redis
+        has 9 two-component tags and 53 three-component ones, measured —
+        it would answer it constantly.
+        """
+        if not tag:
+            return None
+        m = cls._SEMVER_RE.match(tag.strip())
+        if not m:
+            return None
+        return 3 if m.group("patch") is not None else 2
 
     @classmethod
     def _bump_level(cls, old_version, new_version):
@@ -1244,11 +1279,27 @@ class UpdateChecker:
         Deliberately advisory. Nothing downstream may treat this as a
         pending update: the container is running exactly what its compose
         file asks for.
+
+        Within the SAME major version, deliberately. `postgres:16.3`
+        should hear about `16.4`, not about `17.0`: a Postgres major is
+        not a tag change, it is `pg_upgrade`, and a container that
+        swapped the tag alone would not open its old data directory. The
+        badge says "there is a newer one", and pointing it at something
+        that cannot be taken by changing a tag makes it say the wrong
+        thing. Someone at the top of their own line therefore sees
+        nothing, which is the honest answer: within what you pinned,
+        you are current.
+
+        This applies to the advisory only. `_is_major_bump` asks the same
+        function WITHOUT the restriction — its entire job is spotting a
+        major, and capping it there would have quietly disabled
+        major-confirmation for everyone.
         """
         try:
             if self._parse_semver(tag) is None:
                 return ""
-            best, best_parsed = self.get_highest_semver_tag(registry, repository, tag)
+            best, best_parsed = self.get_highest_semver_tag(
+                registry, repository, tag, same_major=True)
             cur = self._parse_semver(tag)
             if not best_parsed or best_parsed[:3] <= cur[:3]:
                 return ""
@@ -1263,7 +1314,8 @@ class UpdateChecker:
     #: read as a different numbering scheme rather than a newer release.
     MAX_PLAUSIBLE_MAJOR_JUMP = 3
 
-    def get_highest_semver_tag(self, registry, repository, current_tag):
+    def get_highest_semver_tag(self, registry, repository, current_tag,
+                               *, same_major=False):
         """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
         version available on the registry that uses the same naming scheme
         as `current_tag`. Returns (None, None) if no comparable version is
@@ -1279,6 +1331,7 @@ class UpdateChecker:
         # Determine the prefix of current_tag (e.g. "v" or "redis-")
         m = self._SEMVER_RE.match(current_tag.strip())
         prefix = current_tag.strip()[:m.start("major")] if m else ""
+        cur_components = self._semver_components(current_tag)
 
         tags = self._list_remote_tags(registry, repository)
         candidates = []
@@ -1312,6 +1365,20 @@ class UpdateChecker:
             # matches only `-apache` tags, and a bare tag matches only bare
             # ones, which is what kept pre-releases out in the first place.
             if (parsed[3] or "") != (cur[3] or ""):
+                continue
+            # Same number of components, for the reason in
+            # `_semver_components`: `7.2` belongs with `7.4`, not `7.4.1`.
+            if self._semver_components(ts) != cur_components:
+                continue
+            # A four-digit first number is a date, not a release. See
+            # _YEARLIKE_MAJOR — precaution, not a measured case.
+            if parsed[0] >= self._YEARLIKE_MAJOR:
+                continue
+            # `same_major` is the advisory's restriction and nothing
+            # else's — see _newer_version_available for why, and note
+            # that _is_major_bump must NOT pass it or it could never
+            # detect the thing it exists to detect.
+            if same_major and parsed[0] != cur[0]:
                 continue
             candidates.append((parsed, ts))
         if not candidates:

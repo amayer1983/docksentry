@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry prüft und aktualisiert weiter, hat aber keine Möglichkeit mehr, dir davon zu berichten — nur noch diese Weboberfläche.",
   "web_chan_none_ok": "Trotzdem speichern",
   "web_leftover_title": "Liegengebliebene Update-Sicherungen",
-  "web_leftover_intro": "{count} Container mit der Endung _old stammen aus einem Update, dessen Vorgang unterbrochen wurde. Es sind gestoppte Kopien von Containern, die erfolgreich aktualisiert wurden — gefahrlos zu entfernen, und hier entfernt sie niemand für dich."
+  "web_leftover_intro": "{count} Container mit der Endung _old stammen aus einem Update, dessen Vorgang unterbrochen wurde. Es sind gestoppte Kopien von Containern, die erfolgreich aktualisiert wurden — gefahrlos zu entfernen, und hier entfernt sie niemand für dich.",
+  "sum_updated": "{n} aktualisiert",
+  "sum_failed": "{n} fehlgeschlagen",
+  "sum_held": "{n} wartet auf Bestätigung",
+  "sum_skipped": "{n} übersprungen",
+  "web_badge_podman_auto_tt": "Dieser Container trägt io.containers.autoupdate={mode}, wird also auch von `podman auto-update` verwaltet. Zwei Updater auf einem Container: wer zuerst läuft, gewinnt. Docksentry aktualisiert ihn weiterhin, wenn du es verlangst — du solltest nur wissen, dass er nicht allein ist.",
+  "web_host_contexts": "Docker kennt auf dieser Maschine diese Endpunkte: {list} — hilfreich, falls in der Adresse oben ein Tippfehler steckt."
 }

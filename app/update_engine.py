@@ -549,6 +549,35 @@ class UpdateEngine:
 
         return results, success_count, major_pending
 
+    #: Leading glyph → what that line means. Every results-line this class
+    #: produces starts with one of these, so counting them is counting
+    #: outcomes rather than re-deriving them from the text.
+    RESULT_GLYPHS = {"✅": "updated", "❌": "failed",
+                     "⏸": "held", "⏭": "skipped"}
+
+    @classmethod
+    def count_results(cls, results):
+        """`{outcome: n}` for a batch's result lines, zeroes omitted.
+
+        The completion message names every container already, one line
+        each — but @LeeNX's screenshot of a lost report (#56) is the
+        reminder that those lines can be split across several Telegram
+        messages, and then the outcome is spread over all of them. A
+        count in the first line means the answer is readable from the
+        first message whatever happens to the rest.
+
+        Lines that are neither (the group-rollback note) are simply not
+        counted; this reports outcomes per container, and that note is
+        about a group.
+        """
+        counts = {}
+        for line in results or ():
+            head = line.strip()[:1]
+            key = cls.RESULT_GLYPHS.get(head)
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+        return counts
+
     def _enrich_with_source_url(self, updates):
         """Set u['source_url'] on each update via the shared LinkResolver.
         Kept as a thin instance method (not inlined at call sites) because

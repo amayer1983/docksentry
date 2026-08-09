@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry will keep checking and updating, but it will have no way to tell you about it — only this Web UI.",
   "web_chan_none_ok": "Save anyway",
   "web_leftover_title": "Leftover update backups",
-  "web_leftover_intro": "{count} container(s) named <name>_old are left from an update whose process was interrupted. They are stopped copies of containers that updated successfully — safe to remove, and nothing here removes them for you."
+  "web_leftover_intro": "{count} container(s) named <name>_old are left from an update whose process was interrupted. They are stopped copies of containers that updated successfully — safe to remove, and nothing here removes them for you.",
+  "sum_updated": "{n} updated",
+  "sum_failed": "{n} failed",
+  "sum_held": "{n} awaiting confirmation",
+  "sum_skipped": "{n} skipped",
+  "web_badge_podman_auto_tt": "This container carries io.containers.autoupdate={mode}, so `podman auto-update` manages it as well. Two updaters on one container: whichever runs first wins. Docksentry still updates it if you ask, but you should know it is not alone.",
+  "web_host_contexts": "Docker on this machine knows these endpoints: {list} — useful if the address above has a typo in it."
 }

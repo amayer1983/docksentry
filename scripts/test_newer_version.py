@@ -96,11 +96,55 @@ def main():
     o = checker(["latest", "1.0.0", "2.0.0"])
     checks["a moving tag is not advised on"] = (
         o._newer_version_available("r", "p", "latest") == "")
-    # Two-component tags do not parse as SemVer — a known limitation, and
-    # asserted so it is a decision rather than a surprise.
+    # Two-component tags DO parse, as of v2.6.0. They used to be a stated
+    # gap, and the gap swallowed exactly the images people pin most:
+    # `postgres` publishes 32 two-component tags on Docker Hub and not one
+    # three-component tag — measured — so the advisory could never fire
+    # for it at all.
     o = checker(["16.3", "16.4"])
-    checks["a two-component tag is a known gap"] = (
-        o._newer_version_available("r", "p", "16.3") == "")
+    checks["a two-component tag is advised on"] = (
+        o._newer_version_available("r", "p", "16.3") == "16.4")
+    # …matched only against its own shape. Somebody pinned to `7.2` means
+    # that line; the equivalent step is `7.4`, not `7.4.1`. redis carries
+    # both shapes (9 two-component tags, 53 three-component — measured),
+    # so this is the ordinary case there, not a corner.
+    o = checker(["7.2", "7.4", "7.4.1", "7.2.5"])
+    checks["shapes are not mixed: two matches two"] = (
+        o._newer_version_available("r", "p", "7.2") == "7.4")
+    o = checker(["7.2", "7.4", "7.4.1", "7.2.5"])
+    checks["…and three matches three"] = (
+        o._newer_version_available("r", "p", "7.2.5") == "7.4.1")
+    # A suffix still has to match, on both axes at once.
+    o = checker(["7.2-alpine", "7.4-alpine", "7.4"])
+    checks["suffix and shape hold together"] = (
+        o._newer_version_available("r", "p", "7.2-alpine") == "7.4-alpine")
+    # A four-digit first number is a date. UNPROVEN precaution: no tag of
+    # that shape exists in postgres, mariadb, redis or mysql (300 tags
+    # each, measured). Asserted so it stays deliberate rather than
+    # becoming folklore.
+    o = checker(["2024.11", "2024.12", "2025.01"])
+    checks["a year-like tag is not read as a version"] = (
+        o._newer_version_available("r", "p", "2024.11") == "")
+
+    # ── the advisory stays inside the major it was pinned to ─────
+    # postgres 16.3 should hear about 16.4, not 17.0. A Postgres major
+    # is not a tag change, it is pg_upgrade, and a container that swapped
+    # the tag alone would not open its old data directory. The badge says
+    # "there is a newer one"; pointing it somewhere you cannot go by
+    # changing a tag makes it say the wrong thing.
+    o = checker(["16.3", "16.4", "17.0"])
+    checks["the advisory stays within the pinned major"] = (
+        o._newer_version_available("r", "p", "16.3") == "16.4")
+    o = checker(["16.3", "16.4", "17.0"])
+    checks["…and says nothing at the top of that line"] = (
+        o._newer_version_available("r", "p", "16.4") == "")
+
+    # But major DETECTION must be untouched — same function, no cap.
+    # Passing the restriction here would have quietly disabled
+    # major-confirmation for everyone.
+    best, _ = checker(["5.12.2", "6.3.0"]).get_highest_semver_tag(
+        "r", "p", "5.12.2")
+    checks["major confirmation still sees across majors"] = best == "6.3.0"
     # A lookup that throws must never break a check that had succeeded.
     o = UpdateChecker.__new__(UpdateChecker)
     o.debug = False

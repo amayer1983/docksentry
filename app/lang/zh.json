@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry 仍会检查和更新，但没有任何途径告诉你 —— 只剩这个网页界面。",
   "web_chan_none_ok": "仍然保存",
   "web_leftover_title": "残留的更新备份",
-  "web_leftover_intro": "有 {count} 个名为 <name>_old 的容器是某次中断的更新遗留下来的。它们是已成功更新的容器的停止副本 —— 删除是安全的，而这里不会替你删除。"
+  "web_leftover_intro": "有 {count} 个名为 <name>_old 的容器是某次中断的更新遗留下来的。它们是已成功更新的容器的停止副本 —— 删除是安全的，而这里不会替你删除。",
+  "sum_updated": "{n} 个已更新",
+  "sum_failed": "{n} 个失败",
+  "sum_held": "{n} 个待确认",
+  "sum_skipped": "{n} 个已跳过",
+  "web_badge_podman_auto_tt": "该容器带有 io.containers.autoupdate={mode}，因此 `podman auto-update` 也在管理它。一个容器两个更新程序：谁先跑谁说了算。你要求时 Docksentry 仍会更新它，但你应该知道它并非独自在管。",
+  "web_host_contexts": "本机的 Docker 知道这些端点：{list} —— 如果上面的地址打错了，这会有用。"
 }

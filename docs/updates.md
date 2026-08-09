@@ -104,12 +104,44 @@ button for it, and will not count it among your pending updates. To move,
 change the tag in your compose file and redeploy — which is the same thing
 you would have done anyway, now with the information you were missing.
 
-Two limits worth knowing rather than discovering:
+What it compares against, and why:
 
-- **Two-component tags are not covered.** `postgres:16.3` and
-  `redis:7.2-alpine` do not parse as SemVer, which needs three numbers, so
-  no advisory appears for them. They still get security rebuilds like any
-  other pinned tag.
+- **The same number of components.** `postgres:16.3` is matched against
+  `16.4`, not against `16.4.1`. Somebody pinned to a two-number tag means
+  that line, and the equivalent step has two numbers too. This matters in
+  practice: `redis` publishes both shapes (9 two-component tags and 53
+  three-component ones, measured on Docker Hub), so mixing them would be
+  the ordinary case rather than a corner.
+
+  Two-component tags were not covered at all before v2.6.0, on the grounds
+  that SemVer needs three numbers. That gap swallowed exactly the images
+  people pin most: `postgres` publishes **32** two-component tags and not a
+  single three-component one, so the advisory could never fire for it.
+
+- **The same suffix.** `redis:7.2-alpine` is matched against
+  `7.4-alpine`, never against the plain `7.4` — a different image variant
+  is not a newer version of yours.
+
+- **The same major version.** `postgres:16.3` hears about `16.4`, not
+  about `17.0`. A Postgres major is not a tag change, it is `pg_upgrade`;
+  a container that swapped only the tag would not open its old data
+  directory. The badge says "there is a newer one", and pointing it at
+  something you cannot reach by changing a tag would make it say the wrong
+  thing. At the top of your own line you therefore see nothing, which is
+  the honest answer: within what you pinned, you are current.
+
+  This applies to the advisory only. Major-version **confirmation** —
+  the `⚠ on` button above — still looks across majors, because spotting a
+  major is its entire job.
+
+- **A four-digit first number is treated as a date, not a version.** So a
+  tag like `2024.11` produces no advisory. This one is precaution rather
+  than a measured case: no such tag exists in `postgres`, `mariadb`,
+  `redis` or `mysql` (300 tags each, checked). It is written down here so
+  it stays a decision.
+
+One limit worth knowing rather than discovering:
+
 - **A repository with two numbering schemes can confuse it.**
   `linuxserver/qbittorrent` tags both the application (`4.6.5`) and its
   Ubuntu base (`20.04.1`), and nothing in the tag text separates them.

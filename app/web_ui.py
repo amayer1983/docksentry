@@ -497,12 +497,46 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     _remote = self._containers_on(_host.backend, timeout=10)
                 except Exception:
                     # One dead host is a line in the table, not a broken page.
-                    views.append({"unreachable": _host.name})
+                    #
+                    # The endpoints come from DOCKER_HOSTS, typed by hand,
+                    # and a typo there is indistinguishable from a machine
+                    # that is down. Docker already knows the endpoints it
+                    # has been told about, so at the one moment somebody is
+                    # standing in front of "cannot reach nas", listing them
+                    # costs one command and may answer the question
+                    # outright. Only on failure — never as a second source
+                    # of hosts, which would be two places to keep in step.
+                    views.append({"unreachable": _host.name,
+                                  "endpoint": _host.endpoint,
+                                  "contexts": self._docker_contexts()})
                     continue
                 views.append(self._status_view(_host.name, _host.store,
                                                _remote, "",
                                                host_backend=_host.backend))
             return views
+
+        def _docker_contexts(self):
+            """`[(name, endpoint)]` from `docker context ls`, or [].
+
+            Best-effort and never raised: this runs while rendering a page
+            that is already reporting a failure, and a second failure must
+            not become the story. Podman has no equivalent, which is fine —
+            the result is simply empty there.
+            """
+            try:
+                r = backend.run(
+                    ["context", "ls", "--format", "{{.Name}}|{{.DockerEndpoint}}"],
+                    timeout=5)
+                if getattr(r, "returncode", 1) != 0:
+                    return []
+                out = []
+                for line in (r.stdout or "").splitlines():
+                    name, _, endpoint = line.partition("|")
+                    if name.strip():
+                        out.append((name.strip(), endpoint.strip()))
+                return out
+            except Exception:
+                return []
 
         def _own_container_name_safe(self):
             """Docksentry's own container name, or "" if it cannot be found."""
@@ -3000,6 +3034,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 badges += (f' <span class="badge badge-purple" '
                            f'title="{_e(t("web_badge_newer_tt", current=_adv.get("current",""), newer=_adv.get("newer","")))}">'
                            f'↑ {_e(_adv.get("newer",""))}</span>')
+            # Podman runs its own updater. A container labelled
+            # `io.containers.autoupdate` is claimed by `podman
+            # auto-update` on a systemd timer, so both it and Docksentry
+            # have an opinion about that container and the outcome
+            # depends on which fires first. Same treatment as a quadlet
+            # (#55): say so, and leave the decision where it belongs.
+            # Free to check — the row already carries its labels.
+            _pod_au = (c.get("labels") or {}).get("io.containers.autoupdate")
+            if _pod_au:
+                badges += (f' <span class="badge badge-yellow" '
+                           f'title="{_e(t("web_badge_podman_auto_tt", mode=_pod_au))}">'
+                           f'podman auto-update</span>')
             if c["name"] in ask_major:
                 badges += f' <span class="badge badge-blue" title="{_e(t("web_badge_major_tt"))}">{_ICONS["ask"]}</span>'
             if c["name"] in groups_lookup:
@@ -3263,6 +3309,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             views = self._host_views(multi, _store_for, own_name)
 
             rows = ""
+            def _ctx_hint(view):
+                """The Docker contexts this machine knows, for a host we
+                could not reach. Only when there is something to say, and
+                only naming the ones whose endpoint is not already the one
+                that just failed — repeating it back would be noise."""
+                ctxs = [(n, e) for n, e in (view.get("contexts") or [])
+                        if e and e != view.get("endpoint") and n != "default"]
+                if not ctxs:
+                    return ""
+                shown = ", ".join(f"{n} ({e})" for n, e in ctxs[:4])
+                return (f'<br><span style="font-size:12px">'
+                        f'{_e(t("web_host_contexts", list=shown))}</span>')
+
             tiles = ""
             for view in views:
                 if view.get("unreachable"):
@@ -3270,7 +3329,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         f'<tr class="host-unreachable" '
                         f'data-host="{_e(view["unreachable"])}">'
                         f'<td colspan="{host_cols}" class="muted">'
-                        f'{_e(t("web_host_unreachable", host=view["unreachable"]))}</td>'
+                        f'{_e(t("web_host_unreachable", host=view["unreachable"]))}'
+                        f'{_ctx_hint(view)}</td>'
                         f'</tr>'
                     )
                     continue

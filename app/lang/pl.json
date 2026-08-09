@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry nadal będzie sprawdzał i aktualizował, ale nie będzie miał jak Ci o tym powiedzieć — tylko ten interfejs webowy.",
   "web_chan_none_ok": "Zapisz mimo to",
   "web_leftover_title": "Pozostałe kopie z aktualizacji",
-  "web_leftover_intro": "{count} kontener(ów) o nazwie <nazwa>_old zostało po przerwanej aktualizacji. To zatrzymane kopie kontenerów, które zaktualizowały się poprawnie — można je bezpiecznie usunąć, a tutaj nikt nie zrobi tego za Ciebie."
+  "web_leftover_intro": "{count} kontener(ów) o nazwie <nazwa>_old zostało po przerwanej aktualizacji. To zatrzymane kopie kontenerów, które zaktualizowały się poprawnie — można je bezpiecznie usunąć, a tutaj nikt nie zrobi tego za Ciebie.",
+  "sum_updated": "{n} zaktualizowano",
+  "sum_failed": "{n} nie powiodło się",
+  "sum_held": "{n} czeka na potwierdzenie",
+  "sum_skipped": "{n} pominięto",
+  "web_badge_podman_auto_tt": "Ten kontener ma io.containers.autoupdate={mode}, więc zarządza nim także `podman auto-update`. Dwa mechanizmy na jednym kontenerze: wygrywa ten, który zadziała pierwszy. Docksentry nadal go zaktualizuje na żądanie, ale warto wiedzieć, że nie jest sam.",
+  "web_host_contexts": "Docker zna na tej maszynie te punkty końcowe: {list} — przydatne, jeśli w adresie powyżej jest literówka."
 }

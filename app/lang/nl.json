@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry blijft controleren en bijwerken, maar heeft geen manier meer om het je te vertellen — alleen deze webinterface.",
   "web_chan_none_ok": "Toch opslaan",
   "web_leftover_title": "Achtergebleven update-back-ups",
-  "web_leftover_intro": "{count} container(s) met de naam <naam>_old zijn overgebleven van een onderbroken update. Het zijn gestopte kopieën van containers die goed zijn bijgewerkt — veilig te verwijderen, en niets hier verwijdert ze voor je."
+  "web_leftover_intro": "{count} container(s) met de naam <naam>_old zijn overgebleven van een onderbroken update. Het zijn gestopte kopieën van containers die goed zijn bijgewerkt — veilig te verwijderen, en niets hier verwijdert ze voor je.",
+  "sum_updated": "{n} bijgewerkt",
+  "sum_failed": "{n} mislukt",
+  "sum_held": "{n} wacht op bevestiging",
+  "sum_skipped": "{n} overgeslagen",
+  "web_badge_podman_auto_tt": "Deze container draagt io.containers.autoupdate={mode}, dus `podman auto-update` beheert hem ook. Twee updaters op één container: wie het eerst draait, wint. Docksentry werkt hem nog steeds bij als je dat vraagt, maar je moet weten dat hij niet alleen is.",
+  "web_host_contexts": "Docker kent op deze machine deze endpoints: {list} — handig als er een typefout in het adres hierboven zit."
 }

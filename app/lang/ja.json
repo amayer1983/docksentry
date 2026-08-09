@@ -720,5 +720,11 @@
   "web_chan_none_body": "Docksentry は確認と更新を続けますが、それを伝える手段がなくなります — この Web 画面だけです。",
   "web_chan_none_ok": "このまま保存",
   "web_leftover_title": "残った更新バックアップ",
-  "web_leftover_intro": "<name>_old という名前のコンテナが {count} 個、処理が中断された更新から残っています。正常に更新されたコンテナの停止済みコピーです — 削除して問題ありませんし、ここで自動的に削除することはありません。"
+  "web_leftover_intro": "<name>_old という名前のコンテナが {count} 個、処理が中断された更新から残っています。正常に更新されたコンテナの停止済みコピーです — 削除して問題ありませんし、ここで自動的に削除することはありません。",
+  "sum_updated": "{n} 件更新",
+  "sum_failed": "{n} 件失敗",
+  "sum_held": "{n} 件が確認待ち",
+  "sum_skipped": "{n} 件スキップ",
+  "web_badge_podman_auto_tt": "このコンテナには io.containers.autoupdate={mode} が付いており、`podman auto-update` も管理しています。ひとつのコンテナに更新役がふたり——先に動いたほうが勝ちます。指示すれば Docksentry は更新しますが、単独ではないことは知っておいてください。",
+  "web_host_contexts": "このマシンの Docker は次の接続先を知っています: {list} — 上のアドレスに打ち間違いがある場合に役立ちます。"
 }
