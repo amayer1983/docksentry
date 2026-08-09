@@ -91,6 +91,7 @@
   "web_host": "Hôte",
   "web_host_filter_all": "Tous les hôtes",
   "web_host_unreachable": "{host} : injoignable",
+  "web_host_reason": "Raison :",
   "web_status": "Statut",
   "web_containers_running": "{count} conteneurs actifs",
   "web_settings": "Paramètres",

@@ -91,6 +91,7 @@
   "web_host": "主机",
   "web_host_filter_all": "所有主机",
   "web_host_unreachable": "{host}：无法连接",
+  "web_host_reason": "原因：",
   "web_status": "状态",
   "web_containers_running": "{count} 个容器运行中",
   "web_settings": "设置",

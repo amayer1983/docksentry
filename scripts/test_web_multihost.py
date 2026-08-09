@@ -62,13 +62,14 @@ class FakeBackend:
     every call raise, which is how an unreachable endpoint behaves once
     the CLI times out."""
 
-    def __init__(self, name, names, dead=False):
+    def __init__(self, name, names, dead=False, error=None):
         self.name, self.names, self.dead = name, list(names), dead
+        self.error = error or "unreachable"
         self.calls = []
 
     def _guard(self):
         if self.dead:
-            raise OSError("unreachable")
+            raise OSError(self.error)
 
     def ps(self, **kw):
         self.calls.append(("ps", kw))
@@ -212,6 +213,24 @@ def render(h):
     return h.rendered[-1] if h.rendered else ""
 
 
+#: What podman 4.9.3 actually writes when it reaches an ssh host and the
+#: key is refused — copied from a run against a local sshd whose
+#: authorized_keys held a different key. Two lines, and the useful one is
+#: the SECOND: line one sends the reader to `podman machine`, which has
+#: nothing to do with a refused key. The Web UI used to print neither and
+#: say only "dead: unreachable", which fits a refused key, a closed port,
+#: a DNS typo and a wrong socket path equally badly.
+PODMAN_SSH_ERROR = (
+    "Cannot connect to Podman. Please verify your connection to the Linux "
+    "system using `podman system connection list`, or try `podman machine "
+    "init` and `podman machine start` to manage a new Linux VM\n"
+    "Error: unable to connect to Podman socket: failed to connect: ssh: "
+    "handshake failed: ssh: unable to authenticate, attempted methods "
+    "[none publickey], no supported methods remain: ssh://root@dead/run/"
+    "podman/podman.sock"
+)
+
+
 def build(tmp, multi=True, pending=()):
     """local(web, db) + nas(web, plex) + an unreachable `dead`."""
     config = make_config(tmp)
@@ -226,7 +245,8 @@ def build(tmp, multi=True, pending=()):
         entries.append(ManagedHost("nas", nb, nc, HostScopedStore(store, "nas"),
                                    endpoint="ssh://nas"))
         entries.append(ManagedHost(
-            "dead", FakeBackend("dead", [], dead=True), FakeChecker("dead"),
+            "dead", FakeBackend("dead", [], dead=True, error=PODMAN_SSH_ERROR),
+            FakeChecker("dead"),
             HostScopedStore(store, "dead"), endpoint="ssh://dead"))
     hosts = HostRegistry(entries)
     bot = FakeBot()
@@ -314,6 +334,19 @@ checks["multi: the host filter offers every host plus 'all'"] = (
     and '<option value="dead">dead</option>' in html)
 checks["multi: an unreachable host is one line, not a broken page"] = (
     "dead: unreachable" in html and 'class="host-unreachable"' in html)
+# …and that line now carries WHY. "unreachable" alone was the same word
+# for a refused SSH key, a closed port and a DNS typo; only the CLI's own
+# text tells them apart, and Telegram/Discord have quoted it all along.
+_dead_row = [r for r in html.split("<tr") if 'data-host="dead"' in r]
+checks["multi: the unreachable row quotes what the CLI said"] = (
+    len(_dead_row) == 1
+    and "Reason:" in _dead_row[0]
+    and "unable to authenticate" in _dead_row[0])
+# The last line only. Podman's first line points at `podman machine`,
+# which is never the answer for a remote host, and printing it would send
+# the reader somewhere unrelated — the exact failure this row is for.
+checks["multi: and drops podman's `podman machine` boilerplate"] = (
+    "podman machine" not in _dead_row[0])
 
 _nas_web = [c for c in table_only(html).split("<tr") if 'value="nas/web"' in c]
 checks["multi: a remote row has the same actions as a local one"] = (

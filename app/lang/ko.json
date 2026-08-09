@@ -91,6 +91,7 @@
   "web_host": "호스트",
   "web_host_filter_all": "모든 호스트",
   "web_host_unreachable": "{host}: 연결할 수 없음",
+  "web_host_reason": "원인:",
   "web_status": "상태",
   "web_containers_running": "{count}개 컨테이너 실행 중",
   "web_settings": "설정",

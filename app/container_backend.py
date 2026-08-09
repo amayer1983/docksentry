@@ -359,6 +359,29 @@ class RemoteBackend(ContainerBackend):
     to already work for the user Docksentry runs as (`ssh user@box` must
     succeed non-interactively). We deliberately don't reimplement ssh.
 
+    …and "the CLI's own ssh handling" is NOT the same thing on both CLIs.
+    Measured, docker 29.5.3 and podman 4.9.3, against a local sshd whose
+    `authorized_keys` accepted one throwaway key and not the account's
+    default one:
+
+      * `docker -H ssh://user@host` shells out to the real `ssh` binary, so
+        `~/.ssh/config` applies. Adding `Host … IdentityFile …` turned
+        `Permission denied (publickey,password).` into a container list.
+      * `podman --url ssh://user@host` uses Go's ssh client and ignores
+        `~/.ssh/config` entirely — the same block changed nothing, in the
+        default `--ssh golang` mode *and* under `--ssh native`. The only
+        keys it will use are `--identity` / `CONTAINER_SSHKEY` and the
+        identity stored on a `podman system connection`.
+      * Worse: `--url` silently borrows the identity of the **default**
+        stored connection, whichever host that connection points at. With
+        a default connection carrying the wrong key and a second,
+        non-default connection carrying the right one for the very same
+        URI, `podman --url <that URI> ps` failed. So on a machine with
+        more than one stored connection, a URL endpoint cannot be made to
+        use the right key at all.
+
+    That is what `context://` is for — see `CONTEXT_FLAG`.
+
     NOT for self-update: Docksentry updates the instance it runs in, which
     is by definition local. Self-update stays on the local backend.
     """
@@ -375,11 +398,42 @@ class RemoteBackend(ContainerBackend):
     #: actually documents.
     ENDPOINT_FLAG = {"docker": "-H", "podman": "--url"}
 
+    #: Which global flag selects a STORED endpoint by name. Docker calls
+    #: those contexts, Podman calls them system connections — and accepts
+    #: `podman context ls` as an alias for its own, which is why one word
+    #: covers both here and in the Web UI's "these endpoints exist" hint.
+    #:
+    #: This is the only way to give a Podman host its own SSH key. A stored
+    #: connection carries an `--identity`, and `--connection <name>` uses
+    #: *that* connection's key rather than the default one's:
+    #:
+    #:   podman system connection add --identity ~/.ssh/id_nas nas \
+    #:       ssh://root@nas/run/podman/podman.sock
+    #:   DOCKER_HOSTS=nas:context://nas
+    #:
+    #: Measured on 4.9.3 with two connections on the same URI, the default
+    #: one holding an unauthorised key: `--url` failed, `--connection` on
+    #: the non-default one listed containers. `CONTAINER_SSHKEY` is not an
+    #: answer either — it is one key for the whole process, and it loses to
+    #: the default connection's identity when one exists (also measured).
+    CONTEXT_FLAG = {"docker": "--context", "podman": "--connection"}
+
+    #: Endpoint prefix that means "this is a stored context/connection
+    #: name, not a URL". Chosen over a bare name so a typo'd `tcp:/box`
+    #: still reads as a broken URL rather than quietly becoming a context
+    #: lookup, and so `DOCKER_HOSTS` keeps its one shape: `name:endpoint`.
+    CONTEXT_SCHEME = "context://"
+
     def __init__(self, endpoint, *, name=None, cli_binary="docker"):
         self.endpoint = endpoint
         self.cli_binary = cli_binary
-        flag = self.ENDPOINT_FLAG.get(cli_binary, "-H")
-        self.global_args = (flag, endpoint)
+        if endpoint.startswith(self.CONTEXT_SCHEME):
+            flag = self.CONTEXT_FLAG.get(cli_binary, "--context")
+            target = endpoint[len(self.CONTEXT_SCHEME):]
+        else:
+            flag = self.ENDPOINT_FLAG.get(cli_binary, "-H")
+            target = endpoint
+        self.global_args = (flag, target)
         self.name = name or endpoint
 
 

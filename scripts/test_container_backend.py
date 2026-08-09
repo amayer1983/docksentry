@@ -256,6 +256,43 @@ def main():
             argv(lambda: container_backend.RemoteBackend(
                 "tcp://h:2375", cli_binary="docker").ps())
             == ["docker", "-H", "tcp://h:2375", "ps"])
+
+        # ── a stored context / connection instead of a URL ───────────
+        # `context://nas` means "the endpoint this machine already has
+        # saved under that name". It exists because of a Podman-only
+        # measurement (4.9.3): `podman --url ssh://…` ignores
+        # `~/.ssh/config` and borrows the identity of whichever stored
+        # connection happens to be the DEFAULT one — so on a machine with
+        # more than one connection there is no way to point a URL endpoint
+        # at the right key. `--connection <name>` uses that connection's
+        # own `--identity`, which is the whole reason this spelling is
+        # here. Docker calls the same thing `--context`.
+        ctx_cases = {
+            "context:// on podman → --connection":
+                (argv(lambda: container_backend.RemoteBackend(
+                    "context://nas", cli_binary="podman").ps()),
+                 ["podman", "--connection", "nas", "ps"]),
+            "context:// on docker → --context":
+                (argv(lambda: container_backend.RemoteBackend(
+                    "context://nas", cli_binary="docker").pull("nginx")),
+                 ["docker", "--context", "nas", "pull", "nginx"]),
+        }
+        for label, (produced, expected) in ctx_cases.items():
+            checks[f"argv: {label}"] = produced == expected
+        # The scheme is stripped from the flag value but NOT from the
+        # endpoint we report: the Web UI prints it back to the user, and
+        # "nas" alone would not tell them which spelling they configured.
+        _ctxb = container_backend.RemoteBackend("context://nas", name="nas")
+        checks["context:// keeps the configured endpoint verbatim"] = (
+            _ctxb.endpoint == "context://nas")
+        # A URL endpoint must be entirely unaffected — the prefix test is
+        # the only thing standing between the two, so a `tcp://` host that
+        # started emitting `--context` would be silent breakage.
+        checks["a URL endpoint still takes the endpoint flag"] = (
+            container_backend.RemoteBackend("tcp://context:2375",
+                                            cli_binary="podman").global_args
+            == ("--url", "tcp://context:2375"))
+
         # …and the local backends must be untouched by all of this.
         checks["local backend emits no global args"] = (
             argv(lambda: b.ps()) == ["docker", "ps"])

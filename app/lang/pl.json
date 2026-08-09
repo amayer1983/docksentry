@@ -91,6 +91,7 @@
   "web_host": "Host",
   "web_host_filter_all": "Wszystkie hosty",
   "web_host_unreachable": "{host}: nieosiągalny",
+  "web_host_reason": "Powód:",
   "web_status": "Status",
   "web_containers_running": "{count} kontenerów aktywnych",
   "web_settings": "Ustawienia",

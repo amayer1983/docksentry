@@ -91,6 +91,7 @@
   "web_host": "Host",
   "web_host_filter_all": "Alle hosts",
   "web_host_unreachable": "{host}: niet bereikbaar",
+  "web_host_reason": "Reden:",
   "web_status": "Status",
   "web_containers_running": "{count} containers actief",
   "web_settings": "Instellingen",

@@ -91,6 +91,7 @@
   "web_host": "ホスト",
   "web_host_filter_all": "すべてのホスト",
   "web_host_unreachable": "{host}: 到達できません",
+  "web_host_reason": "原因:",
   "web_status": "ステータス",
   "web_containers_running": "{count} 個のコンテナが実行中",
   "web_settings": "設定",

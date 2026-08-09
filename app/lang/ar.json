@@ -91,6 +91,7 @@
   "web_host": "المضيف",
   "web_host_filter_all": "كل المضيفين",
   "web_host_unreachable": "{host}: غير قابل للوصول",
+  "web_host_reason": "السبب:",
   "web_status": "الحالة",
   "web_containers_running": "{count} حاوية قيد التشغيل",
   "web_settings": "الإعدادات",

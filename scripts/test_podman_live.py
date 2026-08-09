@@ -78,6 +78,54 @@ try:
     gen = rb.run(["info", "--format", "{{.Host.OS}}"], timeout=20)
     checks["generic run() reaches the remote too"] = (
         gen.returncode == 0 and gen.stdout.strip() != "")
+
+    # ── …and so does a STORED connection, by name ────────────────
+    # `context://nas` → `podman --connection nas`. Docksentry grew this
+    # spelling because of what `--url` does on Podman, measured on 4.9.3
+    # against a local sshd:
+    #
+    #   * `podman --url ssh://…` ignores `~/.ssh/config` (docker, which
+    #     shells out to the real ssh binary, honours it), and
+    #   * it borrows the identity of whichever stored connection is the
+    #     DEFAULT one. With two connections on the same URI — the default
+    #     holding an unauthorised key, a second holding the right one —
+    #     `--url` failed with "ssh: unable to authenticate" while
+    #     `--connection <the second>` listed containers.
+    #
+    # So on a machine with more than one connection, a URL endpoint
+    # cannot be pointed at the right key at all. What this check proves
+    # is the narrow, self-contained half: a real podman accepts the flag
+    # we emit and answers on the connection we name. The key half needs
+    # an sshd and key material and stays a manual procedure.
+    CONN = "ds-selftest-conn"
+    podman = shutil.which("podman")
+    subprocess.run([podman, "system", "connection", "remove", CONN],
+                   capture_output=True)
+    added = subprocess.run(
+        [podman, "system", "connection", "add", CONN, ENDPOINT],
+        capture_output=True, text=True, timeout=30)
+    if added.returncode == 0:
+        try:
+            cb = RemoteBackend(f"context://{CONN}", name="podbox",
+                               cli_binary="podman")
+            checks["context:// emits --connection <name>"] = (
+                cb.global_args == ("--connection", CONN))
+            named = cb.version(fmt="{{.Server.Version}}", timeout=20)
+            checks["a real podman answers on the named connection"] = (
+                named.returncode == 0 and named.stdout.strip() != "")
+            # A name podman has never heard of must fail loudly rather
+            # than quietly falling back to the local socket — otherwise a
+            # typo'd DOCKER_HOSTS entry would report the WRONG machine's
+            # containers under the remote host's name.
+            miss = RemoteBackend("context://ds-selftest-nope",
+                                 cli_binary="podman").ps(timeout=20)
+            checks["an unknown connection name fails, it does not fall back"] = (
+                miss.returncode != 0)
+        finally:
+            subprocess.run([podman, "system", "connection", "remove", CONN],
+                           capture_output=True)
+    else:
+        print("  (skipping the named connection: `connection add` refused)")
 finally:
     svc.terminate()
     try:

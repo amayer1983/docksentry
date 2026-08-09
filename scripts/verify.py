@@ -162,8 +162,14 @@ def collect(quiet=False):
 
 
 def version():
+    # `[\d.]+` matched 2.6.0 and nothing else — a pre-release like
+    # 2.7.0-rc.2 has a hyphen and letters in it, so the search failed and
+    # this file went out saying "How Docksentry v? is checked". Harmless
+    # until release candidates became part of how things ship here, at
+    # which point every RC produced a verification report that could not
+    # name what it had verified.
     for line in open(os.path.join(ROOT, "app", "version.py")):
-        m = re.search(r'"([\d.]+)"', line)
+        m = re.search(r'"(\d+\.\d+\.\d+[\w.+-]*)"', line)
         if m:
             return m.group(1)
     return "?"

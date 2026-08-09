@@ -99,19 +99,32 @@ body {
     flex: 1;
     min-width: 0;
 }
+/* The tile already carries its own rounded corners (transparent, radius
+   ~17.6% of the edge — 6.3px at this 36px box), so this border-radius is
+   not what shapes it. It is kept one notch *under* that 6.3px on purpose:
+   a larger radius here would clip into opaque pixels and chip the corners,
+   a smaller one is a no-op that still guarantees a rounded silhouette if
+   the tile is ever swapped for artwork with square corners. */
 .header-brand img {
     height: 36px;
     width: 36px;
     flex-shrink: 0;
     border-radius: 6px;
 }
+/* Wordmark. Two colours in one heading: "DOCK" in the body text colour,
+   "SENTRY" in the accent — both theme variables, so the lockup inverts
+   with the theme instead of being locked to one background. Tracking is
+   positive here, unlike normal headings: all-caps at 18px sets tightly
+   and the letters run together without a little air between them. */
 .header-brand h1 {
     font-size: 18px;
     margin: 0;
-    color: var(--accent);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    color: var(--text);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
 }
+.header-brand h1 span { color: var(--accent); }
 .header-host-slot { font-size: 13px; color: var(--text-muted); }
 /* Header control form (the Simple/Advanced switcher). inline-flex, not
    inline, so it doesn't drop into baseline layout next to its flex-sibling

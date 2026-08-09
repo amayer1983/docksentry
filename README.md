@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/logo.png" alt="Docksentry Logo" width="200">
+  <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/logo.png" alt="Docksentry Logo" width="128">
 </p>
 
 <h1 align="center">Docksentry</h1>
@@ -164,6 +164,8 @@ The log line `Compose file not found: <path> — falling back to standalone` is 
 **Registry diagnostics (debug).** With `DEBUG=true` the update check also explains itself instead of just printing a verdict — see [Update Workflow → Why didn't it see my new release?](docs/updates.md#why-didnt-it-see-my-new-release) for the full annotated log. Short version: the URL it asked, the status and content type it got back, any redirect, the auth method (category only — never the token), full digests with their repository prefix, the version a digest resolves to, and one line naming the host platform, the daemon's registry mirrors and every proxy in the path. All of it is DEBUG-only: without it the log stays exactly as short as it was.
 
 ### Podman support
+
+**[The full Podman guide is in `docs/podman.md`](docs/podman.md)** — what `CONTAINER_CLI=auto` actually resolves to, what socket activation does and doesn't buy you, remote Podman hosts over SSH (and why the key handling differs from Docker's), pods, and the `io.containers.autoupdate` label. What follows here is the short version and the socket recipes.
 
 Since v1.61.0 Docksentry can drive `podman` directly — set `CONTAINER_CLI=podman` and checks, updates, recreates, rollback, start/restart, `podman compose` and image cleanup all go through it. No aliasing needed. Originally surfaced by [@LeeNX in #23](https://github.com/amayer1983/docksentry/issues/23), with the recreate-level fixes in [#43](https://github.com/amayer1983/docksentry/issues/43), [#48](https://github.com/amayer1983/docksentry/issues/48), [#49](https://github.com/amayer1983/docksentry/issues/49) and [#50](https://github.com/amayer1983/docksentry/issues/50).
 
@@ -428,6 +430,8 @@ environment:
 
 Each entry is `name:endpoint`, and the endpoint is whatever the container CLI takes for `-H`. A **TCP socket / [socket proxy](docs/security.md) is the simplest option** — the same pattern you'd use locally, no keys to manage. SSH endpoints work too and lean on the CLI's own SSH handling, so key-based login has to already succeed non-interactively for the user Docksentry runs as.
 
+An endpoint may also be `context://<name>`, meaning "the endpoint this machine already has saved under that name" — `docker --context <name>` / `podman --connection <name>`. On Podman that is the *only* way to give each remote host its own SSH key, because `podman --url ssh://…` ignores `~/.ssh/config` and borrows whichever stored connection happens to be the default one. Measured, and written up in [docs/podman.md](docs/podman.md#ssh-endpoints-podmans-key-handling-is-not-dockers).
+
 The machine Docksentry runs on is always managed and is **not** listed. Leave `DOCKER_HOSTS` unset and everything behaves exactly as a single-host install — no host column, no `@` anywhere.
 
 <p align="center">
@@ -537,6 +541,7 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 | Web UI | [docs/web-ui.md](docs/web-ui.md) |
 | Notification Channels | [docs/notifications.md](docs/notifications.md) |
 | Docker Compose Support | [docs/compose.md](docs/compose.md) |
+| Podman — CLI, socket activation, remote hosts | [docs/podman.md](docs/podman.md) |
 | Security & Socket Proxy | [docs/security.md](docs/security.md) |
 | Multi-Language | [docs/languages.md](docs/languages.md) |
 

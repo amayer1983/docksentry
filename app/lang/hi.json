@@ -91,6 +91,7 @@
   "web_host": "होस्ट",
   "web_host_filter_all": "सभी होस्ट",
   "web_host_unreachable": "{host}: पहुँच से बाहर",
+  "web_host_reason": "कारण:",
   "web_status": "स्थिति",
   "web_containers_running": "{count} कंटेनर चल रहे हैं",
   "web_settings": "सेटिंग्स",

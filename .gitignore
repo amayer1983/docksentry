@@ -19,3 +19,8 @@ IDEAS.md
 # what's-new notice builds its headlines from it and users have no use
 # for our workflow.
 scripts/issue_inbox.py
+
+# Agent worktrees and session state. Tooling, not the project — and
+# the worktrees are embedded git repositories, which git would either
+# swallow as a broken submodule or copy wholesale.
+.claude/
