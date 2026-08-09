@@ -5210,12 +5210,57 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # time, which is exactly the question the state lines exist to
             # answer without clicking seven times.
             _cards = {
+                # One card for everything Discord. Three of them,
+                # scattered through a list sorted by state, is what
+                # @NotRetarded actually saw (#57): "they're all over
+                # the place". They remain three separate things — a
+                # webhook, the command bot, and the bot's own channel
+                # — so each keeps its own state line and switch. The
+                # card groups them; nothing underneath changed.
                 "discord": f"""<div class="card">
 <h2>Discord</h2>
-<p class="card-intro">{t("web_conn_discord_hook_intro")}</p>
+
+<h3 style="font-size:14px;color:var(--accent);margin:6px 0 4px">{t("web_conn_discord_hook")}</h3>
+<p class="card-intro" style="margin-top:0">{t("web_conn_discord_hook_intro")}</p>
 {channel_head("discord")}
   <label>Discord Webhook {help_(t("web_discord_help"))}{env_("discord_webhook")}</label>
   <input type="text" name="discord_webhook" id="f-discord_webhook" value="{_e(config.discord_webhook)}" placeholder="https://discord.com/api/webhooks/..." style="flex:1" form="conn-form">
+
+<h3 style="font-size:14px;color:var(--accent);margin:22px 0 4px">{t("web_discord_bot_title")}</h3>
+<p class="card-intro" style="margin-top:0">{t("web_discord_bot_intro")}</p>
+{discord_bot_notice}
+
+  <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>
+  <input type="password" name="discord_bot_token" value="" autocomplete="new-password"
+         placeholder="{_e(t('web_discord_token_set') if config.discord_bot_token else t('web_discord_token_placeholder'))}" form="conn-form">
+  {discord_clear_row}
+
+  <div class="grid">
+    <div>
+      <label>{t("web_discord_app_id")} {help_(t("web_discord_app_id_help"))}{env_("discord_app_id")}</label>
+      <input type="text" name="discord_app_id" value="{_e(config.discord_app_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
+    </div>
+    <div>
+      <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
+      <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
+    </div>
+  </div>
+
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="discord_public_replies" id="cb-discord-public" {'checked' if config.discord_public_replies else ''} form="conn-form">
+    <label for="cb-discord-public">{t("web_discord_public_replies")} {help_(t("web_discord_public_replies_help"))}{env_("discord_public_replies")}</label>
+  </div>
+
+  <div class="adv-only">
+    <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
+    <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
+  </div>
+
+<h3 style="font-size:14px;color:var(--accent);margin:22px 0 4px">{t("web_conn_discordbot")}</h3>
+<p class="card-intro" style="margin-top:0">{t("web_conn_discordbot_intro")}</p>
+{channel_head("discordbot")}
+  <label>{t("web_discord_bot_channel")} {help_(t("web_discord_bot_channel_help"))}{env_("discord_bot_channel")}</label>
+  <input type="text" name="discord_bot_channel" value="{_e(config.discord_bot_channel)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
 </div>
 """,
                 "webhook": f"""<div class="card">
@@ -5322,14 +5367,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     </div>
   </div>
   {secret_field("matrix_token", t("web_matrix_token"), t("web_matrix_token_help"), config.matrix_token, t("web_matrix_token_placeholder"))}
-</div>
-""",
-                "discordbot": f"""<div class="card">
-<h2>{t("web_conn_discordbot")}</h2>
-<p class="card-intro">{t("web_conn_discordbot_intro")}</p>
-{channel_head("discordbot")}
-  <label>{t("web_discord_bot_channel")} {help_(t("web_discord_bot_channel_help"))}{env_("discord_bot_channel")}</label>
-  <input type="text" name="discord_bot_channel" value="{_e(config.discord_bot_channel)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
 </div>
 """,
                 "apprise": f"""<div class="card">
@@ -5453,39 +5490,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   </div>
 </div>
 """
-                       + _ordered + f"""<div class="card">
-<h2>{t("web_discord_bot_title")}</h2>
-<p class="card-intro">{t("web_discord_bot_intro")}</p>
-<p style="margin:0 0 10px"><span class="badge" style="font-weight:400">{t("web_chan_commands_only")}</span></p>
-{discord_bot_notice}
-
-  <label>{t("web_discord_token")} {help_(t("web_discord_token_help"))}{env_("discord_bot_token")}</label>
-  <input type="password" name="discord_bot_token" value="" autocomplete="new-password"
-         placeholder="{_e(t('web_discord_token_set') if config.discord_bot_token else t('web_discord_token_placeholder'))}" form="conn-form">
-  {discord_clear_row}
-
-  <div class="grid">
-    <div>
-      <label>{t("web_discord_app_id")} {help_(t("web_discord_app_id_help"))}{env_("discord_app_id")}</label>
-      <input type="text" name="discord_app_id" value="{_e(config.discord_app_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
-    </div>
-    <div>
-      <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
-      <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
-    </div>
-  </div>
-
-  <div class="form-checkbox-row">
-    <input type="checkbox" name="discord_public_replies" id="cb-discord-public" {'checked' if config.discord_public_replies else ''} form="conn-form">
-    <label for="cb-discord-public">{t("web_discord_public_replies")} {help_(t("web_discord_public_replies_help"))}{env_("discord_public_replies")}</label>
-  </div>
-
-  <div class="adv-only">
-    <label>{t("web_discord_allowed_users")} {help_(t("web_discord_allowed_users_help"))}{env_("discord_allowed_users")}</label>
-    <input type="text" name="discord_allowed_users" value="{_e(', '.join(str(u) for u in (config.discord_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
-  </div>
-</div>
-"""
+                       + _ordered
                        + f"""<!-- One Save for the whole page, outside the last card. Inside it, the
      button reads as "save Discord" — and it does not, it saves every
      card above as well. -->

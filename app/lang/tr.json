@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord bot kanalı",
   "web_conn_discordbot_intro": "Yalnızca yanıtlamak yerine kendiliğinden konuşan bot. Yukarıdaki bot belirteci ve bir kanal kimliği gerekir.",
   "web_discord_dup_title": "Discord bildirimleri iki kez gelecek",
-  "web_discord_dup_intro": "Discord webhook'u ve bot kanalı ikisi de açık, yani her bildirimi ikisi de gönderiyor. Buna izin verilir — birini herkese açık, diğerini özel isteyebilirsiniz — ama istenmiyorsa birini kapatın."
+  "web_discord_dup_intro": "Discord webhook'u ve bot kanalı ikisi de açık, yani her bildirimi ikisi de gönderiyor. Buna izin verilir — birini herkese açık, diğerini özel isteyebilirsiniz — ama istenmiyorsa birini kapatın.",
+  "web_conn_discord_hook": "Webhook"
 }

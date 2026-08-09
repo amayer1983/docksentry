@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord 机器人频道",
   "web_conn_discordbot_intro": "机器人主动发言，而不只是回复。需要上面的机器人令牌和一个频道 ID。",
   "web_discord_dup_title": "Discord 通知会收到两次",
-  "web_discord_dup_intro": "Discord Webhook 和机器人频道都已开启，因此每条通知两边都会发。这是允许的——你也许想要一个公开、一个私密——但如果并非本意，请关掉其中一个。"
+  "web_discord_dup_intro": "Discord Webhook 和机器人频道都已开启，因此每条通知两边都会发。这是允许的——你也许想要一个公开、一个私密——但如果并非本意，请关掉其中一个。",
+  "web_conn_discord_hook": "Webhook"
 }

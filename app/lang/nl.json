@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord-botkanaal",
   "web_conn_discordbot_intro": "De bot die uit zichzelf praat in plaats van alleen te antwoorden. Vereist het bottoken hierboven en een kanaal-ID.",
   "web_discord_dup_title": "Discord-meldingen komen dubbel aan",
-  "web_discord_dup_intro": "De Discord-webhook en het botkanaal staan allebei aan, dus elke melding wordt door beide geplaatst. Dat mag — misschien wil je er één openbaar en één privé — maar als het niet de bedoeling was, zet er dan één uit."
+  "web_discord_dup_intro": "De Discord-webhook en het botkanaal staan allebei aan, dus elke melding wordt door beide geplaatst. Dat mag — misschien wil je er één openbaar en één privé — maar als het niet de bedoeling was, zet er dan één uit.",
+  "web_conn_discord_hook": "Webhook"
 }

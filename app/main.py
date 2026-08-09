@@ -569,8 +569,21 @@ def main():
             startup_msg += t("startup_reason_signal", signal=restart_signal)
         if bot.enabled:
             bot.send_message(startup_msg)
-            if settings_missing:
+        # …and every other channel. This line went to Telegram alone,
+        # while the hard-kill note and the what's-new note two blocks down
+        # have always gone to both — so a Discord, e-mail or ntfy user
+        # never saw "restarted on vX" at all. Found by @NotRetarded (#57)
+        # while testing the bot's own channel: the start announcement
+        # arrived and nothing else did, and he reasonably concluded the
+        # rest of the notifications were broken too. They are not; this
+        # one message simply never had a second recipient.
+        if notifier.has_channels():
+            notifier.send_message(startup_msg)
+        if settings_missing:
+            if bot.enabled:
                 bot.send_message(t("data_loss_alert"))
+            if notifier.has_channels():
+                notifier.send_message(t("data_loss_alert"))
 
     # Sent regardless of how we restarted — a self-update and a manual
     # pull both land the user on a new version, and both deserve the note.

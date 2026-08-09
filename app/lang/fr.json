@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Salon du bot Discord",
   "web_conn_discordbot_intro": "Le bot qui parle de lui-même, au lieu de seulement répondre. Nécessite le jeton du bot ci-dessus et un ID de salon.",
   "web_discord_dup_title": "Les notifications Discord arriveront deux fois",
-  "web_discord_dup_intro": "Le webhook Discord et le salon du bot sont tous deux actifs : chaque notification est donc publiée par les deux. C'est permis — vous voulez peut-être l'un public et l'autre privé — mais si ce n'était pas voulu, désactivez-en un."
+  "web_discord_dup_intro": "Le webhook Discord et le salon du bot sont tous deux actifs : chaque notification est donc publiée par les deux. C'est permis — vous voulez peut-être l'un public et l'autre privé — mais si ce n'était pas voulu, désactivez-en un.",
+  "web_conn_discord_hook": "Webhook"
 }

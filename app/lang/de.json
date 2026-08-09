@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord-Bot-Kanal",
   "web_conn_discordbot_intro": "Der Bot spricht von sich aus, statt nur zu antworten. Braucht den Bot-Token oben und eine Kanal-ID.",
   "web_discord_dup_title": "Discord-Meldungen kommen doppelt",
-  "web_discord_dup_intro": "Der Discord-Webhook und der Bot-Kanal sind beide eingeschaltet, jede Meldung wird also von beiden geschickt. Das ist erlaubt — vielleicht willst du einen öffentlich und einen privat — aber falls es unbeabsichtigt war, schalte einen davon aus."
+  "web_discord_dup_intro": "Der Discord-Webhook und der Bot-Kanal sind beide eingeschaltet, jede Meldung wird also von beiden geschickt. Das ist erlaubt — vielleicht willst du einen öffentlich und einen privat — aber falls es unbeabsichtigt war, schalte einen davon aus.",
+  "web_conn_discord_hook": "Webhook"
 }

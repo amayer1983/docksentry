@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Canal do bot do Discord",
   "web_conn_discordbot_intro": "O bot a falar por iniciativa própria, em vez de apenas responder. Precisa do token do bot acima e de um ID de canal.",
   "web_discord_dup_title": "As notificações do Discord chegarão duas vezes",
-  "web_discord_dup_intro": "O webhook do Discord e o canal do bot estão ambos ligados, por isso cada notificação é publicada pelos dois. É permitido — talvez queira um público e outro privado — mas se não era essa a intenção, desligue um deles."
+  "web_discord_dup_intro": "O webhook do Discord e o canal do bot estão ambos ligados, por isso cada notificação é publicada pelos dois. É permitido — talvez queira um público e outro privado — mas se não era essa a intenção, desligue um deles.",
+  "web_conn_discord_hook": "Webhook"
 }

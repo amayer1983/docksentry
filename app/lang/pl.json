@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Kanał bota Discord",
   "web_conn_discordbot_intro": "Bot mówiący z własnej inicjatywy, a nie tylko odpowiadający. Wymaga tokenu bota powyżej i ID kanału.",
   "web_discord_dup_title": "Powiadomienia Discord przyjdą podwójnie",
-  "web_discord_dup_intro": "Webhook Discord i kanał bota są oba włączone, więc każde powiadomienie wysyła i jedno, i drugie. To dozwolone — może chcesz jeden publiczny, a drugi prywatny — ale jeśli to nie było zamierzone, wyłącz jeden z nich."
+  "web_discord_dup_intro": "Webhook Discord i kanał bota są oba włączone, więc każde powiadomienie wysyła i jedno, i drugie. To dozwolone — może chcesz jeden publiczny, a drugi prywatny — ale jeśli to nie było zamierzone, wyłącz jeden z nich.",
+  "web_conn_discord_hook": "Webhook"
 }

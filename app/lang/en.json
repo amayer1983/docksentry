@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord bot channel",
   "web_conn_discordbot_intro": "The bot speaking of its own accord, rather than answering. Needs the bot token above and a channel ID.",
   "web_discord_dup_title": "Discord notifications will arrive twice",
-  "web_discord_dup_intro": "The Discord webhook and the bot channel are both switched on, so every notification is posted by each of them. That is allowed — you may want one public and one private — but if it was not intended, switch one of them off."
+  "web_discord_dup_intro": "The Discord webhook and the bot channel are both switched on, so every notification is posted by each of them. That is allowed — you may want one public and one private — but if it was not intended, switch one of them off.",
+  "web_conn_discord_hook": "Webhook"
 }

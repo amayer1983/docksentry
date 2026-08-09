@@ -734,5 +734,6 @@
   "web_conn_discordbot": "Discord ボットのチャンネル",
   "web_conn_discordbot_intro": "返答するだけでなく、ボットが自分から話します。上のボットトークンとチャンネル ID が必要です。",
   "web_discord_dup_title": "Discord の通知が二重に届きます",
-  "web_discord_dup_intro": "Discord Webhook とボットのチャンネルが両方オンなので、どの通知も両方から投稿されます。それ自体は構いません——片方を公開、片方を非公開にしたい場合もあります——が、意図していないならどちらかをオフにしてください。"
+  "web_discord_dup_intro": "Discord Webhook とボットのチャンネルが両方オンなので、どの通知も両方から投稿されます。それ自体は構いません——片方を公開、片方を非公開にしたい場合もあります——が、意図していないならどちらかをオフにしてください。",
+  "web_conn_discord_hook": "Webhook"
 }
