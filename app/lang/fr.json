@@ -726,5 +726,13 @@
   "sum_held": "{n} en attente de confirmation",
   "sum_skipped": "{n} ignorés",
   "web_badge_podman_auto_tt": "Ce conteneur porte io.containers.autoupdate={mode}, donc `podman auto-update` le gère aussi. Deux gestionnaires sur un conteneur : le premier qui s'exécute l'emporte. Docksentry le met toujours à jour si vous le demandez, mais sachez qu'il n'est pas seul.",
-  "web_host_contexts": "Docker connaît ces points de terminaison sur cette machine : {list} — utile si l'adresse ci-dessus contient une faute de frappe."
+  "web_host_contexts": "Docker connaît ces points de terminaison sur cette machine : {list} — utile si l'adresse ci-dessus contient une faute de frappe.",
+  "web_discord_bot_channel": "ID du salon",
+  "web_discord_bot_channel_help": "Où le bot écrit de lui-même — démarrage, alertes, résultats de mise à jour. Permanent et visible par tout le salon, contrairement aux réponses aux commandes. Mode développeur activé, clic droit sur le salon, Copier l'identifiant du salon.",
+  "web_discord_public_replies": "Réponses aux commandes visibles par tous",
+  "web_discord_public_replies_help": "Désactivé, seule la personne qui a lancé la commande voit la réponse, et elle s'efface ensuite. Activé, elle reste dans le salon pour tout le monde. Désactivé par défaut : une liste de conteneurs nomme vos services internes.",
+  "web_conn_discordbot": "Salon du bot Discord",
+  "web_conn_discordbot_intro": "Le bot qui parle de lui-même, au lieu de seulement répondre. Nécessite le jeton du bot ci-dessus et un ID de salon.",
+  "web_discord_dup_title": "Les notifications Discord arriveront deux fois",
+  "web_discord_dup_intro": "Le webhook Discord et le salon du bot sont tous deux actifs : chaque notification est donc publiée par les deux. C'est permis — vous voulez peut-être l'un public et l'autre privé — mais si ce n'était pas voulu, désactivez-en un."
 }

@@ -84,6 +84,11 @@ def _config():
         discord_app_id="1234567890123456789",
         discord_guild_id="9876543210987654321",
         discord_allowed_users=[],
+        # The bot as a channel of its own (#57): it posts unprompted into
+        # a channel, where every slash reply is ephemeral by design.
+        discord_bot_channel="1122334455667788990",
+        discord_public_replies=False,
+        channel_discordbot_enabled=True,
         # E-mail (v2.4.0). Third secret on the Connections page.
         smtp_host="smtp.example.com",
         smtp_port=587,
@@ -250,6 +255,14 @@ def main():
         'name="discord_app_id" value="1234567890123456789"' in channels)
     checks["server id is on the Connections page, with its value"] = (
         'name="discord_guild_id" value="9876543210987654321"' in channels)
+    checks["the bot's own channel has a field"] = (
+        'name="discord_bot_channel" value="1122334455667788990"' in channels)
+    # Off by default, and the switch has to reflect that rather than
+    # rendering checked because it is a checkbox.
+    checks["…and command visibility is a switch, unchecked here"] = (
+        'name="discord_public_replies"' in channels
+        and 'name="discord_public_replies" id="cb-discord-public" checked'
+        not in channels)
     checks["the allowed-user list is on the Connections page"] = (
         'name="discord_allowed_users"' in channels)
     # Every one of them has to reach the (empty) settings form by id —

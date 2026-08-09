@@ -726,5 +726,13 @@
   "sum_held": "{n} in attesa di conferma",
   "sum_skipped": "{n} saltati",
   "web_badge_podman_auto_tt": "Questo container ha io.containers.autoupdate={mode}, quindi lo gestisce anche `podman auto-update`. Due aggiornatori su un container: vince chi parte per primo. Docksentry lo aggiorna comunque se glielo chiedi, ma è bene sapere che non è solo.",
-  "web_host_contexts": "Docker su questa macchina conosce questi endpoint: {list} — utile se nell'indirizzo sopra c'è un refuso."
+  "web_host_contexts": "Docker su questa macchina conosce questi endpoint: {list} — utile se nell'indirizzo sopra c'è un refuso.",
+  "web_discord_bot_channel": "ID del canale",
+  "web_discord_bot_channel_help": "Dove il bot scrive di sua iniziativa: avvio, avvisi, esiti degli aggiornamenti. Permanente e visibile a tutto il canale, a differenza delle risposte ai comandi. Attiva la modalità sviluppatore, tasto destro sul canale, Copia ID canale.",
+  "web_discord_public_replies": "Risposte ai comandi visibili a tutti",
+  "web_discord_public_replies_help": "Disattivo, la risposta la vede solo chi ha lanciato il comando e poi si cancella da sola. Attivo, resta nel canale per tutti. Disattivo di default: un elenco di container nomina i tuoi servizi interni.",
+  "web_conn_discordbot": "Canale del bot Discord",
+  "web_conn_discordbot_intro": "Il bot che parla di sua iniziativa, invece di limitarsi a rispondere. Servono il token del bot sopra e un ID canale.",
+  "web_discord_dup_title": "Le notifiche Discord arriveranno due volte",
+  "web_discord_dup_intro": "Il webhook Discord e il canale del bot sono entrambi attivi, quindi ogni notifica viene pubblicata da tutti e due. È consentito — magari ne vuoi uno pubblico e uno privato — ma se non era voluto, disattivane uno."
 }

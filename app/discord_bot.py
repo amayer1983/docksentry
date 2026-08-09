@@ -345,6 +345,37 @@ class DiscordBot:
         needs the application id, so both are required to be useful."""
         return bool(self.token and self.application_id)
 
+    def _replies_private(self):
+        """Whether a command answer stays visible only to whoever asked.
+
+        Private by default: a container listing names your internal
+        services and a Discord server can have members in it who should
+        not be reading that, so the default is the one that cannot
+        embarrass anyone.
+
+        @NotRetarded asked for the choice (#57), and his reasoning is
+        better than the flag: an ephemeral answer also tidies up after
+        itself, which some people want and others find infuriating when
+        they wanted a record. Whose channel it is decides that, not us.
+        """
+        return not bool(getattr(self.config, "discord_public_replies", False))
+
+    def announce(self, text):
+        """Say something into the configured channel, unprompted.
+
+        The bot could only ever answer before this: every slash reply is
+        ephemeral, so "bot started" and crash alerts had nowhere to go.
+        Best-effort and silent on failure — an announcement that fails
+        must never take down the thing it was announcing.
+        """
+        channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
+        if not channel or not self.rest:
+            return
+        try:
+            self.rest.create_message(channel, self._clip(text))
+        except Exception as e:
+            self.log(f"Discord: could not post to the configured channel: {e}")
+
     # ── lifecycle ─────────────────────────────────────────────────
     def start(self):
         self.last_error = None
@@ -395,6 +426,10 @@ class DiscordBot:
         self._thread = threading.Thread(target=self.gateway.run_forever,
                                         daemon=True)
         self._thread.start()
+        # The one thing the bot could never say. Only when a channel was
+        # configured — silence is the old behaviour and stays the default.
+        from version import VERSION as _V
+        self.announce(f"✅ Docksentry {_V} — bot connected.")
         return True
 
     def stop(self, timeout=SHUTDOWN_GRACE):
@@ -471,7 +506,7 @@ class DiscordBot:
             try:
                 self.rest.interaction_response(data["id"], data["token"],
                                                self._BUSY_WORKERS,
-                                               ephemeral=True)
+                                               ephemeral=self._replies_private())
             except Exception as e:
                 self.log(f"Discord: could not refuse an interaction: {e}")
             finally:
@@ -582,8 +617,15 @@ class DiscordBot:
         way, and here it costs nobody a heartbeat.
         """
         try:
+            # The DEFERRED acknowledgement carries the flag too. Discord
+            # fixes an answer's visibility at the acknowledgement — the
+            # later edit cannot change it — so setting it only on the
+            # immediate path would leave every deferred command (which is
+            # most of them, since anything slow defers) private no matter
+            # what the switch says.
             self.rest.interaction_response(data["id"], data["token"],
-                                           deferred=True)
+                                           deferred=True,
+                                           ephemeral=self._replies_private())
         except DiscordRESTError as e:
             self.log(f"Discord: could not acknowledge interaction: {e}")
             return

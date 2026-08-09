@@ -86,7 +86,8 @@ def main():
         # every registered class is a BaseNotifier and appears once
         discovered = notifiers.discover()
         checks["registry: expected channel set"] = \
-            sorted(c.name for c in discovered) == ["apprise", "discord", "gotify",
+            sorted(c.name for c in discovered) == ["apprise", "discord",
+                                                   "discordbot", "gotify",
                                                    "matrix", "ntfy", "smtp",
                                                    "webhook"]
 

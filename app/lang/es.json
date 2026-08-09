@@ -726,5 +726,13 @@
   "sum_held": "{n} pendientes de confirmación",
   "sum_skipped": "{n} omitidos",
   "web_badge_podman_auto_tt": "Este contenedor lleva io.containers.autoupdate={mode}, así que `podman auto-update` también lo gestiona. Dos actualizadores sobre un contenedor: gana el que se ejecute primero. Docksentry lo sigue actualizando si se lo pides, pero conviene saber que no está solo.",
-  "web_host_contexts": "Docker conoce estos extremos en esta máquina: {list} — útil si la dirección de arriba tiene una errata."
+  "web_host_contexts": "Docker conoce estos extremos en esta máquina: {list} — útil si la dirección de arriba tiene una errata.",
+  "web_discord_bot_channel": "ID del canal",
+  "web_discord_bot_channel_help": "Donde el bot escribe por su cuenta: arranque, alertas, resultados de actualización. Permanente y visible para todo el canal, a diferencia de las respuestas a comandos. Activa el modo desarrollador, clic derecho en el canal, Copiar ID del canal.",
+  "web_discord_public_replies": "Respuestas a comandos visibles para todos",
+  "web_discord_public_replies_help": "Desactivado, solo quien lanzó el comando ve la respuesta y luego se borra sola. Activado, permanece en el canal para todos. Desactivado por defecto: una lista de contenedores nombra tus servicios internos.",
+  "web_conn_discordbot": "Canal del bot de Discord",
+  "web_conn_discordbot_intro": "El bot hablando por su cuenta, en vez de solo responder. Necesita el token del bot de arriba y un ID de canal.",
+  "web_discord_dup_title": "Los avisos de Discord llegarán dos veces",
+  "web_discord_dup_intro": "El webhook de Discord y el canal del bot están ambos activos, así que cada aviso lo publica cada uno. Está permitido —quizá quieras uno público y otro privado— pero si no era la intención, desactiva uno."
 }

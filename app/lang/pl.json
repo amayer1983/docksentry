@@ -726,5 +726,13 @@
   "sum_held": "{n} czeka na potwierdzenie",
   "sum_skipped": "{n} pominięto",
   "web_badge_podman_auto_tt": "Ten kontener ma io.containers.autoupdate={mode}, więc zarządza nim także `podman auto-update`. Dwa mechanizmy na jednym kontenerze: wygrywa ten, który zadziała pierwszy. Docksentry nadal go zaktualizuje na żądanie, ale warto wiedzieć, że nie jest sam.",
-  "web_host_contexts": "Docker zna na tej maszynie te punkty końcowe: {list} — przydatne, jeśli w adresie powyżej jest literówka."
+  "web_host_contexts": "Docker zna na tej maszynie te punkty końcowe: {list} — przydatne, jeśli w adresie powyżej jest literówka.",
+  "web_discord_bot_channel": "ID kanału",
+  "web_discord_bot_channel_help": "Gdzie bot pisze z własnej inicjatywy — start, alerty, wyniki aktualizacji. Trwałe i widoczne dla całego kanału, inaczej niż odpowiedzi na polecenia. Włącz tryb dewelopera, kliknij kanał prawym przyciskiem, Kopiuj ID kanału.",
+  "web_discord_public_replies": "Odpowiedzi na polecenia widoczne dla wszystkich",
+  "web_discord_public_replies_help": "Wyłączone — odpowiedź widzi tylko ten, kto wydał polecenie, i po czasie znika. Włączone — zostaje na kanale dla wszystkich. Domyślnie wyłączone: lista kontenerów wymienia Twoje wewnętrzne usługi.",
+  "web_conn_discordbot": "Kanał bota Discord",
+  "web_conn_discordbot_intro": "Bot mówiący z własnej inicjatywy, a nie tylko odpowiadający. Wymaga tokenu bota powyżej i ID kanału.",
+  "web_discord_dup_title": "Powiadomienia Discord przyjdą podwójnie",
+  "web_discord_dup_intro": "Webhook Discord i kanał bota są oba włączone, więc każde powiadomienie wysyła i jedno, i drugie. To dozwolone — może chcesz jeden publiczny, a drugi prywatny — ale jeśli to nie było zamierzone, wyłącz jeden z nich."
 }

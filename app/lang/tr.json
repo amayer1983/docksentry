@@ -726,5 +726,13 @@
   "sum_held": "{n} onay bekliyor",
   "sum_skipped": "{n} atlandı",
   "web_badge_podman_auto_tt": "Bu kapsayıcıda io.containers.autoupdate={mode} var, yani onu `podman auto-update` de yönetiyor. Tek kapsayıcıda iki güncelleyici: önce çalışan kazanır. Docksentry istediğinizde yine günceller, ama yalnız olmadığını bilmelisiniz.",
-  "web_host_contexts": "Docker bu makinede şu uç noktaları biliyor: {list} — yukarıdaki adreste yazım hatası varsa işe yarar."
+  "web_host_contexts": "Docker bu makinede şu uç noktaları biliyor: {list} — yukarıdaki adreste yazım hatası varsa işe yarar.",
+  "web_discord_bot_channel": "Kanal kimliği",
+  "web_discord_bot_channel_help": "Botun kendiliğinden yazdığı yer — başlangıç, uyarılar, güncelleme sonuçları. Komut yanıtlarının aksine kalıcı ve kanaldaki herkese görünür. Geliştirici Modu'nu açın, kanala sağ tıklayın, Kanal Kimliğini Kopyala.",
+  "web_discord_public_replies": "Komut yanıtları herkese görünür",
+  "web_discord_public_replies_help": "Kapalıyken yanıtı yalnızca komutu veren görür ve bir süre sonra kendini siler. Açıkken kanalda herkes için kalır. Varsayılan kapalıdır: kapsayıcı listesi iç servislerinizin adlarını içerir.",
+  "web_conn_discordbot": "Discord bot kanalı",
+  "web_conn_discordbot_intro": "Yalnızca yanıtlamak yerine kendiliğinden konuşan bot. Yukarıdaki bot belirteci ve bir kanal kimliği gerekir.",
+  "web_discord_dup_title": "Discord bildirimleri iki kez gelecek",
+  "web_discord_dup_intro": "Discord webhook'u ve bot kanalı ikisi de açık, yani her bildirimi ikisi de gönderiyor. Buna izin verilir — birini herkese açık, diğerini özel isteyebilirsiniz — ama istenmiyorsa birini kapatın."
 }

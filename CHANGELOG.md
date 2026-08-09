@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.7.0] - unreleased
+
+### Added
+- **The Discord bot can speak, not only answer (#57, @NotRetarded).** Every slash-command reply is *ephemeral* — visible only on the device that sent it, and it deletes itself — which is right for an answer naming your internal services and useless for "bot started" or a crash alert. Give the bot a **channel ID** and it posts there of its own accord: permanent, visible to everyone in that channel. It is a notification channel like any other, with its own card, switch and test button, so quiet hours and the rest apply without a special case. The mechanism is not new — `create_message` has been running as the fallback for answers that overran Discord's 15-minute window; it simply was not wired to anything else.
+- **Command answers can be made visible to everyone**, per his argument rather than mine: an ephemeral answer also tidies itself away, and whether you want that depends on whose channel it is. Off by default, because the default should be the one that cannot embarrass anyone. The flag is set on the *acknowledgement*, where Discord fixes visibility — setting it only on the immediate path would have left every deferred command private whatever the switch said, which is most of them.
+- **A notice when both Discord paths are configured.** Webhook and bot channel both on means every notification arrives twice. He asked for a restriction forbidding both; it says so instead — somebody may want the webhook public and the bot private, and a hard block takes that away.
+
 ## [2.6.0] - 2026-08-09
 
 ### Added

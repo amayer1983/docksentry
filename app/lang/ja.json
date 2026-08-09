@@ -726,5 +726,13 @@
   "sum_held": "{n} 件が確認待ち",
   "sum_skipped": "{n} 件スキップ",
   "web_badge_podman_auto_tt": "このコンテナには io.containers.autoupdate={mode} が付いており、`podman auto-update` も管理しています。ひとつのコンテナに更新役がふたり——先に動いたほうが勝ちます。指示すれば Docksentry は更新しますが、単独ではないことは知っておいてください。",
-  "web_host_contexts": "このマシンの Docker は次の接続先を知っています: {list} — 上のアドレスに打ち間違いがある場合に役立ちます。"
+  "web_host_contexts": "このマシンの Docker は次の接続先を知っています: {list} — 上のアドレスに打ち間違いがある場合に役立ちます。",
+  "web_discord_bot_channel": "チャンネル ID",
+  "web_discord_bot_channel_help": "ボットが自分から書き込む先です——起動、警報、更新結果。コマンドの返答と違い、消えずにチャンネルの全員に見えます。開発者モードを有効にし、チャンネルを右クリックして「チャンネル ID をコピー」。",
+  "web_discord_public_replies": "コマンドの返答を全員に見せる",
+  "web_discord_public_replies_help": "オフでは実行した本人にしか見えず、あとで自動的に消えます。オンならチャンネルに残り全員が見られます。既定はオフです——コンテナ一覧には社内サービスの名前が並ぶからです。",
+  "web_conn_discordbot": "Discord ボットのチャンネル",
+  "web_conn_discordbot_intro": "返答するだけでなく、ボットが自分から話します。上のボットトークンとチャンネル ID が必要です。",
+  "web_discord_dup_title": "Discord の通知が二重に届きます",
+  "web_discord_dup_intro": "Discord Webhook とボットのチャンネルが両方オンなので、どの通知も両方から投稿されます。それ自体は構いません——片方を公開、片方を非公開にしたい場合もあります——が、意図していないならどちらかをオフにしてください。"
 }

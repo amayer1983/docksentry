@@ -726,5 +726,13 @@
   "sum_held": "{n} wacht op bevestiging",
   "sum_skipped": "{n} overgeslagen",
   "web_badge_podman_auto_tt": "Deze container draagt io.containers.autoupdate={mode}, dus `podman auto-update` beheert hem ook. Twee updaters op één container: wie het eerst draait, wint. Docksentry werkt hem nog steeds bij als je dat vraagt, maar je moet weten dat hij niet alleen is.",
-  "web_host_contexts": "Docker kent op deze machine deze endpoints: {list} — handig als er een typefout in het adres hierboven zit."
+  "web_host_contexts": "Docker kent op deze machine deze endpoints: {list} — handig als er een typefout in het adres hierboven zit.",
+  "web_discord_bot_channel": "Kanaal-ID",
+  "web_discord_bot_channel_help": "Waar de bot uit zichzelf schrijft — opstarten, waarschuwingen, updateresultaten. Blijvend en zichtbaar voor het hele kanaal, anders dan antwoorden op opdrachten. Zet de ontwikkelaarsmodus aan, rechtsklik op het kanaal, Kanaal-ID kopiëren.",
+  "web_discord_public_replies": "Antwoorden op opdrachten voor iedereen zichtbaar",
+  "web_discord_public_replies_help": "Uit ziet alleen degene die de opdracht gaf het antwoord, en het wist zichzelf later. Aan blijft het voor iedereen in het kanaal staan. Uit is de standaard: een containerlijst noemt je interne diensten.",
+  "web_conn_discordbot": "Discord-botkanaal",
+  "web_conn_discordbot_intro": "De bot die uit zichzelf praat in plaats van alleen te antwoorden. Vereist het bottoken hierboven en een kanaal-ID.",
+  "web_discord_dup_title": "Discord-meldingen komen dubbel aan",
+  "web_discord_dup_intro": "De Discord-webhook en het botkanaal staan allebei aan, dus elke melding wordt door beide geplaatst. Dat mag — misschien wil je er één openbaar en één privé — maar als het niet de bedoeling was, zet er dan één uit."
 }

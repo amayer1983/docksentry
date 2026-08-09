@@ -726,5 +726,13 @@
   "sum_held": "{n} 个待确认",
   "sum_skipped": "{n} 个已跳过",
   "web_badge_podman_auto_tt": "该容器带有 io.containers.autoupdate={mode}，因此 `podman auto-update` 也在管理它。一个容器两个更新程序：谁先跑谁说了算。你要求时 Docksentry 仍会更新它，但你应该知道它并非独自在管。",
-  "web_host_contexts": "本机的 Docker 知道这些端点：{list} —— 如果上面的地址打错了，这会有用。"
+  "web_host_contexts": "本机的 Docker 知道这些端点：{list} —— 如果上面的地址打错了，这会有用。",
+  "web_discord_bot_channel": "频道 ID",
+  "web_discord_bot_channel_help": "机器人自己发言的地方——启动、告警、更新结果。与斜杠命令的回复不同，这些内容会保留并对频道里所有人可见。打开开发者模式，右键点击频道，复制频道 ID。",
+  "web_discord_public_replies": "命令回复对所有人可见",
+  "web_discord_public_replies_help": "关闭时只有执行命令的人能看到回复，之后会自动消失。打开后它会留在频道里给所有人看。默认关闭：容器列表会写出你的内部服务名称。",
+  "web_conn_discordbot": "Discord 机器人频道",
+  "web_conn_discordbot_intro": "机器人主动发言，而不只是回复。需要上面的机器人令牌和一个频道 ID。",
+  "web_discord_dup_title": "Discord 通知会收到两次",
+  "web_discord_dup_intro": "Discord Webhook 和机器人频道都已开启，因此每条通知两边都会发。这是允许的——你也许想要一个公开、一个私密——但如果并非本意，请关掉其中一个。"
 }

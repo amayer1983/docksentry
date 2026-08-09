@@ -726,5 +726,13 @@
   "sum_held": "{n}개 확인 대기",
   "sum_skipped": "{n}개 건너뜀",
   "web_badge_podman_auto_tt": "이 컨테이너에는 io.containers.autoupdate={mode} 라벨이 있어 `podman auto-update`도 함께 관리합니다. 한 컨테이너에 업데이터가 둘 — 먼저 실행되는 쪽이 이깁니다. 요청하면 Docksentry가 계속 업데이트하지만, 혼자가 아니라는 점은 알아 두세요.",
-  "web_host_contexts": "이 컴퓨터의 Docker는 다음 엔드포인트를 알고 있습니다: {list} — 위 주소에 오타가 있을 때 유용합니다."
+  "web_host_contexts": "이 컴퓨터의 Docker는 다음 엔드포인트를 알고 있습니다: {list} — 위 주소에 오타가 있을 때 유용합니다.",
+  "web_discord_bot_channel": "채널 ID",
+  "web_discord_bot_channel_help": "봇이 스스로 글을 올리는 곳입니다 — 시작, 경보, 업데이트 결과. 명령 응답과 달리 사라지지 않고 채널의 모두에게 보입니다. 개발자 모드를 켜고 채널을 오른쪽 클릭해 채널 ID 복사.",
+  "web_discord_public_replies": "명령 응답을 모두에게 보이기",
+  "web_discord_public_replies_help": "꺼져 있으면 명령을 실행한 사람만 보고 나중에 스스로 사라집니다. 켜면 채널에 남아 모두가 봅니다. 기본은 꺼짐입니다 — 컨테이너 목록에는 내부 서비스 이름이 들어 있으니까요.",
+  "web_conn_discordbot": "디스코드 봇 채널",
+  "web_conn_discordbot_intro": "응답만 하는 대신 봇이 스스로 말합니다. 위의 봇 토큰과 채널 ID가 필요합니다.",
+  "web_discord_dup_title": "디스코드 알림이 두 번 옵니다",
+  "web_discord_dup_intro": "디스코드 웹후크와 봇 채널이 모두 켜져 있어 모든 알림을 둘 다 보냅니다. 허용되는 구성입니다 — 하나는 공개, 하나는 비공개로 쓸 수도 있으니까요 — 하지만 의도한 게 아니라면 하나를 끄세요."
 }

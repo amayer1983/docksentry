@@ -726,5 +726,13 @@
   "sum_held": "{n} awaiting confirmation",
   "sum_skipped": "{n} skipped",
   "web_badge_podman_auto_tt": "This container carries io.containers.autoupdate={mode}, so `podman auto-update` manages it as well. Two updaters on one container: whichever runs first wins. Docksentry still updates it if you ask, but you should know it is not alone.",
-  "web_host_contexts": "Docker on this machine knows these endpoints: {list} — useful if the address above has a typo in it."
+  "web_host_contexts": "Docker on this machine knows these endpoints: {list} — useful if the address above has a typo in it.",
+  "web_discord_bot_channel": "Channel ID",
+  "web_discord_bot_channel_help": "Where the bot posts on its own — start-up, alerts, update results. Permanent and visible to everyone in that channel, unlike command answers. Developer Mode on, right-click the channel, Copy Channel ID.",
+  "web_discord_public_replies": "Command answers visible to everyone",
+  "web_discord_public_replies_help": "Off, a slash-command answer is seen only by whoever ran it and deletes itself later. On, it stays in the channel for everyone. Off is the default because a container listing names your internal services.",
+  "web_conn_discordbot": "Discord bot channel",
+  "web_conn_discordbot_intro": "The bot speaking of its own accord, rather than answering. Needs the bot token above and a channel ID.",
+  "web_discord_dup_title": "Discord notifications will arrive twice",
+  "web_discord_dup_intro": "The Discord webhook and the bot channel are both switched on, so every notification is posted by each of them. That is allowed — you may want one public and one private — but if it was not intended, switch one of them off."
 }

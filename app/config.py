@@ -129,6 +129,9 @@ PERSISTENT_KEYS = [
     "channel_matrix_enabled",
     "channel_apprise_enabled",
     "channel_telegram_enabled",
+    "channel_discordbot_enabled",
+    "discord_bot_channel",
+    "discord_public_replies",
 ]
 
 # Attribute name → environment variable, for every persistent key that can
@@ -204,6 +207,9 @@ PERSISTENT_ENV_VARS = {
     "channel_matrix_enabled": "CHANNEL_MATRIX_ENABLED",
     "channel_apprise_enabled": "CHANNEL_APPRISE_ENABLED",
     "channel_telegram_enabled": "CHANNEL_TELEGRAM_ENABLED",
+    "channel_discordbot_enabled": "CHANNEL_DISCORDBOT_ENABLED",
+    "discord_bot_channel": "DISCORD_BOT_CHANNEL",
+    "discord_public_replies": "DISCORD_PUBLIC_REPLIES",
 }
 
 # The value from_env() ends up with when the variable is absent — already
@@ -286,6 +292,9 @@ PERSISTENT_ENV_DEFAULTS = {
     "channel_matrix_enabled": True,
     "channel_apprise_enabled": True,
     "channel_telegram_enabled": True,
+    "channel_discordbot_enabled": True,
+    "discord_bot_channel": "",
+    "discord_public_replies": False,
 }
 
 # Persistent keys whose *value* may be printed (startup log, Web UI hint).
@@ -313,6 +322,8 @@ LOGGABLE_PERSISTENT_KEYS = {
     "channel_matrix_enabled",
     "channel_apprise_enabled",
     "channel_telegram_enabled",
+    "channel_discordbot_enabled",
+    "discord_public_replies",
 }
 # NOT loggable, for the record: web_password, discord_webhook, webhook_url,
 # discord_bot_token (credentials / tokenised URLs) and telegram_topic_id +
@@ -388,6 +399,9 @@ PERSISTENT_SETTINGS_TAB = {
     "channel_matrix_enabled": "Connections",
     "channel_apprise_enabled": "Connections",
     "channel_telegram_enabled": "Connections",
+    "channel_discordbot_enabled": "Connections",
+    "discord_bot_channel": "Connections",
+    "discord_public_replies": "Connections",
     "webhook_url": "Connections",
 }
 
@@ -438,7 +452,10 @@ class Config:
                  channel_gotify_enabled=True,
                  channel_matrix_enabled=True,
                  channel_apprise_enabled=True,
-                 channel_telegram_enabled=True):
+                 channel_telegram_enabled=True,
+                 channel_discordbot_enabled=True,
+                 discord_bot_channel="",
+                 discord_public_replies=False):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -555,6 +572,18 @@ class Config:
         # commands, because half-off ("why is it still replying?")
         # is the confusing state, not the useful one.
         self.channel_telegram_enabled = bool(channel_telegram_enabled)
+        self.channel_discordbot_enabled = bool(channel_discordbot_enabled)
+        # The channel the BOT posts into of its own accord (#57).
+        # Distinct from DISCORD_WEBHOOK: that is a webhook URL and a
+        # separate delivery path; this is the bot itself speaking,
+        # which is what @NotRetarded asked for so that everything
+        # lives in the bot's own settings.
+        self.discord_bot_channel = (discord_bot_channel or "").strip()
+        # Command answers visible to the whole channel. Off by
+        # default: the default should be the one that cannot
+        # embarrass anyone, because a container listing names your
+        # internal services. On is for a channel you control.
+        self.discord_public_replies = bool(discord_public_replies)
         # Container state monitoring (#2, @NotRetarded): health transitions,
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
@@ -960,6 +989,9 @@ class Config:
             channel_matrix_enabled=_env("CHANNEL_MATRIX_ENABLED", "true").lower() not in ("false", "0", "no"),
             channel_apprise_enabled=_env("CHANNEL_APPRISE_ENABLED", "true").lower() not in ("false", "0", "no"),
             channel_telegram_enabled=_env("CHANNEL_TELEGRAM_ENABLED", "true").lower() not in ("false", "0", "no"),
+            channel_discordbot_enabled=_env("CHANNEL_DISCORDBOT_ENABLED", "true").lower() not in ("false", "0", "no"),
+            discord_bot_channel=_env("DISCORD_BOT_CHANNEL", ""),
+            discord_public_replies=_env("DISCORD_PUBLIC_REPLIES", "false").lower() in ("true", "1", "yes"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),

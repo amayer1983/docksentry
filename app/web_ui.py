@@ -1872,6 +1872,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # failure mode worth having.
                 if "conn_page" in params:
                     config.smtp_tls_verify = "smtp_tls_verify" in params
+                    # Same form-marker rule: only a submission that really
+                    # came from this page may read an absent checkbox as
+                    # "off".
+                    config.discord_public_replies = (
+                        "discord_public_replies" in params)
                     # The channel switches, same rule and for the same
                     # reason: an unchecked box submits nothing, so only a
                     # submission that really came from this whole form
@@ -1889,7 +1894,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                   "channel_gotify_enabled",
                                   "channel_matrix_enabled",
                                   "channel_apprise_enabled",
-                                  "channel_telegram_enabled"):
+                                  "channel_telegram_enabled",
+                                  "channel_discordbot_enabled"):
                         if f"{_flag}_shown" in params:
                             setattr(config, _flag, _flag in params)
 
@@ -1897,6 +1903,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Plain values first, then the credentials, which follow
                 # the rule every secret on this page follows: empty means
                 # "leave it alone", and `<name>_clear` is what removes it.
+                if "discord_bot_channel" in params:
+                    config.discord_bot_channel = params["discord_bot_channel"][0].strip()
                 for _plain in ("ntfy_url", "ntfy_server", "ntfy_topic",
                                "ntfy_user", "gotify_url", "matrix_homeserver",
                                "matrix_room", "apprise_url", "apprise_tag"):
@@ -5137,6 +5145,25 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<label for="cb-discord-clear">{t("web_discord_token_clear")}'
                     f' {help_(t("web_discord_token_clear_help"))}</label></div>')
 
+            # Both Discord paths configured means every notification
+            # arrives twice — the webhook posts it and the bot posts it.
+            # @NotRetarded spotted this before it existed (#57) and asked
+            # for a restriction that forbids both. Said, not forbidden:
+            # somebody may genuinely want the webhook in a public channel
+            # and the bot in a private one, and a hard block takes that
+            # away. Same line the rest of this interface takes — tell
+            # them, let them decide.
+            _dup = ""
+            if (config.discord_webhook
+                    and config.discord_bot_token
+                    and config.discord_bot_channel
+                    and getattr(config, "channel_discord_enabled", True)
+                    and getattr(config, "channel_discordbot_enabled", True)):
+                _dup = (f'<div class="card card-warn">'
+                        f'<h2>{_ICONS["alert"]} {t("web_discord_dup_title")}</h2>'
+                        f'<p class="card-intro">{t("web_discord_dup_intro")}</p>'
+                        f'</div>')
+
             # No inline "saved" line: app.js already turns `?saved=1` and
             # `?error=` into a toast for every page, and two success
             # messages for one save reads like something happened twice.
@@ -5272,6 +5299,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   {secret_field("matrix_token", t("web_matrix_token"), t("web_matrix_token_help"), config.matrix_token, t("web_matrix_token_placeholder"))}
 </div>
 """,
+                "discordbot": f"""<div class="card">
+<h2>{t("web_conn_discordbot")}</h2>
+<p class="card-intro">{t("web_conn_discordbot_intro")}</p>
+{channel_head("discordbot")}
+  <label>{t("web_discord_bot_channel")} {help_(t("web_discord_bot_channel_help"))}{env_("discord_bot_channel")}</label>
+  <input type="text" name="discord_bot_channel" value="{_e(config.discord_bot_channel)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
+</div>
+""",
                 "apprise": f"""<div class="card">
 <h2>{t("web_conn_apprise")}</h2>
 <p class="card-intro">{t("web_conn_apprise_intro")}</p>
@@ -5360,7 +5395,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 _cards[n] for n in sorted(_cards, key=lambda n:
                                           (_rank(n), list(_cards).index(n))))
 
-            content = (f"""
+            content = (_dup + f"""
 <form method="POST" action="/connections" id="conn-form"
       data-chan-none-title="{_e(t("web_chan_none_title"))}"
       data-chan-none-body="{_e(t("web_chan_none_body"))}"
@@ -5413,6 +5448,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
       <label>{t("web_discord_guild_id")} {help_(t("web_discord_guild_id_help"))}{env_("discord_guild_id")}</label>
       <input type="text" name="discord_guild_id" value="{_e(config.discord_guild_id)}" inputmode="numeric" placeholder="{_e(t('web_discord_id_placeholder'))}" form="conn-form">
     </div>
+  </div>
+
+  <div class="form-checkbox-row">
+    <input type="checkbox" name="discord_public_replies" id="cb-discord-public" {'checked' if config.discord_public_replies else ''} form="conn-form">
+    <label for="cb-discord-public">{t("web_discord_public_replies")} {help_(t("web_discord_public_replies_help"))}{env_("discord_public_replies")}</label>
   </div>
 
   <div class="adv-only">

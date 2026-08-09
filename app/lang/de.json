@@ -726,5 +726,13 @@
   "sum_held": "{n} wartet auf Bestätigung",
   "sum_skipped": "{n} übersprungen",
   "web_badge_podman_auto_tt": "Dieser Container trägt io.containers.autoupdate={mode}, wird also auch von `podman auto-update` verwaltet. Zwei Updater auf einem Container: wer zuerst läuft, gewinnt. Docksentry aktualisiert ihn weiterhin, wenn du es verlangst — du solltest nur wissen, dass er nicht allein ist.",
-  "web_host_contexts": "Docker kennt auf dieser Maschine diese Endpunkte: {list} — hilfreich, falls in der Adresse oben ein Tippfehler steckt."
+  "web_host_contexts": "Docker kennt auf dieser Maschine diese Endpunkte: {list} — hilfreich, falls in der Adresse oben ein Tippfehler steckt.",
+  "web_discord_bot_channel": "Kanal-ID",
+  "web_discord_bot_channel_help": "Wohin der Bot von sich aus schreibt — Start, Alarme, Update-Ergebnisse. Bleibend und für alle im Kanal sichtbar, anders als Befehlsantworten. Entwicklermodus an, Rechtsklick auf den Kanal, „Kanal-ID kopieren“.",
+  "web_discord_public_replies": "Befehlsantworten für alle sichtbar",
+  "web_discord_public_replies_help": "Aus sieht nur derjenige die Antwort, der den Befehl geschickt hat, und sie löscht sich später selbst. An bleibt sie für alle im Kanal stehen. Aus ist die Vorgabe, weil eine Containerliste deine internen Dienste nennt.",
+  "web_conn_discordbot": "Discord-Bot-Kanal",
+  "web_conn_discordbot_intro": "Der Bot spricht von sich aus, statt nur zu antworten. Braucht den Bot-Token oben und eine Kanal-ID.",
+  "web_discord_dup_title": "Discord-Meldungen kommen doppelt",
+  "web_discord_dup_intro": "Der Discord-Webhook und der Bot-Kanal sind beide eingeschaltet, jede Meldung wird also von beiden geschickt. Das ist erlaubt — vielleicht willst du einen öffentlich und einen privat — aber falls es unbeabsichtigt war, schalte einen davon aus."
 }

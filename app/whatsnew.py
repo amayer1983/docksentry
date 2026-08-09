@@ -59,7 +59,14 @@ def headlines(version, text=None):
     if not text:
         return []
     # Section runs from its own heading to the next one.
+    # A pre-release reads its release's entry. `2.7.0-rc.1` is a build of
+    # what will be 2.7.0, and the changelog holds one section per release,
+    # not one per candidate — so without this, anyone testing an RC gets
+    # an empty "what's new" for the very version they were asked to try.
+    base = (version or "").split("-", 1)[0]
     start = re.search(r"^## \[%s\]" % re.escape(version), text, re.M)
+    if not start and base != version:
+        start = re.search(r"^## \[%s\]" % re.escape(base), text, re.M)
     if not start:
         return []
     rest = text[start.end():]
