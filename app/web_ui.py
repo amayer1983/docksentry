@@ -515,28 +515,53 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                                host_backend=_host.backend))
             return views
 
+        #: The endpoint field is named differently by each CLI and neither
+        #: accepts the other's. Measured, and the failure modes differ too:
+        #:
+        #:   podman context ls --format '{{.Name}}|{{.DockerEndpoint}}'
+        #:     -> exit 125, "can't evaluate field DockerEndpoint"
+        #:   docker context ls --format '{{.Name}}|{{.URI}}'
+        #:     -> exit 0, "template parsing error: … can't evaluate field URI"
+        #:
+        #: Docker returning 0 for a template it could not execute is why
+        #: this cannot go by exit code alone: the first version of this
+        #: checked only `returncode`, so it produced nothing at all on
+        #: Podman and would have handed an error string back as an
+        #: endpoint on Docker.
+        _CONTEXT_FORMATS = ("{{.Name}}|{{.DockerEndpoint}}",   # Docker
+                            "{{.Name}}|{{.URI}}")              # Podman
+
         def _docker_contexts(self):
-            """`[(name, endpoint)]` from `docker context ls`, or [].
+            """`[(name, endpoint)]` from the CLI's context list, or [].
+
+            Both CLIs keep one — Docker calls them contexts, Podman calls
+            them system connections and accepts `context ls` as an alias
+            for it. Whichever we are driving, the other's format string
+            fails, so both are tried and the first usable answer wins.
 
             Best-effort and never raised: this runs while rendering a page
             that is already reporting a failure, and a second failure must
-            not become the story. Podman has no equivalent, which is fine —
-            the result is simply empty there.
+            not become the story.
             """
-            try:
-                r = backend.run(
-                    ["context", "ls", "--format", "{{.Name}}|{{.DockerEndpoint}}"],
-                    timeout=5)
-                if getattr(r, "returncode", 1) != 0:
+            for fmt in self._CONTEXT_FORMATS:
+                try:
+                    r = backend.run(["context", "ls", "--format", fmt],
+                                    timeout=5)
+                except Exception:
                     return []
+                text = (r.stdout or "") + "\n" + (getattr(r, "stderr", "") or "")
+                # A template the CLI could not execute says so in the
+                # output whether or not it also sets an exit code.
+                if getattr(r, "returncode", 1) != 0 or "can't evaluate field" in text:
+                    continue
                 out = []
                 for line in (r.stdout or "").splitlines():
-                    name, _, endpoint = line.partition("|")
-                    if name.strip():
+                    name, sep, endpoint = line.partition("|")
+                    if name.strip() and sep and endpoint.strip():
                         out.append((name.strip(), endpoint.strip()))
-                return out
-            except Exception:
-                return []
+                if out:
+                    return out
+            return []
 
         def _own_container_name_safe(self):
             """Docksentry's own container name, or "" if it cannot be found."""

@@ -89,13 +89,23 @@ def main():
         and "io.containers.autoupdate" not in src("update_engine.py"))
 
     # ── the context hint ─────────────────────────────────────────
-    i = web.index("def _docker_contexts")
-    seg = web[i:i + 1200]
-    checks["contexts are read with an explicit format"] = (
-        "{{.Name}}|{{.DockerEndpoint}}" in seg)
+    i = web.index("_CONTEXT_FORMATS")
+    seg = web[i:web.index("def _ctx_hint")]
+    # Both CLIs keep a context list and neither accepts the other's field
+    # name. Measured: podman rejects `.DockerEndpoint` with exit 125, and
+    # docker rejects `.URI` with exit **0** and an error in the output —
+    # so the first version, which went by exit code alone, produced
+    # nothing on Podman and would have handed an error string back as an
+    # endpoint on Docker.
+    checks["both CLIs' endpoint fields are tried"] = (
+        "{{.Name}}|{{.DockerEndpoint}}" in seg and "{{.Name}}|{{.URI}}" in seg)
+    checks["…and a failed template is caught by its text, not its exit code"] = (
+        "can't evaluate field" in seg)
+    checks["…exit code still counts too"] = "returncode" in seg
     checks["…best-effort, never raised"] = "except Exception" in seg
-    # A page already reporting a failure must not fail a second way.
-    checks["…and a non-zero exit yields nothing"] = "returncode" in seg
+    # A half-parsed line ("name" with no endpoint) is not an answer.
+    checks["…and a line without an endpoint is dropped"] = (
+        "endpoint.strip()" in seg and "sep and" in seg)
 
     i = web.index("def _ctx_hint")
     seg = web[i:i + 900]

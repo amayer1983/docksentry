@@ -9,6 +9,9 @@ All notable changes to Docksentry (formerly Docker Telegram Updater) are documen
 - **Command answers can be made visible to everyone**, per his argument rather than mine: an ephemeral answer also tidies itself away, and whether you want that depends on whose channel it is. Off by default, because the default should be the one that cannot embarrass anyone. The flag is set on the *acknowledgement*, where Discord fixes visibility — setting it only on the immediate path would have left every deferred command private whatever the switch said, which is most of them.
 - **A notice when both Discord paths are configured.** Webhook and bot channel both on means every notification arrives twice. He asked for a restriction forbidding both; it says so instead — somebody may want the webhook public and the bot private, and a hard block takes that away.
 
+### Fixed
+- **The unreachable-host hint never worked on Podman, and would have printed an error as an endpoint on Docker.** It read the CLI's context list with Docker's field name. Podman's is `.URI`, and it rejects `.DockerEndpoint` with exit 125 — so the hint silently produced nothing there. Worse the other way: Docker rejects `.URI` with exit **0** and the error only in its output, so a version that went by exit code alone would have shown `template parsing error: …` where an endpoint belonged. Both field names are tried now, and a template the CLI could not execute is recognised by what it said rather than by whether it bothered to set an exit code. Found within hours of shipping it, from a Podman remote-management tutorial that mentioned `podman system connection` — which `context ls` is an alias for.
+
 ## [2.6.0] - 2026-08-09
 
 ### Added
