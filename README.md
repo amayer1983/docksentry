@@ -277,6 +277,8 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 
 > Per-command help: append `-?` to any command for its detailed help — `/protect -?` is the same as `/help protect`.
 
+> **On Discord** the same commands take named options rather than positional words: `/status container:nginx`, `/check host:nas`. Both fields suggest values while you type, so you don't have to know them in advance — the container list follows whichever host you picked, and the machine Docksentry itself runs on is called `local`. `/hosts` lists them all.
+
 ## Container labels (GitOps)
 
 For GitOps-style setups where you keep all container config in one place, Docksentry reads a few `docksentry.*` labels straight off your containers. A label, when present, **overrides** the equivalent bot/Web-UI toggle — so your compose file stays the source of truth.

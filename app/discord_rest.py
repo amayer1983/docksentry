@@ -186,9 +186,37 @@ class DiscordREST:
             f"/webhooks/{application_id}/{interaction_token}/messages/@original",
             payload)
 
-    def create_message(self, channel_id, content, *, components=None):
-        """An unsolicited message — update notifications, alerts."""
+    def create_message(self, channel_id, content, *, components=None,
+                       embeds=None):
+        """An unsolicited message — update notifications, alerts.
+
+        `embeds` so the bot channel can send the very same embeds the
+        webhook does. That is not decoration: a masked `[name](url)` link
+        renders inside an embed for certain, which is how the webhook has
+        always shown the release link (#57, @NotRetarded noticed the bot
+        was missing it).
+        """
         payload = {"content": content}
         if components:
             payload["components"] = components
+        if embeds:
+            payload["embeds"] = embeds
         return self.request("POST", f"/channels/{channel_id}/messages", payload)
+
+    def interaction_autocomplete(self, interaction_id, interaction_token,
+                                 choices):
+        """Answer an autocomplete interaction with up to 25 suggestions.
+
+        Type 8 = APPLICATION_COMMAND_AUTOCOMPLETE_RESULT. There is no
+        deferring this one: Discord's three-second deadline applies and a
+        late answer is simply dropped, which is why the caller keeps the
+        work cheap.
+
+        Discord rejects the whole response over 25 choices, so the cap is
+        applied here rather than trusted to every caller.
+        """
+        payload = {"type": 8, "data": {"choices": list(choices)[:25]}}
+        return self.request(
+            "POST",
+            f"/interactions/{interaction_id}/{interaction_token}/callback",
+            payload)

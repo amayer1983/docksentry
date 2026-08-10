@@ -28,10 +28,10 @@ running bot to be useful — configure it and it works, whether or not the
 gateway happens to be connected.
 """
 
-from .base import BaseNotifier
+from .discord import DiscordNotifier
 
 
-class DiscordBotNotifier(BaseNotifier):
+class DiscordBotNotifier(DiscordNotifier):
     name = "discordbot"
     #: After the Discord webhook, so a setup carrying both keeps the
     #: historical ordering in its logs.
@@ -58,34 +58,31 @@ class DiscordBotNotifier(BaseNotifier):
         return (self.setting("discord_bot_channel", "DISCORD_BOT_CHANNEL") or "").strip()
 
     # ── transport ────────────────────────────────────────────────────
-    def _post(self, text):
-        """Post one message. Best-effort, like every other channel: logs
-        and returns on failure, never raises into the facade."""
+    def post(self, payload):
+        """Send one payload the bot's way instead of the webhook's.
+
+        The ONLY thing this channel changes about a Discord message is
+        how it gets there. Everything above — the embeds, their colors,
+        the version badge, the clickable `[name](url)` release link, the
+        25-field chunking — is inherited from the webhook channel, which
+        is the entire point: @NotRetarded compared the two side by side
+        and found the bot's version poorer (#57). It shouldn't have been
+        a different message at all; it was only ever a different pipe.
+
+        Written by hand before this, it lost the source link — the method
+        took `source_url` and never used it. Two renderings of the same
+        notification is one too many to keep in step.
+
+        Best-effort, like every other channel: logs and returns on
+        failure, never raises into the facade.
+        """
         from discord_rest import DiscordREST, DiscordRESTError
-        label = self._bot_label()
-        body = (f"{label} · " if label else "") + text
         try:
-            DiscordREST(self._token()).create_message(self._channel(), body[:1900])
+            DiscordREST(self._token()).create_message(
+                self._channel(),
+                (payload.get("content") or "")[:1900],
+                embeds=payload.get("embeds"))
         except DiscordRESTError as e:
             print(f"Discord bot channel error: {e}")
         except Exception as e:                                # pragma: no cover
             print(f"Discord bot channel error: {e}")
-
-    # ── payloads ─────────────────────────────────────────────────────
-    def send_updates_available(self, updates):
-        if not updates:
-            return
-        lines = [f"• `{u['name']}` → {u.get('image', '?')}"
-                 + (f"  ({self.version_str(u)})" if self.version_str(u) else "")
-                 for u in updates]
-        self._post("🔄 **Updates available**\n" + "\n".join(lines))
-
-    def send_update_result(self, name, image, success, detail="", source_url=""):
-        mark = "✅" if success else "❌"
-        text = f"{mark} `{name}` — {image}"
-        if detail:
-            text += f"\n{detail}"
-        self._post(text)
-
-    def send_message(self, text):
-        self._post(text)

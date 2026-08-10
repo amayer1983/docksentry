@@ -214,6 +214,28 @@ COMMANDS = [
      ]},
 ]
 
+#: Options Discord should suggest values for. One seam rather than a flag
+#: repeated on ~30 option dicts, so the next command to grow a `host`
+#: cannot be added without it.
+#:
+#: Why at all: nothing in Discord's UI tells you what a free-text option
+#: will accept. @NotRetarded had to work out that the local host is called
+#: `local` (#57) — reasonable to guess with one host, not with five. The
+#: information was never secret, it just wasn't where the typing happens:
+#: `/hosts` has listed them all along.
+AUTOCOMPLETE_OPTIONS = ("host", "container")
+
+def _mark_autocomplete(commands):
+    """Set `autocomplete` on every option we can suggest values for."""
+    for cmd in commands:
+        for opt in cmd.get("options") or []:
+            if opt["name"] in AUTOCOMPLETE_OPTIONS:
+                opt["autocomplete"] = True
+    return commands
+
+
+_mark_autocomplete(COMMANDS)
+
 #: `/logs` tail bounds. Discord's 2000-character ceiling makes anything
 #: much larger pointless, and an unbounded value would let one command
 #: pull a gigabyte of log text through the container CLI.
@@ -575,10 +597,23 @@ class DiscordBot:
             return
         kind = data.get("type")
         # 2 = APPLICATION_COMMAND (a slash command), 3 = MESSAGE_COMPONENT
-        # (our confirmation buttons). Everything else — modals,
-        # autocomplete — is not wired up and is better ignored than
+        # (our confirmation buttons), 4 = APPLICATION_COMMAND_AUTOCOMPLETE
+        # (someone typing into a `host` or `container` option). Everything
+        # else — modals — is not wired up and is better ignored than
         # half-answered.
-        if kind not in (2, 3):
+        if kind not in (2, 3, 4):
+            return
+        if kind == 4:
+            # Same authorisation as everything else, and the same silence
+            # when it fails: suggesting host names to a stranger would
+            # give away the estate this bot manages.
+            if not self._authorized(data):
+                return
+            # No acknowledgement to send first — for autocomplete the
+            # choices ARE the response, and there is no deferring it.
+            # Off the gateway loop all the same, because building the
+            # container list shells out to the container CLI.
+            self._start_worker(self._autocomplete, data)
             return
         if kind == 3 and not self._is_ours(data):
             # A component we never sent. Not acknowledging it is the
@@ -963,6 +998,69 @@ class DiscordBot:
             return None, ("Several containers match `%s`: %s" %
                           (partial, ", ".join(f"`{m}`" for m in matches)))
         return None, f"No container matches `{partial}`."
+
+    # ── autocomplete ─────────────────────────────────────────────────
+    def _autocomplete(self, data):
+        """Answer the suggestion request for whichever option has focus.
+
+        Three seconds, no deferring, and a late answer is dropped by
+        Discord without telling anyone — so everything here stays cheap
+        and every failure ends as "no suggestions" rather than an error
+        in the user's face. Typing the value by hand still works: these
+        are suggestions, not `choices`, which would forbid anything else.
+        """
+        d = data.get("data") or {}
+        focused = next((o for o in d.get("options") or [] if o.get("focused")),
+                       None)
+        if focused is None:
+            return
+        typed = str(focused.get("value") or "")
+        try:
+            if focused.get("name") == "host":
+                names = self._host_names()
+            else:
+                names = self._container_names(self._options(data).get("host"))
+        except Exception as e:                                # pragma: no cover
+            self.log(f"Discord autocomplete failed: {e}")
+            names = []
+        # Discord does no filtering of its own for autocomplete — the
+        # whole point is that the app decides what matches. Substring, not
+        # prefix: people reach for the distinctive part of a name
+        # ("sentry") rather than its prefix ("docksentry-").
+        low = typed.lower()
+        hits = [n for n in names if low in n.lower()] if low else list(names)
+        try:
+            self.rest.interaction_autocomplete(
+                data["id"], data["token"],
+                [{"name": n[:100], "value": n[:100]} for n in hits[:25]])
+        except DiscordRESTError as e:
+            self.log(f"Discord: could not answer autocomplete: {e}")
+
+    def _host_names(self):
+        """Names accepted by a `host` option, local first.
+
+        Single-host installs included, deliberately: `local` being the
+        name of the machine Docksentry runs on is exactly what wasn't
+        obvious, and one suggestion says it better than any description.
+        """
+        return list(self.hosts.names) if self.hosts else []
+
+    def _container_names(self, host_name=None):
+        """Container names on `host_name`, or on the local host when the
+        host option hasn't been filled in yet.
+
+        Not every host: this runs while someone is typing, and walking
+        five hosts' container lists inside three seconds is a race we
+        would lose. Fill the host in first and the list follows it.
+        """
+        hosts = self._hosts_for(host_name) if host_name else None
+        host = hosts[0] if hosts else (self.hosts.local if self.hosts else None)
+        backend = self._backend_for(host)
+        if backend is None:
+            return []
+        result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
+        return [n.strip() for n in (result.stdout or "").strip().split("\n")
+                if n.strip() and not n.strip().endswith("_old")]
 
     def _dispatch(self, data):
         name = (data.get("data") or {}).get("name")

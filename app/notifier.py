@@ -155,6 +155,19 @@ class Notifier:
         """POST JSON to Discord webhook (returns HTTP status or None)."""
         return self._by_name["discord"].post(payload)
 
+    def _discordbot_post(self, payload):
+        """The same payload through the bot channel, when it is on.
+
+        Returns True when it was sent, False when the channel isn't
+        configured or is switched off — so the caller needs no second
+        condition, and doesn't depend on what the transport returns.
+        """
+        p = self._by_name.get("discordbot")
+        if p is None or not p.active():
+            return False
+        p.post(payload)
+        return True
+
     def _webhook_send(self, event, data):
         """POST JSON to the generic webhook (returns HTTP status or None)."""
         return self._by_name["webhook"].send_raw(event, data)
