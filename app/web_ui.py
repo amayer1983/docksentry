@@ -1434,7 +1434,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             Basic Auth dialog could never say that.
             """
             note = (f'<p class="login-error">{_e(error)}</p>' if error else "")
-            user = getattr(config, "web_username", "") or ""
+            # The username field starts empty on purpose, even when
+            # WEB_USERNAME is set. Pre-filling it would hand the configured
+            # name to every unauthenticated visitor, which undoes the point
+            # of the deliberately vague "wrong username or password"
+            # message: an attacker who can already read the name only has
+            # the password left to guess. A password manager fills the name
+            # from the URL regardless, so nothing is lost by leaving it blank.
             return f"""<!DOCTYPE html>
 <html lang="{_e(config.language)}"><head>
 <meta charset="utf-8">
@@ -1467,7 +1473,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <input type="hidden" name="next" value="{_e(nxt)}">
     <label for="lg-user">{_e(t("web_login_user"))}</label>
     <input type="text" id="lg-user" name="username" autocomplete="username"
-           value="{_e(user)}" autofocus>
+           autofocus>
     <label for="lg-pw">{_e(t("web_login_password"))}</label>
     <input type="password" id="lg-pw" name="password"
            autocomplete="current-password" required>

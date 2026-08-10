@@ -190,6 +190,16 @@ checks["…and marks the fields for password managers"] = (
     'autocomplete="username"' in page
     and 'autocomplete="current-password"' in page)
 checks["…and is not cached"] = "no-store" in src
+# Rendered for real: a configured WEB_USERNAME must NOT appear on the page
+# an unauthenticated visitor sees, or the vague error message is pointless.
+import i18n  # noqa: E402
+_lhc = web_ui.create_handler(
+    types.SimpleNamespace(web_username="s3cret-admin-name", language="en"),
+    checker=None, bot=types.SimpleNamespace(t=None), store=None)
+_lh = _lhc.__new__(_lhc)
+_login_page = _lh._login_html(i18n.get_translator("en"), "", "/")
+checks["the login page does not leak the configured username"] = (
+    "s3cret-admin-name" not in _login_page)
 # One message for both, or a wrong name tells a stranger the other one
 # was right.
 checks["a failed login does not say which half was wrong"] = (
