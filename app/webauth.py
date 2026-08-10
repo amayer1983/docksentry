@@ -38,6 +38,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
 import time
 
 #: Marker for our own format. Anything not starting with this is treated
@@ -119,6 +120,16 @@ class SessionStore:
     session left open on a machine somebody walked away from. **Absolute**
     ends one that is being kept alive by a browser tab polling in the
     background, which no amount of idle timeout would ever catch.
+
+    Guarded by a lock because the Web UI is a `ThreadingHTTPServer`: each
+    request runs on its own thread and they share one store. Most single
+    dict operations are atomic under the GIL, but `create()`'s eviction
+    does `min(self._sessions, …)`, which iterates the dict — and a
+    concurrent write mid-iteration raises `RuntimeError: dictionary
+    changed size`. Only reachable at the 200-session cap and only with
+    valid logins, so low-risk, but a lock is a few lines and removes the
+    question entirely (it also covers free-threaded builds, where the
+    single-op atomicity guarantee does not hold).
     """
 
     def __init__(self, idle_seconds=8 * 3600, max_seconds=7 * 24 * 3600,
@@ -129,6 +140,7 @@ class SessionStore:
         #: without limit. Oldest first out.
         self.limit = int(limit)
         self._sessions = {}
+        self._lock = threading.Lock()
 
     def _now(self):
         return time.time()
@@ -136,13 +148,14 @@ class SessionStore:
     def create(self, username):
         """A new session token. 32 bytes from `secrets`, so it is not
         guessable and does not encode anything about the user."""
-        self.sweep()
-        if len(self._sessions) >= self.limit:
-            oldest = min(self._sessions, key=lambda k: self._sessions[k][1])
-            self._sessions.pop(oldest, None)
         token = secrets.token_urlsafe(32)
         now = self._now()
-        self._sessions[token] = (username or "", now, now)
+        with self._lock:
+            self._sweep_locked(now)
+            if len(self._sessions) >= self.limit:
+                oldest = min(self._sessions, key=lambda k: self._sessions[k][1])
+                self._sessions.pop(oldest, None)
+            self._sessions[token] = (username or "", now, now)
         return token
 
     def validate(self, token):
@@ -150,30 +163,38 @@ class SessionStore:
         so that using the interface keeps it alive."""
         if not token:
             return None
-        entry = self._sessions.get(token)
-        if not entry:
-            return None
-        username, created, seen = entry
         now = self._now()
-        if now - created > self.max or now - seen > self.idle:
-            self._sessions.pop(token, None)
-            return None
-        self._sessions[token] = (username, created, now)
-        return username
+        with self._lock:
+            entry = self._sessions.get(token)
+            if not entry:
+                return None
+            username, created, seen = entry
+            if now - created > self.max or now - seen > self.idle:
+                self._sessions.pop(token, None)
+                return None
+            self._sessions[token] = (username, created, now)
+            return username
 
     def destroy(self, token):
-        self._sessions.pop(token or "", None)
+        with self._lock:
+            self._sessions.pop(token or "", None)
 
     def clear(self):
         """Every session, gone. What a password change has to do: the old
         password's sessions must not outlive it."""
-        self._sessions.clear()
+        with self._lock:
+            self._sessions.clear()
 
     def sweep(self):
-        now = self._now()
+        with self._lock:
+            self._sweep_locked(self._now())
+
+    def _sweep_locked(self, now):
+        """Drop expired sessions. Caller holds the lock."""
         for token, (_, created, seen) in list(self._sessions.items()):
             if now - created > self.max or now - seen > self.idle:
                 self._sessions.pop(token, None)
 
     def __len__(self):
-        return len(self._sessions)
+        with self._lock:
+            return len(self._sessions)

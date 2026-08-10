@@ -208,9 +208,23 @@ def maybe_send_weekly_report(config, bot, t):
     text = format_message_text(stats, t)
     sent_any = False
 
-    if bot is not None and getattr(bot, "enabled", False):
+    # `enabled` means a token and chat id exist; it does NOT mean the
+    # Telegram channel is switched on. Claiming a send when the channel is
+    # off — bot.send_message returns silently in that case — lets mark_sent
+    # fire with nothing delivered, and if no other channel is on the whole
+    # week's report is lost with no retry. So the switch is checked here,
+    # the same way the notifier facade checks it for every other channel.
+    telegram_on = (bot is not None and getattr(bot, "enabled", False)
+                   and getattr(config, "channel_telegram_enabled", True))
+    if telegram_on:
         try:
-            bot.send_message(text, auto=True)
+            # auto=False on purpose: the report goes at the hour the
+            # operator chose, and the notifier facade already exempts it
+            # from quiet hours. Sending the Telegram copy with auto=True
+            # meant quiet hours silently dropped it while every other
+            # channel got it — the one recipient the facade could not
+            # reach through its own policy.
+            bot.send_message(text, auto=False)
             sent_any = True
         except Exception as e:
             print(f"Weekly report (telegram) error: {e}")

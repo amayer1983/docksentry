@@ -144,6 +144,38 @@ checks["…and that class is styled"] = ".h2-alt {" in css
 # in the 15 languages where it is needed most.
 checks["…and is not itself translatable"] = 't("Audit' not in head
 
+# ── render it for real and prove the secret is not in the output ─────
+# The whole point of this file is "the tokens never reach the page", and
+# the checks above establish it by reading the source. That is worth
+# something, but the direct proof is to render the card with a real secret
+# and grep the HTML for it. Driven through create_handler, the same way
+# test_settings_post reaches a live handler.
+import web_ui  # noqa: E402
+import i18n  # noqa: E402
+
+
+def render_card(**cfgkw):
+    base = dict(api_tokens=[], web_username="", language="en")
+    base.update(cfgkw)
+    cfg = types.SimpleNamespace(**base)
+    cfg.env_override = lambda key: None
+    hc = web_ui.create_handler(cfg, checker=None,
+                               bot=types.SimpleNamespace(t=None), store=None)
+    h = hc.__new__(hc)
+    h.server = types.SimpleNamespace(token_seen={})
+    return h._api_token_card(i18n.get_translator("en"))
+
+
+SECRET = "s3cr3t-do-not-leak-0000"
+html_out = render_card(api_tokens=[f"prom:{SECRET}", "grafana:other", "broken"])
+checks["render: the token value is never in the HTML"] = SECRET not in html_out
+checks["render: the token name IS shown"] = "prom" in html_out
+checks["render: a colon-less entry is flagged, not silently accepted"] = (
+    "broken" in html_out)
+empty = render_card()
+checks["render: says so when nothing is configured"] = (
+    "token" in empty.lower())
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

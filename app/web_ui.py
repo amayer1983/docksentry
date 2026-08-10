@@ -1436,10 +1436,23 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             note = (f'<p class="login-error">{_e(error)}</p>' if error else "")
             user = getattr(config, "web_username", "") or ""
             return f"""<!DOCTYPE html>
-<html lang="{_e(config.language)}" data-theme="auto"><head>
+<html lang="{_e(config.language)}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(t("web_login_title"))} · Docksentry</title>
+<script>
+// Same pre-paint theme resolution as every other page. Without it the
+// login page carried a bare data-theme="auto", which the CSS (attribute-
+// driven, no prefers-color-scheme media query) left unresolved — so it
+// rendered dark for everyone, ignoring a stored or OS light preference.
+(function() {{
+    try {{
+        var saved = localStorage.getItem('ds-theme');
+        var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    }} catch(e) {{}}
+}})();
+</script>
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="/static/icon.png">
 </head><body class="login-body">
@@ -1488,9 +1501,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             Only a path, never a URL: `?next=https://elsewhere/` would
             make our own login page into an open redirect, which is a
             phishing primitive and costs nothing to refuse. `//host` is
-            a protocol-relative URL and is refused for the same reason.
+            a protocol-relative URL and is refused for the same reason —
+            and so is a leading slash-backslash, which the browser
+            normalises to `//host` and which an earlier version let through.
+
+            Control characters are refused outright, not because a path
+            contains them but because this value goes into a `Location:`
+            header: a raw CR or LF would end the header and let the rest
+            of `next` inject headers of its own (a `Set-Cookie`, a cache
+            directive). `.strip()` only trims the ends, so an embedded
+            `\r\n` survived it — this checks the whole string.
             """
             value = (value or "/").strip()
+            if any(c in value for c in "\\\r\n\t") or "\x00" in value:
+                return "/"
             if not value.startswith("/") or value.startswith("//"):
                 return "/"
             return value
@@ -1629,11 +1653,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return self._serve_metrics()
             if path.split("?")[0] == "/api/status":
                 return self._serve_status_json()
-            # Static assets (CSS/JS extracted from Python literals → real
-            # files). Served before the setup gate so the wizard is styled.
-            if path in ("/static/app.css", "/static/app.js",
-                        "/static/manifest.webmanifest", "/static/icon.png"):
-                return self._serve_static(path.rsplit("/", 1)[1])
+            # (The static assets used to be served here, after the gate.
+            # They moved above it so the login page can style itself, which
+            # made this second copy dead — the block above returns first.)
             # Plenty of things ask for /favicon.ico by convention —
             # bookmark managers, feed readers, link previewers, older
             # browsers — and every one of them got a 404 (#2,

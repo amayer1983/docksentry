@@ -141,11 +141,70 @@ checks["the report asks the facade instead of naming channels"] = (
 checks["…and names no channel of its own"] = not any(
     s in src for s in ("_discord_post", "_discordbot_post", "_webhook_send",
                        "config.discord_webhook", "config.webhook_url"))
-# Telegram stays outside the facade: it is the bot, not a notifier channel,
-# and it has its own switch and its own `auto=True` quiet-hours handling.
+# Telegram stays outside the facade: it is the bot, not a notifier channel.
 checks["Telegram is still sent to separately"] = "bot.send_message(text" in src
 checks["a report that reached nobody is not marked as sent"] = (
     "if sent_any:" in src and "mark_sent" in src)
+
+# ── the Telegram gate, driven for real (the mark_sent fix) ───────────
+# `bot.enabled` means a token exists, NOT that the channel is on. Sending
+# when the channel is off returns silently, so claiming a send there would
+# let mark_sent fire with nothing delivered and lose the week's report.
+import types as _t  # noqa: E402
+
+_orig_now = weekly_report.should_send_now
+_orig_collect = weekly_report.collect_stats
+_orig_fmt = weekly_report.format_message_text
+_orig_embed = weekly_report.format_discord_embed
+_orig_mark = weekly_report.mark_sent
+weekly_report.should_send_now = lambda cfg: True
+weekly_report.collect_stats = lambda cfg: {"successes": 0, "failures": 0,
+                                           "rolled_back": 0}
+weekly_report.format_message_text = lambda s, t: "report"
+weekly_report.format_discord_embed = lambda s, t: {"title": "w"}
+
+
+def run_report(telegram_channel_on, other_channel_on):
+    sent = {"telegram": False, "marked": False}
+
+    class Bot:
+        enabled = True
+        def send_message(self, text, auto=False):
+            # Mirror the real bot: off channel returns without sending.
+            if telegram_channel_on:
+                sent["telegram"] = True
+
+    bot = Bot()
+    bot.notifier = _t.SimpleNamespace(
+        send_weekly_report=lambda s, t, e: other_channel_on)
+    cfg = _t.SimpleNamespace(channel_telegram_enabled=telegram_channel_on)
+    weekly_report.mark_sent = lambda c: sent.__setitem__("marked", True)
+    weekly_report.maybe_send_weekly_report(cfg, bot, lambda k, **kw: k)
+    return sent
+
+
+# Channel off, nothing else on: the report is NOT marked sent, so next run
+# retries instead of the week being silently lost.
+r = run_report(telegram_channel_on=False, other_channel_on=False)
+checks["Telegram channel off + nothing else: not marked as sent"] = (
+    r["marked"] is False and r["telegram"] is False)
+# Channel on: sent and marked.
+r = run_report(telegram_channel_on=True, other_channel_on=False)
+checks["Telegram channel on: sent and marked"] = (
+    r["telegram"] is True and r["marked"] is True)
+# Channel off but another channel delivered: marked (it did go somewhere).
+r = run_report(telegram_channel_on=False, other_channel_on=True)
+checks["Telegram off but another channel on: still marked"] = (
+    r["telegram"] is False and r["marked"] is True)
+
+checks["the Telegram weekly copy ignores quiet hours (auto=False)"] = (
+    "auto=False" in src)
+
+weekly_report.should_send_now = _orig_now
+weekly_report.collect_stats = _orig_collect
+weekly_report.format_message_text = _orig_fmt
+weekly_report.format_discord_embed = _orig_embed
+weekly_report.mark_sent = _orig_mark
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

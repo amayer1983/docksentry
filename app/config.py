@@ -33,6 +33,19 @@ def _env(key, default=""):
     return _strip_quotes(os.environ.get(key, default))
 
 
+def _clamp_int(value, lo, hi, default):
+    """`value` as an int within [lo, hi], or `default` if it isn't one.
+
+    For settings read back from settings.json, where the value could be a
+    string, None, or out of range if the file was edited by hand — and
+    where the consumer does `int(x) * something`, so a bad value is a
+    crash rather than a wrong number."""
+    try:
+        return max(lo, min(int(value), hi))
+    except (TypeError, ValueError):
+        return default
+
+
 #: Host names we won't accept from config — `local` always means the
 #: machine Docksentry itself runs on and can't be reassigned.
 RESERVED_HOST_NAMES = ("local", "all")
@@ -932,6 +945,17 @@ class Config:
                     setattr(self, key, saved[key])
         except (json.JSONDecodeError, IOError):
             pass
+        # The two session bounds are read back raw above, but consumed as
+        # `int(...) * 3600` at login time. Our own save_persistent always
+        # writes clamped ints, so this only bites a hand-edited or foreign
+        # settings.json — where a `null` becomes int(None) → TypeError and
+        # takes the login page down, and a `100000` silently outlives the
+        # 720-hour ceiling the form enforces. Re-clamp on load so the only
+        # value that ever reaches the session store is a sane one.
+        self.web_session_hours = _clamp_int(
+            getattr(self, "web_session_hours", 8), 1, 720, 8)
+        self.web_session_max_days = _clamp_int(
+            getattr(self, "web_session_max_days", 7), 1, 365, 7)
         # Tighten permissions on existing settings file (covers upgrade case
         # where the file was created with the umask default, typically 0644).
         self._restrict_settings_perms()

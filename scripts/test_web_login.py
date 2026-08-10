@@ -158,11 +158,28 @@ checks["…but not before the CSRF check"] = (
     post.index("_check_csrf") < post.index("_do_login"))
 
 # `?next=` is attacker-controlled, so our own login page must not become
-# an open redirect.
-i = src.index("def _safe_next")
-nxt = src[i:src.index("\n        def ", i + 10)]
-checks["next= only accepts a path on this site"] = (
-    'startswith("/")' in nxt and 'startswith("//")' in nxt)
+# an open redirect — and the value goes into a `Location:` header, so it
+# must not be able to inject headers of its own either. Driven through the
+# real function rather than grepped: an earlier grep-only version of this
+# check passed while `/\evil.com` and an embedded CRLF both sailed through.
+import web_ui  # noqa: E402
+_handler = web_ui.create_handler(
+    types.SimpleNamespace(web_username="", language="en"),
+    checker=None, bot=types.SimpleNamespace(t=None), store=None)
+safe = _handler._safe_next
+checks["next= keeps a real path on this site"] = (
+    safe("/status") == "/status" and safe("/history?x=1") == "/history?x=1")
+checks["next= rejects an absolute URL"] = safe("https://evil/") == "/"
+checks["next= rejects a protocol-relative //host"] = safe("//evil.com") == "/"
+# The two that the grep-only test missed and that shipped broken:
+checks["next= rejects a backslash the browser reads as //"] = (
+    safe("/\\evil.com") == "/" and safe("\\/evil.com") == "/")
+checks["next= rejects an embedded CR or LF (header injection)"] = (
+    safe("/foo\r\nSet-Cookie: evil=1") == "/"
+    and safe("/foo\nX-Injected: x") == "/")
+checks["next= rejects a tab and a NUL"] = (
+    safe("/foo\tbar") == "/" and safe("/foo\x00") == "/")
+checks["next= falls back to / on empty"] = safe("") == "/" and safe(None) == "/"
 
 # The one thing that must never appear on the login page.
 i = src.index("def _login_html")
@@ -218,6 +235,105 @@ checks["…and not when an env var is overruling the file"] = (
     'getattr(self, "web_password", "") != stored' in mig)
 checks["…and it keeps working if the migration fails"] = (
     "self.web_password = stored" in mig)
+
+# ── the login POST, driven for real ──────────────────────────────────
+# The audit found the whole request path was only ever grepped. Drive it:
+# right password in, cookie out; wrong password, 401 and no cookie; and
+# the redirect target run through _safe_next so an attacker's `next` can
+# neither send you off-site nor inject a header.
+import web_ui  # noqa: E402
+
+
+def login(username, password, nxt="/", stored=None):
+    """Drive _do_login and return (status, headers, cookie, audit)."""
+    hashed = webauth.hash_password("secret") if stored is None else stored
+    cfg = types.SimpleNamespace(web_username=username if username else "",
+                                web_password=hashed, web_session_hours=8,
+                                web_session_max_days=7, language="en")
+    hc = web_ui.create_handler(cfg, checker=None,
+                               bot=types.SimpleNamespace(t=None), store=None)
+    h = hc.__new__(hc)
+    h.server = types.SimpleNamespace(
+        sessions=webauth.SessionStore(),
+        audit=types.SimpleNamespace(records=[],
+                                    record=lambda *a, **k: h.server.audit.records.append(a)))
+    cap = {"headers": {}, "status": None}
+    h.send_response = lambda s: cap.__setitem__("status", s)
+    h.send_header = lambda k, v: cap["headers"].__setitem__(k, v)
+    h.end_headers = lambda: None
+    h.wfile = types.SimpleNamespace(write=lambda b: None)
+    body = f"username={username}&password={password}&next={nxt}"
+    h._do_login(__import__("urllib.parse", fromlist=["parse_qs"])
+                .parse_qs(body, keep_blank_values=True))
+    return cap, h.server.sessions, h.server.audit.records
+
+
+cap, store, audit = login("", "secret")
+checks["a correct password gets 302 and a session cookie"] = (
+    cap["status"] == 302
+    and cap["headers"].get("Set-Cookie", "").startswith("ds_session=")
+    and "HttpOnly" in cap["headers"]["Set-Cookie"])
+checks["…the session it hands out actually validates"] = (
+    len(store) == 1)
+checks["…and it is recorded in the audit trail as ok"] = (
+    any("ok" in a for a in audit))
+
+cap, store, audit = login("", "WRONG")
+checks["a wrong password gets 401"] = cap["status"] == 401
+checks["…and no session cookie"] = "Set-Cookie" not in cap["headers"]
+checks["…no session is created"] = len(store) == 0
+checks["…and it is recorded as failed"] = any("failed" in a for a in audit)
+
+# The username is checked now, where the old code threw it away.
+cap, _, _ = login("admin", "secret")  # no WEB_USERNAME set → any name in
+checks["any username passes when none is configured"] = cap["status"] == 302
+cap, _, _ = login("admin", "secret", stored=webauth.hash_password("secret"))
+# With a username required, the wrong one is refused even with right pw.
+cfg = types.SimpleNamespace(web_username="alice",
+                            web_password=webauth.hash_password("secret"),
+                            web_session_hours=8, web_session_max_days=7,
+                            language="en")
+checks["a wrong username is refused even with the right password"] = (
+    not (webauth.username_matches("bob", cfg.web_username)
+         and webauth.verify("secret", cfg.web_password)))
+
+# The attacker-controlled next never reaches the Location header intact.
+cap, _, _ = login("", "secret", nxt="/\\evil.com")
+checks["a hostile next= is neutralised in the real redirect"] = (
+    cap["headers"].get("Location") == "/")
+cap, _, _ = login("", "secret", nxt="/foo%0d%0aX-Injected: x")
+loc = cap["headers"].get("Location", "")
+checks["…and cannot inject a header through the redirect"] = (
+    "\r" not in loc and "\n" not in loc and "X-Injected" not in loc)
+
+# ── the session-bound clamp on load (config) ─────────────────────────
+import config as _config  # noqa: E402
+checks["a bad session value on load clamps instead of crashing"] = (
+    _config._clamp_int(None, 1, 720, 8) == 8
+    and _config._clamp_int("abc", 1, 365, 7) == 7
+    and _config._clamp_int(100000, 1, 720, 8) == 720
+    and _config._clamp_int(-5, 1, 720, 8) == 1)
+
+# ── the session store is safe across threads ─────────────────────────
+import threading as _threading  # noqa: E402
+_store = webauth.SessionStore(limit=40)
+
+
+def _hammer(n):
+    for i in range(150):
+        tok = _store.create(f"u{n}")
+        _store.validate(tok)
+        if i % 4 == 0:
+            _store.destroy(tok)
+
+
+_threads = [_threading.Thread(target=_hammer, args=(n,)) for n in range(16)]
+for _t in _threads:
+    _t.start()
+for _t in _threads:
+    _t.join()
+checks["concurrent logins never crash the store and honour the cap"] = (
+    len(_store) <= 40)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
