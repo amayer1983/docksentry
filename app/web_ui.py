@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -806,7 +807,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if not token:
                     continue
                 if _hmac.compare_digest(token.strip(), supplied):
-                    return name.strip() or "token"
+                    label = name.strip() or "token"
+                    # One seam for "was this token used?", here rather than
+                    # at the two endpoints: /metrics and /api/status both
+                    # come through this, and the third one to be added
+                    # would otherwise be missing from the page without
+                    # anybody noticing.
+                    seen = getattr(getattr(self, "server", None),
+                                   "token_seen", None)
+                    if seen is not None:
+                        seen[label] = time.time()
+                    return label
             return ""
 
         def _check_auth(self):
@@ -4806,8 +4817,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <td><code>{_e(e.get('action',''))}</code>{(' ' + _e(e.get('target'))) if e.get('target') else ''}</td>
 <td style="font-size:11px;color:var(--text-muted)">{_e(extra)}</td>
 </tr>"""
-                content += f"""<div class="card">
-<h2>{t("web_audit")}</h2>
+                # `id` and the untranslated word both exist so the section
+                # can be FOUND: the heading is translated in all 16
+                # languages and none of them contains "audit", so a browser
+                # search for the term that everyone actually uses — and
+                # that the docs, changelog and issues all use — turned up
+                # nothing on the page that has it.
+                content += f"""<div class="card" id="audit">
+<h2>{t("web_audit")} <span class="h2-alt">· Audit-Trail</span></h2>
 <p class="card-intro">{t("web_audit_intro")}</p>
 <div class="table-scroll"><table>
 <tr><th>{t("web_date")}</th><th>{t("web_audit_who")}</th><th>{t("web_audit_what")}</th><th>{t("web_detail")}</th></tr>
@@ -4822,6 +4839,83 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
         # channels moved to a page of their own. Two copies of the env
         # marker is exactly how one page ends up silently not warning
         # about an overruled variable.
+        def _api_token_card(self, t):
+            """Read-only card for `API_TOKENS`.
+
+            The one setting where the interface said nothing at all — not
+            the values, which is right, but not even whether any exist.
+            "Is the scraper authorised, or is it getting 401s?" was a
+            question you could only answer by reading the compose file and
+            then the container's logs.
+
+            So: the names, and when each was last seen. Never the tokens —
+            they are shown once, in the file the operator wrote them in,
+            and this page is reachable by anyone holding the Web UI
+            password, which is a *different* secret on purpose. Not a form
+            either: the values live in the environment, and a field that
+            silently fails to save is worse than no field.
+            """
+            configured = getattr(config, "api_tokens", []) or []
+            seen = getattr(getattr(self, "server", None), "token_seen", {}) or {}
+            # `api_tokens` is a persistent key, so a saved empty list beats
+            # a set `API_TOKENS` — and then the variable is in the compose
+            # file, plainly set, doing nothing. Found while testing this
+            # very card: the tokens were in the environment and every
+            # request was refused, with no way to see why. Silence is the
+            # wrong answer for a setting that is being overruled.
+            overruled = ""
+            try:
+                if config.env_override("api_tokens"):
+                    overruled = (f'<p class="card-intro">'
+                                 f'<span class="badge badge-yellow">env</span> '
+                                 f'{_e(t("web_api_tokens_overruled"))}</p>')
+            except Exception:                                # pragma: no cover
+                overruled = ""
+            if not configured:
+                return f"""<div class="card">
+<h2>{t("web_api_tokens")}</h2>
+<p class="card-intro">{t("web_api_tokens_intro")}</p>
+{overruled}
+<p class="card-intro">{t("web_api_tokens_none")}</p>
+</div>
+"""
+            rows = ""
+            for entry in configured:
+                name, _, token = str(entry).partition(":")
+                label = name.strip() or "token"
+                if not token.strip():
+                    # `API_TOKENS=prom` — no secret at all. It can never
+                    # match, so it is not protecting anything; saying so
+                    # here beats leaving someone to wonder why their
+                    # scraper is refused.
+                    when = (f'<span class="badge badge-yellow">'
+                            f'{_e(t("web_api_tokens_broken"))}</span>')
+                else:
+                    ts = seen.get(label)
+                    if ts:
+                        from datetime import datetime as _dt
+                        # Local time, same format as the audit table right
+                        # next door — two clocks on one page is its own
+                        # small confusion.
+                        when = _e(_dt.fromtimestamp(ts)
+                                  .strftime("%Y-%m-%d %H:%M:%S"))
+                    else:
+                        when = (f'<span style="color:var(--text-muted)">'
+                                f'{_e(t("web_api_tokens_never"))}</span>')
+                rows += (f"<tr><td><code>{_e(label)}</code></td>"
+                         f"<td>{when}</td></tr>")
+            return f"""<div class="card">
+<h2>{t("web_api_tokens")}</h2>
+<p class="card-intro">{t("web_api_tokens_intro")}</p>
+{overruled}
+<div class="table-scroll"><table>
+<tr><th>{t("web_api_tokens_name")}</th><th>{t("web_api_tokens_last")}</th></tr>
+{rows}
+</table></div>
+<p class="card-intro" style="margin:10px 0 0">{t("web_api_tokens_hint")}</p>
+</div>
+"""
+
         def _help(self, text):
             return f'<span class="help" data-tt="{_e(text)}">?</span>'
 
@@ -5595,6 +5689,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </div>
 """
                        + _ordered
+                       + self._api_token_card(t)
                        + f"""<!-- One Save for the whole page, outside the last card. Inside it, the
      button reads as "save Discord" — and it does not, it saves every
      card above as well. -->
@@ -6152,6 +6247,13 @@ class WebUI:
         # request racing on the same file.
         from audit import AuditLog
         self.server.audit = AuditLog(self.config)
+        # `{token name: last used, epoch}`. Deliberately in memory and not
+        # on disk: a Prometheus scraper hits `/metrics` every few seconds,
+        # and a file written that often to record "still being scraped"
+        # would be a lot of I/O to learn nothing. The cost is that a
+        # restart clears it, so the page says "since start" rather than
+        # implying a token has never been used.
+        self.server.token_seen = {}
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         print(f"Web UI started on port {self.port}")

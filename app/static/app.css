@@ -168,6 +168,10 @@ nav a.active { color: var(--accent); background: var(--accent-bg); }
     margin-bottom: 16px;
 }
 .card h2 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+/* A heading's untranslated name, quieter than the heading itself. Exists
+   so a term that is the same word everywhere — "Audit" — is on the page
+   in all 16 languages and can be searched for. */
+.h2-alt { font-size: 12px; font-weight: 400; color: var(--text-muted); }
 .card-intro {
     font-size: 12px;
     color: var(--text-muted);

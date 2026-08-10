@@ -736,5 +736,14 @@
   "web_conn_discordbot_intro": "Der Bot spricht von sich aus, statt nur zu antworten. Braucht den Bot-Token oben und eine Kanal-ID.",
   "web_discord_dup_title": "Discord-Meldungen kommen doppelt",
   "web_discord_dup_intro": "Der Discord-Webhook und der Bot-Kanal sind beide eingeschaltet, jede Meldung wird also von beiden geschickt. Das ist erlaubt — vielleicht willst du einen öffentlich und einen privat — aber falls es unbeabsichtigt war, schalte einen davon aus.",
-  "web_conn_discord_hook": "Webhook"
+  "web_conn_discord_hook": "Webhook",
+  "web_api_tokens": "API-Tokens",
+  "web_api_tokens_intro": "Nur-Lese-Zugriff auf /metrics und GET /api/status ohne das Passwort der Weboberfläche. Wird ausschließlich über die Umgebungsvariable API_TOKENS gesetzt — die Tokens selbst stehen hier nie, nur ihre Namen.",
+  "web_api_tokens_none": "Keine Tokens eingerichtet. Beide Endpunkte verlangen dann das Passwort der Weboberfläche, das ein Sammeldienst nicht liefern kann.",
+  "web_api_tokens_name": "Name",
+  "web_api_tokens_last": "Zuletzt benutzt",
+  "web_api_tokens_never": "seit dem letzten Neustart nicht",
+  "web_api_tokens_hint": "Die Nutzung wird im Arbeitsspeicher gezählt, ein Neustart setzt sie zurück — »seit dem letzten Neustart nicht« heißt also nicht, dass der Token ungenutzt ist.",
+  "web_api_tokens_broken": "kein Token hinter dem Doppelpunkt — dieser Eintrag kann nie passen",
+  "web_api_tokens_overruled": "API_TOKENS ist in der Umgebung gesetzt, ein gespeicherter Wert geht aber vor — es gilt, was hier steht. Den gespeicherten Wert löschen, damit die Variable greift."
 }

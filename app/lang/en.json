@@ -736,5 +736,14 @@
   "web_conn_discordbot_intro": "The bot speaking of its own accord, rather than answering. Needs the bot token above and a channel ID.",
   "web_discord_dup_title": "Discord notifications will arrive twice",
   "web_discord_dup_intro": "The Discord webhook and the bot channel are both switched on, so every notification is posted by each of them. That is allowed — you may want one public and one private — but if it was not intended, switch one of them off.",
-  "web_conn_discord_hook": "Webhook"
+  "web_conn_discord_hook": "Webhook",
+  "web_api_tokens": "API tokens",
+  "web_api_tokens_intro": "Read-only access to /metrics and GET /api/status without the Web UI password. Set through the API_TOKENS environment variable only — the tokens themselves are never shown here, only their names.",
+  "web_api_tokens_none": "No tokens configured. Both endpoints then require the Web UI password, which a scraper cannot supply.",
+  "web_api_tokens_name": "Name",
+  "web_api_tokens_last": "Last used",
+  "web_api_tokens_never": "not since the last restart",
+  "web_api_tokens_hint": "Usage is counted in memory, so a restart clears it — “not since the last restart” does not mean the token is unused.",
+  "web_api_tokens_broken": "no token after the colon — this entry can never match",
+  "web_api_tokens_overruled": "API_TOKENS is set in the environment, but a saved value takes precedence over it — what is listed here is what applies. Clear the saved value to let the variable through."
 }

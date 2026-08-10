@@ -3655,6 +3655,14 @@ class UpdateChecker:
         # CLIs accept the numeric form on the command line; it only ever
         # needed to be a string.
         #
+        # Podman 5.0.0 made the CLI report the signal NAME, a documented
+        # breaking change, so 4.x is where that sentence holds. It is not
+        # obsolete though: the Docker-compat endpoint still returns a
+        # numeric *string* as of v6.0.2, and a client asking on an older
+        # API version still gets the int. Three representations of one
+        # field, by access path — which is the argument for coercing
+        # rather than for special-casing a version.
+        #
         # Coercing the whole list rather than that one field, because the
         # next inspect difference between the two CLIs will land the same
         # way, and a TypeError from inside subprocess is the worst place

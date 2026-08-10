@@ -19,7 +19,8 @@ tells us if that ever stops working.
 Since v2.4.0 it also drives a real **recreate**, because everything above
 is plumbing and plumbing was never the problem. Three differences between
 Podman's inspect output and Docker's each broke `_build_run_args` outright
-— a numeric `StopSignal`, `Runtime: "oci"`, and a pod member whose
+— a numeric `StopSignal` (on 4.x; see `test_podman_recreate.py` for what
+5.0.0 changed and what survived it), `Runtime: "oci"`, and a pod member whose
 `NetworkMode` reads `container:<infra-id>` — which means no Podman user
 ever had a successful update from this code, and this file could not have
 said so, because it only ever checked that `ps` worked.

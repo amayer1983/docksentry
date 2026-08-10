@@ -10,6 +10,13 @@ every fix only revealed the next:
 `15` (measured, podman 4.9.3). That int went straight into the argument
 list, and `subprocess.run` refuses:
 
+Podman 5.0.0 changed this to the signal name, listed as a breaking change
+in its release notes, so on 5.x and later the CLI agrees with Docker. The
+coercion stays regardless, and not out of caution: the Docker-compat API
+endpoint still returns a numeric *string* as of v6.0.2, and a client
+asking with an older API version still gets an int back. One field, three
+representations, depending on how you ask for it.
+
     TypeError: expected str, bytes or os.PathLike object, not int
 
 raised before the CLI is executed at all, from a frame that names no field.
