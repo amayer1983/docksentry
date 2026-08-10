@@ -2,7 +2,7 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
-## [Unreleased]
+## [2.8.0] - 2026-08-10
 
 ### Added
 - **A login page, a username, and the password is no longer stored in plaintext (#60, @NotRetarded).** He asked for all three and checking his claims was the whole of the design work, because every one of them was true. There was no login page: it was HTTP Basic Auth, so what you saw was the browser's dialog rather than a page of this application, and a password manager had no form to fill in. There was no username either, and not in the sense of "not configurable" — the Basic Auth header was split into user and password and the user half was then never looked at again, so any name got in. And the password sat in cleartext in `settings.json` as well as in your compose file, with the file's 0600 as the whole of the protection.
