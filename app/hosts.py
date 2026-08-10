@@ -154,6 +154,7 @@ def build_hosts(config, store):
     )]
 
     cli = resolve_cli(getattr(config, "container_cli", "auto"))
+    plaintext = []
     for entry in getattr(config, "docker_hosts", None) or []:
         name, endpoint = entry["name"], entry["endpoint"]
         backend = RemoteBackend(endpoint, name=name, cli_binary=cli)
@@ -164,7 +165,52 @@ def build_hosts(config, store):
             HostScopedStore(store, name),
             endpoint=endpoint,
         ))
+        if _is_plaintext_remote(endpoint):
+            plaintext.append((name, endpoint))
+    if plaintext:
+        # Said once, at startup, where somebody actually reads it. #60,
+        # @NotRetarded, who reasonably believed his reverse proxy covered
+        # this — it does not: the proxy sits in front of the Web UI, and
+        # this connection runs the other way, out to the remote daemon.
+        # Nothing in the docs said so, and the README example put a
+        # `tcp://` host next to an `ssh://` one without a word.
+        print("")
+        for name, endpoint in plaintext:
+            print(f"WARNING: host {name!r} uses {endpoint} — the Docker API "
+                  f"over plain tcp:// is unencrypted AND unauthenticated.")
+        print("         Anyone who can reach that port controls that "
+              "machine's Docker, which is root on it.")
+        print("         Use ssh://, or keep tcp:// on a network only "
+              "Docksentry can reach (see docs/security.md).")
+        print("         If that endpoint is a socket proxy on a private "
+              "Docker network, this warning does not apply to you.")
+        print("")
     return HostRegistry(hosts)
+
+
+#: The only names where a plain `tcp://` demonstrably does not cross a
+#: network. A socket-proxy sidecar reached by its container name does not
+#: cross one either, but nothing here can tell `socket-proxy` from a LAN
+#: hostname, so that case DOES warn. Accepted rather than guessed at: the
+#: message names the host and says what to check, and a false warning
+#: somebody can resolve in ten seconds beats a missing one about a port
+#: that hands out root.
+_LOCAL_HOSTNAMES = ("localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0")
+
+
+def _is_plaintext_remote(endpoint):
+    """True for a `tcp://` endpoint that leaves this machine.
+
+    Deliberately only `tcp://`. `ssh://` is encrypted, `unix://` never
+    leaves the box, and `context://` is whatever the stored connection
+    says — we would be guessing, and a wrong warning is worse than none.
+    """
+    endpoint = (endpoint or "").strip()
+    if not endpoint.startswith("tcp://"):
+        return False
+    hostpart = endpoint[len("tcp://"):].split("/")[0]
+    host = hostpart.rsplit(":", 1)[0] if ":" in hostpart else hostpart
+    return host.strip().lower() not in _LOCAL_HOSTNAMES
 
 
 #: Sentinel returned by `split_host_target` for an explicit `@all`.

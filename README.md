@@ -5,7 +5,7 @@
 <h1 align="center">Docksentry</h1>
 
 <p align="center">
-Watches <b>Docker</b> and <b>Podman</b> containers for new images and updates them, rolling back automatically when the new container fails its healthcheck. One instance manages several hosts over tcp:// or ssh://; container groups keep a stack's update order, including containers that share a VPN sidecar's network; and update policy, major-version confirmation, update windows and pinning are set per container. When something dies you get the exit code from the live event stream, host memory and load, what each container was using at that moment, and whether the kernel OOM-killed it. <b>Web UI</b>, <b>Telegram bot</b>, <b>Discord bot</b>, /metrics and a read-only JSON API all drive the same update engine — 16 languages, and Telegram is optional: it runs fully headless.
+Watches <b>Docker</b> and <b>Podman</b> containers for new images and updates them, rolling back automatically when the new container fails its healthcheck. One instance manages several hosts over ssh:// or tcp://; container groups keep a stack's update order, including containers that share a VPN sidecar's network; and update policy, major-version confirmation, update windows and pinning are set per container. When something dies you get the exit code from the live event stream, host memory and load, what each container was using at that moment, and whether the kernel OOM-killed it. <b>Web UI</b>, <b>Telegram bot</b>, <b>Discord bot</b>, /metrics and a read-only JSON API all drive the same update engine — 16 languages, and Telegram is optional: it runs fully headless.
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 ## Features
 
 - **Docker and Podman** — set `CONTAINER_CLI=podman` and checks, updates, recreates, rollback, `podman compose` and image cleanup all go through Podman. Mounting the Podman socket where Docksentry expects the Docker one works too
-- **Multi-host** — one instance managing several machines over `tcp://` or `ssh://`, with per-host checks and pending queues, a host column in the Web UI and `@host` / `@all` targeting in the bots
+- **Multi-host** — one instance managing several machines over `ssh://` or `tcp://`, with per-host checks and pending queues, a host column in the Web UI and `@host` / `@all` targeting in the bots
 - **Automatic update detection** — compares image digests on a configurable cron schedule. A pinned version tag, whose digest never moves, gets an advisory badge when a newer version exists — advisory only, nothing is switched behind your back
 - **Container groups** — ordered updates for a stack: database before app, or Gluetun before the containers sharing its network namespace. Those are recreated against the head's *name* rather than its dead container ID, so they come back instead of being left stopped, and a failure in the group aborts the rest of it
 - **Update policies per container** — `all` / `minor` / `patch`, major-version confirmation, per-container update windows, and `MIN_IMAGE_AGE_DAYS` so you need not be the first to pull a new image
@@ -427,7 +427,10 @@ One Docksentry, several hosts. Point it at the others with `DOCKER_HOSTS`:
 
 ```yaml
 environment:
-  - DOCKER_HOSTS=pve1:tcp://pve1:2375, nas:ssh://root@nas
+  # ssh:// is encrypted and authenticated by your key. A plain tcp://
+  # endpoint is neither, so only use one on a network Docksentry alone
+  # can reach — see docs/security.md.
+  - DOCKER_HOSTS=pve1:ssh://root@pve1, nas:ssh://root@nas
 ```
 
 Each entry is `name:endpoint`, and the endpoint is whatever the container CLI takes for `-H`. A **TCP socket / [socket proxy](docs/security.md) is the simplest option** — the same pattern you'd use locally, no keys to manage. SSH endpoints work too and lean on the CLI's own SSH handling, so key-based login has to already succeed non-interactively for the user Docksentry runs as.

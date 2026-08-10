@@ -64,6 +64,44 @@ volumes:
 
 > **Alternative:** [linuxserver/socket-proxy](https://github.com/linuxserver/docker-socket-proxy) is a drop-in replacement with the same environment variables and rootless support.
 
+## Multi-host: how Docksentry reaches the other machines
+
+Two directions, and they need different things. A reverse proxy protects
+people *coming in* to the Web UI. It does nothing for the connection going
+*out* from Docksentry to a remote Docker daemon, which is a separate link
+that never passes through it. Worth stating plainly, because it is an easy
+and reasonable thing to assume (#60).
+
+| Endpoint in `DOCKER_HOSTS` | Encrypted | Authenticated |
+|---|---|---|
+| `ssh://user@host` | yes | yes, by your SSH key |
+| `context://name` | whatever that stored connection uses | same |
+| `tcp://host:2375` | **no** | **no** |
+
+The last row is the one to be careful with. Docker's API on a plain `tcp://`
+port has no TLS and no login: anyone who can reach that port can start a
+container that mounts the host filesystem, which is root on that machine.
+It does not matter how well the Web UI in front of it is protected.
+
+**Use `ssh://` unless you have a specific reason not to.** It needs no
+daemon configuration on the remote host, it is encrypted, and it
+authenticates with a key you already manage. On Podman, give each host its
+own key with `context://` — see [podman.md](podman.md) for why `ssh://`
+cannot do that there.
+
+`tcp://` is fine in two situations:
+
+- the endpoint is a **socket proxy** on a private Docker network that only
+  Docksentry is attached to (the section above), so the port is not
+  reachable from your LAN at all;
+- the remote daemon is configured with **TLS client certificates**
+  (`2376`), which Docker supports and which is a job for the daemon's own
+  configuration, not for Docksentry.
+
+If you have a `tcp://` host that is neither, Docksentry says so once at
+startup, naming the host. That warning is deliberately not silenceable: it
+is a port that hands out root.
+
 ## Web UI with HTTPS (Reverse Proxy)
 
 The built-in Web UI uses HTTP. For secure remote access, put it behind a reverse proxy with TLS.
