@@ -1614,6 +1614,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return self._page_login()
             if bare == "/logout":
                 return self._do_logout()
+            # The static assets come before the gate too, and they have to:
+            # the login page links its stylesheet and its icon, and a 401
+            # with `WWW-Authenticate` on those is exactly what pops the
+            # browser's password dialog — the one thing the login page
+            # exists to replace. It rendered unstyled as well. They carry
+            # no data of yours: the same CSS, JS and icon for everyone.
+            if bare in ("/static/app.css", "/static/app.js",
+                        "/static/manifest.webmanifest", "/static/icon.png"):
+                return self._serve_static(bare.rsplit("/", 1)[1])
             if not self._check_auth():
                 return self._send_auth_required(path)
             if path.split("?")[0] == "/metrics":
