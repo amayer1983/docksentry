@@ -965,7 +965,15 @@ class Config:
             docker_hosts=_env("DOCKER_HOSTS", ""),
             discord_bot_token=_env("DISCORD_BOT_TOKEN", ""),
             discord_app_id=_env("DISCORD_APP_ID", ""),
-            discord_guild_id=_env("DISCORD_GUILD_ID", ""),
+            # Discord's own interface says "Server", its API says "Guild",
+            # and we had it both ways at once: the variable said GUILD, the
+            # field said Server ID, the log said guild (#57, @NotRetarded).
+            # The variable keeps its name — renaming it would break every
+            # existing setup for a word — but DISCORD_SERVER_ID works too,
+            # so guessing the name you can see in Discord is not a dead
+            # end. GUILD wins when both are set, being the documented one.
+            discord_guild_id=(_env("DISCORD_GUILD_ID", "")
+                              or _env("DISCORD_SERVER_ID", "")),
             discord_allowed_users=_env("DISCORD_ALLOWED_USERS", ""),
             ntfy_url=_env("NTFY_URL", ""),
             ntfy_server=_env("NTFY_SERVER", ""),

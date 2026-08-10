@@ -567,12 +567,13 @@ class DiscordBot:
         want_guild = (self.guild_id or "").strip()
         if not want_guild:
             if getattr(self.config, "debug", False):
-                self.log("Discord: interaction refused — DISCORD_GUILD_ID is "
-                         "not set, so no interaction can be trusted")
+                self.log("Discord: interaction refused — no server ID is "
+                         "set (DISCORD_GUILD_ID), so no interaction can be "
+                         "trusted")
             return False
         if str(data.get("guild_id") or "") != want_guild:
             if getattr(self.config, "debug", False):
-                self.log(f"Discord: interaction refused — guild "
+                self.log(f"Discord: interaction refused — server "
                          f"{data.get('guild_id')} != {want_guild}")
             return False
 

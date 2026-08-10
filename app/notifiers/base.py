@@ -211,6 +211,27 @@ class BaseNotifier:
     def send_message(self, text):
         """Send a plain-text notification."""
 
+    def send_weekly_report(self, stats, text, embed=None):
+        """The weekly report, in whatever shape this channel prefers.
+
+        Plain text by default, which is right for every channel that has
+        no richer form. Discord overrides it with its embed and the
+        generic webhook with its JSON event.
+
+        It exists because the report used to write its own list of
+        recipients: Telegram, the Discord webhook, the generic webhook,
+        and nothing else. Every channel added since — e-mail, ntfy,
+        Gotify, Matrix, Apprise, the Discord bot channel — was simply
+        absent from that list, and worse, the list read `discord_webhook`
+        rather than asking whether the channel was *on*, so a switched-off
+        webhook still got the report (#59, @NotRetarded).
+
+        `embed` arrives pre-built rather than assembled here, because it
+        needs the translator and the translated strings live with the
+        report, not with the transport.
+        """
+        self.send_message(text)
+
     # ── shared helpers (so subclasses read as one line) ──────────────
     @staticmethod
     def version_str(u):

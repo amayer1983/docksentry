@@ -97,6 +97,17 @@ class DiscordNotifier(BaseNotifier):
             }
         self.post({"embeds": [embed]})
 
+    def send_weekly_report(self, stats, text, embed=None):
+        """The report as its embed, which is what it has always been here.
+
+        Inherited by the bot channel, which overrides only the transport —
+        so the two Discord paths cannot drift apart on this either.
+        """
+        if embed:
+            self.post({"embeds": [embed]})
+        else:                                             # pragma: no cover
+            self.send_message(text)
+
     def send_message(self, text):
         """Send plain text to Discord."""
         # Strip Markdown bold (*text*) for Discord

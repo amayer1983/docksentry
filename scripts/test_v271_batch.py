@@ -234,6 +234,16 @@ def notifier_cfg(**kw):
                 discord_webhook="https://discord.com/api/webhooks/1/x",
                 discord_bot_token="tok", discord_bot_channel="123",
                 channel_discord_enabled=True, channel_discordbot_enabled=True)
+    # The other channels have to exist and be empty: `send_weekly_report`
+    # walks every plugin, and a bare namespace makes them raise rather
+    # than report themselves inactive.
+    base.update(dict(
+        webhook_url="", smtp_host="", smtp_from="", smtp_to="", smtp_user="",
+        smtp_password="", smtp_port=587, smtp_tls="starttls",
+        smtp_tls_verify=True, ntfy_url="", ntfy_server="", ntfy_topic="",
+        ntfy_token="", ntfy_user="", ntfy_password="", gotify_url="",
+        gotify_token="", matrix_homeserver="", matrix_room="",
+        matrix_token="", apprise_url="", apprise_urls="", apprise_tag=""))
     base.update(kw)
     return types.SimpleNamespace(**base)
 
@@ -291,29 +301,22 @@ checks["…configured by its own fields"] = (
 
 
 # ── the weekly report reaches it too ─────────────────────────────────
-# Same shape of gap as the startup message: a hand-written list of
-# recipients rather than the facade, so a channel added later is simply
-# absent from it.
+# Wiring the bot channel in was the fix here; #59 then showed the wiring
+# itself was the wrong shape, and `test_weekly_report_channels.py` owns
+# that. What is left for this file is the narrow claim it made: the bot
+# channel is a recipient of the weekly report at all.
 from notifier import Notifier  # noqa: E402
 
 posts = []
 n = Notifier(notifier_cfg())
 n._by_name["discordbot"].post = lambda p: posts.append(p)
+n.send_weekly_report({"successes": 1}, "text", {"title": "weekly"})
 checks["the weekly report's embed reaches the bot channel"] = (
-    n._discordbot_post({"embeds": [{"title": "weekly"}]}) is True
-    and len(posts) == 1)
+    len(posts) == 1 and "embeds" in posts[0])
 off = Notifier(notifier_cfg(channel_discordbot_enabled=False))
 off._by_name["discordbot"].post = lambda p: posts.append(p)
-checks["…and respects the channel's switch"] = (
-    off._discordbot_post({"embeds": [{"title": "weekly"}]}) is False
-    and len(posts) == 1)
-blank = Notifier(notifier_cfg(discord_bot_channel=""))
-checks["…and stays quiet when no channel is configured"] = (
-    blank._discordbot_post({"embeds": [{"title": "weekly"}]}) is False)
-
-wr = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                       "weekly_report.py"), encoding="utf-8").read()
-checks["…and the report itself calls it"] = "_discordbot_post" in wr
+off.send_weekly_report({"successes": 1}, "text", {"title": "weekly"})
+checks["…and respects the channel's switch"] = len(posts) == 1
 
 
 failed = [k for k, v in checks.items() if not v]

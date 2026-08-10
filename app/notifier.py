@@ -117,6 +117,22 @@ class Notifier:
             except Exception as e:
                 print(f"{p.name} error: {e}")
 
+    def send_weekly_report(self, stats, text, embed=None):
+        """The weekly report, to every channel that is on.
+
+        Returns True if it went anywhere. Quiet hours deliberately do not
+        apply: the report is sent at an hour the operator picked, and
+        suppressing it there would mean skipping the week rather than
+        delaying it.
+        """
+        targets = self._configured_plugins()
+        for p in targets:
+            try:
+                p.send_weekly_report(stats, text, embed)
+            except Exception as e:
+                print(f"{p.name} error: {e}")
+        return bool(targets)
+
     def send_updates_available(self, updates):
         """Notify about available updates."""
         if self._suppressed():

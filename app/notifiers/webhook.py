@@ -40,6 +40,10 @@ class WebhookNotifier(BaseNotifier):
             self.config.webhook_url, payload, None, "Webhook")
 
     # ── payloads ─────────────────────────────────────────────────────
+    def send_weekly_report(self, stats, text, embed=None):
+        """The raw event, byte-for-byte what this channel already sent."""
+        self.send_raw("weekly_report", {"stats": stats, "text": text})
+
     def send_updates_available(self, updates):
         self.send_raw("updates_available", {
             "count": len(updates),

@@ -216,26 +216,22 @@ def maybe_send_weekly_report(config, bot, t):
             print(f"Weekly report (telegram) error: {e}")
 
     notifier = getattr(bot, "notifier", None) if bot else None
-    if notifier and notifier.has_channels():
+    if notifier is not None:
+        # Through the facade, so every channel that is switched on gets it
+        # and no channel that is switched off does.
+        #
+        # This used to be a hand-written list — the Discord webhook and the
+        # generic webhook, and from 2.7.1 the bot channel. Two things were
+        # wrong with that. E-mail, ntfy, Gotify, Matrix and Apprise had
+        # never received a weekly report at all; and the list asked whether
+        # a webhook URL was *set*, not whether the channel was *on*, so a
+        # switched-off Discord webhook still got one. That is what made the
+        # report arrive twice for @NotRetarded (#59) while the "both Discord
+        # paths are on" warning stayed hidden — the warning is about the
+        # switches, and the switches were exactly what this ignored.
         try:
-            # The bot channel gets the identical embed. Same shape of gap
-            # as the startup message had: a hand-written recipient list
-            # rather than the facade, so a channel added later is simply
-            # absent from it and nobody notices until someone waits for a
-            # report that never comes.
-            embed = None
-            if notifier.config.discord_webhook:
-                embed = format_discord_embed(stats, t)
-                notifier._discord_post({"embeds": [embed]})
-                sent_any = True
-            if notifier._discordbot_post(
-                    {"embeds": [embed or format_discord_embed(stats, t)]}):
-                sent_any = True
-            if notifier.config.webhook_url:
-                notifier._webhook_send("weekly_report", {
-                    "stats": stats,
-                    "text": text,
-                })
+            if notifier.send_weekly_report(stats, text,
+                                           format_discord_embed(stats, t)):
                 sent_any = True
         except Exception as e:
             print(f"Weekly report (notifier) error: {e}")
