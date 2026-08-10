@@ -1093,3 +1093,59 @@ a.btn-icon { text-decoration: none; }
    measured at 1485px viewport: header at x=293, content at x=43. Read as
    "floating in the middle", which is exactly what it was. */
 .header-row.wide, .nav-wrap.wide { max-width: 1400px; }
+
+/* ── Login page (#60) ─────────────────────────────────────────────
+   Standalone rather than inside the usual page frame: the frame carries
+   navigation to pages you cannot open yet, and a menu that 401s on every
+   click is a worse welcome than no menu. */
+.login-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 24px;
+}
+.login-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 26px 24px;
+}
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.login-brand { flex: none; }
+.login-brand img { height: 40px; width: 40px; }
+.login-intro {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 0 0 18px;
+}
+.login-card label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 12px 0 4px;
+}
+.login-card input {
+    width: 100%;
+    box-sizing: border-box;
+}
+.login-card .btn { width: 100%; margin-top: 18px; }
+/* Not red-on-red: the card already sits on a dark surface, so the error
+   needs its own tinted band to be legible rather than just coloured text. */
+.login-error {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger);
+    border-radius: 6px;
+    color: var(--danger);
+    font-size: 13px;
+    margin: 0 0 4px;
+    padding: 8px 10px;
+}

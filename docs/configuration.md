@@ -32,7 +32,10 @@ The handful that decide whether Docksentry runs at all.
 | `TZ` | `Europe/Berlin` | Timezone |
 | `WEB_PASSWORD` | | Web UI password (Basic Auth) |
 | `WEB_PORT` | `8080` | Web UI port |
+| `WEB_SESSION_HOURS` | `8` | How long a browser session survives without being used. Signing in again is all it takes. Sessions live in memory, so a restart signs everyone out — writing them to disk would mean a file of live credentials, which is most of what the login rework was getting away from. |
+| `WEB_SESSION_MAX_DAYS` | `7` | A session ends after this long whatever happens. The idle timeout above catches a machine somebody walked away from; this catches a session a background tab has been keeping alive, which no idle timeout ever would. |
 | `WEB_UI` | `false` | Enable web dashboard |
+| `WEB_USERNAME` | | Username for the Web UI login. **Optional**: left empty, any username is accepted, which is what Docksentry did before it had a username at all (the Basic Auth header was split and the name half then ignored). Set it and only that name gets in. Also editable in Settings › General. |
 
 ### Docker & Podman hosts
 

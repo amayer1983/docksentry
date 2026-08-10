@@ -745,5 +745,19 @@
   "web_api_tokens_never": "not since the last restart",
   "web_api_tokens_hint": "Usage is counted in memory, so a restart clears it — “not since the last restart” does not mean the token is unused.",
   "web_api_tokens_broken": "no token after the colon — this entry can never match",
-  "web_api_tokens_overruled": "API_TOKENS is set in the environment, but a saved value takes precedence over it — what is listed here is what applies. Clear the saved value to let the variable through."
+  "web_api_tokens_overruled": "API_TOKENS is set in the environment, but a saved value takes precedence over it — what is listed here is what applies. Clear the saved value to let the variable through.",
+  "web_login_title": "Sign in",
+  "web_login_intro": "Docksentry is password protected.",
+  "web_login_user": "Username",
+  "web_login_password": "Password",
+  "web_login_submit": "Sign in",
+  "web_login_failed": "Wrong username or password.",
+  "web_logout": "Sign out",
+  "web_username": "Username",
+  "web_username_help": "Optional. Leave empty to accept any username, which is what Docksentry did before there was a username at all. Set it and only that name is accepted.",
+  "web_session_hours": "Session idle timeout (hours)",
+  "web_session_hours_help": "How long a browser session survives without being used. Signing in again is all it takes.",
+  "web_session_max_days": "Session maximum age (days)",
+  "web_session_max_days_help": "A session ends after this long whatever happens, even one a background tab keeps alive.",
+  "web_password_hashed": "Stored as a hash. It cannot be shown again."
 }

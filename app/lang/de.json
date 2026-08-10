@@ -745,5 +745,19 @@
   "web_api_tokens_never": "seit dem letzten Neustart nicht",
   "web_api_tokens_hint": "Die Nutzung wird im Arbeitsspeicher gezählt, ein Neustart setzt sie zurück — »seit dem letzten Neustart nicht« heißt also nicht, dass der Token ungenutzt ist.",
   "web_api_tokens_broken": "kein Token hinter dem Doppelpunkt — dieser Eintrag kann nie passen",
-  "web_api_tokens_overruled": "API_TOKENS ist in der Umgebung gesetzt, ein gespeicherter Wert geht aber vor — es gilt, was hier steht. Den gespeicherten Wert löschen, damit die Variable greift."
+  "web_api_tokens_overruled": "API_TOKENS ist in der Umgebung gesetzt, ein gespeicherter Wert geht aber vor — es gilt, was hier steht. Den gespeicherten Wert löschen, damit die Variable greift.",
+  "web_login_title": "Anmelden",
+  "web_login_intro": "Docksentry ist mit einem Passwort geschützt.",
+  "web_login_user": "Benutzername",
+  "web_login_password": "Passwort",
+  "web_login_submit": "Anmelden",
+  "web_login_failed": "Benutzername oder Passwort falsch.",
+  "web_logout": "Abmelden",
+  "web_username": "Benutzername",
+  "web_username_help": "Optional. Leer lässt jeden Benutzernamen zu, so wie es war, als es gar keinen gab. Gesetzt wird nur dieser Name akzeptiert.",
+  "web_session_hours": "Sitzung endet bei Untätigkeit nach (Stunden)",
+  "web_session_hours_help": "Wie lange eine Sitzung ohne Benutzung bestehen bleibt. Danach einfach neu anmelden.",
+  "web_session_max_days": "Sitzung endet spätestens nach (Tagen)",
+  "web_session_max_days_help": "Nach dieser Zeit endet die Sitzung auf jeden Fall, auch eine, die ein Hintergrundtab wachhält.",
+  "web_password_hashed": "Wird als Hash gespeichert und kann nicht wieder angezeigt werden."
 }

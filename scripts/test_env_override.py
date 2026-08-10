@@ -212,7 +212,20 @@ def main():
         checks[f"secret {key}: env value absent from message"] = env_val not in blob
         checks[f"secret {key}: saved value absent from message"] = saved_val not in blob
         checks[f"secret {key}: variable name still named"] = var in blob
-        checks[f"secret {key}: saved value still wins"] = getattr(c, key) == saved_val
+        # The saved value still wins. For web_password it now wins in
+        # hashed form: a plaintext one in settings.json is migrated on
+        # first load (#60), so equality is the wrong question and
+        # "does it still authenticate?" is the right one.
+        if key == "web_password":
+            import webauth
+            checks[f"secret {key}: saved value still wins"] = (
+                webauth.verify(saved_val, getattr(c, key)))
+            checks[f"secret {key}: and is no longer plaintext on disk"] = (
+                webauth.is_hashed(getattr(c, key)))
+            checks[f"secret {key}: env value still does not authenticate"] = (
+                not webauth.verify(env_val, getattr(c, key)))
+        else:
+            checks[f"secret {key}: saved value still wins"] = getattr(c, key) == saved_val
 
     # Telegram IDs are personal data — main.py already prints only the
     # *count* of allowed users, so the same rule applies here.

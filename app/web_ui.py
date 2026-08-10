@@ -13,6 +13,8 @@ import subprocess
 import sys
 import threading
 import time
+
+import webauth
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -207,6 +209,10 @@ def _icon_label(icon_key, label):
 # that size. The full-resolution file is still served — as the favicon, the
 # apple-touch-icon and the manifest icon — where it is fetched once and
 # cached, and where the display size actually warrants it.
+#: Session cookie name. `ds_` prefixed so it cannot collide with a
+#: cookie from another app behind the same reverse proxy path.
+SESSION_COOKIE = "ds_session"
+
 _LOGO_B64 = "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"
 
 
@@ -820,16 +826,45 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     return label
             return ""
 
+        def _sessions(self):
+            """The server's session store, or None on a bare test handler."""
+            return getattr(getattr(self, "server", None), "sessions", None)
+
+        def _cookie(self, name):
+            """One cookie value from the request, or ""."""
+            raw = self.headers.get("Cookie") or ""
+            for part in raw.split(";"):
+                key, _, value = part.strip().partition("=")
+                if key == name:
+                    return value
+            return ""
+
+        def _session_user(self):
+            """The signed-in username, or None. Also renews the session."""
+            store = self._sessions()
+            if store is None:
+                return None
+            return store.validate(self._cookie(SESSION_COOKIE))
+
         def _check_auth(self):
-            """Check Basic Auth against the currently configured password.
+            """Is this request allowed? A session, or Basic Auth, or no
+            password set at all.
 
             Reads `config.web_password` fresh on every request rather than
-            a hash cached at startup, so a password changed in Settings ›
+            a value cached at startup, so a password changed in Settings ›
             General takes effect immediately — no restart. (The `password`
             argument to create_handler is just the startup value of the
-            same field; config is the source of truth.) One SHA-256 per
-            request is nothing. Uses hmac.compare_digest to avoid the
-            timing side-channel of `==` on the hashes.
+            same field; config is the source of truth.)
+
+            Basic Auth stays, and not for old times' sake: `curl -u` and
+            every existing script and scraper use it, and a login form
+            cannot serve them. What the form adds is a page a password
+            manager can actually fill in, which the browser's own Basic
+            Auth dialog never was (#60, @NotRetarded).
+
+            The stored password may be a scrypt hash or plaintext —
+            `webauth.verify` handles both, because `WEB_PASSWORD` in the
+            environment can only ever be the latter.
             """
             # getattr, not config.web_password directly: the real Config
             # always carries it (a constructor arg), so this is a no-op in
@@ -839,17 +874,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             current = getattr(config, "web_password", "") or ""
             if not current:
                 return True
+            if self._session_user() is not None:
+                return True
             auth = self.headers.get("Authorization", "")
             if not auth.startswith("Basic "):
                 return False
             try:
                 decoded = base64.b64decode(auth[6:]).decode()
                 user, pw = decoded.split(":", 1)
-                submitted = hashlib.sha256(pw.encode()).hexdigest()
-                expected = hashlib.sha256(current.encode()).hexdigest()
-                return hmac.compare_digest(submitted, expected)
             except Exception:
                 return False
+            want_user = getattr(config, "web_username", "") or ""
+            return (webauth.username_matches(user, want_user)
+                    and webauth.verify(pw, current))
 
         def _check_csrf(self):
             """Origin/Referer-based CSRF check for state-changing requests.
@@ -884,7 +921,25 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # when it's non-default, and the Host header includes it too.
             return source_netloc == host
 
-        def _send_auth_required(self):
+        def _send_auth_required(self, path=""):
+            """Send a browser to the login page, a script to Basic Auth.
+
+            The distinction matters both ways round. A person gets a page
+            a password manager can fill in, which is the whole point of
+            #60. A script gets the 401 with `WWW-Authenticate` it has
+            always got, so `curl -u` and every existing scraper keep
+            working — redirecting those to an HTML form would break them
+            silently, which is worse than not having the form at all.
+            """
+            wants_html = "text/html" in (self.headers.get("Accept") or "")
+            api = path.startswith(("/api/", "/metrics"))
+            if wants_html and not api:
+                nxt = quote(path or "/", safe="/?=&")
+                self.send_response(302)
+                self.send_header("Location", f"/login?next={nxt}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.send_response(401)
             self.send_header("WWW-Authenticate", 'Basic realm="Docksentry"')
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1227,6 +1282,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     if isinstance(u, dict) and entry_host(u) == wanted]
 
         def _render_page(self, content, active="status"):
+            # Only for a session. Basic Auth has no logout — the browser
+            # keeps re-sending the header — so a button that claimed to
+            # sign you out and then did nothing would be a lie. It is
+            # absent in that case, which is honest and costs nothing.
+            logout_html = ""
+            if self._session_user() is not None:
+                _t = _web_translator(config.language)
+                logout_html = (f'<a href="/logout" class="btn-icon" '
+                               f'title="{_e(_t("web_logout"))}">⏻</a>')
             from version import VERSION
             from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
             t = _web_translator(config.language)
@@ -1337,7 +1401,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <input type="hidden" name="mode" value="{ui_mode_other}">
 <button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
 </form>
-<button type="button" id="ds-theme-toggle" class="btn-icon" title="Toggle theme">
+{logout_html}<button type="button" id="ds-theme-toggle" class="btn-icon" title="Toggle theme">
 <svg id="ds-theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
 <svg id="ds-theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 </button>
@@ -1356,6 +1420,151 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <script src="/static/app.js?v={VERSION}"></script>
 </body>
 </html>"""
+
+        # ── login ────────────────────────────────────────────────
+        def _login_html(self, t, error="", nxt="/"):
+            """The login page: a real form on a real page.
+
+            Deliberately standalone rather than `_render_page`: the frame
+            carries navigation to pages you cannot open yet, and a menu
+            that 401s on every click is a worse first impression than no
+            menu. `autocomplete` attributes are the entire point of the
+            exercise — they are what tells a password manager that this is
+            a login form and which field is which, and the browser's own
+            Basic Auth dialog could never say that.
+            """
+            note = (f'<p class="login-error">{_e(error)}</p>' if error else "")
+            user = getattr(config, "web_username", "") or ""
+            return f"""<!DOCTYPE html>
+<html lang="{_e(config.language)}" data-theme="auto"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(t("web_login_title"))} · Docksentry</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/icon.png">
+</head><body class="login-body">
+<main class="login-card">
+  <div class="login-brand header-brand">
+    <img src="data:image/png;base64,{_LOGO_B64}" alt="">
+    <h1>DOCK<span>SENTRY</span></h1>
+  </div>
+  <p class="login-intro">{_e(t("web_login_intro"))}</p>
+  {note}
+  <form method="POST" action="/login">
+    <input type="hidden" name="next" value="{_e(nxt)}">
+    <label for="lg-user">{_e(t("web_login_user"))}</label>
+    <input type="text" id="lg-user" name="username" autocomplete="username"
+           value="{_e(user)}" autofocus>
+    <label for="lg-pw">{_e(t("web_login_password"))}</label>
+    <input type="password" id="lg-pw" name="password"
+           autocomplete="current-password" required>
+    <button type="submit" class="btn">{_e(t("web_login_submit"))}</button>
+  </form>
+</main>
+</body></html>"""
+
+        def _page_login(self):
+            t = _web_translator(config.language)
+            params = parse_qs(urlparse(self.path).query)
+            nxt = self._safe_next((params.get("next") or ["/"])[0])
+            # Already signed in, or no password set at all: there is
+            # nothing to log in to.
+            if self._check_auth():
+                return self._redirect(nxt)
+            body = self._login_html(t, "", nxt).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            # A login page must never be cached: the next person on this
+            # machine would get it from disk with the form state intact.
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        @staticmethod
+        def _safe_next(value):
+            """Where to go after login, if it is somewhere on this site.
+
+            Only a path, never a URL: `?next=https://elsewhere/` would
+            make our own login page into an open redirect, which is a
+            phishing primitive and costs nothing to refuse. `//host` is
+            a protocol-relative URL and is refused for the same reason.
+            """
+            value = (value or "/").strip()
+            if not value.startswith("/") or value.startswith("//"):
+                return "/"
+            return value
+
+        def _redirect(self, where):
+            self.send_response(302)
+            self.send_header("Location", where)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _do_login(self, params):
+            """POST /login. Verifies, then hands out a session cookie."""
+            t = _web_translator(config.language)
+            nxt = self._safe_next((params.get("next") or ["/"])[0])
+            user = (params.get("username") or [""])[0]
+            pw = (params.get("password") or [""])[0]
+            current = getattr(config, "web_password", "") or ""
+            store = self._sessions()
+            ok = (webauth.username_matches(user, getattr(config, "web_username", ""))
+                  and webauth.verify(pw, current))
+            audit = getattr(getattr(self, "server", None), "audit", None)
+            if not ok:
+                # Deliberately one message for a wrong name and a wrong
+                # password: saying which was wrong tells a stranger that
+                # the other one was right.
+                if audit is not None:
+                    try:
+                        audit.record("web", user or "?", "/login",
+                                     "failed", {})
+                    except Exception:
+                        pass
+                # A small, fixed delay. Not a rate limiter — it is one
+                # line and it turns "thousands of guesses a second" into
+                # "a few", which for a LAN dashboard is the difference
+                # that matters.
+                time.sleep(0.5)
+                body = self._login_html(t, t("web_login_failed"), nxt).encode()
+                self.send_response(401)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return self.wfile.write(body)
+            token = store.create(user) if store is not None else ""
+            if audit is not None:
+                try:
+                    audit.record("web", user or "-", "/login", "ok", {})
+                except Exception:
+                    pass
+            self.send_response(302)
+            self.send_header("Location", nxt)
+            # HttpOnly so a script cannot read it, SameSite=Lax so it is
+            # not sent on a cross-site POST, and no Secure flag: this is
+            # served over plain HTTP by design (TLS belongs in the reverse
+            # proxy) and Secure would stop the cookie working entirely.
+            max_age = int(getattr(config, "web_session_hours", 8)) * 3600
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; "
+                f"Max-Age={max_age}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _do_logout(self):
+            store = self._sessions()
+            if store is not None:
+                store.destroy(self._cookie(SESSION_COOKIE))
+            self.send_response(302)
+            self.send_header("Location", "/login")
+            self.send_header("Set-Cookie",
+                             f"{SESSION_COOKIE}=; Path=/; HttpOnly; "
+                             f"SameSite=Lax; Max-Age=0")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def _serve_static(self, name):
             """Serve a cached file from app/static/ with the right Content-Type
@@ -1397,8 +1606,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # No token at all: fall through to the password check, so a
                 # logged-in human can open these in a browser and see
                 # exactly what their scraper will get.
+            # The login page and the stylesheet it needs come before the
+            # auth gate, or the page that lets you in would need you to be
+            # in already.
+            bare = path.split("?")[0]
+            if bare == "/login":
+                return self._page_login()
+            if bare == "/logout":
+                return self._do_logout()
             if not self._check_auth():
-                return self._send_auth_required()
+                return self._send_auth_required(path)
             if path.split("?")[0] == "/metrics":
                 return self._serve_metrics()
             if path.split("?")[0] == "/api/status":
@@ -1737,8 +1954,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             audit.record(source, actor, path, target, params)
 
         def do_POST(self):
+            # Signing in is the one POST that cannot require being signed
+            # in. It still goes through the CSRF check below, which is
+            # what stops another site posting a login form at us.
+            if self._get_path() == "/login":
+                if not self._check_csrf():
+                    return self._send_forbidden("CSRF check failed")
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                return self._do_login(parse_qs(body, keep_blank_values=True))
             if not self._check_auth():
-                return self._send_auth_required()
+                return self._send_auth_required(self._get_path())
             # CSRF mitigation: every POST must originate from the same host.
             # Forged cross-origin POSTs (from a malicious site abusing the
             # admin's cached Basic Auth credentials) are rejected here.
@@ -1902,10 +2128,47 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # effect on the very next request (no restart). The value is
                 # never rendered back into the form or logged (it is not on
                 # LOGGABLE_PERSISTENT_KEYS).
+                if "web_username" in params:
+                    config.web_username = params["web_username"][0].strip()
+                # Written out rather than looped over a table of names:
+                # `test_form_nesting` scans this handler for the fields it
+                # reads, and a name assembled at runtime is invisible to
+                # it — which is exactly the gap that made a page appear to
+                # send fields nothing was reading.
+                if "web_session_hours" in params and params["web_session_hours"][0].strip():
+                    try:
+                        config.web_session_hours = max(
+                            1, min(int(params["web_session_hours"][0]), 720))
+                    except ValueError:
+                        pass
+                if "web_session_max_days" in params and params["web_session_max_days"][0].strip():
+                    try:
+                        config.web_session_max_days = max(
+                            1, min(int(params["web_session_max_days"][0]), 365))
+                    except ValueError:
+                        pass
                 if "web_password" in params:
                     new_pw = params["web_password"][0]
                     if new_pw:
-                        config.web_password = new_pw
+                        # Hashed on the way in (#60). What gets written to
+                        # settings.json is scrypt, never the password —
+                        # `webauth.verify` still accepts a plaintext one so
+                        # that WEB_PASSWORD, which can only ever be
+                        # plaintext, keeps working.
+                        config.web_password = webauth.hash_password(new_pw)
+                        # Every existing session belonged to the old
+                        # password. Changing it because you think someone
+                        # else has it, and leaving their browser signed in,
+                        # would defeat the point of changing it.
+                        #
+                        # NOT named `store`: `create_handler` takes a
+                        # `store` argument and a local of that name
+                        # shadows it for the whole of do_POST, which is
+                        # 900 lines long and uses it further down. Same
+                        # trap the `quote` import fell into.
+                        sessions = self._sessions()
+                        if sessions is not None:
+                            sessions.clear()
 
                 # Persist all changes
                 config.save_persistent()
@@ -4997,6 +5260,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
        always starts empty and an empty submit means "leave unchanged". -->
   <label>{t("web_password_label")} {help_(t("web_password_hint"))}{env_("web_password")}</label>
   <input type="password" name="web_password" value="" placeholder="{_e(t('web_password_placeholder'))}" autocomplete="new-password" form="settings-form">
+  <p class="form-help">{t("web_password_hashed")}</p>
+
+  <label>{t("web_username")} {help_(t("web_username_help"))}{env_("web_username")}</label>
+  <input type="text" name="web_username" value="{_e(getattr(config, 'web_username', ''))}" autocomplete="username" form="settings-form">
+
+  <div class="adv-only">
+    <label>{t("web_session_hours")} {help_(t("web_session_hours_help"))}{env_("web_session_hours")}</label>
+    <input type="number" name="web_session_hours" min="1" max="720" value="{_e(getattr(config, 'web_session_hours', 8))}" form="settings-form">
+
+    <label>{t("web_session_max_days")} {help_(t("web_session_max_days_help"))}{env_("web_session_max_days")}</label>
+    <input type="number" name="web_session_max_days" min="1" max="365" value="{_e(getattr(config, 'web_session_max_days', 7))}" form="settings-form">
+  </div>
   <!-- NOT adv-only. It used to be, and that closed the last door: DEBUG
        from the environment can be overruled by settings.json, and the
        only other way to switch debug on was a checkbox that simple mode
@@ -6254,6 +6529,14 @@ class WebUI:
         # restart clears it, so the page says "since start" rather than
         # implying a token has never been used.
         self.server.token_seen = {}
+        # Browser sessions (#60). In memory on purpose, and the interface
+        # says so: writing them down would put live credentials on disk,
+        # which is most of what this change is trying to get away from.
+        # A restart signs everyone out.
+        from webauth import SessionStore
+        self.server.sessions = SessionStore(
+            idle_seconds=int(getattr(self.config, "web_session_hours", 8)) * 3600,
+            max_seconds=int(getattr(self.config, "web_session_max_days", 7)) * 86400)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         print(f"Web UI started on port {self.port}")

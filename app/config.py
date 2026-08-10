@@ -94,7 +94,8 @@ PERSISTENT_KEYS = [
     "quiet_hours_start", "quiet_hours_end",
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
     "web_setup_done", "ui_mode",
-    "language", "web_password", "discord_webhook", "webhook_url", "debug",
+    "language", "web_password", "web_username", "web_session_hours",
+    "web_session_max_days", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
     "healthcheck_max_starting",
     "bot_label", "docker_stop_timeout",
@@ -157,6 +158,9 @@ PERSISTENT_ENV_VARS = {
     "weekly_report_hour": "WEEKLY_REPORT_HOUR",
     "language": "LANGUAGE",
     "web_password": "WEB_PASSWORD",
+    "web_username": "WEB_USERNAME",
+    "web_session_hours": "WEB_SESSION_HOURS",
+    "web_session_max_days": "WEB_SESSION_MAX_DAYS",
     "discord_webhook": "DISCORD_WEBHOOK",
     "webhook_url": "WEBHOOK_URL",
     "debug": "DEBUG",
@@ -242,6 +246,9 @@ PERSISTENT_ENV_DEFAULTS = {
     "weekly_report_hour": 9,
     "language": "en",
     "web_password": "",
+    "web_username": "",
+    "web_session_hours": 8,
+    "web_session_max_days": 7,
     "discord_webhook": "",
     "webhook_url": "",
     "debug": False,
@@ -344,6 +351,9 @@ PERSISTENT_SETTINGS_TAB = {
     "exclude_containers": "General",
     "debug": "General",
     "web_password": "General",
+    "web_username": "General",
+    "web_session_hours": "General",
+    "web_session_max_days": "General",
     "auto_selfupdate": "Updates",
     "healthcheck_max_starting": "Updates",
     "docker_stop_timeout": "Updates",
@@ -455,7 +465,9 @@ class Config:
                  channel_telegram_enabled=True,
                  channel_discordbot_enabled=True,
                  discord_bot_channel="",
-                 discord_public_replies=False):
+                 discord_public_replies=False,
+                 web_username="", web_session_hours=8,
+                 web_session_max_days=7):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -697,6 +709,23 @@ class Config:
         self.web_ui = web_ui
         self.web_port = web_port
         self.web_password = web_password
+        # A username at last (#60). Empty accepts any name, which is what
+        # the old code did by accident: it split the Basic Auth header and
+        # then never looked at the user half. Kept as the default so an
+        # upgrade cannot lock anyone out of their own dashboard.
+        self.web_username = (web_username or "").strip()
+        # How long a browser session lives. Idle first, then absolute:
+        # the idle clock ends a session on a machine somebody walked away
+        # from, the absolute one ends a session a background tab has been
+        # keeping alive, which no idle timeout ever catches.
+        try:
+            self.web_session_hours = max(1, min(int(web_session_hours), 720))
+        except (TypeError, ValueError):
+            self.web_session_hours = 8
+        try:
+            self.web_session_max_days = max(1, min(int(web_session_max_days), 365))
+        except (TypeError, ValueError):
+            self.web_session_max_days = 7
         self.discord_webhook = discord_webhook
         self.webhook_url = webhook_url
         # Native e-mail / SMTP notification channel (#2). Active when host +
@@ -906,6 +935,43 @@ class Config:
         # Tighten permissions on existing settings file (covers upgrade case
         # where the file was created with the umask default, typically 0644).
         self._restrict_settings_perms()
+        self._migrate_web_password(saved if isinstance(saved, dict) else {})
+
+    def _migrate_web_password(self, saved):
+        """Replace a plaintext `web_password` in settings.json with a hash.
+
+        Until #60 the Web UI password sat in this file in cleartext, and
+        the file's 0600 was the whole of the protection. It is hashed on
+        save now, but an existing installation has the old value on disk
+        and nobody is going to retype their password to fix that, so it
+        is done here, once, on the first start after the upgrade.
+
+        Only what came from the *file*. `WEB_PASSWORD` in the environment
+        is plaintext by nature and hashing it here would write a value
+        the env would overrule on the next start anyway.
+        """
+        stored = saved.get("web_password") or ""
+        if not stored:
+            return
+        try:
+            from webauth import is_hashed, hash_password
+        except ImportError:                                # pragma: no cover
+            return
+        if is_hashed(stored):
+            return
+        # Only if the value in force is the one from the file. If an env
+        # var is overruling it, the plaintext in the file is not what
+        # authenticates anybody and rewriting it would be noise.
+        if getattr(self, "web_password", "") != stored:
+            return
+        try:
+            self.web_password = hash_password(stored)
+            self.save_persistent()
+            print("Web UI password migrated to a stored hash "
+                  "(it was in plaintext in settings.json)")
+        except Exception as e:                             # pragma: no cover
+            print(f"Could not migrate the Web UI password: {e}")
+            self.web_password = stored
 
     def save_persistent(self):
         """Save current settings to settings.json for persistence.
@@ -1024,6 +1090,9 @@ class Config:
             web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
             web_port=int(_env("WEB_PORT", "8080")),
             web_password=_env("WEB_PASSWORD"),
+            web_username=_env("WEB_USERNAME", ""),
+            web_session_hours=_env("WEB_SESSION_HOURS", "8"),
+            web_session_max_days=_env("WEB_SESSION_MAX_DAYS", "7"),
             discord_webhook=_env("DISCORD_WEBHOOK"),
             webhook_url=_env("WEBHOOK_URL"),
             telegram_topic_id=_env("TELEGRAM_TOPIC_ID"),
