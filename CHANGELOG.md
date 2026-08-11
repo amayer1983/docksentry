@@ -2,13 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
-## [Unreleased]
-
-### Fixed
-- **The browser's own password box came back after an expired session (#60, @NotRetarded).** He left a tab open overnight, came back to it, and got the native login dialog before a refresh took him to the proper login page. Cause: our pages fetch in the background — the Settings page asks `/api/cron_preview` as it loads — and a `fetch()` sends `Accept: */*`, so it took the branch meant for scripts and got a 401 **with `WWW-Authenticate`**, which is exactly the header that summons that dialog. It is the thing the login page exists to replace, handed back by our own page. Browsers label those calls with `Sec-Fetch-Mode` and no command-line client sends it, so a background call from a page now gets a plain 401 with no such header, and `app.js` turns that into a trip to the login page and back. `curl -u` and every existing scraper are unchanged, and a normal navigation still redirects as before.
+## [2.8.2] - 2026-08-11
 
 ### Added
 - **Documentation for the VPN-sidecar case (Gluetun and friends).** The README has advertised this as a headline feature from the start — "Gluetun before the containers sharing its network namespace", "the case that breaks naive updaters" — and `docs/` did not contain the word "gluetun" once, across all nine files. The strongest thing the tool does was the worst-documented thing in it. There is now a section under Container Groups explaining why `network_mode: container:gluetun` breaks on update (Docker stores it as the head's container *ID*, which dies with the head), what Docksentry does about it (recreates the dependents against the head's *name*, which survives), and the three things you have to get right: the head is the group's first member, the "restart dependents" tick is what switches the mechanism on, and nothing else needs configuring because the namespace check runs per update rather than being stored. A test pins each of those claims against the code so the page cannot quietly go stale.
+
+### Fixed
+- **The browser's own password box came back after an expired session (#60, @NotRetarded).** He left a tab open overnight, came back to it, and got the native login dialog before a refresh took him to the proper login page. Cause: our pages fetch in the background — the Settings page asks `/api/cron_preview` as it loads — and a `fetch()` sends `Accept: */*`, so it took the branch meant for scripts and got a 401 **with `WWW-Authenticate`**, which is exactly the header that summons that dialog. It is the thing the login page exists to replace, handed back by our own page. Browsers label those calls with `Sec-Fetch-Mode` and no command-line client sends it, so a background call from a page now gets a plain 401 with no such header, and `app.js` turns that into a trip to the login page and back. `curl -u` and every existing scraper are unchanged, and a normal navigation still redirects as before.
 
 ## [2.8.1] - 2026-08-11
 
