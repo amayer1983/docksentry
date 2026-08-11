@@ -759,5 +759,13 @@
   "web_session_hours_help": "浏览器会话在不使用的情况下能保持多久。重新登录即可。",
   "web_session_max_days": "会话最长有效期（天）",
   "web_session_max_days_help": "超过这段时间会话一定结束，即使被后台标签页一直保持活动也一样。",
-  "web_password_hashed": "以哈希形式保存，无法再次显示。"
+  "web_password_hashed": "以哈希形式保存，无法再次显示。",
+  "web_setup_pw_title": "保护 Web 界面",
+  "web_setup_pw_intro": "设置一个密码，让只有你能进入仪表板。它以哈希形式保存，绝不明文存储，之后可在设置中修改。",
+  "web_setup_pw_username": "用户名（可选）",
+  "web_setup_pw_password": "密码",
+  "web_setup_pw_confirm": "重复密码",
+  "web_setup_pw_mismatch": "两次密码不一致。",
+  "web_setup_pw_none": "无密码运行 — 仅在反向代理之后或受信任的网络中",
+  "web_setup_pw_required": "选择一个密码，或勾选方框以无密码运行。"
 }

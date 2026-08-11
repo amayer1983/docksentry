@@ -759,5 +759,13 @@
   "web_session_hours_help": "Cuánto sobrevive una sesión del navegador sin usarse. Basta con volver a iniciar sesión.",
   "web_session_max_days": "La sesión caduca como máximo tras (días)",
   "web_session_max_days_help": "Pasado ese tiempo la sesión termina en cualquier caso, incluso una que una pestaña en segundo plano mantenga viva.",
-  "web_password_hashed": "Se guarda como hash y no se puede volver a mostrar."
+  "web_password_hashed": "Se guarda como hash y no se puede volver a mostrar.",
+  "web_setup_pw_title": "Proteger la interfaz web",
+  "web_setup_pw_intro": "Establece una contraseña para que solo tú accedas al panel. Se guarda como hash, nunca en texto plano, y puedes cambiarla después en Ajustes.",
+  "web_setup_pw_username": "Usuario (opcional)",
+  "web_setup_pw_password": "Contraseña",
+  "web_setup_pw_confirm": "Repite la contraseña",
+  "web_setup_pw_mismatch": "Las contraseñas no coinciden.",
+  "web_setup_pw_none": "Funcionar sin contraseña: solo detrás de un proxy inverso o en una red de confianza",
+  "web_setup_pw_required": "Elige una contraseña o marca la casilla para funcionar sin ella."
 }

@@ -759,5 +759,13 @@
   "web_session_hours_help": "ブラウザーのセッションが使われないまま維持される時間です。再度サインインするだけで戻れます。",
   "web_session_max_days": "セッションの最長有効期間（日）",
   "web_session_max_days_help": "この期間を過ぎるとセッションは必ず終了します。バックグラウンドのタブが維持しているものも同様です。",
-  "web_password_hashed": "ハッシュとして保存され、再表示はできません。"
+  "web_password_hashed": "ハッシュとして保存され、再表示はできません。",
+  "web_setup_pw_title": "Web UI を保護",
+  "web_setup_pw_intro": "あなただけがダッシュボードに入れるよう、パスワードを設定してください。ハッシュとして保存され、平文にはなりません。あとで設定から変更できます。",
+  "web_setup_pw_username": "ユーザー名（任意）",
+  "web_setup_pw_password": "パスワード",
+  "web_setup_pw_confirm": "パスワードを再入力",
+  "web_setup_pw_mismatch": "パスワードが一致しません。",
+  "web_setup_pw_none": "パスワードなしで運用する — リバースプロキシの背後か、信頼できるネットワークでのみ",
+  "web_setup_pw_required": "パスワードを決めるか、なしで運用するにはチェックを入れてください。"
 }

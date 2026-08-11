@@ -759,5 +759,13 @@
   "web_session_hours_help": "Hoe lang een browsersessie blijft bestaan zonder gebruikt te worden. Opnieuw aanmelden volstaat.",
   "web_session_max_days": "Sessie verloopt uiterlijk na (dagen)",
   "web_session_max_days_help": "Daarna eindigt de sessie hoe dan ook, ook een die door een achtergrondtabblad in leven wordt gehouden.",
-  "web_password_hashed": "Wordt als hash opgeslagen en kan niet opnieuw worden getoond."
+  "web_password_hashed": "Wordt als hash opgeslagen en kan niet opnieuw worden getoond.",
+  "web_setup_pw_title": "De webinterface beveiligen",
+  "web_setup_pw_intro": "Stel een wachtwoord in zodat alleen jij bij het dashboard kunt. Het wordt als hash opgeslagen, nooit als platte tekst, en je kunt het later wijzigen bij Instellingen.",
+  "web_setup_pw_username": "Gebruikersnaam (optioneel)",
+  "web_setup_pw_password": "Wachtwoord",
+  "web_setup_pw_confirm": "Herhaal wachtwoord",
+  "web_setup_pw_mismatch": "De wachtwoorden komen niet overeen.",
+  "web_setup_pw_none": "Zonder wachtwoord draaien — alleen achter een reverse proxy of op een vertrouwd netwerk",
+  "web_setup_pw_required": "Kies een wachtwoord, of vink het vakje aan om zonder te draaien."
 }

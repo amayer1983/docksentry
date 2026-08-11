@@ -759,5 +759,13 @@
   "web_session_hours_help": "Wie lange eine Sitzung ohne Benutzung bestehen bleibt. Danach einfach neu anmelden.",
   "web_session_max_days": "Sitzung endet spätestens nach (Tagen)",
   "web_session_max_days_help": "Nach dieser Zeit endet die Sitzung auf jeden Fall, auch eine, die ein Hintergrundtab wachhält.",
-  "web_password_hashed": "Wird als Hash gespeichert und kann nicht wieder angezeigt werden."
+  "web_password_hashed": "Wird als Hash gespeichert und kann nicht wieder angezeigt werden.",
+  "web_setup_pw_title": "Weboberfläche absichern",
+  "web_setup_pw_intro": "Vergib ein Passwort, damit nur du das Dashboard erreichst. Es wird als Hash gespeichert, nie im Klartext, und lässt sich später in den Einstellungen ändern.",
+  "web_setup_pw_username": "Benutzername (optional)",
+  "web_setup_pw_password": "Passwort",
+  "web_setup_pw_confirm": "Passwort wiederholen",
+  "web_setup_pw_mismatch": "Die Passwörter stimmen nicht überein.",
+  "web_setup_pw_none": "Ohne Passwort betreiben — nur hinter einem Reverse-Proxy oder in einem Netz, dem du vertraust",
+  "web_setup_pw_required": "Vergib ein Passwort oder setze das Häkchen, um ohne zu betreiben."
 }

@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.8.1] - 2026-08-11
+
+### Added
+- **First-run setup now makes you set a password (#60, @NotRetarded and the owner).** Two people asked for the same thing from opposite ends: @NotRetarded went looking for an initial "create a username and password" screen and there wasn't one, and the request was to build exactly that — a fresh boot with no password where the first thing you do is set one. The setup wizard has a password step now, and it is the first step: you leave it either with a password (typed twice, stored as a scrypt hash, never in the clear) or by deliberately ticking a "run without a password" box for the reverse-proxy or trusted-LAN case. Enforced on the server, not just in the browser — a missing or mismatched password sends you back to the wizard rather than into an accidentally-open dashboard, and the endpoint that used to skip the whole wizard now refuses to open a passwordless one. Not retroactive: an existing install has already been through setup and is left alone, so upgrading does not suddenly demand a password from anyone running open on purpose.
+
+### Fixed
+- **The logout button rendered as an empty box (#60, @NotRetarded).** It used the U+23FB power symbol, which a lot of system fonts do not have, so it showed as a tofu box rather than an icon. It is an inline SVG now, like the theme toggle beside it that was already one for the same reason.
+
 ## [2.8.0] - 2026-08-10
 
 ### Added

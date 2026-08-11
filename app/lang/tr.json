@@ -759,5 +759,13 @@
   "web_session_hours_help": "Bir tarayıcı oturumunun kullanılmadan ne kadar süreyle geçerli kaldığı. Yeniden oturum açmak yeterlidir.",
   "web_session_max_days": "Oturum en geç şu süre sonra biter (gün)",
   "web_session_max_days_help": "Bu süreden sonra oturum her durumda sona erer; arka plandaki bir sekmenin canlı tuttuğu oturum da dahil.",
-  "web_password_hashed": "Karma olarak saklanır ve bir daha gösterilemez."
+  "web_password_hashed": "Karma olarak saklanır ve bir daha gösterilemez.",
+  "web_setup_pw_title": "Web arayüzünü güvene al",
+  "web_setup_pw_intro": "Panoya yalnızca sen erişesin diye bir parola belirle. Karma olarak saklanır, asla düz metin değil, ve sonra Ayarlar'dan değiştirebilirsin.",
+  "web_setup_pw_username": "Kullanıcı adı (isteğe bağlı)",
+  "web_setup_pw_password": "Parola",
+  "web_setup_pw_confirm": "Parolayı tekrar gir",
+  "web_setup_pw_mismatch": "Parolalar eşleşmiyor.",
+  "web_setup_pw_none": "Parolasız çalıştır — yalnızca bir ters vekil arkasında veya güvendiğin bir ağda",
+  "web_setup_pw_required": "Bir parola seç ya da parolasız çalıştırmak için kutuyu işaretle."
 }

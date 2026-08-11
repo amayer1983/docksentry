@@ -759,5 +759,13 @@
   "web_session_hours_help": "Combien de temps une session du navigateur survit sans être utilisée. Il suffit de se reconnecter.",
   "web_session_max_days": "La session expire au plus tard après (jours)",
   "web_session_max_days_help": "Passé ce délai la session se termine dans tous les cas, même celle qu'un onglet en arrière-plan maintient ouverte.",
-  "web_password_hashed": "Enregistré sous forme de hachage, il ne peut plus être affiché."
+  "web_password_hashed": "Enregistré sous forme de hachage, il ne peut plus être affiché.",
+  "web_setup_pw_title": "Sécuriser l'interface web",
+  "web_setup_pw_intro": "Définissez un mot de passe pour que vous seul accédiez au tableau de bord. Il est stocké sous forme de hachage, jamais en clair, et modifiable ensuite dans les Réglages.",
+  "web_setup_pw_username": "Nom d'utilisateur (facultatif)",
+  "web_setup_pw_password": "Mot de passe",
+  "web_setup_pw_confirm": "Répétez le mot de passe",
+  "web_setup_pw_mismatch": "Les mots de passe ne correspondent pas.",
+  "web_setup_pw_none": "Fonctionner sans mot de passe — uniquement derrière un reverse proxy ou sur un réseau de confiance",
+  "web_setup_pw_required": "Choisissez un mot de passe, ou cochez la case pour fonctionner sans."
 }

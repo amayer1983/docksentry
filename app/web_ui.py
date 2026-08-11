@@ -1289,8 +1289,22 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             logout_html = ""
             if self._session_user() is not None:
                 _t = _web_translator(config.language)
-                logout_html = (f'<a href="/logout" class="btn-icon" '
-                               f'title="{_e(_t("web_logout"))}">⏻</a>')
+                # An inline SVG, not the U+23FB power symbol it used to be:
+                # that character is missing from a lot of system fonts and
+                # rendered as a tofu box for @NotRetarded (#60). The theme
+                # toggle right next to it was already an SVG for the same
+                # reason — a glyph you cannot guarantee is a glyph you
+                # should not ship in a control.
+                logout_html = (
+                    f'<a href="/logout" class="btn-icon" '
+                    f'title="{_e(_t("web_logout"))}" aria-label="{_e(_t("web_logout"))}">'
+                    f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+                    f'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                    f'stroke-linejoin="round">'
+                    f'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'
+                    f'<polyline points="16 17 21 12 16 7"/>'
+                    f'<line x1="21" y1="12" x2="9" y2="12"/>'
+                    f'</svg></a>')
             from version import VERSION
             from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
             t = _web_translator(config.language)
@@ -1936,7 +1950,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 threading.Thread(target=self._api_check).start()
                 self._send_redirect("/")
             elif path == "/api/wizard_skip":
-                # Power-user escape hatch: just set the flag and move on.
+                # No longer linked from the wizard — the password step is
+                # the first thing now and its own "no password" tick is the
+                # deliberate escape. The endpoint stays only so a bookmark
+                # to it doesn't 404, and it refuses to open a passwordless
+                # dashboard: without a password set it sends you back to the
+                # wizard rather than past it. The password decision cannot
+                # be jumped by URL.
+                if not (getattr(config, "web_password", "") or ""):
+                    self._send_redirect("/setup")
+                    return
                 config.web_setup_done = True
                 config.save_persistent()
                 self._send_redirect("/")
@@ -2724,7 +2747,24 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             elif path == "/api/wizard":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
-                params = parse_qs(body)
+                params = parse_qs(body, keep_blank_values=True)
+
+                # Password — the first step, and the one thing the wizard
+                # will not let you skip past silently. Either a password
+                # (hashed here, never stored in the clear) or a deliberate
+                # "no password" tick. Without one of those we do NOT mark
+                # setup done: the redirect gate sends the user back to the
+                # wizard rather than into an accidentally-open dashboard.
+                pw = (params.get("web_password") or [""])[0]
+                pw2 = (params.get("web_password_confirm") or [""])[0]
+                no_pw = (params.get("no_password") or [""])[0] == "1"
+                if not no_pw:
+                    if not pw or pw != pw2:
+                        self._send_redirect("/setup?pw=1")
+                        return
+                    config.web_password = webauth.hash_password(pw)
+                if "web_username" in params:
+                    config.web_username = params["web_username"][0].strip()
 
                 # Language
                 if "language" in params:
@@ -3146,6 +3186,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             """
             from i18n import available_languages
             t = _web_translator(config.language)
+            # Set when the server bounced a submit for a missing/mismatched
+            # password — the JS gate is not the last word, the server is.
+            pw_error = ("pw=1" in (self.path.split("?", 1)[1]
+                                   if "?" in self.path else ""))
 
             langs = available_languages()
             lang_names = {"en": "English", "de": "Deutsch", "fr": "Français", "es": "Español",
@@ -3180,19 +3224,39 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <span class="wstep" data-step="3">3</span>
 <span class="wstep-bar"></span>
 <span class="wstep" data-step="4">4</span>
+<span class="wstep-bar"></span>
+<span class="wstep" data-step="5">5</span>
 </div>
 
 <form method="POST" action="/api/wizard">
 
-<!-- ── Step 1: Language ──────────────────────────────────── -->
+<!-- ── Step 1: Password ──────────────────────────────────── -->
 <div class="wstep-pane is-active" data-step-pane="1">
+<h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🔒 {t("web_setup_pw_title")}</h3>
+<p class="form-help" style="margin:0 0 12px 0">{t("web_setup_pw_intro")}</p>
+{'<p class="login-error">' + _e(t("web_setup_pw_required")) + '</p>' if pw_error else ''}
+<label>{t("web_setup_pw_username")}</label>
+<input type="text" name="web_username" id="wiz-user" autocomplete="username" value="{_e(getattr(config, 'web_username', ''))}">
+<label>{t("web_setup_pw_password")}</label>
+<input type="password" name="web_password" id="wiz-pw" autocomplete="new-password">
+<label>{t("web_setup_pw_confirm")}</label>
+<input type="password" name="web_password_confirm" id="wiz-pw2" autocomplete="new-password">
+<p class="form-help" id="wiz-pw-msg" style="color:var(--danger);margin:0 0 8px 0;display:none">{t("web_setup_pw_mismatch")}</p>
+<label class="wizard-radio-row" style="margin-top:4px">
+  <input type="checkbox" name="no_password" id="wiz-nopw" value="1">
+  <span class="form-help" style="margin:0">{t("web_setup_pw_none")}</span>
+</label>
+</div>
+
+<!-- ── Step 2: Language ──────────────────────────────────── -->
+<div class="wstep-pane" data-step-pane="2">
 <h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🌐 {t("web_setup_lang_title")}</h3>
 <p class="form-help" style="margin:0 0 12px 0">{t("web_setup_lang_intro")}</p>
 <select name="language">{lang_options}</select>
 </div>
 
-<!-- ── Step 2: Schedule ──────────────────────────────────── -->
-<div class="wstep-pane" data-step-pane="2">
+<!-- ── Step 3: Schedule ──────────────────────────────────── -->
+<div class="wstep-pane" data-step-pane="3">
 <h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">⏰ {t("web_setup_schedule_title")}</h3>
 <p class="form-help" style="margin:0 0 12px 0">{t("web_setup_schedule_intro")}</p>
 <div class="wizard-presets">
@@ -3206,8 +3270,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <p class="form-help">{t("web_setup_cron_help")}</p>
 </div>
 
-<!-- ── Step 3: Channels ──────────────────────────────────── -->
-<div class="wstep-pane" data-step-pane="3">
+<!-- ── Step 4: Channels ──────────────────────────────────── -->
+<div class="wstep-pane" data-step-pane="4">
 <h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🔔 {t("web_setup_channels_title")}</h3>
 <p class="form-help" style="margin:0 0 12px 0">{t("web_setup_channels_intro")}</p>
 
@@ -3223,8 +3287,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <input type="text" name="webhook_url" value="{_e(config.webhook_url)}" placeholder="https://your-service/webhook">
 </div>
 
-<!-- ── Step 4: Auto-update behavior ──────────────────────── -->
-<div class="wstep-pane" data-step-pane="4">
+<!-- ── Step 5: Auto-update behavior ──────────────────────── -->
+<div class="wstep-pane" data-step-pane="5">
 <h3 style="font-size:15px;color:var(--accent);margin-bottom:8px">🔄 {t("web_setup_auto_title")}</h3>
 <p class="form-help" style="margin:0 0 12px 0">{t("web_setup_auto_intro")}</p>
 
@@ -3249,7 +3313,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
 <div class="wizard-nav">
 <button type="button" class="btn btn-outline" id="wizard-back" disabled>← {t("web_setup_back")}</button>
-<a href="/api/wizard_skip" class="btn-back" style="align-self:center;font-size:13px">{t("web_setup_skip")}</a>
 <button type="button" class="btn" id="wizard-next">{t("web_setup_next")} →</button>
 <button type="submit" class="btn" id="wizard-finish" style="display:none">✓ {t("web_setup_finish")}</button>
 </div>
@@ -3258,13 +3321,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
 <script>
 (function() {{
-    const TOTAL = 4;
+    const TOTAL = 5;
     let cur = 1;
     const steps = document.querySelectorAll('.wstep');
     const panes = document.querySelectorAll('.wstep-pane');
     const back = document.getElementById('wizard-back');
     const next = document.getElementById('wizard-next');
     const finish = document.getElementById('wizard-finish');
+    const pw = document.getElementById('wiz-pw');
+    const pw2 = document.getElementById('wiz-pw2');
+    const nopw = document.getElementById('wiz-nopw');
+    const pwMsg = document.getElementById('wiz-pw-msg');
+
+    // Step 1 is the password, and it is a gate: you leave it either with
+    // a password (typed twice, matching) or by deliberately ticking the
+    // no-password box. Enforced again on the server, this is only so the
+    // user is not let past a mistake without seeing it.
+    function passwordStepOK() {{
+        if (nopw.checked) return true;
+        if (!pw.value) return false;
+        if (pw.value !== pw2.value) {{ pwMsg.style.display = 'block'; return false; }}
+        pwMsg.style.display = 'none';
+        return true;
+    }}
+    nopw.addEventListener('change', () => {{
+        pw.disabled = pw2.disabled = nopw.checked;
+        if (nopw.checked) pwMsg.style.display = 'none';
+    }});
 
     function render() {{
         steps.forEach(s => {{
@@ -3280,7 +3363,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
         finish.style.display = (cur === TOTAL) ? '' : 'none';
     }}
     back.addEventListener('click', () => {{ if (cur > 1)     {{ cur--; render(); }} }});
-    next.addEventListener('click', () => {{ if (cur < TOTAL) {{ cur++; render(); }} }});
+    next.addEventListener('click', () => {{
+        if (cur === 1 && !passwordStepOK()) return;
+        if (cur < TOTAL) {{ cur++; render(); }}
+    }});
 
     // Cron preset buttons
     const cronInput = document.getElementById('wizard-cron');

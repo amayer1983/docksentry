@@ -759,5 +759,13 @@
   "web_session_hours_help": "브라우저 세션이 사용되지 않은 채 유지되는 시간입니다. 다시 로그인하면 됩니다.",
   "web_session_max_days": "세션 최대 유지 기간 (일)",
   "web_session_max_days_help": "이 기간이 지나면 세션은 어떤 경우에도 종료됩니다. 백그라운드 탭이 살려 두는 세션도 마찬가지입니다.",
-  "web_password_hashed": "해시로 저장되며 다시 표시할 수 없습니다."
+  "web_password_hashed": "해시로 저장되며 다시 표시할 수 없습니다.",
+  "web_setup_pw_title": "웹 UI 보호",
+  "web_setup_pw_intro": "당신만 대시보드에 접근하도록 비밀번호를 설정하세요. 평문이 아니라 해시로 저장되며, 나중에 설정에서 바꿀 수 있습니다.",
+  "web_setup_pw_username": "사용자 이름 (선택)",
+  "web_setup_pw_password": "비밀번호",
+  "web_setup_pw_confirm": "비밀번호 다시 입력",
+  "web_setup_pw_mismatch": "비밀번호가 일치하지 않습니다.",
+  "web_setup_pw_none": "비밀번호 없이 운영 — 리버스 프록시 뒤 또는 신뢰하는 네트워크에서만",
+  "web_setup_pw_required": "비밀번호를 정하거나, 없이 운영하려면 상자를 체크하세요."
 }

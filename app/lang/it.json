@@ -759,5 +759,13 @@
   "web_session_hours_help": "Quanto sopravvive una sessione del browser senza essere usata. Basta accedere di nuovo.",
   "web_session_max_days": "La sessione scade al massimo dopo (giorni)",
   "web_session_max_days_help": "Trascorso questo tempo la sessione termina comunque, anche una tenuta viva da una scheda in secondo piano.",
-  "web_password_hashed": "Viene salvata come hash e non può più essere mostrata."
+  "web_password_hashed": "Viene salvata come hash e non può più essere mostrata.",
+  "web_setup_pw_title": "Proteggi l'interfaccia web",
+  "web_setup_pw_intro": "Imposta una password così solo tu raggiungi la dashboard. È salvata come hash, mai in chiaro, e la puoi cambiare dopo nelle Impostazioni.",
+  "web_setup_pw_username": "Nome utente (opzionale)",
+  "web_setup_pw_password": "Password",
+  "web_setup_pw_confirm": "Ripeti la password",
+  "web_setup_pw_mismatch": "Le password non coincidono.",
+  "web_setup_pw_none": "Funziona senza password — solo dietro un reverse proxy o su una rete fidata",
+  "web_setup_pw_required": "Scegli una password, o spunta la casella per funzionare senza."
 }

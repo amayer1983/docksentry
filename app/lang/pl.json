@@ -759,5 +759,13 @@
   "web_session_hours_help": "Jak długo sesja przeglądarki utrzymuje się bez użycia. Wystarczy zalogować się ponownie.",
   "web_session_max_days": "Sesja wygasa najpóźniej po (dni)",
   "web_session_max_days_help": "Po tym czasie sesja kończy się w każdym przypadku, także ta podtrzymywana przez kartę w tle.",
-  "web_password_hashed": "Zapisywane jako hash i nie może zostać ponownie wyświetlone."
+  "web_password_hashed": "Zapisywane jako hash i nie może zostać ponownie wyświetlone.",
+  "web_setup_pw_title": "Zabezpiecz interfejs webowy",
+  "web_setup_pw_intro": "Ustaw hasło, aby tylko Ty miał dostęp do panelu. Jest przechowywane jako hash, nigdy jawnie, i można je później zmienić w Ustawieniach.",
+  "web_setup_pw_username": "Nazwa użytkownika (opcjonalnie)",
+  "web_setup_pw_password": "Hasło",
+  "web_setup_pw_confirm": "Powtórz hasło",
+  "web_setup_pw_mismatch": "Hasła nie są zgodne.",
+  "web_setup_pw_none": "Działaj bez hasła — tylko za reverse proxy lub w zaufanej sieci",
+  "web_setup_pw_required": "Wybierz hasło albo zaznacz pole, aby działać bez niego."
 }

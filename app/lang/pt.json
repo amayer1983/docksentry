@@ -759,5 +759,13 @@
   "web_session_hours_help": "Quanto tempo uma sessão do navegador sobrevive sem ser usada. Basta iniciar sessão de novo.",
   "web_session_max_days": "A sessão expira no máximo após (dias)",
   "web_session_max_days_help": "Passado esse tempo a sessão termina de qualquer forma, mesmo uma mantida viva por um separador em segundo plano.",
-  "web_password_hashed": "É guardada como hash e não pode voltar a ser mostrada."
+  "web_password_hashed": "É guardada como hash e não pode voltar a ser mostrada.",
+  "web_setup_pw_title": "Proteger a interface web",
+  "web_setup_pw_intro": "Define uma palavra-passe para que só tu acedas ao painel. É guardada como hash, nunca em texto simples, e podes alterá-la depois nas Definições.",
+  "web_setup_pw_username": "Utilizador (opcional)",
+  "web_setup_pw_password": "Palavra-passe",
+  "web_setup_pw_confirm": "Repete a palavra-passe",
+  "web_setup_pw_mismatch": "As palavras-passe não coincidem.",
+  "web_setup_pw_none": "Funcionar sem palavra-passe — só atrás de um reverse proxy ou numa rede de confiança",
+  "web_setup_pw_required": "Escolhe uma palavra-passe, ou marca a caixa para funcionar sem."
 }

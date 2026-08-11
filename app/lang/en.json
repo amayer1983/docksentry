@@ -759,5 +759,13 @@
   "web_session_hours_help": "How long a browser session survives without being used. Signing in again is all it takes.",
   "web_session_max_days": "Session maximum age (days)",
   "web_session_max_days_help": "A session ends after this long whatever happens, even one a background tab keeps alive.",
-  "web_password_hashed": "Stored as a hash. It cannot be shown again."
+  "web_password_hashed": "Stored as a hash. It cannot be shown again.",
+  "web_setup_pw_title": "Secure the Web UI",
+  "web_setup_pw_intro": "Set a password so only you can reach the dashboard. It is stored as a hash, never in plain text, and you can change it later under Settings.",
+  "web_setup_pw_username": "Username (optional)",
+  "web_setup_pw_password": "Password",
+  "web_setup_pw_confirm": "Repeat password",
+  "web_setup_pw_mismatch": "The passwords do not match.",
+  "web_setup_pw_none": "Run without a password — only do this behind a reverse proxy or on a network you trust",
+  "web_setup_pw_required": "Choose a password, or tick the box to run without one."
 }
