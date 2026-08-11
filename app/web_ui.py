@@ -930,6 +930,23 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             always got, so `curl -u` and every existing scraper keep
             working — redirecting those to an HTML form would break them
             silently, which is worse than not having the form at all.
+
+            There is a third caller, and missing it is what put the
+            browser's own password box back on @NotRetarded's screen after
+            all this work to replace it (#60). Our own pages fetch in the
+            background — the Settings page asks `/api/cron_preview` on
+            load. A `fetch()` sends `Accept: */*`, so it took the script
+            branch, and `WWW-Authenticate` is precisely what makes a
+            browser pop that dialog. He left a tab open overnight, the
+            session expired, and the restored page's first background call
+            asked him for a password in the browser's voice rather than
+            ours.
+
+            Browsers label those requests: `Sec-Fetch-Mode` is set on
+            every fetch/XHR and cannot be spoofed by page script, and no
+            command-line client sends it. So a background call from a page
+            gets a plain 401 with no `WWW-Authenticate` — no dialog — and
+            `app.js` turns that into a trip to the login page instead.
             """
             wants_html = "text/html" in (self.headers.get("Accept") or "")
             api = path.startswith(("/api/", "/metrics"))
@@ -940,8 +957,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
+            # A fetch/XHR from one of our own pages. Answer 401 so the
+            # caller knows, but WITHOUT the header that summons the
+            # browser's password box.
+            from_page = bool(self.headers.get("Sec-Fetch-Mode"))
             self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Basic realm="Docksentry"')
+            if not from_page:
+                self.send_header("WWW-Authenticate",
+                                 'Basic realm="Docksentry"')
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(b"<h1>401 - Login required</h1>")

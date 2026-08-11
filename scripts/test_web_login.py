@@ -246,6 +246,57 @@ checks["…and not when an env var is overruling the file"] = (
 checks["…and it keeps working if the migration fails"] = (
     "self.web_password = stored" in mig)
 
+# ── who gets WWW-Authenticate, and who must not ──────────────────────
+# The header is what makes a browser pop its own password box. Sending it
+# to a background fetch from one of our own pages put that box back on
+# @NotRetarded's screen (#60) after all the work to replace it: he left a
+# tab open overnight, the session expired, and the Settings page's
+# /api/cron_preview call on load asked for a password in the browser's
+# voice. A fetch sends `Accept: */*`, so it had taken the script branch.
+def auth_required(headers, path="/api/cron_preview"):
+    hc = web_ui.create_handler(
+        types.SimpleNamespace(web_username="", web_password="x", language="en"),
+        checker=None, bot=types.SimpleNamespace(t=None), store=None)
+    h = hc.__new__(hc)
+    h.headers = headers
+    cap = {"headers": {}, "status": None}
+    h.send_response = lambda s: cap.__setitem__("status", s)
+    h.send_header = lambda k, v: cap["headers"].__setitem__(k, v)
+    h.end_headers = lambda: None
+    h.wfile = types.SimpleNamespace(write=lambda b: None)
+    h._send_auth_required(path)
+    return cap
+
+
+# A page's background fetch: 401 so the caller knows, but no dialog.
+cap = auth_required({"Accept": "*/*", "Sec-Fetch-Mode": "cors"})
+checks["a page's background fetch gets 401 without WWW-Authenticate"] = (
+    cap["status"] == 401 and "WWW-Authenticate" not in cap["headers"])
+# A script: unchanged, or curl -u and every scraper breaks.
+cap = auth_required({"Accept": "*/*"})
+checks["a script still gets WWW-Authenticate"] = (
+    cap["status"] == 401 and "WWW-Authenticate" in cap["headers"])
+# A person navigating: the login page, as before.
+cap = auth_required({"Accept": "text/html", "Sec-Fetch-Mode": "navigate"},
+                    path="/settings")
+checks["a browser navigation still goes to the login page"] = (
+    cap["status"] == 302
+    and cap["headers"].get("Location") == "/login?next=/settings")
+# /api paths are never redirected, whatever they claim to accept — a
+# scraper that sets Accept: text/html must not get an HTML form.
+cap = auth_required({"Accept": "text/html"}, path="/api/status")
+checks["…but an /api path is never redirected"] = cap["status"] == 401
+
+# And the page turns that 401 into a trip to the login page rather than
+# failing silently, wrapped once so call site number eight is covered too.
+js = open(os.path.join(os.path.dirname(__file__), "..", "app", "static",
+                       "app.js"), encoding="utf-8").read()
+checks["the page redirects itself to login on a 401"] = (
+    "window.fetch = function" in js and "r.status === 401" in js
+    and "/login?next=" in js)
+checks["…and does not loop when already on the login page"] = (
+    "/login/.test(location.pathname)" in js)
+
 # ── the login POST, driven for real ──────────────────────────────────
 # The audit found the whole request path was only ever grepped. Drive it:
 # right password in, cookie out; wrong password, 401 and no cookie; and

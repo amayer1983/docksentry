@@ -1,3 +1,27 @@
+// ── An expired session must not fail silently (#60, @NotRetarded) ──
+// Every background call on these pages goes through window.fetch. If the
+// session died while a tab sat open — overnight, say — the first one comes
+// back 401 and the page would otherwise just stop working, with no hint
+// why. Send the user to the login page and bring them back where they
+// were.
+//
+// Wrapped once here rather than at each of the seven call sites: the
+// eighth would be added without it, and "the page quietly stopped
+// updating" is the kind of bug nobody reports.
+(function() {
+    var _fetch = window.fetch;
+    if (!_fetch) return;
+    window.fetch = function() {
+        return _fetch.apply(this, arguments).then(function(r) {
+            if (r.status === 401 && !/\/login/.test(location.pathname)) {
+                location.href = '/login?next=' +
+                    encodeURIComponent(location.pathname + location.search);
+            }
+            return r;
+        });
+    };
+})();
+
 (function() {
     // ── Container table: optional Name-column sort (#37, @LeeNX) ──
     // 3-state cycle on the Name header so the deliberate Container-Group
