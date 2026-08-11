@@ -47,6 +47,100 @@ Behaviour:
 
 The Status table shows a `📦 GroupName` badge for grouped containers; the per-container detail page shows the group + position.
 
+### Containers behind a VPN sidecar (Gluetun and friends)
+
+This is the case ordering alone does not solve, and the one most update
+tools get wrong.
+
+When a container routes its traffic through another one — Gluetun being
+the common example — it does not have a network of its own. Its compose
+entry says:
+
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    # ports for the whole stack are published HERE, not on the apps
+    ports:
+      - 8080:8080     # qbittorrent
+      - 8989:8989     # sonarr
+
+  qbittorrent:
+    image: linuxserver/qbittorrent
+    network_mode: "container:gluetun"   # ← no network of its own
+    depends_on: [gluetun]
+
+  sonarr:
+    image: linuxserver/sonarr
+    network_mode: "container:gluetun"
+```
+
+`network_mode: container:gluetun` is stored by Docker as
+`container:<id>` — the *ID* of the running Gluetun container, not its
+name. That single detail is what breaks updates:
+
+**Updating Gluetun destroys the old container and creates a new one with
+a new ID.** Every container pointing at the old ID is now pointing at
+something that no longer exists. They do not fail over, they do not
+reconnect, and `docker restart` on them fails outright with a dead
+reference. In practice you come back to a stack where the VPN updated
+cleanly and everything behind it is stopped, with the apps still
+reachable on no port at all because the ports belong to the sidecar.
+
+**What Docksentry does.** Put Gluetun and everything behind it in one
+group, with Gluetun first, and tick **"Restart dependents when the head
+container updates"** on that group:
+
+```
+Group "vpn-stack":          ☑ restart dependents
+  1. gluetun        ← the head
+  2. qbittorrent
+  3. sonarr
+```
+
+That tick is what switches the whole mechanism on. Without it the group
+is an ordering group like any other: the containers update in sequence
+and nothing repairs their network afterwards. Grouping alone is not
+enough.
+
+The head updates. Docksentry waits for it to become healthy, then, for
+each container behind it, checks whether it shares the head's network
+namespace. Those are **recreated** rather than restarted, rebuilt from
+their own inspect output with the *same image* — no pull, no version
+change — and attached to `container:<name>` instead of the ID. The name
+survives the next update; the ID does not. Group members that are *not*
+netns-sharing are simply restarted, which is cheaper and enough.
+
+Points worth knowing:
+
+- **The head is identified by position, not by configuration.** The first
+  container in the group is the head. Put the sidecar anywhere else and
+  the containers behind it will be handled before it updates, which
+  achieves nothing.
+- **An unhealthy head does not stop the repair.** Docksentry waits for the
+  head using the group's own wait time (never less than 30 seconds), and
+  if it still is not healthy it says so and fixes the dependents anyway —
+  leaving them pointing at a dead ID would be the worse outcome of the two.
+- **The old container is kept until the new one is up.** The dependent is
+  renamed to `<name>_old` before the rebuild and restored if the rebuild
+  fails, so a failed recreate leaves you where you started rather than
+  with nothing.
+- **`--rm` containers are handled.** A container started with `AutoRemove`
+  vanishes the moment it is stopped, so its configuration is read *before*
+  the stop rather than after.
+- **This applies to any netns sharing**, not just Gluetun: the same is
+  true for a Tailscale sidecar, a WireGuard container, or anything else
+  another container is routed through.
+
+Beyond the group, the order, and that one tick, there is nothing to
+configure: which members share the head's namespace is detected per
+update, not stored, so it stays right when you change the stack.
+
+The Groups page in the Web UI marks such a group with 🔁, and `/groups`
+in Telegram or Discord shows the head with 👑. There is also a **"Restart
+dependents now"** button for the case where you updated the head yourself,
+outside Docksentry, and need the stack put back together.
+
 ## Update Windows (per container)
 
 You can restrict auto-updates for specific containers to a time-of-day range and selected weekdays via the **Update Windows** section on the Settings page. Format: `HH:MM`–`HH:MM` plus a list of weekdays (Mon–Sun).

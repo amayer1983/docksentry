@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [Unreleased]
+
+### Added
+- **Documentation for the VPN-sidecar case (Gluetun and friends).** The README has advertised this as a headline feature from the start — "Gluetun before the containers sharing its network namespace", "the case that breaks naive updaters" — and `docs/` did not contain the word "gluetun" once, across all nine files. The strongest thing the tool does was the worst-documented thing in it. There is now a section under Container Groups explaining why `network_mode: container:gluetun` breaks on update (Docker stores it as the head's container *ID*, which dies with the head), what Docksentry does about it (recreates the dependents against the head's *name*, which survives), and the three things you have to get right: the head is the group's first member, the "restart dependents" tick is what switches the mechanism on, and nothing else needs configuring because the namespace check runs per update rather than being stored. A test pins each of those claims against the code so the page cannot quietly go stale.
+
 ## [2.8.1] - 2026-08-11
 
 ### Added
