@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.9.0] - 2026-08-16
+
+### Added
+- **Tapping several containers in the update notification now updates several containers.** Only the first one ran. The rest answered "an update is already running" and were then thrown away, so you had to come back after each one finished and tap the next again — and nothing told you which had never run. They queue now, with their position, and work off one after the other.
+
+  The lock stays: two updates recreating containers at the same time is what v1.23.1 was added to prevent. It is re-taken per entry rather than held across the whole queue, so the scheduler, "update all" and a queued self-update can still get in between — holding it for five containers would lock everything else out for ten minutes.
+
+  A failure carries on to the next container, **unless they belong to the same group**: group order exists because those containers depend on each other, and updating the next one against a head that just failed is how an app ends up talking to a database that rolled back. The skipped ones are named. And because the queue lives in memory, a pending self-update stops the drain and says which containers will not run rather than letting the restart swallow them — dropping work quietly is the bug this whole change exists to fix.
+
 ## [2.8.4] - 2026-08-16
 
 ### Fixed

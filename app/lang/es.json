@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Repite la contraseña",
   "web_setup_pw_mismatch": "Las contraseñas no coinciden.",
   "web_setup_pw_none": "Funcionar sin contraseña: solo detrás de un proxy inverso o en una red de confianza",
-  "web_setup_pw_required": "Elige una contraseña o marca la casilla para funcionar sin ella."
+  "web_setup_pw_required": "Elige una contraseña o marca la casilla para funcionar sin ella.",
+  "update_queued": "🕒 `{name}` en cola — posición {pos}. Empieza cuando termine la actualización actual.",
+  "update_already_queued": "🕒 `{name}` ya está en la cola.",
+  "update_queue_full": "⚠️ La cola está llena ({max}). Espera a que se vacíe y vuelve a tocar.",
+  "update_queue_dropped_selfupdate": "⚠️ Hay una autoactualización pendiente, Docksentry va a reiniciarse. NO se ejecutaron: {names}. Vuelve a tocarlos después.",
+  "update_queue_skipped_group": "⚠️ Se omitió el resto del grupo `{group}` tras el fallo anterior: {names}. Se actualizan en orden por una razón — arregla primero el que falló."
 }

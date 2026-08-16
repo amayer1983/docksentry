@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Repeat password",
   "web_setup_pw_mismatch": "The passwords do not match.",
   "web_setup_pw_none": "Run without a password — only do this behind a reverse proxy or on a network you trust",
-  "web_setup_pw_required": "Choose a password, or tick the box to run without one."
+  "web_setup_pw_required": "Choose a password, or tick the box to run without one.",
+  "update_queued": "🕒 `{name}` queued — position {pos}. It starts when the current update finishes.",
+  "update_already_queued": "🕒 `{name}` is already in the queue.",
+  "update_queue_full": "⚠️ Queue is full ({max}). Wait for it to work through, then tap again.",
+  "update_queue_dropped_selfupdate": "⚠️ A self-update is pending, so Docksentry is about to restart. NOT run: {names}. Tap them again afterwards.",
+  "update_queue_skipped_group": "⚠️ Skipped the rest of group `{group}` after the failure above: {names}. They update in order for a reason — fix the one that failed first."
 }

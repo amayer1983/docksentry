@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "パスワードを再入力",
   "web_setup_pw_mismatch": "パスワードが一致しません。",
   "web_setup_pw_none": "パスワードなしで運用する — リバースプロキシの背後か、信頼できるネットワークでのみ",
-  "web_setup_pw_required": "パスワードを決めるか、なしで運用するにはチェックを入れてください。"
+  "web_setup_pw_required": "パスワードを決めるか、なしで運用するにはチェックを入れてください。",
+  "update_queued": "🕒 `{name}` を順番待ちに追加しました（{pos} 番目）。現在の更新が終わり次第はじまります。",
+  "update_already_queued": "🕒 `{name}` はすでに順番待ちです。",
+  "update_queue_full": "⚠️ 順番待ちがいっぱいです（{max}）。消化されるまで待ってから、もう一度タップしてください。",
+  "update_queue_dropped_selfupdate": "⚠️ 自己更新が控えているため、Docksentry はまもなく再起動します。実行されませんでした: {names}。あとでもう一度タップしてください。",
+  "update_queue_skipped_group": "⚠️ 上の失敗を受けて、グループ `{group}` の残りを飛ばしました: {names}。順番には理由があります。まず失敗したものを直してください。"
 }

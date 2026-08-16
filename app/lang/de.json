@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Passwort wiederholen",
   "web_setup_pw_mismatch": "Die Passwörter stimmen nicht überein.",
   "web_setup_pw_none": "Ohne Passwort betreiben — nur hinter einem Reverse-Proxy oder in einem Netz, dem du vertraust",
-  "web_setup_pw_required": "Vergib ein Passwort oder setze das Häkchen, um ohne zu betreiben."
+  "web_setup_pw_required": "Vergib ein Passwort oder setze das Häkchen, um ohne zu betreiben.",
+  "update_queued": "🕒 `{name}` eingereiht — Platz {pos}. Startet, sobald das laufende Update fertig ist.",
+  "update_already_queued": "🕒 `{name}` steht schon in der Warteschlange.",
+  "update_queue_full": "⚠️ Warteschlange ist voll ({max}). Warte, bis sie abgearbeitet ist, und tippe dann erneut.",
+  "update_queue_dropped_selfupdate": "⚠️ Ein Selbst-Update steht an, Docksentry startet gleich neu. NICHT gelaufen: {names}. Danach bitte erneut antippen.",
+  "update_queue_skipped_group": "⚠️ Rest der Gruppe `{group}` nach dem Fehlschlag oben übersprungen: {names}. Sie werden aus gutem Grund der Reihe nach aktualisiert — erst den gescheiterten reparieren."
 }

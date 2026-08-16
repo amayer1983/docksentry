@@ -1123,7 +1123,7 @@ class TelegramBot:
 
         return {"inline_keyboard": keyboard}
 
-    def _run_single_update(self, checker, container_key):
+    def _run_single_update(self, checker, container_key, from_queue=False):
         """Update a single container.
 
         `container_key` is the `update_one:` payload: a bare container name
@@ -1139,8 +1139,25 @@ class TelegramBot:
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
         if not self._update_lock.acquire(blocking=False):
-            self.send_message(self.t("update_already_running"))
+            # Queue it instead of dropping it. Tapping four containers in
+            # the notification used to run one and discard three, with an
+            # "an update is already running" for each — so you had to come
+            # back and tap them again, one at a time, and nothing told you
+            # which ones had not run.
+            pos = self.engine.enqueue_update(container_key)
+            if pos == -1:
+                self.send_message(self.t("update_queue_full",
+                                         max=self.engine.UPDATE_QUEUE_MAX))
+            elif pos == 0:
+                self.send_message(self.t("update_already_queued",
+                                         name=container_name))
+            else:
+                self.send_message(self.t("update_queued",
+                                         name=container_name, pos=pos))
             return
+        # Reset per attempt: a stale value from a previous failure would
+        # make the drain skip a group that has nothing to do with this run.
+        self._last_update_group = None
         try:
             if not os.path.exists(self.config.pending_file):
                 self.send_message(self.t("no_pending_updates"))
@@ -1166,12 +1183,17 @@ class TelegramBot:
             try:
                 compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
                 success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
+                # Remembered for the drain: a failure takes its group-mates
+                # out of the queue, an success does not.
+                self._last_update_group = (
+                    None if success else self._group_of(container_key))
                 status = "✅" if success else "❌"
                 self.send_message(f"{status} {self._display_name(target)}: {msg}")
                 if self.notifier:
                     self.notifier.send_update_result(container_name, target["image"], success, msg,
                                                      source_url=target.get("source_url", ""))
             except Exception as e:
+                self._last_update_group = self._group_of(container_key)
                 self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
                 if self.notifier:
                     self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
@@ -1189,6 +1211,80 @@ class TelegramBot:
         finally:
             self._update_lock.release()
             self._run_queued_selfupdate()
+        # Only after the lock is back: whoever ran gets to work off what
+        # arrived while they held it. Re-acquired per entry rather than
+        # held across the whole queue, so the scheduler and a queued
+        # self-update can still get in — holding it for five containers
+        # would lock everything else out for ten minutes, and re-taking it
+        # per entry keeps the concurrency guard that v1.23.1 added.
+        if not from_queue:
+            self._drain_update_queue(
+                checker, last_group=getattr(self, "_last_update_group", None))
+
+    def _drain_update_queue(self, checker, last_group=None):
+        """Run whatever was queued while an update held the lock.
+
+        Never raises: a queue is a convenience and must not be able to
+        take down the update that finished successfully before it.
+        """
+        while True:
+            # A pending self-update restarts the process, which would take
+            # the rest of the queue with it. Stop and NAME what is not
+            # going to run — dropping work quietly is the bug this whole
+            # change exists to fix, and doing it here would be worse than
+            # never having queued at all.
+            if self._queued_selfupdate:
+                left = self.engine.drop_queued_updates()
+                if left:
+                    self.send_message(self.t(
+                        "update_queue_dropped_selfupdate",
+                        names=", ".join(f"`{self._short_key(k)}`" for k in left)))
+                return
+            # A failed container takes its group-mates with it: the group
+            # order exists because they depend on each other, and updating
+            # the next one against a head that just failed is how you get
+            # an app talking to a database that rolled back. Same rule the
+            # automatic batch already follows.
+            if last_group:
+                mates = self.engine.drop_queued_updates(
+                    lambda k: self._group_of(k) == last_group)
+                if mates:
+                    self.send_message(self.t(
+                        "update_queue_skipped_group", group=last_group,
+                        names=", ".join(f"`{self._short_key(k)}`" for k in mates)))
+                last_group = None
+            key = self.engine.take_queued_update()
+            if key is None:
+                return
+            if not self._update_lock.acquire(blocking=False):
+                # Something else claimed it first — hand the entry back and
+                # let whoever holds it now do the draining.
+                self.engine.enqueue_update(key)
+                return
+            self._update_lock.release()
+            try:
+                self._run_single_update(checker, key, from_queue=True)
+            except Exception as e:                          # pragma: no cover
+                self.send_message(f"❌ `{self._short_key(key)}`: {str(e)[:200]}")
+                last_group = None
+                continue
+            last_group = getattr(self, "_last_update_group", None)
+
+    @staticmethod
+    def _short_key(container_key):
+        from container_store import split_host_key
+        return split_host_key(container_key)[1]
+
+    def _group_of(self, container_key):
+        """The group name a queued container belongs to, or None."""
+        try:
+            from container_store import split_host_key
+            host_name, name = split_host_key(container_key)
+            store = self._store_for(self._host_by_name(host_name))
+            g = store.get_group_for_container(name)
+            return (g or {}).get("name") or (g or {}).get("id") or None
+        except Exception:
+            return None
 
     # ── Neutral orchestration helpers, delegated to the engine ─────────
     # These moved to UpdateEngine (v2 groundwork — Telegram-agnostic: no

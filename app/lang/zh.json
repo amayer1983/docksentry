@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "重复密码",
   "web_setup_pw_mismatch": "两次密码不一致。",
   "web_setup_pw_none": "无密码运行 — 仅在反向代理之后或受信任的网络中",
-  "web_setup_pw_required": "选择一个密码，或勾选方框以无密码运行。"
+  "web_setup_pw_required": "选择一个密码，或勾选方框以无密码运行。",
+  "update_queued": "🕒 已将 `{name}` 加入队列 — 第 {pos} 位。当前更新完成后开始。",
+  "update_already_queued": "🕒 `{name}` 已在队列中。",
+  "update_queue_full": "⚠️ 队列已满（{max}）。等队列跑完再点一次。",
+  "update_queue_dropped_selfupdate": "⚠️ 有自我更新在等待，Docksentry 即将重启。未执行：{names}。重启后请重新点击。",
+  "update_queue_skipped_group": "⚠️ 由于上面的失败，已跳过组 `{group}` 的其余部分：{names}。它们按顺序更新是有原因的 — 先修好失败的那个。"
 }

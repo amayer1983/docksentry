@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "비밀번호 다시 입력",
   "web_setup_pw_mismatch": "비밀번호가 일치하지 않습니다.",
   "web_setup_pw_none": "비밀번호 없이 운영 — 리버스 프록시 뒤 또는 신뢰하는 네트워크에서만",
-  "web_setup_pw_required": "비밀번호를 정하거나, 없이 운영하려면 상자를 체크하세요."
+  "web_setup_pw_required": "비밀번호를 정하거나, 없이 운영하려면 상자를 체크하세요.",
+  "update_queued": "🕒 `{name}` 대기열에 추가됨 — {pos}번째. 현재 업데이트가 끝나면 시작됩니다.",
+  "update_already_queued": "🕒 `{name}` 은(는) 이미 대기열에 있습니다.",
+  "update_queue_full": "⚠️ 대기열이 가득 찼습니다({max}). 처리될 때까지 기다린 뒤 다시 누르세요.",
+  "update_queue_dropped_selfupdate": "⚠️ 자체 업데이트가 대기 중이라 Docksentry가 곧 재시작합니다. 실행되지 않음: {names}. 이후 다시 눌러 주세요.",
+  "update_queue_skipped_group": "⚠️ 위 실패 이후 `{group}` 그룹의 나머지를 건너뛰었습니다: {names}. 순서에는 이유가 있습니다 — 실패한 것부터 고치세요."
 }

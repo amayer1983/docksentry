@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Répétez le mot de passe",
   "web_setup_pw_mismatch": "Les mots de passe ne correspondent pas.",
   "web_setup_pw_none": "Fonctionner sans mot de passe — uniquement derrière un reverse proxy ou sur un réseau de confiance",
-  "web_setup_pw_required": "Choisissez un mot de passe, ou cochez la case pour fonctionner sans."
+  "web_setup_pw_required": "Choisissez un mot de passe, ou cochez la case pour fonctionner sans.",
+  "update_queued": "🕒 `{name}` en file — position {pos}. Démarre dès que la mise à jour en cours se termine.",
+  "update_already_queued": "🕒 `{name}` est déjà dans la file.",
+  "update_queue_full": "⚠️ File pleine ({max}). Attendez qu'elle se vide, puis retouchez.",
+  "update_queue_dropped_selfupdate": "⚠️ Une auto-mise à jour est en attente, Docksentry va redémarrer. NON exécutés : {names}. Retouchez-les ensuite.",
+  "update_queue_skipped_group": "⚠️ Reste du groupe `{group}` ignoré après l'échec ci-dessus : {names}. L'ordre existe pour une raison — corrigez d'abord celui qui a échoué."
 }

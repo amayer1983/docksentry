@@ -98,6 +98,50 @@ class UpdateEngine:
         # in progress) is queued instead of killing the batch mid-flight
         # (#2, @famewolf). Holds the 1-tuple `(target,)` or None.
         self._queued_selfupdate = None
+        # Container updates tapped while the lock was held. Before this,
+        # they were answered with "an update is already running" and then
+        # thrown away, so tapping four containers in the notification ran
+        # exactly one and silently dropped three — you had to come back
+        # and tap each of them again once the previous had finished.
+        #
+        # Bounded, because a queue somebody can fill by tapping is a queue
+        # somebody can fill by tapping. In memory on purpose and never
+        # persisted: a restart losing it is honest and the entries are
+        # still in the pending list, whereas a queue surviving a restart
+        # would start updating containers on boot without anyone asking.
+        # What must not happen is losing it *silently* — the drain says
+        # what it is dropping and why.
+        self._update_queue = []
+        self._update_queue_lock = threading.Lock()
+
+    #: Most anyone can queue by tapping. Ten manual updates back to back
+    #: is already a long time to be holding someone's attention.
+    UPDATE_QUEUE_MAX = 10
+
+    def enqueue_update(self, key):
+        """Queue a container key. Returns its 1-based position, or 0 when
+        it is already queued, or -1 when the queue is full."""
+        with self._update_queue_lock:
+            if key in self._update_queue:
+                return 0
+            if len(self._update_queue) >= self.UPDATE_QUEUE_MAX:
+                return -1
+            self._update_queue.append(key)
+            return len(self._update_queue)
+
+    def take_queued_update(self):
+        """Pop the next queued key, or None."""
+        with self._update_queue_lock:
+            return self._update_queue.pop(0) if self._update_queue else None
+
+    def drop_queued_updates(self, predicate=None):
+        """Remove and return queued keys matching `predicate` (all if None)."""
+        with self._update_queue_lock:
+            keep, taken = [], []
+            for k in self._update_queue:
+                (taken if (predicate is None or predicate(k)) else keep).append(k)
+            self._update_queue = keep
+            return taken
         # True once the helper container is launched — the process is
         # about to be stopped, so the wrapper keeps the update lock held
         # (nothing may start an update in the final seconds).

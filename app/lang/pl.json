@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Powtórz hasło",
   "web_setup_pw_mismatch": "Hasła nie są zgodne.",
   "web_setup_pw_none": "Działaj bez hasła — tylko za reverse proxy lub w zaufanej sieci",
-  "web_setup_pw_required": "Wybierz hasło albo zaznacz pole, aby działać bez niego."
+  "web_setup_pw_required": "Wybierz hasło albo zaznacz pole, aby działać bez niego.",
+  "update_queued": "🕒 `{name}` w kolejce — pozycja {pos}. Ruszy, gdy skończy się bieżąca aktualizacja.",
+  "update_already_queued": "🕒 `{name}` już jest w kolejce.",
+  "update_queue_full": "⚠️ Kolejka pełna ({max}). Poczekaj, aż się opróżni, i dotknij ponownie.",
+  "update_queue_dropped_selfupdate": "⚠️ Czeka autoaktualizacja, Docksentry zaraz się zrestartuje. NIE wykonano: {names}. Dotknij ich ponownie później.",
+  "update_queue_skipped_group": "⚠️ Pominięto resztę grupy `{group}` po powyższym błędzie: {names}. Kolejność ma powód — najpierw napraw ten, który zawiódł."
 }

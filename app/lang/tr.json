@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Parolayı tekrar gir",
   "web_setup_pw_mismatch": "Parolalar eşleşmiyor.",
   "web_setup_pw_none": "Parolasız çalıştır — yalnızca bir ters vekil arkasında veya güvendiğin bir ağda",
-  "web_setup_pw_required": "Bir parola seç ya da parolasız çalıştırmak için kutuyu işaretle."
+  "web_setup_pw_required": "Bir parola seç ya da parolasız çalıştırmak için kutuyu işaretle.",
+  "update_queued": "🕒 `{name}` sıraya alındı — {pos}. sırada. Mevcut güncelleme bitince başlar.",
+  "update_already_queued": "🕒 `{name}` zaten sırada.",
+  "update_queue_full": "⚠️ Sıra dolu ({max}). Boşalmasını bekleyip yeniden dokun.",
+  "update_queue_dropped_selfupdate": "⚠️ Bekleyen bir kendi kendine güncelleme var, Docksentry birazdan yeniden başlayacak. ÇALIŞMADI: {names}. Sonra tekrar dokun.",
+  "update_queue_skipped_group": "⚠️ Yukarıdaki hatadan sonra `{group}` grubunun kalanı atlandı: {names}. Sırayla güncellenmelerinin bir nedeni var — önce hata vereni düzelt."
 }

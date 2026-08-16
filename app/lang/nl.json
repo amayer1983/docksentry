@@ -767,5 +767,10 @@
   "web_setup_pw_confirm": "Herhaal wachtwoord",
   "web_setup_pw_mismatch": "De wachtwoorden komen niet overeen.",
   "web_setup_pw_none": "Zonder wachtwoord draaien — alleen achter een reverse proxy of op een vertrouwd netwerk",
-  "web_setup_pw_required": "Kies een wachtwoord, of vink het vakje aan om zonder te draaien."
+  "web_setup_pw_required": "Kies een wachtwoord, of vink het vakje aan om zonder te draaien.",
+  "update_queued": "🕒 `{name}` in de wachtrij — plek {pos}. Start zodra de huidige update klaar is.",
+  "update_already_queued": "🕒 `{name}` staat al in de wachtrij.",
+  "update_queue_full": "⚠️ Wachtrij is vol ({max}). Wacht tot hij leeg is en tik opnieuw.",
+  "update_queue_dropped_selfupdate": "⚠️ Er staat een zelfupdate klaar, Docksentry herstart zo. NIET uitgevoerd: {names}. Tik ze daarna opnieuw aan.",
+  "update_queue_skipped_group": "⚠️ Rest van groep `{group}` overgeslagen na de fout hierboven: {names}. Ze werken in volgorde bij met reden — repareer eerst de mislukte."
 }
