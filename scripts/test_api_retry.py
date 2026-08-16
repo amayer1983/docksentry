@@ -18,8 +18,12 @@ from telegram_bot import TelegramBot
 def _bot():
     return types.SimpleNamespace(
         enabled=True,
-        config=types.SimpleNamespace(bot_token="t"),
+        config=types.SimpleNamespace(bot_token="t", chat_id="-1"),
         _is_timeout=lambda e: True,
+        # A 4xx body is also where a supergroup migration would be
+        # announced; "no migration here" keeps this test on retries.
+        # That path has its own: test_silent_rejection.py.
+        _note_migration=lambda body: None,
     )
 
 

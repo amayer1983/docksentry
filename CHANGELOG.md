@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.9.1] - 2026-08-16
+
+### Fixed
+- **A group that becomes a supergroup no longer takes the bot down with it (#2, @famewolf).** His bots stopped answering after an upgrade. Clean log, listener running, 27 commands registered, nothing happening. With `DEBUG=true` the cause was in there four times over: `Bad Request: group chat was upgraded to a supergroup chat`. Telegram had changed the group's id from `-52…` to `-100…`, and that breaks both directions at once — sends are refused, and incoming messages carry the new id, so they no longer match `CHAT_ID` and are dropped as unauthorised. Which is why it looked total rather than partial.
+
+  We had the answer the whole time and threw it away. That 400 carries `parameters.migrate_to_chat_id` — the new id, from Telegram, in the same response we were already printing. We printed the description and dropped the parameters. So the bot now follows the rename: it picks up the new id, **resends the message that was refused** instead of losing it, accepts commands from the group under its new id, and says in the log and once in the chat exactly which value to change. It is deliberately not written to `settings.json` — a saved value outranks the environment, so persisting it would just swap this problem for the one where a corrected `CHAT_ID` in your compose file is silently ignored. And a bot that only ever listens never meets that 400, so the first rejected command asks Telegram once whether the chat merely moved.
+
+- **The two places a command can be dropped now say so.** Both were silent unless `DEBUG=true`: an incoming `chat.id` that does not match `CHAT_ID`, and a sender who is not on `TELEGRAM_ALLOWED_USERS`. That produces a very specific dead end — the bot announces itself and registers its command list, so the `/` picker even offers you the commands, and then nothing happens with no error anywhere. There is nothing to pull on unless you already suspect the setting. Each reason is now named once per boot, with the actual ids, and the allow-list one points out that a value in `settings.json` overrules your compose file. Once, not per message: the silence was there to stop drive-by messages in a shared group burying the log, and that still holds. Log only, never a reply into the chat — answering an unauthorised chat would confirm the bot is there and name the machine it watches, which is the whole point of refusing.
+
 ## [2.9.0] - 2026-08-16
 
 ### Added

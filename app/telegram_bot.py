@@ -271,6 +271,64 @@ class TelegramBot:
         headless (Web UI + Discord/Webhook only)."""
         return bool(self.config.bot_token and self.config.chat_id)
 
+    # ── supergroup migration ────────────────────────────────────────────
+    # When a Telegram group is upgraded to a supergroup, its id changes
+    # from -123456 to -100123456 and the old one stops working — for
+    # sending AND for receiving, because incoming messages then carry the
+    # new id and no longer match CHAT_ID. Everything goes quiet at once:
+    # notifications are refused, commands are ignored.
+    #
+    # Telegram tells us, and we were throwing it away. The 400 body is
+    #
+    #   {"ok": false, "error_code": 400,
+    #    "description": "Bad Request: group chat was upgraded to a
+    #                    supergroup chat",
+    #    "parameters": {"migrate_to_chat_id": -1001234567890}}
+    #
+    # and we printed the description and dropped the `parameters`. So we
+    # had the new id in hand, said nothing about it, and carried on
+    # failing (@famewolf, #2 — four of these lines in his log, with the
+    # answer sitting inside them).
+
+    def _effective_chat_id(self):
+        """The chat we actually talk to: the migrated id once we know it."""
+        return getattr(self, "_migrated_chat_id", None) or self.config.chat_id
+
+    def _note_migration(self, body):
+        """Pick the new chat id out of a Telegram error body, once.
+
+        Returns it when it is new to us, else None. Kept in memory only
+        and deliberately not written to settings.json: a saved value
+        outranks the environment, so persisting it would fix today's
+        problem by planting the trap where a corrected `CHAT_ID` in the
+        compose file is silently ignored (#53, and again with
+        WEB_PASSWORD). Better to keep working and keep saying so.
+        """
+        # Followed at most once per process. A supergroup cannot be
+        # upgraded again, so a second one would mean something we do not
+        # understand — and `api_call` retries on the back of this, so
+        # "at most once" is also what keeps that from recursing.
+        if getattr(self, "_migrated_chat_id", None):
+            return None
+        try:
+            new_id = (body or {}).get("parameters", {}).get("migrate_to_chat_id")
+        except AttributeError:
+            return None
+        if not new_id:
+            return None
+        new_id = str(new_id)
+        if new_id == str(self.config.chat_id):
+            return None
+        self._migrated_chat_id = new_id
+        self._migration_notice_pending = True
+        print(
+            f"Telegram: this group was upgraded to a supergroup, so "
+            f"CHAT_ID={self.config.chat_id} no longer exists. Its new id is "
+            f"{new_id}. Using that for now, but nothing else will: set "
+            f"CHAT_ID={new_id} (Settings › Telegram, or your compose file), "
+            f"otherwise every restart has to rediscover this.")
+        return new_id
+
     def stop(self):
         self.running = False
 
@@ -403,6 +461,51 @@ class TelegramBot:
                 return (f"{v[0]}.{v[1]}.{v[2]}", m.group(4), text[start:end].strip())
         return None
 
+    def _probe_migration_once(self):
+        """Ask Telegram whether our configured chat still exists. Once.
+
+        `getChat` on a group that has been upgraded fails with the same
+        400 that carries `migrate_to_chat_id`, so this reuses the whole
+        detection path in `api_call` rather than duplicating it. Returns
+        the new id if there was one, else None.
+
+        Once per boot, and only ever from the rejection branch: on a
+        correctly configured instance this never runs at all.
+        """
+        if getattr(self, "_migration_probed", False):
+            return None
+        self._migration_probed = True
+        self.api_call("getChat", {"chat_id": self.config.chat_id})
+        return getattr(self, "_migrated_chat_id", None)
+
+    def _warn_rejected_once(self, reason, message):
+        """Say WHY commands are being ignored — once per reason, per boot.
+
+        Both rejections in `_check_auth` were silent unless debug was on,
+        and silence there produces a very specific dead end: the bot
+        starts, announces itself, registers its command list, and then
+        answers nothing at all, with a clean log. @famewolf spent an
+        evening on exactly that after an upgrade, and the only way to find
+        out was a setting he had no reason to suspect.
+
+        Once per reason, because the original silence was not arbitrary:
+        in a shared group, drive-by messages from people who are not on
+        the allow-list are normal and logging each one would bury the
+        useful lines. One line per boot says the thing and then gets out
+        of the way.
+
+        Log only, never a reply into the chat. Answering an unauthorised
+        chat would confirm the bot is there and say which server it
+        watches, which is the whole point of refusing in the first place.
+        """
+        seen = getattr(self, "_rejection_warned", None)
+        if seen is None:
+            seen = self._rejection_warned = set()
+        if reason in seen:
+            return
+        seen.add(reason)
+        print(f"Telegram: {message}")
+
     def _check_auth(self, chat_id, user_id, kind="message"):
         """Authorize an incoming Telegram message or callback.
 
@@ -429,9 +532,22 @@ class TelegramBot:
         chat_id = str(chat_id) if chat_id is not None else ""
         user_id = str(user_id) if user_id is not None else ""
 
-        if chat_id != str(self.config.chat_id):
+        if chat_id != str(self._effective_chat_id()):
+            # Before refusing, find out whether the chat simply changed its
+            # id under us. A bot that only listens never sends, so it would
+            # otherwise never meet the 400 that carries the new id — and
+            # would sit there ignoring its own group forever. One probe per
+            # boot, on the first rejection only.
+            if self._probe_migration_once() == chat_id:
+                return self._check_auth(chat_id, user_id, kind)
             if self.config.debug:
                 print(f"Auth fail ({kind}): chat.id={chat_id} ≠ CHAT_ID={self.config.chat_id} (from user {user_id})")
+            self._warn_rejected_once(
+                "chat",
+                f"Ignoring commands from chat {chat_id}: it does not match "
+                f"CHAT_ID={self.config.chat_id}. If the bot answers nothing, "
+                f"this is why — set CHAT_ID to {chat_id} if that is the chat "
+                f"you meant. (Said once; further ones are silent.)")
             return False
 
         allowed = self.config.telegram_allowed_users or []
@@ -441,6 +557,15 @@ class TelegramBot:
         if allowed_strs and user_id not in allowed_strs:
             if self.config.debug:
                 print(f"Auth fail ({kind}): user {user_id} not in TELEGRAM_ALLOWED_USERS={allowed_strs}")
+            self._warn_rejected_once(
+                "user",
+                f"Ignoring commands from user {user_id}: not in "
+                f"TELEGRAM_ALLOWED_USERS ({len(allowed_strs)} entry/entries). "
+                f"If the bot answers nothing, this is why — add {user_id}, or "
+                f"clear the setting to allow everyone in the chat. Note it is "
+                f"a persistent setting, so a value in /data/settings.json "
+                f"overrules your compose file. (Said once; further ones are "
+                f"silent.)")
             return False
 
         return True
@@ -936,6 +1061,13 @@ class TelegramBot:
         if not self.enabled:
             return None
         url = f"https://api.telegram.org/bot{self.config.bot_token}/{method}"
+        # One seam for the supergroup rename: every caller builds its data
+        # with `self.config.chat_id`, so swapping it here covers sending,
+        # button edits and callback answers alike, rather than asking each
+        # of them to remember.
+        migrated = getattr(self, "_migrated_chat_id", None)
+        if data and migrated and str(data.get("chat_id", "")) == str(self.config.chat_id):
+            data = dict(data, chat_id=migrated)
         if data:
             req = urllib.request.Request(
                 url,
@@ -967,12 +1099,19 @@ class TelegramBot:
                 # instead of treating it as a network failure. Not retried.
                 try:
                     body = json.loads(e.read())
-                    if not (quiet_timeout and self._is_timeout(e)):
-                        print(f"Telegram API {e.code}: {body.get('description', body)}")
-                    return body
                 except Exception:
                     print(f"Telegram API error: {e}")
                     return None
+                # The group was renamed under us. Learn the new id, say so,
+                # and send the same thing again to where it now lives — the
+                # message that triggered this was on its way to the user and
+                # dropping it is how a whole evening goes missing.
+                if self._note_migration(body) and data:
+                    return self.api_call(method, data, timeout=timeout,
+                                         quiet_timeout=quiet_timeout)
+                if not (quiet_timeout and self._is_timeout(e)):
+                    print(f"Telegram API {e.code}: {body.get('description', body)}")
+                return body
             except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
                 if attempt < attempts - 1:
                     _t.sleep(2 * (attempt + 1))  # 2s, then 4s
@@ -1022,6 +1161,21 @@ class TelegramBot:
         label = (self.config.bot_label or "").strip()
         if label:
             text = f"{label} · {text}"
+
+        # Say it where it will actually be read. The log line is for
+        # whoever goes looking; this is for the person who only ever sees
+        # Telegram, and who would otherwise never learn that their CHAT_ID
+        # is dead — because from their side everything just works again.
+        # Rides along with the next message rather than costing a send of
+        # its own, and only ever once.
+        if getattr(self, "_migration_notice_pending", False):
+            self._migration_notice_pending = False
+            text = (f"⚠️ This group was upgraded to a supergroup, so the "
+                    f"configured `CHAT_ID={self.config.chat_id}` no longer "
+                    f"exists. I found the new one and I am using it: "
+                    f"`{self._migrated_chat_id}`. Please put that in your "
+                    f"settings — until you do, I have to rediscover it after "
+                    f"every restart.\n\n" + text)
 
         # Over Telegram's limit the whole message is rejected and lost —
         # measured against @LeeNX's three-container rollback report, which
