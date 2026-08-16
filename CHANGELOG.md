@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.8.4] - 2026-08-16
+
+### Fixed
+- **A timed-out command is not a command that did not happen (#2, @famewolf).** He sent the log, and it turned his ten-day outage into a chain that reads end to end. The `stop` before it was given 60 seconds; the `rename` right after it had a hard-coded **10**. It hit that limit — and Docker completed the rename anyway, because our timeout stops *us* waiting, not the daemon working. His words: "the rm times out after 15 seconds but the delete actually works". The `TimeoutExpired` then escaped `recreate_dependent`, which had no `try` around that call, so the rebuild **and** the rollback were both skipped; the container existed from then on only as `<name>_old`; and every later run found no such container, fell through to `restart`, and printed the same line. That is why it was consistent rather than intermittent: after the first failure the state was permanently wrong and nothing ever looked again.
+
+  Three repairs. The renames follow `DOCKER_STOP_TIMEOUT` like the rest of the shutdown path (2.8.3 fixed `kill` and `rm` and missed these — this is the other half of that). A rename that times out now **checks what actually happened** before deciding it failed. And a dependent left behind as `<name>_old` is put back under its own name and started on the next run, instead of being reported as missing forever. `recovery.py` has healed exactly this shape for the main update path all along, but it runs off an in-flight note that only that path writes, so the dependent recreate was never covered by it.
+
+  Deliberately narrow: it only touches `<name>_old`, only when `<name>` itself is absent, and only for a container already known to be a group dependent. A stray `*_old` belonging to someone else is not ours to move.
+
 ## [2.8.3] - 2026-08-16
 
 ### Fixed

@@ -328,6 +328,24 @@ class UpdateEngine:
                 nm = backend.inspect(
                     dep, fmt="{{.HostConfig.NetworkMode}}", timeout=10,
                 ).stdout.strip()
+                if not nm:
+                    # The dependent is gone. Before reporting that, check
+                    # whether it is gone because WE left it as `<dep>_old`
+                    # — a recreate that was interrupted after the rename
+                    # and before the rebuild leaves exactly that, and
+                    # nothing used to pick it back up. @famewolf's
+                    # nzbhydra2 sat like that for ten days while every run
+                    # tried to restart a name that no longer existed (#2).
+                    #
+                    # Deliberately only `<dep>_old`, and only for a
+                    # container we were asked about: a container somebody
+                    # else named that way is theirs, not ours to move.
+                    if getattr(checker, "recover_dependent", None) and \
+                            checker.recover_dependent(dep):
+                        restarted.append(dep)
+                        print(f"Recovered {dep} from {dep}_old "
+                              f"(left by an interrupted recreate)")
+                        continue
                 if nm.startswith("container:"):
                     ok, detail = checker.recreate_dependent(dep, head_name)
                     if ok:

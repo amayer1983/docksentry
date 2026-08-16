@@ -2063,13 +2063,111 @@ class UpdateChecker:
             return False
         # -f so a wedged/running broken new container can't block the
         # rename the way the old non-forced `docker rm` did.
-        self.backend.rm(name, force=True, timeout=self._lifecycle_timeout())
-        self.backend.rename(old_name, name, timeout=10)
-        start = self.backend.start(name, timeout=60)
-        ok = start.returncode == 0
+        #
+        # Every step guarded, because this is the last line of defence and
+        # it used to be the one place with none. `_update_standalone` calls
+        # this from its `except Exception:` handler — so a timeout raised
+        # in here escaped that handler, skipping the rename, the history
+        # write and the in-flight clear, and left the container as
+        # `<name>_old` with nothing under its own name. The same shape as
+        # #2, arriving through the code meant to prevent it.
+        try:
+            self.backend.rm(name, force=True,
+                            timeout=self._lifecycle_timeout())
+        except subprocess.SubprocessError as e:
+            # Not fatal on its own: there may be nothing at `name` at all,
+            # and the rename below will say so if it matters.
+            self._debug(f"  Rollback: removing {name} failed ({e}) — "
+                        f"trying the rename anyway")
+        if not self._rename_container(old_name, name):
+            self._debug(f"  Rollback: could not restore {old_name} → {name}")
+            return False
+        try:
+            start = self.backend.start(name,
+                                       timeout=self._lifecycle_timeout())
+            ok = start.returncode == 0
+        except subprocess.SubprocessError as e:
+            # Restored but not started. Say so honestly rather than
+            # claiming a rollback that left the service down — and never
+            # raise, or the caller's own cleanup is skipped again.
+            self._debug(f"  Rollback: restored {name} but start failed ({e})")
+            ok = False
         self._debug(f"  Rollback: restored {old_name} → {name} "
                     f"({'started' if ok else 'start failed'})")
         return ok
+
+    def _rename_container(self, src, dst):
+        """Rename `src` to `dst`. Returns True if it ended up renamed.
+
+        A timeout here is OURS, not the daemon's. Docker carries on after
+        we stop waiting, so "the command timed out" and "the rename did
+        not happen" are different statements — and treating the first as
+        the second is what cost @famewolf ten days (#2). His log:
+
+            Fixing dependent gluetun-nzbhydra2 crashed: Command 'docker
+            rename gluetun-nzbhydra2 gluetun-nzbhydra2_old' timed out
+            after 10 seconds
+
+        The rename then completed. The exception escaped the recreate, so
+        the container was never rebuilt and never rolled back, and from
+        then on it existed only as `<name>_old` while every later run
+        tried to restart a name that was gone.
+
+        So: on a timeout, look at what is actually there before deciding.
+        """
+        try:
+            r = self.backend.rename(src, dst, timeout=self._lifecycle_timeout())
+            return getattr(r, "returncode", 1) == 0
+        except subprocess.TimeoutExpired:
+            # Give the daemon the moment it needed, then check reality.
+            #
+            # NOT through `_container_exists`: that answers "probably yes"
+            # when its own inspect fails, which is the right instinct for
+            # its own job and exactly wrong here. The daemon being too busy
+            # to answer is the very condition that got us into this branch,
+            # so both probes could fail and "exists AND not exists" would
+            # read as "the rename did not happen" — reporting failure for
+            # a rename that worked, which is the bug this method exists to
+            # prevent. `_container_probe` says "I could not tell" instead.
+            time.sleep(2)
+            done = self._renamed(src, dst)
+            if done is None:
+                time.sleep(5)
+                done = self._renamed(src, dst)
+            self._debug(f"  Rename {src}→{dst} timed out; "
+                        f"actually renamed: {done}")
+            # Only claim success on a positive observation. "Could not
+            # tell" counts as failure, and the caller says so — a
+            # dependent left as `<name>_old` by that is picked back up by
+            # `recover_dependent` on the next run, so being wrong here
+            # costs a cycle rather than the container.
+            return done is True
+        except subprocess.SubprocessError as e:
+            self._debug(f"  Rename {src}→{dst} failed: {e}")
+            return False
+
+    def _container_probe(self, name):
+        """True, False, or None when the daemon would not say.
+
+        `_container_exists` collapses "I could not ask" into "it exists",
+        which is the safe answer for deciding whether to recreate and the
+        wrong one for deciding whether a rename completed. This keeps the
+        three states apart so a caller can tell not-there from don't-know.
+        """
+        try:
+            r = self.backend.run(["inspect", "--format", "{{.Id}}", name],
+                                 timeout=self._lifecycle_timeout())
+            return r.returncode == 0
+        except subprocess.SubprocessError:
+            return None
+
+    def _renamed(self, src, dst):
+        """Did `src` end up as `dst`? True / False / None if unknowable."""
+        there = self._container_probe(dst)
+        gone = self._container_probe(src)
+        if there is None or gone is None:
+            return None
+        return there and not gone
 
     def _lifecycle_timeout(self):
         """How long to let `kill` / `rm -f` / `rename` run before giving up.
@@ -2286,6 +2384,37 @@ class UpdateChecker:
             return None
         return rr.stdout.strip().lstrip("/") or None
 
+    def recover_dependent(self, name):
+        """Put `<name>_old` back as `<name>` and start it. True if healed.
+
+        The other half of the fix for #2. A recreate interrupted between
+        the rename and the rebuild leaves the container under `<name>_old`
+        and nothing under `<name>`, and until now nothing ever looked
+        again: every later run saw no such container, tried a restart, and
+        failed with the same line. Ten days, for @famewolf.
+
+        `recovery.py` already heals exactly this shape for the main update
+        path, but it is driven by an in-flight note that only that path
+        writes — so the dependent recreate was never covered by it. This
+        is the same repair, decided from what is on the machine rather
+        than from a note.
+
+        Careful about what it will touch: only `<name>_old`, only when
+        `<name>` itself is absent, and only for a container the caller
+        already knows is a group dependent. A stray `*_old` belonging to
+        somebody else is none of our business.
+        """
+        old_name = f"{name}_old"
+        if self._container_exists(name) or not self._container_exists(old_name):
+            return False
+        if not self._rename_container(old_name, name):
+            return False
+        try:
+            self.backend.run(["start", name], timeout=self._lifecycle_timeout())
+        except subprocess.SubprocessError as e:
+            self._debug(f"  Recovered {name} but could not start it: {e}")
+        return True
+
     def recreate_dependent(self, name, netns_name):
         """Recreate a netns-sharing group dependent in place, rejoining the
         head's CURRENT container via `container:<netns_name>`. After the head
@@ -2312,8 +2441,15 @@ class UpdateChecker:
         self._stop_container(name)
         # Back up by renaming — only if it survived the stop (AutoRemove may
         # have deleted it, in which case we recreate straight from `config`).
+        #
+        # Through `_rename_container`, which survives a timeout and checks
+        # what actually happened. Called bare, a `TimeoutExpired` escaped
+        # this whole function: no rebuild, no rollback, and the container
+        # left under `<name>_old` for good (#2, @famewolf).
         if self._container_exists(name):
-            self.backend.rename(name, old_name, timeout=10)
+            if not self._rename_container(name, old_name):
+                return False, ("could not rename to " + old_name +
+                               " — container left untouched")
 
         cmd = self._build_run_args(config, image, name,
                                    self._get_image_defaults(image),
@@ -4140,7 +4276,7 @@ class UpdateChecker:
             # named that way and renaming theirs would be worse than the
             # bug.
             self._mark_inflight(name, old_name, image)
-            rename = self.backend.rename(name, old_name, timeout=10)
+            rename = self.backend.rename(name, old_name, timeout=self._lifecycle_timeout())
             if getattr(rename, "returncode", 0) != 0:
                 # Never proceed on an unverified backup: the recreate below
                 # would run against a container that still holds the name,
