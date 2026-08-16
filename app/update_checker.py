@@ -2063,13 +2063,32 @@ class UpdateChecker:
             return False
         # -f so a wedged/running broken new container can't block the
         # rename the way the old non-forced `docker rm` did.
-        self.backend.rm(name, force=True, timeout=15)
+        self.backend.rm(name, force=True, timeout=self._lifecycle_timeout())
         self.backend.rename(old_name, name, timeout=10)
         start = self.backend.start(name, timeout=60)
         ok = start.returncode == 0
         self._debug(f"  Rollback: restored {old_name} → {name} "
                     f"({'started' if ok else 'start failed'})")
         return ok
+
+    def _lifecycle_timeout(self):
+        """How long to let `kill` / `rm -f` / `rename` run before giving up.
+
+        These were hard-coded at 15 seconds and that is not enough for a
+        big container: @famewolf hit `docker kill ollama` timing out at 15s
+        again and again, and the same on `docker rm -f` for byparr and
+        metube (#2). A model loaded in VRAM, a slow storage driver or a
+        busy daemon all make the reap take longer than the command that
+        asks for it.
+
+        Derived from `DOCKER_STOP_TIMEOUT` rather than a second setting,
+        because someone whose containers are slow to stop has already
+        raised that one and would have to discover this separately. Never
+        below 30 seconds — double the old value even for a default
+        install, since the reports came from defaults.
+        """
+        floor = int(getattr(self.config, "docker_stop_timeout", 60) or 60)
+        return max(30, floor)
 
     def _stop_container(self, name, inspect_config=None):
         """Stop a container, respecting its own `Config.StopTimeout`.
@@ -2132,7 +2151,7 @@ class UpdateChecker:
         # Fallback: force-kill so we don't leave the recreate flow
         # half-finished.
         try:
-            kill = self.backend.kill(name, timeout=15)
+            kill = self.backend.kill(name, timeout=self._lifecycle_timeout())
             if kill.returncode == 0:
                 return True, "killed after stop timeout"
             return False, f"stop+kill both failed: {(kill.stderr or '').strip()[:120]}"
@@ -2289,7 +2308,7 @@ class UpdateChecker:
 
         old_name = f"{name}_old"
         # Clear any stale backup from a previous interrupted run.
-        self.backend.rm(old_name, force=True, timeout=15)
+        self.backend.rm(old_name, force=True, timeout=self._lifecycle_timeout())
         self._stop_container(name)
         # Back up by renaming — only if it survived the stop (AutoRemove may
         # have deleted it, in which case we recreate straight from `config`).
@@ -2309,7 +2328,7 @@ class UpdateChecker:
             self._debug(f"  Dependent recreate failed for {name}: {err}")
             self._rollback_to_old(name, old_name)
             return False, err
-        self.backend.rm(old_name, force=True, timeout=15)
+        self.backend.rm(old_name, force=True, timeout=self._lifecycle_timeout())
         return True, "recreated"
 
     def _wait_healthy(self, name, max_starting=None, interval=10):
@@ -4109,7 +4128,7 @@ class UpdateChecker:
             # and Ouroboros's issue histories reproduced the same end state
             # here (watchtower#1101/#235, ouroboros#19/#20), which is what
             # sent me looking.
-            self.backend.rm(old_name, force=True, timeout=15)
+            self.backend.rm(old_name, force=True, timeout=self._lifecycle_timeout())
             # Journal the swap BEFORE it happens. The rollback that guards
             # every other failure lives in an `except` handler, and a
             # SIGKILL raises nothing — the process is simply gone, leaving

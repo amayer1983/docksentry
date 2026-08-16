@@ -311,6 +311,11 @@ class UpdateEngine:
             import container_backend as _cb
             backend = _cb.default_backend()
 
+        # `failed` carries (name, reason). The reason used to be printed to
+        # the console and dropped from the notification, so the message said
+        # "failed 1 (x)" and nothing else — @famewolf spent ten days with a
+        # dead nzbhydra2 because the one line that could have told him what
+        # was wrong went to a log he had no reason to open (#2).
         recreated, restarted, failed = [], [], []
         for dep in dependents:
             try:
@@ -324,24 +329,38 @@ class UpdateEngine:
                     dep, fmt="{{.HostConfig.NetworkMode}}", timeout=10,
                 ).stdout.strip()
                 if nm.startswith("container:"):
-                    ok, _detail = checker.recreate_dependent(dep, head_name)
-                    (recreated if ok else failed).append(dep)
-                    if not ok:
-                        print(f"Failed to recreate netns dependent {dep}: {_detail}")
+                    ok, detail = checker.recreate_dependent(dep, head_name)
+                    if ok:
+                        recreated.append(dep)
+                    else:
+                        failed.append((dep, detail or "no reason given"))
+                        print(f"Failed to recreate netns dependent {dep}: {detail}")
                 else:
                     r = backend.restart(dep, timeout=30)
-                    (restarted if r.returncode == 0 else failed).append(dep)
-                    if r.returncode != 0:
-                        print(f"Failed to restart dependent {dep}: {r.stderr.strip()[:200]}")
+                    if r.returncode == 0:
+                        restarted.append(dep)
+                    else:
+                        why = (r.stderr or "").strip()[:200] or f"exit {r.returncode}"
+                        failed.append((dep, why))
+                        print(f"Failed to restart dependent {dep}: {why}")
             except subprocess.SubprocessError as e:
-                failed.append(dep)
+                failed.append((dep, str(e)[:200]))
                 print(f"Fixing dependent {dep} crashed: {e}")
 
         done = recreated + restarted
         ok_str = ", ".join(f"`{d}`" for d in done) if done else "—"
         if failed:
-            return (f"🔁 `{head_name}` dependents: {len(done)} ok ({ok_str}), "
-                    f"failed {len(failed)} ({', '.join(f'`{d}`' for d in failed)})")
+            # The failure gets its own lines, above the successes and with
+            # the reason attached. It used to be a suffix on the success
+            # line — "9 ok (…), failed 1 (…)" — which reads as good news at
+            # a glance and was missed for ten days by the person it
+            # happened to.
+            lines = [f"❌ `{head_name}` dependents: {len(failed)} FAILED"]
+            for name, why in failed:
+                lines.append(f"   • `{name}`: {why}")
+            if done:
+                lines.append(f"🔁 {len(done)} ok ({ok_str})")
+            return "\n".join(lines)
         verb = "recreated/restarted" if recreated else "restarted"
         return f"🔁 `{head_name}` dependents {verb}: {ok_str}"
 

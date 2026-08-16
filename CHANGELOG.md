@@ -2,6 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **A failed dependent said which container, never why — and said it at the end of a line of good news (#2, @famewolf).** One of ten containers behind his Gluetun sidecar failed to be recreated on 6 August and every time after. His whole arr stack depends on it, so it sat broken for **ten days**, while the notification read `9 ok (nine names…), failed 1 (gluetun-nzbhydra2)`. Two of our failures in that one line. The reason was thrown away: `recreate_dependent` returns it, and the caller printed it to the container's own log and put only the name in the message — so it could tell him something was wrong and never what, and the line that would have let him act sat somewhere he had no reason to look. And a failure appended to nine successes reads as good news at a glance, which is exactly how it was missed. Failures now come first, on their own lines, each with its reason attached; the successes follow. An all-good run is unchanged.
+- **`kill`, `rm -f` and `rename` timed out after a hard-coded 15 seconds.** Not enough for a container that is slow to die: he hit it repeatedly on `ollama` (a model loaded in VRAM), and on `byparr` and `metube`. They follow `DOCKER_STOP_TIMEOUT` now — `max(30, that)` — so the whole shutdown path is governed by the one setting somebody with slow containers has already raised, instead of only its first step. The default rises from 15 to 60 seconds.
+
 ## [2.8.2] - 2026-08-11
 
 ### Added
