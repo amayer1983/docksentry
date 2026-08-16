@@ -1890,7 +1890,22 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 bundle["links"] = store.get_links()
                 bundle["update_windows"] = store.get_update_windows()
                 payload = json.dumps(bundle, indent=2, ensure_ascii=False).encode("utf-8")
-                fname = f"docksentry-backup-{_dt.now().strftime('%Y%m%d-%H%M%S')}.json"
+                # Name the host in the file (#2, @famewolf). He backs up
+                # three machines to one PC and ends up staring at
+                # docksentry-backup-20260816-152818.json ×3 with "no clue
+                # what host they are from" — and a restore from the wrong
+                # one puts another machine's groups and pins on this one.
+                # BOT_LABEL is the value people already set to tell their
+                # instances apart in a shared Telegram group, so it is the
+                # label they will recognise; the container hostname is the
+                # fallback, and neither being set keeps the old name.
+                import re as _re
+                _who = (config.bot_label or "").strip() or os.environ.get(
+                    "HOSTNAME", "").strip()
+                _who = _re.sub(r"[^A-Za-z0-9._-]+", "-", _who).strip("-.")[:40]
+                fname = "docksentry-backup-{}{}.json".format(
+                    f"{_who}-" if _who else "",
+                    _dt.now().strftime('%Y%m%d-%H%M%S'))
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Disposition", f'attachment; filename="{fname}"')

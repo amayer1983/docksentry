@@ -491,6 +491,18 @@ class Config:
         self.pinned_file = os.path.join(data_dir, "pinned_containers.json")
         self.autoupdate_file = os.path.join(data_dir, "autoupdate_containers.json")
         self.settings_file = os.path.join(data_dir, "settings.json")
+        # A marker saying "settings.json existed at some point" (#2).
+        # Without it, a missing settings.json is ambiguous: it means real
+        # loss for someone who configured things in the Web UI, and
+        # absolutely nothing for someone who drives everything from the
+        # environment and never saved — measured, an env-only install
+        # never writes one. The old alert could not tell those apart and
+        # warned both about "possible data loss" on every restart.
+        #
+        # It records an observation, never a setting, which is why it is
+        # its own file rather than a key in settings.json: nothing here
+        # can ever end up outranking an environment variable (#53).
+        self.settings_seen_file = os.path.join(data_dir, ".settings_seen")
         # DEBUG follows the same precedence as every other persistent key:
         # the env var seeds the initial value, and a later /debug or Web UI
         # toggle persisted to settings.json still overrides on load (see
@@ -1011,12 +1023,39 @@ class Config:
         try:
             atomic_write_json(self.settings_file, data, indent=2)
             self._restrict_settings_perms()
+            self.mark_settings_seen()
         except OSError as e:
             print(f"Failed to save settings: {e}")
             try:
                 os.unlink(self.settings_file + ".tmp")
             except OSError:
                 pass
+
+    def mark_settings_seen(self):
+        """Record that a settings.json has existed in this data directory.
+
+        Idempotent and best-effort: a data directory we cannot write to
+        has bigger problems than this marker, and failing to write it
+        only costs us the ability to call a later loss by its name.
+        """
+        try:
+            if not os.path.exists(self.settings_seen_file):
+                with open(self.settings_seen_file, "w") as f:
+                    f.write("settings.json has existed here\n")
+        except OSError:
+            pass
+
+    def settings_ever_saved(self):
+        """True when this data directory has held a settings.json before.
+
+        Also true when one is sitting there right now — an install that
+        predates the marker gets it stamped on the spot, so upgrading
+        does not look like a fresh volume.
+        """
+        if os.path.exists(self.settings_file):
+            self.mark_settings_seen()
+            return True
+        return os.path.exists(self.settings_seen_file)
 
     def _restrict_settings_perms(self):
         """Restrict settings.json to owner-only read/write (0600).

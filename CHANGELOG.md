@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.9.2] - 2026-08-16
+
+### Fixed
+- **Docksentry now checks whether its data directory is somewhere that survives (#2, @famewolf).** He lost his settings on a recreate, then after a `compose down`/`up`, then again — restored from backup, reconfigured three hosts, and wrote "I'm afraid to restart them". Every time, all we said was "possible data loss", which named the symptom and stopped there.
+
+  The cause was one line of his compose file: `- /mnt/.../docksentry/config:/app/data`. We use `/data`, and nothing in this image has ever read `/app/data`, so his bind mount held nothing and the real `/data` fell to the anonymous volume that our `VOLUME ["/data"]` creates — a fresh one per container, discarded with the old one. Which is exactly why it "worked all this time" and then lost everything on every recreate: within a single container's life the settings really were there.
+
+  All of that is visible from inside the container, in its own mounts, so it now looks on startup instead of describing the loss afterwards. A bind mount at a path we never read is named, along with the corrected line to put in your compose file. An anonymous volume at `/data` is named, because it will not survive the next recreate — including a self-update's. Sockets, timezone files and the documented `/data/compose` mount are left alone.
+
+- **And the alert stopped crying wolf.** Measured on a fresh env-only install across three boots: `/data` ends up holding `version_state.json` and nothing else, because `save_persistent()` only ever runs from a user action. So anyone who configures Docksentry purely through environment variables has no `settings.json`, has lost nothing, and was being warned about "possible data loss" on **every single restart**. Whether settings were ever saved here is now recorded rather than guessed, with a marker written alongside every save — so a real loss is still reported, in the log as well as your notification channels, and a first boot or an env-only install gets one quiet line instead of an alarm. The marker is a plain file and never a setting: nothing about it can end up outranking an environment variable (#53).
+
+- **`Skipped (self): Docksentry` and friends left the ordinary log (#2, @NotRetarded).** He asked what was being skipped and why, which is the tell that a line costs more attention than it is worth. Nothing was wrong: we exclude our own container from the regular update path because updating yourself through it kills PID 1 mid-swap (#16). That bookkeeping is behind `DEBUG=true` now. The failure diagnostics stay unconditional on purpose — `Stop …: effective_stop=60s, subprocess=90s` came out of a debug-OFF log and is what made #2 readable at all.
+
+### Added
+- **Backups are named after the instance they came from (#2, @famewolf).** "I backup 3 hosts to my pc currently and end up with this: […] No clue what host they are from." The file now carries your `BOT_LABEL` (or the container hostname) — `docksentry-backup-dockmox.lan-20260816-152818.json` — which matters more than tidiness, because restoring the wrong one puts another machine's groups and pins on this one. Nothing set on either: the old name.
+
 ## [2.9.1] - 2026-08-16
 
 ### Fixed

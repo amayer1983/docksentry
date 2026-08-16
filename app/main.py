@@ -484,20 +484,58 @@ def main():
     from i18n import get_translator
     t = get_translator(config.language)
 
-    # Data-loss alert (v1.22.0): if BOT_TOKEN is configured via env but
-    # settings.json is missing or empty, surface this as a Telegram
-    # message so the user knows immediately instead of silently
-    # discovering it later via the Web UI's setup wizard. Reported by
-    # @famewolf in #2 — three of his hosts simultaneously rebooted, all
-    # three came back with the wizard up. We can detect this case
-    # reliably: a fresh install with no env config wouldn't reach here
-    # at all (main.py would refuse to start), so the combination
-    # "Telegram configured AND settings.json missing" means real loss.
+    # Where does /data actually live? (#2, @famewolf)
+    #
+    # He lost his settings on every recreate because his compose file
+    # bind-mounted to `/app/data`, a path nothing in this image reads,
+    # which left the real `/data` on the anonymous volume our Dockerfile's
+    # `VOLUME ["/data"]` creates — new one per container, gone with the
+    # old one. From inside, both mistakes are plainly visible in our own
+    # mounts, so look before the loss instead of describing it after.
+    storage_findings = []
+    try:
+        import storage_check
+        storage_findings = storage_check.check(
+            backend, checker._own_container_name(), config.data_dir)
+        for _line in storage_check.describe(storage_findings):
+            print(_line)
+    except Exception as e:
+        print(f"Storage check failed (non-fatal): {e}")
+
+    # Data-loss alert (v1.22.0): BOT_TOKEN configured via env but no
+    # settings.json. Originally reported by @famewolf in #2 when three of
+    # his hosts rebooted at once and all three came back with the setup
+    # wizard up.
+    #
+    # The old comment here claimed this combination "means real loss".
+    # Measured on a fresh env-only install, three boots: /data ends up
+    # holding version_state.json and nothing else, because
+    # `save_persistent()` only ever runs from a user action. So somebody
+    # who configures everything through the environment and never saves
+    # anything in the Web UI has no settings.json, has lost nothing, and
+    # was being told about "possible data loss" on every single restart.
+    # The alert cried wolf at exactly the people with nothing to lose.
+    #
+    # So the question is no longer "is settings.json here" but "was it
+    # ever here" — which we now record rather than infer, with a marker
+    # written alongside every save. A missing settings.json with the
+    # marker present is real loss and worth shouting about. Without the
+    # marker it is a fresh volume or an env-only install, and shouting at
+    # those people is what the alert had been doing all along.
     settings_missing = (
         bot.enabled
         and not os.path.exists(config.settings_file)
         and not post_selfupdate_restart
     )
+    settings_ever_saved = config.settings_ever_saved()
+    # …but a storage finding beats the inference either way: if the data
+    # directory demonstrably cannot survive a recreate, say so even when
+    # this particular boot happens to look tidy.
+    storage_key = ""
+    try:
+        storage_key = storage_check.summary_key(storage_findings)
+    except Exception:
+        pass
 
     if restart_signal:
         print(f"Restart cause: external stop signal ({restart_signal}) — not a self-restart")
@@ -579,11 +617,40 @@ def main():
         # one message simply never had a second recipient.
         if notifier.has_channels():
             notifier.send_message(startup_msg)
-        if settings_missing:
+        # Three different things used to share one alarming message.
+        # Now: name the cause when we can see it, stay quiet when there is
+        # nothing to mourn, and keep the old warning for the case it was
+        # actually written for.
+        storage_msg = ""
+        if storage_key:
+            _f = storage_check.first(storage_findings,
+                                     storage_key[len("storage_"):]) or {}
+            storage_msg = t(storage_key,
+                            data_dir=_f.get("data_dir", config.data_dir),
+                            source=_f.get("source", ""),
+                            dest=_f.get("dest", ""))
+        elif settings_missing and settings_ever_saved:
+            # This one is real: a settings.json existed in this data
+            # directory and is not there any more.
+            print(f"Data loss: {config.settings_file} is gone, but this data "
+                  f"directory has held one before. Restore a backup via Web "
+                  f"UI → Settings → Import.")
+            storage_msg = t("data_loss_alert")
+        elif settings_missing:
+            # Never saved here, so nothing was lost — the normal state for
+            # an install driven purely by environment variables, which is
+            # measurably most of them: `save_persistent()` only ever runs
+            # from a user action, so such an install never writes one.
+            # Worth a log line and nothing more; this used to be a warning
+            # about possible data loss, on every single boot.
+            print("No settings.json yet — everything is coming from the "
+                  "environment. Normal until you save something in the Web "
+                  "UI or via the bot.")
+        if storage_msg:
             if bot.enabled:
-                bot.send_message(t("data_loss_alert"))
+                bot.send_message(storage_msg)
             if notifier.has_channels():
-                notifier.send_message(t("data_loss_alert"))
+                notifier.send_message(storage_msg)
 
     # Sent regardless of how we restarted — a self-update and a manual
     # pull both land the user on a new version, and both deserve the note.

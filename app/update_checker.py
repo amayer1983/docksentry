@@ -179,8 +179,34 @@ class UpdateChecker:
         self._auth_kind = "anonymous"
 
     def _debug(self, msg):
+        """A diagnostic line. Always printed, on purpose.
+
+        Tempting to hide these behind `debug`, and wrong: these are the
+        lines that say something *happened* — a rollback, a rename that
+        timed out, a stop that had to escalate to kill. @famewolf's
+        `Stop gluetun-nzbhydra2: effective_stop=60s, subprocess=90s` came
+        from a debug-OFF log and is what finally made #2 readable. A
+        diagnostic nobody has switched on is not a diagnostic.
+
+        For the per-container bookkeeping of an ordinary scan, use
+        `_trace` instead.
+        """
         print(msg)
         if self.config.debug:
+            self.debug_log.append(msg)
+
+    def _trace(self, msg):
+        """Bookkeeping from a routine scan — only with debug on.
+
+        `Skipped (self): DockSentry` and its siblings say nothing except
+        "the loop ran". They appeared in every log, on every check, and
+        @NotRetarded reasonably asked in #2 what was being skipped and
+        why — which is the tell that a line is costing more attention
+        than it is worth. Nothing here reports an event; each one is a
+        restatement of configuration the user already set.
+        """
+        if self.config.debug:
+            print(msg)
             self.debug_log.append(msg)
 
     def _diag_on(self):
@@ -290,7 +316,7 @@ class UpdateChecker:
             labels = all_labels.get(name) or {}
             # Skip self
             if own_name and name == own_name:
-                self._debug(f"  Skipped (self): {name}")
+                self._trace(f"  Skipped (self): {name}")
                 continue
             # Resolve images referenced by ID via container inspect
             if re.match(r'^[0-9a-f]{12,}$', image):
@@ -299,27 +325,27 @@ class UpdateChecker:
                 if resolved.returncode == 0 and resolved.stdout.strip() and \
                    not re.match(r'^[0-9a-f]{12,}$', resolved.stdout.strip()):
                     image = resolved.stdout.strip()
-                    self._debug(f"  Resolved image ID: {name} → {image}")
+                    self._trace(f"  Resolved image ID: {name} → {image}")
                 else:
-                    self._debug(f"  Skipped (image ID): {name} ({image})")
+                    self._trace(f"  Skipped (image ID): {name} ({image})")
                     continue
             if name_matches(name, self.config.exclude_containers):
-                self._debug(f"  Skipped (excluded): {name}")
+                self._trace(f"  Skipped (excluded): {name}")
                 continue
             if name in self._get_pinned():
-                self._debug(f"  Skipped (pinned): {name}")
+                self._trace(f"  Skipped (pinned): {name}")
                 continue
             # GitOps twin of /pin (#42, @LeeNX): freeze a container from its
             # own compose file. Same effect as the stored pin — never listed,
             # never updated.
             if self.label_bool(labels, "pin") is True:
-                self._debug(f"  Skipped (pinned via label): {name}")
+                self._trace(f"  Skipped (pinned via label): {name}")
                 continue
             # Per-container label opt-out (#42, @LeeNX): a GitOps-friendly way
             # to take a container out of Docksentry's scope from the compose
             # file itself — `docksentry.enable=false` or `docksentry.exclude=true`.
             if self.label_bool(labels, "enable") is False or self.label_bool(labels, "exclude") is True:
-                self._debug(f"  Skipped (docksentry label): {name}")
+                self._trace(f"  Skipped (docksentry label): {name}")
                 continue
             # Detect Docker Compose
             compose_info = self._get_compose_info(name)
@@ -2637,10 +2663,10 @@ class UpdateChecker:
                 registry, repository, tag = self._parse_image(image)
                 if not registry:
                     reason = "pinned by digest" if "@" in image else "unparseable"
-                    self._debug(f"  Skipped ({reason}): {c['name']} ({image})")
+                    self._trace(f"  Skipped ({reason}): {c['name']} ({image})")
                     continue
 
-                self._debug(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")
+                self._trace(f"  Checking: {c['name']} ({registry}/{repository}:{tag})")
 
                 # #53 (@LeeNX): compare the image the container is ACTUALLY
                 # running against the registry — NOT whatever the tag currently
