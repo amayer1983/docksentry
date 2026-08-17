@@ -801,11 +801,18 @@
   "restore_cancel_btn": "✋ Abbrechen",
   "restore_cancelled": "Bleibt, wie es ist.",
   "restore_running": "Wird eingespielt…",
-  "restore_done": "✅ Eingespielt: {parts}{errors}\n\nManche Einstellungen greifen erst nach einem Neustart.",
+  "restore_done": "✅ Eingespielt: {parts}{errors}",
   "restore_failed": "⚠️ Einspielen fehlgeschlagen: {error}",
   "restore_expired": "⚠️ Das Angebot ist abgelaufen — schick die Datei noch einmal.",
   "restore_too_big": "⚠️ {size} MB sind zu groß für ein Backup. Es wurde nichts heruntergeladen.",
   "restore_download_failed": "⚠️ Telegram gibt mir die Datei nicht.",
   "restore_not_json": "⚠️ Diese Datei ist kein JSON, also kein Docksentry-Backup.",
-  "restore_not_a_backup": "⚠️ Das ist JSON, aber kein Docksentry-Backup — kein `schema_version` darin."
+  "restore_not_a_backup": "⚠️ Das ist JSON, aber kein Docksentry-Backup — kein `schema_version` darin.",
+  "restart_now_btn": "🔄 Jetzt neu starten",
+  "restart_running": "Wird neu gestartet…",
+  "restart_going_down": "🔄 Neustart läuft — gleich wieder da. (Restart-Policy: `{policy}`)",
+  "startup_reason_requested": "\n↻ _Neustart auf Anforderung — über den Knopf oder `/restart`._",
+  "restart_no_policy": "⚠️ Ich käme nicht zurück, also bleibe ich oben.\n\n{detail}\n\nEin Neustart-Knopf, der nicht neu startet, ist ein Stopp-Knopf. Trag `restart: unless-stopped` bei diesem Container ein, dann funktioniert er — bis dahin nach einem Stopp von Hand `docker compose up -d`.",
+  "help_restart": "/restart — Docksentry selbst neu starten",
+  "help_detail_restart": "*/restart*\n\nStoppt Docksentry, damit die Restart-Policy des Containers es wieder hochholt — so greifen Einstellungen, die erst beim Start gelesen werden.\n\nDie Policy wird vorher geprüft. Ohne sie bliebe der Container unten und du ohne den Bot, mit dem du ihn wieder hochholen würdest — dann verweigert er den Dienst und sagt warum.\n\nDer nächste Start weiß, dass er angefordert war, statt ein externes Stopp-Signal zu melden."
 }

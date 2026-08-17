@@ -57,6 +57,7 @@ _BOT_COMMANDS = [
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
     ("backup",      "Send a backup of settings, groups and pins as a file",           "help_backup",      "help_detail_backup"),
+    ("restart",     "Restart Docksentry itself",                                      "help_restart",     "help_detail_restart"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),
@@ -1290,21 +1291,89 @@ class TelegramBot:
             print(f"Telegram: could not download the attachment: {e}")
             return None
 
+    def restart_self(self, checker=None):
+        """Go down, on purpose, and only if something will bring us back.
+
+        Stopping ourselves is easy; coming back is the container's job,
+        and that is a promise only its restart policy can make. Without
+        one, a restart button is a stop button with a friendlier label —
+        and the person who pressed it has just lost the bot they would
+        have used to bring it back. So the policy is checked first, and a
+        container that would stay down is told rather than stopped. If
+        the check itself cannot be answered, that counts as "no": going
+        down with no way back is the worse of the two mistakes.
+
+        Deliberately our own SIGTERM rather than `docker restart` on
+        ourselves — that asks the daemon to stop the very process making
+        the request, and the answer would die mid-sentence. This way the
+        message is already gone, the shutdown handler runs its normal
+        course, and the marker below keeps the next boot honest about
+        why it happened.
+        """
+        policy, why = self._restart_policy(checker)
+        if not policy:
+            self.send_message(self.t("restart_no_policy", detail=why))
+            return False
+        try:
+            from container_store import atomic_write_json
+            import time as _t
+            atomic_write_json(self.config.restart_request_file,
+                              {"ts": _t.time(), "by": "telegram"})
+        except Exception as e:
+            print(f"Could not record the restart request (non-fatal): {e}")
+        self.send_message(self.t("restart_going_down", policy=policy))
+        import os as _os
+        import signal as _signal
+        import threading as _threading
+        # A beat, so the message is on its way before we go.
+        _threading.Timer(
+            1.5, lambda: _os.kill(_os.getpid(), _signal.SIGTERM)).start()
+        return True
+
+    def _restart_policy(self, checker=None):
+        """(policy name, explanation). Empty name means "do not stop"."""
+        checker = checker or getattr(self, "checker", None)
+        own = ""
+        try:
+            own = (checker._own_container_name() if checker else "") or ""
+        except Exception:
+            own = ""
+        if not own:
+            return "", "I cannot tell which container I am."
+        try:
+            r = self.backend.run(
+                ["inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}",
+                 own], timeout=15)
+        except Exception as e:
+            return "", f"the daemon would not answer: {str(e)[:80]}"
+        name = (getattr(r, "stdout", "") or "").strip()
+        if getattr(r, "returncode", 1) != 0 or not name:
+            return "", "the daemon did not report a restart policy."
+        if name in ("no", "none", "<no value>"):
+            return "", f"this container's restart policy is `{name}`."
+        return name, ""
+
     def _do_restore(self, token):
-        """Apply the bundle behind `token`. Returns the reply text."""
+        """Apply the bundle behind `token`.
+
+        Returns `(reply text, applied anything)`. The second half is what
+        decides whether to offer a restart — a restore that failed or had
+        nothing to do should not.
+        """
         bundle = (getattr(self, "_pending_restores", {}) or {}).pop(token, None)
         if bundle is None:
-            return self.t("restore_expired")
+            return self.t("restore_expired"), False
         import backup as _backup
         from config import PERSISTENT_KEYS as _PK
         try:
             restored, errors, dropped = _backup.restore(
                 bundle, self.config, self.store, _PK)
         except Exception as e:
-            return self.t("restore_failed", error=str(e)[:150])
-        return self.t("restore_done",
-                      parts=", ".join(restored) or "—",
-                      errors=("\n⚠️ " + "; ".join(errors)) if errors else "")
+            return self.t("restore_failed", error=str(e)[:150]), False
+        return (self.t("restore_done",
+                       parts=", ".join(restored) or "—",
+                       errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
+                bool(restored))
 
     def send_document(self, filename, data, caption=""):
         """Upload a file to the configured chat. True when it landed.
@@ -3190,7 +3259,24 @@ class TelegramBot:
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             self.answer_callback(callback["id"], self.t("restore_running"))
-            self.send_message(self._do_restore(data.split(":", 1)[1]))
+            text, ok = self._do_restore(data.split(":", 1)[1])
+            # "Some settings only take effect after a restart" is a thing
+            # to *do*, not a thing to read — the owner's point when he
+            # tested this. So offer the restart rather than describing
+            # it. Only after a restore that actually applied something.
+            self.send_message(
+                text,
+                reply_markup=({"inline_keyboard": [[
+                    {"text": self.t("restart_now_btn"),
+                     "callback_data": "restart_self"},
+                ]]} if ok else None))
+            return
+
+        if data == "restart_self":
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            self.answer_callback(callback["id"], self.t("restart_running"))
+            self.restart_self(checker)
             return
 
         if data == "update_all" or data.startswith("update_all:"):
@@ -4344,6 +4430,12 @@ class TelegramBot:
                     self.t("protect_on" if now_on else "protect_off", name=name)
                     + tag + hint)
 
+        elif text.startswith("/restart"):
+            # Asked for by the owner after the restore button shipped: a
+            # restart you can only reach by restoring something first is
+            # a restart you cannot reach.
+            self.restart_self(checker)
+            return
         elif text.startswith("/backup"):
             # Hand the backup over in the one place he is already
             # standing (#2, @famewolf): "Can we get a /backup option in

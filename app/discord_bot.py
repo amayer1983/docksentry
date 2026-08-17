@@ -76,6 +76,14 @@ COMMANDS = [
      ]},
     {"name": "backup", "description":
      "Send a backup of settings, groups and pins as a file", "type": 1},
+    # Option type 11 is ATTACHMENT — Discord uploads the file for us and
+    # hands back an id we resolve out of `data.resolved.attachments`.
+    {"name": "restore", "description":
+     "Restore settings, groups and pins from a backup file", "type": 1,
+     "options": [
+         {"name": "file", "description": "A Docksentry backup (.json)",
+          "type": 11, "required": True},
+     ]},
     {"name": "check", "description": "Check for container updates now",
      "type": 1,
      "options": [
@@ -905,6 +913,8 @@ class DiscordBot:
             return self._do_stop(rec["params"])
         if action == "updateall":
             return self._do_updateall(rec["params"])
+        if action == "restore":
+            return self._run_restore(rec["params"])
         return self._CONFIRM_GONE
 
     def _retire_buttons(self, rec):
@@ -1122,6 +1132,8 @@ class DiscordBot:
             return self._cmd_settings()
         if name == "backup":
             return self._cmd_backup(data)
+        if name == "restore":
+            return self._cmd_restore(opts, data)
         if name == "update":
             return self._cmd_update(opts)
         if name == "updateall":
@@ -1552,6 +1564,74 @@ class DiscordBot:
         except Exception:
             pass
         return ANSWERED
+
+    #: A backup bundle is small. Anything much larger is not one, and
+    #: downloading it to find that out is somebody else's bandwidth.
+    RESTORE_MAX_BYTES = 2 * 1024 * 1024
+
+    def _cmd_restore(self, opts, data):
+        """Restore from an attached backup — the Discord half (#2).
+
+        Same shape as Telegram's: fetch, check it is one of ours, report
+        what it would overwrite, and ask. The press restores. Discord
+        already has that pattern for `/stop` and `/updateall`, so this
+        reuses it rather than inventing a second kind of confirmation.
+
+        Discord has uploaded the file by the time we see the
+        interaction, so there is a URL to read rather than a two-step
+        fetch. It is a CDN link with a signed query string and a short
+        life — no token of ours goes near it.
+        """
+        att = ((data.get("data") or {}).get("resolved") or {}).get(
+            "attachments") or {}
+        chosen = att.get(str(opts.get("file"))) or {}
+        name = str(chosen.get("filename") or "")
+        size = int(chosen.get("size") or 0)
+        url = chosen.get("url") or ""
+        if not name.lower().endswith(".json"):
+            return "⚠️ That is not a `.json` file, so it is not a Docksentry backup."
+        if size > self.RESTORE_MAX_BYTES:
+            return (f"⚠️ {size / 1024 / 1024:.1f} MB is too large for a backup "
+                    f"file. Nothing was downloaded.")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=60) as r:
+                raw = r.read(self.RESTORE_MAX_BYTES + 1)
+            bundle = json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            self.log(f"Discord: could not read the attachment: {e}")
+            return "⚠️ I could not read that attachment."
+        if not isinstance(bundle, dict) or "schema_version" not in bundle:
+            return ("⚠️ That is JSON, but not a Docksentry backup — no "
+                    "`schema_version` in it.")
+
+        parts = [k for k in ("settings", "groups", "pinned", "autoupdate",
+                             "notes", "links", "update_windows", "ask_major")
+                 if bundle.get(k)]
+        token = self._new_confirmation("restore", {"bundle": bundle}, data)
+        return Reply(
+            f"📥 **A backup arrived**\n`{name}`\n"
+            f"From: **{bundle.get('instance') or '?'}** · "
+            f"{str(bundle.get('generated_at') or '?')[:16]} · "
+            f"v{bundle.get('docksentry_version') or '?'}\n"
+            f"Contains: {', '.join(parts) or '—'}\n\n"
+            f"Restoring overwrites the settings, groups, pins, notes, links "
+            f"and update windows on **this** instance. Nothing has been "
+            f"changed yet.",
+            self._confirm_components("restore", token, "♻️ Restore"))
+
+    def _run_restore(self, params):
+        """Apply a confirmed bundle. Returns the reply."""
+        import backup as _backup
+        from config import PERSISTENT_KEYS as _PK
+        try:
+            restored, errors, _dropped = _backup.restore(
+                params["bundle"], self.config, self.store, _PK)
+        except Exception as e:
+            return f"⚠️ Restore failed: {str(e)[:150]}"
+        note = ("\n⚠️ " + "; ".join(errors)) if errors else ""
+        return (f"✅ Restored: {', '.join(restored) or '—'}{note}\n\n"
+                f"Some settings only take effect after a restart.")
 
     def _cmd_settings(self):
         """The instance's effective settings.

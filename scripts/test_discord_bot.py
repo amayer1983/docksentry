@@ -250,8 +250,12 @@ def _required_first(cmd):
 
 checks["required options come before optional ones"] = all(
     _required_first(c) for c in COMMANDS)
+# 3 STRING, 4 INTEGER, 5 BOOLEAN, 6 USER, 7 CHANNEL, 8 ROLE,
+# 9 MENTIONABLE, 10 NUMBER, 11 ATTACHMENT. 11 arrived with `/restore`,
+# which takes the backup file as an attachment — Discord uploads it and
+# hands back an id to resolve.
 checks["option types are ones Discord knows"] = all(
-    o["type"] in (3, 4, 5, 6, 7, 8, 9, 10)
+    o["type"] in (3, 4, 5, 6, 7, 8, 9, 10, 11)
     for c in COMMANDS for o in c.get("options", []))
 # The bad-ordering check has to be able to fail, or it proves nothing.
 checks["…and that check would catch a bad ordering"] = not _required_first(

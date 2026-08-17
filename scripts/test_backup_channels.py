@@ -155,6 +155,14 @@ checks["…because an empty answer would post a second message"] = (
 
 
 # ═══ Telegram: a file dropped into the chat ══════════════════════════
+tsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "telegram_bot.py"), encoding="utf-8").read()
+
+
+def tsrc_head():
+    return tsrc
+
+
 def bot(**over):
     b = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
     b.config = types.SimpleNamespace(
@@ -228,11 +236,43 @@ b.store = Store()
 b.config.save_persistent = lambda: b.__dict__.setdefault("saved_settings", True)
 b._offer_restore({"file_name": "b.json", "file_size": 900, "file_id": "f1"})
 token = list(b._pending_restores)[0]
-msg = b._do_restore(token)
+msg, applied = b._do_restore(token)
 checks["the press restores"] = "restore_done" in msg
+checks["…and reports that it applied something"] = applied is True
 checks["…settings among them"] = b.__dict__.get("saved_settings") is True
+again, applied2 = b._do_restore(token)
 checks["…and a second press finds nothing left"] = (
-    "restore_expired" in b._do_restore(token))
+    "restore_expired" in again and applied2 is False)
+
+# "Some settings only take effect after a restart" is a thing to do, not
+# a thing to read — so the restore offers the restart instead of
+# describing it. The owner's note when he tested it live.
+checks["a restart is offered after a restore that applied something"] = (
+    '"callback_data": "restart_self"' in tsrc_head())
+checks["…and not after one that applied nothing"] = (
+    "if ok else None" in tsrc_head())
+# Scoped to the handler, not the file: `docker restart` appears
+# elsewhere for perfectly good reasons — including the comment
+# explaining why it is wrong *here*. A file-wide grep would have failed
+# on our own reasoning, which is what it did the first time.
+# The work moved into `restart_self` once it had to check the policy
+# first, so this reads the method rather than the button handler.
+_h = tsrc_head()
+_restart = _h[_h.index("    def restart_self(self"):]
+_restart = _restart[:_restart.index("\n    def ", 10)]
+# Match on the statements, not on the prose. The docstring explains why
+# SIGTERM is the mechanism, and the first version of this check found
+# that sentence and concluded the code ran in the wrong order.
+_code = _restart.split('"""')[2] if _restart.count('"""') >= 2 else _restart
+checks["the restart goes through our own shutdown handler"] = (
+    "_signal.SIGTERM" in _code and "_os.kill" in _code)
+# `docker restart` on ourselves would ask the daemon to stop the process
+# making the request, and the reply would die with it.
+checks["…rather than asking the daemon to stop us mid-reply"] = (
+    "self.backend.run" not in _restart and "restart\"" not in _restart)
+checks["…and the answer is sent before the process goes"] = (
+    _code.index('self.send_message(self.t("restart_going_down"')
+    < _code.index("_os.kill"))
 
 # The bundle's own claims are not trusted.
 checks["an unknown settings key is dropped"] = not hasattr(
@@ -242,8 +282,6 @@ checks["…and an unsafe link never reaches the store"] = (
 checks["…while the safe one does"] = (
     (b.store.saved.get("links") or {}).get("ok") == "https://example.com/notes")
 
-tsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                         "telegram_bot.py"), encoding="utf-8").read()
 checks["the confirm button strips itself before acting"] = (
     "self.remove_buttons(chat_id, msg_id)" in tsrc.split(
         'if data.startswith("restore_go:")')[1][:400])
@@ -257,6 +295,77 @@ checks["the Web UI import goes through the same restore"] = (
     "_backup.restore(" in wsrc)
 checks["…and no longer keeps its own copy of it"] = (
     wsrc.count("dropped_links += 1") == 0)
+
+# ═══ a restart that will not come back is not offered ════════════════
+# The owner's question the moment the restart button shipped: "können
+# wir das abfangen?" — stopping ourselves is easy, coming back is the
+# container's job, and only its restart policy can promise that. Without
+# one, a restart button is a stop button with a friendlier label, and
+# the person who pressed it has just lost the bot they would have used
+# to bring it back.
+class Backend:
+    def __init__(self, policy, rc=0):
+        self.policy, self.rc = policy, rc
+
+    def run(self, args, timeout=None):
+        return types.SimpleNamespace(returncode=self.rc, stdout=self.policy,
+                                     stderr="")
+
+
+def restarter(policy, rc=0, own="docksentry"):
+    b = bot()
+    b.backend = Backend(policy, rc)
+    b.config.restart_request_file = "/tmp/ds-restart-test.json"
+    b.checker = types.SimpleNamespace(_own_container_name=lambda: own)
+    b.killed = []
+    return b
+
+
+import threading as _th  # noqa: E402
+_real_timer = _th.Timer
+_th.Timer = lambda delay, fn: types.SimpleNamespace(start=lambda: None)
+try:
+    b = restarter("unless-stopped")
+    checks["a container that will come back is restarted"] = (
+        b.restart_self(b.checker) is True)
+    checks["…and the message names the policy"] = any(
+        "unless-stopped" in s for s in b.sent)
+    checks["…and the request is recorded for the next boot"] = os.path.exists(
+        "/tmp/ds-restart-test.json")
+    os.unlink("/tmp/ds-restart-test.json")
+
+    for policy in ("no", "none", ""):
+        b = restarter(policy)
+        checks[f"a restart policy of {policy!r} means we stay up"] = (
+            b.restart_self(b.checker) is False)
+        checks[f"…and {policy!r} is explained rather than just refused"] = any(
+            "restart_no_policy" in s for s in b.sent)
+
+    b = restarter("always", rc=1)
+    checks["a daemon that will not answer counts as no"] = (
+        b.restart_self(b.checker) is False)
+    b = restarter("always", own="")
+    checks["…and so does not knowing which container we are"] = (
+        b.restart_self(b.checker) is False)
+finally:
+    _th.Timer = _real_timer
+
+# The next boot must not call our own restart an external stop signal.
+msrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "main.py"), encoding="utf-8").read()
+checks["a requested restart is told apart from an external stop"] = (
+    "requested_restart" in msrc and "startup_reason_requested" in msrc)
+# Scoped to the block, not to a fixed window after the first mention —
+# the first attempt sliced 600 characters and missed the guard by a line.
+_req_block = msrc[msrc.index("    requested_restart = False"):]
+_req_block = _req_block[:_req_block.index("\n\n    ", 10)]
+checks["…and a stale request cannot mask a real one an hour later"] = (
+    "< 3600" in _req_block)
+checks["…the marker is consumed, not left to fire twice"] = (
+    "os.unlink(config.restart_request_file)" in msrc)
+
+checks["/restart is reachable without restoring something first"] = (
+    '("restart",' in tsrc_head() and 'text.startswith("/restart")' in tsrc_head())
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

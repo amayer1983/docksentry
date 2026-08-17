@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.12.0] - 2026-08-17
+
+### Added
+- **`/backup` and `/restore` on Discord too, and `/restore` on Telegram (#2).** @famewolf, once Telegram's `/backup` worked: *"No more having to jump from webui to webui."* @NotRetarded four hours later, asking why Discord did not have it — and then for the other half, a restore from the chat. That is the case that counts: the day you need a restore is the day the Web UI is the thing you cannot reach.
+
+  On Telegram you simply drop the backup into the chat. On Discord it is `/restore file:<attachment>`. Either way **the file arriving is not the decision**: it reports which instance the bundle came from, when it was made and what it would overwrite, and hands back a confirm button. The press restores, once. Somebody showing somebody else a backup file must not cost them their configuration.
+
+  A bundle is not trusted just because a person picked it: settings go through the persistent-keys allow-list so nothing can inject arbitrary attributes, links go through the same validator the live write path uses, and rejects are counted rather than swallowed. The apply logic moved out of the Web UI's import endpoint into one shared function rather than being written a second time — it is the half that carries those rules, and having it twice means maintaining it once.
+
+  Discord keeps the real `.json` name. Both of them expected it would need a `.txt` rename or a zip; the documented API has no extension whitelist for bot uploads. **That part is not verified against the live API** — no bot of my own, and somebody else's channel is not mine to test in. If Discord does refuse it, the answer is a zip, not a rename: disguising a file only moves the problem to whatever opens it later.
+
+- **A restart you can ask for, and that refuses when it would not come back.** Restoring a backup ends with settings that only apply at boot, so the reply now offers the restart instead of describing it — the owner's point on seeing the message. There is a `/restart` command too, because a restart you can only reach by restoring something first is a restart you cannot reach.
+
+  It checks the container's restart policy first. Without one, stopping would leave the container down and you without the bot you would have used to bring it back — so it stays up and says so. If the check itself cannot be answered, that counts as no: going down with no way back is the worse mistake. And it is our own `SIGTERM` rather than `docker restart` on ourselves, which would ask the daemon to stop the process making the request and kill the answer mid-sentence.
+
+### Fixed
+- **A restart you asked for no longer reports itself as an external stop signal.** The banner said *"Restarted after an external stop signal (SIGTERM) — e.g. a host reboot… Docksentry did not restart itself"*, which was true of the mechanism and backwards about what happened. It is our own SIGTERM. A marker written just before going down keeps the next boot honest, and is ignored if it is more than an hour old so an abandoned request cannot mask a genuine external restart later.
+
 ## [2.11.1] - 2026-08-17
 
 ### Fixed

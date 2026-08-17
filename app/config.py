@@ -506,6 +506,13 @@ class Config:
         # its own file rather than a key in settings.json: nothing here
         # can ever end up outranking an environment variable (#53).
         self.settings_seen_file = os.path.join(data_dir, ".settings_seen")
+        # Written just before we ask ourselves to stop, so the next boot
+        # can tell "somebody pressed restart" from "something stopped us".
+        # Without it the banner claimed an external stop signal after our
+        # own restart button — true of the mechanism, false about what
+        # happened, which is the sort of message that sends people
+        # looking for a host reboot that never occurred.
+        self.restart_request_file = os.path.join(data_dir, "restart_request.json")
         # DEBUG follows the same precedence as every other persistent key:
         # the env var seeds the initial value, and a later /debug or Web UI
         # toggle persisted to settings.json still overrides on load (see

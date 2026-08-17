@@ -241,6 +241,26 @@ def main():
     if selfupdate_restart:
         restart_signal = None
 
+    # Neither is a restart somebody asked for. The stop still arrives as
+    # SIGTERM — it is our own SIGTERM — so without this marker the banner
+    # reports an external stop signal and adds "Docksentry did not
+    # restart itself", which is exactly backwards.
+    requested_restart = False
+    try:
+        if os.path.exists(config.restart_request_file):
+            import json as _json, time as _time
+            with open(config.restart_request_file) as f:
+                _req = _json.load(f)
+            # Stale markers are ignored, same rule as the self-update one:
+            # an abandoned request must not mask a genuine external stop
+            # an hour later.
+            if _time.time() - float(_req.get("ts", 0) or 0) < 3600:
+                requested_restart = True
+                restart_signal = None
+            os.unlink(config.restart_request_file)
+    except Exception as e:
+        print(f"Could not read the restart request (non-fatal): {e}")
+
     # Post-selfupdate fixup: when _save_selfupdate_history wrote the
     # entry before the swap, the new version wasn't known yet — it's
     # stored as `v{old} → ?`. We're the freshly-booted process and
@@ -580,7 +600,9 @@ def main():
     except Exception:
         pass
 
-    if restart_signal:
+    if requested_restart:
+        print("Restart cause: requested (restart button or /restart)")
+    elif restart_signal:
         print(f"Restart cause: external stop signal ({restart_signal}) — not a self-restart")
 
     # Surface a failed self-update recreate (#43). The helper writes its
@@ -646,7 +668,9 @@ def main():
 
     if not post_selfupdate_restart:
         startup_msg = t("startup_message", version=VERSION)
-        if restart_signal:
+        if requested_restart:
+            startup_msg += t("startup_reason_requested")
+        elif restart_signal:
             startup_msg += t("startup_reason_signal", signal=restart_signal)
         if bot.enabled:
             bot.send_message(startup_msg)
