@@ -1101,6 +1101,38 @@ class Config:
             return True
         return os.path.exists(self.settings_seen_file)
 
+    def restore_settings_from(self, path):
+        """Put settings.json back from a backup bundle. Returns the keys.
+
+        Only the `settings` half of the bundle, and only on a boot where
+        settings.json is genuinely gone — groups, pins and links live in
+        their own files and survive independently, so pulling them from
+        an older backup would overwrite live state with stale state to
+        fix a problem they never had.
+
+        Unknown keys are dropped rather than trusted: this file may have
+        come from a newer Docksentry, or from a hand-edited export.
+        """
+        try:
+            with open(path, encoding="utf-8") as f:
+                bundle = json.load(f)
+        except (OSError, ValueError):
+            return []
+        saved = (bundle or {}).get("settings")
+        if not isinstance(saved, dict) or not saved:
+            return []
+        applied = []
+        for key, value in saved.items():
+            if key not in PERSISTENT_KEYS:
+                continue
+            setattr(self, key, value)
+            applied.append(key)
+        if not applied:
+            return []
+        self.save_persistent()
+        self.refresh_env_overrides()
+        return sorted(applied)
+
     def _restrict_settings_perms(self):
         """Restrict settings.json to owner-only read/write (0600).
 

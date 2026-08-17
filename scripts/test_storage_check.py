@@ -312,30 +312,103 @@ for loud in ("Rollback: restored", "escalating to kill", "Stop failed",
 # "I backup 3 hosts to my pc currently and end up with this: […] No clue
 # what host they are from." Restoring the wrong one puts another
 # machine's groups and pins on this one.
-web_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                            "web_ui.py"), encoding="utf-8").read()
-k = web_src.index("docksentry-backup-{}{}.json")
-gen = web_src[max(0, k - 700):k + 200]
+#
+# The naming moved into backup.py when the Telegram `/backup` command
+# and the automatic local copies needed the same bundle — one builder,
+# three callers, rather than three that drift.
+import backup as _bk  # noqa: E402
+
+lbl = types.SimpleNamespace(bot_label="\U0001f5a5  dockmox.lan")
 checks["the backup file is named after the instance"] = (
-    "config.bot_label" in gen and "HOSTNAME" in gen)
+    _bk.filename(lbl).startswith("docksentry-backup-dockmox.lan-"))
 checks["…sanitised, so a label with emoji cannot break the filename"] = (
-    "_re.sub(" in gen)
-checks["…and an unlabelled instance keeps the old name"] = (
-    'f"{_who}-" if _who else ""' in gen)
-
-# The sanitiser has to survive what people actually put in BOT_LABEL —
-# "🖥 dockmox.lan" is his, straight from the thread.
-import re as _re  # noqa: E402
-
-
-def slug(v):
-    return _re.sub(r"[^A-Za-z0-9._-]+", "-", v).strip("-.")[:40]
-
-
-checks["a real bot label becomes a usable filename"] = (
-    slug("🖥  dockmox.lan") == "dockmox.lan")
+    _bk.instance_slug(lbl) == "dockmox.lan")
 checks["…and a hostile one cannot escape the directory"] = (
-    "/" not in slug("../../etc/passwd") and ".." not in slug("../..")[:2])
+    "/" not in _bk.filename(
+        types.SimpleNamespace(bot_label="../../etc/passwd")))
+os.environ.pop("HOSTNAME", None)
+checks["…and an unlabelled instance keeps the old name"] = (
+    _bk.filename(types.SimpleNamespace(bot_label=""))
+    == f"docksentry-backup-{_bk.datetime.now().strftime('%Y%m%d-%H%M%S')}.json")
+os.environ["HOSTNAME"] = "docknas"
+checks["a hostname somebody chose stands in for a missing label"] = (
+    _bk.instance_slug(types.SimpleNamespace(bot_label="")) == "docknas")
+# Seen for real on this developer's instance the first time a file was
+# written: HOSTNAME in a container is normally the container id, and
+# `docksentry-backup-9cef9348bc8f-…` is worse than no name — it looks
+# like it means something.
+os.environ["HOSTNAME"] = "9cef9348bc8f"
+checks["a container id is not mistaken for a machine name"] = (
+    _bk.instance_slug(types.SimpleNamespace(bot_label="")) == "")
+os.environ.pop("HOSTNAME", None)
+
+# The Web UI export goes through that same builder rather than keeping
+# its own copy of the format.
+_web = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "web_ui.py"), encoding="utf-8").read()
+checks["the Web UI export uses the shared builder"] = (
+    "_backup.payload(config, store, VERSION)" in _web
+    and "_backup.filename(config)" in _web)
+
+# ═══ the local copy has to cover the state it is protecting ══════════
+# Found against a real container, not reasoned about: a fresh install
+# writes a copy on its first boot, when nothing is configured and
+# `settings` is empty. Configure an hour later, lose settings.json,
+# restart — and the copy being kept is the empty one from before you
+# started. It restored nothing, correctly, and looked like the feature
+# was broken.
+import tempfile as _tf  # noqa: E402
+import time as _time  # noqa: E402
+
+
+class _Store:
+    def get_pinned(self): return []
+    def get_autoupdate(self): return []
+    def get_ask_before_major(self): return []
+    def get_groups(self): return {}
+    def get_notes(self): return {}
+    def get_links(self): return {}
+    def get_update_windows(self): return {}
+
+
+with _tf.TemporaryDirectory() as tmp:
+    c = types.SimpleNamespace(data_dir=tmp, bot_label="docknas.lan",
+                              settings_file=os.path.join(tmp, "settings.json"))
+    st = _Store()
+    first = _bk.write_local_if_stale(c, st, "2.9.3", min_gap_seconds=0)
+    checks["a first boot writes a copy"] = bool(first)
+    checks["…even with nothing saved yet"] = (
+        json.loads(open(first).read())["settings"] == {})
+
+    # Nothing changed → no second copy.
+    checks["an unchanged instance does not write again"] = (
+        _bk.write_local_if_stale(c, st, "2.9.3", min_gap_seconds=0) == "")
+
+    # Settings appear → a copy that actually contains them must follow,
+    # long before the twelve-hour age guard would allow one.
+    open(c.settings_file, "w").write('{"cron_schedule": "0 5 * * *"}')
+    os.utime(c.settings_file, (_time.time() + 2, _time.time() + 2))
+    second = _bk.write_local_if_stale(c, st, "2.9.3", min_gap_seconds=0)
+    checks["a change writes a copy that contains it"] = (
+        bool(second) and json.loads(open(second).read())
+        ["settings"]["cron_schedule"] == "0 5 * * *")
+
+    # The burst guard still holds where it belongs — the request path.
+    open(c.settings_file, "w").write('{"cron_schedule": "0 6 * * *"}')
+    os.utime(c.settings_file, (_time.time() + 4, _time.time() + 4))
+    checks["a burst of saves collapses into one file"] = (
+        _bk.write_local_if_stale(c, st, "2.9.3", min_gap_seconds=300) == "")
+    checks["…and the boot path is not held back by it"] = bool(
+        _bk.write_local_if_stale(c, st, "2.9.3", min_gap_seconds=0))
+
+    checks["state_mtime sees every file the bundle is built from"] = (
+        "settings.json" in _bk.STATE_FILES and "groups.json" in _bk.STATE_FILES
+        and len(_bk.STATE_FILES) == 8)
+
+# And the boot path must not archive a loss it could not repair —
+# five wipes would otherwise leave five backups of nothing.
+checks["a boot that lost settings does not overwrite the good copies"] = (
+    "if not (settings_missing and settings_ever_saved):" in main_src)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

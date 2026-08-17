@@ -783,5 +783,13 @@
   "web_env_card_intro": "Diese sind in deiner Umgebung gesetzt, aber ein hier gespeicherter Wert gewinnt. Das ist Absicht — sonst würde alles, was du in dieser Oberfläche änderst, beim nächsten Neustart zurückgesetzt. Hol dir den Wert aus der Umgebung zurück, wann immer er dir lieber ist.",
   "web_env_card_env": "In der Umgebung",
   "web_env_card_saved": "Hier gespeichert",
-  "web_env_adopt": "Wert aus der Umgebung übernehmen"
+  "web_env_adopt": "Wert aus der Umgebung übernehmen",
+  "help_backup": "/backup — Sichert Einstellungen, Gruppen und Pins als Datei",
+  "help_detail_backup": "*/backup*\n\nBaut dasselbe Paket, das die Weboberfläche exportiert — gespeicherte Einstellungen, Container-Gruppen, Pins, Auto-Update-Markierungen, Notizen, Links und Update-Fenster — und schickt es als Datei in diesen Chat.\n\nGleichzeitig wird eine Kopie nach `/data/backups/` geschrieben; die fünf neuesten bleiben erhalten.\n\n_Die Datei enthält deine gespeicherten Einstellungen, darunter Webhook-URLs und den Passwort-Hash der Weboberfläche. Sie geht nur in diesen Chat, aber behandle sie wie die Datei selbst._",
+  "backup_caption": "📦 Docksentry-Backup — Wiederherstellen über Web-UI → Einstellungen → Import.",
+  "backup_failed": "⚠️ Backup konnte nicht erstellt werden: {error}",
+  "backup_send_failed": "⚠️ Das Backup wurde erstellt, aber Telegram hat die Datei nicht angenommen. Versuch es nochmal oder lade es in der Weboberfläche unter Einstellungen herunter.",
+  "backup_local_written": "💾 Automatisches Backup geschrieben: `{path}`",
+  "web_setup_restore_intro": "Du hast schon ein Backup — von einer anderen Installation oder von dieser? Spiel es ein und überspring den Rest hier.",
+  "web_setup_restore_btn": "Aus Backup wiederherstellen"
 }

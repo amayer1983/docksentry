@@ -56,6 +56,7 @@ _BOT_COMMANDS = [
     ("protect",     "Protect a container from Stop — /protect <name>",                 "help_protect",     "help_detail_protect"),
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
+    ("backup",      "Send a backup of settings, groups and pins as a file",           "help_backup",      "help_detail_backup"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),
@@ -1207,6 +1208,77 @@ class TelegramBot:
                 data.pop("parse_mode", None)
                 result = self.api_call("sendMessage", data)
         return result
+
+    def send_document(self, filename, data, caption=""):
+        """Upload a file to the configured chat. True when it landed.
+
+        `sendDocument` is the one Telegram call that will not go through
+        `api_call`: it needs multipart/form-data, and everything else we
+        send is urlencoded. Rather than teach that method a second body
+        format — and risk the ordinary message path in the process — this
+        builds the one request it needs and keeps the migration swap and
+        the error reporting consistent with it.
+
+        No retry. A dropped notification is worth resending; a dropped
+        file the user asked for produces an error they can act on by
+        typing the command again, and a duplicated 30 kB upload into a
+        chat is worse than a second attempt they chose to make.
+        """
+        if not self.enabled:
+            return False
+        chat_id = str(self._effective_chat_id())
+        # A boundary that cannot occur in the payload. Derived from the
+        # content rather than random so the same call is reproducible in
+        # a test; uniqueness is all multipart asks of it.
+        import hashlib as _h
+        boundary = "----docksentry" + _h.sha1(
+            (filename + str(len(data))).encode()).hexdigest()[:16]
+        parts = []
+
+        def field(name, value):
+            parts.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n".encode("utf-8"))
+
+        field("chat_id", chat_id)
+        if caption:
+            field("caption", caption)
+        if self.config.telegram_topic_id:
+            field("message_thread_id", str(self.config.telegram_topic_id))
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="document"; '
+            f'filename="{filename}"\r\n'
+            f"Content-Type: application/json\r\n\r\n".encode("utf-8"))
+        parts.append(data if isinstance(data, bytes) else data.encode("utf-8"))
+        parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+        body = b"".join(parts)
+
+        url = (f"https://api.telegram.org/bot{self.config.bot_token}"
+               f"/sendDocument")
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return bool(json.loads(resp.read()).get("ok"))
+        except urllib.error.HTTPError as e:
+            try:
+                body = json.loads(e.read())
+            except Exception:
+                print(f"Telegram sendDocument error: {e}")
+                return False
+            # A group renamed to a supergroup fails here exactly as it
+            # fails for a message, and the same one-time follow applies.
+            if self._note_migration(body):
+                return self.send_document(filename, data, caption)
+            print(f"Telegram sendDocument {e.code}: "
+                  f"{body.get('description', body)}")
+            return False
+        except Exception as e:
+            print(f"Telegram sendDocument error: {e}")
+            return False
 
     def answer_callback(self, callback_id, text):
         self.api_call("answerCallbackQuery", {
@@ -4117,6 +4189,37 @@ class TelegramBot:
                     self.t("protect_on" if now_on else "protect_off", name=name)
                     + tag + hint)
 
+        elif text.startswith("/backup"):
+            # Hand the backup over in the one place he is already
+            # standing (#2, @famewolf): "Can we get a /backup option in
+            # telegram that sends the backup as a file VIA telegram?"
+            # Restoring used to mean reaching a browser on the machine
+            # you are trying to repair — which is exactly the machine you
+            # cannot reach when it matters.
+            #
+            # The chat is already the trusted channel: CHAT_ID plus the
+            # allow-list gate every command, and this one goes back to
+            # that same chat and nowhere else. It still carries webhook
+            # URLs and a password hash, so it is worth saying out loud
+            # rather than shipping quietly.
+            try:
+                import backup as _backup
+                from version import VERSION as _V
+                data = _backup.payload(self.config, self.store, _V)
+                name = _backup.filename(self.config)
+            except Exception as e:
+                self.send_message(self.t("backup_failed", error=str(e)[:120]))
+                return
+            if self.send_document(name, data, self.t("backup_caption")):
+                # Same bundle, written next to the data as well — a copy
+                # in the volume is worth having and costs nothing here.
+                try:
+                    _backup.write_local(self.config, self.store, _V)
+                except Exception:
+                    pass
+            else:
+                self.send_message(self.t("backup_send_failed"))
+            return
         elif text.startswith("/audit"):
             # /audit <container> — run UpdateChecker._audit_inspect_coverage
             # against the target's docker inspect and report any non-

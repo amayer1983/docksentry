@@ -528,6 +528,49 @@ def main():
         and not post_selfupdate_restart
     )
     settings_ever_saved = config.settings_ever_saved()
+
+    # A copy next to the data, and a way back from it (#2, @famewolf).
+    #
+    #   "I would REALLY REALLY like it if backups stored a local copy so
+    #    restores are not dependent on another machine to get going
+    #    again […] and an option to load most recent when no config is
+    #    found."
+    #
+    # The obvious objection — a backup inside the volume it backs up
+    # protects against nothing — is answered by what keeps actually
+    # happening: settings.json going while the rest of the directory
+    # survives, or a restore needed from a browser on the very machine
+    # that is broken. It is not a substitute for the copy you keep
+    # elsewhere, and does not pretend to be.
+    restored_from = ""
+    try:
+        import backup as _backup
+        if settings_missing and settings_ever_saved:
+            newest = _backup.newest_local(config)
+            if newest:
+                restored_from = config.restore_settings_from(newest)
+                if restored_from:
+                    print(f"Restored settings from {newest} — settings.json "
+                          f"was missing and this directory has held one "
+                          f"before.")
+                    settings_missing = False
+        # One copy per boot, and only when the newest is stale, so a
+        # restart loop cannot churn through the retention window and
+        # leave five copies of the same minute.
+        #
+        # Skipped only on a boot where settings are demonstrably lost and
+        # we could not put them back: archiving the damage would evict the
+        # good copies, and five wipes in a row would leave five backups of
+        # nothing. A *fresh* install still gets one — groups, pins and
+        # links live in their own files, so "no settings.json yet" does
+        # not mean "nothing worth keeping" (found while testing this: an
+        # instance driven entirely from compose, with groups configured,
+        # was getting no automatic backup at all).
+        if not (settings_missing and settings_ever_saved):
+            _backup.write_local_if_stale(config, store, VERSION,
+                                         min_gap_seconds=0)
+    except Exception as e:
+        print(f"Local backup step failed (non-fatal): {e}")
     # …but a storage finding beats the inference either way: if the data
     # directory demonstrably cannot survive a recreate, say so even when
     # this particular boot happens to look tidy.

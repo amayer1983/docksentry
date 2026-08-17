@@ -783,5 +783,13 @@
   "web_env_card_intro": "These are set in your environment, but a value saved here wins. That is deliberate — otherwise anything you change in this interface would be reset on the next restart. Take the environment's value back whenever you would rather have it.",
   "web_env_card_env": "In the environment",
   "web_env_card_saved": "Saved here",
-  "web_env_adopt": "Use the environment value"
+  "web_env_adopt": "Use the environment value",
+  "help_backup": "/backup — Send a backup of settings, groups and pins as a file",
+  "help_detail_backup": "*/backup*\n\nBuilds the same bundle the Web UI exports — persisted settings, container groups, pins, auto-update flags, notes, links and update windows — and sends it into this chat as a file.\n\nA copy is written to `/data/backups/` at the same time, and the five most recent are kept.\n\n_The file contains your saved settings, which includes webhook URLs and the Web UI password hash. It goes to this chat only, but treat it the way you would treat the file itself._",
+  "backup_caption": "📦 Docksentry backup — restore via Web UI → Settings → Import.",
+  "backup_failed": "⚠️ Could not build the backup: {error}",
+  "backup_send_failed": "⚠️ The backup was built but Telegram would not take the file. Try again, or download it from the Web UI under Settings.",
+  "backup_local_written": "💾 Automatic backup written: `{path}`",
+  "web_setup_restore_intro": "Already have a backup from another install, or from this one? Restore it and skip the rest of this.",
+  "web_setup_restore_btn": "Restore from a backup"
 }

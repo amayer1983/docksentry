@@ -1859,53 +1859,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # update_history.json (large, regenerates) or
                 # pending_updates.json (transient).
                 from version import VERSION
-                from datetime import datetime as _dt
-                bundle = {
-                    "schema_version": 1,
-                    "generated_at": _dt.now().isoformat(timespec="seconds"),
-                    "docksentry_version": VERSION,
-                    "settings": {},
-                    "pinned": [],
-                    "autoupdate": [],
-                    "ask_major": [],
-                    "groups": {},
-                    "notes": {},
-                    "links": {},
-                    "update_windows": {},
-                }
-                # Settings — only the user-set keys, not env defaults.
-                # save_persistent uses the same key list, so reading the
-                # file directly mirrors what we'd save.
-                if os.path.exists(config.settings_file):
-                    try:
-                        with open(config.settings_file) as f:
-                            bundle["settings"] = json.load(f)
-                    except (IOError, json.JSONDecodeError):
-                        pass
-                bundle["pinned"] = store.get_pinned()
-                bundle["autoupdate"] = store.get_autoupdate()
-                bundle["ask_major"] = store.get_ask_before_major()
-                bundle["groups"] = store.get_groups()
-                bundle["notes"] = store.get_notes()
-                bundle["links"] = store.get_links()
-                bundle["update_windows"] = store.get_update_windows()
-                payload = json.dumps(bundle, indent=2, ensure_ascii=False).encode("utf-8")
-                # Name the host in the file (#2, @famewolf). He backs up
-                # three machines to one PC and ends up staring at
-                # docksentry-backup-20260816-152818.json ×3 with "no clue
-                # what host they are from" — and a restore from the wrong
-                # one puts another machine's groups and pins on this one.
-                # BOT_LABEL is the value people already set to tell their
-                # instances apart in a shared Telegram group, so it is the
-                # label they will recognise; the container hostname is the
-                # fallback, and neither being set keeps the old name.
-                import re as _re
-                _who = (config.bot_label or "").strip() or os.environ.get(
-                    "HOSTNAME", "").strip()
-                _who = _re.sub(r"[^A-Za-z0-9._-]+", "-", _who).strip("-.")[:40]
-                fname = "docksentry-backup-{}{}.json".format(
-                    f"{_who}-" if _who else "",
-                    _dt.now().strftime('%Y%m%d-%H%M%S'))
+                import backup as _backup
+                payload = _backup.payload(config, store, VERSION)
+                fname = _backup.filename(config)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
@@ -2078,6 +2034,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # accepted requests are recorded; a rejected one never reached
             # any state to change.
             self._audit_post(path)
+            # Same seam, second job: a state-changing request means the
+            # last local copy is now out of date. Doing it here rather
+            # than at each of the twenty-odd endpoints is the same
+            # argument the audit log makes one comment up — the twenty-
+            # first is added without it otherwise. Debounced inside, and
+            # it never raises: a backup that cannot be written must not
+            # cost the user the change they just made.
+            try:
+                import backup as _backup
+                from version import VERSION as _V
+                _backup.write_local_if_stale(config, store, _V)
+            except Exception:
+                pass
             if path == "/settings":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -3305,6 +3274,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <span class="form-help" style="margin:0">{t("web_setup_pw_none")}</span>
 </label>
 
+<!-- Coming back from a backup is not the same journey as setting up
+     for the first time, and it was buried five steps behind one.
+     @famewolf, #2: "Why force the user to go through the setup wizard
+     if they plan to import a backup? It should be on the first page as
+     an option to skip the click-through's." He is right — by the time
+     you are restoring, you are usually having a bad day already.
+     The file carries web_setup_done, so a successful restore ends the
+     wizard as well as filling it in. -->
+<hr class="section-divider" style="margin:18px 0 12px">
+<p class="form-help" style="margin:0 0 8px 0">{t("web_setup_restore_intro")}</p>
+<button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('wiz-restore-file').click()">⬆ {t("web_setup_restore_btn")}</button>
+<input type="file" id="wiz-restore-file" accept=".json,application/json" style="display:none" onchange="dsBackupImport(this)">
 </div>
 
 <!-- ── Step 2: Language ──────────────────────────────────── -->

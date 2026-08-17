@@ -73,14 +73,25 @@ jobs:
             fi
             echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
             echo "tags<<EOF" >> $GITHUB_OUTPUT
+            # `beta` moves with pre-releases the way `latest` moves with
+            # stable ones, so trying them is a one-time compose change
+            # rather than a new pin per release. Asked for by @famewolf in
+            # #2 after a large change landed on him: "Please consider a
+            # seperate developmental chain (beta) that is opt in for
+            # future large changes. We could have ran them in parallel
+            # with seperate containers/directories."
             if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
               if [[ "$PRERELEASE" == "false" ]]; then
                 echo "${{ env.DOCKERHUB_IMAGE }}:latest" >> $GITHUB_OUTPUT
+              else
+                echo "${{ env.DOCKERHUB_IMAGE }}:beta" >> $GITHUB_OUTPUT
               fi
               echo "${{ env.DOCKERHUB_IMAGE }}:$VERSION" >> $GITHUB_OUTPUT
             fi
             if [[ "$PRERELEASE" == "false" ]]; then
               echo "${{ env.GHCR_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            else
+              echo "${{ env.GHCR_IMAGE }}:beta" >> $GITHUB_OUTPUT
             fi
             echo "${{ env.GHCR_IMAGE }}:$VERSION" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT

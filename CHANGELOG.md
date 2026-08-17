@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.10.0] - 2026-08-17
+
+### Added
+- **`/backup` in Telegram sends the backup as a file (#2, @famewolf).** *"Can we get a /backup option in telegram that sends the backup as a file VIA telegram?"* — the same bundle the Web UI exports, uploaded straight into the chat. Restoring used to mean reaching a browser on the machine you are trying to repair, which is exactly the machine you cannot reach when it matters. The chat is already the trusted channel: `CHAT_ID` plus the allow-list gate every command, and the file goes back to that same chat and nowhere else. It still carries webhook URLs and the Web UI password hash, so the command says so rather than shipping it quietly.
+
+- **Automatic local copies in `/data/backups`, five kept.** *"I would REALLY REALLY like it if backups stored a local copy so restores are not dependent on another machine to get going again […] In every case I've lost a config having a copy in the docksentry container directory would have solved the issue."* A copy is written on startup and after anything that changes state, debounced so a burst of saves produces one file rather than ten, and the oldest are pruned. The obvious objection — a backup inside the volume it backs up protects against nothing — is answered by what actually keeps happening: a `settings.json` lost while the rest of the directory survives, or a restore needed from a browser you cannot reach. It is not a substitute for the copy you keep elsewhere and does not pretend to be.
+
+- **And a way back from one.** When `settings.json` is missing on startup *and* this directory has held one before, the newest local copy is restored automatically and the log says which file it came from. Only the settings half: groups, pins and links live in their own files and survive independently, so pulling those from an older backup would overwrite live state to fix a problem it never had. A boot that lost settings and could not repair them writes no new copy — archiving the damage would evict the good ones.
+
+- **"Restore from a backup" on the first page of the setup wizard.** *"Why force the user to go through the setup wizard if they plan to import a backup? It should be on the first page as an option to skip the click-through's."* Quite right — by the time you are restoring, you are usually having a bad day already. The file carries `web_setup_done`, so a successful restore ends the wizard as well as filling it in.
+
+- **A `beta` tag for pre-releases.** *"Please consider a seperate developmental chain (beta) that is opt in for future large changes. We could have ran them in parallel with seperate containers/directories."* `beta` now moves with pre-releases the way `latest` moves with stable ones, so running one alongside is a single compose change rather than a new pin per release. `latest` is untouched by them, as before.
+
+### Fixed
+- **Backup filenames no longer fall back to a container id.** With no `BOT_LABEL`, `HOSTNAME` inside a container is normally the container id, and `docksentry-backup-9cef9348bc8f-…` is worse than no name at all — it looks like it means something. Only a hostname somebody actually chose is used. Found by looking at the first file this wrote on a real instance.
+
 ## [2.9.3] - 2026-08-17
 
 ### Fixed
