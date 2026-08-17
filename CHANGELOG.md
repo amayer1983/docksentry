@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.12.1] - 2026-08-17
+
+### Fixed
+- **`/restart` was declared twice on Telegram, and one of the two was silently dropped.** 2.12.0 added "restart Docksentry itself" as a second table entry under a name that already meant "restart a container". `setMyCommands` was handed 29 commands and stored 28 — Telegram deduplicates by name without complaining — so the picker kept one description for a command that no longer matched it. One entry now, covering both meanings: `/restart <name>` restarts that container, bare `/restart` restarts Docksentry. The behaviour was correct by accident of handler ordering; the declaration was not.
+
+### Added
+- **Discord caught up with Telegram.** `/restart` with no container restarts Docksentry there too, with the same refusal when the container has no restart policy to bring it back — asked of the same code rather than reimplemented, so the two cannot disagree about when stopping is safe. A Discord restore now points at it instead of merely mentioning that a restart is needed.
+
 ## [2.12.0] - 2026-08-17
 
 ### Added

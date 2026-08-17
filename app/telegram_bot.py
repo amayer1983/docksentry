@@ -44,7 +44,13 @@ _BOT_COMMANDS = [
     ("checkimages", "How much space /cleanup would free (dry-run)",                    "help_checkimages", "help_detail_checkimages"),
     ("start",       "Start a stopped container — /start <name>",                      "help_lifecycle",   "help_detail_lifecycle"),
     ("stop",        "Stop a running container — /stop <name>",                        "help_lifecycle",   "help_detail_lifecycle"),
-    ("restart",     "Restart a container — /restart <name>",                          "help_lifecycle",   "help_detail_lifecycle"),
+    # One entry, both meanings: `/restart <name>` restarts that
+    # container, bare `/restart` restarts Docksentry. Two entries under
+    # the same name looked tidier in the table and was wrong —
+    # setMyCommands takes 29 and stores 28, silently dropping one, so
+    # the picker showed a description for a command that no longer
+    # matched what it did.
+    ("restart",     "Restart a container — /restart <name>, or Docksentry itself with no name", "help_lifecycle",   "help_detail_lifecycle"),
     ("maintenance", "Pause auto-updates — /maintenance 2h or /maintenance off",       "help_maintenance", "help_detail_maintenance"),
     ("history",     "Recent update history",                                          "help_history",     "help_detail_history"),
     ("events",      "Recent container events (crashes, OOM, health flips)",           "help_events",      "help_detail_events"),
@@ -57,7 +63,6 @@ _BOT_COMMANDS = [
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
     ("backup",      "Send a backup of settings, groups and pins as a file",           "help_backup",      "help_detail_backup"),
-    ("restart",     "Restart Docksentry itself",                                      "help_restart",     "help_detail_restart"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),

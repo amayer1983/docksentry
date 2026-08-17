@@ -192,10 +192,16 @@ COMMANDS = [
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
-    {"name": "restart", "description": "Restart a container", "type": 1,
+    # No container means Docksentry itself, which is why this option is
+    # optional here and required on /stop and /start. Same rule as
+    # Telegram's bare `/restart`.
+    {"name": "restart", "description":
+     "Restart a container — or Docksentry itself, with no container",
+     "type": 1,
      "options": [
-         {"name": "container", "description": "Container to restart",
-          "type": 3, "required": True},
+         {"name": "container", "description":
+          "Container to restart (empty restarts Docksentry)",
+          "type": 3, "required": False},
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
@@ -1138,6 +1144,11 @@ class DiscordBot:
             return self._cmd_update(opts)
         if name == "updateall":
             return self._cmd_updateall(opts, data)
+        if name == "restart" and not opts.get("container"):
+            # No container named: restart Docksentry itself. Same rule as
+            # Telegram's bare `/restart`, and the same refusal when the
+            # container has no restart policy to bring it back.
+            return self._cmd_restart_self()
         if name in ("restart", "stop", "start"):
             return self._cmd_lifecycle(name, opts, data)
         if name == "cleanup":
@@ -1620,6 +1631,26 @@ class DiscordBot:
             f"changed yet.",
             self._confirm_components("restore", token, "♻️ Restore"))
 
+    def _cmd_restart_self(self):
+        """Restart Docksentry, if something will bring it back.
+
+        The check and the refusal live on the Telegram bot because that
+        is where the update machinery already sits; this asks it rather
+        than growing a second copy that can disagree about when it is
+        safe to stop.
+        """
+        bot = getattr(self, "telegram", None)
+        if bot is None or not hasattr(bot, "restart_self"):
+            return "⚠️ I cannot restart myself from here."
+        policy, why = bot._restart_policy()
+        if not policy:
+            return (f"⚠️ I would not come back, so I am staying up.\n\n{why}\n\n"
+                    f"A restart button that does not restart is a stop "
+                    f"button. Add `restart: unless-stopped` to this "
+                    f"container and it will work.")
+        bot.restart_self()
+        return f"🔄 Restarting — back in a moment. (restart policy: `{policy}`)"
+
     def _run_restore(self, params):
         """Apply a confirmed bundle. Returns the reply."""
         import backup as _backup
@@ -1630,8 +1661,12 @@ class DiscordBot:
         except Exception as e:
             return f"⚠️ Restore failed: {str(e)[:150]}"
         note = ("\n⚠️ " + "; ".join(errors)) if errors else ""
+        # Offer the restart rather than describing it — the same point
+        # the owner made about Telegram's wording. `/restart` with no
+        # container is the button here.
         return (f"✅ Restored: {', '.join(restored) or '—'}{note}\n\n"
-                f"Some settings only take effect after a restart.")
+                f"Some settings only take effect after a restart — "
+                f"`/restart` with no container does it.")
 
     def _cmd_settings(self):
         """The instance's effective settings.

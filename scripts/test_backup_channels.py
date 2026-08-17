@@ -145,6 +145,11 @@ checks["the untested part is labelled as untested"] = (
 
 dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "discord_bot.py"), encoding="utf-8").read()
+
+
+def dsrc_now():
+    return dsrc
+
 checks["Discord has the command"] = '{"name": "backup"' in dsrc
 checks["…dispatched like the rest"] = 'return self._cmd_backup(data)' in dsrc
 checks["…and it says it already answered"] = (
@@ -366,6 +371,40 @@ checks["…the marker is consumed, not left to fire twice"] = (
 
 checks["/restart is reachable without restoring something first"] = (
     '("restart",' in tsrc_head() and 'text.startswith("/restart")' in tsrc_head())
+
+# ═══ the two front ends agree about what a command is ════════════════
+# `/restart` was added to the Telegram table as a second entry under a
+# name that already existed. The table looked tidier and setMyCommands
+# took 29 and stored 28 — silently keeping one description for a command
+# that no longer matched it. One name, one entry, both meanings.
+from collections import Counter  # noqa: E402
+
+from discord_bot import COMMANDS  # noqa: E402
+from telegram_bot import _BOT_COMMANDS  # noqa: E402
+
+tg_dupes = {n: k for n, k in Counter(c[0] for c in _BOT_COMMANDS).items()
+            if k > 1}
+dc_dupes = {n: k for n, k in Counter(c["name"] for c in COMMANDS).items()
+            if k > 1}
+checks["no Telegram command name is declared twice"] = not tg_dupes
+checks["…nor a Discord one"] = not dc_dupes
+
+_dc_restart = [c for c in COMMANDS if c["name"] == "restart"][0]
+checks["Discord's restart takes an optional container"] = (
+    _dc_restart["options"][0]["required"] is False)
+checks["…and says what leaving it empty does"] = (
+    "Docksentry" in _dc_restart["options"][0]["description"])
+for other in ("stop", "start"):
+    _c = [c for c in COMMANDS if c["name"] == other][0]
+    checks[f"…while /{other} still requires one"] = (
+        _c["options"][0]["required"] is True)
+
+checks["restarting Docksentry from Discord asks the same guard"] = (
+    "_restart_policy()" in dsrc_now() and "restart_self()" in dsrc_now())
+checks["…rather than growing a second copy of the rule"] = (
+    "HostConfig.RestartPolicy" not in dsrc_now())
+checks["a Discord restore points at the restart too"] = (
+    "`/restart` with no container does it" in dsrc_now())
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
