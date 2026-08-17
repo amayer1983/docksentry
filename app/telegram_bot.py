@@ -2240,7 +2240,20 @@ class TelegramBot:
         try:
             self._selfupdate_locked(target)
         finally:
-            if not self._swap_in_flight:
+            # Nothing in here may stop the release. This block raised
+            # once — `_swap_in_flight` had been orphaned out of
+            # UpdateEngine.__init__ by an unrelated edit, so reading it
+            # threw AttributeError *before* release() was reached, and
+            # the update lock stayed held for the life of the process.
+            # Every later update on that instance answered "an update is
+            # already running" and queued behind a batch that had
+            # finished 40 minutes earlier. One attribute wedged the whole
+            # machine, silently.
+            try:
+                swap = bool(getattr(self, "_swap_in_flight", False))
+            except Exception:
+                swap = False
+            if not swap:
                 self._update_lock.release()
 
     def cleanup_guarded(self, checker):
@@ -2662,7 +2675,20 @@ class TelegramBot:
         try:
             return self._check_selfupdate_auto_locked(defer_check)
         finally:
-            if not self._swap_in_flight:
+            # Nothing in here may stop the release. This block raised
+            # once — `_swap_in_flight` had been orphaned out of
+            # UpdateEngine.__init__ by an unrelated edit, so reading it
+            # threw AttributeError *before* release() was reached, and
+            # the update lock stayed held for the life of the process.
+            # Every later update on that instance answered "an update is
+            # already running" and queued behind a batch that had
+            # finished 40 minutes earlier. One attribute wedged the whole
+            # machine, silently.
+            try:
+                swap = bool(getattr(self, "_swap_in_flight", False))
+            except Exception:
+                swap = False
+            if not swap:
                 self._update_lock.release()
 
     def _check_selfupdate_auto_locked(self, defer_check=False):

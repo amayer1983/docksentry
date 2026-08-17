@@ -113,6 +113,16 @@ class UpdateEngine:
         # what it is dropping and why.
         self._update_queue = []
         self._update_queue_lock = threading.Lock()
+        # True once the helper container is launched — the process is
+        # about to be stopped, so the wrapper keeps the update lock held
+        # (nothing may start an update in the final seconds).
+        self._swap_in_flight = False
+        # Notifier (Discord/webhook fan-out) — single-sourced here so the
+        # orchestration methods that moved off the bot (_process_update_batch)
+        # can reach it, while the bot mirrors it through a property. Set by
+        # main.py after init (bot.notifier = Notifier(config), which writes
+        # through to here). Defensive default so the attribute always exists.
+        self.notifier = None
 
     #: Most anyone can queue by tapping. Ten manual updates back to back
     #: is already a long time to be holding someone's attention.
@@ -142,16 +152,6 @@ class UpdateEngine:
                 (taken if (predicate is None or predicate(k)) else keep).append(k)
             self._update_queue = keep
             return taken
-        # True once the helper container is launched — the process is
-        # about to be stopped, so the wrapper keeps the update lock held
-        # (nothing may start an update in the final seconds).
-        self._swap_in_flight = False
-        # Notifier (Discord/webhook fan-out) — single-sourced here so the
-        # orchestration methods that moved off the bot (_process_update_batch)
-        # can reach it, while the bot mirrors it through a property. Set by
-        # main.py after init (bot.notifier = Notifier(config), which writes
-        # through to here). Defensive default so the attribute always exists.
-        self.notifier = None
 
     def _store_for(self, host):
         """Container state scoped to `host` (a `ManagedHost`, a host name,

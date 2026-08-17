@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.11.1] - 2026-08-17
+
+### Fixed
+- **A failed self-update check wedged every update on the instance (affects 2.9.0 – 2.11.0).** Found in this developer's own log while @famewolf and @NotRetarded were testing something else on #2. With `AUTO_SELFUPDATE` on, the scheduled check takes the shared update lock, and the `finally` that gives it back first reads `_swap_in_flight` to see whether the helper container is about to stop the process. That attribute was never set on any real engine — so the read raised `AttributeError` **inside the finally, before `release()`** — and the lock stayed held for the life of the process.
+
+  Everything after that answered "an update is already running". Tapping a container in the notification queued it behind a batch that had finished forty minutes earlier, where it waited until the container restarted and the in-memory queue died with it. From the outside: the bot answers, the buttons work, and nothing ever updates.
+
+  The cause was a line in the wrong place. v2.9.0 added the update queue by inserting three methods into the middle of `UpdateEngine.__init__`, which left the tail of the constructor — `_swap_in_flight` and `notifier` — sitting after a `return` inside the last of them. Dead code. Both are back in the constructor, and neither `finally` can raise before releasing any more: a lock release must not depend on an attribute lookup succeeding.
+
+  No test caught it because every test builds its engine with `UpdateEngine.__new__` and sets the handful of attributes it needs by hand — a reasonable fixture, and a blind spot the size of the constructor. There is now one that builds the real thing.
+
 ## [2.11.0] - 2026-08-17
 
 ### Added
