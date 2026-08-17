@@ -1209,6 +1209,103 @@ class TelegramBot:
                 result = self.api_call("sendMessage", data)
         return result
 
+    #: A backup bundle is small — a few dozen kB. Anything much larger is
+    #: not one, and downloading it to find that out is somebody else's
+    #: bandwidth.
+    RESTORE_MAX_BYTES = 2 * 1024 * 1024
+
+    def _offer_restore(self, doc):
+        """A file arrived. Say what it is and ask, do not act.
+
+        Restoring overwrites settings, groups, pins, notes, links and
+        update windows. A file landing in a chat is not a decision — it
+        is an attachment somebody may well have dropped to show
+        somebody else. So this fetches it, checks it is one of ours,
+        reports what it would restore, and hands back a button. The
+        press is the decision (#2, @NotRetarded).
+        """
+        name = str(doc.get("file_name") or "")
+        size = int(doc.get("file_size") or 0)
+        if not name.lower().endswith(".json"):
+            return                                   # not for us, stay quiet
+        if size > self.RESTORE_MAX_BYTES:
+            self.send_message(self.t("restore_too_big",
+                                     size=f"{size / 1024 / 1024:.1f}"))
+            return
+        raw = self._download_file(doc.get("file_id"))
+        if raw is None:
+            self.send_message(self.t("restore_download_failed"))
+            return
+        try:
+            bundle = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self.send_message(self.t("restore_not_json"))
+            return
+        if not isinstance(bundle, dict) or "schema_version" not in bundle:
+            self.send_message(self.t("restore_not_a_backup"))
+            return
+
+        # Held in memory against a token, exactly like Discord's confirm
+        # flow: the button carries the token, not the payload, so a
+        # 30 kB bundle never has to fit in a callback_data field.
+        import secrets as _secrets
+        token = _secrets.token_hex(6)
+        pending = getattr(self, "_pending_restores", None)
+        if pending is None:
+            pending = self._pending_restores = {}
+        pending.clear()          # one at a time; the newest wins
+        pending[token] = bundle
+
+        parts = [k for k in ("settings", "groups", "pinned", "autoupdate",
+                             "notes", "links", "update_windows", "ask_major")
+                 if bundle.get(k)]
+        self.send_message(
+            self.t("restore_offer",
+                   name=name,
+                   instance=bundle.get("instance") or "?",
+                   made=str(bundle.get("generated_at") or "?")[:16],
+                   version=bundle.get("docksentry_version") or "?",
+                   parts=", ".join(parts) or "—"),
+            reply_markup={"inline_keyboard": [[
+                {"text": self.t("restore_confirm_btn"),
+                 "callback_data": f"restore_go:{token}"},
+                {"text": self.t("restore_cancel_btn"),
+                 "callback_data": "restore_cancel"},
+            ]]})
+
+    def _download_file(self, file_id):
+        """Fetch an attachment's bytes, or None."""
+        if not file_id:
+            return None
+        info = self.api_call("getFile", {"file_id": file_id})
+        path = ((info or {}).get("result") or {}).get("file_path")
+        if not path:
+            return None
+        url = (f"https://api.telegram.org/file/bot{self.config.bot_token}"
+               f"/{path}")
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                return r.read(self.RESTORE_MAX_BYTES + 1)
+        except Exception as e:
+            print(f"Telegram: could not download the attachment: {e}")
+            return None
+
+    def _do_restore(self, token):
+        """Apply the bundle behind `token`. Returns the reply text."""
+        bundle = (getattr(self, "_pending_restores", {}) or {}).pop(token, None)
+        if bundle is None:
+            return self.t("restore_expired")
+        import backup as _backup
+        from config import PERSISTENT_KEYS as _PK
+        try:
+            restored, errors, dropped = _backup.restore(
+                bundle, self.config, self.store, _PK)
+        except Exception as e:
+            return self.t("restore_failed", error=str(e)[:150])
+        return self.t("restore_done",
+                      parts=", ".join(restored) or "—",
+                      errors=("\n⚠️ " + "; ".join(errors)) if errors else "")
+
     def send_document(self, filename, data, caption=""):
         """Upload a file to the configured chat. True when it landed.
 
@@ -3080,6 +3177,22 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("not_authorized"))
             return
 
+        if data == "restore_cancel":
+            self.answer_callback(callback["id"], self.t("restore_cancelled"))
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            return
+
+        if data.startswith("restore_go:"):
+            # The press is the decision, not the file arriving. Buttons
+            # come off first so a second tap cannot run it twice — the
+            # token is popped as well, so even a race only restores once.
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            self.answer_callback(callback["id"], self.t("restore_running"))
+            self.send_message(self._do_restore(data.split(":", 1)[1]))
+            return
+
         if data == "update_all" or data.startswith("update_all:"):
             # Tokenised form (v1.23.3): "update_all:<token>" updates the
             # exact container set that THIS notification showed, looked
@@ -3236,6 +3349,22 @@ class TelegramBot:
         chat_id = message.get("chat", {}).get("id")
 
         if not self._check_auth(chat_id, user_id, kind="message"):
+            return
+
+        # A backup dropped into the chat (#2, @NotRetarded): "I'd love to
+        # see if it's possible to perform a /restore for Telegram by
+        # attaching that file from the backup. That will keep you out of
+        # the GUI even for restores." The other half of /backup, and the
+        # half that matters on the day the Web UI is the thing you cannot
+        # reach.
+        #
+        # It does not act on the file. Restoring overwrites settings,
+        # groups, pins and links, and a file arriving in a chat is not a
+        # decision — so this answers with what it found and a button, and
+        # the press is what restores. Same reasoning as Discord's /stop.
+        doc = message.get("document")
+        if doc and not text.startswith("/"):
+            self._offer_restore(doc)
             return
 
         # Audit trail (v2.1). One seam, after the auth check so only

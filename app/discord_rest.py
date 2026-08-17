@@ -14,6 +14,7 @@ here, once, rather than trusted to every call site.
 `urllib` only, like the rest of the project.
 """
 
+import hashlib
 import json
 import time
 import urllib.error
@@ -202,6 +203,76 @@ class DiscordREST:
         if embeds:
             payload["embeds"] = embeds
         return self.request("POST", f"/channels/{channel_id}/messages", payload)
+
+    def upload(self, path, filename, data, content="", *, method="POST"):
+        """Attach a file to a message. Returns the decoded body.
+
+        Discord takes attachments as multipart/form-data: the ordinary
+        JSON body under `payload_json`, and each file under `files[n]`
+        with a matching entry in `attachments`. That is a different body
+        format from every other call this client makes, so it builds its
+        own request rather than teaching `request()` a second shape and
+        risking the path every notification already goes through.
+
+        `.json` is attached as-is, with its real name. @famewolf and
+        @NotRetarded both expected Discord would need it renamed to
+        `.txt` or wrapped in a zip (#2); the documented API takes an
+        arbitrary filename and there is no extension whitelist for bot
+        uploads, so it should not.
+
+        **Not verified against the live API.** The body below is built to
+        Discord's documented multipart shape and checked structurally,
+        but nothing here has posted a real `.json` to a real channel — I
+        have no bot of my own, and using somebody else's channel to find
+        out is not mine to do. If Discord does refuse it, the fix is a
+        zip rather than a `.txt` rename: renaming a file to hide what it
+        is only moves the problem to whatever has to open it later.
+
+        Not retried. A duplicated 30 kB upload into a channel is worse
+        than an error the user can act on by asking again.
+        """
+        boundary = "----docksentry" + hashlib.sha1(
+            (filename + str(len(data))).encode()).hexdigest()[:16]
+        payload = {"content": content,
+                   "attachments": [{"id": 0, "filename": filename}]}
+        parts = [
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="payload_json"\r\n'
+            f"Content-Type: application/json\r\n\r\n"
+            f"{json.dumps(payload)}\r\n".encode("utf-8"),
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="files[0]"; '
+            f'filename="{filename}"\r\n'
+            f"Content-Type: application/json\r\n\r\n".encode("utf-8"),
+            data if isinstance(data, bytes) else data.encode("utf-8"),
+            f"\r\n--{boundary}--\r\n".encode("utf-8"),
+        ]
+        body = b"".join(parts)
+        req = urllib.request.Request(
+            f"{self.base}{path}", data=body, method=method,
+            headers={"Authorization": f"Bot {self.token}",
+                     "User-Agent": USER_AGENT,
+                     "Content-Type":
+                         f"multipart/form-data; boundary={boundary}"})
+        try:
+            with urllib.request.urlopen(req, timeout=max(self.timeout, 60)) as r:
+                raw = r.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as e:
+            raise DiscordRESTError(e.code, e.read().decode("utf-8", "replace"))
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise DiscordRESTError(0, str(e))
+
+    def upload_to_channel(self, channel_id, filename, data, content=""):
+        return self.upload(f"/channels/{channel_id}/messages",
+                           filename, data, content)
+
+    def upload_followup(self, application_id, interaction_token,
+                        filename, data, content=""):
+        """A file as the answer to a deferred slash command."""
+        return self.upload(
+            f"/webhooks/{application_id}/{interaction_token}",
+            filename, data, content)
 
     def interaction_autocomplete(self, interaction_id, interaction_token,
                                  choices):

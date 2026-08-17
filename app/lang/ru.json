@@ -795,5 +795,17 @@
   "web_status_view": "Status page",
   "web_status_view_hint": "How your containers are drawn. The table shows every action on every row and suits a wide screen. The list shows one row per container leading with whether an update is waiting, puts the rest in a detail panel, and reads on a phone.",
   "web_status_view_table": "Table — everything on the row",
-  "web_status_view_list": "List — update state first, details on demand"
+  "web_status_view_list": "List — update state first, details on demand",
+  "restore_offer": "📥 *A backup arrived*\n\n`{name}`\nFrom: *{instance}* · {made} · v{version}\nContains: {parts}\n\nRestoring overwrites the settings, groups, pins, notes, links and update windows on *this* instance. Nothing has been changed yet.",
+  "restore_confirm_btn": "♻️ Restore",
+  "restore_cancel_btn": "✋ Cancel",
+  "restore_cancelled": "Left alone.",
+  "restore_running": "Restoring…",
+  "restore_done": "✅ Restored: {parts}{errors}\n\nSome settings only take effect after a restart.",
+  "restore_failed": "⚠️ Restore failed: {error}",
+  "restore_expired": "⚠️ That offer is gone — send the file again.",
+  "restore_too_big": "⚠️ {size} MB is too large for a backup file. Nothing was downloaded.",
+  "restore_download_failed": "⚠️ Telegram would not hand me that file.",
+  "restore_not_json": "⚠️ That file is not JSON, so it is not a Docksentry backup.",
+  "restore_not_a_backup": "⚠️ That is JSON, but not a Docksentry backup — no `schema_version` in it."
 }

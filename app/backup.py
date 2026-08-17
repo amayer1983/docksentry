@@ -246,3 +246,97 @@ def write_local_if_stale(config, store, version, max_age_hours=12,
         if age < max_age_hours * 3600 and not changed_since:
             return ""
     return write_local(config, store, version, keep=keep, when=when)
+
+
+def restore(bundle, config, store, persistent_keys):
+    """Apply a backup bundle. Returns (restored, errors, dropped_links).
+
+    Lifted verbatim out of the Web UI's import endpoint when Telegram
+    needed the same thing (#2, @NotRetarded: "I'd love to see if it's
+    possible to perform a /restore for Telegram by attaching that file").
+    One implementation with two callers, rather than a second one that
+    starts identical and quietly stops being.
+
+    The care in here is not decoration. Settings go through the
+    PERSISTENT_KEYS allow-list so a bundle cannot inject arbitrary
+    attributes, and links go through the same validator the live write
+    path uses — a backup is a file, not a trusted channel, and nothing
+    about "the user picked it" says the user wrote it. Rejects are
+    counted rather than swallowed, because a restore that reports
+    success while quietly losing entries is worse than one that fails.
+    """
+    restored = []
+    errors = []
+    dropped_links = 0   # links rejected by is_safe_link (#52)
+    # Settings — apply via the PERSISTENT_KEYS allowlist so
+    # we don't accept arbitrary attribute injection.
+    if isinstance(bundle.get("settings"), dict):
+        try:
+            for key, value in bundle["settings"].items():
+                if key in persistent_keys:
+                    setattr(config, key, value)
+            config.save_persistent()
+            restored.append("settings")
+        except Exception as e:
+            errors.append(f"settings: {str(e)[:100]}")
+    # Lists — pinned, autoupdate, ask_major
+    if isinstance(bundle.get("pinned"), list):
+        store.save_pinned([str(x) for x in bundle["pinned"] if isinstance(x, str)])
+        restored.append("pinned")
+    if isinstance(bundle.get("autoupdate"), list):
+        store.save_autoupdate([str(x) for x in bundle["autoupdate"] if isinstance(x, str)])
+        restored.append("autoupdate")
+    if isinstance(bundle.get("ask_major"), list):
+        # No public save_ask_before_major — write through
+        # the same _save the toggle uses. Coerce to str just
+        # to be paranoid about malformed bundles.
+        store._save(store.ask_before_major_file,
+                    [str(x) for x in bundle["ask_major"] if isinstance(x, str)])
+        restored.append("ask_major")
+    # Dicts — groups, notes, links, update_windows. Just
+    # write them through the existing _save_dict so the
+    # atomic-write path applies.
+    if isinstance(bundle.get("groups"), dict):
+        store._save_dict(store.groups_file, bundle["groups"])
+        restored.append("groups")
+    if isinstance(bundle.get("notes"), dict):
+        store._save_dict(store.notes_file, bundle["notes"])
+        restored.append("notes")
+    if isinstance(bundle.get("links"), dict):
+        # Links are the one section that gets rendered as an
+        # `<a href>` (#52) — everything else in a bundle ends
+        # up as escaped text. Writing them through _save_dict
+        # raw bypassed set_link and therefore the validator,
+        # so a hand-edited backup file could plant
+        # `javascript:…` in container_links.json and have the
+        # Web UI hand it to the browser on the next render.
+        # A backup is a file, not a trusted channel: it
+        # arrives over an unauthenticated-by-content upload
+        # and nothing about "the user picked it" says the
+        # user wrote it.
+        #
+        # Every entry goes through the same is_safe_link the
+        # live write path uses. Rejects are dropped and
+        # COUNTED — swallowing them silently would restore a
+        # bundle "successfully" while quietly losing data the
+        # user believes is back.
+        from container_store import is_safe_link as _is_safe_link
+        clean_links = {}
+        for k, v in bundle["links"].items():
+            if isinstance(k, str) and isinstance(v, str) and _is_safe_link(v.strip()):
+                clean_links[k] = v.strip()
+            else:
+                dropped_links += 1
+        store._save_dict(store.links_file, clean_links)
+        # The import toast prints `restored` verbatim, so the
+        # count has to travel inside it to be seen at all.
+        restored.append("links" if not dropped_links
+                        else f"links ({dropped_links} unsafe dropped)")
+        if dropped_links:
+            errors.append(
+                f"links: {dropped_links} entry/entries rejected by the "
+                f"URL validator (not http/https, or unsafe characters)")
+    if isinstance(bundle.get("update_windows"), dict):
+        store._save_dict(store.update_windows_file, bundle["update_windows"])
+        restored.append("update_windows")
+    return restored, errors, dropped_links

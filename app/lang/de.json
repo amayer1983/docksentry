@@ -795,5 +795,17 @@
   "web_status_view": "Statusseite",
   "web_status_view_hint": "Wie deine Container dargestellt werden. Die Tabelle zeigt jede Aktion in jeder Zeile und passt auf einen breiten Bildschirm. Die Liste zeigt pro Container eine Zeile, die mit dem Update-Zustand beginnt, packt den Rest in ein Detailpanel und lässt sich auf dem Handy lesen.",
   "web_status_view_table": "Tabelle — alles in der Zeile",
-  "web_status_view_list": "Liste — Update zuerst, Details auf Abruf"
+  "web_status_view_list": "Liste — Update zuerst, Details auf Abruf",
+  "restore_offer": "📥 *Ein Backup ist angekommen*\n\n`{name}`\nVon: *{instance}* · {made} · v{version}\nEnthält: {parts}\n\nEin Einspielen überschreibt Einstellungen, Gruppen, Pins, Notizen, Links und Update-Fenster auf *dieser* Instanz. Bisher wurde nichts geändert.",
+  "restore_confirm_btn": "♻️ Einspielen",
+  "restore_cancel_btn": "✋ Abbrechen",
+  "restore_cancelled": "Bleibt, wie es ist.",
+  "restore_running": "Wird eingespielt…",
+  "restore_done": "✅ Eingespielt: {parts}{errors}\n\nManche Einstellungen greifen erst nach einem Neustart.",
+  "restore_failed": "⚠️ Einspielen fehlgeschlagen: {error}",
+  "restore_expired": "⚠️ Das Angebot ist abgelaufen — schick die Datei noch einmal.",
+  "restore_too_big": "⚠️ {size} MB sind zu groß für ein Backup. Es wurde nichts heruntergeladen.",
+  "restore_download_failed": "⚠️ Telegram gibt mir die Datei nicht.",
+  "restore_not_json": "⚠️ Diese Datei ist kein JSON, also kein Docksentry-Backup.",
+  "restore_not_a_backup": "⚠️ Das ist JSON, aber kein Docksentry-Backup — kein `schema_version` darin."
 }

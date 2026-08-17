@@ -74,6 +74,8 @@ COMMANDS = [
          {"name": "host", "description": "Limit to one host",
           "type": 3, "required": False},
      ]},
+    {"name": "backup", "description":
+     "Send a backup of settings, groups and pins as a file", "type": 1},
     {"name": "check", "description": "Check for container updates now",
      "type": 1,
      "options": [
@@ -247,6 +249,14 @@ LOG_LINES_MAX = 200
 #: so the user isn't looking at a spinner with no explanation — and so the
 #: warning about the 15-minute window arrives BEFORE it's relevant.
 SLOW_COMMANDS = ("update", "updateall", "cleanup")
+
+#: What a command handler returns when it has already answered for
+#: itself. `/backup` has to: an attachment cannot be added by editing a
+#: deferred response, so the file goes as a followup message and there is
+#: nothing left for the usual delivery to say. Returning "" would not do
+#: — `_deliver` turns an empty answer into "(no output)", which would
+#: post a second, puzzling message under the file.
+ANSWERED = object()
 
 #: How long a confirmation button stays pressable. Deliberately the same
 #: 15 minutes Discord gives the interaction token: past that the button is
@@ -743,6 +753,8 @@ class DiscordBot:
         a reason to change that. Anything other than an expired token is
         logged and dropped.
         """
+        if text is ANSWERED:
+            return
         body = str(text) or "(no output)"
         if self._now() - started < DEFER_TOKEN_TTL - DEFER_TOKEN_MARGIN:
             try:
@@ -1108,6 +1120,8 @@ class DiscordBot:
             return self._cmd_groups()
         if name == "settings":
             return self._cmd_settings()
+        if name == "backup":
+            return self._cmd_backup(data)
         if name == "update":
             return self._cmd_update(opts)
         if name == "updateall":
@@ -1497,6 +1511,47 @@ class DiscordBot:
     @staticmethod
     def _on_off(value):
         return "on ✅" if value else "off"
+
+    def _cmd_backup(self, data):
+        """Hand the backup over as a file (#2).
+
+        @famewolf asked for this on Telegram — "no more having to jump
+        from webui to webui" — and @NotRetarded asked why Discord did not
+        have it about four hours later. Same bundle, same builder, a
+        different transport.
+
+        The answer is a *followup*, not the usual edited reply: an
+        attachment cannot be added by editing a deferred response, so the
+        file goes as its own message on the interaction's webhook. The
+        return value is empty because the followup has already said
+        everything — returning text too would post the answer twice.
+
+        The bundle carries webhook URLs and the Web UI password hash. The
+        channel is already the trusted one (the guild check and the
+        allow-list gate every command), but that is worth saying out loud
+        rather than shipping quietly.
+        """
+        import backup as _backup
+        from version import VERSION as _V
+        try:
+            payload = _backup.payload(self.config, self.store, _V)
+            fname = _backup.filename(self.config)
+        except Exception as e:
+            return f"⚠️ Could not build the backup: {str(e)[:150]}"
+        try:
+            self.rest.upload_followup(
+                self.application_id, data.get("token"),
+                fname, payload,
+                "📦 Docksentry backup — restore via Web UI → Settings → Import.")
+        except Exception as e:
+            self.log(f"Discord: backup upload failed: {e}")
+            return ("⚠️ The backup was built but Discord would not take the "
+                    "file. Download it from the Web UI under Settings.")
+        try:
+            _backup.write_local(self.config, self.store, _V)
+        except Exception:
+            pass
+        return ANSWERED
 
     def _cmd_settings(self):
         """The instance's effective settings.
