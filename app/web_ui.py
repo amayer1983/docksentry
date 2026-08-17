@@ -1369,6 +1369,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if ui_mode not in ("simple", "advanced"):
                 ui_mode = "advanced"
             body_class = "mode-simple" if ui_mode == "simple" else "mode-advanced"
+            # The rebuilt interface, for whoever asked for it by setting
+            # WEB_UI_V2. Nothing links to it and nothing announces it: the
+            # point is that the people testing it are the people who were
+            # told how, so a half-finished page cannot surprise anybody
+            # else. The marker is on <body> so the stylesheet, the tests
+            # and a screenshot can all tell which one they are looking at.
+            v2 = bool(getattr(config, "web_ui_v2", False))
+            v2_class = " ui-v2" if v2 else ""
+            ui_gen = "v2" if v2 else "v1"
             ui_mode_other = "advanced" if ui_mode == "simple" else "simple"
             if ui_mode == "simple":
                 ui_mode_toggle_title = t("web_ui_mode_show_advanced")
@@ -1413,7 +1422,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </script>
 <link rel="stylesheet" href="/static/app.css?v={VERSION}">
 </head>
-<body class="{body_class}">
+<body class="{body_class}{v2_class}" data-ui="{ui_gen}">
 <div class="header">
 <div class="header-row{" wide" if active == "status" else ""}">
 <!-- Brand lockup: tile + wordmark. The wordmark is real text, not part

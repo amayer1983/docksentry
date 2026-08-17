@@ -733,6 +733,19 @@ class Config:
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port
+        # The rebuilt interface, off unless somebody asks for it.
+        #
+        # Read straight from the environment and never from settings.json,
+        # on purpose. A saved value outranks the environment, so a test
+        # switch that got persisted would be one you cannot turn off again
+        # without editing a file inside the volume — which is the trap
+        # @famewolf hit three times in one night with
+        # DISK_WARN_AUTO_CLEANUP, WEB_PASSWORD and BOT_LABEL (#2). It is
+        # also why this is absent from PERSISTENT_KEYS and from
+        # PERSISTENT_ENV_VARS, and why there is no toggle for it in the
+        # interface: a switch in the UI is a switch everybody finds.
+        self.web_ui_v2 = _env("WEB_UI_V2", "false").lower() in (
+            "true", "1", "yes")
         self.web_password = web_password
         # A username at last (#60). Empty accepts any name, which is what
         # the old code did by accident: it split the Basic Auth header and
