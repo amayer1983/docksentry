@@ -1604,14 +1604,35 @@ class DiscordBot:
         if size > self.RESTORE_MAX_BYTES:
             return (f"⚠️ {size / 1024 / 1024:.1f} MB is too large for a backup "
                     f"file. Nothing was downloaded.")
+        # A User-Agent, because the attachment does not come from the API
+        # — it comes from Discord's CDN, which sits behind Cloudflare, and
+        # Cloudflare answers `Python-urllib/3.x` with 403. Every other
+        # request this bot makes already sends one; this was the one that
+        # did not, and it is the reason @NotRetarded's first `/restore`
+        # failed ten minutes after it shipped (#2).
+        import urllib.error
+        import urllib.request
+        from discord_rest import USER_AGENT
         try:
-            import urllib.request
-            with urllib.request.urlopen(url, timeout=60) as r:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=60) as r:
                 raw = r.read(self.RESTORE_MAX_BYTES + 1)
-            bundle = json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            self.log(f"Discord: attachment fetch returned {e.code}: {url[:120]}")
+            return (f"⚠️ Discord would not hand me that file — its CDN "
+                    f"answered **HTTP {e.code}**. Try attaching it again; if "
+                    f"it keeps happening, the link may have expired.")
         except Exception as e:
-            self.log(f"Discord: could not read the attachment: {e}")
-            return "⚠️ I could not read that attachment."
+            self.log(f"Discord: could not fetch the attachment: {e}")
+            return (f"⚠️ I could not fetch that attachment: "
+                    f"`{str(e)[:120]}`")
+        try:
+            bundle = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as e:
+            self.log(f"Discord: attachment was not JSON: {e}")
+            return (f"⚠️ That file is not JSON, so it is not a Docksentry "
+                    f"backup: `{str(e)[:100]}`")
         if not isinstance(bundle, dict) or "schema_version" not in bundle:
             return ("⚠️ That is JSON, but not a Docksentry backup — no "
                     "`schema_version` in it.")

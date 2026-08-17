@@ -406,6 +406,29 @@ checks["…rather than growing a second copy of the rule"] = (
 checks["a Discord restore points at the restart too"] = (
     "`/restart` with no container does it" in dsrc_now())
 
+# ═══ the attachment fetch, which failed ten minutes after shipping ═══
+# @NotRetarded ran /restore straight away and got "I could not read that
+# attachment" — a message that says nothing, on a fetch that sent no
+# User-Agent. The attachment does not come from the API; it comes from
+# Discord's CDN behind Cloudflare, which answers Python-urllib with 403.
+_fetch = dsrc_now()[dsrc_now().index("def _cmd_restore"):]
+_fetch = _fetch[:_fetch.index("\n    def ", 10)]
+checks["the attachment fetch identifies itself"] = (
+    'headers={"User-Agent": USER_AGENT}' in _fetch)
+checks["…with the same agent every other call uses"] = (
+    "from discord_rest import USER_AGENT" in _fetch)
+checks["an HTTP refusal reports its status code"] = (
+    "HTTP {e.code}" in _fetch)
+checks["…and a network failure reports what went wrong"] = (
+    "could not fetch that attachment" in _fetch and "str(e)[:120]" in _fetch)
+checks["…and a file that is not JSON says which part failed"] = (
+    "not JSON, so it is not a Docksentry" in _fetch)
+# The old message told the user nothing and put the reason in a log they
+# had no reason to open. That is the failure mode this whole thread has
+# been about.
+checks["no blank 'could not read that attachment' is left"] = (
+    "I could not read that attachment." not in dsrc_now())
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

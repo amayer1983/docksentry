@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.12.2] - 2026-08-17
+
+### Fixed
+- **`/restore` on Discord could not read the file it was given (#2, @NotRetarded).** He ran it ten minutes after 2.12.0 shipped and got "I could not read that attachment", which is a message that says nothing.
+
+  The attachment does not come from the API — it comes from Discord's CDN, which sits behind Cloudflare, and Cloudflare answers `Python-urllib/3.x` with a refusal. Every other request this bot makes already identifies itself; this one fetch did not. It does now.
+
+  And the message is no longer a dead end. An HTTP refusal names its status code, a network failure quotes what went wrong, and a file that turns out not to be JSON says which part failed — rather than a blank sentence and a reason buried in a log the user has no reason to open. That is the failure mode this whole thread has been about.
+
+- Confirmed along the way: Discord takes a `.json` attachment with its real filename and previews it inline. No `.txt` rename, no zip — the question 2.12.0 shipped with unanswered.
+
 ## [2.12.1] - 2026-08-17
 
 ### Fixed
