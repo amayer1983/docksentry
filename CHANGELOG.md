@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.11.0] - 2026-08-17
+
+### Added
+- **A second way to draw the status page, and a setting to pick it.** The old one was measurably the dense page in the product: 25 containers produced 236 forms, 380 fields and 289 buttons — about nine forms and eleven buttons per row — and 426 of the page's explanations sat in `title` tooltips, which a phone cannot show at all. Looking at a screenshot settled the rest: every row carried six identical emoji buttons at the same size and weight, so you could not tell the routine one from the one that stops your database. And in a tool whose whole job is telling you when a container needs updating, **the row never said whether it needed updating**. That lived in a counter at the top of the page.
+
+  The new **list** layout leads with the answer: state, name, image, and then either "update available" with the button that applies it, or nothing at all. An up-to-date container is quiet. Everything else — check, pin, auto-update, restart, logs, stop — moved into a detail panel behind one control per row, with its explanations as text on the page instead of in a tooltip. Colour means something again: *Stop* is the only red thing on the screen. It also renders as two-line cards on a phone, and refreshes itself in place rather than reloading.
+
+  Under it, the page is data instead of markup: the server sends one JSON document built from the same view the table renders from — so the two cannot disagree about what is pinned or pending — and the browser draws it. 27 kB instead of 173 kB at 25 containers. No framework and no build step; this image still has no npm anywhere near it.
+
+  **Settings › General › Status page**, and the default is unchanged: `table`, the layout you already have. An upgrade must not rearrange a page somebody knows how to use. `STATUS_VIEW=list` seeds it for a fresh install; the setting wins after that.
+
+  A note on what this deliberately is not. It began as a whole rebuilt interface behind a hidden switch, for testers. That was over-scoped, and the same measurements said so: Settings, at four tabs and 45 fields, was the tidiest page there was. One page had the problem, so one page got the fix.
+
+- **The status JSON says what the caller is allowed to do.** A read-only API token now gets a read-only page: the actions it would be refused are not offered. Groundwork rather than a feature — the day roles and users arrive, the server sends a shorter list and the interface needs no change. To be clear about the boundary: hiding a button is not a permission, and every endpoint still enforces its own access.
+
+### Fixed
+- **The status page no longer changes width when you arrive on it.** It has been 1400px since #46, because the old seven-column table scrolled sideways on a wide monitor. The list layout has no such problem, and inheriting the exception made the header, the navigation and the content jump between two widths as you moved between pages. The table keeps its extra width; the list matches every other page.
+
 ## [2.10.0] - 2026-08-17
 
 ### Added
