@@ -791,5 +791,9 @@
   "backup_send_failed": "⚠️ The backup was built but Telegram would not take the file. Try again, or download it from the Web UI under Settings.",
   "backup_local_written": "💾 Automatic backup written: `{path}`",
   "web_setup_restore_intro": "Already have a backup from another install, or from this one? Restore it and skip the rest of this.",
-  "web_setup_restore_btn": "Restore from a backup"
+  "web_setup_restore_btn": "Restore from a backup",
+  "web_status_view": "Status page",
+  "web_status_view_hint": "How your containers are drawn. The table shows every action on every row and suits a wide screen. The list shows one row per container leading with whether an update is waiting, puts the rest in a detail panel, and reads on a phone.",
+  "web_status_view_table": "Table — everything on the row",
+  "web_status_view_list": "List — update state first, details on demand"
 }

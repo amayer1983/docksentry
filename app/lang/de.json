@@ -791,5 +791,9 @@
   "backup_send_failed": "⚠️ Das Backup wurde erstellt, aber Telegram hat die Datei nicht angenommen. Versuch es nochmal oder lade es in der Weboberfläche unter Einstellungen herunter.",
   "backup_local_written": "💾 Automatisches Backup geschrieben: `{path}`",
   "web_setup_restore_intro": "Du hast schon ein Backup — von einer anderen Installation oder von dieser? Spiel es ein und überspring den Rest hier.",
-  "web_setup_restore_btn": "Aus Backup wiederherstellen"
+  "web_setup_restore_btn": "Aus Backup wiederherstellen",
+  "web_status_view": "Statusseite",
+  "web_status_view_hint": "Wie deine Container dargestellt werden. Die Tabelle zeigt jede Aktion in jeder Zeile und passt auf einen breiten Bildschirm. Die Liste zeigt pro Container eine Zeile, die mit dem Update-Zustand beginnt, packt den Rest in ein Detailpanel und lässt sich auf dem Handy lesen.",
+  "web_status_view_table": "Tabelle — alles in der Zeile",
+  "web_status_view_list": "Liste — Update zuerst, Details auf Abruf"
 }

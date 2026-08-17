@@ -1378,17 +1378,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if wide is None:
                 wide = (active == "status")
             body_class = "mode-simple" if ui_mode == "simple" else "mode-advanced"
-            # The rebuilt interface, for whoever asked for it by setting
-            # WEB_UI_V2. Nothing links to it and nothing announces it: the
-            # point is that the people testing it are the people who were
-            # told how, so a half-finished page cannot surprise anybody
-            # else. The marker is on <body> so the stylesheet, the tests
-            # and a screenshot can all tell which one they are looking at.
-            v2 = bool(getattr(config, "web_ui_v2", False))
+            # Which status view this instance draws. The marker goes on
+            # <body> so the stylesheet, the tests and a screenshot can all
+            # tell which one they are looking at.
+            v2 = getattr(config, "status_view", "table") == "list"
             v2_class = " ui-v2" if v2 else ""
             ui_gen = "v2" if v2 else "v1"
             v2_css = (f'\n<link rel="stylesheet" href="/static/v2.css?v={VERSION}">'
                       if v2 else "")
+            # `ui-v2` is the class the list view's stylesheet hangs off;
+            # `data-ui` is what a test or a screenshot reads.
             ui_mode_other = "advanced" if ui_mode == "simple" else "simple"
             if ui_mode == "simple":
                 ui_mode_toggle_title = t("web_ui_mode_show_advanced")
@@ -2180,6 +2179,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         config.disk_warn_percent = max(50, min(v, 100))
                     except (ValueError, IndexError):
                         pass
+                _sv = (params.get("status_view") or ["table"])[0].strip().lower()
+                if _sv in ("table", "list"):
+                    config.status_view = _sv
                 config.disk_warn_auto_cleanup = "disk_warn_auto_cleanup" in params
 
                 # Quiet hours — accept HH:MM or empty
@@ -3931,7 +3933,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # here ends with the same `views` the old table is built
             # from — one reader of the store, not two that can disagree
             # about what is pinned or pending.
-            if getattr(config, "web_ui_v2", False):
+            if getattr(config, "status_view", "table") == "list":
                 import web_v2
                 from version import VERSION as _V
                 self._v2_views = views
@@ -5479,7 +5481,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <div class="tab-pane" data-tab-pane="settings" data-tab-name="general">
   <div class="grid">
     <div>
-      <label>{t("web_language")}{env_("language")}</label>
+      <label>{t("web_status_view")} {help_(t("web_status_view_hint"))}{env_("status_view")}</label>
+  <select name="status_view" form="settings-form">
+    <option value="table" {'selected' if getattr(config, "status_view", "table") != "list" else ''}>{t("web_status_view_table")}</option>
+    <option value="list" {'selected' if getattr(config, "status_view", "table") == "list" else ''}>{t("web_status_view_list")}</option>
+  </select>
+  <label>{t("web_language")}{env_("language")}</label>
       <select name="language" form="settings-form">{lang_options}</select>
     </div>
     <div>

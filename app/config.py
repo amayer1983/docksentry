@@ -106,7 +106,7 @@ PERSISTENT_KEYS = [
     "disk_warn_percent", "disk_warn_auto_cleanup",
     "quiet_hours_start", "quiet_hours_end",
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
-    "web_setup_done", "ui_mode",
+    "web_setup_done", "ui_mode", "status_view",
     "language", "web_password", "web_username", "web_session_hours",
     "web_session_max_days", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
@@ -170,6 +170,7 @@ PERSISTENT_ENV_VARS = {
     "weekly_report_weekday": "WEEKLY_REPORT_WEEKDAY",
     "weekly_report_hour": "WEEKLY_REPORT_HOUR",
     "language": "LANGUAGE",
+    "status_view": "STATUS_VIEW",
     "web_password": "WEB_PASSWORD",
     "web_username": "WEB_USERNAME",
     "web_session_hours": "WEB_SESSION_HOURS",
@@ -258,6 +259,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "weekly_report_weekday": 0,
     "weekly_report_hour": 9,
     "language": "en",
+    "status_view": "table",
     "web_password": "",
     "web_username": "",
     "web_session_hours": 8,
@@ -329,7 +331,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "disk_warn_percent", "disk_warn_auto_cleanup",
     "quiet_hours_start", "quiet_hours_end",
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
-    "web_setup_done", "ui_mode", "language", "debug",
+    "web_setup_done", "ui_mode", "status_view", "language", "debug",
     "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
@@ -480,7 +482,8 @@ class Config:
                  discord_bot_channel="",
                  discord_public_replies=False,
                  web_username="", web_session_hours=8,
-                 web_session_max_days=7):
+                 web_session_max_days=7,
+                 status_view="table"):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.cron_schedule = cron_schedule
@@ -733,19 +736,25 @@ class Config:
         self.language = language
         self.web_ui = web_ui
         self.web_port = web_port
-        # The rebuilt interface, off unless somebody asks for it.
+        # How the status page draws its containers.
         #
-        # Read straight from the environment and never from settings.json,
-        # on purpose. A saved value outranks the environment, so a test
-        # switch that got persisted would be one you cannot turn off again
-        # without editing a file inside the volume — which is the trap
-        # @famewolf hit three times in one night with
-        # DISK_WARN_AUTO_CLEANUP, WEB_PASSWORD and BOT_LABEL (#2). It is
-        # also why this is absent from PERSISTENT_KEYS and from
-        # PERSISTENT_ENV_VARS, and why there is no toggle for it in the
-        # interface: a switch in the UI is a switch everybody finds.
-        self.web_ui_v2 = _env("WEB_UI_V2", "false").lower() in (
-            "true", "1", "yes")
+        #   table — every action on every row, wide layout (the original)
+        #   list  — one row per container leading with its update state,
+        #           everything else in a detail panel
+        #
+        # This started life as WEB_UI_V2, an env-only switch for a rebuilt
+        # interface. That was over-scoped: measured, the status page was
+        # the dense one — 236 forms and 289 buttons at 25 containers —
+        # while Settings, at four tabs and 45 fields, was the tidiest page
+        # there was. A whole second interface would have been solving a
+        # problem the measurements said did not exist.
+        #
+        # So it is a preference, not a test flag, and therefore an
+        # ordinary persistent setting like `ui_mode` next to it. Defaults
+        # to `table`: an upgrade must not rearrange the page somebody
+        # already knows.
+        self.status_view = status_view if status_view in (
+            "table", "list") else "table"
         self.web_password = web_password
         # A username at last (#60). Empty accepts any name, which is what
         # the old code did by accident: it split the Basic Auth header and
@@ -1241,6 +1250,7 @@ class Config:
             language=_env("LANGUAGE", "en"),
             web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
             web_port=int(_env("WEB_PORT", "8080")),
+            status_view=_env("STATUS_VIEW", "table").strip().lower(),
             web_password=_env("WEB_PASSWORD"),
             web_username=_env("WEB_USERNAME", ""),
             web_session_hours=_env("WEB_SESSION_HOURS", "8"),
