@@ -1378,6 +1378,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             v2 = bool(getattr(config, "web_ui_v2", False))
             v2_class = " ui-v2" if v2 else ""
             ui_gen = "v2" if v2 else "v1"
+            v2_css = (f'\n<link rel="stylesheet" href="/static/v2.css?v={VERSION}">'
+                      if v2 else "")
             ui_mode_other = "advanced" if ui_mode == "simple" else "simple"
             if ui_mode == "simple":
                 ui_mode_toggle_title = t("web_ui_mode_show_advanced")
@@ -1420,7 +1422,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     }} catch(e) {{}}
 }})();
 </script>
-<link rel="stylesheet" href="/static/app.css?v={VERSION}">
+<link rel="stylesheet" href="/static/app.css?v={VERSION}">{v2_css}
 </head>
 <body class="{body_class}{v2_class}" data-ui="{ui_gen}">
 <div class="header">
@@ -1697,6 +1699,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # exists to replace. It rendered unstyled as well. They carry
             # no data of yours: the same CSS, JS and icon for everyone.
             if bare in ("/static/app.css", "/static/app.js",
+                        "/static/v2.css", "/static/v2.js",
                         "/static/manifest.webmanifest", "/static/icon.png"):
                 return self._serve_static(bare.rsplit("/", 1)[1])
             if not self._check_auth():
@@ -1877,6 +1880,45 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
+                return
+            elif path == "/api/v2/status":
+                # Everything the rebuilt status page draws, in one
+                # document. Built from the same `_status_view` dicts the
+                # old table renders from, deliberately: two readers of
+                # the store is two answers to "is this pinned?", and the
+                # one that is wrong is always the one nobody is looking
+                # at. Behind the same auth as every other page.
+                import web_v2
+                from container_store import LOCAL_HOST, host_key
+                t = _web_translator(config.language)
+                try:
+                    own_name = checker._own_container_name()
+                except Exception:
+                    own_name = ""
+                multi = _multi_hosts()
+                views = self._host_views(multi, _store_for, own_name)
+                extra = {}
+                try:
+                    disk_pct, disk_free, _tot = checker.get_disk_usage()
+                    extra["disk"] = disk_pct
+                    extra["disk_free"] = round(disk_free / (1024 ** 3))
+                except Exception:
+                    pass
+                # A read-only API token gets a read-only page: the
+                # actions it would be refused are not offered. The
+                # endpoints still enforce it themselves — this is the
+                # interface agreeing with them, not replacing them.
+                body = json.dumps(web_v2.payload(
+                    views, host_key, extra,
+                    can=web_v2.capabilities(
+                        read_only=bool(self._api_token_name())))
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return
             elif path == "/api/cron_preview":
                 # Settings page schedule-editor live preview. Returns
@@ -3875,6 +3917,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 own_name = ""
 
             views = self._host_views(multi, _store_for, own_name)
+
+            # V2 renders from JSON in the browser, so the server's job
+            # here ends with the same `views` the old table is built
+            # from — one reader of the store, not two that can disagree
+            # about what is pinned or pending.
+            if getattr(config, "web_ui_v2", False):
+                import web_v2
+                from version import VERSION as _V
+                self._v2_views = views
+                self._send_html(self._render_page(
+                    web_v2.shell(t, _V, config.language), "status"))
+                return
 
             rows = ""
             def _ctx_hint(view):

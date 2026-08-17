@@ -1,0 +1,187 @@
+/* Docksentry V2 — the rebuilt interface.
+ *
+ * Layered on top of app.css rather than replacing it: the shell, the
+ * theme variables and the login page are shared, and forking those would
+ * mean fixing every colour twice. Only what V2 draws lives here, and all
+ * of it is scoped under .ui-v2 so a v1 page cannot be touched by it.
+ *
+ * The design rule throughout: colour means something. Green, amber and
+ * red are states, not decoration, and nothing that is merely available
+ * gets to be red — the old row had a red circle sitting next to five
+ * other buttons of equal weight, and you could not tell which one
+ * stopped your database. */
+
+.ui-v2 .v2 { max-width: 1100px; margin: 0 auto; }
+
+/* ── the strip that replaced five big cards ─────────────────────── */
+.ui-v2 .v2-bar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 16px; margin-bottom: 12px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 12px;
+}
+.ui-v2 .v2-stats { display: flex; gap: 18px; flex: 1; flex-wrap: wrap; }
+.ui-v2 .v2-stat { display: flex; align-items: baseline; gap: 6px; }
+.ui-v2 .v2-stat b { font-size: 19px; font-weight: 650; }
+.ui-v2 .v2-stat span { font-size: 13px; color: var(--text-muted); }
+.ui-v2 .v2-stat.is-alert b { color: var(--accent); }
+
+.ui-v2 .v2-tools { display: flex; gap: 8px; align-items: center; }
+.ui-v2 .v2-search, .ui-v2 .v2-host {
+    padding: 7px 11px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); min-width: 190px;
+}
+.ui-v2 .v2-search:focus, .ui-v2 .v2-host:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px;
+}
+
+/* ── buttons: one shape, three weights, and that is all ─────────── */
+.ui-v2 .v2-btn {
+    padding: 7px 13px; font-size: 14px; font-weight: 500;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); cursor: pointer;
+    white-space: nowrap; line-height: 1.3;
+}
+.ui-v2 .v2-btn:hover { border-color: var(--accent); }
+.ui-v2 .v2-btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.ui-v2 .v2-btn-primary:hover { filter: brightness(1.08); }
+.ui-v2 .v2-btn-danger { color: var(--danger); border-color: var(--border); }
+.ui-v2 .v2-btn-danger:hover { border-color: var(--danger); }
+.ui-v2 .v2-btn[disabled] { opacity: .5; cursor: default; }
+.ui-v2 .v2-btn-sm { padding: 5px 10px; font-size: 13px; }
+
+/* ── filter chips ───────────────────────────────────────────────── */
+.ui-v2 .v2-filters { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.ui-v2 .v2-chip {
+    padding: 5px 12px; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: transparent; color: var(--text-muted);
+}
+.ui-v2 .v2-chip.is-on {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.ui-v2 .v2-chip[hidden] { display: none; }
+
+/* ── the list ───────────────────────────────────────────────────── */
+.ui-v2 .v2-list {
+    border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; background: var(--bg-elev);
+}
+.ui-v2 .v2-row {
+    display: grid; align-items: center; gap: 12px;
+    grid-template-columns: 22px minmax(0, 1fr) minmax(150px, auto) auto;
+    padding: 11px 14px; border-top: 1px solid var(--border);
+    cursor: pointer;
+}
+.ui-v2 .v2-row:first-child { border-top: 0; }
+.ui-v2 .v2-row:hover { background: var(--accent-bg); }
+.ui-v2 .v2-row.is-selected { background: rgba(59,130,246,.09); }
+
+/* State is a dot, not a word repeated 25 times down a column. */
+.ui-v2 .v2-dot {
+    width: 9px; height: 9px; border-radius: 50%; margin-left: 6px;
+    background: var(--text-muted); flex: none;
+}
+.ui-v2 .v2-dot.is-healthy { background: #22c55e; }
+.ui-v2 .v2-dot.is-running { background: #3b82f6; }
+.ui-v2 .v2-dot.is-starting { background: #f59e0b; }
+.ui-v2 .v2-dot.is-unhealthy { background: var(--danger); }
+
+.ui-v2 .v2-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ui-v2 .v2-name b {
+    font-weight: 560; font-size: 15px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-v2 .v2-sub {
+    font-size: 12.5px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-v2 .v2-tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-muted);
+}
+
+/* The update state, which the old row never showed at all. */
+.ui-v2 .v2-update {
+    display: flex; align-items: center; gap: 10px; justify-content: flex-end;
+}
+.ui-v2 .v2-uptodate { font-size: 13px; color: var(--text-muted); }
+.ui-v2 .v2-pending {
+    font-size: 13px; font-weight: 550; color: var(--accent);
+}
+.ui-v2 .v2-more {
+    border: 0; background: transparent; color: var(--text-muted);
+    font-size: 18px; line-height: 1; padding: 4px 8px; cursor: pointer;
+    border-radius: 6px;
+}
+.ui-v2 .v2-more:hover { background: var(--border); color: var(--text); }
+
+.ui-v2 .v2-empty { text-align: center; color: var(--text-muted); padding: 28px; }
+
+/* ── bulk bar: on screen only when it has something to act on ───── */
+.ui-v2 .v2-bulk {
+    position: sticky; bottom: 12px; z-index: 90;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 12px; padding: 10px 14px;
+    background: var(--bg-elev); border: 1px solid var(--accent);
+    border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.ui-v2 .v2-bulk b { font-size: 14px; }
+
+/* ── detail panel: where the other five buttons went ────────────── */
+/* `hidden` has to beat the layout, or the panel and the bulk bar sit
+   over the page from the first paint — which is exactly what the first
+   screenshot of this showed. A display rule outranks the attribute's
+   default styling, so it has to be said explicitly. */
+.ui-v2 .v2-panel[hidden], .ui-v2 .v2-bulk[hidden] { display: none; }
+
+.ui-v2 .v2-panel {
+    position: fixed; inset: 0; z-index: 1100;
+    background: rgba(0,0,0,.42); display: flex; justify-content: flex-end;
+}
+.ui-v2 .v2-panel-sheet {
+    width: min(460px, 100%); height: 100%; overflow-y: auto;
+    /* Opaque, explicitly. The first version asked for var(--card),
+       which app.css does not define — so it resolved to nothing, the
+       sheet was transparent, and the page underneath read straight
+       through it. Only visible in a screenshot. */
+    background: var(--bg-elev); border-left: 1px solid var(--border);
+    padding: 20px 22px 40px;
+}
+.ui-v2 .v2-panel h3 { margin: 0 0 2px; font-size: 18px; }
+.ui-v2 .v2-panel .v2-sub { margin-bottom: 16px; }
+.ui-v2 .v2-panel-close {
+    float: right; border: 0; background: transparent; cursor: pointer;
+    font-size: 22px; line-height: 1; color: var(--text-muted); padding: 0 4px;
+}
+.ui-v2 .v2-sec { margin: 18px 0 0; }
+.ui-v2 .v2-sec h4 {
+    margin: 0 0 8px; font-size: 12px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.ui-v2 .v2-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Explanation belongs on the page, not in a title= attribute — 426 of
+   those were unreachable on every phone that opened the old one. */
+.ui-v2 .v2-hint { font-size: 12.5px; color: var(--text-muted); margin: 6px 0 0; }
+.ui-v2 .v2-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.ui-v2 .v2-kv dt { font-size: 13px; color: var(--text-muted); }
+.ui-v2 .v2-kv dd { margin: 0; font-size: 13px; word-break: break-all; }
+
+/* ── phones ─────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+    .ui-v2 .v2-row {
+        grid-template-columns: 22px 1fr auto;
+        grid-template-areas: "dot name more" ". update more";
+        row-gap: 4px;
+    }
+    .ui-v2 .v2-row > .v2-dot   { grid-area: dot; }
+    .ui-v2 .v2-row > .v2-name  { grid-area: name; }
+    .ui-v2 .v2-row > .v2-update{ grid-area: update; justify-content: flex-start; }
+    .ui-v2 .v2-row > .v2-more  { grid-area: more; }
+    .ui-v2 .v2-search { min-width: 0; flex: 1; }
+    .ui-v2 .v2-tools { width: 100%; }
+    .ui-v2 .v2-panel-sheet { width: 100%; }
+}
