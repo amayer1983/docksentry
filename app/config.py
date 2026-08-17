@@ -840,7 +840,51 @@ class Config:
         # flipping it would silently reset every user who set something in
         # the env once and later changed it in the Web UI. What was missing
         # is that nothing ever *said* so.
+        self._env_seeded = _env_seeded
         self.env_overrides = self._detect_env_overrides(_env_seeded)
+
+    def adopt_env_value(self, key):
+        """Take the environment's value for one setting. True if taken.
+
+        The precedence itself stays as it is: a saved value beats the
+        environment, because flipping that would silently reset everyone
+        who set something in the env once and later changed it in the Web
+        UI. What was missing is a way back — @famewolf set
+        DISK_WARN_AUTO_CLEANUP=true, watched a saved `false` win, and the
+        only remedy on offer was hand-editing settings.json inside the
+        volume (#2).
+
+        The raw value is read from the private seed map and never from
+        the override entries: those are built for display and get
+        iterated, serialised and rendered, and half of these keys are
+        passwords and webhook URLs. An earlier version of this carried
+        the value in the entry, and `test_env_override.py` caught the
+        leak by JSON-dumping one — the check it failed was written for
+        exactly this.
+
+        Adopting rather than deleting the key from settings.json is what
+        makes it stick: save_persistent() writes *every* persistent key,
+        so a key merely removed comes back the next time anything at all
+        is saved.
+        """
+        seeded = getattr(self, "_env_seeded", {}) or {}
+        if key not in seeded or not self.env_override(key):
+            return False
+        setattr(self, key, seeded[key])
+        self.save_persistent()
+        self.refresh_env_overrides()
+        return True
+
+    def refresh_env_overrides(self):
+        """Recompute which env vars a saved value is overruling.
+
+        Adopting one of them removes it from the list, and the page that
+        offered the button is rendered from that same list — so without
+        this the row survives its own click.
+        """
+        self.env_overrides = self._detect_env_overrides(
+            getattr(self, "_env_seeded", {}) or {})
+        return self.env_overrides
 
     def _detect_env_overrides(self, env_seeded):
         """Which explicitly set env vars does settings.json overrule?

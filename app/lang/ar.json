@@ -775,5 +775,13 @@
   "update_already_queued": "🕒 `{name}` موجود بالفعل في قائمة الانتظار.",
   "update_queue_full": "⚠️ قائمة الانتظار ممتلئة ({max}). انتظر حتى تُنجَز ثم اضغط مجدداً.",
   "update_queue_dropped_selfupdate": "⚠️ هناك تحديث ذاتي معلّق، وDocksentry على وشك إعادة التشغيل. لم يُنفَّذ: {names}. اضغط عليها مجدداً بعد ذلك.",
-  "update_queue_skipped_group": "⚠️ تم تخطي بقية المجموعة `{group}` بعد الفشل أعلاه: {names}. الترتيب موجود لسبب — أصلح المتعثّر أولاً."
+  "update_queue_skipped_group": "⚠️ تم تخطي بقية المجموعة `{group}` بعد الفشل أعلاه: {names}. الترتيب موجود لسبب — أصلح المتعثّر أولاً.",
+  "web_hidden_active_title": "Active settings you cannot see here",
+  "web_hidden_active_intro": "Simple mode hides the advanced options, and {count} of them are not at their default — so they are doing something on this instance while being off the page. Switch to advanced to see and change them.",
+  "web_hidden_active_show": "Show advanced settings",
+  "web_env_card_title": "Environment variables being overruled",
+  "web_env_card_intro": "These are set in your environment, but a value saved here wins. That is deliberate — otherwise anything you change in this interface would be reset on the next restart. Take the environment's value back whenever you would rather have it.",
+  "web_env_card_env": "In the environment",
+  "web_env_card_saved": "Saved here",
+  "web_env_adopt": "Use the environment value"
 }

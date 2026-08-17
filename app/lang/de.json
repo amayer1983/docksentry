@@ -775,5 +775,13 @@
   "update_already_queued": "🕒 `{name}` steht schon in der Warteschlange.",
   "update_queue_full": "⚠️ Warteschlange ist voll ({max}). Warte, bis sie abgearbeitet ist, und tippe dann erneut.",
   "update_queue_dropped_selfupdate": "⚠️ Ein Selbst-Update steht an, Docksentry startet gleich neu. NICHT gelaufen: {names}. Danach bitte erneut antippen.",
-  "update_queue_skipped_group": "⚠️ Rest der Gruppe `{group}` nach dem Fehlschlag oben übersprungen: {names}. Sie werden aus gutem Grund der Reihe nach aktualisiert — erst den gescheiterten reparieren."
+  "update_queue_skipped_group": "⚠️ Rest der Gruppe `{group}` nach dem Fehlschlag oben übersprungen: {names}. Sie werden aus gutem Grund der Reihe nach aktualisiert — erst den gescheiterten reparieren.",
+  "web_hidden_active_title": "Aktive Einstellungen, die du hier nicht siehst",
+  "web_hidden_active_intro": "Der einfache Modus blendet die erweiterten Optionen aus, und {count} davon stehen nicht auf dem Standardwert — sie wirken also auf dieser Instanz, ohne auf der Seite zu stehen. Wechsle in den erweiterten Modus, um sie zu sehen und zu ändern.",
+  "web_hidden_active_show": "Erweiterte Einstellungen anzeigen",
+  "web_env_card_title": "Überstimmte Umgebungsvariablen",
+  "web_env_card_intro": "Diese sind in deiner Umgebung gesetzt, aber ein hier gespeicherter Wert gewinnt. Das ist Absicht — sonst würde alles, was du in dieser Oberfläche änderst, beim nächsten Neustart zurückgesetzt. Hol dir den Wert aus der Umgebung zurück, wann immer er dir lieber ist.",
+  "web_env_card_env": "In der Umgebung",
+  "web_env_card_saved": "Hier gespeichert",
+  "web_env_adopt": "Wert aus der Umgebung übernehmen"
 }

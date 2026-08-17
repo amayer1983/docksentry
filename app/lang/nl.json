@@ -775,5 +775,13 @@
   "update_already_queued": "🕒 `{name}` staat al in de wachtrij.",
   "update_queue_full": "⚠️ Wachtrij is vol ({max}). Wacht tot hij leeg is en tik opnieuw.",
   "update_queue_dropped_selfupdate": "⚠️ Er staat een zelfupdate klaar, Docksentry herstart zo. NIET uitgevoerd: {names}. Tik ze daarna opnieuw aan.",
-  "update_queue_skipped_group": "⚠️ Rest van groep `{group}` overgeslagen na de fout hierboven: {names}. Ze werken in volgorde bij met reden — repareer eerst de mislukte."
+  "update_queue_skipped_group": "⚠️ Rest van groep `{group}` overgeslagen na de fout hierboven: {names}. Ze werken in volgorde bij met reden — repareer eerst de mislukte.",
+  "web_hidden_active_title": "Active settings you cannot see here",
+  "web_hidden_active_intro": "Simple mode hides the advanced options, and {count} of them are not at their default — so they are doing something on this instance while being off the page. Switch to advanced to see and change them.",
+  "web_hidden_active_show": "Show advanced settings",
+  "web_env_card_title": "Environment variables being overruled",
+  "web_env_card_intro": "These are set in your environment, but a value saved here wins. That is deliberate — otherwise anything you change in this interface would be reset on the next restart. Take the environment's value back whenever you would rather have it.",
+  "web_env_card_env": "In the environment",
+  "web_env_card_saved": "Saved here",
+  "web_env_adopt": "Use the environment value"
 }

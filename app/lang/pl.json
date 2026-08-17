@@ -775,5 +775,13 @@
   "update_already_queued": "🕒 `{name}` już jest w kolejce.",
   "update_queue_full": "⚠️ Kolejka pełna ({max}). Poczekaj, aż się opróżni, i dotknij ponownie.",
   "update_queue_dropped_selfupdate": "⚠️ Czeka autoaktualizacja, Docksentry zaraz się zrestartuje. NIE wykonano: {names}. Dotknij ich ponownie później.",
-  "update_queue_skipped_group": "⚠️ Pominięto resztę grupy `{group}` po powyższym błędzie: {names}. Kolejność ma powód — najpierw napraw ten, który zawiódł."
+  "update_queue_skipped_group": "⚠️ Pominięto resztę grupy `{group}` po powyższym błędzie: {names}. Kolejność ma powód — najpierw napraw ten, który zawiódł.",
+  "web_hidden_active_title": "Active settings you cannot see here",
+  "web_hidden_active_intro": "Simple mode hides the advanced options, and {count} of them are not at their default — so they are doing something on this instance while being off the page. Switch to advanced to see and change them.",
+  "web_hidden_active_show": "Show advanced settings",
+  "web_env_card_title": "Environment variables being overruled",
+  "web_env_card_intro": "These are set in your environment, but a value saved here wins. That is deliberate — otherwise anything you change in this interface would be reset on the next restart. Take the environment's value back whenever you would rather have it.",
+  "web_env_card_env": "In the environment",
+  "web_env_card_saved": "Saved here",
+  "web_env_adopt": "Use the environment value"
 }

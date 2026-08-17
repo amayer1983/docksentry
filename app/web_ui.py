@@ -2782,6 +2782,26 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)
+            elif path == "/api/env_adopt":
+                # Take the environment's value for one setting (#2).
+                #
+                # The precedence itself stays as it is — flipping it would
+                # silently reset everyone who set something in the env once
+                # and later changed it in the Web UI. What was missing is a
+                # way back: @famewolf set DISK_WARN_AUTO_CLEANUP=true,
+                # watched a saved `false` beat it, and the only remedy on
+                # offer was to hand-edit settings.json inside the volume.
+                #
+                # The value itself never leaves Config — see
+                # adopt_env_value, and the leak the env-override test
+                # caught when it did.
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                key = (parse_qs(body).get("key") or [""])[0].strip()
+                if key:
+                    config.adopt_env_value(key)
+                ref = self.headers.get("Referer", "/")
+                self._send_redirect(urlparse(ref).path or "/settings")
             elif path == "/api/wizard":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode()
@@ -3284,6 +3304,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <input type="checkbox" name="no_password" id="wiz-nopw" value="1">
   <span class="form-help" style="margin:0">{t("web_setup_pw_none")}</span>
 </label>
+
 </div>
 
 <!-- ── Step 2: Language ──────────────────────────────────── -->
@@ -4134,7 +4155,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <tbody id="ctblBody">
 {rows}
 </tbody>
-</table></div>
+</table>
 <!-- The same containers as cards, for narrow screens. Both are rendered
      and CSS shows one; the alternative — deciding server-side from a
      user-agent string — guesses at a viewport it cannot see, and gets it
@@ -5624,7 +5645,83 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
 """
 
+            content = self._settings_notices(t, content) + content
             self._send_html(self._render_page(content, "settings"))
+
+        def _settings_notices(self, t, page_html):
+            """Two cards above the settings, each answering "why is this
+            not what I set?".
+
+            Both come out of @famewolf's night in #2. He spent four hours
+            hunting a setting that was switched on and hidden by simple
+            mode, and separately found three of his environment variables
+            being overruled by saved values with no way to undo it short
+            of editing settings.json by hand.
+            """
+            cards = ""
+
+            # ── settings that are on, but not on screen ─────────────────
+            # Only in simple mode: in advanced mode nothing is hidden, so
+            # there is nothing to disclose.
+            if getattr(config, "ui_mode", "advanced") == "simple":
+                try:
+                    import settings_notices
+                    from config import PERSISTENT_ENV_DEFAULTS, LOGGABLE_PERSISTENT_KEYS
+                    labels = {}
+                    active = [
+                        (k, v, lbl) for k, v, lbl in settings_notices.active_hidden(
+                            config, page_html, PERSISTENT_ENV_DEFAULTS, labels)
+                        if k in LOGGABLE_PERSISTENT_KEYS
+                    ]
+                except Exception:
+                    active = []
+                if active:
+                    rows = "".join(
+                        f"<li><code>{_e(k)}</code> — "
+                        f"{_e(settings_notices.as_text(v))}</li>"
+                        for k, v, _lbl in active)
+                    cards += f"""
+<div class="card">
+<h2>{t("web_hidden_active_title")}</h2>
+<p class="card-intro">{t("web_hidden_active_intro", count=len(active))}</p>
+<ul class="notice-list">{rows}</ul>
+<form method="POST" action="/api/ui_mode">
+  <input type="hidden" name="mode" value="advanced">
+  <button type="submit" class="btn">{t("web_hidden_active_show")}</button>
+</form>
+</div>
+"""
+
+            # ── environment variables that a saved value is overruling ──
+            overrides = list(getattr(config, "env_overrides", []) or [])
+            if overrides:
+                rows = ""
+                for o in overrides:
+                    env_v = o["var"] if o["secret"] else f"{o['var']}={o['env']}"
+                    saved = ("(hidden)" if o["secret"]
+                             else (o["saved"] or "(empty)"))
+                    rows += f"""
+<tr>
+  <td><code>{_e(env_v)}</code></td>
+  <td>{_e(saved)}</td>
+  <td>
+    <form method="POST" action="/api/env_adopt" class="inline-form">
+      <input type="hidden" name="key" value="{_e(o['key'])}">
+      <button type="submit" class="btn btn-sm">{t("web_env_adopt")}</button>
+    </form>
+  </td>
+</tr>"""
+                cards += f"""
+<div class="card">
+<h2>{t("web_env_card_title")}</h2>
+<p class="card-intro">{t("web_env_card_intro")}</p>
+<table>
+<thead><tr><th>{t("web_env_card_env")}</th><th>{t("web_env_card_saved")}</th><th></th></tr></thead>
+<tbody>{rows}</tbody>
+</table>
+</div>
+"""
+            return cards
 
         def _page_connections(self):
             """Where the notification channels are configured.

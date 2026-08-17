@@ -1149,3 +1149,9 @@ a.btn-icon { text-decoration: none; }
     margin: 0 0 4px;
     padding: 8px 10px;
 }
+
+/* Settings notices — the two cards above the settings form (#2).
+   One lists settings that simple mode is hiding while they are active,
+   the other the environment variables a saved value is overruling. */
+.notice-list { margin: 8px 0 14px; padding-left: 20px; }
+.notice-list li { margin: 4px 0; font-size: 14px; }

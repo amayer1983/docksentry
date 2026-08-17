@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.9.3] - 2026-08-17
+
+### Fixed
+- **Simple mode no longer hides settings that are switched on (#2, @famewolf and @NotRetarded).** Two people spent four hours on this. He had auto-cleanup running at 85% on three hosts and could see it on one; the other two were in simple mode, where that control lives in a block the stylesheet hides. The setting was working the whole time — it just was not there to look at. His conclusion is the right one: *"If I have things enabled but can't see them in the gui how would I know to change them?"*
+
+  Simple mode is meant to be fewer knobs, not "your server is doing things you cannot see". Hiding an option nobody has touched is fine; hiding one that is active is not. In simple mode the Settings page now opens with a short list of exactly those — every hidden setting that is not at its default, with its value — and a button that switches to advanced. It reads the list back out of the page it just rendered rather than from a hand-kept list of "advanced" keys, so moving a block around cannot make the two disagree. An untouched install sees nothing at all.
+
+- **An overruled environment variable can be taken back with one click.** He hit this three times in one night — `DISK_WARN_AUTO_CLEANUP`, `WEB_PASSWORD` and `BOT_LABEL` — and asked the fair question: *"I would think environment variables should have priority?"*
+
+  The precedence stays as it is, because flipping it would silently reset everyone who set something in the environment once and later changed it in the Web UI. What was missing was a way back that is not "hand-edit settings.json inside the volume". The Settings page lists every variable a saved value is overruling, with both values side by side and a button to take the environment's. It writes the value in rather than deleting the key, which is what makes it stick — `save_persistent()` writes every persistent key, so a key merely removed comes back the next time anything is saved. Secrets are named and never shown, and the value itself never leaves the config object; an earlier draft carried it in the entries the interface iterates, and the existing env-override test caught the leak.
+
 ## [2.9.2] - 2026-08-16
 
 ### Fixed

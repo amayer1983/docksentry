@@ -775,5 +775,13 @@
   "update_already_queued": "🕒 `{name}` はすでに順番待ちです。",
   "update_queue_full": "⚠️ 順番待ちがいっぱいです（{max}）。消化されるまで待ってから、もう一度タップしてください。",
   "update_queue_dropped_selfupdate": "⚠️ 自己更新が控えているため、Docksentry はまもなく再起動します。実行されませんでした: {names}。あとでもう一度タップしてください。",
-  "update_queue_skipped_group": "⚠️ 上の失敗を受けて、グループ `{group}` の残りを飛ばしました: {names}。順番には理由があります。まず失敗したものを直してください。"
+  "update_queue_skipped_group": "⚠️ 上の失敗を受けて、グループ `{group}` の残りを飛ばしました: {names}。順番には理由があります。まず失敗したものを直してください。",
+  "web_hidden_active_title": "Active settings you cannot see here",
+  "web_hidden_active_intro": "Simple mode hides the advanced options, and {count} of them are not at their default — so they are doing something on this instance while being off the page. Switch to advanced to see and change them.",
+  "web_hidden_active_show": "Show advanced settings",
+  "web_env_card_title": "Environment variables being overruled",
+  "web_env_card_intro": "These are set in your environment, but a value saved here wins. That is deliberate — otherwise anything you change in this interface would be reset on the next restart. Take the environment's value back whenever you would rather have it.",
+  "web_env_card_env": "In the environment",
+  "web_env_card_saved": "Saved here",
+  "web_env_adopt": "Use the environment value"
 }
