@@ -814,5 +814,6 @@
   "startup_reason_requested": "\n↻ _Restarted on request — the restart button or `/restart`._",
   "restart_no_policy": "⚠️ I would not come back, so I am staying up.\n\n{detail}\n\nA restart button that does not restart is a stop button. Add `restart: unless-stopped` to this container and the button will work — until then, `docker compose up -d` after stopping me by hand.",
   "help_restart": "/restart — Restart Docksentry itself",
-  "help_detail_restart": "*/restart*\n\nStops Docksentry so its container's restart policy brings it back — which is how settings that only apply at boot take effect.\n\nIt checks that policy first. Without one, stopping would leave the container down and you without the bot you would use to bring it back, so it refuses and says so instead.\n\nThe next start knows it was asked for, rather than reporting an external stop signal."
+  "help_detail_restart": "*/restart*\n\nStops Docksentry so its container's restart policy brings it back — which is how settings that only apply at boot take effect.\n\nIt checks that policy first. Without one, stopping would leave the container down and you without the bot you would use to bring it back, so it refuses and says so instead.\n\nThe next start knows it was asked for, rather than reporting an external stop signal.",
+  "host_check_recovered": "✅ Host `{host}` is reachable again — it is back in the scheduled check."
 }

@@ -1604,12 +1604,20 @@ class DiscordBot:
         if size > self.RESTORE_MAX_BYTES:
             return (f"⚠️ {size / 1024 / 1024:.1f} MB is too large for a backup "
                     f"file. Nothing was downloaded.")
-        # A User-Agent, because the attachment does not come from the API
-        # — it comes from Discord's CDN, which sits behind Cloudflare, and
-        # Cloudflare answers `Python-urllib/3.x` with 403. Every other
-        # request this bot makes already sends one; this was the one that
-        # did not, and it is the reason @NotRetarded's first `/restore`
-        # failed ten minutes after it shipped (#2).
+        # `json` is imported here because this module has no module-level
+        # import of it — every other user does the same. Leaving it out is
+        # what actually broke `/restore` for @NotRetarded (#2): the
+        # original code caught the resulting NameError in the same `try`
+        # as the download and reported "I could not read that attachment",
+        # so the real fault was invisible and I diagnosed the CDN instead.
+        # His second screenshot settled it — once the messages told the
+        # truth, the failure moved past the fetch and named itself.
+        #
+        # The User-Agent below is still right, and still not the cause.
+        # The attachment comes from Discord's CDN rather than the API, and
+        # every other request this bot makes identifies itself; this one
+        # did not. Kept as correctness, not as a fix.
+        import json
         import urllib.error
         import urllib.request
         from discord_rest import USER_AGENT

@@ -814,5 +814,6 @@
   "startup_reason_requested": "\n↻ _Neustart auf Anforderung — über den Knopf oder `/restart`._",
   "restart_no_policy": "⚠️ Ich käme nicht zurück, also bleibe ich oben.\n\n{detail}\n\nEin Neustart-Knopf, der nicht neu startet, ist ein Stopp-Knopf. Trag `restart: unless-stopped` bei diesem Container ein, dann funktioniert er — bis dahin nach einem Stopp von Hand `docker compose up -d`.",
   "help_restart": "/restart — Docksentry selbst neu starten",
-  "help_detail_restart": "*/restart*\n\nStoppt Docksentry, damit die Restart-Policy des Containers es wieder hochholt — so greifen Einstellungen, die erst beim Start gelesen werden.\n\nDie Policy wird vorher geprüft. Ohne sie bliebe der Container unten und du ohne den Bot, mit dem du ihn wieder hochholen würdest — dann verweigert er den Dienst und sagt warum.\n\nDer nächste Start weiß, dass er angefordert war, statt ein externes Stopp-Signal zu melden."
+  "help_detail_restart": "*/restart*\n\nStoppt Docksentry, damit die Restart-Policy des Containers es wieder hochholt — so greifen Einstellungen, die erst beim Start gelesen werden.\n\nDie Policy wird vorher geprüft. Ohne sie bliebe der Container unten und du ohne den Bot, mit dem du ihn wieder hochholen würdest — dann verweigert er den Dienst und sagt warum.\n\nDer nächste Start weiß, dass er angefordert war, statt ein externes Stopp-Signal zu melden.",
+  "host_check_recovered": "✅ Host `{host}` ist wieder erreichbar — er ist zurück im geplanten Lauf."
 }

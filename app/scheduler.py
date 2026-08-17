@@ -148,6 +148,49 @@ class Scheduler:
         self._weekly_sent_date = None
         self._disk_warned_at = None
 
+    def _host_failed(self, host_name, err):
+        """Tell somebody a host dropped out — once, not every night.
+
+        The scheduled check used to `print` this and stop there, while the
+        manual `/check` sent a message. Backwards: the unattended run is
+        the one nobody is watching. @famewolf added two hosts, the SSH
+        from inside the container could not authenticate, and his nightly
+        check quietly covered one machine out of three — with the reason
+        sitting in a container log he had no reason to open (#2).
+
+        Once per host per outage, and again when it comes back. A message
+        every night about the same dead box is a message people learn to
+        ignore, which is the same defect in a different coat.
+        """
+        state = getattr(self, "_host_failures", None)
+        if state is None:
+            state = self._host_failures = {}
+        if host_name in state:
+            return
+        state[host_name] = str(err)[:200]
+        self._tell(self.bot.t("host_check_failed", host=host_name or "local",
+                              error=str(err)[:200]))
+
+    def _host_recovered(self, host_name):
+        state = getattr(self, "_host_failures", None) or {}
+        if host_name not in state:
+            return
+        state.pop(host_name, None)
+        self._tell(self.bot.t("host_check_recovered",
+                              host=host_name or "local"))
+
+    def _tell(self, text):
+        """Every channel, not just Telegram — a host dropping out is not
+        a Telegram-only fact."""
+        try:
+            if getattr(self.bot, "enabled", False):
+                self.bot.send_message(text)
+            notifier = getattr(self.bot, "notifier", None)
+            if notifier is not None and notifier.has_channels():
+                notifier.send_message(text)
+        except Exception as e:
+            print(f"Could not report the host state change: {e}")
+
     def _checkers(self):
         """(checker, host_name) for every managed host, local first.
 
@@ -350,12 +393,14 @@ class Scheduler:
                             auto_updated += self.bot.handle_autoupdates(
                                 updates, host_checker) or 0
                         # If no updates, stay quiet (--quiet behavior)
+                        self._host_recovered(host_name)
                     except Exception as e:
                         # One unreachable or misbehaving host must not stop
                         # the others from being checked (#7) — report it and
                         # carry on down the list.
                         where = f" on {host_name}" if host_name else ""
                         print(f"Scheduled check error{where}: {e}")
+                        self._host_failed(host_name, e)
 
                 # Auto cleanup after successful auto-updates. The grace-hours
                 # filter (default 24h) in cleanup_images() prevents removing

@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.12.3] - 2026-08-17
+
+### Fixed
+- **A host that drops out of the *scheduled* check now says so (#2, @famewolf).** The manual `/check` has always reported an unreachable host. The nightly run printed it to the container log and stopped there — which is backwards, because the unattended run is the one nobody is watching. He added two hosts, the SSH out of the container could not authenticate, and his nightly check quietly covered one machine out of three with the reason sitting in a log he had no reason to open.
+
+  Said once per outage, and again when the host comes back. A message every night about the same dead box is a message people learn to ignore, which is the same defect wearing a different coat. It goes to every channel, not just Telegram.
+
+- **`/restore` on Discord failed with `name 'json' is not defined`.** `discord_bot.py` has no module-level `import json` — every function that needs it imports it itself, which is the style in that file — and the new one did not.
+
+  **And the 2.12.2 diagnosis was wrong.** The original code caught this NameError in the same `try` as the download and answered "I could not read that attachment", so the real fault was invisible and I blamed Discord's CDN, in a changelog and in the issue. @NotRetarded's second screenshot settled it: once the messages told the truth, the failure moved *past* the fetch and named itself, which means the download had been working all along. The User-Agent added in 2.12.2 is still correct — every other request this bot makes sends one — but it fixed nothing.
+
+  There is now a check across the whole app that every standard-library module a function touches is one it can actually see. A missing import is invisible until the line runs, which on an error path can be weeks.
+
 ## [2.12.2] - 2026-08-17
 
 ### Fixed
