@@ -1304,7 +1304,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return [u for u in data
                     if isinstance(u, dict) and entry_host(u) == wanted]
 
-        def _render_page(self, content, active="status"):
+        def _render_page(self, content, active="status", wide=None):
             # Only for a session. Basic Auth has no logout — the browser
             # keeps re-sending the header — so a button that claimed to
             # sign you out and then did nothing would be a lie. It is
@@ -1368,6 +1368,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             ui_mode = getattr(config, "ui_mode", "advanced")
             if ui_mode not in ("simple", "advanced"):
                 ui_mode = "advanced"
+            # The status page has been 1400px wide since #46, because the
+            # old seven-column table scrolled sideways on a monitor with
+            # room to spare. V2's list has no such problem, and inheriting
+            # the exception meant the header, the nav and the content all
+            # jumped between two widths as you moved between pages — which
+            # the owner spotted straight away. So it is a parameter now,
+            # defaulting to the old behaviour, and V2 opts out.
+            if wide is None:
+                wide = (active == "status")
             body_class = "mode-simple" if ui_mode == "simple" else "mode-advanced"
             # The rebuilt interface, for whoever asked for it by setting
             # WEB_UI_V2. Nothing links to it and nothing announces it: the
@@ -1426,7 +1435,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 </head>
 <body class="{body_class}{v2_class}" data-ui="{ui_gen}">
 <div class="header">
-<div class="header-row{" wide" if active == "status" else ""}">
+<div class="header-row{" wide" if wide else ""}">
 <!-- Brand lockup: tile + wordmark. The wordmark is real text, not part
      of the image, for two reasons. It stays sharp at any pixel density
      instead of being resampled like the bitmap next to it, and it picks
@@ -1454,9 +1463,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <svg id="ds-theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 </button>
 </div>
-<div class="nav-wrap{" wide" if active == "status" else ""}"><nav>{nav_html}</nav></div>
+<div class="nav-wrap{" wide" if wide else ""}"><nav>{nav_html}</nav></div>
 </div>
-{maint_banner}<div class="content{" wide" if active == "status" else ""}">
+{maint_banner}<div class="content{" wide" if wide else ""}">
 {content}
 </div>
 <div class="footer">
@@ -3927,7 +3936,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 from version import VERSION as _V
                 self._v2_views = views
                 self._send_html(self._render_page(
-                    web_v2.shell(t, _V, config.language), "status"))
+                    web_v2.shell(t, _V, config.language), "status", wide=False))
                 return
 
             rows = ""
