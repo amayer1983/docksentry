@@ -60,10 +60,16 @@ checks["…and identical content once bold is stripped"] = (
 joined = " ".join(tg)
 # ── everything he asked for is in it ─────────────────────────────────
 checks["state and health"] = "running (unhealthy)" in joined
+# The stanza layout, after the owner's "übersichtlicher?": the header
+# carries state and uptime, groups are separated by blank lines, and a
+# duplicate port mapping (tcp+udp rendering identically) shows once.
+checks["the header leads with name, state and uptime"] = (
+    tg[0].startswith("📊") and "3h 12m" in tg[0])
+checks["stanzas are separated by blank lines"] = tg.count("") >= 3
 checks["uptime"] = "3h 12m" in joined
 checks["live CPU and memory"] = "312.4%" in joined and "8.2GiB" in joined
 checks["net and disk I/O ride along"] = (
-    "1.2MB / 800kB" in joined and "5.1MB / 0B" in joined)
+    "1.2MB" in joined and "800kB" in joined and "5.1MB" in joined)
 # A runtime that only answers two fields still yields the two that
 # matter — Podman's stats output is leaner than Docker's.
 two = status_render.collect("x", STATE, stats=("1%", "10MiB / 1GiB"))
@@ -82,7 +88,7 @@ stopped = status_render.collect("dead", dict(STATE, running=False,
 sj = " ".join(status_render.lines(stopped))
 checks["a stopped container shows its exit code"] = "137" in sj
 checks["…and no uptime or load for something not running"] = (
-    "Uptime" not in sj and "Load" not in sj)
+    "⏱" not in sj and "CPU" not in sj)
 
 # ── the overview line ────────────────────────────────────────────────
 ov = status_render.overview_line("ollama", STATE)
@@ -140,6 +146,14 @@ checks["…and Discord too"] = "status_render.lines(" in dsrc
 checks["Discord's overview includes ourselves"] = (
     "include_self=True" in dsrc)
 checks["…via the shared overview line"] = "overview_line" in dsrc
+
+# Port dedupe and the I/O direction markers.
+dup = status_render.collect("x", dict(STATE,
+    ports="3001→3000, 53→53, 53→53, 8082→80"))
+dj = " ".join(status_render.lines(dup))
+checks["a tcp+udp double mapping shows once"] = dj.count("53→53") == 1
+checks["net I/O carries direction arrows"] = "↓1.2MB ↑800kB" in joined
+checks["disk I/O says read and write"] = "R 5.1MB · W 0B" in joined
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

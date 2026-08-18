@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.2] - 2026-08-18
+
+### Changed
+- **The `/status` detail reads in stanzas instead of a label list.** Eleven `Label: value` lines carry no hierarchy, so nothing leads — the owner's reaction to beta.1 was "übersichtlicher?" and he was right. Now: who and how it is doing (header with state and uptime), what it runs, what it costs right now, how it is wired, what Docksentry knows about it — a blank line between each, because a gap is the cheapest heading there is. Net I/O carries direction arrows (`↓11MB ↑7.15MB` — docker reports received/sent in that order), disk says `R`/`W`, and a port mapped identically over tcp and udp shows once instead of twice.
+
 ## [2.18.0-beta.1] - 2026-08-18
 
 First release through the beta channel — features settle on `:beta` before they move to `:latest`. See the README's "Trying new features early" section.

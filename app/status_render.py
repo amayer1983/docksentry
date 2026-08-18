@@ -83,48 +83,126 @@ def collect(name, state_info, *, stats=None, store=None, pending=None,
 def lines(info, *, bold="*", host_tag=""):
     """The detail as chat lines. `bold` is the only front-end difference:
     Telegram wants `*x*`, Discord `**x**`. Everything else is identical
-    by construction, which is the point."""
+    by construction, which is the point.
+
+    Grouped into stanzas rather than a flat label list — the owner's
+    reaction to the first version was "können wir das übersichtlicher
+    darstellen?", and he was right: eleven `Label: value` lines carry no
+    hierarchy, so nothing leads. Now: who and how it is, what it runs,
+    what it costs, how it is wired — with a blank line between, because
+    a gap is the cheapest heading there is.
+    """
     b = lambda s: f"{bold}{s}{bold}"  # noqa: E731
     running = info.get("running")
-    icon = "✅" if running else ("⏸" if info.get("state") == "paused" else "⏹")
+    health = info.get("health") or ""
+    if running:
+        icon = "🔴" if health == "unhealthy" else (
+            "🟡" if health == "starting" else "✅")
+    else:
+        icon = "⏸" if info.get("state") == "paused" else "⏹"
     state_text = info.get("state", "?")
-    if info.get("health"):
-        state_text += f" ({info['health']})"
+    if health:
+        state_text += f" ({health})"
 
-    out = [f"📊 {b(info['name'])}{host_tag}  {icon}",
-           f"{b('State:')} `{state_text}`"]
-    if not running and info.get("exit_code") not in (None, ""):
-        out.append(f"{b('Exit code:')} `{info['exit_code']}`")
+    # ── who, and how it is doing ────────────────────────────────
+    head = f"📊 {b(info['name'])}{host_tag} — {icon} {state_text}"
     if running and info.get("uptime"):
-        out.append(f"⏱ {b('Uptime:')} {info['uptime']}")
-    if info.get("cpu") or info.get("mem"):
-        out.append(f"📈 {b('Load:')} CPU {info.get('cpu', '?')} · "
-                   f"RAM {info.get('mem', '?')}")
-    if info.get("net_io") or info.get("block_io"):
-        out.append(f"📡 {b('I/O:')} net {info.get('net_io', '?')} · "
-                   f"disk {info.get('block_io', '?')}")
+        head += f" · ⏱ {info['uptime']}"
+    out = [head]
+    if not running and info.get("exit_code") not in (None, ""):
+        out.append(f"🔻 Exit code `{info['exit_code']}`")
     if info.get("probe"):
         out.append(f"🩺 {b('Health check said:')} `{info['probe']}`")
-    out.append(f"{b('Image:')} `{info.get('image', '?')}`")
-    if info.get("version"):
-        out.append(f"{b('Version:')} `{info['version']}`")
-    if info.get("short_id"):
-        out.append(f"{b('Image ID:')} `{info['short_id']}`")
-    if info.get("ports"):
-        out.append(f"{b('Ports:')} {info['ports']}")
-    if info.get("volumes"):
-        out.append(f"{b('Volumes:')} {info['volumes']}")
+
+    # ── what it runs ────────────────────────────────────────────
+    img = [f"📦 `{info.get('image', '?')}`"]
+    idbits = " · ".join(f"`{info[k]}`" for k in ("version", "short_id")
+                        if info.get(k))
+    if idbits:
+        img.append(f"     {idbits}")
+    out.append("")
+    out.extend(img)
+
+    # ── what it costs, right now ────────────────────────────────
+    cost = []
+    if info.get("cpu") or info.get("mem"):
+        cost.append(f"📈 CPU {info.get('cpu', '?')} · "
+                    f"RAM {info.get('mem', '?')}")
+    if info.get("net_io") or info.get("block_io"):
+        cost.append(f"📡 net {_updown(info.get('net_io'))} · "
+                    f"disk {_rw(info.get('block_io'))}")
+    if cost:
+        out.append("")
+        out.extend(cost)
+
+    # ── how it is wired ─────────────────────────────────────────
+    wired = []
+    ports = _dedupe_ports(info.get("ports"))
+    if ports:
+        wired.append(f"🔌 {ports}")
+    tail = []
+    vols = str(info.get("volumes", "") or "")
+    if vols and vols not in ("—", "0"):
+        tail.append(f"💾 {vols} volume{'s' if vols != '1' else ''}"
+                    if vols.isdigit() else f"💾 {vols}")
     if info.get("restart_policy"):
-        out.append(f"{b('Restart policy:')} `{info['restart_policy']}`")
+        tail.append(f"🔁 {info['restart_policy']}")
+    if tail:
+        wired.append(" · ".join(tail))
+    if wired:
+        out.append("")
+        out.extend(wired)
+
+    # ── what Docksentry knows about it ──────────────────────────
+    ours = []
     if info.get("flags"):
-        out.append(f"{b('Docksentry:')} " + ", ".join(info["flags"]))
+        ours.append("🏷 " + ", ".join(info["flags"]))
+    grp = []
     if info.get("group"):
-        out.append(f"{b('Group:')} `{info['group']}`")
-    if info.get("pending"):
-        out.append("🔄 " + b("Update available"))
+        grp.append(f"🗂 {b('Group:')} `{info['group']}`")
     if info.get("note"):
-        out.append(f"📝 {info['note']}")
+        grp.append(f"📝 {info['note']}")
+    if grp:
+        ours.append(" · ".join(grp))
+    if info.get("pending"):
+        ours.append("🔄 " + b("Update available"))
+    if ours:
+        out.append("")
+        out.extend(ours)
     return out
+
+
+def _updown(net):
+    """`11MB / 7.15MB` → `↓11MB ↑7.15MB` — docker stats reports NetIO as
+    received / sent, in that order. Unparseable input passes through."""
+    parts = [p.strip() for p in str(net or "?").split("/")]
+    if len(parts) == 2:
+        return f"↓{parts[0]} ↑{parts[1]}"
+    return str(net or "?")
+
+
+def _rw(block):
+    """`35.8MB / 13.7MB` → `R 35.8MB · W 13.7MB` — BlockIO is
+    read / written, in that order."""
+    parts = [p.strip() for p in str(block or "?").split("/")]
+    if len(parts) == 2:
+        return f"R {parts[0]} · W {parts[1]}"
+    return str(block or "?")
+
+
+def _dedupe_ports(ports):
+    """`53→53, 53→53` → `53→53` — the same mapping over tcp and udp
+    renders as the same text, and one line saying a thing twice reads
+    like a mistake (the owner's adguardhome showed exactly that)."""
+    if not ports or ports == "—":
+        return ""
+    seen, out = set(), []
+    for part in str(ports).split(","):
+        part = part.strip()
+        if part and part not in seen:
+            seen.add(part)
+            out.append(part)
+    return " · ".join(out)
 
 
 def overview_line(name, state_info, *, host_tag="", version=""):
