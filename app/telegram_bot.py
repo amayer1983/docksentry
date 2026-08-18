@@ -2720,8 +2720,22 @@ class TelegramBot:
         return None
 
     @staticmethod
-    def _build_selfupdate_script(name, run_parts, image):
+    def _build_selfupdate_script(name, run_parts, image, stop_timeout=60):
         """Shell run by the helper container to swap Docksentry's image.
+
+        `stop_timeout` is `DOCKER_STOP_TIMEOUT`, and it is here because
+        it was missing. A bare `docker stop` uses Docker's own default of
+        **ten seconds** and then sends SIGKILL — which is what killed
+        @NotRetarded's instance with exit 137 mid-update (#62), while the
+        update itself reported success.
+
+        Every other stop in this project was moved onto
+        `_lifecycle_timeout()` in v2.8.3 after @famewolf hit exactly this
+        on slow containers. This one was missed, in the same way the
+        `rename` calls were missed in that release and had to be fixed
+        again in 2.8.4. Shutting *ourselves* down is not faster than
+        shutting anything else down: the web server, the scheduler and
+        the Discord gateway all have to come to a stop first.
 
         Recovery net (#43, @LeeNX): if the recreate `docker run` fails — e.g. a
         flag the runtime rejects, seen on rootless Podman — the old
@@ -2761,7 +2775,7 @@ class TelegramBot:
         return (
             f"sleep 3; "
             f"docker rm -f {qname}_old >/dev/null 2>&1; "
-            f"docker stop {qname} && "
+            f"docker stop -t {stop_timeout} {qname} && "
             f"{{ docker rename {qname} {qname}_old || "
             f"{{ echo 'Selfupdate backup failed — restarting unchanged'; "
             f"docker start {qname}; exit 1; }}; }} && "
@@ -2834,7 +2848,10 @@ class TelegramBot:
 
         # Build the full recreation command
         run_parts = " ".join(shlex.quote(a) for a in run_args)
-        update_script = self._build_selfupdate_script(own_name, run_parts, own_image)
+        update_script = self._build_selfupdate_script(
+            own_name, run_parts, own_image,
+            stop_timeout=max(30, int(getattr(self.config,
+                                             "docker_stop_timeout", 60) or 60)))
 
         # Launch a temporary helper container on the host that performs the swap.
         # This container survives because it runs independently on the Docker host.

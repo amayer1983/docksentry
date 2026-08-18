@@ -605,7 +605,7 @@
   "recovery_gone": "⚠️ Ein Update von {name} wurde unterbrochen; weder der Container noch seine Sicherung sind noch da.",
   "web_badge_newer_tt": "Auf {current} festgelegt. In der Registry gibt es {newer} — Docksentry wechselt nicht dorthin, weil der festgelegte Tag gilt. Zum Wechseln den Tag in der Compose-Datei ändern.",
   "web_discord_bot_title": "Discord-Bot (Slash-Befehle)",
-  "web_discord_bot_intro": "Optional und unabhängig vom Webhook darüber. Mit einem Bot-Token nimmt Docksentry Befehle in Discord entgegen — /status, /update, /logs und 19 weitere — statt nur Meldungen zu senden. Die Anwendung wird unter discord.com/developers/applications angelegt.",
+  "web_discord_bot_intro": "Optional und unabhängig vom Webhook darüber. Mit einem Bot-Token nimmt Docksentry Befehle in Discord entgegen — /status, /update, /logs und 32 weitere — statt nur Meldungen zu senden. Die Anwendung wird unter discord.com/developers/applications angelegt.",
   "web_discord_token": "Bot-Token",
   "web_discord_token_help": "Von der Seite „Bot“ deiner Discord-Anwendung. Wird in settings.json abgelegt, lesbar nur für den Eigentümer. Leer lassen behält den gespeicherten Token.",
   "web_discord_token_placeholder": "Bot-Token einfügen",
@@ -848,5 +848,8 @@
   "help_askmajor": "/askmajor — Vor einem Major-Update nachfragen",
   "help_detail_askmajor": "*/askmajor <Container>*\n\nEin Sprung der Hauptversion — etwa 16 → 17 bei einer Datenbank — fragt vorher nach, statt einfach zu laufen. Die Frage kommt mit dem Update, und bis zu deiner Antwort passiert nichts.\n\nOhne Argument wird gelistet, was gesetzt ist.",
   "help_testchannel": "/testchannel — Testnachricht an jeden Kanal",
-  "help_detail_testchannel": "*/testchannel*\n\nSchickt eine Nachricht durch jeden eingeschalteten Benachrichtigungskanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise, Webhook.\n\nVon hier aus nützlicher als aus der Weboberfläche: du stehst schon dort, wo die Nachricht ankommen muss, „hat es geklappt?“ beantwortet sich also selbst. Ein Kanal, der stumm bleibt, ist einer zum Nachsehen."
+  "help_detail_testchannel": "*/testchannel*\n\nSchickt eine Nachricht durch jeden eingeschalteten Benachrichtigungskanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise, Webhook.\n\nVon hier aus nützlicher als aus der Weboberfläche: du stehst schon dort, wo die Nachricht ankommen muss, „hat es geklappt?“ beantwortet sich also selbst. Ein Kanal, der stumm bleibt, ist einer zum Nachsehen.",
+  "startup_killed_stopping": "⚠️ _Der vorige Lauf wurde abgeschossen, bevor er fertig heruntergefahren war — `docker stop` hat die Geduld verloren und SIGKILL geschickt (Exit 137). Verloren gehen sollte nichts, jede Datei wird atomar geschrieben, aber ein größeres `DOCKER_STOP_TIMEOUT` gibt Webserver, Scheduler und Discord-Verbindung die Zeit, wirklich anzuhalten._",
+  "web_label_card_title": "Bezeichnung dieser Instanz",
+  "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht."
 }

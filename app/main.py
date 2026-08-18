@@ -162,7 +162,7 @@ def main():
                 signame = str(sig)
             atomic_write_json(config.last_exit_file,
                               {"reason": "signal", "signal": signame,
-                               "ts": time.time()})
+                               "ts": time.time(), "done": False})
         except Exception as e:
             print(f"Could not record exit cause (non-fatal): {e}")
         print("Shutting down...")
@@ -181,6 +181,22 @@ def main():
             _discord_ref["bot"].stop()
         if web:
             web.stop()
+        # Rewritten now that everything has actually stopped. The marker
+        # above proves a signal *arrived*; this proves we got to the end
+        # of shutting down, and the difference is the whole point: a
+        # `docker stop` that runs out of patience sends SIGKILL, and
+        # without this the next boot could not tell that from a clean
+        # exit. @NotRetarded's instance died with 137 mid-self-update and
+        # Docksentry reported the update as a success and said nothing
+        # about it (#62).
+        try:
+            from container_store import atomic_write_json as _aw
+            _aw(config.last_exit_file,
+                {"reason": "signal", "signal": signame,
+                 "ts": time.time(), "done": True})
+        except Exception:
+            pass
+        print("Shutdown complete.")
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
@@ -209,6 +225,7 @@ def main():
     hard_kill = previous_run_died(config)
 
     restart_signal = None
+    killed_stopping = False
     try:
         if os.path.exists(config.last_exit_file):
             import json as _json
@@ -216,6 +233,11 @@ def main():
                 _exit = _json.load(f)
             if _exit.get("reason") == "signal":
                 restart_signal = _exit.get("signal", "signal")
+                # A stop that never finished. `done` is written after
+                # every service has come to a halt, so its absence means
+                # the process was killed partway through — almost always
+                # a `docker stop` timeout expiring into SIGKILL (#62).
+                killed_stopping = not _exit.get("done", True)
             os.unlink(config.last_exit_file)
     except Exception as e:
         print(f"Could not read exit cause (non-fatal): {e}")
@@ -600,6 +622,15 @@ def main():
     except Exception:
         pass
 
+    if killed_stopping:
+        # Into the log as well, not only the notification channels. An
+        # instance with no channels configured — or one whose channels
+        # are the thing that is broken — would otherwise have no record
+        # of it at all, which is how #62 stayed invisible in the first
+        # place.
+        print("Restart cause: the previous run was KILLED before it finished "
+              "shutting down (exit 137). `docker stop` timed out; raise "
+              "DOCKER_STOP_TIMEOUT if this repeats.")
     if requested_restart:
         print("Restart cause: requested (restart button or /restart)")
     elif restart_signal:
@@ -723,10 +754,12 @@ def main():
     # pull both land the user on a new version, and both deserve the note.
     # Said even when a self-update restart suppresses the ordinary startup
     # line: "we were killed" is never the story that message tells.
-    if hard_kill or recovery_msg:
+    if hard_kill or recovery_msg or killed_stopping:
         parts = []
         if hard_kill:
             parts.append(t("startup_hard_kill"))
+        elif killed_stopping:
+            parts.append(t("startup_killed_stopping"))
         if recovery_msg:
             parts.append(recovery_msg)
         killed_msg = "\n".join(parts)

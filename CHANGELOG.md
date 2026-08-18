@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.14.2] - 2026-08-18
+
+### Fixed
+- **A self-update no longer kills Docksentry halfway through shutting down (#62, @NotRetarded).** His instance updated from 2.12.3 to 2.14.0, announced it cheerfully, and died with **exit 137** — SIGKILL — with, in his words, "nothing about the exit code 137".
+
+  The helper that performs the swap ran a bare `docker stop`. No `-t`, so Docker's own default of ten seconds applied and then it killed us. Shutting *ourselves* down is not faster than shutting anything else down: the web server, the scheduler and the Discord gateway all have to come to a halt, and the Discord one deliberately waits for a command still in flight. Every other stop in this project moved onto `DOCKER_STOP_TIMEOUT` in v2.8.3 after @famewolf hit exactly this on slow containers; this one was missed, the same way the `rename` calls were missed then and had to be fixed again in 2.8.4. It follows the setting now, floored at 30 seconds.
+
+- **And we could not tell afterwards, which is why nothing was said.** The shutdown handler writes its exit marker *first*, deliberately, so it survives a SIGKILL — which means the marker proved a signal had arrived, not that shutting down ever finished. A killed shutdown and a clean one looked identical. It is written a second time once every service has stopped, and the difference between those two writes is the answer: a run that was killed partway through now says so, in the log as well as on your channels. Reproduced against a real container — `docker stop -t 0`, exit 137, marker `done: false`, message on the next boot.
+
+- **`BOT_LABEL` moved out of the Telegram section (#2, @NotRetarded).** It sat between "Telegram Topic ID" and "Allowed users" on the Connections page, and seven of the nine channels use it — it prefixes every message on all of them. He uses Discord, read it as a Telegram setting and never touched it, which is entirely reasonable. Its own card now, above the per-channel ones, saying what it actually does.
+
+- **The Discord bot card no longer advertises a command count from three months ago.** It said "/status, /update, /logs and 19 more" while there were 35. Spotted in a screenshot taken for something else; a test now holds that number against the command table, because a number written into a sentence cannot notice that the thing it counts has moved.
+
 ## [2.14.1] - 2026-08-18
 
 ### Added

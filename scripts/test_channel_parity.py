@@ -190,6 +190,20 @@ _n.send_message("plain")
 checks["a plain message is unchanged"] = not list(
     _sent["msg"].iter_attachments())
 
+# ═══ counts written into prose go stale ═════════════════════════════
+# The Connections page advertised "/status, /update, /logs and 19 more"
+# while there were 35 commands — spotted in a screenshot taken for an
+# unrelated change. A number in a sentence has no way of noticing that
+# the thing it counts has moved.
+import json as _json  # noqa: E402
+import re as _re  # noqa: E402
+
+_en = _json.load(open(os.path.join(APP, "lang", "en.json"), encoding="utf-8"))
+_intro = _en.get("web_discord_bot_intro", "")
+_m = _re.search(r"\b(\d+) more\b", _intro)
+checks["the advertised command count is the real one"] = (
+    bool(_m) and int(_m.group(1)) == len(COMMANDS) - 3)
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

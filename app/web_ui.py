@@ -6207,9 +6207,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <label>{t("web_allowed_users")} {help_(t("web_allowed_users_help"))}{env_("telegram_allowed_users")}</label>
     <input type="text" name="telegram_allowed_users" value="{_e(', '.join(str(u) for u in (config.telegram_allowed_users or [])))}" placeholder="{_e(t('web_allowed_users_placeholder'))}" form="conn-form">
 
-    <label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
-    <input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="conn-form">
   </div>
+</div>
+
+<!-- BOT_LABEL is not a Telegram setting. Seven of the nine channels
+     prefix their messages with it, and it sat between "Telegram Topic
+     ID" and "Allowed users" — where @NotRetarded, who uses Discord,
+     reasonably read it as a Telegram thing and never touched it (#2).
+     Its own card, above the per-channel ones, because it applies to all
+     of them. -->
+<div class="card">
+<h2>{t("web_label_card_title")}</h2>
+<p class="card-intro">{t("web_label_card_intro")}</p>
+<label>{t("web_bot_label")} {help_(t("web_bot_label_help"))}{env_("bot_label")}</label>
+<input type="text" name="bot_label" value="{_e(config.bot_label or '')}" placeholder="{_e(t('web_bot_label_placeholder'))}" form="conn-form">
 </div>
 """
                        + _ordered

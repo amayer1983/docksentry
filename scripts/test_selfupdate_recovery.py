@@ -74,7 +74,13 @@ def main():
     ok = _run(fail_run=False)
     checks = {
         # failure → old container restored, cleanup of _old NOT done
-        "fail: stop + rename to _old happened": "stop ds" in fail and "rename ds ds_old" in fail,
+        # `stop -t <n>` since #62: a bare `docker stop` uses Docker's own
+        # ten seconds and then SIGKILLs us mid-shutdown, which is how
+        # @NotRetarded's instance died with exit 137 during a self-update.
+        "fail: stop + rename to _old happened":
+            "stop -t " in fail and "rename ds ds_old" in fail,
+        "fail: the stop carries a timeout, not Docker's default":
+            "stop ds" not in fail,
         "fail: rolls back (rename _old -> ds + start)": "rename ds_old ds" in fail and "start ds" in fail,
         "fail: does NOT rm the _old backup": "rm ds_old" not in fail,
         # success → new container kept, _old cleaned up, no rollback
