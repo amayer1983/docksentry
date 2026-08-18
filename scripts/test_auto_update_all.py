@@ -35,6 +35,10 @@ def run(all_auto, auto_list):
     # under test cannot talk to.
     bot.send_message = lambda *a, **k: None
     bot.announce = lambda *a, **k: None
+    # The start message names the containers now (#56, @LeeNX) — "I
+    # prefer knowing what is about to change at a glance" — so the fake
+    # bot needs the same display helper the real one has.
+    bot._display_name = lambda u: u.get("name", "?")
     bot.notify_updates = lambda upd, **k: cap["manual"].extend(u["name"] for u in upd)
     # Update-policy gate (v1.53.0) — bind the real resolution/decision so the
     # gate runs; with no UPDATE_POLICY set it resolves to "all" (allow all),

@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.14.0] - 2026-08-18
+
+### Added
+- **Five things the Web UI could do and the chat could not.** `/note`, `/trustrunning`, `/askmajor` and `/testchannel` on both Telegram and Discord — 35 commands each, still identical on both sides. All four are container state, which is what the chat is for; the Web UI is where you go when you are already at a desk.
+
+  `/testchannel` is the one that is genuinely better here than there: it sends a test through every channel that is switched on, and you are already standing where the message has to arrive, so "did it work?" answers itself. A channel that stays quiet is a channel to look at.
+
+- **The auto-update notice names the containers (#56, @LeeNX).** It said "⚡ Auto-updating 2 container(s)…" and nothing else. His words: *"I prefer knowing what is about to change or upgrade at a glance, so if something breaks and could be related, I have an idea of where to look."* Names now, capped at twelve with an "and N more" — past a dozen it stops being a glance, and the per-container results follow in the same conversation anyway.
+
+- **E-mail can carry a backup.** Of the seven delivery-only channels it is the one that can hold a file, and a backup in your inbox is the copy that survives the machine it came from. Nothing can *ask* for it there — e-mail has no back channel — so the Web UI and the automatic local copy are what trigger it.
+
+### Fixed
+- **The configuration reference says, per variable, whether the Web UI can change it (#2, @NotRetarded).** He read that a setting was editable in the interface on one page and saw its default on another, and could not tell whether the two agreed. Fair: the tables never said, and a paragraph eighty lines further down described "roughly" which settings were editable. Sixty-six variables now carry a ⚙, with a legend that also says the interface wins — and that since 2.13.0 a save only writes what you actually changed, so a variable set in your compose file keeps working unless you change that same setting in the interface.
+
 ## [2.13.0] - 2026-08-18
 
 ### Fixed

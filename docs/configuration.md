@@ -23,20 +23,24 @@ At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOO
 
 The handful that decide whether Docksentry runs at all.
 
+> **⚙ = also editable in the Web UI**, and the interface wins: a value saved there overrules this variable, on this boot and every one after. Everything without the mark is environment-only — credentials especially, which deliberately never touch the data volume.
+>
+> Since v2.13.0 a save only writes settings you actually changed, so a variable you set here keeps working unless you change that same setting in the interface. Settings › the *overruled variables* card lists any that are being overruled, with a button to take the environment's value back.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `DATA_DIR` | `/data` | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Change it only if you mount the volume somewhere else; everything in it is what a backup would restore |
-| `LANGUAGE` | `en` | Bot language ([16 available](docs/languages.md)) |
+| `LANGUAGE` ⚙ | `en` | Bot language ([16 available](docs/languages.md)) |
 | `TZ` | `Europe/Berlin` | Timezone |
-| `WEB_PASSWORD` | | Web UI password (Basic Auth) |
+| `WEB_PASSWORD` ⚙ | | Web UI password (Basic Auth) |
 | `WEB_PORT` | `8080` | Web UI port |
-| `WEB_SESSION_HOURS` | `8` | How long a browser session survives without being used. Signing in again is all it takes. Sessions live in memory, so a restart signs everyone out — writing them to disk would mean a file of live credentials, which is most of what the login rework was getting away from. |
-| `WEB_SESSION_MAX_DAYS` | `7` | A session ends after this long whatever happens. The idle timeout above catches a machine somebody walked away from; this catches a session a background tab has been keeping alive, which no idle timeout ever would. |
+| `WEB_SESSION_HOURS` ⚙ | `8` | How long a browser session survives without being used. Signing in again is all it takes. Sessions live in memory, so a restart signs everyone out — writing them to disk would mean a file of live credentials, which is most of what the login rework was getting away from. |
+| `WEB_SESSION_MAX_DAYS` ⚙ | `7` | A session ends after this long whatever happens. The idle timeout above catches a machine somebody walked away from; this catches a session a background tab has been keeping alive, which no idle timeout ever would. |
 | `WEB_UI` | `false` | Enable web dashboard |
-| `STATUS_VIEW` | `table` | How the status page draws your containers. `table` is the original: every action on every row, wide layout. `list` is the compact one: one row per container leading with whether an update is waiting, everything else in a detail panel, and a layout that works on a phone. Also switchable in Settings › General — this variable only seeds the initial value. |
-| `WEB_USERNAME` | | Username for the Web UI login. **Optional**: left empty, any username is accepted, which is what Docksentry did before it had a username at all (the Basic Auth header was split and the name half then ignored). Set it and only that name gets in. Also editable in Settings › General. |
+| `STATUS_VIEW` ⚙ | `table` | How the status page draws your containers. `table` is the original: every action on every row, wide layout. `list` is the compact one: one row per container leading with whether an update is waiting, everything else in a detail panel, and a layout that works on a phone. Also switchable in Settings › General — this variable only seeds the initial value. |
+| `WEB_USERNAME` ⚙ | | Username for the Web UI login. **Optional**: left empty, any username is accepted, which is what Docksentry did before it had a username at all (the Basic Auth header was split and the name half then ignored). Set it and only that name gets in. Also editable in Settings › General. |
 
 ### Docker & Podman hosts
 
@@ -48,9 +52,9 @@ Where the containers are, and which CLI talks to them.
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
 | `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
 | `DOCKER_HOSTS` | | **Multi-host (experimental).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. An endpoint may instead be `context://<name>`, naming a context / system connection this machine has already stored (`docker --context <name>`, `podman --connection <name>`) — on Podman that is the only way to give each host its own SSH key, because `podman --url ssh://…` ignores `~/.ssh/config` and takes the identity of whichever stored connection is the *default* one, whatever host it points at (measured on 4.9.3; [docs/podman.md](podman.md) has the detail). An unknown name fails rather than falling back to the local socket. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
-| `DOCKER_STOP_TIMEOUT` | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators).  It also bounds the commands that follow a stop — `kill`, `rm -f` and `rename` — which were fixed at 15 seconds until v2.8.3 and timed out on containers that are slow to die (a model loaded in VRAM, a busy daemon). Those get `max(30, this)`, so raising this one value covers the whole shutdown path rather than only the first step of it.|
+| `DOCKER_STOP_TIMEOUT` ⚙ | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators).  It also bounds the commands that follow a stop — `kill`, `rm -f` and `rename` — which were fixed at 15 seconds until v2.8.3 and timed out on containers that are slow to die (a model loaded in VRAM, a busy daemon). Those get `max(30, this)`, so raising this one value covers the whole shutdown path rather than only the first step of it.|
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
-| `HEALTHCHECK_MAX_STARTING` | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
+| `HEALTHCHECK_MAX_STARTING` ⚙ | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
 
 ### What gets updated, and when
 
@@ -58,14 +62,14 @@ The schedule, the policy, and the containers it applies to.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTO_SELFUPDATE` | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
+| `AUTO_SELFUPDATE` ⚙ | `false` | Auto-update the bot itself on each check — **self-update / selfupdate: Docksentry updating itself** (via `/selfupdate` or the Web UI button), not your other containers |
 | `AUTO_UPDATE_ALL` | `false` | Auto-update **every** checked container **(auto-updating your other containers, not Docksentry itself)** — Watchtower-style, not just per-container opt-ins. Pinned / excluded / `docksentry.exclude` containers are still skipped. |
-| `CRON_SCHEDULE` | `0 18 * * *` | Cron expression for scheduled checks |
-| `EXCLUDE_CONTAINERS` | | Comma-separated names to exclude — wildcards allowed (`systemd-*`) |
-| `MIN_IMAGE_AGE_DAYS` | `0` | Don't auto-update to an image younger than this many days. Two reasons people want it: let someone else find the broken release first, and give a compromised image time to be noticed before you pull it. **Auto path only** — pressing the button yourself always works, and the update stays pending so it applies by itself once the image has aged. Per container with `docksentry.min-age=7`. Off by default |
-| `MONITOR_ONLY_CONTAINERS` | | Watch and report these, never update them. Wildcards allowed. For containers something else owns — quadlets, Portainer stacks, anything deployed by Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `EXCLUDE_CONTAINERS` they stay visible and still report updates. The label `docksentry.monitor-only=true` does the same per container |
-| `QUIET_HOURS_END` | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
-| `QUIET_HOURS_START` | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
+| `CRON_SCHEDULE` ⚙ | `0 18 * * *` | Cron expression for scheduled checks |
+| `EXCLUDE_CONTAINERS` ⚙ | | Comma-separated names to exclude — wildcards allowed (`systemd-*`) |
+| `MIN_IMAGE_AGE_DAYS` ⚙ | `0` | Don't auto-update to an image younger than this many days. Two reasons people want it: let someone else find the broken release first, and give a compromised image time to be noticed before you pull it. **Auto path only** — pressing the button yourself always works, and the update stays pending so it applies by itself once the image has aged. Per container with `docksentry.min-age=7`. Off by default |
+| `MONITOR_ONLY_CONTAINERS` ⚙ | | Watch and report these, never update them. Wildcards allowed. For containers something else owns — quadlets, Portainer stacks, anything deployed by Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `EXCLUDE_CONTAINERS` they stay visible and still report updates. The label `docksentry.monitor-only=true` does the same per container |
+| `QUIET_HOURS_END` ⚙ | | Quiet-hours window end (HH:MM). Manual command replies always go through. |
+| `QUIET_HOURS_START` ⚙ | | Quiet-hours window start (HH:MM). Auto-notifications in this window are dropped. |
 | `UPDATE_POLICY` | `all` | Global default cap on which semver bump levels **auto-updates** apply: `all` (every bump), `minor` (minor+patch, hold back majors) or `patch` (patch only). The per-container `docksentry.policy` label overrides it. Manual `/update` and Bulk update always apply. An update whose version can't be classified is allowed. This caps *by bump level only* — it does **not** make Docksentry follow or switch semver tags (it never rewrites `:1.2.3` → `:1.2.4`); that's a separate future capability. Env-only. |
 
 ### Registries
@@ -77,8 +81,8 @@ Credentials, mirrors, and certificates for pulling images.
 | `DOCKER_AUTH_CONFIG` | | Path to an existing `config.json` with stored credentials (alternative to USERNAME/PASSWORD). Mount your host's `~/.docker/config.json` read-only and point at it. |
 | `DOCKER_REGISTRY` | `docker.io` | Registry to log into. Set to `ghcr.io`, `quay.io`, an internal Harbor, etc. when using `DOCKER_USERNAME`/`PASSWORD`. |
 | `DOCKER_USERNAME` / `DOCKER_PASSWORD` | | Docker Hub (or other registry) credentials. Bypasses the anonymous pull rate limit (100 / 6h / IP). We run `docker login` once at startup. |
-| `INSECURE_REGISTRIES` | | Registries to reach over plain HTTP instead of HTTPS, comma-separated, wildcards allowed. Only hosts named here — never guessed, and never a fallback when TLS fails |
-| `REGISTRY_MIRRORS` | | `origin=mirror` pairs, comma-separated (`docker.io=mirror.internal`). Applies to update **checks** only — those go straight to the registry over HTTPS and otherwise ignore the daemon's own `registry-mirrors`, so on a network where only the mirror is reachable Docksentry could not check at all. Pulling still goes through the daemon with the container's own image reference; use `registry-mirrors` in `daemon.json` for that side |
+| `INSECURE_REGISTRIES` ⚙ | | Registries to reach over plain HTTP instead of HTTPS, comma-separated, wildcards allowed. Only hosts named here — never guessed, and never a fallback when TLS fails |
+| `REGISTRY_MIRRORS` ⚙ | | `origin=mirror` pairs, comma-separated (`docker.io=mirror.internal`). Applies to update **checks** only — those go straight to the registry over HTTPS and otherwise ignore the daemon's own `registry-mirrors`, so on a network where only the mirror is reachable Docksentry could not check at all. Pulling still goes through the daemon with the container's own image reference; use `registry-mirrors` in `daemon.json` for that side |
 | `SSL_CERT_FILE` | | PEM bundle for a registry (or webhook / SMTP host) behind your own CA. Keeps TLS on, unlike `INSECURE_REGISTRIES`. Public roots keep working alongside it |
 
 ### Monitoring & events
@@ -87,12 +91,12 @@ Crash alerts, health flips, and the weekly report.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MONITOR` | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
-| `MONITOR_EVENTS` | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
-| `MONITOR_INTERVAL` | `60` | Seconds between monitoring passes (min 15) |
-| `WEEKLY_REPORT_ENABLED` | `false` | Send a once-a-week summary report to all configured channels |
-| `WEEKLY_REPORT_HOUR` | `9` | Hour of day for the report (0-23, local time) |
-| `WEEKLY_REPORT_WEEKDAY` | `0` | Day of week for the report (0=Mon, 6=Sun) |
+| `MONITOR` ⚙ | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
+| `MONITOR_EVENTS` ⚙ | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
+| `MONITOR_INTERVAL` ⚙ | `60` | Seconds between monitoring passes (min 15) |
+| `WEEKLY_REPORT_ENABLED` ⚙ | `false` | Send a once-a-week summary report to all configured channels |
+| `WEEKLY_REPORT_HOUR` ⚙ | `9` | Hour of day for the report (0-23, local time) |
+| `WEEKLY_REPORT_WEEKDAY` ⚙ | `0` | Day of week for the report (0=Mon, 6=Sun) |
 
 ### Cleanup & disk space
 
@@ -100,12 +104,12 @@ Reclaiming space, and warning before it runs out.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTO_CLEANUP` | `false` | Run image cleanup after every successful auto-update |
-| `CLEANUP_BACKUP_DAYS` | `7` | How long backup tarballs are kept (1–365 days) |
-| `CLEANUP_BACKUP_LOCAL_ONLY` | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
-| `CLEANUP_GRACE_HOURS` | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
-| `DISK_WARN_AUTO_CLEANUP` | `false` | Automatically run cleanup when disk warning fires |
-| `DISK_WARN_PERCENT` | `85` | Notify when disk usage exceeds this percentage (50–100) |
+| `AUTO_CLEANUP` ⚙ | `false` | Run image cleanup after every successful auto-update |
+| `CLEANUP_BACKUP_DAYS` ⚙ | `7` | How long backup tarballs are kept (1–365 days) |
+| `CLEANUP_BACKUP_LOCAL_ONLY` ⚙ | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
+| `CLEANUP_GRACE_HOURS` ⚙ | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
+| `DISK_WARN_AUTO_CLEANUP` ⚙ | `false` | Automatically run cleanup when disk warning fires |
+| `DISK_WARN_PERCENT` ⚙ | `85` | Notify when disk usage exceeds this percentage (50–100) |
 
 ### Notifications — Telegram
 
@@ -113,10 +117,10 @@ The Telegram bot: notifications and commands.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BOT_LABEL` | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
-| `TELEGRAM_ALLOWED_USERS` | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
+| `BOT_LABEL` ⚙ | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
+| `TELEGRAM_ALLOWED_USERS` ⚙ | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
 | `TELEGRAM_POLLING` | `true` | Set `false` for **send-only mode**: Docksentry sends notifications but doesn't poll for commands. Use this to share one bot token with another app (e.g. Home Assistant) — Telegram allows only one command-polling consumer per token, so let the other app own commands while Docksentry just posts. Control Docksentry via the Web UI in this mode. |
-| `TELEGRAM_TOPIC_ID` | | Telegram topic/thread ID (for groups with topics) |
+| `TELEGRAM_TOPIC_ID` ⚙ | | Telegram topic/thread ID (for groups with topics) |
 
 ### Notifications — Discord
 
@@ -124,40 +128,40 @@ Two separate paths: a webhook that only posts, and a bot that also answers.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DISCORD_ALLOWED_USERS` | | Optional, comma-separated Discord user IDs. Unset means anyone in that server can run the commands; set it when the server has members who shouldn't be able to stop a database or read `/logs`. On top of this, the commands are registered Administrator-only and disabled in DMs, so a server admin can also grant them per role in Discord itself. Also editable on the **Connections** page. |
-| `DISCORD_APP_ID` | | The application ID from the same portal page. Required alongside `DISCORD_BOT_TOKEN`; it's what the slash commands get registered against. Also editable on the **Connections** page. |
-| `DISCORD_BOT_CHANNEL` | | The channel the **bot** posts into of its own accord — start-up, alerts, update results. Every slash-command reply is *ephemeral* (visible only on the device that sent it, and it deletes itself), which is right for answers and useless for notifications; this is how the bot gets to speak rather than only reply. Distinct from `DISCORD_WEBHOOK`, which is a separate delivery path — with both set, every notification arrives twice, and the Connections page says so. Developer Mode on, right-click the channel, Copy Channel ID. Also editable on the **Connections** page (v2.7.0). |
-| `DISCORD_BOT_TOKEN` | | **Interactive Discord bot (experimental).** A bot token from the [Discord developer portal](https://discord.com/developers/applications) — this is *not* the same thing as `DISCORD_WEBHOOK`, which only pushes notifications one way. With a token, Docksentry connects to Discord and answers slash commands (`/status`, `/check`, `/updates`, `/hosts`), the same way the Telegram bot does. Needs `DISCORD_APP_ID` as well. Replies are ephemeral — only the person who ran the command sees them — because container listings name internal services. Also editable on the **Connections** page (v2.3.0); saving it there restarts the bot and reports back whether Discord accepted the token. |
+| `DISCORD_ALLOWED_USERS` ⚙ | | Optional, comma-separated Discord user IDs. Unset means anyone in that server can run the commands; set it when the server has members who shouldn't be able to stop a database or read `/logs`. On top of this, the commands are registered Administrator-only and disabled in DMs, so a server admin can also grant them per role in Discord itself. Also editable on the **Connections** page. |
+| `DISCORD_APP_ID` ⚙ | | The application ID from the same portal page. Required alongside `DISCORD_BOT_TOKEN`; it's what the slash commands get registered against. Also editable on the **Connections** page. |
+| `DISCORD_BOT_CHANNEL` ⚙ | | The channel the **bot** posts into of its own accord — start-up, alerts, update results. Every slash-command reply is *ephemeral* (visible only on the device that sent it, and it deletes itself), which is right for answers and useless for notifications; this is how the bot gets to speak rather than only reply. Distinct from `DISCORD_WEBHOOK`, which is a separate delivery path — with both set, every notification arrives twice, and the Connections page says so. Developer Mode on, right-click the channel, Copy Channel ID. Also editable on the **Connections** page (v2.7.0). |
+| `DISCORD_BOT_TOKEN` ⚙ | | **Interactive Discord bot (experimental).** A bot token from the [Discord developer portal](https://discord.com/developers/applications) — this is *not* the same thing as `DISCORD_WEBHOOK`, which only pushes notifications one way. With a token, Docksentry connects to Discord and answers slash commands (`/status`, `/check`, `/updates`, `/hosts`), the same way the Telegram bot does. Needs `DISCORD_APP_ID` as well. Replies are ephemeral — only the person who ran the command sees them — because container listings name internal services. Also editable on the **Connections** page (v2.3.0); saving it there restarts the bot and reports back whether Discord accepted the token. |
 | `DISCORD_GUILD_ID`<br>(`DISCORD_SERVER_ID`) | | Discord's interface calls this a **Server**, its API calls it a **Guild** — same thing, two names, and both variables work here (`DISCORD_GUILD_ID` wins if you set both). **Required** when `DISCORD_BOT_TOKEN` is set — the bot refuses to start without it. It is what restricts the bot to *your* server: it registers the slash commands there (which also makes them appear instantly rather than after up to an hour) and every incoming command is checked against it. Without that restriction the commands are global, and a "Public" application can be invited to a stranger's server and used to drive your containers. Discord → Settings → Advanced → Developer Mode, then right-click the server name → Copy Server ID. Also editable on the **Connections** page. |
-| `DISCORD_PUBLIC_REPLIES` | `false` | Make slash-command answers visible to the whole channel instead of only to whoever ran them. Off by default because a container listing names your internal services. On is for a channel you control — and note that an ephemeral answer also tidies itself away, which is a reason to want either setting. Also editable on the **Connections** page (v2.7.0). |
-| `DISCORD_WEBHOOK` | | Discord webhook URL |
+| `DISCORD_PUBLIC_REPLIES` ⚙ | `false` | Make slash-command answers visible to the whole channel instead of only to whoever ran them. Off by default because a container listing names your internal services. On is for a channel you control — and note that an ephemeral answer also tidies itself away, which is a reason to want either setting. Also editable on the **Connections** page (v2.7.0). |
+| `DISCORD_WEBHOOK` ⚙ | | Discord webhook URL |
 
 ### Notifications — e-mail
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMTP_FROM` | | Sender address, e.g. `docksentry@example.com`. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_HOST` | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_PASSWORD` | | SMTP password. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain). Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_TLS` | `starttls` | `starttls`, `ssl`, or `none`. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_TLS_VERIFY` | `true` | Verify the mail server's certificate. Set `false` only for an internal server with a self-signed certificate — it sends the password to whatever answers. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_TO` | | Recipient(s), comma-separated. Also editable on the **Connections** page (v2.4.0). |
-| `SMTP_USER` | | SMTP username (omit for an unauthenticated relay). Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_FROM` ⚙ | | Sender address, e.g. `docksentry@example.com`. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_HOST` ⚙ | | E-mail/SMTP server host. Setting this + `SMTP_FROM` + `SMTP_TO` enables e-mail notifications. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_PASSWORD` ⚙ | | SMTP password. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_PORT` ⚙ | `587` | SMTP port (587 for STARTTLS, 465 for SSL, 25 for plain). Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_TLS` ⚙ | `starttls` | `starttls`, `ssl`, or `none`. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_TLS_VERIFY` ⚙ | `true` | Verify the mail server's certificate. Set `false` only for an internal server with a self-signed certificate — it sends the password to whatever answers. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_TO` ⚙ | | Recipient(s), comma-separated. Also editable on the **Connections** page (v2.4.0). |
+| `SMTP_USER` ⚙ | | SMTP username (omit for an unauthenticated relay). Also editable on the **Connections** page (v2.4.0). |
 
 ### Notifications — ntfy, Gotify, Matrix, Apprise, webhook
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APPRISE_URL` | | **Apprise fan-out.** The notify endpoint of a self-hosted [Apprise API](https://github.com/caronc/apprise) container, e.g. `http://apprise:8000/notify/docksentry`. Apprise then forwards to whatever *it* is configured for — Pushover, Signal, Rocket.Chat, Mattermost, SMS gateways and ~100 more — so this one setting covers services Docksentry has no code for. Failures are sent with Apprise type `failure` so destinations that colour or prioritise by severity treat them differently. Optional `APPRISE_URLS` (comma-separated Apprise URLs) for the stateless endpoint, and `APPRISE_TAG` to route by tag. Also editable on the **Connections** page (v2.4.0). |
-| `GOTIFY_URL` / `GOTIFY_TOKEN` | | **Gotify push.** Base URL of your [Gotify](https://gotify.net) server plus an **application** token from its Apps tab (not a client token — they look alike and only the application one may post). Failed updates are sent at priority 8, which Gotify's app treats as loud and lets through quiet hours; everything else at 5. Also editable on the **Connections** page (v2.4.0). |
-| `MATRIX_HOMESERVER` / `MATRIX_TOKEN` / `MATRIX_ROOM` | | **Matrix room.** Homeserver base URL (`https://matrix.example.com`, *not* the server name), an access token for a dedicated sending account, and the internal room ID (`!abc:example.com`; a `#alias` also works and is resolved once). Messages carry both a plain-text and an HTML body, so formatting-capable clients render it and the rest still read fine. Also editable on the **Connections** page (v2.4.0). |
-| `NTFY_SERVER` | | ntfy server base URL, e.g. `https://ntfy.sh` — combined with `NTFY_TOPIC` when `NTFY_URL` isn't set |
-| `NTFY_TOKEN` | | ntfy access token for a protected topic |
-| `NTFY_TOPIC` | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
-| `NTFY_URL` | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
-| `NTFY_USER` / `NTFY_PASSWORD` | | ntfy credentials, if you use basic auth rather than a token |
-| `WEBHOOK_URL` | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
+| `APPRISE_URL` ⚙ | | **Apprise fan-out.** The notify endpoint of a self-hosted [Apprise API](https://github.com/caronc/apprise) container, e.g. `http://apprise:8000/notify/docksentry`. Apprise then forwards to whatever *it* is configured for — Pushover, Signal, Rocket.Chat, Mattermost, SMS gateways and ~100 more — so this one setting covers services Docksentry has no code for. Failures are sent with Apprise type `failure` so destinations that colour or prioritise by severity treat them differently. Optional `APPRISE_URLS` (comma-separated Apprise URLs) for the stateless endpoint, and `APPRISE_TAG` to route by tag. Also editable on the **Connections** page (v2.4.0). |
+| `GOTIFY_URL` / `GOTIFY_TOKEN` ⚙ | | **Gotify push.** Base URL of your [Gotify](https://gotify.net) server plus an **application** token from its Apps tab (not a client token — they look alike and only the application one may post). Failed updates are sent at priority 8, which Gotify's app treats as loud and lets through quiet hours; everything else at 5. Also editable on the **Connections** page (v2.4.0). |
+| `MATRIX_HOMESERVER` / `MATRIX_TOKEN` / `MATRIX_ROOM` ⚙ | | **Matrix room.** Homeserver base URL (`https://matrix.example.com`, *not* the server name), an access token for a dedicated sending account, and the internal room ID (`!abc:example.com`; a `#alias` also works and is resolved once). Messages carry both a plain-text and an HTML body, so formatting-capable clients render it and the rest still read fine. Also editable on the **Connections** page (v2.4.0). |
+| `NTFY_SERVER` ⚙ | | ntfy server base URL, e.g. `https://ntfy.sh` — combined with `NTFY_TOPIC` when `NTFY_URL` isn't set |
+| `NTFY_TOKEN` ⚙ | | ntfy access token for a protected topic |
+| `NTFY_TOPIC` ⚙ | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
+| `NTFY_URL` ⚙ | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
+| `NTFY_USER` / `NTFY_PASSWORD` ⚙ | | ntfy credentials, if you use basic auth rather than a token |
+| `WEBHOOK_URL` ⚙ | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
 
 ### Switching a channel off
 
@@ -165,25 +169,25 @@ Each channel has a switch, so it can be silenced without clearing its settings. 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CHANNEL_APPRISE_ENABLED` | `true` | Switch the Apprise channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_DISCORDBOT_ENABLED` | `true` | Switch the bot's own channel off without clearing its settings, like every other channel. Also editable on the **Connections** page. |
-| `CHANNEL_DISCORD_ENABLED` | `true` | Switch the Discord webhook channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_GOTIFY_ENABLED` | `true` | Switch the Gotify channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_MATRIX_ENABLED` | `true` | Switch the Matrix channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_NTFY_ENABLED` | `true` | Switch the ntfy channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_SMTP_ENABLED` | `true` | Switch the e-mail channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
-| `CHANNEL_TELEGRAM_ENABLED` | `true` | Switch Telegram off without clearing `BOT_TOKEN`/`CHAT_ID`. Off means off: no notifications **and** no answers to commands — a channel that is off but still replies to `/status` is the confusing state, not the useful one. Distinct from `TELEGRAM_POLLING`, which keeps notifications on and only stops command polling so a second app can share the token. Also editable on the **Connections** page (v2.6.0). |
-| `CHANNEL_WEBHOOK_ENABLED` | `true` | Switch the generic webhook channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_APPRISE_ENABLED` ⚙ | `true` | Switch the Apprise channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_DISCORDBOT_ENABLED` ⚙ | `true` | Switch the bot's own channel off without clearing its settings, like every other channel. Also editable on the **Connections** page. |
+| `CHANNEL_DISCORD_ENABLED` ⚙ | `true` | Switch the Discord webhook channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_GOTIFY_ENABLED` ⚙ | `true` | Switch the Gotify channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_MATRIX_ENABLED` ⚙ | `true` | Switch the Matrix channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_NTFY_ENABLED` ⚙ | `true` | Switch the ntfy channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_SMTP_ENABLED` ⚙ | `true` | Switch the e-mail channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
+| `CHANNEL_TELEGRAM_ENABLED` ⚙ | `true` | Switch Telegram off without clearing `BOT_TOKEN`/`CHAT_ID`. Off means off: no notifications **and** no answers to commands — a channel that is off but still replies to `/status` is the confusing state, not the useful one. Distinct from `TELEGRAM_POLLING`, which keeps notifications on and only stops command polling so a second app can share the token. Also editable on the **Connections** page (v2.6.0). |
+| `CHANNEL_WEBHOOK_ENABLED` ⚙ | `true` | Switch the generic webhook channel off without clearing its settings. Default on, so an upgrade changes nothing. Also editable on the **Connections** page (v2.5.0), where the switch only appears once the channel has everything it needs — offering to turn on something that would then do nothing is how you get "I enabled it and nothing happened". |
 
 ### API access & diagnostics
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_TOKENS` | | `name:token` pairs, comma-separated (`prom:xxx,grafana:yyy`). Grants **read-only** access to `/metrics` and `GET /api/status` without the Web UI password — a scraper cannot log in, and the browser password would let a monitoring job stop containers. Named so one can be revoked without disturbing the other. Send as `Authorization: Bearer <token>`, or `?token=<token>` for scrapers that cannot set headers (note that a query string lands in access logs) |
-| `DEBUG` | `false` | Seed debug mode on at startup (verbose logging, the full registry diagnostics on every update check, and the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
+| `API_TOKENS` ⚙ | | `name:token` pairs, comma-separated (`prom:xxx,grafana:yyy`). Grants **read-only** access to `/metrics` and `GET /api/status` without the Web UI password — a scraper cannot log in, and the browser password would let a monitoring job stop containers. Named so one can be revoked without disturbing the other. Send as `Authorization: Bearer <token>`, or `?token=<token>` for scrapers that cannot set headers (note that a query string lands in access logs) |
+| `DEBUG` ⚙ | `false` | Seed debug mode on at startup (verbose logging, the full registry diagnostics on every update check, and the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
 
 > **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `/data/settings.json`, and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Note that saving *anything* in the Web UI writes all of these settings at once, so a value you never touched can end up saved too. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /data/settings.json.`, and the affected field carries a small `env` marker in the Web UI. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
 
-Only the settings that live in the Web UI (roughly: schedule, exclude list, auto-selfupdate, cleanup options, disk-warning, quiet hours, weekly report, language, Web password, Discord/webhook URLs, debug, Telegram topic/allowed-users, stop timeout, monitoring toggle/interval) plus everything on the **Connections** page (Telegram topic/allowed-users, bot label, Discord and generic webhooks, Discord bot token/app ID/server ID/allowed users) can be edited there and persist across restarts. Everything else is env-only — notably `DOCKER_USERNAME`/`PASSWORD`/`AUTH_CONFIG`/`REGISTRY`, `AUTO_UPDATE_ALL`, `UPDATE_POLICY`, `CONTAINER_CLI`, `DOCKER_HOSTS`, `APPRISE_*`, `GOTIFY_*`, `MATRIX_*`, `TELEGRAM_POLLING`, `WEB_UI`, `WEB_PORT`, plus `BOT_TOKEN`/`CHAT_ID` — several of them (credentials especially) intentionally never touch the data volume. Telegram is fully optional — if BOT_TOKEN/CHAT_ID are unset, Docksentry runs headless (Web UI + Discord/Webhook).
+Which settings the Web UI can change is marked ⚙ in the tables above — per variable, rather than described in a paragraph somewhere else. @NotRetarded had to guess from two pages that did not obviously agree (#2), which is a fair thing to be confused by. Telegram is fully optional: with `BOT_TOKEN` / `CHAT_ID` unset, Docksentry runs headless (Web UI + Discord/webhook/e-mail).
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.

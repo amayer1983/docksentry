@@ -82,6 +82,28 @@ COMMANDS = [
     # for — @NotRetarded found the gap in the notifications (#61) and it
     # is the same gap in the command list.
     {"name": "help", "description": "What every command does", "type": 1},
+    # The five the Web UI could do and neither chat could.
+    {"name": "note", "description": "Attach a note to a container", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container name", "type": 3,
+          "required": True},
+         {"name": "text", "description": "The note (omit to clear)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "trustrunning", "description":
+     "Accept running-but-unhealthy for a container", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container name", "type": 3,
+          "required": True},
+     ]},
+    {"name": "askmajor", "description":
+     "Ask before applying a major update", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container name", "type": 3,
+          "required": True},
+     ]},
+    {"name": "testchannel", "description":
+     "Send a test notification to every channel", "type": 1},
     {"name": "changelog", "description":
      "What is new in versions ahead of yours", "type": 1},
     {"name": "selfupdate", "description":
@@ -1176,6 +1198,12 @@ class DiscordBot:
             return self._cmd_backup(data)
         if name == "help":
             return self._cmd_help()
+        if name == "note":
+            return self._cmd_note(opts)
+        if name in ("trustrunning", "askmajor"):
+            return self._cmd_flag(name, opts)
+        if name == "testchannel":
+            return self._cmd_testchannel()
         if name == "changelog":
             return self._cmd_changelog()
         if name == "selfupdate":
@@ -1841,6 +1869,63 @@ class DiscordBot:
             out.append("**Config**")
             out += [f"  • `{k}`" for k in cfg_keys]
         return "\n".join(out)[:1800]
+
+    def _cmd_note(self, opts):
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return "Usage: `/note <container> [text]`"
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        note = (opts.get("text") or "").strip()
+        lines = []
+        for host in targets:
+            name, err = self._resolve_container(arg, self._backend_for(host))
+            if err:
+                lines.append(err + self._label(host))
+                continue
+            self._store_for(host).set_note(name, note)
+            lines.append(
+                (f"📝 Note on `{name}`: {note}" if note
+                 else f"📝 Note cleared on `{name}`") + self._label(host))
+        return "\n".join(lines)
+
+    def _cmd_flag(self, which, opts):
+        """`/trustrunning` and `/askmajor` — same skeleton, one toggle."""
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return f"Usage: `/{which} <container>`"
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        lines = []
+        for host in targets:
+            name, err = self._resolve_container(arg, self._backend_for(host))
+            if err:
+                lines.append(err + self._label(host))
+                continue
+            store = self._store_for(host)
+            if which == "trustrunning":
+                on = store.toggle_trust_running(name)
+                what = ("running-but-unhealthy will be accepted"
+                        if on else "health must be green again")
+            else:
+                on = store.toggle_ask_before_major(name)
+                what = ("major updates will ask first"
+                        if on else "major updates apply like any other")
+            lines.append(f"{'✅' if on else '⬜'} `{name}`: {what}"
+                         + self._label(host))
+        return "\n".join(lines)
+
+    def _cmd_testchannel(self):
+        """More useful from a chat than from the Web UI: you are already
+        standing where the message has to arrive."""
+        bot = getattr(self, "telegram", None)
+        if bot is None or not hasattr(bot, "announce"):
+            return "⚠️ Not available."
+        bot.announce("🔔 Test notification — if you can read this on a "
+                     "channel, that channel works.")
+        return "🔔 Sent to every channel that is switched on."
 
     def _cmd_restart_self(self):
         """Restart Docksentry, if something will bring it back.

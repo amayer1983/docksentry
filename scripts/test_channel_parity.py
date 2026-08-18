@@ -141,6 +141,55 @@ checks["a keyboard is not forced on channels that have none"] = (
     "reply_markup" in ann and "reply_markup" not in ann.split(
         "notifier.send_message(")[1][:80])
 
+# ═══ what a delivery-only channel can still do ═══════════════════════
+# E-mail is the only one of the seven that can carry a file, and a
+# backup in your inbox is the copy that survives the machine it came
+# from — the point of the ones @famewolf asked for. Nothing can *ask*
+# for it there (no back channel); the Web UI and the scheduled copy are
+# what trigger it.
+import smtplib  # noqa: E402
+import types as _t  # noqa: E402
+
+_sent = {}
+
+
+class _FakeSMTP:
+    def __init__(self, *a, **k): pass
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def starttls(self, **k): pass
+    def login(self, *a): pass
+    def send_message(self, msg, **kw): _sent["msg"] = msg
+    def quit(self): pass
+
+
+smtplib.SMTP = _FakeSMTP
+smtplib.SMTP_SSL = _FakeSMTP
+from notifiers.smtp import SmtpNotifier  # noqa: E402
+
+_cfg = _t.SimpleNamespace(
+    smtp_host="mail", smtp_port=587, smtp_user="", smtp_password="",
+    smtp_from="a@b.c", smtp_to="d@e.f", smtp_tls="starttls",
+    smtp_tls_verify=True, bot_label="nas", channel_smtp_enabled=True)
+_n = SmtpNotifier(_cfg)
+_n.send_document("docksentry-backup-nas.json", b'{"schema_version": 1}',
+                 "Docksentry backup")
+_m = _sent.get("msg")
+_att = [p for p in _m.iter_attachments()] if _m else []
+checks["e-mail can carry a backup"] = len(_att) == 1
+checks["…under its real filename"] = (
+    _att and _att[0].get_filename() == "docksentry-backup-nas.json")
+checks["…as JSON, not as an opaque blob"] = (
+    _att and _att[0].get_content_type() == "application/json")
+checks["…with the bytes intact"] = (
+    _att and _att[0].get_payload(decode=True) == b'{"schema_version": 1}')
+
+# An ordinary message must not have grown an empty attachment.
+_sent.clear()
+_n.send_message("plain")
+checks["a plain message is unchanged"] = not list(
+    _sent["msg"].iter_attachments())
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

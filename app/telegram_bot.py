@@ -67,6 +67,13 @@ _BOT_COMMANDS = [
     # These three existed on Discord only. Two front ends answering
     # different questions is a support burden nobody signed up for.
     ("restore",     "Restore from a backup — send the file, or attach it here",       "help_restore",     "help_detail_restore"),
+    # Five things the Web UI could do and the chat could not. All five
+    # are container state, which is exactly what the chat is for — the
+    # Web UI is the place you go when you are already at a desk.
+    ("note",        "Attach a note to a container — /note <name> <text>",             "help_note",        "help_detail_note"),
+    ("trustrunning","Accept running-but-unhealthy for a container",                   "help_trustrunning","help_detail_trustrunning"),
+    ("askmajor",    "Ask before applying a major update — /askmajor <name>",          "help_askmajor",    "help_detail_askmajor"),
+    ("testchannel", "Send a test notification to every channel",                      "help_testchannel", "help_detail_testchannel"),
     ("hosts",       "Show the hosts this instance manages",                           "help_hosts",       "help_detail_hosts"),
     ("updateall",   "Update every container with a pending update",                   "help_updateall",   "help_detail_updateall"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
@@ -1920,8 +1927,23 @@ class TelegramBot:
                 auto_updates = []
         try:
             if auto_updates:
-                self.announce(self.t("autoupdate_running",
-                                     count=len(auto_updates)))
+                # Name them, do not just count them (#56, @LeeNX): "I
+                # prefer knowing what is about to change or upgrade at a
+                # glance, so if something breaks and could be related, I
+                # have an idea of where to look." A number tells you the
+                # size of what is about to happen and nothing about what.
+                #
+                # Capped, because the point is a glance: past a dozen the
+                # list stops being one, and the per-container results
+                # follow in the same conversation anyway.
+                _names = [self._display_name(u) for u in auto_updates]
+                _shown = _names[:12]
+                _rest = len(_names) - len(_shown)
+                _list = ", ".join(f"`{n}`" for n in _shown)
+                if _rest:
+                    _list += self.t("and_n_more", n=_rest)
+                self.announce(self.t("autoupdate_running_named",
+                                     count=len(auto_updates), names=_list))
                 results, success_count, major_pending_now = self._process_update_batch(
                     auto_updates, checker, auto=True)
                 # Outcome in the first line. The lines below name every
@@ -4489,6 +4511,95 @@ class TelegramBot:
                     self.t("protect_on" if now_on else "protect_off", name=name)
                     + tag + hint)
 
+        elif text.startswith("/note"):
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split(maxsplit=1)
+            hint = self._host_hint_for(text)
+            if not argv:
+                self.send_message(self.t("note_usage") + hint)
+                return
+            text_part = argv[1].strip() if len(argv) > 1 else ""
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                store.set_note(name, text_part)
+                self.send_message(
+                    self.t("note_set" if text_part else "note_cleared",
+                           name=name, text=text_part) + tag + hint)
+            return
+        elif text.startswith("/trustrunning"):
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    names = self._store_for(host).get_trust_running()
+                    tag = self._host_tag(host)
+                    self.send_message(
+                        (self.t("trust_list") + "\n"
+                         + "\n".join(f"• `{n}`{tag}" for n in names)
+                         if names else self.t("trust_empty") + tag) + hint)
+                return
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                now_on = store.toggle_trust_running(name)
+                self.send_message(
+                    self.t("trust_on" if now_on else "trust_off", name=name)
+                    + tag + hint)
+            return
+        elif text.startswith("/askmajor"):
+            raw_arg, targets, host_err = self._state_targets(text)
+            if host_err:
+                self.send_message(host_err)
+                return
+            argv = raw_arg.split()
+            hint = self._host_hint_for(text)
+            if not argv:
+                for host in (targets or [None]):
+                    names = self._store_for(host).get_ask_before_major()
+                    tag = self._host_tag(host)
+                    self.send_message(
+                        (self.t("askmajor_list") + "\n"
+                         + "\n".join(f"• `{n}`{tag}" for n in names)
+                         if names else self.t("askmajor_empty") + tag) + hint)
+                return
+            for host in (targets or [None]):
+                store = self._store_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(
+                    argv[0], backend=self._backend_for(host))
+                if err:
+                    self.send_message(err + tag + hint)
+                    continue
+                now_on = store.toggle_ask_before_major(name)
+                self.send_message(
+                    self.t("askmajor_on" if now_on else "askmajor_off",
+                           name=name) + tag + hint)
+            return
+        elif text.startswith("/testchannel"):
+            # The one command that is more useful from the chat than from
+            # the Web UI: you are already standing where the message has
+            # to arrive, so "did it work?" answers itself.
+            self.send_message(self.t("testchannel_sending"))
+            self.announce(self.t("testchannel_message"))
+            return
         elif text.startswith("/restart"):
             # Asked for by the owner after the restore button shipped: a
             # restart you can only reach by restoring something first is

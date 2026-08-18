@@ -24,7 +24,22 @@ class SmtpNotifier(BaseNotifier):
         return bool(c.smtp_host and c.smtp_from and c.smtp_to)
 
     # ── transport ────────────────────────────────────────────────────
-    def send_raw(self, subject, body):
+    def send_document(self, filename, data, subject, body=""):
+        """One e-mail with a file attached.
+
+        E-mail is the only delivery-only channel that can carry a file,
+        and a backup arriving in your inbox is the copy that survives the
+        machine it came from — which is the whole point of the ones
+        @famewolf asked for (#2). No back channel, so nothing can *ask*
+        for it; the Web UI and the scheduled copy are what trigger it.
+
+        Same best-effort contract as everything else here: logged and
+        dropped on failure, never raised into the caller.
+        """
+        return self.send_raw(subject, body or subject,
+                             attachment=(filename, data))
+
+    def send_raw(self, subject, body, attachment=None):
         """Send a plain-text e-mail via SMTP. `smtp_tls` selects the
         transport: "starttls" (default, 587), "ssl" (implicit, 465) or
         "none". SMTP_TO may be a comma/semicolon-separated list. Best-effort:
@@ -43,6 +58,14 @@ class SmtpNotifier(BaseNotifier):
         msg["From"] = c.smtp_from
         msg["To"] = ", ".join(recipients)
         msg.set_content(body)
+        if attachment:
+            name, data = attachment
+            # `application/json` rather than octet-stream: a mail client
+            # that can preview it should, and one that cannot falls back
+            # to an attachment anyway.
+            msg.add_attachment(
+                data if isinstance(data, bytes) else data.encode("utf-8"),
+                maintype="application", subtype="json", filename=name)
         # Verify the server's certificate. `smtplib` without an explicit
         # context falls back to `ssl._create_stdlib_context()`, which on
         # this Python IS `_create_unverified_context` — measured:
