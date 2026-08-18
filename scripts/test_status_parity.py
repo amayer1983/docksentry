@@ -162,6 +162,9 @@ checks["disk I/O says read and write"] = "R 5.1MB · W 0B" in joined
 checks["the image states its size"] = "73.4MB" in joined
 checks["…and its age"] = "built 2026-08-01" in joined
 checks["the writable layer is named"] = "+2.45MB layer" in joined
+checks["a zero layer is shown too — 0B is an answer, not noise"] = (
+    "+0B layer" in " ".join(status_render.lines(
+        status_render.collect("x", STATE, disk={"layer_bytes": 0}))))
 nodisk = status_render.collect("x", STATE)
 checks["no disk facts, no disk lines"] = "layer" not in " ".join(
     status_render.lines(nodisk))
