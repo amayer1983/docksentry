@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.13.0] - 2026-08-18
+
+### Fixed
+- **A saved setting no longer swallows a variable you never touched (#2, @NotRetarded).** He set `BOT_LABEL=QNAP` in his compose file, rebuilt, and nothing changed — because `bot_label: ""` sat in `settings.json`, written by some unrelated save months earlier, and a saved value beats the environment. His words: *"A blank entry in settings.json should not exist so it doesn't report the way it did and the compose entry then sticks."* He is right, and this is the root of a trap that has bitten repeatedly (#53, and three times in one night for @famewolf).
+
+  A save used to write all eighty-odd persistent keys, freezing the then-current value of every setting including the ones nobody had ever opened. It now writes two things: what actually changed since the process started, and what `settings.json` already carried and is not at its default — so a value you set on purpose stays yours, and a blank that was swept in by an unrelated save is simply dropped. Existing files shed their accumulated blanks the next time anything is saved.
+
+- **The reason an error happened is no longer the part that gets cut off (#2, @famewolf).** His host-unreachable message stopped at 200 characters, exactly where `…dial-stdio ha` becomes `…has exited with status 255, stderr=ssh: Permission denied (publickey)`. Wrapped errors put the context first and the cause last, all the way down, so taking the first 200 characters takes the least useful 200. Long errors are now trimmed from the middle: what was attempted, then what went wrong.
+
+- **`/status @host` says when a host is unreachable.** It answered `📊 0 Containers` — a failing `ps` was indistinguishable from a host with nothing running, and the reply named neither the problem nor the host. @famewolf asked exactly that of an instance whose SSH could not authenticate.
+
+- **The auto-update batch notices reach every channel (#61, @NotRetarded).** He photographed Discord and Telegram side by side: Discord had the per-container results, Telegram had those *plus* "⚡ Auto-updating 2 container(s)…" and "⚡ Auto-update complete: 2 updated". Two `send_message` calls that never had a second recipient — and the third time this has happened, after the release link in #57 and the "restarted on vX" line in v2.9.0. Each was fixed where it was found, which is why there was a third. There is one seam now, and a test fails if an unattended message goes anywhere else.
+
+### Added
+- **Telegram and Discord offer the same commands.** Seven existed on Telegram only (`help`, `changelog`, `selfupdate`, `debug`, `lang`, `setlink`, `audit`) and three on Discord only (`hosts`, `updateall`, `restore`). Thirty-one each now, same names, with a test that fails if they drift again — two front ends answering different questions is a support burden nobody signed up for.
+
 ## [2.12.3] - 2026-08-17
 
 ### Fixed

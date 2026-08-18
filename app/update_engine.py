@@ -24,6 +24,7 @@ import subprocess
 import threading
 
 from container_store import LOCAL_HOST, HostScopedStore, entry_host
+from errfmt import clip
 
 
 def host_name_of(host):
@@ -402,11 +403,11 @@ class UpdateEngine:
                     if r.returncode == 0:
                         restarted.append(dep)
                     else:
-                        why = (r.stderr or "").strip()[:200] or f"exit {r.returncode}"
+                        why = clip(r.stderr or "") or f"exit {r.returncode}"
                         failed.append((dep, why))
                         print(f"Failed to restart dependent {dep}: {why}")
             except subprocess.SubprocessError as e:
-                failed.append((dep, str(e)[:200]))
+                failed.append((dep, clip(e)))
                 print(f"Fixing dependent {dep} crashed: {e}")
 
         done = recreated + restarted
@@ -618,11 +619,11 @@ class UpdateEngine:
                                        self._restart_group_dependents(
                                            u["name"], members[1:], checker, max_wait=wait_s))
             except Exception as e:
-                results.append(f"❌ {self._display_name(u)}: {str(e)[:200]}")
+                results.append(f"❌ {self._display_name(u)}: {clip(e)}")
                 if cur_group:
                     group_aborted.add(abort_key)
                 if self.notifier:
-                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, str(e)[:200],
+                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, clip(e),
                                                      source_url=u.get("source_url", ""))
             prev_group = abort_key
             self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1,

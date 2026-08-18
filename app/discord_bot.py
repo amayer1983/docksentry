@@ -38,6 +38,7 @@ import time
 
 from discord_gateway import DiscordGateway
 from discord_rest import DiscordREST, DiscordRESTError
+from errfmt import clip
 
 #: Discord-side gating, applied to every command below by
 #: `_harden_commands()`. Two flags, and they are defence in depth — the
@@ -76,6 +77,41 @@ COMMANDS = [
      ]},
     {"name": "backup", "description":
      "Send a backup of settings, groups and pins as a file", "type": 1},
+    # The seven below existed on Telegram only. Two front ends that
+    # answer different questions is a support burden nobody signed up
+    # for — @NotRetarded found the gap in the notifications (#61) and it
+    # is the same gap in the command list.
+    {"name": "help", "description": "What every command does", "type": 1},
+    {"name": "changelog", "description":
+     "What is new in versions ahead of yours", "type": 1},
+    {"name": "selfupdate", "description":
+     "Update Docksentry itself", "type": 1,
+     "options": [
+         {"name": "version", "description":
+          "A version to pin, or `previous` (default: latest)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "debug", "description": "Toggle debug logging", "type": 1},
+    {"name": "lang", "description":
+     "Switch the language Docksentry answers in", "type": 1,
+     "options": [
+         {"name": "code", "description": "e.g. en, de", "type": 3,
+          "required": True},
+     ]},
+    {"name": "setlink", "description":
+     "Set the changelog / repo link for a container", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container name",
+          "type": 3, "required": True},
+         {"name": "url", "description": "Link (omit to clear)",
+          "type": 3, "required": False},
+     ]},
+    {"name": "audit", "description":
+     "Audit container inspect coverage", "type": 1,
+     "options": [
+         {"name": "container", "description": "Container to audit",
+          "type": 3, "required": True},
+     ]},
     # Option type 11 is ATTACHMENT — Discord uploads the file for us and
     # hands back an id we resolve out of `data.resolved.attachments`.
     {"name": "restore", "description":
@@ -707,7 +743,7 @@ class DiscordBot:
             text = self._dispatch(data)
         except Exception as e:
             self.log(f"Discord command error: {e}")
-            text = f"Something went wrong: {str(e)[:200]}"
+            text = f"Something went wrong: {clip(e)}"
         self._deliver(data, started, text)
 
     def _run_component(self, data, started=None):
@@ -724,7 +760,7 @@ class DiscordBot:
             text = self._on_component(cid, data)
         except Exception as e:
             self.log(f"Discord component error: {e}")
-            text = f"Something went wrong: {str(e)[:200]}"
+            text = f"Something went wrong: {clip(e)}"
         self._deliver(data, started, text)
 
     _SLOW_NOTE = ("⏳ Working on it — this can take a few minutes.\n"
@@ -1138,6 +1174,20 @@ class DiscordBot:
             return self._cmd_settings()
         if name == "backup":
             return self._cmd_backup(data)
+        if name == "help":
+            return self._cmd_help()
+        if name == "changelog":
+            return self._cmd_changelog()
+        if name == "selfupdate":
+            return self._cmd_selfupdate(opts)
+        if name == "debug":
+            return self._cmd_debug()
+        if name == "lang":
+            return self._cmd_lang(opts)
+        if name == "setlink":
+            return self._cmd_setlink(opts)
+        if name == "audit":
+            return self._cmd_audit(opts)
         if name == "restore":
             return self._cmd_restore(opts, data)
         if name == "update":
@@ -1659,6 +1709,138 @@ class DiscordBot:
             f"and update windows on **this** instance. Nothing has been "
             f"changed yet.",
             self._confirm_components("restore", token, "♻️ Restore"))
+
+    def _cmd_help(self):
+        """The command list, from the same table Discord registers.
+
+        Built from COMMANDS rather than written out, so a command added
+        without a description here is impossible.
+        """
+        # No argument list. With 31 commands the full form came to 1972
+        # characters against Discord's ceiling of 2000 — the smoke test
+        # that dispatches every command caught it, four characters short
+        # of a reply that would simply have been refused. Discord's own
+        # picker shows the parameters as you type anyway, which is the
+        # one thing it does better than a help text.
+        lines = ["**Docksentry commands**", ""]
+        for c in sorted(COMMANDS, key=lambda x: x["name"]):
+            lines.append(f"`/{c['name']}` — {c['description']}")
+        lines.append("")
+        lines.append("📖 <https://github.com/amayer1983/docksentry>")
+        return self._clip("\n".join(lines))
+
+    def _cmd_changelog(self):
+        bot = getattr(self, "telegram", None)
+        if bot is None:
+            return "⚠️ Not available."
+        from version import VERSION
+        ok, content = bot._fetch_changelog()
+        if not ok:
+            return f"⚠️ Could not fetch the changelog: {clip(content)}"
+        entries = bot._parse_changelog_entries(content, VERSION)
+        if not entries:
+            return f"✅ You are on the newest version (v{VERSION})."
+        return "\n\n".join(entries)[:1800]
+
+    def _cmd_selfupdate(self, opts):
+        bot = getattr(self, "telegram", None)
+        if bot is None:
+            return "⚠️ Not available."
+        target = (opts.get("version") or "").strip() or None
+        bot.check_selfupdate(target)
+        return ("⬆️ Self-update started — I will report in the channel when "
+                "it finishes, and restart if there is something to apply.")
+
+    def _cmd_debug(self):
+        self.config.debug = not getattr(self.config, "debug", False)
+        self.config.save_persistent()
+        state = "on" if self.config.debug else "off"
+        return (f"🔍 Debug logging **{state}**. It shows every registry call "
+                f"and the per-container bookkeeping of each scan.")
+
+    def _cmd_lang(self, opts):
+        from i18n import available_languages, get_translator
+        code = (opts.get("code") or "").strip().lower()
+        langs = available_languages()
+        if code not in langs:
+            return (f"⚠️ Unknown language `{code}`. Available: "
+                    f"{', '.join(sorted(langs))}")
+        self.config.language = code
+        self.config.save_persistent()
+        bot = getattr(self, "telegram", None)
+        if bot is not None:
+            bot.t = get_translator(code)
+        return f"🌍 Language set to `{code}`."
+
+    def _cmd_setlink(self, opts):
+        """Same skeleton as the other per-container writes: resolve the
+        host with the WRITE default, then the container on that host's
+        own backend, then act through that host's state view."""
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return "Usage: `/setlink <container> [url]`"
+        targets = self._write_hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        url = (opts.get("url") or "").strip()
+        lines = []
+        for host in targets:
+            name, err = self._resolve_container(arg, self._backend_for(host))
+            if err:
+                lines.append(err + self._label(host))
+                continue
+            store = self._store_for(host)
+            if not url:
+                store.set_link(name, "")
+                lines.append(f"🔗 Link cleared for `{name}`{self._label(host)}")
+            elif store.set_link(name, url):
+                lines.append(f"🔗 Link set for `{name}`{self._label(host)}")
+            else:
+                lines.append(f"⚠️ `{url}` is not a safe link — http(s) only.")
+        return "\n".join(lines)
+
+    def _cmd_audit(self, opts):
+        """Which non-default inspect fields we would not restore.
+
+        Reuses `UpdateChecker._audit_inspect_coverage`, the same function
+        Telegram's `/audit` calls — the value of this command is the
+        finding, and two implementations of a finding is two findings.
+        """
+        import json
+        arg = (opts.get("container") or "").strip()
+        if not arg:
+            return "Usage: `/audit <container>`"
+        targets = self._hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
+        host = targets[0]
+        backend = self._backend_for(host)
+        name, err = self._resolve_container(arg, backend)
+        if err:
+            return err
+        try:
+            r = backend.run(["inspect", name], timeout=10)
+            if r.returncode != 0:
+                return f"⚠️ Could not inspect `{name}`."
+            inspect = json.loads(r.stdout)[0]
+        except Exception as e:
+            return f"⚠️ Could not inspect `{name}`: {clip(e)}"
+        from update_checker import UpdateChecker as _UC
+        checker = self._checker_for(host)
+        findings = _UC._audit_inspect_coverage(checker, inspect)
+        host_keys = findings.get("host_unknown") or []
+        cfg_keys = findings.get("config_unknown") or []
+        if not host_keys and not cfg_keys:
+            return (f"✅ `{name}`: every non-default field we found is one "
+                    f"we restore on recreate.")
+        out = [f"🔍 `{name}` — fields we would not carry over:"]
+        if host_keys:
+            out.append("**HostConfig**")
+            out += [f"  • `{k}`" for k in host_keys]
+        if cfg_keys:
+            out.append("**Config**")
+            out += [f"  • `{k}`" for k in cfg_keys]
+        return "\n".join(out)[:1800]
 
     def _cmd_restart_self(self):
         """Restart Docksentry, if something will bring it back.

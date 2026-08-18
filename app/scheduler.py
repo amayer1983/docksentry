@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from errfmt import clip
 
 
 # Markers older than this are considered stale (a previous self-update
@@ -167,9 +168,9 @@ class Scheduler:
             state = self._host_failures = {}
         if host_name in state:
             return
-        state[host_name] = str(err)[:200]
+        state[host_name] = clip(err)
         self._tell(self.bot.t("host_check_failed", host=host_name or "local",
-                              error=str(err)[:200]))
+                              error=clip(err)))
 
     def _host_recovered(self, host_name):
         state = getattr(self, "_host_failures", None) or {}

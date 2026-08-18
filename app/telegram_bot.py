@@ -10,6 +10,7 @@ import threading
 import urllib.error
 import urllib.request
 import urllib.parse
+from errfmt import clip
 
 
 # ── Single source of truth for all bot commands ────────────────────────
@@ -63,6 +64,11 @@ _BOT_COMMANDS = [
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
     ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
     ("backup",      "Send a backup of settings, groups and pins as a file",           "help_backup",      "help_detail_backup"),
+    # These three existed on Discord only. Two front ends answering
+    # different questions is a support burden nobody signed up for.
+    ("restore",     "Restore from a backup — send the file, or attach it here",       "help_restore",     "help_detail_restore"),
+    ("hosts",       "Show the hosts this instance manages",                           "help_hosts",       "help_detail_hosts"),
+    ("updateall",   "Update every container with a pending update",                   "help_updateall",   "help_detail_updateall"),
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),
@@ -1380,6 +1386,34 @@ class TelegramBot:
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
 
+    def announce(self, text, reply_markup=None):
+        """One unattended message, to every channel that is switched on.
+
+        Three times now a notification has been written against
+        `send_message` and quietly reached Telegram alone: the release
+        link the bot channel never got (#57), the "restarted on vX" line
+        that no Discord or e-mail user ever saw, and the auto-update
+        batch notices @NotRetarded photographed side by side (#61) —
+        Discord had the per-container results and neither the "starting"
+        nor the "complete" line around them.
+
+        Each was fixed where it was found, which is why there was a
+        third. Anything the scheduler says on its own goes through here
+        instead, and a test fails if a new one does not.
+
+        `reply_markup` is Telegram's alone; the other channels get the
+        text. A button is not something an e-mail can carry, and leaving
+        it out is better than inventing a second-class version of it.
+        """
+        if self.enabled:
+            self.send_message(text, reply_markup=reply_markup, auto=True)
+        notifier = self.notifier
+        try:
+            if notifier is not None and notifier.has_channels():
+                notifier.send_message(text)
+        except Exception as e:
+            print(f"Could not fan out an announcement: {e}")
+
     def send_document(self, filename, data, caption=""):
         """Upload a file to the configured chat. True when it landed.
 
@@ -1886,7 +1920,8 @@ class TelegramBot:
                 auto_updates = []
         try:
             if auto_updates:
-                self.send_message(self.t("autoupdate_running", count=len(auto_updates)), auto=True)
+                self.announce(self.t("autoupdate_running",
+                                     count=len(auto_updates)))
                 results, success_count, major_pending_now = self._process_update_batch(
                     auto_updates, checker, auto=True)
                 # Outcome in the first line. The lines below name every
@@ -1901,7 +1936,7 @@ class TelegramBot:
                 _head = self.t("autoupdate_done")
                 if _parts:
                     _head += " " + " · ".join(_parts)
-                self.send_message(_head + "\n\n" + "\n".join(results), auto=True)
+                self.announce(_head + "\n\n" + "\n".join(results))
 
                 # Remove fully-processed auto-updates from pending. Major-pending
                 # entries stay in pending so the user can also act on them via
@@ -3634,10 +3669,26 @@ class TelegramBot:
             # install → exactly one pseudo-host whose backend is the bot's
             # own and whose tag is empty, i.e. the original two calls.
             inspected = []
+            # A host that cannot be reached returns a non-zero `ps` with
+            # empty output, which used to be indistinguishable from a host
+            # with nothing running: both fell through `continue` and the
+            # answer came back as "📊 0 Containers" with no mention that a
+            # machine was missing. @famewolf asked `/status @docknas` of an
+            # instance whose SSH could not authenticate and got exactly
+            # that — the reply neither said the host was unreachable nor
+            # which host it was about (#2).
+            from container_store import LOCAL_HOST
+            unreachable = []
             for _host in (status_targets or [None]):
                 _b = self._backend_for(_host)
                 ids_p = _b.run(
                     ["ps", "-q"])
+                if getattr(ids_p, "returncode", 0) != 0:
+                    unreachable.append((
+                        getattr(_host, "name", "") or LOCAL_HOST,
+                        clip(getattr(ids_p, "stderr", "") or "")
+                        or f"exit {ids_p.returncode}"))
+                    continue
                 ids = [i for i in ids_p.stdout.strip().split("\n") if i]
                 if not ids:
                     continue
@@ -3702,6 +3753,9 @@ class TelegramBot:
 
             # Summary line
             summary = f"📊 *{total}* {self.t('status_containers')}"
+            for _name, _why in unreachable:
+                summary += "\n" + self.t("status_host_unreachable",
+                                         host=_name, error=_why)
             if healthy:
                 summary += f" · 🟢 {healthy}"
             if unhealthy:
@@ -4441,6 +4495,34 @@ class TelegramBot:
             # a restart you cannot reach.
             self.restart_self(checker)
             return
+        elif text.startswith("/hosts"):
+            if not self.hosts or not getattr(self.hosts, "is_multi", False):
+                self.send_message(self.t("hosts_single"))
+                return
+            lines = [self.t("hosts_header")]
+            for h in self.hosts:
+                where = "local" if h.is_local else h.endpoint
+                lines.append(f"• `{h.name}` — `{where}`")
+            self.send_message("\n".join(lines))
+            return
+        elif text.startswith("/restore"):
+            # The file is what does the work; this exists so the command
+            # picker offers it and says how. A document sent with the
+            # command as its caption arrives here too — Telegram puts a
+            # caption in `caption`, not `text`, so the attachment branch
+            # above has already handled it and we never get here.
+            self.send_message(self.t("restore_how"))
+            return
+        elif text.startswith("/updateall"):
+            # The same path the "Update all" button takes, so the two
+            # cannot drift — the button is just this with a snapshot.
+            self._handle_callback({"data": "update_all",
+                                   "from": {"id": user_id},
+                                   "id": "cmd",
+                                   "message": {"message_id": None,
+                                               "chat": {"id": chat_id}}},
+                                  checker)
+            return
         elif text.startswith("/backup"):
             # Hand the backup over in the one place he is already
             # standing (#2, @famewolf): "Can we get a /backup option in
@@ -4665,8 +4747,14 @@ class TelegramBot:
             # exact help text it got before.
             hosts_block = ""
             if self._multi():
+                # `help_hosts_block`, not `help_hosts`: the latter is the
+                # one-line summary of the `/hosts` command, and adding
+                # that command silently took this key over — the whole
+                # multi-host section vanished from /help and only a test
+                # noticed. Command summaries follow `help_<name>`, so
+                # anything else needs a name that cannot be claimed.
                 hosts_block = self.t(
-                    "help_hosts",
+                    "help_hosts_block",
                     hosts=", ".join(f"`{n}`" for n in self.hosts.names)) + "\n\n"
             self.send_message(
                 self.t("help_title", version=VERSION) + "\n\n"

@@ -126,7 +126,11 @@ def _int_bot(update_policy):
     bot.t = get_translator("en")
     bot.notifier = None
     sent = []
+    # `announce` is the seam every unattended message goes through
+    # now (#61) — a fake bot that lacks it is a fake bot the code
+    # under test cannot talk to.
     bot.send_message = lambda *a, **k: sent.append(a[0] if a else "")
+    bot.announce = lambda *a, **k: sent.append(a[0] if a else "")
     bot._sent = sent
     manual = []
     bot.notify_updates = lambda upd, **k: manual.extend(u["name"] for u in upd)

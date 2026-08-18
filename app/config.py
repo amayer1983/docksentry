@@ -862,6 +862,8 @@ class Config:
                 continue
             _env_seeded[key] = value
 
+
+
         # Load persistent overrides from settings.json
         self._load_persistent()
 
@@ -871,6 +873,11 @@ class Config:
         # is that nothing ever *said* so.
         self._env_seeded = _env_seeded
         self.env_overrides = self._detect_env_overrides(_env_seeded)
+        # Every persistent key as construction left it — environment,
+        # then settings.json on top. `save_persistent` writes what has
+        # changed since; see there.
+        self._boot_state = {key: getattr(self, key, None)
+                            for key in PERSISTENT_KEYS}
 
     def adopt_env_value(self, key):
         """Take the environment's value for one setting. True if taken.
@@ -1025,6 +1032,10 @@ class Config:
         try:
             with open(self.settings_file) as f:
                 saved = json.load(f)
+            # Which keys the file actually carried, so `save_persistent`
+            # can tell "somebody saved this on purpose" from "this was
+            # swept in by an unrelated save".
+            self._loaded_keys = {k for k in PERSISTENT_KEYS if k in saved}
             for key in PERSISTENT_KEYS:
                 if key in saved:
                     setattr(self, key, saved[key])
@@ -1090,9 +1101,61 @@ class Config:
         to share the helper with every other JSON write in the codebase.
         """
         from container_store import atomic_write_json
+        # Only what differs from what the environment produced.
+        #
+        # This method used to write all ~80 keys on every save, which is
+        # the root of a trap this project has hit repeatedly (#53, and
+        # three times in one night for @famewolf with
+        # DISK_WARN_AUTO_CLEANUP, WEB_PASSWORD and BOT_LABEL). Changing
+        # any one setting froze the then-current value of every other —
+        # including empty ones nobody had ever touched — and a saved
+        # value outranks the environment. So a variable set in the
+        # compose file stopped taking effect because an unrelated save
+        # had written `""` next to its name.
+        #
+        # @NotRetarded put it plainly on #2: "A blank entry in
+        # settings.json should not exist so it doesn't report the way it
+        # did and the compose entry then sticks." He is right, and this
+        # is that.
+        #
+        # A key is written when its value differs from what the
+        # environment gave us — which is exactly "the user changed this
+        # here". Anything still equal to the environment is left out, so
+        # the environment keeps deciding it, on this boot and the next.
+        # Nothing is lost: a value equal to the env's is the same value
+        # either way.
+        #
+        # Two things get written, and nothing else:
+        #
+        #   * whatever changed since this process started — that is a
+        #     person editing a setting, which is the whole point;
+        #   * whatever settings.json already carried and is not at its
+        #     default — somebody saved that on purpose once, and it must
+        #     not evaporate because it happens to match the environment
+        #     today.
+        #
+        # A blank sitting at its default is dropped either way, which is
+        # what clears the accumulated bloat out of an existing
+        # settings.json the next time anything is saved. That is the
+        # entry @NotRetarded was pointing at: `bot_label: ""`, written by
+        # a save that had nothing to do with it, quietly beating
+        # `BOT_LABEL=QNAP` in his compose file ever after.
+        #
+        # Falls back to writing everything if the snapshot is missing,
+        # which can only happen to a Config built by a test.
+        base = getattr(self, "_boot_state", None)
+        was_saved = getattr(self, "_loaded_keys", set())
         data = {}
         for key in PERSISTENT_KEYS:
-            data[key] = getattr(self, key)
+            value = getattr(self, key)
+            if base is None:
+                data[key] = value                 # test-built Config
+                continue
+            changed_now = value != base.get(key)
+            kept_on_purpose = (key in was_saved
+                               and value != PERSISTENT_ENV_DEFAULTS.get(key))
+            if changed_now or kept_on_purpose:
+                data[key] = value
         try:
             atomic_write_json(self.settings_file, data, indent=2)
             self._restrict_settings_perms()

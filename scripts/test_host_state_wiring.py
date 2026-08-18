@@ -86,6 +86,9 @@ class FakeChecker:
 
 def make_cfg(d):
     cfg = types.SimpleNamespace(
+        # `announce` reads `bot.enabled`, which reads these two — a fake
+        # config without them is a config no real one can be (#61).
+        bot_token="", chat_id="",
         language="en", debug=False, container_cli="docker",
         auto_update_all=False, update_policy="all",
         data_dir=d,

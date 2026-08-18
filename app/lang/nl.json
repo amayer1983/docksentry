@@ -587,7 +587,7 @@
   "host_unknown": "❌ Unknown host `{name}`. Managed hosts: {hosts}",
   "host_local_only_hint": "ℹ️ Local host only — add `@<host>` or `@all` for the others.",
   "host_check_failed": "⚠️ Host `{host}` could not be checked: {error}",
-  "help_hosts": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}",
+  "help_hosts": "/hosts — Show the hosts this instance manages",
   "web_audit": "Who did what",
   "web_audit_intro": "State-changing actions from the Web UI, Telegram, Discord and the scheduler. Secrets are never recorded.",
   "web_audit_who": "Who",
@@ -815,5 +815,15 @@
   "restart_no_policy": "⚠️ I would not come back, so I am staying up.\n\n{detail}\n\nA restart button that does not restart is a stop button. Add `restart: unless-stopped` to this container and the button will work — until then, `docker compose up -d` after stopping me by hand.",
   "help_restart": "/restart — Restart Docksentry itself",
   "help_detail_restart": "*/restart*\n\nStops Docksentry so its container's restart policy brings it back — which is how settings that only apply at boot take effect.\n\nIt checks that policy first. Without one, stopping would leave the container down and you without the bot you would use to bring it back, so it refuses and says so instead.\n\nThe next start knows it was asked for, rather than reporting an external stop signal.",
-  "host_check_recovered": "✅ Host `{host}` is reachable again — it is back in the scheduled check."
+  "host_check_recovered": "✅ Host `{host}` is reachable again — it is back in the scheduled check.",
+  "status_host_unreachable": "⚠️ `{host}` unreachable — not counted above: {error}",
+  "hosts_single": "This instance manages a single host.",
+  "hosts_header": "🖥 *Managed hosts*",
+  "restore_how": "📥 *Restoring*\n\nSend the backup file into this chat — drag it in, or forward one from another Docksentry's chat. I will say what it contains and ask before changing anything.\n\nUse `/backup` to get one.",
+  "help_restore": "/restore — Restore from a backup file sent into this chat",
+  "help_detail_restore": "*/restore*\n\nSend a Docksentry backup into this chat and I will offer to restore it. Dragging the file in is enough — the command itself only explains how.\n\nBefore anything changes you get told which instance the bundle came from, when it was made and what it would overwrite. The button is the decision, not the file arriving.\n\nUnknown settings are dropped and links are checked, because a backup is a file and nothing about you picking it says you wrote it.",
+  "help_detail_hosts": "*/hosts*\n\nLists every host this instance manages and the endpoint it reaches each one through. On a single-host install it says so.\n\nUseful when a check reports a host as unreachable: the endpoint here is the one that failed.",
+  "help_updateall": "/updateall — Update every container with a pending update",
+  "help_detail_updateall": "*/updateall*\n\nUpdates everything currently listed as having an update, exactly like the *Update all* button under an update notification.\n\nPinned containers are skipped, groups are updated in order, and a failure stops that group but not the others.",
+  "help_hosts_block": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}"
 }

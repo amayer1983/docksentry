@@ -587,7 +587,7 @@
   "host_unknown": "❌ Unbekannter Host `{name}`. Verwaltete Hosts: {hosts}",
   "host_local_only_hint": "ℹ️ Nur der lokale Host — mit `@<host>` oder `@all` erreichst du die anderen.",
   "host_check_failed": "⚠️ Host `{host}` konnte nicht geprüft werden: {error}",
-  "help_hosts": "🖥 *Mehrere Hosts:* `@<host>` richtet einen Befehl an einen bestimmten Host, `@all` an alle — z.B. `/check @nas` oder `/update sonarr @nas`.\nOhne `@`: `/check`, `/status` und `/updates` schauen auf allen Hosts nach; `/update`, `/start`, `/stop` und `/restart` wirken nur auf dem lokalen Host.\nVerwaltete Hosts: {hosts}",
+  "help_hosts": "/hosts — Zeigt die Hosts, die diese Instanz verwaltet",
   "web_audit": "Wer hat was getan",
   "web_audit_intro": "Zustandsändernde Aktionen aus Weboberfläche, Telegram, Discord und Zeitplan. Geheimnisse werden nie protokolliert.",
   "web_audit_who": "Wer",
@@ -815,5 +815,15 @@
   "restart_no_policy": "⚠️ Ich käme nicht zurück, also bleibe ich oben.\n\n{detail}\n\nEin Neustart-Knopf, der nicht neu startet, ist ein Stopp-Knopf. Trag `restart: unless-stopped` bei diesem Container ein, dann funktioniert er — bis dahin nach einem Stopp von Hand `docker compose up -d`.",
   "help_restart": "/restart — Docksentry selbst neu starten",
   "help_detail_restart": "*/restart*\n\nStoppt Docksentry, damit die Restart-Policy des Containers es wieder hochholt — so greifen Einstellungen, die erst beim Start gelesen werden.\n\nDie Policy wird vorher geprüft. Ohne sie bliebe der Container unten und du ohne den Bot, mit dem du ihn wieder hochholen würdest — dann verweigert er den Dienst und sagt warum.\n\nDer nächste Start weiß, dass er angefordert war, statt ein externes Stopp-Signal zu melden.",
-  "host_check_recovered": "✅ Host `{host}` ist wieder erreichbar — er ist zurück im geplanten Lauf."
+  "host_check_recovered": "✅ Host `{host}` ist wieder erreichbar — er ist zurück im geplanten Lauf.",
+  "status_host_unreachable": "⚠️ `{host}` nicht erreichbar — oben nicht mitgezählt: {error}",
+  "hosts_single": "Diese Instanz verwaltet nur einen Host.",
+  "hosts_header": "🖥 *Verwaltete Hosts*",
+  "restore_how": "📥 *Wiederherstellen*\n\nSchick die Backup-Datei in diesen Chat — hineinziehen oder aus dem Chat einer anderen Docksentry-Instanz weiterleiten. Ich sage dir, was drin ist, und frage nach, bevor sich etwas ändert.\n\nEines bekommst du mit `/backup`.",
+  "help_restore": "/restore — Backup einspielen, das in diesen Chat geschickt wurde",
+  "help_detail_restore": "*/restore*\n\nSchick ein Docksentry-Backup in diesen Chat, dann biete ich das Einspielen an. Die Datei hineinzuziehen genügt — das Kommando selbst erklärt nur, wie.\n\nVor jeder Änderung erfährst du, von welcher Instanz das Paket stammt, wann es erstellt wurde und was es überschreiben würde. Der Knopf ist die Entscheidung, nicht das Ankommen der Datei.\n\nUnbekannte Einstellungen werden verworfen und Links geprüft — ein Backup ist eine Datei, und dass du sie ausgewählt hast, heißt nicht, dass du sie geschrieben hast.",
+  "help_detail_hosts": "*/hosts*\n\nListet jeden verwalteten Host und den Endpunkt, über den er erreicht wird. Bei einer Ein-Host-Installation sagt es das.\n\nNützlich, wenn eine Prüfung einen Host als nicht erreichbar meldet: der Endpunkt hier ist der, der gescheitert ist.",
+  "help_updateall": "/updateall — Alle Container mit anstehendem Update aktualisieren",
+  "help_detail_updateall": "*/updateall*\n\nAktualisiert alles, was gerade als aktualisierbar gelistet ist — genau wie der Knopf *Alle updaten* unter einer Update-Benachrichtigung.\n\nAngepinnte Container werden übersprungen, Gruppen der Reihe nach aktualisiert, und ein Fehlschlag stoppt seine Gruppe, aber nicht die anderen.",
+  "help_hosts_block": "🖥 *Mehrere Hosts:* `@<host>` richtet einen Befehl an einen bestimmten Host, `@all` an alle — z.B. `/check @nas` oder `/update sonarr @nas`.\nOhne `@`: `/check`, `/status` und `/updates` schauen auf allen Hosts nach; `/update`, `/start`, `/stop` und `/restart` wirken nur auf dem lokalen Host.\nVerwaltete Hosts: {hosts}"
 }

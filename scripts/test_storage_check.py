@@ -234,8 +234,12 @@ cfg_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "config.py"), encoding="utf-8").read()
 checks["the marker is not a persistent setting"] = (
     "settings_seen" not in cfg_src.split("PERSISTENT_KEYS = [")[1].split("]")[0])
-checks["…and every save records it"] = (
-    "self.mark_settings_seen()" in cfg_src.split("def save_persistent")[1][:900])
+# Scoped to the function, not to a fixed window — the first version
+# sliced 900 characters after the `def` and started failing the moment
+# save_persistent grew a comment explaining what it writes.
+_sp = cfg_src[cfg_src.index("    def save_persistent(self):"):]
+_sp = _sp[:_sp.index("\n    def ", 10)]
+checks["…and every save records it"] = "self.mark_settings_seen()" in _sp
 
 # ═══ scan bookkeeping leaves the ordinary log ════════════════════════
 # @NotRetarded, same thread: "Any idea what the skipped self in the logs

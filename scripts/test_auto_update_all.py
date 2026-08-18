@@ -30,7 +30,11 @@ def run(all_auto, auto_list):
     bot._run_queued_selfupdate = lambda: None
     bot._get_autoupdate = lambda: set(auto_list)
     bot.t = get_translator("en")
+    # `announce` is the seam every unattended message goes through
+    # now (#61) — a fake bot that lacks it is a fake bot the code
+    # under test cannot talk to.
     bot.send_message = lambda *a, **k: None
+    bot.announce = lambda *a, **k: None
     bot.notify_updates = lambda upd, **k: cap["manual"].extend(u["name"] for u in upd)
     # Update-policy gate (v1.53.0) — bind the real resolution/decision so the
     # gate runs; with no UPDATE_POLICY set it resolves to "all" (allow all),

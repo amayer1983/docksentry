@@ -193,7 +193,11 @@ NAS = [{"name": "web", "image": "nginx:1", "update": True},
        {"name": "plex", "image": "plex:2", "update": False}]
 
 cfg = types.SimpleNamespace(discord_bot_token="t", discord_app_id="app",
-                            discord_guild_id="g", pending_file="")
+                            discord_guild_id="g", pending_file="",
+                            # /debug and /lang persist their change, like
+                            # their Telegram twins have always done.
+                            language="en", debug=False,
+                            save_persistent=lambda: None)
 engine = FakeEngine()
 reg = FakeRegistry([_host("local", LOCAL, local=True), _host("nas", NAS)])
 
@@ -397,7 +401,11 @@ scfg2 = types.SimpleNamespace(
     monitor_events_file=_p("events.json"),
     maintenance_file=_p("maintenance.json"),
     cron_schedule="0 3 * * *", language="en", auto_selfupdate=False,
-    debug=False, exclude_containers=["watchtower"])
+    debug=False, exclude_containers=["watchtower"],
+    # `/debug` and `/lang` persist their change, exactly as their
+    # Telegram twins always have. The smoke test below dispatches every
+    # command, which is how that requirement surfaced at all.
+    save_persistent=lambda: None)
 
 
 def _state_host(name, names, local=False):
