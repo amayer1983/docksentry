@@ -169,8 +169,25 @@ class Scheduler:
         if host_name in state:
             return
         state[host_name] = clip(err)
+        # If we can say *why* the connection was refused, say it here —
+        # this message is the one somebody reads at 18:00 when nothing
+        # updated, and "Permission denied (publickey)" is right and
+        # useless on its own (#2).
+        detail = clip(err)
+        try:
+            import hostdiag
+            endpoint = ""
+            for h in (self.hosts or ()):
+                if getattr(h, "name", None) == host_name:
+                    endpoint = getattr(h, "endpoint", "") or ""
+                    break
+            extra = hostdiag.hint(endpoint, err)
+            if extra:
+                detail += "\n\n" + extra
+        except Exception:
+            pass
         self._tell(self.bot.t("host_check_failed", host=host_name or "local",
-                              error=clip(err)))
+                              error=detail))
 
     def _host_recovered(self, host_name):
         state = getattr(self, "_host_failures", None) or {}

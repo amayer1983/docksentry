@@ -1030,8 +1030,16 @@ class TelegramBot:
                     raise
                 # One unreachable host must not stop the others from being
                 # reported — same rule the scheduler follows (#7).
+                _detail = clip(e)
+                try:
+                    import hostdiag
+                    _extra = hostdiag.hint(getattr(host, "endpoint", ""), e)
+                    if _extra:
+                        _detail += "\n\n" + _extra
+                except Exception:
+                    pass
                 self.send_message(self.t("host_check_failed",
-                                         host=host.name, error=str(e)[:200]))
+                                         host=host.name, error=_detail))
                 continue
             if updates:
                 found = True
@@ -3706,10 +3714,17 @@ class TelegramBot:
                 ids_p = _b.run(
                     ["ps", "-q"])
                 if getattr(ids_p, "returncode", 0) != 0:
+                    _why = (clip(getattr(ids_p, "stderr", "") or "")
+                            or f"exit {ids_p.returncode}")
+                    try:
+                        import hostdiag
+                        _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why)
+                        if _h:
+                            _why += "\n" + _h
+                    except Exception:
+                        pass
                     unreachable.append((
-                        getattr(_host, "name", "") or LOCAL_HOST,
-                        clip(getattr(ids_p, "stderr", "") or "")
-                        or f"exit {ids_p.returncode}"))
+                        getattr(_host, "name", "") or LOCAL_HOST, _why))
                     continue
                 ids = [i for i in ids_p.stdout.strip().split("\n") if i]
                 if not ids:

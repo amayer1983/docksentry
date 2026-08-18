@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.14.1] - 2026-08-18
+
+### Added
+- **An `ssh://` host that refuses now says why (#2, @famewolf).** He set up key-based login between his three machines, tested it, added `DOCKER_HOSTS`, and lost two days to an instance that reported three managed hosts and could reach one. The error, once it stopped being truncated, said `Permission denied (publickey)` — correct, and useless from where he was standing, because the keys *did* work.
+
+  They did, on the host. Docksentry runs in a container, and a container has its own filesystem: `ssh-copy-id` writes to `/root/.ssh` on the machine, and the image has no `/root/.ssh` in it at all. He is the second person to hit this, which is where a message should stop leaving it to be deduced.
+
+  A refused `ssh://` host now carries a sentence naming what is actually missing — no `.ssh` in the container, no `known_hosts` in a mounted one, or neither, in which case it points at the remote `authorized_keys` instead. Every branch is a check made at the moment of failure, not an inference from the wording of the error: a connection refused on port 22 is not blamed on keys, a `tcp://` host gets no SSH advice, and an error we cannot place gets no guess. A confident wrong hint is worse than none, because it sends somebody looking where we pointed.
+
 ## [2.14.0] - 2026-08-18
 
 ### Added
