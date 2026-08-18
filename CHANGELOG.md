@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.0] - 2026-08-18
+
+### Fixed
+- **`/status` on Discord no longer hides Docksentry itself (#2, @NotRetarded).** It listed everything except the one container answering the question. The self-filter exists for the *update* path, where it protects PID 1 (#16) — Discord's status borrowed that listing and inherited a filter that makes no sense for a read. Readers now ask for the whole truth; the update path keeps its guard.
+
+### Added
+- **One `/status` detail, assembled once, rendered per front end.** The owner's diagnosis of the drift was better than the report that prompted it: he assumed a reply was generated once and then sent per connection — which has been true for notifications since `announce()`, and was false for command replies, where each front end kept its own assembly. Two assemblies is drift by construction. The detail view is now one collector and one renderer (`status_render`), and the only thing a front end may choose is its bold marker. Verified live: both outputs are identical to the byte once markdown is stripped.
+
+  What the detail shows now — the questions you actually have when a container misbehaves: state, health and uptime; the **exit code** when it is not running (the field #62 was diagnosed from); **live CPU and memory**; **what the health probe said** when unhealthy (the 2.15.0 lesson — the probe's words, not the container's); image, **version label** and image ID; ports, volumes, restart policy; and Docksentry's own knowledge — pinned, auto-update, protected, trust-running, ask-major, group, note, pending update.
+
+- **The overview says the version, not just the tag (#2, @NotRetarded).** `ollama/ollama:latest` tells you nothing; `(v0.32.14)` sits right in the image label. Both front ends' overviews now lead with a health icon, name the version when the image carries one, and show uptime.
+
 ## [2.16.1] - 2026-08-18
 
 ### Fixed

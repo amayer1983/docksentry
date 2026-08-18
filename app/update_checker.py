@@ -277,7 +277,7 @@ class UpdateChecker:
                 out[nm] = cfg.get("Labels") or {}
         return out
 
-    def get_running_containers(self):
+    def get_running_containers(self, include_self=False):
         # `{{.Labels}}` deliberately dropped from this format string — see
         # `_labels_for`. Names and image references cannot contain a
         # newline, so without it a `ps` line can no longer be truncated
@@ -314,8 +314,13 @@ class UpdateChecker:
         containers = []
         for name, image in rows:
             labels = all_labels.get(name) or {}
-            # Skip self
-            if own_name and name == own_name:
+            # Skip self — on the UPDATE path, where it protects PID 1
+            # (#16). A read is a different matter: `/status` hiding the
+            # very container that answers it confused @NotRetarded twice
+            # over — first "what is Skipped (self)?", then "Docksentry
+            # doesn't see itself in /status" (#2). Readers pass
+            # include_self=True; the update path keeps the default.
+            if own_name and name == own_name and not include_self:
                 self._trace(f"  Skipped (self): {name}")
                 continue
             # Resolve images referenced by ID via container inspect

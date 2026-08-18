@@ -101,7 +101,12 @@ class FakeChecker:
         self.self_named = None      # name _would_kill_self says yes to
         self.labels = {}            # name -> {"protect": True/False}
 
-    def get_running_containers(self):
+    def get_running_containers(self, include_self=False):
+        # Mirrors the real signature — /status passes include_self=True
+        # since the self-hiding fix (#2), and a fake without the
+        # parameter answered that call with a TypeError, which the
+        # caller's per-host try read as "host unreachable". Every host
+        # in the overview reported dead because of a stub gap.
         if self.fail:
             raise OSError("host down")
         return self._c

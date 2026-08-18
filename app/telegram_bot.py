@@ -635,6 +635,21 @@ class TelegramBot:
             return "/help " + text.split()[0].lstrip("/")
         return text
 
+    def _container_stats(self, name, backend=None):
+        """(cpu, mem) as Docker prints them, or None. One bounded call —
+        `docker stats` without --no-stream would sit forever."""
+        b = backend or self.backend
+        try:
+            r = b.run(["stats", "--no-stream", "--format",
+                       "{{.CPUPerc}}|{{.MemUsage}}", name], timeout=20)
+        except Exception:
+            return None
+        out = (getattr(r, "stdout", "") or "").strip()
+        if getattr(r, "returncode", 1) != 0 or "|" not in out:
+            return None
+        cpu, mem = out.split("|", 1)
+        return cpu.strip(), mem.strip()
+
     def _container_state(self, name, backend=None):
         """Return a dict with current state of `name` for the per-container
         status output. Keys: state, health, uptime, image, ports, volumes,
@@ -732,6 +747,10 @@ class TelegramBot:
             "volumes": volumes,
             "restart_policy": restart or "no",
             "running": bool(state.get("Running")),
+            # How it died, for a container that is not running — the
+            # first thing worth knowing about a stopped service, and the
+            # field #62 was diagnosed from (137 = SIGKILL).
+            "exit_code": state.get("ExitCode"),
         }
 
     def _lifecycle_action(self, action, name, checker, backend=None, host=None):
@@ -3643,30 +3662,32 @@ class TelegramBot:
                                                         name=resolved)
                         continue
                     shown = True
-                    # State / health label with color icon
-                    state_icon = "✅" if info["running"] else ("⏸" if info["state"] == "paused" else "⏹")
-                    state_text = info["state"]
-                    if info["health"]:
-                        state_text += f" ({info['health']})"
-                    uptime_line = f"⏱ *Uptime:* {info['uptime']}" if info["running"] else ""
-
-                    lines = [
-                        f"📊 *{info['name']}*{tag}  {state_icon}",
-                        f"*State:* `{state_text}`",
-                    ]
-                    if uptime_line:
-                        lines.append(uptime_line)
-                    lines.append(f"*Image:* `{info['image']}`")
-                    if info.get("version"):
-                        lines.append(f"*Version:* `{info['version']}`")
-                    if info.get("short_id"):
-                        lines.append(f"*Image ID:* `{info['short_id']}`")
-                    lines.extend([
-                        f"*Ports:* {info['ports']}",
-                        f"*Volumes:* {info['volumes']}",
-                        f"*Restart policy:* `{info['restart_policy']}`",
-                    ])
-
+                    # Assembled ONCE, rendered per front end (#2). The
+                    # owner assumed replies were generated once and sent
+                    # per connection — true for notifications since
+                    # announce(), and now true here: Discord's detail
+                    # calls this same collector and renderer, so the two
+                    # cannot drift apart field by field.
+                    import status_render
+                    hstore = self._store_for(host)
+                    probe = ""
+                    if info.get("health") == "unhealthy":
+                        try:
+                            probe = self._checker_for(host, checker)\
+                                ._health_output(resolved, entries=1)
+                        except Exception:
+                            probe = ""
+                    detail = status_render.collect(
+                        resolved, info,
+                        stats=self._container_stats(resolved, backend=backend)
+                        if info.get("running") else None,
+                        store=hstore,
+                        pending=resolved in [
+                            u.get("name") for u in
+                            read_pending(self.config.pending_file)],
+                        probe=probe)
+                    lines = status_render.lines(detail, bold="*",
+                                                host_tag=tag)
                     # Build inline keyboard based on current state. Only for
                     # the local host: the lifecycle callbacks carry a bare
                     # container name and act locally, so a Stop button under

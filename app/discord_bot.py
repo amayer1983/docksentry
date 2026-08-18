@@ -1245,30 +1245,84 @@ class DiscordBot:
         return "**Managed hosts**\n" + "\n".join(lines)
 
     def _cmd_status(self, opts):
-        wanted = (opts.get("container") or "").strip().lower()
+        """Overview, or a single container's detail.
+
+        Both halves are the owner's "one assembly" rule made real (#2):
+        the detail is collected and rendered by the same code Telegram's
+        `/status <name>` uses — `status_render` — so the two front ends
+        cannot drift apart field by field, which is exactly what
+        @NotRetarded photographed. The only difference either is allowed
+        is the bold marker.
+        """
+        import status_render
+        wanted = (opts.get("container") or "").strip()
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
+        bot = getattr(self, "telegram", None)
+
+        # ── one container: the full detail ──────────────────────────
+        # Falls through to the substring-filtered overview when the name
+        # does not resolve to exactly one container — `container:ngx`
+        # matching three things keeps listing three things, as it always
+        # has, rather than answering "not found".
+        if wanted and bot is not None:
+            for host in targets:
+                backend = self._backend_for(host)
+                name, err = self._resolve_container(wanted, backend)
+                if err:
+                    continue
+                info = bot._container_state(name, backend=backend)
+                if not info:
+                    continue
+                probe = ""
+                if info.get("health") == "unhealthy":
+                    try:
+                        probe = self._checker_for(host)._health_output(
+                            name, entries=1)
+                    except Exception:
+                        probe = ""
+                detail = status_render.collect(
+                    name, info,
+                    stats=bot._container_stats(name, backend=backend)
+                    if info.get("running") else None,
+                    store=self._store_for(host),
+                    probe=probe)
+                return "\n".join(status_render.lines(
+                    detail, bold="**", host_tag=self._label(host)))
+            # Not resolved anywhere: the overview below, narrowed.
+
+        # ── everyone: the overview ──────────────────────────────────
         lines = []
         for host in targets:
             checker = self._checker_for(host)
             if checker is None:
                 continue
             try:
-                containers = checker.get_running_containers()
+                # include_self: /status is a read, and a status that
+                # hides the very container answering it confused its
+                # reporter twice over. The update path keeps the filter
+                # that protects PID 1 (#16).
+                containers = checker.get_running_containers(include_self=True)
             except Exception as e:
-                lines.append(f"⚠ `{getattr(host, 'name', 'local')}` unreachable: "
-                             f"{str(e)[:80]}")
+                lines.append(f"⚠ `{getattr(host, 'name', 'local')}` "
+                             f"unreachable: {clip(e)}")
                 continue
+            tag = self._label(host)
             for c in containers:
-                if wanted and wanted not in c["name"].lower():
+                nm = c["name"]
+                if wanted and wanted.lower() not in nm.lower():
                     continue
-                lines.append(f"• `{c['name']}`{self._label(host)} — {c['image']}")
+                si = bot._container_state(nm, backend=self._backend_for(host)) \
+                    if bot is not None else None
+                if si:
+                    lines.append(status_render.overview_line(
+                        nm, si, host_tag=tag))
+                else:
+                    lines.append(f"⚪ `{nm}`{tag} — `{c.get('image', '?')}`")
         if not lines:
-            return "No matching containers."
-        # Discord rejects messages over 2000 characters, and a busy host
-        # blows past that easily — truncate rather than fail the call.
-        return self._clip("**Containers**\n" + "\n".join(lines))
+            return "No containers running."
+        return self._clip("\n".join(lines))
 
     def _cmd_check(self, opts):
         targets = self._hosts_for(opts.get("host"))
