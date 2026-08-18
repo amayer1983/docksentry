@@ -40,7 +40,12 @@ def collect(name, state_info, *, stats=None, store=None, pending=None,
     info = dict(state_info or {})
     info["name"] = info.get("name") or name
     if stats:
-        info["cpu"], info["mem"] = stats
+        # Two fields or four: CPU and memory always, net and disk I/O
+        # when the runtime reports them — `docker stats` hands all four
+        # over in the same call, so the extra two cost nothing.
+        info["cpu"], info["mem"] = stats[0], stats[1]
+        if len(stats) >= 4:
+            info["net_io"], info["block_io"] = stats[2], stats[3]
     if probe:
         info["probe"] = probe
     if store is not None:
@@ -95,6 +100,9 @@ def lines(info, *, bold="*", host_tag=""):
     if info.get("cpu") or info.get("mem"):
         out.append(f"📈 {b('Load:')} CPU {info.get('cpu', '?')} · "
                    f"RAM {info.get('mem', '?')}")
+    if info.get("net_io") or info.get("block_io"):
+        out.append(f"📡 {b('I/O:')} net {info.get('net_io', '?')} · "
+                   f"disk {info.get('block_io', '?')}")
     if info.get("probe"):
         out.append(f"🩺 {b('Health check said:')} `{info['probe']}`")
     out.append(f"{b('Image:')} `{info.get('image', '?')}`")

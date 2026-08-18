@@ -43,7 +43,8 @@ class Store:
 
 
 info = status_render.collect(
-    "ollama", STATE, stats=("312.4%", "8.2GiB / 61.3GiB"),
+    "ollama", STATE,
+    stats=("312.4%", "8.2GiB / 61.3GiB", "1.2MB / 800kB", "5.1MB / 0B"),
     store=Store(), pending=True,
     probe="exit 1: nvidia-smi: not found")
 
@@ -61,6 +62,13 @@ joined = " ".join(tg)
 checks["state and health"] = "running (unhealthy)" in joined
 checks["uptime"] = "3h 12m" in joined
 checks["live CPU and memory"] = "312.4%" in joined and "8.2GiB" in joined
+checks["net and disk I/O ride along"] = (
+    "1.2MB / 800kB" in joined and "5.1MB / 0B" in joined)
+# A runtime that only answers two fields still yields the two that
+# matter — Podman's stats output is leaner than Docker's.
+two = status_render.collect("x", STATE, stats=("1%", "10MiB / 1GiB"))
+checks["two-field stats still work"] = (
+    two.get("cpu") == "1%" and "net_io" not in two)
 checks["the version, not just the latest tag"] = "v0.32.14" in joined
 checks["what the probe said, when unhealthy"] = "nvidia-smi: not found" in joined
 checks["Docksentry's own flags"] = "pinned" in joined and "protected" in joined

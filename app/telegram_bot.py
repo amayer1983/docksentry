@@ -641,14 +641,17 @@ class TelegramBot:
         b = backend or self.backend
         try:
             r = b.run(["stats", "--no-stream", "--format",
-                       "{{.CPUPerc}}|{{.MemUsage}}", name], timeout=20)
+                       "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}",
+                       name], timeout=20)
         except Exception:
             return None
         out = (getattr(r, "stdout", "") or "").strip()
         if getattr(r, "returncode", 1) != 0 or "|" not in out:
             return None
-        cpu, mem = out.split("|", 1)
-        return cpu.strip(), mem.strip()
+        parts = [p.strip() for p in out.split("|")]
+        # Four fields since net/disk I/O joined; a Podman that answers
+        # with fewer still yields the two that matter.
+        return tuple(parts[:4]) if len(parts) >= 2 else None
 
     def _container_state(self, name, backend=None):
         """Return a dict with current state of `name` for the per-container

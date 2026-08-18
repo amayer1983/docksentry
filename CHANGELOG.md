@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.1] - 2026-08-18
+
+First release through the beta channel — features settle on `:beta` before they move to `:latest`. See the README's "Trying new features early" section.
+
+### Added
+- **Network and disk I/O in the `/status` detail.** `docker stats` hands them over in the same call that already fetches CPU and memory, so the two extra fields cost nothing. A runtime that reports fewer fields still yields the two that matter.
+- **The `beta` channel, documented.** New features land on `amayer1983/docksentry:beta` first and move to `:latest` once they have settled — `:latest` is never moved by a pre-release, so `AUTO_SELFUPDATE` only ever pulls settled versions.
+
 ## [2.17.0] - 2026-08-18
 
 ### Fixed

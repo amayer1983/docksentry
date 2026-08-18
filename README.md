@@ -137,6 +137,23 @@ volumes:
   docksentry_data:
 ```
 
+### Trying new features early: the `beta` tag
+
+New features land on `amayer1983/docksentry:beta` first and move to
+`:latest` once they have settled — usually a day later, sooner when
+testers confirm. `:latest` is never moved by a pre-release, so an
+instance with `AUTO_SELFUPDATE` on only ever pulls settled versions.
+
+Running a beta alongside your real instance is one compose change:
+
+```yaml
+    image: amayer1983/docksentry:beta
+```
+
+Give it its own container name and data volume if you run both at once.
+Bug reports from the beta are what makes it become the release, so if
+something looks wrong there, say so in the issues.
+
 ### Compose-managed containers
 
 When a container was started by `docker compose`, its inspect data records the **host-side path** of the compose file (e.g. `/opt/stacks/myapp/docker-compose.yml`). Docksentry runs inside its own container and can't see that path unless you mount it.
