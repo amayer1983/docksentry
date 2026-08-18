@@ -851,5 +851,6 @@
   "help_detail_testchannel": "*/testchannel*\n\nSends one message through every notification channel that is switched on — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise, webhook.\n\nMore useful from here than from the Web UI: you are already standing where the message has to arrive, so \"did it work?\" answers itself. A channel that stays quiet is a channel to look at.",
   "startup_killed_stopping": "⚠️ _The previous run was killed before it finished shutting down — `docker stop` ran out of patience and sent SIGKILL (exit 137). Nothing should be lost, every file is written atomically, but a longer `DOCKER_STOP_TIMEOUT` gives the web server, the scheduler and the Discord gateway time to come to a stop._",
   "web_label_card_title": "Instance label",
-  "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking."
+  "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
+  "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:"
 }

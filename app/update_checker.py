@@ -3444,6 +3444,15 @@ class UpdateChecker:
                     spec += f":{perms}"
                 args.extend(["--device", spec])
 
+        # ── GPU (DeviceRequests → --gpus) ──────────────────────
+        # The one field whose loss the owner measured on his own server:
+        # his ollama was recreated without its GPU, the NVIDIA runtime
+        # therefore never injected `nvidia-smi`, his healthcheck probes
+        # exactly that binary, and every update rolled back forever.
+        # The old comment here said "may add in a future release if
+        # requested" — his server requested.
+        args.extend(UpdateChecker._gpus_args(host.get("DeviceRequests")))
+
         # ── Sysctls ────────────────────────────────────────────
         for key, value in (host.get("Sysctls") or {}).items():
             args.extend(["--sysctl", f"{key}={value}"])
@@ -4091,6 +4100,8 @@ class UpdateChecker:
         "CpuRtPeriod", "CpuRtRuntime", "CpusetCpus", "CpusetMems",
         "PidsLimit", "OomScoreAdj", "OomKillDisable", "BlkioWeight",
         "Ulimits", "GroupAdd", "AutoRemove",
+            # GPU — carried via _gpus_args since the ollama incident.
+        "DeviceRequests",
     })
     # HostConfig keys we read elsewhere or intentionally don't restore
     # (Docker auto-manages them, or they're system-set metadata).
@@ -4101,9 +4112,10 @@ class UpdateChecker:
         # Block-IO leaf fields we don't expose; rare in real-world use
         "BlkioWeightDevice", "BlkioDeviceReadBps", "BlkioDeviceWriteBps",
         "BlkioDeviceReadIOps", "BlkioDeviceWriteIOps",
-        # Device-cgroup-rules / DeviceRequests (GPU): out of scope here,
-        # may add in a future release if requested.
-        "DeviceCgroupRules", "DeviceRequests",
+        # Device-cgroup-rules: still out of scope. DeviceRequests left
+        # this list when the GPU flag started being carried — see
+        # _gpus_args, and #62's neighbour on the owner's own server.
+        "DeviceCgroupRules",
         # Storage opts (rare, driver-specific)
         "StorageOpt",
         # User-facing duplicates we already handle via top-level Mounts
@@ -4130,6 +4142,63 @@ class UpdateChecker:
         "NetworkDisabled",       # we handle via NetworkMode
         "Shell",                 # used by image build, not run-time
     })
+
+    @staticmethod
+    def _gpus_args(device_requests):
+        """`HostConfig.DeviceRequests` → the `--gpus` flag that made it.
+
+        Built against Docker's documented shapes, not sampled from a live
+        GPU machine — this development box has none, which is worth
+        saying out loud. The four forms `docker run` produces:
+
+          --gpus all             → Count -1, no DeviceIDs
+          --gpus 2               → Count 2
+          --gpus "device=0,1"    → DeviceIDs ["0","1"]
+          --gpus 'all,capabilities=utility'
+                                 → Capabilities beyond the implicit gpu
+
+        The flag's value is CSV to Docker's parser, so a field that
+        itself contains commas (a device list, a capability list) must
+        arrive as a quoted CSV field — literal double quotes inside the
+        argv element. That is not shell quoting; we exec without a
+        shell, and the quotes are part of the value.
+
+        One request only: `--gpus` is a single-value flag, and a second
+        DeviceRequests entry has no CLI spelling. In that case nothing
+        is emitted and the audit reports the field instead — dropping
+        half a GPU config silently would be this bug all over again.
+        """
+        reqs = device_requests or []
+        if len(reqs) != 1 or not isinstance(reqs[0], dict):
+            return []
+        req = reqs[0]
+        driver = (req.get("Driver") or "").strip()
+        count = req.get("Count") or 0
+        ids = [str(i) for i in (req.get("DeviceIDs") or []) if str(i)]
+        caps = sorted({c for group in (req.get("Capabilities") or [])
+                       for c in group if c and c != "gpu"})
+        options = req.get("Options") or {}
+
+        # The canonical `--gpus all`, byte for byte the common case.
+        if count == -1 and not ids and not caps and not options and \
+                driver in ("", "nvidia"):
+            return ["--gpus", "all"]
+
+        fields = []
+        if driver and driver != "nvidia":
+            fields.append(f"driver={driver}")
+        if ids:
+            joined = ",".join(ids)
+            fields.append(f'"device={joined}"' if "," in joined
+                          else f"device={joined}")
+        elif count:
+            fields.append("count=all" if count == -1 else f"count={count}")
+        if caps:
+            joined = ",".join(["gpu"] + caps)
+            fields.append(f'"capabilities={joined}"')
+        for k, v in sorted(options.items()):
+            fields.append(f"{k}={v}")
+        return ["--gpus", ",".join(fields)] if fields else []
 
     def _audit_inspect_coverage(self, config):
         """Walk the inspect dict and log a debug warning for any
@@ -4158,6 +4227,16 @@ class UpdateChecker:
             and k not in self._HONORED_HOSTCONFIG
             and k not in self._SKIPPED_HOSTCONFIG
         )
+        # …and the fields we skip KNOWINGLY are reported too, when they
+        # are actually set. "Deliberately not carried" and "the user
+        # knows it is not carried" are different things: DeviceRequests
+        # sat in the skip list while the owner's GPU container failed
+        # every update, and /audit — the command built to find exactly
+        # such gaps — stayed silent about the one field that mattered.
+        dropped_host = sorted(
+            k for k, v in host.items()
+            if _is_non_default(v) and k in self._SKIPPED_HOSTCONFIG
+        )
         unknown_cfg = sorted(
             k for k, v in cfg.items()
             if _is_non_default(v)
@@ -4178,6 +4257,7 @@ class UpdateChecker:
         return {
             "host_unknown": unknown_host,
             "config_unknown": unknown_cfg,
+            "host_dropped": dropped_host,
         }
 
     def _update_standalone(self, name, image, netns_name=None):

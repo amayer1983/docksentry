@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.16.0] - 2026-08-18
+
+### Fixed
+- **A recreated container keeps its GPU.** The owner's `ollama`, deployed from a Portainer stack with a GPU, was updated by Docksentry — and the recreate dropped `HostConfig.DeviceRequests`. The NVIDIA runtime therefore never injected `nvidia-smi` into the new container, his healthcheck probes exactly that binary, and every update failed and rolled back, forever. The rollback was the only thing keeping him off CPU inference — and the skip list's comment literally said *"may add in a future release if requested"*. His server requested.
+
+  All four shapes `docker run --gpus` produces round-trip now: `all`, a count, a device list (as a quoted CSV field — the quotes are part of the value, not shell quoting), and extra capabilities. Two `DeviceRequests` entries have no CLI spelling, so that case emits nothing and the audit reports it instead — carrying half a GPU config silently would be this bug all over again.
+
+  Said plainly: this was built against Docker's documented shapes, not a live NVIDIA box — this development machine has none. The owner's ollama is the live verification, with the rollback as the net.
+
+- **`/audit` no longer keeps the skip list to itself.** Fields we deliberately do not carry (`DeviceCgroupRules`, `StorageOpt`, …) were invisible to the one command built to find recreate gaps — `DeviceRequests` sat in that silence while the ollama failed every update. A field that is *set* on the container and *knowingly skipped* now shows up in `/audit` under its own heading, on both Telegram and Discord. Unset skip-fields stay quiet; the section is for what would actually be lost.
+
 ## [2.15.0] - 2026-08-18
 
 ### Fixed

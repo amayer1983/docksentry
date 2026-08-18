@@ -851,5 +851,6 @@
   "help_detail_testchannel": "*/testchannel*\n\nSchickt eine Nachricht durch jeden eingeschalteten Benachrichtigungskanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise, Webhook.\n\nVon hier aus nützlicher als aus der Weboberfläche: du stehst schon dort, wo die Nachricht ankommen muss, „hat es geklappt?“ beantwortet sich also selbst. Ein Kanal, der stumm bleibt, ist einer zum Nachsehen.",
   "startup_killed_stopping": "⚠️ _Der vorige Lauf wurde abgeschossen, bevor er fertig heruntergefahren war — `docker stop` hat die Geduld verloren und SIGKILL geschickt (Exit 137). Verloren gehen sollte nichts, jede Datei wird atomar geschrieben, aber ein größeres `DOCKER_STOP_TIMEOUT` gibt Webserver, Scheduler und Discord-Verbindung die Zeit, wirklich anzuhalten._",
   "web_label_card_title": "Bezeichnung dieser Instanz",
-  "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht."
+  "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht.",
+  "audit_section_dropped": "*Bewusst übersprungen* — an diesem Container gesetzt, uns bekannt, und beim Neuerstellen nicht übernommen:"
 }

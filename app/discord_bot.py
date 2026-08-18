@@ -1858,10 +1858,15 @@ class DiscordBot:
         findings = _UC._audit_inspect_coverage(checker, inspect)
         host_keys = findings.get("host_unknown") or []
         cfg_keys = findings.get("config_unknown") or []
-        if not host_keys and not cfg_keys:
+        dropped = findings.get("host_dropped") or []
+        if not host_keys and not cfg_keys and not dropped:
             return (f"✅ `{name}`: every non-default field we found is one "
                     f"we restore on recreate.")
         out = [f"🔍 `{name}` — fields we would not carry over:"]
+        if dropped:
+            out.append("**Skipped on purpose** (set on this container, "
+                       "known, not carried):")
+            out += [f"  • `{k}`" for k in dropped]
         if host_keys:
             out.append("**HostConfig**")
             out += [f"  • `{k}`" for k in host_keys]

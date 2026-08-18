@@ -4725,10 +4725,19 @@ class TelegramBot:
             findings = _UC._audit_inspect_coverage(checker, inspect)
             host_keys = findings.get("host_unknown") or []
             cfg_keys = findings.get("config_unknown") or []
-            if not host_keys and not cfg_keys:
+            dropped = findings.get("host_dropped") or []
+            if not host_keys and not cfg_keys and not dropped:
                 self.send_message(self.t("audit_clean", name=name))
                 return
             lines = [self.t("audit_findings_header", name=name)]
+            if dropped:
+                # The fields we skip on purpose, said out loud. This list
+                # existed silently while the owner's GPU container failed
+                # every update on a field sitting in it (#62's neighbour)
+                # — the audit command stayed quiet about the one thing
+                # that mattered.
+                lines.append(self.t("audit_section_dropped"))
+                lines.extend(f"  • `HostConfig.{k}`" for k in dropped)
             if host_keys:
                 lines.append(self.t("audit_section_host"))
                 lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
