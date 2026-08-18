@@ -117,6 +117,61 @@ dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
 checks["Telegram's /audit shows it"] = "audit_section_dropped" in tsrc
 checks["…and Discord's"] = "Skipped on purpose" in dsrc
 
+# ═══ Docker's own defaults are not findings ══════════════════════════
+# The owner ran /audit against a stock ollama and got four findings —
+# all four of them values Docker writes into EVERY container unasked:
+# CgroupnsMode "private", ConsoleSize [0,0], and the standard
+# MaskedPaths/ReadonlyPaths lists. Measured on a plain nginx here: same
+# four. An audit that reports what Docker does to everything is an
+# audit people learn to ignore, which is the defect the section was
+# built to fix.
+stock = {"HostConfig": {"CgroupnsMode": "private", "ConsoleSize": [0, 0],
+                        "MaskedPaths": ["/proc/acpi", "/proc/asound"],
+                        "ReadonlyPaths": ["/proc/bus"]}, "Config": {}}
+f = c._audit_inspect_coverage(stock)
+checks["a stock container audits clean"] = (
+    not f["host_unknown"] and not f["host_dropped"])
+
+# MaskedPaths/ReadonlyPaths are DERIVED: Docker computes them from
+# --privileged and --security-opt, both of which the recreate carries,
+# so the recreated container gets the same values recomputed. They are
+# not lost, and saying they would be was wrong.
+checks["derived path lists are never reported"] = (
+    "MaskedPaths" in U._HONORED_HOSTCONFIG
+    and "ReadonlyPaths" in U._HONORED_HOSTCONFIG)
+
+# An explicit --cgroupns host is a real choice and is now carried…
+gargs = " ".join(U._build_run_args(
+    {"Config": {"Image": "x", "Env": [], "Labels": {}},
+     "HostConfig": {"CgroupnsMode": "host", "NetworkMode": "bridge",
+                    "RestartPolicy": {"Name": "no"}},
+     "NetworkSettings": {"Networks": {}}, "Name": "/x"}, "x:1", "x"))
+checks["an explicit cgroupns host survives the recreate"] = (
+    "--cgroupns host" in gargs)
+# …while the default mode adds no flag.
+pargs = " ".join(U._build_run_args(
+    {"Config": {"Image": "x", "Env": [], "Labels": {}},
+     "HostConfig": {"CgroupnsMode": "private", "NetworkMode": "bridge",
+                    "RestartPolicy": {"Name": "no"}},
+     "NetworkSettings": {"Networks": {}}, "Name": "/x"}, "x:1", "x"))
+checks["…and the default mode stays flagless"] = "--cgroupns" not in pargs
+
+# A genuinely skipped, genuinely set field still shows.
+f2 = c._audit_inspect_coverage(
+    {"HostConfig": {"DeviceCgroupRules": ["c 189:* rmw"]}, "Config": {}})
+checks["a real skipped field is still reported"] = (
+    f2["host_dropped"] == ["DeviceCgroupRules"])
+
+# And the "please open an issue" line belongs under unknown fields only
+# — the skip section is policy, not a coverage gap.
+_t = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                       "telegram_bot.py"), encoding="utf-8").read()
+_a = _t[_t.index('elif text.startswith("/audit")'):]
+_a = _a[:_a.index('elif text.startswith("/setlink")')]
+checks["the issue-plea is gated on unknown findings"] = (
+    "if host_keys or cfg_keys:" in _a
+    and _a.index("if host_keys or cfg_keys:") < _a.index('audit_footer'))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

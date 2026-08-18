@@ -4744,7 +4744,12 @@ class TelegramBot:
             if cfg_keys:
                 lines.append(self.t("audit_section_config"))
                 lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
-            lines.append(self.t("audit_footer"))
+            # "Please open an issue" belongs under UNKNOWN fields only.
+            # The deliberately-skipped section is a statement of policy,
+            # not a coverage gap — asking people to file issues about it
+            # invites reports we would close as intended behaviour.
+            if host_keys or cfg_keys:
+                lines.append(self.t("audit_footer"))
             self.send_message("\n".join(lines))
 
         elif text.startswith("/setlink"):

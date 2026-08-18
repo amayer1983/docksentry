@@ -3444,6 +3444,13 @@ class UpdateChecker:
                     spec += f":{perms}"
                 args.extend(["--device", spec])
 
+        # ── Cgroup namespace mode ──────────────────────────────
+        # "private" is Docker's default and carries itself; an explicit
+        # `--cgroupns host` is a real choice and used to be silently
+        # dropped. Surfaced by the audit rework: it sat in the skip list.
+        if (host.get("CgroupnsMode") or "") == "host":
+            args.extend(["--cgroupns", "host"])
+
         # ── GPU (DeviceRequests → --gpus) ──────────────────────
         # The one field whose loss the owner measured on his own server:
         # his ollama was recreated without its GPU, the NVIDIA runtime
@@ -4102,13 +4109,24 @@ class UpdateChecker:
         "Ulimits", "GroupAdd", "AutoRemove",
             # GPU — carried via _gpus_args since the ollama incident.
         "DeviceRequests",
+        # Carried via --cgroupns when set to "host"; "private" is the
+        # daemon default and needs no flag.
+        "CgroupnsMode",
+        # Derived, not settable: Docker computes these two from
+        # --privileged and --security-opt systempaths, both of which we
+        # carry — so on the recreated container Docker recomputes the
+        # same values. Reporting them as "would be lost" was wrong
+        # twice over: they are on EVERY container, and they are not
+        # lost. The owner's first /audit of a stock ollama listed four
+        # findings, all four of them Docker's own defaults.
+        "MaskedPaths", "ReadonlyPaths",
     })
     # HostConfig keys we read elsewhere or intentionally don't restore
     # (Docker auto-manages them, or they're system-set metadata).
     _SKIPPED_HOSTCONFIG = frozenset({
         # Internal Docker accounting / runtime state
-        "ContainerIDFile", "CgroupParent", "CgroupnsMode", "Cgroup",
-        "ConsoleSize", "Isolation", "MaskedPaths", "ReadonlyPaths",
+        "ContainerIDFile", "CgroupParent", "Cgroup",
+        "ConsoleSize", "Isolation",
         # Block-IO leaf fields we don't expose; rare in real-world use
         "BlkioWeightDevice", "BlkioDeviceReadBps", "BlkioDeviceWriteBps",
         "BlkioDeviceReadIOps", "BlkioDeviceWriteIOps",
@@ -4221,9 +4239,28 @@ class UpdateChecker:
                 return False
             return True
 
+        # Values Docker writes into every container unasked. Truthy, so
+        # the emptiness test above cannot catch them — measured on a
+        # stock nginx: CgroupnsMode "private", ConsoleSize [0,0], the
+        # standard MaskedPaths list. An audit that reports what Docker
+        # does to every container is an audit people learn to ignore.
+        _DOCKER_DEFAULTS = {
+            "CgroupnsMode": ("private", "host"),  # host = daemon config,
+                                                   # carried either way
+            "ConsoleSize": ([0, 0],),
+        }
+
+        def _is_finding(key, value):
+            if not _is_non_default(value):
+                return False
+            defaults = _DOCKER_DEFAULTS.get(key)
+            if defaults is not None and any(value == d for d in defaults):
+                return False
+            return True
+
         unknown_host = sorted(
             k for k, v in host.items()
-            if _is_non_default(v)
+            if _is_finding(k, v)
             and k not in self._HONORED_HOSTCONFIG
             and k not in self._SKIPPED_HOSTCONFIG
         )
@@ -4235,7 +4272,7 @@ class UpdateChecker:
         # such gaps — stayed silent about the one field that mattered.
         dropped_host = sorted(
             k for k, v in host.items()
-            if _is_non_default(v) and k in self._SKIPPED_HOSTCONFIG
+            if _is_finding(k, v) and k in self._SKIPPED_HOSTCONFIG
         )
         unknown_cfg = sorted(
             k for k, v in cfg.items()

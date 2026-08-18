@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.16.1] - 2026-08-18
+
+### Fixed
+- **`/audit` no longer reports what Docker does to every container.** The owner ran the new audit against a stock `ollama` and got four findings — all four of them values Docker writes into every container unasked: `CgroupnsMode "private"`, `ConsoleSize [0,0]`, and the standard `MaskedPaths`/`ReadonlyPaths` lists. Measured against a plain nginx here: the same four. An audit that flags the baseline is an audit people learn to ignore, which is precisely the defect the section was built to fix — one release earlier.
+
+  Three different truths, now separated. `MaskedPaths` and `ReadonlyPaths` are **derived**: Docker computes them from `--privileged` and `--security-opt`, both of which the recreate carries, so the recreated container gets the same values recomputed — they were never lost, and saying they would be was wrong. `ConsoleSize [0,0]` and `CgroupnsMode "private"` are **defaults** and no longer count as findings. And an explicit `--cgroupns host` turned out to be **genuinely dropped** on recreate — it is carried now, which the audit rework surfaced by accident.
+
+  The "please open an issue" plea appears only under genuinely unknown fields. The deliberately-skipped section is a statement of policy, not a coverage gap, and asking people to file issues about it invites reports that would be closed as intended.
+
 ## [2.16.0] - 2026-08-18
 
 ### Fixed
