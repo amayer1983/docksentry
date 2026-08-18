@@ -1287,7 +1287,8 @@ class DiscordBot:
                     stats=bot._container_stats(name, backend=backend)
                     if info.get("running") else None,
                     store=self._store_for(host),
-                    probe=probe)
+                    probe=probe,
+                    disk=bot._disk_facts(name, backend=backend))
                 return "\n".join(status_render.lines(
                     detail, bold="**", host_tag=self._label(host)))
             # Not resolved anywhere: the overview below, narrowed.

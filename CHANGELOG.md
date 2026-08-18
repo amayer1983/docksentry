@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.3] - 2026-08-18
+
+### Added
+- **Disk facts in the `/status` detail — the two that cost milliseconds.** The image line now states its size and age (`73.4MB · built 2026-08-01, 17d old`), and the wiring line names the container's writable layer (`✍ +2.45MB layer`) — the part that `system prune` reclaims and the one that balloons when something logs into the container filesystem. Both measured at ~13 ms together, detail view only, never the overview loop.
+
+  **Volume sizes are deliberately absent.** The only way Docker surfaces them is `system df -v`, which walks every volume on the host — measured at 7 seconds on this machine — and a status command that stalls for seconds answers a different question than it was asked.
+
 ## [2.18.0-beta.2] - 2026-08-18
 
 ### Changed

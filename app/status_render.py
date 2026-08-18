@@ -27,8 +27,21 @@ misbehaves at 2 am:
 """
 
 
+def _human(n):
+    """Bytes the way docker prints them."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return ""
+    for unit in ("B", "kB", "MB", "GB", "TB"):
+        if n < 1000:
+            return f"{n:.3g}{unit}"
+        n /= 1000
+    return f"{n:.3g}PB"
+
+
 def collect(name, state_info, *, stats=None, store=None, pending=None,
-            probe=""):
+            probe="", disk=None):
     """Merge everything known about one container into a flat dict.
 
     `state_info` is `_container_state()`'s dict (inspect-derived).
@@ -48,6 +61,8 @@ def collect(name, state_info, *, stats=None, store=None, pending=None,
             info["net_io"], info["block_io"] = stats[2], stats[3]
     if probe:
         info["probe"] = probe
+    if disk:
+        info.update(disk)
     if store is not None:
         # Per accessor, not per store: the docstring above promises that
         # a missing piece costs a line, never the whole status — and the
@@ -118,6 +133,22 @@ def lines(info, *, bold="*", host_tag=""):
     img = [f"📦 `{info.get('image', '?')}`"]
     idbits = " · ".join(f"`{info[k]}`" for k in ("version", "short_id")
                         if info.get(k))
+    sizebits = []
+    if info.get("image_bytes"):
+        sizebits.append(_human(info["image_bytes"]))
+    if info.get("image_created"):
+        age = ""
+        try:
+            from datetime import date
+            d = date.fromisoformat(info["image_created"])
+            days = (date.today() - d).days
+            if days >= 0:
+                age = f", {days}d old"
+        except ValueError:
+            pass
+        sizebits.append(f"built {info['image_created']}{age}")
+    if sizebits:
+        idbits = " · ".join(x for x in (idbits, " · ".join(sizebits)) if x)
     if idbits:
         img.append(f"     {idbits}")
     out.append("")
@@ -145,6 +176,14 @@ def lines(info, *, bold="*", host_tag=""):
     if vols and vols not in ("—", "0"):
         tail.append(f"💾 {vols} volume{'s' if vols != '1' else ''}"
                     if vols.isdigit() else f"💾 {vols}")
+    # What the container has written on top of its image — the layer
+    # that `docker system prune` reclaims, and the one that balloons
+    # when something logs into the container filesystem. Volume sizes
+    # are deliberately absent: Docker only surfaces them via
+    # `system df -v`, which walks every volume on the host (~7 s
+    # measured) — a status that stalls answers the wrong question.
+    if info.get("layer_bytes") is not None:
+        tail.append(f"✍ +{_human(info['layer_bytes'])} layer")
     if info.get("restart_policy"):
         tail.append(f"🔁 {info['restart_policy']}")
     if tail:

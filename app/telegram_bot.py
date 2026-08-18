@@ -653,6 +653,41 @@ class TelegramBot:
         # with fewer still yields the two that matter.
         return tuple(parts[:4]) if len(parts) >= 2 else None
 
+    def _disk_facts(self, name, backend=None):
+        """Image size and age, plus the container's writable layer.
+
+        Detail view only, never the overview loop: two extra inspects
+        per container would double the overview's cost, while one
+        container's detail absorbs them without noticing (measured:
+        ~13 ms together).
+
+        Volume sizes are deliberately NOT here. The only way Docker
+        offers them is `system df -v`, which walks every volume on the
+        host — measured at ~7 s on this machine — and a status command
+        that stalls for seconds answers a different question than it
+        was asked.
+        """
+        b = backend or self.backend
+        out = {}
+        try:
+            r = b.run(["inspect", "--size", "--format",
+                       "{{.Image}}|{{.SizeRw}}", name], timeout=15)
+            if getattr(r, "returncode", 1) == 0 and "|" in (r.stdout or ""):
+                image_id, sizerw = r.stdout.strip().split("|", 1)
+                if sizerw.strip().lstrip("-").isdigit():
+                    out["layer_bytes"] = int(sizerw)
+                r2 = b.run(["image", "inspect", "--format",
+                            "{{.Size}}|{{.Created}}", image_id.strip()],
+                           timeout=15)
+                if getattr(r2, "returncode", 1) == 0 and "|" in (r2.stdout or ""):
+                    size, created = r2.stdout.strip().split("|", 1)
+                    if size.strip().isdigit():
+                        out["image_bytes"] = int(size)
+                    out["image_created"] = created.strip()[:10]
+        except Exception:
+            pass
+        return out
+
     def _container_state(self, name, backend=None):
         """Return a dict with current state of `name` for the per-container
         status output. Keys: state, health, uptime, image, ports, volumes,
@@ -3688,7 +3723,8 @@ class TelegramBot:
                         pending=resolved in [
                             u.get("name") for u in
                             read_pending(self.config.pending_file)],
-                        probe=probe)
+                        probe=probe,
+                        disk=self._disk_facts(resolved, backend=backend))
                     lines = status_render.lines(detail, bold="*",
                                                 host_tag=tag)
                     # Build inline keyboard based on current state. Only for

@@ -45,6 +45,8 @@ class Store:
 info = status_render.collect(
     "ollama", STATE,
     stats=("312.4%", "8.2GiB / 61.3GiB", "1.2MB / 800kB", "5.1MB / 0B"),
+    disk={"image_bytes": 73400000, "image_created": "2026-08-01",
+          "layer_bytes": 2449357},
     store=Store(), pending=True,
     probe="exit 1: nvidia-smi: not found")
 
@@ -154,6 +156,20 @@ dj = " ".join(status_render.lines(dup))
 checks["a tcp+udp double mapping shows once"] = dj.count("53→53") == 1
 checks["net I/O carries direction arrows"] = "↓1.2MB ↑800kB" in joined
 checks["disk I/O says read and write"] = "R 5.1MB · W 0B" in joined
+# The disk facts the owner asked for — the two that cost milliseconds.
+# Volume sizes are deliberately absent: Docker only surfaces them via
+# `system df -v`, which walks every volume on the host (~7 s measured).
+checks["the image states its size"] = "73.4MB" in joined
+checks["…and its age"] = "built 2026-08-01" in joined
+checks["the writable layer is named"] = "+2.45MB layer" in joined
+nodisk = status_render.collect("x", STATE)
+checks["no disk facts, no disk lines"] = "layer" not in " ".join(
+    status_render.lines(nodisk))
+# Matched as an argv token, not as prose — the docstring explaining WHY
+# we skip `system df -v` contains the phrase, and the first version of
+# this check failed on the explanation of the very rule it enforces.
+checks["volume sizes are not fetched anywhere"] = (
+    '"df"' not in tsrc and '"df"' not in dsrc)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
