@@ -2,9 +2,8 @@
 
 This walkthrough was written by [@NotRetarded](https://github.com/NotRetarded)
 in [#57](https://github.com/amayer1983/docksentry/issues/57). He set the bot up
-from nothing, screenshotted every step while he was doing it, and then went
-back and fixed the two places that turned out to be wrong once we held them
-against the code. That is why it is here rather than something of mine: I have
+from nothing and screenshotted every step while he was doing it. That is why
+it is here rather than something of mine: I have
 never clicked through Discord's developer portal, I have no bot and no test
 server, and everything I know about that half of it I know from his pictures.
 The commentary in the indented notes is mine; the walkthrough is his.
@@ -38,9 +37,13 @@ variable.
 
 ## 1. Grab your server ID
 
-You need Developer Mode on first: Discord → **Settings** → **Advanced** →
-**Developer Mode**. Then click your server name at the top left and
-**Copy Server ID**. That goes into `DISCORD_GUILD_ID` (or `DISCORD_SERVER_ID`).
+Click your server name at the top left and **Copy Server ID**. That goes into
+`DISCORD_GUILD_ID` (or `DISCORD_SERVER_ID`).
+
+If that menu entry is missing, opening the [developer
+portal](https://discord.com/developers/applications) once (step 2) is enough —
+it marks your account as a developer and the entry appears. There is no
+switch to hunt for first.
 
 ![Copy Server ID from the server menu](images/discord-bot/01-copy-server-id.png)
 
@@ -55,9 +58,9 @@ Under **Overview** → **General Information**, copy the **Application ID** into
 ![Application ID under General Information](images/discord-bot/02-application-id.png)
 
 > This is the application's own ID, not your server's. The two are different
-> numbers and they go in different variables — an earlier version of this guide
-> had the Client ID from the OAuth2 page going into the server variable, which
-> would have left the bot answering nothing at all.
+> numbers and they go in different variables: this one into
+> `DISCORD_APP_ID`, the server's into `DISCORD_GUILD_ID`. Mixing them up
+> leaves the bot answering nothing at all.
 
 ## 3. Set the install link to None
 
