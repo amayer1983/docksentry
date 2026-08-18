@@ -204,6 +204,23 @@ _m = _re.search(r"\b(\d+) more\b", _intro)
 checks["the advertised command count is the real one"] = (
     bool(_m) and int(_m.group(1)) == len(COMMANDS) - 3)
 
+# The README said 27 in three places, stale since v1.63, and a new doc
+# page copied the number rather than counting. Same class, wider blast
+# radius — a prose number cannot notice the thing it counts has moved.
+_docs = {}
+for _p in ("README.md", "docs/notifications.md", "docs/discord-bot.md"):
+    _f = os.path.join(os.path.dirname(__file__), "..", _p)
+    if os.path.exists(_f):
+        _docs[_p] = open(_f, encoding="utf-8").read()
+_wrong = []
+for _p, _text in _docs.items():
+    for _n in _re.findall(r"\b(\d{1,3}) slash[- ]commands?\b", _text):
+        if int(_n) != len(COMMANDS):
+            _wrong.append(f"{_p}: {_n}")
+checks["no document advertises a stale command count"] = not _wrong
+if _wrong:
+    print("  → " + ", ".join(_wrong))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

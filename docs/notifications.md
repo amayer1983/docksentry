@@ -66,6 +66,11 @@ environment:
 
 You can also configure or change the Discord webhook URL via the Web UI settings page.
 
+A webhook only pushes notifications one way. If you also want to *drive*
+Docksentry from Discord — slash commands, and a channel the bot posts into
+itself — that's the bot, and [docs/discord-bot.md](discord-bot.md) walks the
+whole setup with screenshots.
+
 ### Discord Notifications Include
 
 - **Update available** — blue embed with container list, image sizes, and creation dates

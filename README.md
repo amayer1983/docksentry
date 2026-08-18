@@ -54,7 +54,7 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 - **Update policies per container** — `all` / `minor` / `patch`, major-version confirmation, per-container update windows, and `MIN_IMAGE_AGE_DAYS` so you need not be the first to pull a new image
 - **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update. Container cards instead of a table below 700px
 - **Telegram bot** *(optional)* — full interactive control with inline buttons and 20+ commands
-- **Discord bot** — 27 slash commands and the same control surface, driven by the same update engine
+- **Discord bot** — 35 slash commands and the same control surface, driven by the same update engine ([setup guide](docs/discord-bot.md))
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Home Assistant or any HTTP endpoint
 - **Native push channels** — ntfy, Gotify, Matrix, and Apprise (which fans out to ~100 further services)
@@ -277,7 +277,7 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 
 > Per-command help: append `-?` to any command for its detailed help — `/protect -?` is the same as `/help protect`.
 
-> **On Discord** the same commands take named options rather than positional words: `/status container:nginx`, `/check host:nas`. Both fields suggest values while you type, so you don't have to know them in advance — the container list follows whichever host you picked, and the machine Docksentry itself runs on is called `local`. `/hosts` lists them all.
+> **On Discord** the same commands take named options rather than positional words: `/status container:nginx`, `/check host:nas`. Both fields suggest values while you type, so you don't have to know them in advance — the container list follows whichever host you picked, and the machine Docksentry itself runs on is called `local`. `/hosts` lists them all. Setting the bot up is a trip through Discord's developer portal — [docs/discord-bot.md](docs/discord-bot.md) walks it screenshot by screenshot.
 
 ## Container labels (GitOps)
 
@@ -515,7 +515,7 @@ docker ps        # should show "(healthy)" after ~3 minutes of uptime
 | Channel | Updates | Results | Interactive |
 |---------|:-:|:-:|:-:|
 | **Telegram** | buttons | detailed | full control |
-| **Discord** | rich embeds | rich embeds | 27 slash commands |
+| **Discord** | rich embeds | rich embeds | 35 slash commands |
 | **Webhook** | JSON | JSON | via Web UI |
 
 <p align="center">
@@ -534,7 +534,7 @@ Health flips are reported the same way, in both directions, and the unhealthy me
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-unhealthy-recovered.png" alt="Unhealthy alert quoting the healthcheck output, followed by the recovery message" width="520">
 </p>
 
-See [Notification Setup](docs/notifications.md) for Discord and Webhook configuration, and [Container Monitoring](docs/monitoring.md) for what triggers each alert.
+See [Notification Setup](docs/notifications.md) for Discord and Webhook configuration, [the Discord bot guide](docs/discord-bot.md) if you want slash commands as well, and [Container Monitoring](docs/monitoring.md) for what triggers each alert.
 
 ## Documentation
 
@@ -545,6 +545,7 @@ See [Notification Setup](docs/notifications.md) for Discord and Webhook configur
 | Container Monitoring | [docs/monitoring.md](docs/monitoring.md) |
 | Web UI | [docs/web-ui.md](docs/web-ui.md) |
 | Notification Channels | [docs/notifications.md](docs/notifications.md) |
+| Discord bot — the portal, step by step | [docs/discord-bot.md](docs/discord-bot.md) |
 | Docker Compose Support | [docs/compose.md](docs/compose.md) |
 | Podman — CLI, socket activation, remote hosts | [docs/podman.md](docs/podman.md) |
 | Security & Socket Proxy | [docs/security.md](docs/security.md) |
@@ -559,7 +560,7 @@ Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what 
 **Shipped since — both of the items that used to sit under "v2.0, ahead":**
 
 - **Multi-host management** — one instance managing several Docker or Podman hosts (`DOCKER_HOSTS=name:endpoint`, TCP or SSH), with per-host pending queues, host-prefixed notifications, a host selector in the Web UI, and `@host` / `@all` command targeting. Landed in v1.62.0.
-- **Interactive Discord bot** — 27 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
+- **Interactive Discord bot** — 35 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
 
 **Shipped since:** an audit-free read-only surface — `/metrics` in Prometheus format and `GET /api/status` as JSON, both behind `API_TOKENS` so a scraper never needs the Web UI password. Plus `MONITOR_ONLY_CONTAINERS` for containers another tool owns, `MIN_IMAGE_AGE_DAYS` so you need not be first to pull a new release, registry mirrors for lookups, and the audit trail of who did what across the front ends — that one landed in v2.0.0 and lives on the Web UI History page.
 
