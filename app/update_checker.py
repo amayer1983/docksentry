@@ -2302,6 +2302,53 @@ class UpdateChecker:
         except (subprocess.SubprocessError, ValueError):
             return 0.0
 
+    def _health_output(self, name, entries=2):
+        """What the *healthcheck* said, which is not what the container said.
+
+        A failed health check used to be reported with a tail of the
+        container's stdout — and for a container that starts perfectly
+        and then fails its probe, that tail looks immaculate. The owner
+        hit exactly that on `ollama`: rolled back for
+        `health=unhealthy`, with ten lines of a textbook-clean startup
+        underneath it and nothing to act on.
+
+        The probe's own output lives in `.State.Health.Log[].Output`,
+        with the exit code of the command Docker ran. That is the thing
+        that failed, so that is the thing to show.
+
+        Returns "" when there is nothing to say — no healthcheck, a
+        runtime that does not report one, an inspect that would not
+        answer. Podman fills the same field, under `Healthcheck` on
+        older versions, so both spellings are tried.
+        """
+        import json as _json
+        for field in (".State.Health", ".State.Healthcheck"):
+            try:
+                r = self.backend.run(
+                    ["inspect", "--format", "{{json " + field + "}}", name],
+                    timeout=10)
+            except (subprocess.SubprocessError, OSError):
+                continue
+            raw = (getattr(r, "stdout", "") or "").strip()
+            if getattr(r, "returncode", 1) != 0 or raw in ("", "null", "<no value>"):
+                continue
+            try:
+                data = _json.loads(raw)
+            except ValueError:
+                continue
+            log = (data or {}).get("Log") or []
+            out = []
+            for entry in log[-entries:]:
+                text = " ".join(str(entry.get("Output", "")).split())
+                code = entry.get("ExitCode")
+                if text:
+                    out.append(f"exit {code}: {text[:300]}")
+                elif code not in (None, 0):
+                    out.append(f"exit {code} (no output)")
+            if out:
+                return "\n".join(out)
+        return ""
+
     def _tail_logs(self, name, lines=10):
         """Return the last N log lines as a single string, trimmed for
         Telegram. Best-effort — failures return empty string. Used to
@@ -3184,10 +3231,13 @@ class UpdateChecker:
             # didn't happen.
             self._debug(f"  Health check FAILED ({outcome}, compose) — container left in place")
             tail = self._tail_logs(name, lines=10)
+            probe = self._health_output(name)
             if outcome == "crashloop":
                 msg = f"Update produced a crash-restart loop (state={state}, health={health}) — left in place (compose)"
             else:
                 msg = f"Health check failed (state={state}, health={health}) — container left in place (compose)"
+            if probe:
+                msg += f"\nHealth check said:\n```\n{probe}\n```"
             if tail:
                 msg += f"\nLast logs:\n```\n{tail}\n```"
             self._save_history(name, image, False, msg)
@@ -4360,6 +4410,16 @@ class UpdateChecker:
                 # container so the user isn't left with a broken service.
                 self._debug(f"  Health check FAILED ({outcome}) for {name} — rolling back")
                 tail = self._tail_logs(name, lines=10)
+                # And what the *probe* said, which is a different thing
+                # from what the container said — and the one that
+                # actually failed. Read here, before the rollback, or we
+                # would be quoting the restored old container's health
+                # log and calling it the reason the new one failed.
+                #
+                # The owner hit this on `ollama`: rolled back for
+                # health=unhealthy, with ten lines of a textbook-clean
+                # startup underneath and nothing to act on.
+                probe = self._health_output(name)
                 # Grab logs first (above), then roll back. _rollback_to_old
                 # force-removes the broken new container and restores the
                 # backup — safely (won't destroy `name` if no backup
@@ -4370,6 +4430,8 @@ class UpdateChecker:
                     msg = f"Update produced a crash-restart loop (state={state}, health={health}) — rolled back"
                 else:
                     msg = f"Health check failed (state={state}, health={health}) — rolled back"
+                if probe:
+                    msg += f"\nHealth check said:\n```\n{probe}\n```"
                 if tail:
                     msg += f"\nLast logs:\n```\n{tail}\n```"
                 self._save_history(name, image, False, msg)

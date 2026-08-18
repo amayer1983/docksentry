@@ -1,111 +1,138 @@
 #!/usr/bin/env python3
-"""An unhealthy alert carries what the probe said (#2, @famewolf).
+"""Show what the health check said, not what the container said.
 
-His report was a question, and a fair one: two alerts, byparr turned
-unhealthy and recovered, neither with any diagnostic. "Normally there is a
-last log when a container goes unhealthy?"
+The owner's `ollama` was rolled back and reported like this:
 
-The first suspect was us. His alerts come from a remote host
-(`🖥 dockmox.lan`), and per-host plumbing is the trap this project has
-fallen into four times. Measured instead of assumed: `_tail_logs` against
-the remote podman host returned 173 characters of real nginx output. That
-path works, and the remote-host theory was wrong.
+    ❌ ollama: Health check failed (state=running, health=unhealthy)
+       — rolled back
+    Last logs:
+      … msg="Listening on [::]:11434 (version 0.32.14)"
+      … msg="discovering available GPUs..."
+      … msg="model list cache hydration complete" models=5 failures=0
 
-The actual cause: for a health flip we attach `docker logs`, and `docker
-logs` frequently has nothing to say. What explains the flip is the probe's
-own output, and Docker keeps it — `State.Health.Log[].Output`. Measured on
-a container whose healthcheck printed "connection refused: upstream
-10.0.0.5:8080":
+Ten lines of a textbook-clean startup, and nothing in them to act on —
+because they are the wrong lines. What failed was the **probe**, and a
+probe's output does not go to the container's stdout. It goes to
+`.State.Health.Log[].Output`, with the exit code of the command Docker
+ran, and we were not looking there.
 
-    docker logs           (completely empty)
-    State.Health.Log      ExitCode=1, Output="connection refused: …"
-
-We read that field nowhere. The snapshot already inspects every container,
-so picking it up costs no extra call.
+Read *before* the rollback, on purpose: `_rollback_to_old` restores the
+previous container under the same name, so an inspect afterwards would
+quote the old container's health log and present it as the reason the
+new one failed.
 """
 
+import json
 import os
+import subprocess
 import sys
 import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
-from monitor import ContainerMonitor
+from update_checker import UpdateChecker  # noqa: E402
 
-H = ContainerMonitor._health_output
-
-
-def _state(log, status="unhealthy"):
-    return {"Status": "running", "Health": {"Status": status, "Log": log}}
+checks = {}
 
 
-def main():
-    checks = {}
+def checker(answers):
+    """`answers` maps the inspect format string to (rc, stdout)."""
+    calls = []
 
-    # ── picking the right probe ──────────────────────────────────
-    failing = {"ExitCode": 1, "Output": "connection refused: upstream\n"}
-    passing = {"ExitCode": 0, "Output": "OK\n"}
-    checks["a failing probe is reported"] = (
-        H(_state([failing])) == "connection refused: upstream")
-    # After a recovery the last entry passed, but what is worth reading is
-    # what it said while it was down — that is the message being explained.
-    checks["the failing probe wins over a later pass"] = (
-        H(_state([failing, passing], "healthy")) == "connection refused: upstream")
-    # With nothing failing there is still context in the last probe.
-    checks["a passing probe is used as a fallback"] = H(_state([passing])) == "OK"
-    # Most recent failure, not the first.
-    old = {"ExitCode": 1, "Output": "old failure"}
-    checks["the newest failure wins"] = (
-        H(_state([old, failing])) == "connection refused: upstream")
+    class Backend:
+        def run(self, args, timeout=None):
+            calls.append(args)
+            fmt = args[2] if len(args) > 2 else ""
+            rc, out = answers.get(fmt, (1, ""))
+            return types.SimpleNamespace(returncode=rc, stdout=out, stderr="")
 
-    # ── nothing to say ───────────────────────────────────────────
-    checks["no healthcheck yields nothing"] = H({"Status": "running"}) == ""
-    checks["an empty log yields nothing"] = H(_state([])) == ""
-    checks["a silent probe yields nothing"] = (
-        H(_state([{"ExitCode": 1, "Output": "   \n"}])) == "")
-    checks["a missing Health key is safe"] = H({}) == ""
-
-    # ── a probe that dumps a page is capped ──────────────────────
-    # A curl healthcheck against an HTML error page is the realistic worst
-    # case. The log tail already spends 1500 of Telegram's 4096.
-    big = H(_state([{"ExitCode": 1, "Output": "x" * 4000}]))
-    checks["a long output is capped"] = len(big) <= 501
-    checks["…and marked as cut"] = big.endswith("…")
-
-    # ── it reaches the snapshot ──────────────────────────────────
-    m = ContainerMonitor.__new__(ContainerMonitor)
-    m.backend = types.SimpleNamespace(
-        ps=lambda **kw: types.SimpleNamespace(returncode=0, stdout="web\n"),
-        inspect=lambda names, **kw: types.SimpleNamespace(
-            returncode=0,
-            stdout='[{"Name":"/web","State":{"Status":"running","Health":'
-                   '{"Status":"unhealthy","Log":[{"ExitCode":1,'
-                   '"Output":"probe said no"}]}},"Config":{"Labels":{}}}]'))
-    snap = m.snapshot()
-    checks["the snapshot carries the probe output"] = (
-        snap["web"]["health_output"] == "probe said no")
-    # And the fields it already had are untouched.
-    checks["the snapshot keeps its other fields"] = (
-        snap["web"]["health"] == "unhealthy" and snap["web"]["status"] == "running")
-
-    # ── the alert uses it, and only where it applies ─────────────
-    src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                            "monitor.py"), encoding="utf-8").read()
-    notify = src[src.index("def _notify"):]
-    checks["the alert reads health_output"] = "health_output" in notify
-    # It is shown as well as the log tail, not instead: one says why the
-    # probe failed, the other what the container was doing.
-    checks["the log tail is still attached"] = "_tail_logs" in notify
-    # A crash has no probe to quote; asking for one would be noise.
-    seg = notify[notify.index("health_output") - 260:notify.index("health_output")]
-    checks["only health flips look for a probe"] = '"unhealthy", "recovered"' in seg
-
-    failed = [k for k, v in checks.items() if not v]
-    for k, v in checks.items():
-        print(f"  {'PASS' if v else 'FAIL'} {k}")
-    print("FAIL" if failed else "PASS")
-    return 1 if failed else 0
+    c = UpdateChecker.__new__(UpdateChecker)
+    c.config = types.SimpleNamespace(debug=False)
+    c._backend = Backend()
+    c._debug = lambda *a, **k: None
+    c._trace = lambda *a, **k: None
+    return c, calls
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+HEALTH = "{{json .State.Health}}"
+LEGACY = "{{json .State.Healthcheck}}"
+
+# ── the case that started it ─────────────────────────────────────────
+c, _ = checker({HEALTH: (0, json.dumps({
+    "Status": "unhealthy",
+    "Log": [{"ExitCode": 1, "Output": "curl: (7) Failed to connect to "
+                                      "localhost port 11434"},
+            {"ExitCode": 1, "Output": "curl: (7) Failed to connect to "
+                                      "localhost port 11434"}]}))})
+out = c._health_output("ollama")
+checks["the probe's own output is reported"] = "Failed to connect" in out
+checks["…with the exit code of the command Docker ran"] = "exit 1" in out
+checks["…and the most recent attempts, not the first ever"] = (
+    out.count("exit 1") == 2)
+
+# A probe that fails without printing anything still says something.
+c, _ = checker({HEALTH: (0, json.dumps({
+    "Status": "unhealthy", "Log": [{"ExitCode": 137, "Output": ""}]}))})
+checks["a silent failure still names its exit code"] = (
+    "exit 137" in c._health_output("x"))
+
+# Long output is trimmed rather than pasted whole into a chat message.
+c, _ = checker({HEALTH: (0, json.dumps({
+    "Log": [{"ExitCode": 1, "Output": "x" * 5000}]}))})
+checks["a torrent of output is trimmed"] = len(c._health_output("x")) < 400
+
+# Multi-line output is flattened — a health probe that prints a stack
+# trace should not turn one message into forty lines.
+c, _ = checker({HEALTH: (0, json.dumps({
+    "Log": [{"ExitCode": 2, "Output": "line one\nline two\n\nline three"}]}))})
+checks["…and multi-line output is flattened"] = (
+    "\n" not in c._health_output("x").split("exit 2: ")[1])
+
+# ── nothing to say, so nothing is said ───────────────────────────────
+c, _ = checker({})
+checks["a container with no healthcheck says nothing"] = (
+    c._health_output("x") == "")
+c, _ = checker({HEALTH: (0, "null")})
+checks["…and neither does a null health block"] = c._health_output("x") == ""
+c, _ = checker({HEALTH: (0, "not json at all")})
+checks["…nor output we cannot parse"] = c._health_output("x") == ""
+c, _ = checker({HEALTH: (0, json.dumps({"Status": "healthy", "Log": [
+    {"ExitCode": 0, "Output": ""}]}))})
+checks["a passing probe adds no noise"] = c._health_output("x") == ""
+
+
+class Exploding:
+    def run(self, *a, **k):
+        raise subprocess.SubprocessError("daemon gone")
+
+
+c, _ = checker({})
+c._backend = Exploding()
+checks["a daemon that will not answer costs nothing"] = (
+    c._health_output("x") == "")
+
+# Podman spelled it differently on older versions; both are tried.
+c, calls = checker({LEGACY: (0, json.dumps({
+    "Log": [{"ExitCode": 1, "Output": "probe said no"}]}))})
+checks["the older Podman spelling is tried too"] = (
+    "probe said no" in c._health_output("x"))
+
+# ── read before the rollback, or it quotes the wrong container ───────
+src = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                        "update_checker.py"), encoding="utf-8").read()
+lines = src.splitlines()
+probe_at = [i for i, l in enumerate(lines) if "probe = self._health_output(" in l]
+checks["both failure paths collect it"] = len(probe_at) == 2
+rollback_at = [i for i, l in enumerate(lines)
+               if "self._rollback_to_old(name, old_name)" in l]
+after = [r for r in rollback_at if r > probe_at[-1]]
+checks["…and the rollback path reads it first"] = bool(after) and (
+    probe_at[-1] < after[0])
+checks["the message labels it as the health check"] = (
+    src.count('Health check said:') == 2)
+
+failed = [k for k, v in checks.items() if not v]
+for k, v in checks.items():
+    print(f"  {'PASS' if v else 'FAIL'} {k}")
+print("FAIL" if failed else "PASS")
+sys.exit(1 if failed else 0)

@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.15.0] - 2026-08-18
+
+### Fixed
+- **A failed health check now shows what the health check said.** The owner's `ollama` was rolled back with `health=unhealthy`, and underneath it ten lines of a textbook-clean startup — listening on its port, discovering GPUs, model cache hydrated. Nothing to act on, because those were the wrong lines. What failed was the **probe**, and a probe's output does not go to the container's stdout: it goes to `.State.Health.Log[].Output`, with the exit code of the command Docker ran, and we were not looking there.
+
+  Both failure paths report it now, above the container log rather than instead of it — the two answer different questions. On the rollback path it is read *before* the rollback, because restoring the previous container under the same name would otherwise have us quoting the old container's health log as the reason the new one failed.
+
+  It stays quiet where there is nothing to say: a container with no healthcheck, a runtime that does not report one, a probe that passed. Long output is trimmed and multi-line output flattened, so a probe printing a stack trace does not turn one message into forty lines. Podman's older spelling of the field is tried as well.
+
+### Added
+- **The Discord bot setup guide, written by @NotRetarded (#57).** He set the bot up from nothing, screenshotted every step while he was doing it, and corrected the two places that turned out to be wrong once we held them against the code. It is his walkthrough, with commentary in the indented notes, and it is better than anything written from the source would have been. `docs/discord-bot.md`, linked from the README and the notifications page, with all sixteen screenshots in the repository rather than hotlinked.
+
 ## [2.14.2] - 2026-08-18
 
 ### Fixed
