@@ -120,7 +120,7 @@ def lines(info, *, bold="*", host_tag=""):
         state_text += f" ({health})"
 
     # ── who, and how it is doing ────────────────────────────────
-    head = f"📊 {b(info['name'])}{host_tag} — {icon} {state_text}"
+    head = f"🩺 {b(info['name'])}{host_tag} — {icon} {state_text}"
     if running and info.get("uptime"):
         head += f" · ⏱ {info['uptime']}"
     out = [head]
@@ -157,20 +157,25 @@ def lines(info, *, bold="*", host_tag=""):
     # ── what it costs, right now ────────────────────────────────
     cost = []
     if info.get("cpu") or info.get("mem"):
-        cost.append(f"📈 CPU {info.get('cpu', '?')} · "
+        cost.append(f"📊 CPU {info.get('cpu', '?')} · "
                     f"RAM {info.get('mem', '?')}")
     if info.get("net_io") or info.get("block_io"):
         cost.append(f"📡 net {_updown(info.get('net_io'))} · "
                     f"disk {_rw(info.get('block_io'))}")
-    if cost:
+    # A blank line before each cost line, not just before the block —
+    # the owner found the paired lines (CPU next to net/disk) read as
+    # "gedrückt" against the airy header and image blocks above. One
+    # rhythm for the whole detail: every fact gets its own breathing
+    # room rather than the lower half clumping into dense pairs.
+    for c in cost:
         out.append("")
-        out.extend(cost)
+        out.append(c)
 
     # ── how it is wired ─────────────────────────────────────────
     wired = []
     ports = _dedupe_ports(info.get("ports"))
     if ports:
-        wired.append(f"🔌 {ports}")
+        wired.append(f"🌐 {ports}")
     tail = []
     vols = str(info.get("volumes", "") or "")
     if vols and vols not in ("—", "0"):
@@ -193,9 +198,9 @@ def lines(info, *, bold="*", host_tag=""):
         tail.append(f"🔁 {info['restart_policy']}")
     if tail:
         wired.append(" · ".join(tail))
-    if wired:
+    for w in wired:
         out.append("")
-        out.extend(wired)
+        out.append(w)
 
     # ── what Docksentry knows about it ──────────────────────────
     ours = []
@@ -210,9 +215,9 @@ def lines(info, *, bold="*", host_tag=""):
         ours.append(" · ".join(grp))
     if info.get("pending"):
         ours.append("🔄 " + b("Update available"))
-    if ours:
+    for o in ours:
         out.append("")
-        out.extend(ours)
+        out.append(o)
     return out
 
 

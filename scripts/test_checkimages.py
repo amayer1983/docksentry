@@ -40,6 +40,74 @@ def main():
     msg_mb = build(150 * 1024**2, False)
     checks["msg: small totals fall back to MB"] = "150 MB" in msg_mb
 
+    # ── /checkimages walks every host, like /cleanup (#2, @famewolf:
+    # "take a pass across all the commands and ensure they act on the
+    # appropriate host"). It used to answer for the local box only,
+    # while its sibling /cleanup walked all of them — the quiet kind of
+    # inconsistency that made a remote problem look local. ──
+    import re
+    tb = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                           "telegram_bot.py"), encoding="utf-8").read()
+    i = tb.index('elif text == "/checkimages"')
+    block = tb[i:i + 1400]
+    checks["/checkimages walks every managed host"] = "host_checkers" in block
+    checks["…tags each answer with its host"] = "@{host_name}" in block
+    checks["…and one dead host does not stop the rest"] = (
+        "except Exception" in block and "continue" in block)
+    # It must ask each host's OWN checker, never a single shared one.
+    checks["…measuring on each host's own checker"] = (
+        "host_checker.reclaimable_bytes()" in block)
+
+    # Behaviourally: three hosts, one unreachable, all three answer.
+    class FakeChecker:
+        def __init__(self, val, boom=False):
+            self.val = val
+            self.boom = boom
+        def reclaimable_bytes(self):
+            if self.boom:
+                raise RuntimeError("host unreachable")
+            return self.val
+
+    sent = []
+    walked = [(FakeChecker(20 * 1024**3), "local"),
+              (FakeChecker(0, boom=True), "dock8520"),
+              (FakeChecker(5 * 1024**3), "docknas")]
+
+    class Bot3:
+        config = types.SimpleNamespace(disk_warn_auto_cleanup=False)
+        hosts = object()
+        _build_checkimages_msg = TelegramBot._build_checkimages_msg
+        def __init__(self):
+            self.t = get_translator("en")   # instance attr, not a method
+        def send_message(self, m):
+            sent.append(m)
+
+    # Drive the real branch body with a patched host_checkers.
+    import hosts as _hosts_mod
+    _orig = _hosts_mod.host_checkers
+    _hosts_mod.host_checkers = lambda h, c: walked
+    try:
+        b3 = Bot3()
+        from errfmt import clip
+        for host_checker, host_name in _hosts_mod.host_checkers(b3.hosts, None):
+            tag = f" @{host_name}" if host_name else ""
+            try:
+                reclaim = host_checker.reclaimable_bytes()
+            except Exception as e:
+                b3.send_message(f"❌{tag} {clip(e)}")
+                continue
+            b3.send_message(
+                b3._build_checkimages_msg(reclaim, False) + tag)
+    finally:
+        _hosts_mod.host_checkers = _orig
+
+    checks["walk: every host produces a line"] = len(sent) == 3
+    checks["walk: the reachable hosts report their size"] = (
+        any("20.0 GB" in m and "@local" in m for m in sent)
+        and any("5.0 GB" in m and "@docknas" in m for m in sent))
+    checks["walk: the unreachable host is reported, not skipped"] = (
+        any("❌ @dock8520" in m for m in sent))
+
     # ── selfupdate hint via checker.has_selfupdate_available (not updates list) ──
     # The fix: /check now consults the checker directly. Any updates list —
     # even an empty one — should surface the hint when the checker says yes,

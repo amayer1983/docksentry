@@ -302,13 +302,13 @@ checks["@nas: /status is that host's overview"] = (
 bot, checker, cfg, hosts = multi_bot()
 out = drive(bot, "/status db", checker)
 checks["one reply for a container only the local host has"] = (
-    len(out) == 1 and out[0].startswith("📊 *db*")
+    len(out) == 1 and out[0].startswith("🩺 *db*")
     and "not found" not in out[0])
 
 bot, checker, cfg, hosts = multi_bot()
 out = drive(bot, "/status plex", checker)
 checks["one reply for a container only the remote host has"] = (
-    len(out) == 1 and out[0].startswith("📊 *plex* @nas"))
+    len(out) == 1 and out[0].startswith("🩺 *plex* @nas"))
 checks["remote /status detail carries no lifecycle buttons"] = (
     bot.markups == [None])
 

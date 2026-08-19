@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.8] - 2026-08-19
+
+### Changed
+- **`/checkimages` answers for every managed host now (#2, @famewolf).** It reported the reclaimable image space on the local box only, while its sibling `/cleanup` had walked every host since beta.4 — the quiet kind of inconsistency that makes a remote problem look local. It now takes the same host walk: one line per host, tagged with its name, and one unreachable host is reported without stopping the rest. Discord's `/checkimages` already did this; this brings Telegram level with it. Prompted by his ask to *"take a pass across all the commands and ensure they act on the appropriate host"* — the audit found this was the one remaining command that did not.
+
+- **The `/status` detail reads less cramped, and two icons carry better (#63, @NotRetarded).** The plug on the ports line was nearly invisible on Discord's dark theme, so ports now use 🌐; the live-cost line moved from 📈 to 📊; and the header carries 🩺. The lower half also had its paired lines (CPU next to net/disk, ports next to volumes) sitting flush against the airy header and image blocks above — every fact now gets its own blank line, so the whole detail breathes at one rhythm rather than clumping toward the bottom.
+
 ## [2.18.0-beta.7] - 2026-08-19
 
 ### Fixed

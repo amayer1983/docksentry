@@ -4344,9 +4344,26 @@ class TelegramBot:
             # free right now (unused images / build cache), plus the
             # AUTO_CLEANUP status (#2, @famewolf: if you're not running
             # auto-cleanup, being able to check on demand is valuable).
-            reclaim = checker.reclaimable_bytes()
+            #
+            # Every managed host, like /cleanup itself (#2, @famewolf:
+            # "take a pass across all the commands and ensure they act
+            # on the appropriate host"). Answering only for the local
+            # box while /cleanup walks all of them is exactly the kind
+            # of quiet inconsistency that made a remote disaster look
+            # local. One unreachable host reports and does not stop the
+            # rest.
             auto_on = bool(getattr(self.config, "disk_warn_auto_cleanup", False))
-            self.send_message(self._build_checkimages_msg(reclaim, auto_on))
+            from hosts import host_checkers
+            for host_checker, host_name in host_checkers(self.hosts,
+                                                         checker):
+                tag = f" @{host_name}" if host_name else ""
+                try:
+                    reclaim = host_checker.reclaimable_bytes()
+                except Exception as e:
+                    self.send_message(f"❌{tag} {clip(e)}")
+                    continue
+                self.send_message(
+                    self._build_checkimages_msg(reclaim, auto_on) + tag)
 
         elif text == "/events":
             # Telegram parity for the Web UI's Container Events section
