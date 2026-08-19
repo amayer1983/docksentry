@@ -183,7 +183,12 @@ def lines(info, *, bold="*", host_tag=""):
     # `system df -v`, which walks every volume on the host (~7 s
     # measured) — a status that stalls answers the wrong question.
     if info.get("layer_bytes") is not None:
-        tail.append(f"✍ +{_human(info['layer_bytes'])} layer")
+        _mark = ""
+        if info["layer_bytes"] >= 500 * 1000 * 1000:
+            # Past caches-and-temp-files territory: an application is
+            # storing data where the next update destroys it.
+            _mark = " ⚠ lost on next update"
+        tail.append(f"✍ +{_human(info['layer_bytes'])} layer{_mark}")
     if info.get("restart_policy"):
         tail.append(f"🔁 {info['restart_policy']}")
     if tail:

@@ -499,21 +499,28 @@ class DiscordBot:
                      "right-click the server name → Copy Server ID).")
             self.last_error = ("guild", "")
             return False
+        # Timed, all of it: @NotRetarded's bot took SEVEN minutes from
+        # container start to first answer, with a log that explained none
+        # of them (#63). Whichever step is slow next time now says so.
+        _t = time.monotonic()
         try:
             me = self.rest.me()
-            self.log(f"Discord bot authenticated as {me.get('username', '?')}")
+            self.log(f"Discord bot authenticated as {me.get('username', '?')} "
+                     f"({time.monotonic() - _t:.1f}s)")
         except DiscordRESTError as e:
             # A bad token is a configuration problem, not a transient
             # one — say so plainly instead of reconnecting forever.
             self.log(f"Discord bot disabled: token rejected ({e})")
             self.last_error = ("token", str(e))
             return False
+        _t = time.monotonic()
         try:
             self.rest.register_commands(self.application_id,
                                         _harden_commands(COMMANDS),
                                         guild_id=self.guild_id or None)
             where = f"guild {self.guild_id}" if self.guild_id else "globally"
-            self.log(f"Discord slash commands registered {where}")
+            self.log(f"Discord slash commands registered {where} "
+                     f"({time.monotonic() - _t:.1f}s)")
         except DiscordRESTError as e:
             # Not fatal: the commands may already be registered from a
             # previous run, and the gateway half still works.
@@ -741,9 +748,19 @@ class DiscordBot:
             # immediate path would leave every deferred command (which is
             # most of them, since anything slow defers) private no matter
             # what the switch says.
+            _t = self._now()
             self.rest.interaction_response(data["id"], data["token"],
                                            deferred=True,
                                            ephemeral=self._replies_private())
+            _ack = self._now() - _t
+            if _ack > 2.0:
+                # Discord's window is three seconds from the interaction,
+                # and the retry-on-429 inside interaction_response can eat
+                # far more than that. When it does, the user saw "did not
+                # respond" — the log should say why, not leave a silence.
+                self.log(f"Discord: acknowledgement took {_ack:.1f}s "
+                         f"(window is 3s — the user may have seen "
+                         f"'did not respond')")
         except DiscordRESTError as e:
             self.log(f"Discord: could not acknowledge interaction: {e}")
             return

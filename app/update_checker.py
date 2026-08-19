@@ -2201,6 +2201,36 @@ class UpdateChecker:
             return None
         return there and not gone
 
+    #: A writable layer past this is no longer "caches and temp files" —
+    #: it is an application storing data somewhere a recreate destroys.
+    LAYER_WARN_BYTES = 500 * 1000 * 1000
+
+    def _layer_farewell(self, name):
+        """"⚠ N GB had been written inside the old container…" — or "".
+
+        Measured BEFORE the recreate destroys the writable layer (13 ms,
+        `inspect --size`), because afterwards the evidence is gone with
+        the layer. Threshold, not always: a few MB of caches is the
+        normal state of the world and not worth a warning. Shared by the
+        standalone and compose paths — both destroy the layer the same
+        way.
+        """
+        try:
+            r = self.backend.run(["inspect", "--size", "--format",
+                                  "{{.SizeRw}}", name], timeout=15)
+            raw = (getattr(r, "stdout", "") or "").strip()
+            if getattr(r, "returncode", 1) == 0 and \
+                    raw.lstrip("-").isdigit():
+                b = int(raw)
+                if b >= self.LAYER_WARN_BYTES:
+                    return (f"\n⚠ {b / 1e9:.1f} GB had been written "
+                            f"inside the old container (not in a volume) "
+                            f"— discarded with it. If that was data, it "
+                            f"belongs in a volume.")
+        except Exception:
+            pass
+        return ""
+
     def _lifecycle_timeout(self):
         """How long to let `kill` / `rm -f` / `rename` run before giving up.
 
@@ -3202,6 +3232,8 @@ class UpdateChecker:
         new_version = self._get_image_version_label(image)
         self._version_arrow = self._format_version_arrow(old_version, new_version)
 
+        layer_note = self._layer_farewell(name)
+
         # Recreate service via compose. `--force-recreate` so the container
         # is actually replaced: a plain `up -d` can leave the old container
         # (and old image) running if Compose judges the service "unchanged",
@@ -3266,7 +3298,7 @@ class UpdateChecker:
 
         detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
         self._save_history(name, image, True, f"compose: {detail}")
-        return True, f"OK ({detail})"
+        return True, f"OK ({detail}){layer_note}"
 
     @staticmethod
     def _build_run_args(config, image, name, image_defaults=None, netns_name=None,
@@ -4364,6 +4396,8 @@ class UpdateChecker:
 
         self._debug(f"  Pull OK: {name} ({old_created} → {new_created}, {new_size})")
 
+        layer_note = self._layer_farewell(name)
+
         # Recreate container: stop, rename old, create new with same config, start, remove old
         try:
             # Get full container config for recreation
@@ -4449,7 +4483,7 @@ class UpdateChecker:
                     return False, mismatch
                 suffix = " (recreated after auto-remove)"
                 self._save_history(name, image, True, detail + suffix)
-                return True, f"OK ({detail}){suffix}"
+                return True, f"OK ({detail}){suffix}{layer_note}"
 
             # Container still exists. If the stop itself failed, leave it
             # alone — same as before.

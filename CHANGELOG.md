@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.6] - 2026-08-19
+
+### Added
+- **Disk pressure is handled where it happens, container by container (#2, @famewolf).** His words after the routing fix: *"It should never get to 'no space left on device' if docksentry is doing its job. It needs to do cleanup on a container by container basis as it updates them."* Two halves, because the two kinds of host allow different honesty. **Reactive, any host:** an update that fails on ENOSPC gets that host's image cleanup immediately, mid-batch — `🧹 dock8520: emergency cleanup after ENOSPC — freed …` — and the batch carries on. It is the only disk signal a remote host gives us at all: free space is a filesystem question, and the Docker API does not answer it. **Proactive, local only:** between containers the local disk is checked against `DISK_WARN_PERCENT`, and past it a cleanup runs before the next update — behind the existing `DISK_WARN_AUTO_CLEANUP` opt-in, at most once per batch (a prune walks every image; pruning after every container would spend longer pruning than updating). The usual grace-hours filter applies throughout, so an image pulled seconds ago for the next entry is never eligible.
+
+- **A big writable layer is named before the update destroys it.** A recreate throws the container's writable layer away by design — below half a gigabyte that is caches and temp files, above it an application has been storing data in a place the next update deletes. Said twice now: in the `/status` detail (`✍ +9.8GB layer ⚠ lost on next update`, before the fact) and in the update result itself (*"⚠ 9.8 GB had been written inside the old container (not in a volume) — discarded with it. If that was data, it belongs in a volume."*). Measured **before** the stop, because afterwards the evidence is gone with the layer; one measurement shared by the standalone and compose paths.
+
+### Changed
+- **The Discord bot's silences explain themselves now (#63, @NotRetarded).** His bot took seven minutes from container start to first answer, with a log that explained none of them — and a silence the log cannot explain is a defect of the log. Every step now says what it cost: gateway connects are timestamped and say whether they resume or identify fresh, READY reports its seconds since connect start, and a successful RESUME — which never gets a READY and used to be **completely silent** — logs too. On the REST side, authentication and the bulk slash-command registration (the first rate-limit candidate on frequent restarts) are timed, and an interaction acknowledgement that takes longer than two of Discord's three seconds logs that the user may have seen "did not respond". I can't reproduce Discord's side live; what I can do is make the next silence name its slow step itself.
+
 ## [2.18.0-beta.5] - 2026-08-19
 
 ### Changed

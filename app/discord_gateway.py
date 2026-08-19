@@ -205,6 +205,14 @@ class DiscordGateway:
 
     def _connect_once(self, resuming):
         url = self.resume_url if (resuming and self.resume_url) else self.url
+        # Timestamped, because @NotRetarded's bot was silent for seven
+        # minutes after a restart with NOTHING in the log to pull on —
+        # and a silence the log cannot explain is a defect of the log
+        # (#63). Every state transition now says when it happened, so
+        # the next occurrence names its slow step itself.
+        self._connect_started = time.monotonic()
+        self.log(f"Discord gateway: connecting "
+                 f"({'resume' if resuming else 'fresh identify'})…")
         self.ws = WebSocketClient(url).connect()
         self._awaiting_ack = False
         self._ready_at = None
@@ -274,6 +282,13 @@ class DiscordGateway:
             f"gateway closed the connection {where}"
             + (f" (close code {code})" if code is not None else ""))
 
+    def _since_connect(self):
+        """" (N.Ns after connect start)" — or nothing, defensively."""
+        t0 = getattr(self, "_connect_started", None)
+        if t0 is None:
+            return ""
+        return f" ({time.monotonic() - t0:.1f}s after connect start)"
+
     def _recv_json(self):
         raw = self.ws.recv()
         if raw is None:
@@ -297,7 +312,16 @@ class DiscordGateway:
                     data.get("resume_gateway_url"))
                 self._ready_at = time.monotonic()
                 user = (data.get("user") or {}).get("username", "?")
-                self.log(f"Discord bot connected as {user}")
+                self.log(f"Discord bot connected as {user}"
+                         + self._since_connect())
+            elif name == "RESUMED":
+                # A successful resume never gets a READY — Discord sends
+                # RESUMED instead, and until now that path logged nothing
+                # at all. A reconnect whose success is silent is half of
+                # how seven quiet minutes stay unexplained.
+                self._ready_at = time.monotonic()
+                self.log("Discord gateway: session resumed"
+                         + self._since_connect())
             if self.on_event:
                 try:
                     self.on_event(name, data)

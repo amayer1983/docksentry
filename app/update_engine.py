@@ -475,6 +475,7 @@ class UpdateEngine:
         _host_of = entry_host
         _stores = {}
         _checkers = {}
+        self._batch_cleaned = False
 
         def _checker_of(u):
             """The checker whose backend actually reaches this entry's host.
@@ -634,6 +635,57 @@ class UpdateEngine:
                     netns_name=u.get("netns_name"), **compose_kwargs)
                 status = "✅" if success else "❌"
                 results.append(f"{status} {self._display_name(u)}: {msg}")
+
+                # Disk pressure, handled where it happens (#2, @famewolf:
+                # "It should never get to 'no space left on device' if
+                # docksentry is doing its job. It needs to do cleanup on
+                # a container by container basis as it updates them.")
+                # Two triggers, honestly different in what they can know:
+                #
+                #  * reactive, any host: an update that just failed on
+                #    ENOSPC gets that host's cleanup immediately — the
+                #    only signal a remote host's disk gives us at all,
+                #    since free space is a filesystem question the Docker
+                #    API does not answer;
+                #  * proactive, local only: between containers, the local
+                #    disk is checked against DISK_WARN_PERCENT — locally
+                #    we CAN see it coming. Once per batch: prune walks
+                #    every image, and a batch that prunes after every
+                #    container spends longer pruning than updating.
+                #
+                # cleanup_images carries the grace-hours filter, so a
+                # just-pulled image for the NEXT entry is never eligible.
+                try:
+                    if not success and "no space left" in str(msg).lower():
+                        _ok, _cmsg = u_checker.cleanup_images()
+                        results.append(
+                            f"🧹 {_host_of(u) or 'local'}: emergency cleanup "
+                            f"after ENOSPC — {_cmsg}")
+                    elif (getattr(self.config, "disk_warn_auto_cleanup", False)
+                          and not getattr(self, "_batch_cleaned", False)):
+                        # Measurement and cleanup on the SAME machine:
+                        # get_disk_usage() reads the local data dir no
+                        # matter which checker it hangs off, so the prune
+                        # must go to the LOCAL checker too — on the
+                        # scheduled per-host path `checker` is a remote
+                        # one, and pruning a remote host over a local
+                        # reading would be the routing bug all over again.
+                        _lc = checker
+                        for host in (self.hosts or ()):
+                            if getattr(host, "is_local", False):
+                                _lc = getattr(host, "checker", None) or checker
+                                break
+                        _pct, _free, _tot = _lc.get_disk_usage()
+                        _thr = int(getattr(self.config, "disk_warn_percent",
+                                           85) or 85)
+                        if _pct and _pct >= _thr:
+                            self._batch_cleaned = True
+                            _ok, _cmsg = _lc.cleanup_images()
+                            results.append(
+                                f"🧹 local disk at {_pct}% (≥{_thr}%) — "
+                                f"cleaned between updates: {_cmsg}")
+                except Exception as _ce:
+                    results.append(f"🧹 cleanup attempt failed: {_ce}")
                 if self.notifier:
                     self.notifier.send_update_result(u["name"], u["image"], success, msg,
                                                      source_url=u.get("source_url", ""))
