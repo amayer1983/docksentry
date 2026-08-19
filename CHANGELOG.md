@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.5] - 2026-08-19
+
+### Changed
+- **`/check` answers per host, as each one finishes (#2, @famewolf).** His observation after the first real multi-host run: *"You currently wait until it's checked all hosts before responding."* Half true, measured: a host **with** updates already answered the moment it finished — but a host that was up to date said nothing until every host was done, so the first feedback sat on the slowest machine's SSH round-trip. Every host now produces exactly one thing when it completes: its updates, its `✅ everything up to date`, or its failure. No aggregate line repeats what each host already said. A single-host install keeps its original messages untouched, byte for byte.
+
+  Discord's `/check` keeps its single collected reply — an interaction is one editable answer, and that is a property of the transport, not a drift.
+
 ## [2.18.0-beta.4] - 2026-08-19
 
 ### Fixed

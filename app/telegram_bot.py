@@ -1101,7 +1101,19 @@ class TelegramBot:
             if updates:
                 found = True
                 self.notify_updates(updates)
-        if not found:
+            elif self._multi():
+                # Say so NOW, per host, not at the end (#2, @famewolf):
+                # "You currently wait until it's checked all hosts before
+                # responding." A host with updates already answers the
+                # moment it finishes; a host that is up to date was
+                # silent until the slowest machine's SSH round-trip was
+                # done — so the first feedback sat on the slowest
+                # machine's clock. One line per finished host is the
+                # progress indicator; a single-host install keeps its
+                # original single summary untouched.
+                self.send_message(self.t("host_check_uptodate",
+                                         host=getattr(host, "name", "local")))
+        if not found and not self._multi():
             self.notify_no_updates()
         # Docksentry-selfupdate hint (#2, @famewolf): the regular
         # `check_all` filters us out (get_running_containers → "Skipped

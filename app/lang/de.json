@@ -852,5 +852,6 @@
   "startup_killed_stopping": "⚠️ _Der vorige Lauf wurde abgeschossen, bevor er fertig heruntergefahren war — `docker stop` hat die Geduld verloren und SIGKILL geschickt (Exit 137). Verloren gehen sollte nichts, jede Datei wird atomar geschrieben, aber ein größeres `DOCKER_STOP_TIMEOUT` gibt Webserver, Scheduler und Discord-Verbindung die Zeit, wirklich anzuhalten._",
   "web_label_card_title": "Bezeichnung dieser Instanz",
   "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht.",
-  "audit_section_dropped": "*Bewusst übersprungen* — an diesem Container gesetzt, uns bekannt, und beim Neuerstellen nicht übernommen:"
+  "audit_section_dropped": "*Bewusst übersprungen* — an diesem Container gesetzt, uns bekannt, und beim Neuerstellen nicht übernommen:",
+  "host_check_uptodate": "✅ `{host}`: alles aktuell"
 }
