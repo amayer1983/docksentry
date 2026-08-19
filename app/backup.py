@@ -88,6 +88,13 @@ def build(config, store, version, when=None):
         "notes": {},
         "links": {},
         "update_windows": {},
+        # The hosts this bundle speaks for. Restore uses it as the
+        # boundary of what the bundle may overwrite: state for a host
+        # the bundle never saw is kept, not wiped (#2 — a single-host
+        # bundle imported into famewolf's multi-host instance used to
+        # silently erase every dock8520/ entry). Older bundles lack the
+        # field; restore infers it from the keys instead.
+        "hosts": [],
     }
     # Settings come off disk rather than off the live config: the file
     # holds what was actually saved, while the object also carries every
@@ -100,6 +107,10 @@ def build(config, store, version, when=None):
                 bundle["settings"] = json.load(f)
         except (IOError, ValueError):
             pass
+    from container_store import LOCAL_HOST
+    bundle["hosts"] = [LOCAL_HOST] + [
+        h.get("name") for h in (getattr(config, "docker_hosts", None) or [])
+        if isinstance(h, dict) and h.get("name")]
     bundle["pinned"] = store.get_pinned()
     bundle["autoupdate"] = store.get_autoupdate()
     bundle["ask_major"] = store.get_ask_before_major()
@@ -248,6 +259,39 @@ def write_local_if_stale(config, store, version, max_age_hours=12,
     return write_local(config, store, version, keep=keep, when=when)
 
 
+def bundle_hosts(bundle):
+    """The hosts a bundle speaks for, lowercased, always including local.
+
+    Newer bundles carry a `hosts` list. Older ones are inferred from
+    their keys: a plain `nginx` is local, a `dock8520/nginx` names its
+    host. The inference errs in the safe direction — a host the bundle
+    managed but had no entries for is treated as not covered, so a
+    restore keeps that host's current state instead of clearing it.
+    Staleness is recoverable; a wipe is not.
+    """
+    from container_store import split_host_key, LOCAL_HOST
+    declared = bundle.get("hosts")
+    if isinstance(declared, list) and declared:
+        return {str(h).strip().lower() for h in declared
+                if isinstance(h, str) and h.strip()} | {LOCAL_HOST}
+    hosts = {LOCAL_HOST}
+    for section in ("pinned", "autoupdate", "ask_major"):
+        for key in bundle.get(section) or []:
+            if isinstance(key, str):
+                hosts.add(split_host_key(key)[0])
+    for section in ("notes", "links", "update_windows"):
+        entries = bundle.get(section)
+        if isinstance(entries, dict):
+            for key in entries:
+                hosts.add(split_host_key(str(key))[0])
+    for group in (bundle.get("groups") or {}).values():
+        if isinstance(group, dict):
+            for key in group.get("containers") or []:
+                if isinstance(key, str):
+                    hosts.add(split_host_key(key)[0])
+    return hosts
+
+
 def restore(bundle, config, store, persistent_keys):
     """Apply a backup bundle. Returns (restored, errors, dropped_links).
 
@@ -268,6 +312,35 @@ def restore(bundle, config, store, persistent_keys):
     restored = []
     errors = []
     dropped_links = 0   # links rejected by is_safe_link (#52)
+
+    # The boundary of the overwrite (#2): a bundle replaces state only
+    # for hosts it speaks for. Everything the current instance knows
+    # about OTHER hosts is carried over untouched — famewolf restoring
+    # a bundle from before his multi-host setup must not lose every
+    # dock8520/ pin, group and note to it. Kept entries are counted and
+    # said, because a restore that silently decides what survives is
+    # only one step better than one that silently wipes.
+    from container_store import split_host_key
+    covered = bundle_hosts(bundle)
+    kept = {}   # host -> how many current entries were preserved
+
+    def _keep_list(bundle_items, current):
+        merged = list(bundle_items)
+        for key in current or []:
+            host = split_host_key(str(key))[0]
+            if host not in covered and key not in merged:
+                merged.append(key)
+                kept[host] = kept.get(host, 0) + 1
+        return merged
+
+    def _keep_dict(bundle_items, current):
+        merged = dict(bundle_items)
+        for key, value in (current or {}).items():
+            host = split_host_key(str(key))[0]
+            if host not in covered and key not in merged:
+                merged[key] = value
+                kept[host] = kept.get(host, 0) + 1
+        return merged
     # Settings — apply via the PERSISTENT_KEYS allowlist so
     # we don't accept arbitrary attribute injection.
     if isinstance(bundle.get("settings"), dict):
@@ -281,26 +354,47 @@ def restore(bundle, config, store, persistent_keys):
             errors.append(f"settings: {str(e)[:100]}")
     # Lists — pinned, autoupdate, ask_major
     if isinstance(bundle.get("pinned"), list):
-        store.save_pinned([str(x) for x in bundle["pinned"] if isinstance(x, str)])
+        store.save_pinned(_keep_list(
+            [str(x) for x in bundle["pinned"] if isinstance(x, str)],
+            store.get_pinned()))
         restored.append("pinned")
     if isinstance(bundle.get("autoupdate"), list):
-        store.save_autoupdate([str(x) for x in bundle["autoupdate"] if isinstance(x, str)])
+        store.save_autoupdate(_keep_list(
+            [str(x) for x in bundle["autoupdate"] if isinstance(x, str)],
+            store.get_autoupdate()))
         restored.append("autoupdate")
     if isinstance(bundle.get("ask_major"), list):
         # No public save_ask_before_major — write through
         # the same _save the toggle uses. Coerce to str just
         # to be paranoid about malformed bundles.
-        store._save(store.ask_before_major_file,
-                    [str(x) for x in bundle["ask_major"] if isinstance(x, str)])
+        store._save(store.ask_before_major_file, _keep_list(
+            [str(x) for x in bundle["ask_major"] if isinstance(x, str)],
+            store.get_ask_before_major()))
         restored.append("ask_major")
     # Dicts — groups, notes, links, update_windows. Just
     # write them through the existing _save_dict so the
     # atomic-write path applies.
     if isinstance(bundle.get("groups"), dict):
-        store._save_dict(store.groups_file, bundle["groups"])
+        # Groups are keyed by id, not by host — a current group survives
+        # when the bundle does not have its id AND every container in it
+        # lives on an uncovered host. A group the bundle knows, or one
+        # that mixes covered containers in, is the bundle's to define.
+        merged_groups = dict(bundle["groups"])
+        for gid, group in (store.get_groups() or {}).items():
+            if gid in merged_groups or not isinstance(group, dict):
+                continue
+            members = [str(c) for c in (group.get("containers") or [])]
+            if members and all(split_host_key(c)[0] not in covered
+                               for c in members):
+                merged_groups[gid] = group
+                for c in members:
+                    kept[split_host_key(c)[0]] = (
+                        kept.get(split_host_key(c)[0], 0) + 1)
+        store._save_dict(store.groups_file, merged_groups)
         restored.append("groups")
     if isinstance(bundle.get("notes"), dict):
-        store._save_dict(store.notes_file, bundle["notes"])
+        store._save_dict(store.notes_file,
+                         _keep_dict(bundle["notes"], store.get_notes()))
         restored.append("notes")
     if isinstance(bundle.get("links"), dict):
         # Links are the one section that gets rendered as an
@@ -327,7 +421,8 @@ def restore(bundle, config, store, persistent_keys):
                 clean_links[k] = v.strip()
             else:
                 dropped_links += 1
-        store._save_dict(store.links_file, clean_links)
+        store._save_dict(store.links_file,
+                         _keep_dict(clean_links, store.get_links()))
         # The import toast prints `restored` verbatim, so the
         # count has to travel inside it to be seen at all.
         restored.append("links" if not dropped_links
@@ -337,6 +432,28 @@ def restore(bundle, config, store, persistent_keys):
                 f"links: {dropped_links} entry/entries rejected by the "
                 f"URL validator (not http/https, or unsafe characters)")
     if isinstance(bundle.get("update_windows"), dict):
-        store._save_dict(store.update_windows_file, bundle["update_windows"])
+        store._save_dict(store.update_windows_file, _keep_dict(
+            bundle["update_windows"], store.get_update_windows()))
         restored.append("update_windows")
+
+    if kept:
+        total = sum(kept.values())
+        hosts_txt = ", ".join(sorted(kept))
+        restored.append(f"kept {total} current entr"
+                        f"{'y' if total == 1 else 'ies'} for "
+                        f"{hosts_txt} (not covered by this bundle)")
+    # Hosts the bundle speaks for that this instance does not manage —
+    # a multi-host bundle imported into a smaller install. Restored as
+    # data (they take effect if the host is added), said as a warning.
+    from container_store import LOCAL_HOST
+    managed = {LOCAL_HOST} | {
+        str(h.get("name", "")).strip().lower()
+        for h in (getattr(config, "docker_hosts", None) or [])
+        if isinstance(h, dict)}
+    foreign = sorted(h for h in covered - managed if h)
+    if foreign:
+        errors.append(
+            f"bundle carries entries for host(s) this instance does not "
+            f"manage: {', '.join(foreign)} — restored anyway; they take "
+            f"effect if the host is added to DOCKER_HOSTS")
     return restored, errors, dropped_links

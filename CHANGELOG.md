@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.7] - 2026-08-19
+
+### Fixed
+- **A restore no longer wipes the hosts a backup never knew about (#2).** `restore()` replaced every list and dictionary wholesale, so importing a bundle taken from a single-host install — or from before a second host existed — into a multi-host instance silently erased every `dock8520/` pin, note, group and update window in it. Nothing said so; the toast reported success.
+
+  The rule now: **a bundle replaces state only for the hosts it speaks for, and state for hosts it never saw is kept.** New bundles record the hosts they were taken from; older ones are inferred from their keys, and the inference errs toward keeping — being stale is recoverable, being wiped is not. What survived is counted and named in the result (`kept 4 current entries for dock8520 (not covered by this bundle)`), because a restore that quietly decides what lives is only one step better than one that quietly wipes.
+
+  The mirror case is reported too: a bundle carrying entries for a host this instance does not manage restores them anyway — they take effect if the host is later added — with a warning saying which host and why nothing appears yet.
+
 ## [2.18.0-beta.6] - 2026-08-19
 
 ### Added

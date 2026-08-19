@@ -235,6 +235,18 @@ class Store:
     def _save(self, f, v): self.saved[f] = v
     def _save_dict(self, f, v): self.saved[f] = v
 
+    # Restore reads the current state before writing, so it can keep
+    # entries for hosts a bundle never spoke for (#2). An empty store
+    # is the honest fixture for "fresh instance" — and mirroring the
+    # real signatures is what this file's fakes exist to do.
+    def get_pinned(self): return []
+    def get_autoupdate(self): return []
+    def get_ask_before_major(self): return []
+    def get_groups(self): return {}
+    def get_notes(self): return {}
+    def get_links(self): return {}
+    def get_update_windows(self): return {}
+
 
 b = bot()
 b.store = Store()
