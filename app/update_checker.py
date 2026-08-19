@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 # The container CLI seam. Module-level so the @staticmethod/@classmethod
 # helpers (which have no self) can reach the shared backend too.
 import container_backend as _cb
+from errfmt import clip
 
 
 #: The names Docker Hub answers to. `docker login` writes the legacy v1
@@ -4369,7 +4370,15 @@ class UpdateChecker:
             inspect_raw = self.backend.run(
                 ["inspect", name])
             if inspect_raw.returncode != 0:
-                return True, "Image pulled. Container inspect failed."
+                # NOT a success. The image is on disk but the container
+                # was never touched — it still runs the old version, and
+                # calling that ✅ is how @famewolf read "pulled" as
+                # "updated" while dockmox pulled images for containers
+                # that live on another machine entirely (#2). The pull
+                # is reported as what it is: half the job, stopped.
+                return False, (f"Image pulled, but `{name}` could not be "
+                               f"inspected — container NOT updated: "
+                               f"{clip(getattr(inspect_raw, 'stderr', '') or 'no details')}")
 
             config = json.loads(inspect_raw.stdout)[0]
             self._debug(f"  Recreating container: {name}")

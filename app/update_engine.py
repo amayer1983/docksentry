@@ -474,6 +474,44 @@ class UpdateEngine:
 
         _host_of = entry_host
         _stores = {}
+        _checkers = {}
+
+        def _checker_of(u):
+            """The checker whose backend actually reaches this entry's host.
+
+            The batch used to run EVERY entry through the one checker its
+            caller passed. The scheduled path passes the right one per
+            host, but the manual paths — "Update all", /updates — hand
+            over the LOCAL checker with a mixed list. For an @dock8520
+            entry that meant: the remote-compose guard read
+            `backend.name`, saw "local", stood down — and `docker compose`
+            ran the local copy of the file against the LOCAL daemon.
+            @famewolf's dockmox pulled dock8520's 2.4 GB CUDA images onto
+            its own disk until it was full (#2); his local /cleanup then
+            reclaimed 14 GB of images that were never meant to be there.
+
+            Falls back to the caller's checker for the local host and for
+            anything the registry cannot resolve — never to silently
+            acting on the wrong machine.
+            """
+            h = _host_of(u)
+            if h in (None, "", LOCAL_HOST):
+                return checker
+            if h not in _checkers:
+                resolved = None
+                for host in (self.hosts or ()):
+                    if getattr(host, "name", None) == h:
+                        resolved = getattr(host, "checker", None)
+                        break
+                _checkers[h] = resolved
+            # None means the registry does not know this host — the
+            # caller decides whether to refuse. Returning the fallback
+            # here would blur "resolved to the same checker the caller
+            # passed" (the scheduled per-host path, correct) with
+            # "nobody knows this host" (refuse) — the first version of
+            # this did exactly that, and the wiring test caught the
+            # scheduled path refusing everything it was asked to do.
+            return _checkers[h]
 
         def _store_of(u):
             h = _host_of(u)
@@ -579,7 +617,19 @@ class UpdateEngine:
 
             try:
                 compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                success, msg = checker.update_container(
+                u_checker = _checker_of(u)
+                if u_checker is None:
+                    # A remote entry whose host the registry no longer
+                    # knows. Acting on it with the local checker is how
+                    # dockmox filled its disk with dock8520's images —
+                    # refusing is the only honest move left.
+                    results.append(
+                        f"❌ {self._display_name(u)}: host "
+                        f"`{_host_of(u)}` is not managed any more — "
+                        f"skipped rather than acting on the wrong machine")
+                    prev_group = abort_key
+                    continue
+                success, msg = u_checker.update_container(
                     u["name"], u["image"],
                     netns_name=u.get("netns_name"), **compose_kwargs)
                 status = "✅" if success else "❌"

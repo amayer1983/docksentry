@@ -4303,16 +4303,29 @@ class TelegramBot:
                                               until=until.strftime("%H:%M")))
 
         elif text == "/cleanup":
+            # Every managed host, not just this one. @famewolf ran it
+            # while dockmox was drowning in wrongly-pulled images and it
+            # answered for one machine out of three — "the cleanup is
+            # only running locally?" (#2). Same host walk as /check;
+            # one unreachable box reports and does not stop the rest.
             self.send_message(self.t("cleanup_starting"))
-            ok, msg = self.cleanup_guarded(checker)
-            if ok is None:
-                self.send_message(msg)
-            elif ok and "Nothing" in msg:
-                self.send_message(self.t("cleanup_none"))
-            elif ok:
-                self.send_message(f"✅ {msg}")
-            else:
-                self.send_message(f"❌ {msg}")
+            from hosts import host_checkers
+            for host_checker, host_name in host_checkers(self.hosts,
+                                                         checker):
+                tag = f" @{host_name}" if host_name else ""
+                try:
+                    ok, msg = self.cleanup_guarded(host_checker)
+                except Exception as e:
+                    self.send_message(f"❌{tag} {clip(e)}")
+                    continue
+                if ok is None:
+                    self.send_message(msg + tag)
+                elif ok and "Nothing" in msg:
+                    self.send_message(self.t("cleanup_none") + tag)
+                elif ok:
+                    self.send_message(f"✅{tag} {msg}")
+                else:
+                    self.send_message(f"❌{tag} {msg}")
 
         elif text == "/checkimages":
             # Dry-run counterpart to /cleanup — how much would `/cleanup`

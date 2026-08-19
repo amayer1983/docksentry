@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.4] - 2026-08-19
+
+### Fixed
+- **A manual multi-host update batch now runs every container on the host it belongs to (#2, @famewolf).** His first real remote update ended with dockmox's disk full. The batch takes one checker for the whole list; the scheduled path passes the right one per host, but the manual paths — "Update all", `/updates` — handed over the *local* checker with a mixed list. For an `@dock8520` entry that meant: the remote-compose guard read `backend.name`, saw "local", stood down — it guards the right thing, but it was never asked — and `docker compose` ran dockmox's copy of the compose file against the *local* daemon. dock8520's 2.4 GB CUDA images were pulled onto dockmox until the disk was full; his local `/cleanup` afterwards reclaimed 14 GB of images that were never meant to be there.
+
+  Reproduced end to end against a dind "remote host" before the fix — producing his error byte for byte — and again after: the container is recreated on the remote host, nothing appears locally. Every batch entry now resolves its own host's checker; an entry whose host the registry no longer knows is refused with its name, never run on the wrong machine.
+
+- **"✅ Image pulled. Container inspect failed." is a ❌ now.** The image is on disk but the container was never touched — it still runs the old version, and a success mark there is how "pulled" gets read as "updated". It reports as a failure, saying plainly that the container was NOT updated, with the actual error attached.
+
+- **`/cleanup` walks every managed host (#2, @famewolf).** He ran it while dockmox was drowning and it answered for one machine out of three — "the cleanup is only running locally?" Same host walk as `/check` now, each answer tagged with its host, one unreachable box reported without stopping the rest.
+
 ## [2.18.0-beta.3] - 2026-08-18
 
 ### Added
