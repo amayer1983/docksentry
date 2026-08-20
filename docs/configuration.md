@@ -94,6 +94,7 @@ Crash alerts, health flips, and the weekly report.
 | `MONITOR` ⚙ | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
 | `MONITOR_EVENTS` ⚙ | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
 | `MONITOR_INTERVAL` ⚙ | `60` | Seconds between monitoring passes (min 15) |
+| `MONITOR_MASS_STOP` ⚙ | `true` | When a whole host's containers stop in one pass (a reboot, `docker restart`, or daemon restart), send one digest message plus a log file instead of one crash alert per container. A single container crashing still alerts on its own. |
 | `WEEKLY_REPORT_ENABLED` ⚙ | `false` | Send a once-a-week summary report to all configured channels |
 | `WEEKLY_REPORT_HOUR` ⚙ | `9` | Hour of day for the report (0-23, local time) |
 | `WEEKLY_REPORT_WEEKDAY` ⚙ | `0` | Day of week for the report (0=Mon, 6=Sun) |
