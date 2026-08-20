@@ -441,45 +441,62 @@ class TelegramBot:
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
         return text
 
-    def _parse_changelog_entries(self, text, after_version):
-        """Parse CHANGELOG.md, return entries with version > after_version
-        as list of (version, date, body) tuples in newest-first order."""
+    #: A `## [x.y.z]` or `## [x.y.z-beta.N]` changelog heading with its date.
+    #: The prerelease suffix used to be left out of the pattern, so a beta
+    #: heading matched NOTHING — and the version parse below hit a
+    #: ValueError on "0-beta", fell back to (0,0,0), and reported every one
+    #: of the 206 historical stable entries as "newer than 2.18.0-beta.12",
+    #: v2.17.0 among them. Both are fixed here (#63, owner-reported).
+    _CHANGELOG_HEADING = (
+        r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\] - (\d{4}-\d{2}-\d{2})$")
+
+    @staticmethod
+    def _version_key(vstr):
+        """A comparable key for '2.18.0' or '2.18.0-beta.12'.
+
+        A final release ranks ABOVE its own prereleases and both rank above
+        the previous version: 2.18.0 > 2.18.0-beta.12 > 2.18.0-beta.1 >
+        2.17.0. The fourth field is 1 for a final release and 0 for a
+        prerelease, so a beta sorts just below the release it leads up to.
+        """
         import re
-        pat = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\] - (\d{4}-\d{2}-\d{2})$", re.MULTILINE)
-        entries = []
+        m = re.match(r"(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z]+\.?(\d+))?",
+                     (vstr or "").strip())
+        if not m:
+            return (0, 0, 0, 0, 0)
+        base = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if m.group(4) is None:
+            return base + (1, 0)                 # final release
+        return base + (0, int(m.group(4)))       # prerelease N
+
+    def _parse_changelog_entries(self, text, after_version):
+        """Parse CHANGELOG.md, return entries newer than `after_version` as
+        (version, date, body) tuples, newest first."""
+        import re
+        pat = re.compile(self._CHANGELOG_HEADING, re.MULTILINE)
         matches = list(pat.finditer(text))
+        entries = []
         for i, m in enumerate(matches):
-            major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            date = m.group(4)
             start = m.end()
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            body = text[start:end].strip()
-            entries.append(((major, minor, patch), date, body))
-        # Filter newer than current
-        try:
-            cur = tuple(int(x) for x in after_version.split(".")[:3])
-        except ValueError:
-            cur = (0, 0, 0)
-        newer = [(f"{v[0]}.{v[1]}.{v[2]}", d, b) for v, d, b in entries if v > cur]
-        return newer
+            entries.append((m.group(1), m.group(2), text[start:end].strip()))
+        cur = self._version_key(after_version)
+        return [(v, d, b) for v, d, b in entries
+                if self._version_key(v) > cur]
 
     def _changelog_entry_for(self, text, version):
         """Return (version, date, body) for the exact `version` in the
         CHANGELOG, or None. Lets `/changelog` show what the version you're
         *already* on brought, when nothing newer exists (#2, @famewolf)."""
         import re
-        try:
-            want = tuple(int(x) for x in version.split(".")[:3])
-        except ValueError:
-            return None
-        pat = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\] - (\d{4}-\d{2}-\d{2})$", re.MULTILINE)
+        want = (version or "").strip()
+        pat = re.compile(self._CHANGELOG_HEADING, re.MULTILINE)
         matches = list(pat.finditer(text))
         for i, m in enumerate(matches):
-            v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            if v == want:
+            if m.group(1) == want:
                 start = m.end()
                 end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-                return (f"{v[0]}.{v[1]}.{v[2]}", m.group(4), text[start:end].strip())
+                return (m.group(1), m.group(2), text[start:end].strip())
         return None
 
     def _probe_migration_once(self):

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.13] - 2026-08-20
+
+### Fixed
+- **`/changelog` compares versions correctly on a beta (#63).** Run on `2.18.0-beta.12` it reported "206 new versions", v2.17.0 — an older release — among them. The heading pattern matched only `## [x.y.z]`, so every `-beta.N` entry was invisible; and parsing the running version as three integers threw on "0-beta", fell back to (0,0,0), and made all 206 historical stable entries look newer. Both are replaced by one comparable key that understands prereleases: a final release ranks above its own betas, and both above the previous version.
+
 ## [2.18.0-beta.12] - 2026-08-20
 
 ### Added
