@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.9] - 2026-08-20
+
+### Fixed
+- **A host going down is one message now, not one per container (#63, @famewolf).** He rebooted a monitored host (planned, from Proxmox) and ran `systemctl restart docker` on another; each time the monitoring host sent one 💥 crash alert — with a full log dump — for *every* container that stopped. A dozen messages for one shutdown, which he called, fairly, unsustainable. Deaths in a single monitor tick are coalesced: up to three stay individual, full-detail alerts (two unrelated crashes in a minute are two incidents), but above that it is a host going away, not that many incidents — so **one** digest (`host X appears to have gone down — N of M stopped`) plus **one file** carrying every container's log tail. The logs go in the file because a dozen inline dumps *is* the flood being removed, and they are captured at detection, since a host that stays down can no longer be asked (the same reason the writable layer is measured before a recreate). A single container crashing still alerts on its own with its logs inline — the fix must never hide a real problem. The wording is honest about scale: only a majority of the host going at once reads as "the host went down"; a smaller cluster reads as "N stopped at once". The event log keeps every death individually — only the notification collapses. Reproduced end to end against a throwaway remote host before shipping. Behind `MONITOR_MASS_STOP` (default on).
+
+### Changed
+- **`/logs` and `/audit` reach every host now (#2, @famewolf).** Completing the command pass he asked for: both resolved the container on the *local* daemon only, so a container on a remote host came back "not found" — while their Discord twins were host-aware all along. Both take the same `@host` sweep as `/status` now, and a coverage test holds every container-touching command to it so the gap cannot reopen unnoticed.
+
 ## [2.18.0-beta.8] - 2026-08-19
 
 ### Changed

@@ -113,6 +113,7 @@ PERSISTENT_KEYS = [
     "healthcheck_max_starting",
     "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
+    "monitor_mass_stop_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
     "api_tokens",
@@ -186,6 +187,7 @@ PERSISTENT_ENV_VARS = {
     "monitor_enabled": "MONITOR",
     "monitor_interval_seconds": "MONITOR_INTERVAL",
     "monitor_events_enabled": "MONITOR_EVENTS",
+    "monitor_mass_stop_enabled": "MONITOR_MASS_STOP",
     "smtp_tls_verify": "SMTP_TLS_VERIFY",
     "monitor_only_containers": "MONITOR_ONLY_CONTAINERS",
     "insecure_registries": "INSECURE_REGISTRIES",
@@ -275,6 +277,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "monitor_enabled": True,
     "monitor_interval_seconds": 60,
     "monitor_events_enabled": True,
+    "monitor_mass_stop_enabled": True,
     "smtp_tls_verify": True,
     "monitor_only_containers": [],
     "insecure_registries": [],
@@ -334,6 +337,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "web_setup_done", "ui_mode", "status_view", "language", "debug",
     "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
+    "monitor_mass_stop_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
     "registry_mirrors", "min_image_age_days",
     "channel_discord_enabled",
@@ -385,6 +389,7 @@ PERSISTENT_SETTINGS_TAB = {
     "weekly_report_hour": "Notifications",
     "monitor_enabled": "Notifications",
     "monitor_events_enabled": "Notifications",
+    "monitor_mass_stop_enabled": "Notifications",
     "monitor_interval_seconds": "Notifications",
     "telegram_topic_id": "Connections",
     "telegram_allowed_users": "Connections",
@@ -448,7 +453,8 @@ class Config:
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
                  monitor_enabled=True, monitor_interval_seconds=60,
-                 monitor_events_enabled=True, smtp_tls_verify=True,
+                 monitor_events_enabled=True, monitor_mass_stop_enabled=True,
+                 smtp_tls_verify=True,
                  monitor_only_containers=None, insecure_registries=None,
                  registry_mirrors=None, min_image_age_days=0,
                  api_tokens=None,
@@ -635,6 +641,7 @@ class Config:
         # non-zero exits, OOM kills, crash-restarts. Interval floored at 15s.
         self.monitor_enabled = monitor_enabled
         self.monitor_events_enabled = monitor_events_enabled
+        self.monitor_mass_stop_enabled = monitor_mass_stop_enabled
         self.smtp_tls_verify = smtp_tls_verify
         self.monitor_only_containers = monitor_only_containers or []
         self.insecure_registries = insecure_registries or []
@@ -1299,6 +1306,7 @@ class Config:
             discord_public_replies=_env("DISCORD_PUBLIC_REPLIES", "false").lower() in ("true", "1", "yes"),
             monitor_enabled=_env("MONITOR", "true").lower() in ("true", "1", "yes"),
             monitor_events_enabled=_env("MONITOR_EVENTS", "true").lower() in ("true", "1", "yes"),
+            monitor_mass_stop_enabled=_env("MONITOR_MASS_STOP", "true").lower() in ("true", "1", "yes"),
             smtp_tls_verify=_env("SMTP_TLS_VERIFY", "true").lower() in ("true", "1", "yes"),
             monitor_only_containers=[x.strip() for x in _env("MONITOR_ONLY_CONTAINERS", "").split(",") if x.strip()],
             insecure_registries=[x.strip() for x in _env("INSECURE_REGISTRIES", "").split(",") if x.strip()],

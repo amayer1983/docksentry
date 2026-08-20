@@ -71,8 +71,23 @@ def _clock(iso):
 
 
 
+#: The event kinds that mean "a container stopped or crashed" — the ones a
+#: host reboot / `docker restart` fires all at once, and therefore the ones
+#: the mass-stop digest coalesces. Health flips are not here: a container
+#: turning unhealthy is its own event and stays individual.
+_DEATH_KINDS = ("exited", "oom", "crash_restart")
+
+
 class ContainerMonitor:
     COOLDOWN_SECONDS = 1800
+
+    #: Up to this many deaths in a single tick stay individual, full-detail
+    #: alerts (log tail inline). Above it, a host reboot or daemon restart is
+    #: the likely cause, not that many separate incidents — so they collapse
+    #: to one host digest plus a log file (#63, @famewolf: a dozen crash
+    #: dumps for one planned shutdown was "unsustainable"). Three is where a
+    #: readable stack of alerts becomes a wall.
+    MASS_STOP_INLINE_MAX = 3
 
     def __init__(self, config, checker, bot, backend=None, host_name=""):
         self.config = config
@@ -414,6 +429,11 @@ class ContainerMonitor:
             if self._monitored(name, cur.get(name) or {})
         ]
         events = [self._with_real_exit_code(e) for e in events]
+        # The host's running count BEFORE this tick's snapshot replaces it —
+        # the denominator for "12 of 12 stopped". Read here, because the very
+        # next lines overwrite `self._prev`.
+        prev_running = sum(1 for i in self._prev.values()
+                           if i.get("status") == "running")
         # `_prev` becomes `cur` here, so by the time _notify runs it is no
         # longer "previous" at all. Naming it separately rather than
         # relying on that: a reader who sees `self._prev` in _notify and
@@ -432,10 +452,60 @@ class ContainerMonitor:
         # picture. Cleared here rather than kept, so the next tick measures
         # afresh instead of reporting a stale snapshot.
         self._snap_cache = None
-        for kind, name, detail in events:
+
+        # Deaths are coalesced; health flips are not (a container turning
+        # unhealthy is its own event). One host reboot or `docker restart`
+        # stops every container at once — the old loop sent one alert, with
+        # a full log dump, for EACH, and that flood is what drove @famewolf
+        # off multi-host (#63). Up to MASS_STOP_INLINE_MAX deaths in a tick
+        # stay individual, full-detail alerts (two unrelated crashes in a
+        # minute are two real incidents); above it they are one host digest
+        # plus a log file, because that many at once is a host going away,
+        # not that many separate incidents.
+        deaths = [(k, n, d) for k, n, d in events if k in _DEATH_KINDS]
+        others = [(k, n, d) for k, n, d in events if k not in _DEATH_KINDS]
+
+        # Per-(name,kind) cooldown still gates every death, so a container
+        # crash-looping tick after tick is not re-reported every 60 s.
+        fresh = []
+        for k, n, d in deaths:
+            if now_ts - self._last_sent.get((n, k), 0) < self.COOLDOWN_SECONDS:
+                continue
+            fresh.append((k, n, d))
+
+        mass = (getattr(self.config, "monitor_mass_stop_enabled", True)
+                and len(fresh) > self.MASS_STOP_INLINE_MAX)
+        if fresh and mass:
+            # The audit trail keeps every death individually — the digest
+            # collapses the NOTIFICATION, never the record.
+            for k, n, d in fresh:
+                self._record(k, self._label(n), d, self._resources_for(k, n))
+            self._record("mass_stop",
+                         getattr(self, "host_name", "") or "local",
+                         {"count": len(fresh), "total": prev_running}, {})
+            hkey = ("__host__", "mass_stop")
+            if now_ts - self._last_sent.get(hkey, 0) >= self.COOLDOWN_SECONDS:
+                self._last_sent[hkey] = now_ts
+                self._notify_mass_stop(fresh, prev_running)
+            # A split reboot's second wave is recorded above but the host
+            # cooldown holds back a duplicate host message. The per-container
+            # cooldown is deliberately NOT stamped here: a container that
+            # genuinely crashes minutes after the host settles must still
+            # alert on its own.
+            sent.extend(fresh)
+        else:
+            # Single crash or a small burst: unchanged behaviour — each one
+            # its own full-detail alert with its log tail inline.
+            for kind, name, detail in fresh:
+                self._last_sent[(name, kind)] = now_ts
+                resources = self._resources_for(kind, name)
+                self._record(kind, self._label(name), detail, resources)
+                self._notify(kind, name, detail, resources)
+                sent.append((kind, name, detail))
+
+        for kind, name, detail in others:
             key = (name, kind)
-            last = self._last_sent.get(key, 0)
-            if now_ts - last < self.COOLDOWN_SECONDS:
+            if now_ts - self._last_sent.get(key, 0) < self.COOLDOWN_SECONDS:
                 continue
             self._last_sent[key] = now_ts
             # Gathered once, before the write, and handed to both. It used
@@ -818,6 +888,76 @@ class ContainerMonitor:
             if row_name == short:
                 return f"{used} · {cpu:.0f}%"
         return ""
+
+    def _notify_mass_stop(self, deaths, prev_running):
+        """One message for a whole host's worth of deaths in a tick, plus a
+        log file carrying every container's tail.
+
+        Why a file and not inline text: a host reboot stops a dozen
+        containers, and a dozen inline log dumps is exactly the flood being
+        removed (#63). The file keeps every line — more of them than the
+        inline alert ever showed — and it is captured NOW, at detection,
+        because a host that stays down can no longer be asked. Same reason
+        the writable layer is measured before the recreate: once the thing
+        is gone, so is its evidence. Best-effort: a container whose logs we
+        cannot fetch is named in the file as unavailable rather than
+        silently dropped.
+        """
+        t = self.bot.t
+        host = getattr(self, "host_name", "") or "local"
+        n = len(deaths)
+        names = [self._label(nm).split("/")[-1] for _, nm, _ in deaths]
+        # Honest about scale: a majority of the host going at once reads as
+        # the host itself; a handful reads as a cluster, and claiming "the
+        # host went down" over five of fifty would be a fabrication.
+        if prev_running and n >= 0.5 * prev_running:
+            head = t("monitor_mass_host_down", host=host, count=n,
+                     total=prev_running)
+        else:
+            head = t("monitor_mass_cluster", host=host, count=n)
+        msg = head + "\n" + ", ".join(names[:30]) + "\n" \
+            + t("monitor_mass_footer")
+        try:
+            self.bot.send_message(msg, auto=True)
+        except Exception as e:
+            print(f"Monitor mass notify error: {e}")
+        notifier = getattr(self.bot, "notifier", None)
+        if notifier and getattr(notifier, "has_channels", lambda: False)():
+            try:
+                notifier.send_message(msg)
+            except Exception as e:
+                print(f"Monitor mass notifier error: {e}")
+        # The log file — best-effort, only where the front end takes one.
+        try:
+            body = self._mass_log_file(deaths)
+            send_doc = getattr(self.bot, "send_document", None)
+            if body and send_doc:
+                from datetime import datetime
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                fname = f"{host}-logs-{stamp}.txt".replace("/", "_")
+                send_doc(fname, body.encode("utf-8"),
+                         t("monitor_mass_file_caption", host=host))
+        except Exception as e:
+            print(f"Monitor mass log-file error: {e}")
+        print(f"Monitor: {msg}")
+
+    def _mass_log_file(self, deaths):
+        """Every stopped container's log tail, one section each, as the text
+        of a single attachment. The tails are longer than the inline alert's
+        ten lines — a file has room the chat message never did."""
+        out = []
+        for kind, name, detail in deaths:
+            code = detail.get("code", "?")
+            out.append(f"===== {self._label(name)} (exit {code}) =====")
+            try:
+                tail = self.checker._tail_logs(name, lines=40)
+            except Exception:
+                tail = ""
+            out.append(tail.strip() if tail.strip()
+                       else "(logs unavailable — host unreachable, or the "
+                            "container is gone)")
+            out.append("")
+        return "\n".join(out)
 
     def _notify(self, kind, name, detail, resources=None):
         t = self.bot.t
