@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.11] - 2026-08-20
+
+### Fixed
+- **With debug on, `/check` no longer floods the chat with the registry trace (#63).** The debug build sent `check_all`'s entire HTTP trace to Telegram in code blocks — on every check, for every container. On an instance with debug left on and 21 containers, a routine `/check` came back as pages of code blocks. The trace is only ever useful for diagnosing *why a specific container's check failed*, so it now fires only when a check actually failed — a local-only image with no registry is a clean skip, not a failure, so an ordinary check is silent. The full trace is still in the console (`docker logs`) and the Web UI Logs page either way, so nothing is lost.
+
 ## [2.18.0-beta.10] - 2026-08-20
 
 ### Fixed

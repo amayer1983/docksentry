@@ -3039,8 +3039,18 @@ class UpdateChecker:
             atomic_write_json(self.config.pending_file, merged)
         self._debug(f"Found {len(updates)} updates.")
 
-        # Send debug log via Telegram
-        if self.config.debug and bot and self.debug_log:
+        # Send the debug trace to Telegram ONLY when a check actually
+        # failed (#63). With debug on, dumping the full registry HTTP trace
+        # of every container on every check turned a routine /check into
+        # pages of code blocks — the owner hit exactly that on an instance
+        # with debug left on, 21 containers deep. A local-only image with
+        # no registry is a clean "Skipped (no local digest)", NOT a
+        # failure (measured), so a normal check stays silent; the trace
+        # comes through only when there is a real registry / auth / network
+        # problem to diagnose, which is the only time anyone wanted it. The
+        # full log is in the console (`docker logs`) and the Web UI Logs
+        # page regardless, so nothing is lost by holding it back here.
+        if self.config.debug and bot and self.debug_log and failed_checks:
             log_text = "\n".join(self.debug_log)
             # Split into chunks if too long
             while log_text:
