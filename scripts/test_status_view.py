@@ -108,6 +108,28 @@ checks["…and that the interface can change it too"] = "Settings" in row[0]
 checks["the old WEB_UI_V2 switch is gone"] = "WEB_UI_V2" not in docs and (
     "web_ui_v2" not in web_src)
 
+# ── the mobile card list must be a SIBLING of the table, not a child
+# (#63, @NotRetarded). The table view renders both a `<table>` (wrapped
+# in `.table-scroll`) and a `.tile-list` of cards; CSS shows the table on
+# desktop and the cards on a phone by setting `.table-scroll{display:none}`
+# below 700px. The tile-list had been placed INSIDE `.table-scroll`, so on
+# a phone it inherited that display:none and vanished — 16 containers, an
+# empty list, and no table either. Measured with a headless browser at
+# 390px: `.tile-list` computed to `display:grid` but height 0 and
+# offsetParent null, because its parent was hidden. The fix is structural:
+# `.table-scroll` wraps the table ALONE. This pins that the scroll wrapper
+# closes before the tile-list opens, so the two are siblings.
+i = web_src.index('<div class="table-scroll"><table id="ctbl">')
+j = web_src.index('<div class="tile-list" id="ctblTiles">', i)
+between = web_src[i:j]
+# `.table-scroll` (which is display:none on a phone) must wrap the table
+# ALONE, closing before the tile-list opens — otherwise the mobile card
+# list is a child of a hidden element and vanishes. The `</table></div>`
+# is that early close; without it the tile-list is nested and the phone
+# view shows nothing.
+checks["the scroll wrapper closes right after the table, not around the cards"] = (
+    "</table></div>" in between)
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.10] - 2026-08-20
+
+### Fixed
+- **The Status page shows every container on a phone again (#63, @NotRetarded).** In the table layout, the mobile card list had been placed *inside* the `.table-scroll` wrapper — the very element CSS sets to `display:none` below 700px to hide the wide table. So on a phone the cards inherited that and vanished: the header still counted "16 containers running", but the list beneath it was empty and there was no table either. Measured with a headless browser at 390px — the card list computed to `display:grid` yet had zero height, because its parent was hidden. The scroll wrapper now closes right after the table, so the cards are a sibling of it rather than a child, and the phone view fills in. Desktop is unchanged. A test holds the wrapper to closing before the card list opens, so it cannot nest again unnoticed.
+
 ## [2.18.0-beta.9] - 2026-08-20
 
 ### Fixed

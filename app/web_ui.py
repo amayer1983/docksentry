@@ -4141,11 +4141,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <tbody id="ctblBody">
 {rows}
 </tbody>
-</table>
+</table></div>
 <!-- The same containers as cards, for narrow screens. Both are rendered
      and CSS shows one; the alternative — deciding server-side from a
      user-agent string — guesses at a viewport it cannot see, and gets it
-     wrong on a tablet held sideways. The markup cost is a few KB. -->
+     wrong on a tablet held sideways. The markup cost is a few KB.
+     The tile-list is a SIBLING of `.table-scroll`, not a child: on mobile
+     `.table-scroll` is `display:none`, and a tile-list nested inside it
+     inherited that and vanished — 16 containers, an empty list, and no
+     table either (#63, @NotRetarded). The `</div>` above closes the
+     scroll wrapper around the table ALONE. -->
 <div class="tile-list" id="ctblTiles">
 {tiles}
 </div>
@@ -4165,7 +4170,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <span title="{_e(t("web_label_authoritative"))}">🏷 {_legend_word(t("web_legend_label"))}</span>
 <span title="{_e(t("web_selfupdate_marker_tt"))}">⚙ {_legend_word(t("web_legend_selfupdate"))}</span>
 <span title="{_e(t("web_link_open_tt"))}">🔗 {_legend_word(t("web_link_title"))}</span>
-</div>
 </div>
 <script>
 (function() {{
