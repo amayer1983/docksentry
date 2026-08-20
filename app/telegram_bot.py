@@ -4809,50 +4809,81 @@ class TelegramBot:
             if len(parts) < 2:
                 self.send_message(self.t("audit_usage"))
                 return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
+            # `@host` narrows, `@all` widens; without a token this read
+            # sweeps every managed host (#7). /audit inspected only the
+            # local box until beta.9 — the same lag /checkimages had,
+            # while its Discord twin was host-aware all along. A remote
+            # container's dropped-field audit is exactly what you want
+            # when its update fails on that host, so it must reach it.
+            arg, audit_targets, host_err = self._resolve_targets(
+                parts[1], write=False)
+            if host_err:
+                self.send_message(host_err)
                 return
-            try:
-                r = self.backend.run(
-                    ["inspect", name], timeout=10)
-                if r.returncode != 0:
-                    self.send_message(self.t("audit_inspect_failed", name=name))
-                    return
-                inspect = json.loads(r.stdout)[0]
-            except (subprocess.SubprocessError, json.JSONDecodeError, IndexError):
-                self.send_message(self.t("audit_inspect_failed", name=name))
+            if not arg:
+                self.send_message(self.t("audit_usage"))
                 return
             from update_checker import UpdateChecker as _UC
-            findings = _UC._audit_inspect_coverage(checker, inspect)
-            host_keys = findings.get("host_unknown") or []
-            cfg_keys = findings.get("config_unknown") or []
-            dropped = findings.get("host_dropped") or []
-            if not host_keys and not cfg_keys and not dropped:
-                self.send_message(self.t("audit_clean", name=name))
-                return
-            lines = [self.t("audit_findings_header", name=name)]
-            if dropped:
-                # The fields we skip on purpose, said out loud. This list
-                # existed silently while the owner's GPU container failed
-                # every update on a field sitting in it (#62's neighbour)
-                # — the audit command stayed quiet about the one thing
-                # that mattered.
-                lines.append(self.t("audit_section_dropped"))
-                lines.extend(f"  • `HostConfig.{k}`" for k in dropped)
-            if host_keys:
-                lines.append(self.t("audit_section_host"))
-                lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
-            if cfg_keys:
-                lines.append(self.t("audit_section_config"))
-                lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
-            # "Please open an issue" belongs under UNKNOWN fields only.
-            # The deliberately-skipped section is a statement of policy,
-            # not a coverage gap — asking people to file issues about it
-            # invites reports we would close as intended behaviour.
-            if host_keys or cfg_keys:
-                lines.append(self.t("audit_footer"))
-            self.send_message("\n".join(lines))
+            shown = False
+            first_err = None
+            for host in (audit_targets or [None]):
+                backend = self._backend_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(arg, backend=backend)
+                if err:
+                    # A container lives on one host as a rule; a host that
+                    # doesn't have it stays quiet, and only a sweep that
+                    # found it nowhere answers "not found" (like /status).
+                    first_err = first_err or (err + tag)
+                    continue
+                try:
+                    r = backend.run(["inspect", name], timeout=10)
+                    if r.returncode != 0:
+                        self.send_message(
+                            self.t("audit_inspect_failed", name=name) + tag)
+                        shown = True
+                        continue
+                    inspect = json.loads(r.stdout)[0]
+                except (subprocess.SubprocessError, json.JSONDecodeError,
+                        IndexError):
+                    self.send_message(
+                        self.t("audit_inspect_failed", name=name) + tag)
+                    shown = True
+                    continue
+                shown = True
+                findings = _UC._audit_inspect_coverage(
+                    self._checker_for(host, checker), inspect)
+                host_keys = findings.get("host_unknown") or []
+                cfg_keys = findings.get("config_unknown") or []
+                dropped = findings.get("host_dropped") or []
+                if not host_keys and not cfg_keys and not dropped:
+                    self.send_message(self.t("audit_clean", name=name) + tag)
+                    continue
+                lines = [self.t("audit_findings_header", name=name) + tag]
+                if dropped:
+                    # The fields we skip on purpose, said out loud. This
+                    # list existed silently while the owner's GPU
+                    # container failed every update on a field sitting in
+                    # it (#62's neighbour) — the audit command stayed
+                    # quiet about the one thing that mattered.
+                    lines.append(self.t("audit_section_dropped"))
+                    lines.extend(f"  • `HostConfig.{k}`" for k in dropped)
+                if host_keys:
+                    lines.append(self.t("audit_section_host"))
+                    lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
+                if cfg_keys:
+                    lines.append(self.t("audit_section_config"))
+                    lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
+                # "Please open an issue" belongs under UNKNOWN fields
+                # only. The deliberately-skipped section is a statement
+                # of policy, not a coverage gap — asking people to file
+                # issues about it invites reports we would close as
+                # intended behaviour.
+                if host_keys or cfg_keys:
+                    lines.append(self.t("audit_footer"))
+                self.send_message("\n".join(lines))
+            if not shown and first_err:
+                self.send_message(first_err)
 
         elif text.startswith("/setlink"):
             # Telegram-side affordance for the per-container link store —
@@ -4944,24 +4975,51 @@ class TelegramBot:
             if len(parts) < 2:
                 self.send_message(self.t("logs_usage"))
                 return
-            name, err = self._resolve_container(parts[1])
-            if err:
-                self.send_message(err)
+            # `@host` narrows, `@all` widens; without a token this read
+            # sweeps every managed host (#7). /logs read only the local
+            # box until beta.9 — the same lag /checkimages and /audit
+            # had, while their Discord twins were host-aware. The logs of
+            # a remote container that just failed to update are exactly
+            # what you reach for, so the command has to reach that host.
+            arg, log_targets, host_err = self._resolve_targets(
+                " ".join(parts[1:]), write=False)
+            if host_err:
+                self.send_message(host_err)
                 return
-            # `backend.logs()`, not a hand-built `["logs", …]` — the
-            # stream merge from v1.73.0 lives in that method, and this
-            # call site never got it. A container writing its errors to
-            # stderr showed half its output in `/logs` and the missing
-            # half was the half worth reading (#2, @NotRetarded).
-            result = self.backend.logs(name, tail=30, timeout=10)
-            output = result.stdout or result.stderr
-            if output.strip():
-                # Telegram message limit is 4096, truncate if needed
-                if len(output) > 3500:
-                    output = output[-3500:]
-                self.send_message(self.t("logs_title", name=name) + f"\n```\n{output.strip()}\n```")
-            else:
-                self.send_message(self.t("logs_empty", name=name))
+            arg = arg.split()[0] if arg.split() else ""
+            if not arg:
+                self.send_message(self.t("logs_usage"))
+                return
+            shown = False
+            first_err = None
+            for host in (log_targets or [None]):
+                backend = self._backend_for(host)
+                tag = self._host_tag(host)
+                name, err = self._resolve_container(arg, backend=backend)
+                if err:
+                    # A container lives on one host as a rule; a host that
+                    # doesn't have it stays quiet, and only a sweep that
+                    # found it nowhere answers "not found" (like /status).
+                    first_err = first_err or (err + tag)
+                    continue
+                shown = True
+                # `backend.logs()`, not a hand-built `["logs", …]` — the
+                # stream merge from v1.73.0 lives in that method, and this
+                # call site never got it. A container writing its errors
+                # to stderr showed half its output in `/logs` and the
+                # missing half was the half worth reading (#2, @NotRetarded).
+                result = backend.logs(name, tail=30, timeout=10)
+                output = result.stdout or result.stderr
+                if output.strip():
+                    # Telegram message limit is 4096, truncate if needed
+                    if len(output) > 3500:
+                        output = output[-3500:]
+                    self.send_message(self.t("logs_title", name=name) + tag
+                                      + f"\n```\n{output.strip()}\n```")
+                else:
+                    self.send_message(self.t("logs_empty", name=name) + tag)
+            if not shown and first_err:
+                self.send_message(first_err)
 
         elif text.startswith("/help ") or text.startswith("/start "):
             # /help <command> — per-command detailed help (#15, @famewolf).
