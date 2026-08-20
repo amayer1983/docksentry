@@ -2,6 +2,11 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.12] - 2026-08-20
+
+### Added
+- **A temporary `/iconcheck` command (#63, @NotRetarded).** The `/status` header icon washes out on Discord's lighter ephemeral background, and it can only be judged in a real ephemeral reply. This dumps every candidate icon, each labelled by a letter, for him to screenshot and pick one. It will be removed once an icon is chosen.
+
 ## [2.18.0-beta.11] - 2026-08-20
 
 ### Fixed

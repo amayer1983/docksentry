@@ -610,7 +610,7 @@
   "recovery_gone": "⚠️ An update to {name} was interrupted and neither the container nor its backup is there any more.",
   "web_badge_newer_tt": "Pinned to {current}. Version {newer} exists on the registry — Docksentry will not switch to it, because the tag you pinned is what it keeps running. Change the tag in your compose file to move.",
   "web_discord_bot_title": "Discord bot (slash commands)",
-  "web_discord_bot_intro": "Optional, and separate from the webhook above. A bot token lets Docksentry receive commands in Discord — /status, /update, /logs and 32 more — instead of only sending notifications. Create the application at discord.com/developers/applications.",
+  "web_discord_bot_intro": "Optional, and separate from the webhook above. A bot token lets Docksentry receive commands in Discord — /status, /update, /logs and 33 more — instead of only sending notifications. Create the application at discord.com/developers/applications.",
   "web_discord_token": "Bot token",
   "web_discord_token_help": "From the Bot page of your Discord application. Stored in settings.json, which is readable by its owner only. Leave empty to keep the saved token.",
   "web_discord_token_placeholder": "paste the bot token",

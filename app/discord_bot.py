@@ -114,6 +114,8 @@ COMMANDS = [
           "type": 3, "required": False},
      ]},
     {"name": "debug", "description": "Toggle debug logging", "type": 1},
+    {"name": "iconcheck", "description":
+     "Header icon candidates to screenshot (temporary)", "type": 1},
     {"name": "lang", "description":
      "Switch the language Docksentry answers in", "type": 1,
      "options": [
@@ -1227,6 +1229,8 @@ class DiscordBot:
             return self._cmd_selfupdate(opts)
         if name == "debug":
             return self._cmd_debug()
+        if name == "iconcheck":
+            return self._cmd_iconcheck()
         if name == "lang":
             return self._cmd_lang(opts)
         if name == "setlink":
@@ -2003,6 +2007,17 @@ class DiscordBot:
         bot.announce("🔔 Test notification — if you can read this on a "
                      "channel, that channel works.")
         return "🔔 Sent to every channel that is switched on."
+
+    def _cmd_iconcheck(self):
+        """TEMPORARY (#63, @NotRetarded): candidate header icons as an
+        ephemeral reply — the only place he sees the washed-out
+        background. The text comes from the Telegram bot so both front
+        ends show byte-for-byte the same set. Remove once an icon is
+        picked."""
+        bot = getattr(self, "telegram", None)
+        if bot is None or not hasattr(bot, "_icon_candidates_text"):
+            return "⚠️ Not available."
+        return bot._icon_candidates_text()
 
     def _cmd_restart_self(self):
         """Restart Docksentry, if something will bring it back.
