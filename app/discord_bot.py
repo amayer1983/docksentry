@@ -402,6 +402,12 @@ class DiscordBot:
         self.hosts = hosts
         self.checker = checker
         self.log = log
+        # Every user-facing line comes from the shared translations, the
+        # same ones Telegram reads (#63). Discord used to carry its own
+        # hardcoded English: one instance then answered German in Telegram
+        # and English here, for the same question — a difference in
+        # CONTENT, not in presentation, which is the line the owner drew.
+        # Resolved per call rather than held, so /lang applies at once.
         #: The Telegram bot, when one is running. What is still borrowed
         #: from it, counted rather than remembered — `test_discord_borrows
         #: _exist.py` scans this file and prints the list:
@@ -470,6 +476,12 @@ class DiscordBot:
         #: Same shape, for a start that succeeded with something worth
         #: saying anyway — currently only a failed command registration.
         self.last_warning = None
+
+    @property
+    def t(self):
+        """The translator for the configured language."""
+        from i18n import get_translator
+        return get_translator(getattr(self.config, "language", "en") or "en")
 
     @property
     def enabled(self):
@@ -1300,7 +1312,7 @@ class DiscordBot:
 
     def _cmd_hosts(self):
         if not self.hosts or not self.hosts.is_multi:
-            return "This instance manages a single host."
+            return self.t("hosts_single")
         lines = []
         for h in self.hosts:
             where = "local" if h.is_local else h.endpoint
@@ -1390,7 +1402,7 @@ class DiscordBot:
         if targets is None:
             return self._unknown_host(opts.get("host"))
         if self.engine.update_running:
-            return "An update is running right now — try again once it finishes."
+            return self.t("web_check_one_busy")
         found = []
         for host in targets:
             checker = self._checker_for(host)
@@ -1413,14 +1425,14 @@ class DiscordBot:
         import os
         path = getattr(self.config, "pending_file", "")
         if not path or not os.path.exists(path):
-            return "No pending updates."
+            return self.t("no_pending_updates")
         try:
             with open(path) as f:
                 pending = json.load(f)
         except (OSError, ValueError):
-            return "No pending updates."
+            return self.t("no_pending_updates")
         if not isinstance(pending, list) or not pending:
-            return "No pending updates."
+            return self.t("no_pending_updates")
         from container_store import LOCAL_HOST, entry_host
         lines = []
         for u in pending:
@@ -1638,14 +1650,14 @@ class DiscordBot:
         import os
         path = getattr(self.config, "monitor_events_file", "")
         if not path or not os.path.exists(path):
-            return "No container events recorded."
+            return self.t("events_empty")
         try:
             with open(path) as f:
                 events = json.load(f) or []
         except (OSError, ValueError):
-            return "No container events recorded."
+            return self.t("events_empty")
         if not isinstance(events, list) or not events:
-            return "No container events recorded."
+            return self.t("events_empty")
         lines = []
         for ev in reversed([e for e in events if isinstance(e, dict)][-limit:]):
             kind = ev.get("kind", "event")
@@ -1656,13 +1668,13 @@ class DiscordBot:
             lines.append(f"`{ev.get('timestamp', '')}` **{kind}** "
                          f"`{ev.get('container', '?')}`{extra}")
         if not lines:
-            return "No container events recorded."
+            return self.t("events_empty")
         return self._clip("**Container events**\n" + "\n".join(lines))
 
     def _cmd_logs(self, opts):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/logs <container>`"
+            return self.t("logs_usage")
         try:
             tail = int(opts.get("lines") or LOG_LINES_DEFAULT)
         except (TypeError, ValueError):
@@ -2003,7 +2015,7 @@ class DiscordBot:
         import json
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/audit <container>`"
+            return self.t("audit_usage")
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -2044,7 +2056,7 @@ class DiscordBot:
     def _cmd_note(self, opts):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/note <container> [text]`"
+            return self.t("note_usage")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -2340,7 +2352,7 @@ class DiscordBot:
                 # is pressed and a scheduled check runs in that window.
                 approved.append((host_name_of(host), u["name"]))
         if not preview:
-            return "No pending updates."
+            return self.t("no_pending_updates")
         token = self._new_confirmation("updateall",
                                        {"host": opts.get("host"),
                                         "approved": approved}, data)
@@ -2389,7 +2401,7 @@ class DiscordBot:
                 return ("Nothing left to update — every container you "
                         "approved has already been updated or is no longer "
                         "pending.")
-            return "No pending updates."
+            return self.t("no_pending_updates")
         note = ""
         if gone > 0:
             note = (f"\nℹ {gone} of the {len(approved_set)} container(s) you "
@@ -2575,7 +2587,7 @@ class DiscordBot:
         finally:
             self._release_lock()
         if ok and "Nothing" in str(msg):
-            return "🧹 Nothing to clean up."
+            return self.t("cleanup_none")
         return self._clip(("✅ " if ok else "❌ ") + str(msg))
 
     @staticmethod
