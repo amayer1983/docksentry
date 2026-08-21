@@ -79,7 +79,6 @@ _BOT_COMMANDS = [
     ("selfupdate",  "Update the bot itself (add a version to pin)",                   "help_selfupdate",  "help_detail_selfupdate"),
     ("changelog",   "What's new in versions ahead of yours",                          "help_changelog",   "help_detail_changelog"),
     ("debug",       "Toggle debug mode",                                              "help_debug",       "help_detail_debug"),
-    ("iconcheck",   "Header icon candidates to screenshot (temporary)",               "help_settings",    "help_detail_settings"),
     ("logs",        "Last 30 log lines — /logs <name>",                               "help_logs",        "help_detail_logs"),
     ("lang",        "Switch bot language — /lang en or /lang de",                     "help_lang",        "help_detail_lang"),
     ("settings",    "Show current settings",                                          "help_settings",    "help_detail_settings"),
@@ -2283,24 +2282,6 @@ class TelegramBot:
             lines.append(f"`{ev.get('timestamp', '')}` {msg}")
         return "\n".join(lines)
 
-    #: TEMPORARY (#63): candidate header icons for @NotRetarded to pick
-    #: from against Discord's washed-out ephemeral background. Icons on
-    #: one line, their letters beneath, in the order he listed them plus
-    #: the current 🩺 and the original 📊. Remove with /iconcheck.
-    _ICON_CANDIDATES = ["🩺", "📊", "🩻", "🧿", "🩸", "📋", "💡", "⛑️",
-                        "🔎", "🏥", "❣️", "💞", "👁️‍🗨️", "🤍", "🕵️",
-                        "🧑‍💻", "👁️"]
-
-    def _icon_candidates_text(self):
-        """The /iconcheck reply, shared by both bots so the set can't drift.
-        Letter glued directly in front of its icon and flowed as running
-        text — a two-row layout drifted out of alignment because emoji are
-        wider than letters, so the columns no longer lined up."""
-        pairs = "   ".join(f"{chr(65 + i)} {e}"
-                           for i, e in enumerate(self._ICON_CANDIDATES))
-        return ("🖼️ Icons for header — screenshot this and tell me the "
-                "letter:\n\n" + pairs)
-
     def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup):
         """`/checkimages` reply — how much `/cleanup` would free right now.
         Nothing-to-clean and auto-cleanup states each get a clear line so
@@ -4311,15 +4292,6 @@ class TelegramBot:
             self.config.save_persistent()
             status = self.t("debug_on") if self.config.debug else self.t("debug_off")
             self.send_message(self.t("debug_mode", status=status))
-
-        elif text == "/iconcheck":
-            # TEMPORARY (#63, @NotRetarded): the /status header emoji washes
-            # out on Discord's lighter ephemeral background. He can only
-            # judge it in a real ephemeral reply, so this dumps every
-            # candidate labelled by letter for him to screenshot and pick.
-            # Remove once an icon is chosen. Shared text so both bots show
-            # exactly the same set.
-            self.send_message(self._icon_candidates_text())
 
         elif text.startswith("/maintenance"):
             from maintenance import (

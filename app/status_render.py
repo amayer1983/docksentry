@@ -120,7 +120,7 @@ def lines(info, *, bold="*", host_tag=""):
         state_text += f" ({health})"
 
     # ── who, and how it is doing ────────────────────────────────
-    head = f"🩺 {b(info['name'])}{host_tag} — {icon} {state_text}"
+    head = f"🔎 {b(info['name'])}{host_tag} — {icon} {state_text}"
     if running and info.get("uptime"):
         head += f" · ⏱ {info['uptime']}"
     out = [head]

@@ -66,7 +66,7 @@ checks["state and health"] = "running (unhealthy)" in joined
 # carries state and uptime, groups are separated by blank lines, and a
 # duplicate port mapping (tcp+udp rendering identically) shows once.
 checks["the header leads with name, state and uptime"] = (
-    tg[0].startswith("🩺") and "3h 12m" in tg[0])
+    tg[0].startswith("🔎") and "3h 12m" in tg[0])
 checks["stanzas are separated by blank lines"] = tg.count("") >= 3
 checks["uptime"] = "3h 12m" in joined
 checks["live CPU and memory"] = "312.4%" in joined and "8.2GiB" in joined
@@ -82,10 +82,11 @@ checks["what the probe said, when unhealthy"] = "nvidia-smi: not found" in joine
 checks["Docksentry's own flags"] = "pinned" in joined and "protected" in joined
 checks["group and note"] = "`ai`" in joined and "GPU box" in joined
 checks["a pending update is announced"] = "Update available" in joined
-# NotRetarded's icon pass (#63): the header stethoscope, a bar chart on
-# the live-cost line, and a network glyph on the ports line — the plug
-# was near-invisible on Discord's dark theme. Pinned so a refactor does
-# not quietly walk them back.
+# NotRetarded's icon pass (#63): the header magnifier (he screenshotted
+# the candidates against Discord's ephemeral background and picked it), a
+# bar chart on the live-cost line, and a network glyph on the ports line
+# — the plug was near-invisible on Discord's dark theme. Pinned so a
+# refactor does not quietly walk them back.
 checks["ports carry a visible glyph, not the washed-out plug"] = (
     "🌐" in joined and "🔌" not in joined)
 checks["the live-cost line uses the bar chart"] = "📊 CPU" in joined

@@ -54,7 +54,7 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 - **Update policies per container** — `all` / `minor` / `patch`, major-version confirmation, per-container update windows, and `MIN_IMAGE_AGE_DAYS` so you need not be the first to pull a new image
 - **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update. Container cards instead of a table below 700px
 - **Telegram bot** *(optional)* — full interactive control with inline buttons and 20+ commands
-- **Discord bot** — 36 slash commands and the same control surface, driven by the same update engine ([setup guide](docs/discord-bot.md))
+- **Discord bot** — 35 slash commands and the same control surface, driven by the same update engine ([setup guide](docs/discord-bot.md))
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Home Assistant or any HTTP endpoint
 - **Native push channels** — ntfy, Gotify, Matrix, and Apprise (which fans out to ~100 further services)
@@ -532,7 +532,7 @@ docker ps        # should show "(healthy)" after ~3 minutes of uptime
 | Channel | Updates | Results | Interactive |
 |---------|:-:|:-:|:-:|
 | **Telegram** | buttons | detailed | full control |
-| **Discord** | rich embeds | rich embeds | 36 slash commands |
+| **Discord** | rich embeds | rich embeds | 35 slash commands |
 | **Webhook** | JSON | JSON | via Web UI |
 
 <p align="center">
@@ -577,7 +577,7 @@ Docksentry is actively developed — see the [CHANGELOG](CHANGELOG.md) for what 
 **Shipped since — both of the items that used to sit under "v2.0, ahead":**
 
 - **Multi-host management** — one instance managing several Docker or Podman hosts (`DOCKER_HOSTS=name:endpoint`, TCP or SSH), with per-host pending queues, host-prefixed notifications, a host selector in the Web UI, and `@host` / `@all` command targeting. Landed in v1.62.0.
-- **Interactive Discord bot** — 36 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
+- **Interactive Discord bot** — 35 slash-commands, confirmation buttons and the same control surface the Telegram bot offers, driven by the same update engine so the three front-ends cannot drift apart. Landed in v1.63.0.
 
 **Shipped since:** an audit-free read-only surface — `/metrics` in Prometheus format and `GET /api/status` as JSON, both behind `API_TOKENS` so a scraper never needs the Web UI password. Plus `MONITOR_ONLY_CONTAINERS` for containers another tool owns, `MIN_IMAGE_AGE_DAYS` so you need not be first to pull a new release, registry mirrors for lookups, and the audit trail of who did what across the front ends — that one landed in v2.0.0 and lives on the Web UI History page.
 

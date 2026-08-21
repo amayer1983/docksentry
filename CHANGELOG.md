@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.14] - 2026-08-20
+
+### Changed
+- **The `/status` header icon is a 🔎 now (#63, @NotRetarded).** The stethoscope washed out on Discord's lighter ephemeral background — and, as he spotted, Discord even renders it mirrored. He screenshotted the candidates against the real background and narrowed it to a few; the magnifier won: it reads clearly, and it says "look at this container" rather than "emergency", which a rescue helmet did. The stethoscope stays on the "Health check said:" line, where it belongs and only shows when something is actually unhealthy — so the header no longer doubles it either.
+
+### Removed
+- **The temporary `/iconcheck` command is gone** — it existed only to pick the icon above.
+
 ## [2.18.0-beta.13] - 2026-08-20
 
 ### Fixed
