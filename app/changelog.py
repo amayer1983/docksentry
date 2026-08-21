@@ -83,3 +83,53 @@ def entry_for(text, version):
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             return (m.group(1), m.group(2), text[start:end].strip())
     return None
+
+
+def report(text, version):
+    """What `/changelog` has to say, decided once for every front end.
+
+    Returns a dict:
+        kind     — "newer": releases are waiting
+                   "current": you are on the newest, and here is what it
+                              brought (#2, @famewolf: answerable after a
+                              /selfupdate)
+                   "unknown": newest, and this version is not in the file
+        entries  — [(version, date, body)] for "newer", newest first
+        current  — (version, date, body) for "current"
+        version  — the version we are running
+
+    The *decision* lives here; the two front ends only lay it out, each in
+    its own markdown. They used to decide for themselves, and drifted:
+    Telegram showed what your current version brought and translated its
+    lines, Discord said one hardcoded English sentence and printed raw
+    GitHub markdown — @NotRetarded put the two side by side (#63).
+    """
+    entries = parse_entries(text, version)
+    if entries:
+        return {"kind": "newer", "entries": entries, "current": None,
+                "version": version}
+    cur = entry_for(text, version)
+    if cur:
+        return {"kind": "current", "entries": [], "current": cur,
+                "version": version}
+    return {"kind": "unknown", "entries": [], "current": None,
+            "version": version}
+
+
+def render_body(body, bold="*"):
+    """A changelog entry's body, laid out for a chat.
+
+    GitHub writes `### Fixed` and `**bold**`; a chat has no headings, and
+    the two clients spell bold differently — Telegram `*x*`, Discord
+    `**x**`. So the marker is the parameter and everything else is shared,
+    the same arrangement `status_render` uses. Image embeds go: neither
+    client inlines them, and the raw `![alt](url)` is noise.
+
+    Telegram in particular chokes on GitHub's `**`, which is why this
+    conversion is not optional there.
+    """
+    text = re.sub(r"^#{1,6}\s+(.+)$", rf"{bold}\1{bold}", body,
+                  flags=re.MULTILINE)
+    text = re.sub(r"\*\*([^*\n]+)\*\*", rf"{bold}\1{bold}", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
+    return text

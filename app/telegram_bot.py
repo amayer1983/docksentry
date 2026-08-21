@@ -3373,33 +3373,34 @@ class TelegramBot:
             if not ok:
                 self.send_message(self.t("changelog_fetch_failed", error=content))
                 return
-            new_entries = changelog.parse_entries(content, VERSION)
-            if not new_entries:
+            # The core decides which of the three things to say; this only
+            # lays it out. Discord asks the same question and renders the
+            # same three cases — they used to decide separately and drifted
+            # (#63, @NotRetarded).
+            rep = changelog.report(content, VERSION)
+            if rep["kind"] == "unknown":
+                self.send_message(self.t("changelog_up_to_date", version=VERSION))
+                return
+            if rep["kind"] == "current":
                 # Up to date — but show what the version you're ON brought,
                 # so a post-/selfupdate "what did I just get?" is answerable
-                # (#2, @famewolf). Fall back to the plain message if the
-                # current version isn't in the changelog yet.
-                cur = changelog.entry_for(content, VERSION)
-                if cur:
-                    v, d, body = cur
-                    tg = self._github_md_to_telegram(body)
-                    self.send_message(
-                        self.t("changelog_current", version=v, date=d)
-                        + "\n" + tg)
-                else:
-                    self.send_message(self.t("changelog_up_to_date", version=VERSION))
+                # (#2, @famewolf).
+                v, d, body = rep["current"]
+                self.send_message(
+                    self.t("changelog_current", version=v, date=d)
+                    + "\n" + changelog.render_body(body, bold="*"))
                 return
             # Build the message entry-by-entry and stop at the cap so we
             # never truncate mid-`*bold*` (which would leave an unpaired
             # asterisk and force the Markdown-fallback retry path).
+            new_entries = rep["entries"]
             header = self.t("changelog_title", count=len(new_entries), current=VERSION)
             parts = [header]
             total_len = len(header)
             truncated = False
             cap = 3800  # leaves headroom for truncation footer + BOT_LABEL
             for version, date, body in new_entries:
-                tg_body = self._github_md_to_telegram(body)
-                chunk = f"\n*v{version}* — {date}\n{tg_body}"
+                chunk = f"\n*v{version}* — {date}\n{changelog.render_body(body, bold='*')}"
                 if total_len + len(chunk) > cap:
                     truncated = True
                     break

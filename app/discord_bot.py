@@ -1873,21 +1873,47 @@ class DiscordBot:
         return self._clip("\n".join(lines))
 
     def _cmd_changelog(self):
-        # Straight to the neutral core now — no reaching into the Telegram
-        # bot for it (#63, core extraction). And it renders the entries
-        # instead of `"\n\n".join`-ing a list of (version, date, body)
-        # TUPLES, which raised TypeError and left /changelog broken on
-        # Discord: the adapter's job is to render what the core returns.
+        """The changelog, decided by the core and laid out for Discord.
+
+        Both front ends ask `changelog.report` what to say and render its
+        three cases; only the markdown differs. They used to decide
+        separately, and drifted — Discord printed raw GitHub markdown and
+        never showed what your current version brought, which
+        @NotRetarded caught by putting the two side by side (#63).
+        """
         import changelog
         from version import VERSION
         ok, content = changelog.fetch()
         if not ok:
             return f"⚠️ Could not fetch the changelog: {clip(content)}"
-        entries = changelog.parse_entries(content, VERSION)
-        if not entries:
-            return f"✅ You are on the newest version (v{VERSION})."
-        blocks = [f"**{v}** — {d}\n{body}" for v, d, body in entries]
-        return "\n\n".join(blocks)[:1800]
+        rep = changelog.report(content, VERSION)
+        if rep["kind"] == "unknown":
+            return (f"✅ You're on **v{VERSION}** — no newer versions in "
+                    f"the changelog.")
+        if rep["kind"] == "current":
+            v, d, body = rep["current"]
+            return self._clip(
+                f"📄 **You're on the latest — v{v}** ({d})\n"
+                f"What this version brought:\n\n"
+                f"{changelog.render_body(body, bold='**')}")
+        entries = rep["entries"]
+        parts = [f"📋 **{len(entries)} new version(s) since v{VERSION}:**"]
+        total, truncated = len(parts[0]), False
+        cap = 1800
+        for v, d, body in entries:
+            chunk = (f"\n**v{v}** — {d}\n"
+                     f"{changelog.render_body(body, bold='**')}")
+            if total + len(chunk) > cap:
+                truncated = True
+                break
+            parts.append(chunk)
+            total += len(chunk)
+        msg = "\n".join(parts)
+        if truncated:
+            msg += ("\n\n… (truncated — full changelog at "
+                    "<https://github.com/amayer1983/docksentry/blob/main/"
+                    "CHANGELOG.md>)")
+        return msg
 
     def _cmd_selfupdate(self, opts):
         """Start a self-update. Reports through the shared seam, so what

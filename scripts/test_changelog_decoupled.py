@@ -30,20 +30,22 @@ for gone in ("_parse_changelog_entries", "_version_key",
     checks[f"telegram_bot no longer defines {gone}"] = (
         f"def {gone}" not in tsrc)
 checks["…and calls the core instead"] = (
-    "changelog.fetch()" in tsrc and "changelog.parse_entries(" in tsrc
-    and "changelog.entry_for(" in tsrc)
+    "changelog.fetch()" in tsrc and "changelog.report(" in tsrc)
 
 # ── Discord calls the core directly, not the Telegram bot ────────────
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
 i = dsrc.index("def _cmd_changelog")
 body = dsrc[i:dsrc.index("\n    def ", i + 10)]
 checks["Discord's /changelog calls the core"] = (
-    "changelog.fetch()" in body and "changelog.parse_entries(" in body)
+    "changelog.fetch()" in body and "changelog.report(" in body)
 checks["…and stops borrowing it from the Telegram bot"] = (
     "bot._fetch_changelog" not in body
     and "bot._parse_changelog_entries" not in body)
-checks["…and renders the tuples instead of join-crashing on them"] = (
-    'join(blocks)' in body and 'join(entries)' not in body)
+# The crash was `"\n\n".join(entries)` over (version, date, body) TUPLES.
+# It renders each entry now — through the shared body renderer, so the two
+# front ends cannot word it differently (#63).
+checks["…and renders the entries instead of join-crashing on them"] = (
+    "changelog.render_body(" in body and "join(entries)" not in body)
 
 # ── behavioural: the rendered Discord reply is a real string ─────────
 SAMPLE = ("# Changelog\n\n"
