@@ -13,6 +13,7 @@ import urllib.parse
 from errfmt import clip
 import changelog
 import container_info
+from broadcast import Broadcast
 
 
 # ── Single source of truth for all bot commands ────────────────────────
@@ -227,6 +228,10 @@ class TelegramBot:
         self._update_snapshots = {}
         self._snapshot_seq = 0
         self.notifier = None  # Set by main.py after init
+        #: The all-channel seam (`broadcast.Broadcast`), set by
+        #: main.py so both front ends share one. `announce()` builds
+        #: a local one when nothing wired it up.
+        self.broadcast = None
         # Container repo/changelog link resolution (#52) — a neutral,
         # Telegram-agnostic module so the Web UI (and, in v2, Discord)
         # resolve links through the same code instead of reaching into
@@ -1268,30 +1273,17 @@ class TelegramBot:
     def announce(self, text, reply_markup=None):
         """One unattended message, to every channel that is switched on.
 
-        Three times now a notification has been written against
-        `send_message` and quietly reached Telegram alone: the release
-        link the bot channel never got (#57), the "restarted on vX" line
-        that no Discord or e-mail user ever saw, and the auto-update
-        batch notices @NotRetarded photographed side by side (#61) —
-        Discord had the per-container results and neither the "starting"
-        nor the "complete" line around them.
-
-        Each was fixed where it was found, which is why there was a
-        third. Anything the scheduler says on its own goes through here
-        instead, and a test fails if a new one does not.
-
-        `reply_markup` is Telegram's alone; the other channels get the
-        text. A button is not something an e-mail can carry, and leaving
-        it out is better than inventing a second-class version of it.
+        The seam itself lives in `broadcast.py` now (#63) — it was never
+        Telegram's: it hands one text to every channel, and the Discord
+        bot had to reach into this instance to be heard at all. This is
+        the adapter; the history of why the seam exists is in that module.
         """
-        if self.enabled:
-            self.send_message(text, reply_markup=reply_markup, auto=True)
-        notifier = self.notifier
-        try:
-            if notifier is not None and notifier.has_channels():
-                notifier.send_message(text)
-        except Exception as e:
-            print(f"Could not fan out an announcement: {e}")
+        seam = getattr(self, "broadcast", None)
+        if seam is None:
+            # No main.py to wire one up (tests, and anything that builds a
+            # bot on its own). Same two senders, same behaviour.
+            seam = Broadcast(telegram=self, notifier=self.notifier)
+        seam.announce(text, reply_markup=reply_markup)
 
     def send_document(self, filename, data, caption=""):
         """Upload a file to the configured chat. True when it landed.

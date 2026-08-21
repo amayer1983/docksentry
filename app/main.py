@@ -24,6 +24,7 @@ from update_engine import UpdateEngine
 from update_checker import UpdateChecker
 from scheduler import Scheduler
 from notifier import Notifier
+from broadcast import Broadcast
 
 
 def _setup_docker_auth(config):
@@ -130,6 +131,13 @@ def main():
     bot.audit = audit_log
     notifier = Notifier(config)
     bot.notifier = notifier
+    # One all-channel seam, built here and handed to both front ends (#63).
+    # It used to live on the Telegram bot, so Discord had to reach into that
+    # instance to say anything outside its own channel — an all-channel seam
+    # that only one front end could reach is how "unattended message goes to
+    # Telegram alone" happened three times (#57, #61).
+    broadcast = Broadcast(telegram=bot, notifier=notifier)
+    bot.broadcast = broadcast
     checker = host_registry.local.checker
     if host_registry.is_multi:
         print(f"Managing {len(host_registry)} hosts: "
@@ -418,7 +426,8 @@ def main():
         # the same handoff the Web UI does. No Discord command reaches
         # into the Telegram bot for anything else.
         discord_bot = DiscordBot(config, store, engine, hosts=host_registry,
-                                 checker=checker, telegram=bot)
+                                 checker=checker, telegram=bot,
+                                 broadcast=broadcast)
         discord_bot.audit = audit_log
         if discord_bot.enabled:
             if discord_bot.start():
@@ -453,7 +462,8 @@ def main():
                 print(f"Discord bot stop failed (non-fatal): {e}")
         try:
             fresh = DiscordBot(config, store, engine, hosts=host_registry,
-                               checker=checker, telegram=bot)
+                               checker=checker, telegram=bot,
+                               broadcast=broadcast)
             fresh.audit = audit_log
             if not fresh.enabled:
                 # No token, or a token with no application id. This is

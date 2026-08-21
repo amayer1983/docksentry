@@ -16,8 +16,9 @@ except this was the **third** time:
   * #61 — these two.
 
 Each was fixed where it was found, which is precisely why there was a
-third. So there is one seam now — `TelegramBot.announce` — and this test
-fails if an unattended message goes anywhere else.
+third. So there is one seam now — `broadcast.Broadcast.announce`, which
+both front ends hold — and this test fails if an unattended message goes
+anywhere else.
 
 The command lists had drifted the same way: seven commands Telegram had
 and Discord did not, three the other way round. Two front ends that
@@ -128,9 +129,14 @@ checks["no unattended message goes to Telegram alone"] = not stray
 if stray:
     print("  → " + "\n  → ".join(stray))
 
-i = tsrc.index("    def announce(self")
-ann = tsrc[i:tsrc.index("\n    def ", i + 10)]
-checks["the seam sends to Telegram"] = "self.send_message(" in ann
+# The seam itself moved into `broadcast.py` (#63, third core-extraction
+# step) — it was never Telegram's, and while it sat on the Telegram bot
+# the Discord side had to reach into that instance to be heard at all.
+# Same checks, pointed at where the seam lives now.
+bsrc = open(os.path.join(APP, "broadcast.py"), encoding="utf-8").read()
+i = bsrc.index("    def announce(self")
+ann = bsrc[i:]
+checks["the seam sends to Telegram"] = "send_message(text" in ann
 checks["…and to every other channel"] = "notifier.send_message(" in ann
 checks["…and asks whether there are any first"] = "has_channels()" in ann
 checks["…and a failing channel cannot stop the others"] = (
@@ -140,6 +146,12 @@ checks["…and a failing channel cannot stop the others"] = (
 checks["a keyboard is not forced on channels that have none"] = (
     "reply_markup" in ann and "reply_markup" not in ann.split(
         "notifier.send_message(")[1][:80])
+# And the Telegram bot's `announce` is now the adapter onto it, so every
+# existing caller (and every test that builds a bare bot) still works.
+i = tsrc.index("    def announce(self")
+tg_ann = tsrc[i:tsrc.index("\n    def ", i + 10)]
+checks["TelegramBot.announce delegates to the seam"] = (
+    "seam.announce(" in tg_ann and "notifier.send_message(" not in tg_ann)
 
 # ═══ what a delivery-only channel can still do ═══════════════════════
 # E-mail is the only one of the seven that can carry a file, and a

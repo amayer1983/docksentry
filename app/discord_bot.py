@@ -392,20 +392,37 @@ class DiscordBot:
     """
 
     def __init__(self, config, store, engine, hosts=None, checker=None,
-                 log=print, telegram=None):
+                 log=print, telegram=None, broadcast=None):
         self.config = config
         self.store = store
         self.engine = engine
         self.hosts = hosts
         self.checker = checker
         self.log = log
-        #: The Telegram bot, when one is running. Used for exactly one
-        #: thing: handing a queued self-update on to its runner after we
-        #: release the shared update lock, the same way the Web UI does
-        #: (`bot._run_queued_selfupdate()`). Without it a /selfupdate
-        #: queued behind a Discord-triggered update would sit there until
-        #: some other front-end happened to release the lock next.
+        #: The Telegram bot, when one is running. What is still borrowed
+        #: from it, counted rather than remembered — `test_discord_borrows
+        #: _exist.py` scans this file and prints the list:
+        #:
+        #:   * `_handle_selfupdate`  — /selfupdate;
+        #:   * `_run_queued_selfupdate` — handing a queued self-update on
+        #:     to its runner after we release the shared update lock, the
+        #:     same two-step the Web UI does. Without it a /selfupdate
+        #:     queued behind a Discord-triggered update would sit there
+        #:     until some other front end released the lock next;
+        #:   * `_restart_policy` + `restart_self` — /restartself;
+        #:   * `t` — WRITTEN, not read: /lang replaces the translator.
+        #:
+        #: Each is machinery that is not Telegram's and has not been
+        #: pulled into the core yet (#63). The list shrinks with every
+        #: extraction step; the announcement seam left it in this one.
         self.telegram = telegram
+        #: The all-channel seam (`broadcast.Broadcast`), the same
+        #: instance the Telegram bot holds. What `/testchannel`
+        #: speaks through — it used to borrow `bot.announce`,
+        #: which made an all-channel seam look like Telegram's
+        #: (#63). Not to be confused with `self.announce` below,
+        #: which posts to this bot's own Discord channel.
+        self.broadcast = broadcast
         #: Pending confirmations, token → record. Written on `/stop` and
         #: `/updateall`, claimed by the button press. A plain dict: the
         #: single-use property comes from `dict.pop`, which is atomic
@@ -1277,14 +1294,12 @@ class DiscordBot:
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        bot = getattr(self, "telegram", None)
-
         # ── one container: the full detail ──────────────────────────
         # Falls through to the substring-filtered overview when the name
         # does not resolve to exactly one container — `container:ngx`
         # matching three things keeps listing three things, as it always
         # has, rather than answering "not found".
-        if wanted and bot is not None:
+        if wanted:
             for host in targets:
                 backend = self._backend_for(host)
                 name, err = self._resolve_container(wanted, backend)
@@ -1332,8 +1347,7 @@ class DiscordBot:
                 nm = c["name"]
                 if wanted and wanted.lower() not in nm.lower():
                     continue
-                si = container_info.state(self._backend_for(host), nm) \
-                    if bot is not None else None
+                si = container_info.state(self._backend_for(host), nm)
                 if si:
                     lines.append(status_render.overview_line(
                         nm, si, host_tag=tag))
@@ -2011,11 +2025,11 @@ class DiscordBot:
     def _cmd_testchannel(self):
         """More useful from a chat than from the Web UI: you are already
         standing where the message has to arrive."""
-        bot = getattr(self, "telegram", None)
-        if bot is None or not hasattr(bot, "announce"):
+        seam = getattr(self, "broadcast", None)
+        if seam is None:
             return "⚠️ Not available."
-        bot.announce("🔔 Test notification — if you can read this on a "
-                     "channel, that channel works.")
+        seam.announce("🔔 Test notification — if you can read this on a "
+                      "channel, that channel works.")
         return "🔔 Sent to every channel that is switched on."
 
     def _cmd_restart_self(self):
