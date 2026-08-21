@@ -39,6 +39,7 @@ import time
 from discord_gateway import DiscordGateway
 from discord_rest import DiscordREST, DiscordRESTError
 from errfmt import clip
+import container_info
 
 #: Discord-side gating, applied to every command below by
 #: `_harden_commands()`. Two flags, and they are defence in depth — the
@@ -1289,7 +1290,7 @@ class DiscordBot:
                 name, err = self._resolve_container(wanted, backend)
                 if err:
                     continue
-                info = bot._container_state(name, backend=backend)
+                info = container_info.state(backend, name)
                 if not info:
                     continue
                 probe = ""
@@ -1301,11 +1302,11 @@ class DiscordBot:
                         probe = ""
                 detail = status_render.collect(
                     name, info,
-                    stats=bot._container_stats(name, backend=backend)
+                    stats=container_info.stats(backend, name)
                     if info.get("running") else None,
                     store=self._store_for(host),
                     probe=probe,
-                    disk=bot._disk_facts(name, backend=backend))
+                    disk=container_info.disk_facts(backend, name))
                 return "\n".join(status_render.lines(
                     detail, bold="**", host_tag=self._label(host)))
             # Not resolved anywhere: the overview below, narrowed.
@@ -1331,7 +1332,7 @@ class DiscordBot:
                 nm = c["name"]
                 if wanted and wanted.lower() not in nm.lower():
                     continue
-                si = bot._container_state(nm, backend=self._backend_for(host)) \
+                si = container_info.state(self._backend_for(host), nm) \
                     if bot is not None else None
                 if si:
                     lines.append(status_render.overview_line(
