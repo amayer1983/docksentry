@@ -877,5 +877,6 @@
   "chan_history_none_for": "`{name}` の更新履歴はありません。",
   "chan_cooldown_bad_number": "`{value}` は秒の整数ではありません。",
   "chan_maint_on_until": "🔧 メンテナンスモードは {until} まで**オン**です。",
-  "chan_maint_remaining": "🔧 メンテナンスモードは**オン** — 残り {remaining}。"
+  "chan_maint_remaining": "🔧 メンテナンスモードは**オン** — 残り {remaining}。",
+  "chan_restore_restart_hint": "一部の設定は再起動後にのみ有効になります — コンテナを指定しない `/restart` で行えます。"
 }

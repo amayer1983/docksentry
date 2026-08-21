@@ -877,5 +877,6 @@
   "chan_history_none_for": "Немає історії оновлень для `{name}`.",
   "chan_cooldown_bad_number": "`{value}` — не ціле число секунд.",
   "chan_maint_on_until": "🔧 Режим обслуговування **увімкнено** до {until}.",
-  "chan_maint_remaining": "🔧 Режим обслуговування **увімкнено** — лишилося {remaining}."
+  "chan_maint_remaining": "🔧 Режим обслуговування **увімкнено** — лишилося {remaining}.",
+  "chan_restore_restart_hint": "Деякі налаштування діють лише після перезапуску — `/restart` без контейнера це зробить."
 }

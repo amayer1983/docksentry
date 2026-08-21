@@ -877,5 +877,6 @@
   "chan_history_none_for": "Geen updategeschiedenis voor `{name}`.",
   "chan_cooldown_bad_number": "`{value}` is geen heel aantal seconden.",
   "chan_maint_on_until": "🔧 Onderhoudsmodus staat **aan** tot {until}.",
-  "chan_maint_remaining": "🔧 Onderhoudsmodus staat **aan** — nog {remaining}."
+  "chan_maint_remaining": "🔧 Onderhoudsmodus staat **aan** — nog {remaining}.",
+  "chan_restore_restart_hint": "Sommige instellingen werken pas na een herstart — `/restart` zonder container doet dat."
 }

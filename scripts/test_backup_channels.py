@@ -438,8 +438,11 @@ checks["…and Discord goes down only after its answer is out"] = (
     and "_shutdown_after_answer = True" in _dcr_code
     and _dc.index("self._deliver(data, started, text)")
     < _dc.index("self._shutdown_if_asked()"))
+# Telegram offers a button; Discord has no buttons on an ephemeral
+# reply, so it says the same thing in words — from the shared
+# translations, so the sentence lives in one place (#63).
 checks["a Discord restore points at the restart too"] = (
-    "`/restart` with no container does it" in dsrc_now())
+    "chan_restore_restart_hint" in dsrc_now())
 
 # ═══ the attachment fetch, which failed ten minutes after shipping ═══
 # @NotRetarded ran /restore straight away and got "I could not read that

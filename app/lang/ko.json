@@ -877,5 +877,6 @@
   "chan_history_none_for": "`{name}`의 업데이트 기록이 없습니다.",
   "chan_cooldown_bad_number": "`{value}`은(는) 정수 초가 아닙니다.",
   "chan_maint_on_until": "🔧 유지 보수 모드가 {until}까지 **켜짐**입니다.",
-  "chan_maint_remaining": "🔧 유지 보수 모드 **켜짐** — {remaining} 남음."
+  "chan_maint_remaining": "🔧 유지 보수 모드 **켜짐** — {remaining} 남음.",
+  "chan_restore_restart_hint": "일부 설정은 재시작 후에만 적용됩니다 — 컨테이너 없이 `/restart`를 실행하면 됩니다."
 }

@@ -877,5 +877,6 @@
   "chan_history_none_for": "Brak historii aktualizacji dla `{name}`.",
   "chan_cooldown_bad_number": "`{value}` to nie jest całkowita liczba sekund.",
   "chan_maint_on_until": "🔧 Tryb konserwacji jest **włączony** do {until}.",
-  "chan_maint_remaining": "🔧 Tryb konserwacji jest **włączony** — pozostało {remaining}."
+  "chan_maint_remaining": "🔧 Tryb konserwacji jest **włączony** — pozostało {remaining}.",
+  "chan_restore_restart_hint": "Niektóre ustawienia działają dopiero po restarcie — `/restart` bez kontenera to zrobi."
 }

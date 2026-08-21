@@ -877,5 +877,6 @@
   "chan_history_none_for": "Sin historial de actualizaciones para `{name}`.",
   "chan_cooldown_bad_number": "`{value}` no es un número entero de segundos.",
   "chan_maint_on_until": "🔧 El modo de mantenimiento está **activado** hasta {until}.",
-  "chan_maint_remaining": "🔧 El modo de mantenimiento está **activado**: quedan {remaining}."
+  "chan_maint_remaining": "🔧 El modo de mantenimiento está **activado**: quedan {remaining}.",
+  "chan_restore_restart_hint": "Algunos ajustes solo se aplican tras reiniciar: `/restart` sin contenedor lo hace."
 }

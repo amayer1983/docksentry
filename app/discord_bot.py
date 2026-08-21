@@ -2145,17 +2145,14 @@ class DiscordBot:
         """
         name, why = selfrestart.policy(self._backend_for(None), self.checker)
         if not name:
-            return (f"⚠️ I would not come back, so I am staying up.\n\n{why}\n\n"
-                    f"A restart button that does not restart is a stop "
-                    f"button. Add `restart: unless-stopped` to this "
-                    f"container and it will work.")
+            return self.t("restart_no_policy", detail=why)
         selfrestart.record_request(self.config, by="discord")
         # NOT armed here. Telegram's message is already sent by the time
         # it goes down; this answer is only RETURNED — it still has to be
         # posted to Discord after this method ends. So the shutdown waits
         # for delivery, below.
         self._shutdown_after_answer = True
-        return f"🔄 Restarting — back in a moment. (restart policy: `{name}`)"
+        return self.t("restart_going_down", policy=name)
 
     def _run_restore(self, params):
         """Apply a confirmed bundle. Returns the reply."""
@@ -2165,14 +2162,14 @@ class DiscordBot:
             restored, errors, _dropped = _backup.restore(
                 params["bundle"], self.config, self.store, _PK)
         except Exception as e:
-            return f"⚠️ Restore failed: {str(e)[:150]}"
+            return self.t("restore_failed", error=str(e)[:150])
         note = ("\n⚠️ " + "; ".join(errors)) if errors else ""
         # Offer the restart rather than describing it — the same point
         # the owner made about Telegram's wording. `/restart` with no
         # container is the button here.
-        return (f"✅ Restored: {', '.join(restored) or '—'}{note}\n\n"
-                f"Some settings only take effect after a restart — "
-                f"`/restart` with no container does it.")
+        return (self.t("restore_done",
+                       parts=", ".join(restored) or "—", errors=note)
+                + "\n\n" + self.t("chan_restore_restart_hint"))
 
     def _cmd_settings(self):
         """The instance's effective settings.
@@ -2509,10 +2506,12 @@ class DiscordBot:
             lines.append(("✅ " if ok else "❌ ") + msg + tag)
         return self._clip("\n".join(lines) or "Nothing to do.")
 
-    @staticmethod
-    def _protected_msg(name):
-        return (f"`{name}` is protected from being stopped. "
-                "Lift it with `/protect` first.")
+    def _protected_msg(self, name):
+        """Why a stop was refused — the shared sentence Telegram uses for
+        the same refusal, so the two cannot word it differently (#63).
+        An instance method now, because reaching the translations needs
+        the configured language."""
+        return self.t("lifecycle_refused_protected", name=name)
 
     def _is_protected(self, name, checker, store):
         """True if `name` must not be stopped. A `docksentry.protect`
@@ -2601,8 +2600,7 @@ class DiscordBot:
         if checker is None:
             return self.t("chan_no_backend")
         if not self._lock().acquire(blocking=False):
-            return ("🧹 An update is running right now — cleanup skipped. "
-                    "The next one will pick it up.")
+            return self.t("cleanup_busy")
         try:
             ok, msg = checker.cleanup_images()
         finally:
@@ -2657,7 +2655,7 @@ class DiscordBot:
 
     def _unknown_host(self, name):
         known = ", ".join(f"`{n}`" for n in self.hosts.names) if self.hosts else ""
-        return f"Unknown host `{name}`. Managed hosts: {known}"
+        return self.t("host_unknown", name=name, hosts=known)
 
     #: Appended to a clipped message. Counted against the limit rather
     #: than added on top of it — otherwise a caller passing a limit close

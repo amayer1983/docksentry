@@ -877,5 +877,6 @@
   "chan_history_none_for": "Aucun historique de mise à jour pour `{name}`.",
   "chan_cooldown_bad_number": "`{value}` n'est pas un nombre entier de secondes.",
   "chan_maint_on_until": "🔧 Le mode maintenance est **activé** jusqu'à {until}.",
-  "chan_maint_remaining": "🔧 Le mode maintenance est **activé** — il reste {remaining}."
+  "chan_maint_remaining": "🔧 Le mode maintenance est **activé** — il reste {remaining}.",
+  "chan_restore_restart_hint": "Certains réglages ne prennent effet qu'après un redémarrage — `/restart` sans conteneur s'en charge."
 }

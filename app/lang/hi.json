@@ -877,5 +877,6 @@
   "chan_history_none_for": "`{name}` के लिए कोई अपडेट इतिहास नहीं।",
   "chan_cooldown_bad_number": "`{value}` सेकंड की पूर्ण संख्या नहीं है।",
   "chan_maint_on_until": "🔧 रखरखाव मोड {until} तक **चालू** है।",
-  "chan_maint_remaining": "🔧 रखरखाव मोड **चालू** — {remaining} शेष।"
+  "chan_maint_remaining": "🔧 रखरखाव मोड **चालू** — {remaining} शेष।",
+  "chan_restore_restart_hint": "कुछ सेटिंग्स पुनः आरंभ के बाद ही प्रभावी होती हैं — बिना कंटेनर `/restart` यह करता है।"
 }

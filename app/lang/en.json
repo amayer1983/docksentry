@@ -877,5 +877,6 @@
   "chan_history_none_for": "No update history for `{name}`.",
   "chan_cooldown_bad_number": "`{value}` is not a whole number of seconds.",
   "chan_maint_on_until": "🔧 Maintenance mode is **on** until {until}.",
-  "chan_maint_remaining": "🔧 Maintenance mode is **on** — {remaining} remaining."
+  "chan_maint_remaining": "🔧 Maintenance mode is **on** — {remaining} remaining.",
+  "chan_restore_restart_hint": "Some settings only take effect after a restart — `/restart` with no container does it."
 }

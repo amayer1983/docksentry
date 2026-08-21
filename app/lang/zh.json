@@ -877,5 +877,6 @@
   "chan_history_none_for": "`{name}` 没有更新历史。",
   "chan_cooldown_bad_number": "`{value}` 不是整数秒。",
   "chan_maint_on_until": "🔧 维护模式**开启**至 {until}。",
-  "chan_maint_remaining": "🔧 维护模式**开启** — 剩余 {remaining}。"
+  "chan_maint_remaining": "🔧 维护模式**开启** — 剩余 {remaining}。",
+  "chan_restore_restart_hint": "部分设置需重启后才生效 — 不带容器的 `/restart` 即可。"
 }

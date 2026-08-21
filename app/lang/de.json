@@ -877,5 +877,6 @@
   "chan_history_none_for": "Keine Update-Historie für `{name}`.",
   "chan_cooldown_bad_number": "`{value}` ist keine ganze Anzahl Sekunden.",
   "chan_maint_on_until": "🔧 Wartungsmodus ist **an** bis {until}.",
-  "chan_maint_remaining": "🔧 Wartungsmodus ist **an** — noch {remaining}."
+  "chan_maint_remaining": "🔧 Wartungsmodus ist **an** — noch {remaining}.",
+  "chan_restore_restart_hint": "Manche Einstellungen greifen erst nach einem Neustart — `/restart` ohne Container erledigt das."
 }

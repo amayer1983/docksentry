@@ -877,5 +877,6 @@
   "chan_history_none_for": "`{name}` için güncelleme geçmişi yok.",
   "chan_cooldown_bad_number": "`{value}` tam sayı saniye değil.",
   "chan_maint_on_until": "🔧 Bakım modu {until} tarihine kadar **açık**.",
-  "chan_maint_remaining": "🔧 Bakım modu **açık** — {remaining} kaldı."
+  "chan_maint_remaining": "🔧 Bakım modu **açık** — {remaining} kaldı.",
+  "chan_restore_restart_hint": "Bazı ayarlar yalnızca yeniden başlatmadan sonra geçerli olur — kapsayıcısız `/restart` bunu yapar."
 }

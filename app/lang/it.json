@@ -877,5 +877,6 @@
   "chan_history_none_for": "Nessuna cronologia aggiornamenti per `{name}`.",
   "chan_cooldown_bad_number": "`{value}` non è un numero intero di secondi.",
   "chan_maint_on_until": "🔧 La modalità manutenzione è **attiva** fino a {until}.",
-  "chan_maint_remaining": "🔧 La modalità manutenzione è **attiva** — mancano {remaining}."
+  "chan_maint_remaining": "🔧 La modalità manutenzione è **attiva** — mancano {remaining}.",
+  "chan_restore_restart_hint": "Alcune impostazioni hanno effetto solo dopo un riavvio — `/restart` senza container lo fa."
 }
