@@ -40,6 +40,7 @@ from discord_gateway import DiscordGateway
 from discord_rest import DiscordREST, DiscordRESTError
 from errfmt import clip
 import container_info
+import selfrestart
 
 #: Discord-side gating, applied to every command below by
 #: `_harden_commands()`. Two flags, and they are defence in depth — the
@@ -409,7 +410,8 @@ class DiscordBot:
         #:     same two-step the Web UI does. Without it a /selfupdate
         #:     queued behind a Discord-triggered update would sit there
         #:     until some other front end released the lock next;
-        #:   * `_restart_policy` + `restart_self` — /restartself;
+        #:   * `_restart_policy` + `restart_self` — /restart with no
+        #:     container named;
         #:   * `t` — WRITTEN, not read: /lang replaces the translator.
         #:
         #: Each is machinery that is not Telegram's and has not been
@@ -423,6 +425,9 @@ class DiscordBot:
         #: (#63). Not to be confused with `self.announce` below,
         #: which posts to this bot's own Discord channel.
         self.broadcast = broadcast
+        #: Set by a bare /restart, read once its answer is posted.
+        #: See `_shutdown_if_asked` for why it cannot go down itself.
+        self._shutdown_after_answer = False
         #: Pending confirmations, token → record. Written on `/stop` and
         #: `/updateall`, claimed by the button press. A plain dict: the
         #: single-use property comes from `dict.pop`, which is atomic
@@ -802,6 +807,7 @@ class DiscordBot:
             self.log(f"Discord command error: {e}")
             text = f"Something went wrong: {clip(e)}"
         self._deliver(data, started, text)
+        self._shutdown_if_asked()
 
     def _run_component(self, data, started=None):
         """Handle a button press. Same shape as a slash command: work on
@@ -819,6 +825,7 @@ class DiscordBot:
             self.log(f"Discord component error: {e}")
             text = f"Something went wrong: {clip(e)}"
         self._deliver(data, started, text)
+        self._shutdown_if_asked()
 
     _SLOW_NOTE = ("⏳ Working on it — this can take a few minutes.\n"
                   "If it runs past Discord's 15-minute reply window I'll "
@@ -835,6 +842,22 @@ class DiscordBot:
             self.log(f"Discord: could not post the progress note: {e}")
         except Exception:
             pass
+
+    def _shutdown_if_asked(self):
+        """Go down, if the command that just answered asked to.
+
+        A bare /restart cannot arm the shutdown itself: its reply is only
+        RETURNED from the handler, and the post to Discord happens after
+        that. Arming a 1.5-second timer there would race the very message
+        telling you the restart is happening. So the command sets the
+        flag, `_deliver` gets the answer out, and this fires afterwards —
+        the same "message first, then go" order Telegram has, which there
+        is free because its message is sent inside the handler.
+        """
+        if not getattr(self, "_shutdown_after_answer", False):
+            return
+        self._shutdown_after_answer = False
+        selfrestart.go_down()
 
     def _deliver(self, data, started, text):
         """Deliver `text` as the answer to `data`'s interaction.
@@ -2035,22 +2058,28 @@ class DiscordBot:
     def _cmd_restart_self(self):
         """Restart Docksentry, if something will bring it back.
 
-        The check and the refusal live on the Telegram bot because that
-        is where the update machinery already sits; this asks it rather
-        than growing a second copy that can disagree about when it is
-        safe to stop.
+        This used to ask the Telegram bot (`bot._restart_policy()`), and
+        the answer was always the same: that method falls back to
+        `self.checker` when called without one, the Telegram bot has no
+        such attribute, and so every bare /restart from Discord refused
+        with "I cannot tell which container I am" — and then advised
+        adding a restart policy the container almost certainly already
+        had. Both bots ask the neutral core now, each with its own
+        checker (#63).
         """
-        bot = getattr(self, "telegram", None)
-        if bot is None or not hasattr(bot, "restart_self"):
-            return "⚠️ I cannot restart myself from here."
-        policy, why = bot._restart_policy()
-        if not policy:
+        name, why = selfrestart.policy(self._backend_for(None), self.checker)
+        if not name:
             return (f"⚠️ I would not come back, so I am staying up.\n\n{why}\n\n"
                     f"A restart button that does not restart is a stop "
                     f"button. Add `restart: unless-stopped` to this "
                     f"container and it will work.")
-        bot.restart_self()
-        return f"🔄 Restarting — back in a moment. (restart policy: `{policy}`)"
+        selfrestart.record_request(self.config, by="discord")
+        # NOT armed here. Telegram's message is already sent by the time
+        # it goes down; this answer is only RETURNED — it still has to be
+        # posted to Discord after this method ends. So the shutdown waits
+        # for delivery, below.
+        self._shutdown_after_answer = True
+        return f"🔄 Restarting — back in a moment. (restart policy: `{name}`)"
 
     def _run_restore(self, params):
         """Apply a confirmed bundle. Returns the reply."""

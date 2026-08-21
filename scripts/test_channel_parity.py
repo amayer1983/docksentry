@@ -92,6 +92,26 @@ if called - methods:
 
 # The new handlers must not call helpers that are not there either —
 # the first draft of them called four methods this class does not have.
+# State the class assigns to itself is not a missing helper: a bare
+# /restart sets a flag so the shutdown waits until its answer is posted,
+# and reading that as a call to a method named after the flag is a false
+# alarm. So: known method, or an attribute the class actually assigns
+# somewhere. A bare reference to neither is still caught — that is the
+# `target=self._thing` shape, which never grows a parenthesis.
+assigned = set()
+for cls in tree.body:
+    if not isinstance(cls, ast.ClassDef):
+        continue
+    for node in ast.walk(cls):
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        for t in targets:
+            if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                    and t.value.id == "self"):
+                assigned.add(t.attr)
 new = ("_cmd_help", "_cmd_changelog", "_cmd_selfupdate", "_cmd_debug",
        "_cmd_lang", "_cmd_setlink", "_cmd_audit", "_cmd_restore",
        "_cmd_backup", "_cmd_restart_self")
@@ -106,7 +126,8 @@ for cls in tree.body:
                         and isinstance(node.value, ast.Name)
                         and node.value.id == "self"
                         and node.attr.startswith("_")
-                        and node.attr not in methods):
+                        and node.attr not in methods
+                        and node.attr not in assigned):
                     ghosts.add(f"{m.name} → self.{node.attr}")
 checks["the new commands call helpers that exist"] = not ghosts
 if ghosts:

@@ -273,23 +273,30 @@ checks["…and not after one that applied nothing"] = (
 # explaining why it is wrong *here*. A file-wide grep would have failed
 # on our own reasoning, which is what it did the first time.
 # The work moved into `restart_self` once it had to check the policy
-# first, so this reads the method rather than the button handler.
+# first, and the mechanism moved again into the neutral `selfrestart`
+# module (#63) once Discord needed it too — so the shutdown itself is
+# read there, and the ORDER is read here, in the Telegram adapter that
+# still owns what Telegram says.
 _h = tsrc_head()
 _restart = _h[_h.index("    def restart_self(self"):]
 _restart = _restart[:_restart.index("\n    def ", 10)]
+_srsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                           "selfrestart.py"), encoding="utf-8").read()
+_down = _srsrc[_srsrc.index("def go_down("):]
 # Match on the statements, not on the prose. The docstring explains why
 # SIGTERM is the mechanism, and the first version of this check found
 # that sentence and concluded the code ran in the wrong order.
-_code = _restart.split('"""')[2] if _restart.count('"""') >= 2 else _restart
+_code = _down.split('"""')[2] if _down.count('"""') >= 2 else _down
 checks["the restart goes through our own shutdown handler"] = (
-    "_signal.SIGTERM" in _code and "_os.kill" in _code)
+    "signal.SIGTERM" in _code and "os.kill" in _code)
 # `docker restart` on ourselves would ask the daemon to stop the process
 # making the request, and the reply would die with it.
 checks["…rather than asking the daemon to stop us mid-reply"] = (
-    "self.backend.run" not in _restart and "restart\"" not in _restart)
+    "backend.run" not in _down and "restart\"" not in _down)
+_tg = _restart.split('"""')[2] if _restart.count('"""') >= 2 else _restart
 checks["…and the answer is sent before the process goes"] = (
-    _code.index('self.send_message(self.t("restart_going_down"')
-    < _code.index("_os.kill"))
+    _tg.index('self.send_message(self.t("restart_going_down"')
+    < _tg.index("selfrestart.go_down()"))
 
 # The bundle's own claims are not trusted.
 checks["an unknown settings key is dropped"] = not hasattr(
@@ -411,10 +418,26 @@ for other in ("stop", "start"):
     checks[f"…while /{other} still requires one"] = (
         _c["options"][0]["required"] is True)
 
+# Scoped to the STATEMENTS of the handler, not the file and not its
+# prose. Read file-wide it passed on the docstring alone — which now
+# explains the old borrow by name, so the check was satisfied by an
+# explanation of the very thing it exists to forbid.
+_dc = dsrc_now()
+_dcr = _dc[_dc.index("    def _cmd_restart_self(self):"):]
+_dcr = _dcr[:_dcr.index("\n    def ", 10)]
+_dcr_code = _dcr.split('"""')[2] if _dcr.count('"""') >= 2 else _dcr
 checks["restarting Docksentry from Discord asks the same guard"] = (
-    "_restart_policy()" in dsrc_now() and "restart_self()" in dsrc_now())
+    "selfrestart.policy(" in _dcr_code)
 checks["…rather than growing a second copy of the rule"] = (
-    "HostConfig.RestartPolicy" not in dsrc_now())
+    "HostConfig.RestartPolicy" not in _dc)
+# The answer has to be POSTED before the process goes — Discord's reply
+# is only returned from the handler, so arming the timer inside it would
+# race the message announcing the restart.
+checks["…and Discord goes down only after its answer is out"] = (
+    "selfrestart.go_down()" not in _dcr_code
+    and "_shutdown_after_answer = True" in _dcr_code
+    and _dc.index("self._deliver(data, started, text)")
+    < _dc.index("self._shutdown_if_asked()"))
 checks["a Discord restore points at the restart too"] = (
     "`/restart` with no container does it" in dsrc_now())
 

@@ -13,6 +13,7 @@ import urllib.parse
 from errfmt import clip
 import changelog
 import container_info
+import selfrestart
 from broadcast import Broadcast
 
 
@@ -1189,64 +1190,25 @@ class TelegramBot:
     def restart_self(self, checker=None):
         """Go down, on purpose, and only if something will bring us back.
 
-        Stopping ourselves is easy; coming back is the container's job,
-        and that is a promise only its restart policy can make. Without
-        one, a restart button is a stop button with a friendlier label —
-        and the person who pressed it has just lost the bot they would
-        have used to bring it back. So the policy is checked first, and a
-        container that would stay down is told rather than stopped. If
-        the check itself cannot be answered, that counts as "no": going
-        down with no way back is the worse of the two mistakes.
+        The mechanism lives in `selfrestart.py` now (#63) — it is not
+        Telegram's, and while it sat here the Discord side borrowed it and
+        got a refusal every single time. This is the adapter: it says the
+        two things Telegram says, in the order it said them.
 
-        Deliberately our own SIGTERM rather than `docker restart` on
-        ourselves — that asks the daemon to stop the very process making
-        the request, and the answer would die mid-sentence. This way the
-        message is already gone, the shutdown handler runs its normal
-        course, and the marker below keeps the next boot honest about
-        why it happened.
+        `checker` is passed straight through. It used to fall back to
+        `self.checker` when omitted — an attribute this class does not
+        have, which is precisely how the Discord bug stayed invisible.
         """
-        policy, why = self._restart_policy(checker)
-        if not policy:
+        name, why = selfrestart.policy(self.backend, checker)
+        if not name:
             self.send_message(self.t("restart_no_policy", detail=why))
             return False
-        try:
-            from container_store import atomic_write_json
-            import time as _t
-            atomic_write_json(self.config.restart_request_file,
-                              {"ts": _t.time(), "by": "telegram"})
-        except Exception as e:
-            print(f"Could not record the restart request (non-fatal): {e}")
-        self.send_message(self.t("restart_going_down", policy=policy))
-        import os as _os
-        import signal as _signal
-        import threading as _threading
-        # A beat, so the message is on its way before we go.
-        _threading.Timer(
-            1.5, lambda: _os.kill(_os.getpid(), _signal.SIGTERM)).start()
+        selfrestart.record_request(self.config, by="telegram")
+        # The message first, then the beat: it is already on its way by
+        # the time the timer is armed.
+        self.send_message(self.t("restart_going_down", policy=name))
+        selfrestart.go_down()
         return True
-
-    def _restart_policy(self, checker=None):
-        """(policy name, explanation). Empty name means "do not stop"."""
-        checker = checker or getattr(self, "checker", None)
-        own = ""
-        try:
-            own = (checker._own_container_name() if checker else "") or ""
-        except Exception:
-            own = ""
-        if not own:
-            return "", "I cannot tell which container I am."
-        try:
-            r = self.backend.run(
-                ["inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}",
-                 own], timeout=15)
-        except Exception as e:
-            return "", f"the daemon would not answer: {str(e)[:80]}"
-        name = (getattr(r, "stdout", "") or "").strip()
-        if getattr(r, "returncode", 1) != 0 or not name:
-            return "", "the daemon did not report a restart policy."
-        if name in ("no", "none", "<no value>"):
-            return "", f"this container's restart policy is `{name}`."
-        return name, ""
 
     def _do_restore(self, token):
         """Apply the bundle behind `token`.
