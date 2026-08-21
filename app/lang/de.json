@@ -858,5 +858,13 @@
   "web_label_card_title": "Bezeichnung dieser Instanz",
   "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht.",
   "audit_section_dropped": "*Bewusst übersprungen* — an diesem Container gesetzt, uns bekannt, und beim Neuerstellen nicht übernommen:",
-  "host_check_uptodate": "✅ `{host}`: alles aktuell"
+  "host_check_uptodate": "✅ `{host}`: alles aktuell",
+  "chan_no_containers": "Keine Container laufen.",
+  "chan_all_up_to_date": "✅ Alles ist aktuell.",
+  "chan_testchannel_sent": "🔔 An jeden eingeschalteten Kanal gesendet.",
+  "chan_not_available": "⚠️ Nicht verfügbar.",
+  "chan_no_backend": "Kein Container-Backend verfügbar.",
+  "chan_unknown_button": "Diesen Knopf kenne ich nicht.",
+  "chan_cancelled": "Abgebrochen — nichts wurde geändert.",
+  "chan_confirm_not_yours": "Nur wer den Befehl ausgeführt hat, kann ihn bestätigen."
 }

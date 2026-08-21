@@ -858,5 +858,13 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "host_check_uptodate": "✅ `{host}`: everything up to date"
+  "host_check_uptodate": "✅ `{host}`: everything up to date",
+  "chan_no_containers": "Żadne kontenery nie działają.",
+  "chan_all_up_to_date": "✅ Wszystko jest aktualne.",
+  "chan_testchannel_sent": "🔔 Wysłano do każdego włączonego kanału.",
+  "chan_not_available": "⚠️ Niedostępne.",
+  "chan_no_backend": "Brak dostępnego backendu kontenerów.",
+  "chan_unknown_button": "Nie rozpoznaję tego przycisku.",
+  "chan_cancelled": "Anulowano — nic nie zmieniono.",
+  "chan_confirm_not_yours": "Tylko osoba, która uruchomiła polecenie, może je potwierdzić."
 }

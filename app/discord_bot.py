@@ -1020,11 +1020,11 @@ class DiscordBot:
         """
         parts = str(custom_id).split(":", 2)
         if len(parts) != 3 or parts[0] != "ds":
-            return "I don't recognise that button."
+            return self.t("chan_unknown_button")
         _, action, token = parts
         if action == "cancel":
             self._confirmations.pop(token, None)
-            return "Cancelled — nothing was changed."
+            return self.t("chan_cancelled")
         rec = self._confirmations.get(token)
         if rec is None or rec["action"] != action:
             return self._CONFIRM_GONE
@@ -1038,7 +1038,7 @@ class DiscordBot:
         # Both ids have to be present and equal.
         who = self._invoker(data)
         if not who or not rec.get("user") or who != rec["user"]:
-            return "Only the person who ran the command can confirm it."
+            return self.t("chan_confirm_not_yours")
         if self._now() - rec["created"] > CONFIRM_TTL:
             self._confirmations.pop(token, None)
             return self._CONFIRM_GONE
@@ -1394,7 +1394,7 @@ class DiscordBot:
                 else:
                     lines.append(f"⚪ `{nm}`{tag} — `{c.get('image', '?')}`")
         if not lines:
-            return "No containers running."
+            return self.t("chan_no_containers")
         return self._clip("\n".join(lines))
 
     def _cmd_check(self, opts):
@@ -1417,7 +1417,7 @@ class DiscordBot:
             for u in updates:
                 found.append(f"• `{u['name']}`{self._label(host)} — {u['image']}")
         if not found:
-            return "✅ Everything is up to date."
+            return self.t("chan_all_up_to_date")
         return self._clip("**Updates available**\n" + "\n".join(found))
 
     def _cmd_updates(self):
@@ -1618,14 +1618,14 @@ class DiscordBot:
         wanted = (opts.get("container") or "").strip().lower()
         path = getattr(self.config, "history_file", "")
         if not path or not os.path.exists(path):
-            return "No update history yet."
+            return self.t("history_empty")
         try:
             with open(path) as f:
                 history = json.load(f)
         except (OSError, ValueError):
-            return "No update history yet."
+            return self.t("history_empty")
         if not isinstance(history, list) or not history:
-            return "No update history yet."
+            return self.t("history_empty")
         entries = [h for h in history if isinstance(h, dict)]
         if wanted:
             entries = [h for h in entries
@@ -1932,7 +1932,7 @@ class DiscordBot:
         it finds lands here too — not only on Telegram (#63)."""
         ctx = getattr(self, "selfupdate_ctx", None)
         if ctx is None:
-            return "⚠️ Not available."
+            return self.t("chan_not_available")
         target = (opts.get("version") or "").strip() or None
         # In the background so this reply goes out now: the self-update
         # blocks through the pull and recreate, and then the swap helper
@@ -2105,10 +2105,10 @@ class DiscordBot:
         standing where the message has to arrive."""
         seam = getattr(self, "broadcast", None)
         if seam is None:
-            return "⚠️ Not available."
+            return self.t("chan_not_available")
         seam.announce("🔔 Test notification — if you can read this on a "
                       "channel, that channel works.")
-        return "🔔 Sent to every channel that is switched on."
+        return self.t("chan_testchannel_sent")
 
     def _cmd_restart_self(self):
         """Restart Docksentry, if something will bring it back.
@@ -2578,7 +2578,7 @@ class DiscordBot:
         host = (self._write_hosts_for(None) or [None])[0]
         checker = self._checker_for(host)
         if checker is None:
-            return "No container backend available."
+            return self.t("chan_no_backend")
         if not self._lock().acquire(blocking=False):
             return ("🧹 An update is running right now — cleanup skipped. "
                     "The next one will pick it up.")
@@ -2626,7 +2626,7 @@ class DiscordBot:
                 lines.append(f"🧹{tag} — {self._human_size(reclaim)} "
                              "reclaimable.")
         if not lines:
-            return "No container backend available."
+            return self.t("chan_no_backend")
         if total > 0:
             if getattr(self.config, "disk_warn_auto_cleanup", False):
                 lines.append("Auto-cleanup is **on** — this happens by itself.")

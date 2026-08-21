@@ -548,7 +548,14 @@ checks["…and nothing is pinned"] = LOCAL_STORE.get_pinned() == []
 
 # ── /history ─────────────────────────────────────────────────────────
 out = call("history")
-checks["/history with no file says so"] = "No update history" in out
+# Compared against the shared translation rather than a copy of its
+# wording: Discord reads the same keys Telegram does now (#63), so the
+# sentence lives in one place and a test that re-typed it would be the
+# second place it could drift.
+import json as _json
+_en = _json.load(open(os.path.join(os.path.dirname(__file__), "..", "app",
+                                   "lang", "en.json"), encoding="utf-8"))
+checks["/history with no file says so"] = _en["history_empty"] in out
 with open(scfg2.history_file, "w") as f:
     json.dump([
         {"timestamp": "2026-07-01 10:00:00", "container": "web",
