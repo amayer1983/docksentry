@@ -866,5 +866,10 @@
   "chan_no_backend": "Nenhum backend de contêineres disponível.",
   "chan_unknown_button": "Não reconheço esse botão.",
   "chan_cancelled": "Cancelado — nada foi alterado.",
-  "chan_confirm_not_yours": "Apenas quem executou o comando pode confirmá-lo."
+  "chan_confirm_not_yours": "Apenas quem executou o comando pode confirmá-lo.",
+  "chan_usage_autoupdate": "Uso: `/autoupdate <contêiner>`",
+  "chan_usage_protect": "Uso: `/protect <contêiner>`",
+  "chan_usage_cooldown": "Uso: `/cooldown <contêiner> <segundos>`",
+  "chan_maint_off": "🔧 O modo de manutenção está **desligado** — as atualizações seguem o agendamento.",
+  "chan_maint_on": "🔧 O modo de manutenção está **ligado** até você desligá-lo."
 }

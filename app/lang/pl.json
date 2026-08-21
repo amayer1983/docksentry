@@ -866,5 +866,10 @@
   "chan_no_backend": "Brak dostępnego backendu kontenerów.",
   "chan_unknown_button": "Nie rozpoznaję tego przycisku.",
   "chan_cancelled": "Anulowano — nic nie zmieniono.",
-  "chan_confirm_not_yours": "Tylko osoba, która uruchomiła polecenie, może je potwierdzić."
+  "chan_confirm_not_yours": "Tylko osoba, która uruchomiła polecenie, może je potwierdzić.",
+  "chan_usage_autoupdate": "Użycie: `/autoupdate <kontener>`",
+  "chan_usage_protect": "Użycie: `/protect <kontener>`",
+  "chan_usage_cooldown": "Użycie: `/cooldown <kontener> <sekundy>`",
+  "chan_maint_off": "🔧 Tryb konserwacji jest **wyłączony** — aktualizacje działają zgodnie z harmonogramem.",
+  "chan_maint_on": "🔧 Tryb konserwacji jest **włączony**, dopóki go nie wyłączysz."
 }

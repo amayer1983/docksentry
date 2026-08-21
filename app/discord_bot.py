@@ -1506,7 +1506,7 @@ class DiscordBot:
     def _cmd_autoupdate(self, opts):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/autoupdate <container>`"
+            return self.t("chan_usage_autoupdate")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -1532,7 +1532,7 @@ class DiscordBot:
     def _cmd_protect(self, opts):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/protect <container>`"
+            return self.t("chan_usage_protect")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -1553,7 +1553,7 @@ class DiscordBot:
     def _cmd_cooldown(self, opts):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/cooldown <container> <seconds>`"
+            return self.t("chan_usage_cooldown")
         raw = opts.get("seconds")
         try:
             seconds = int(raw)
@@ -1592,9 +1592,9 @@ class DiscordBot:
         if not arg:
             state = get_state(self.config)
             if not state.get("active"):
-                return "🔧 Maintenance mode is **off** — updates run on schedule."
+                return self.t("chan_maint_off")
             if state.get("until_iso") == "forever":
-                return "🔧 Maintenance mode is **on** until you turn it off."
+                return self.t("chan_maint_on")
             return ("🔧 Maintenance mode is **on** — "
                     f"{format_remaining(state)} remaining.")
         try:
@@ -1604,10 +1604,10 @@ class DiscordBot:
                     "Try `2h`, `30m`, `1d`, `forever` or `off`.")
         if parsed is False:
             _disable(self.config)
-            return "🔧 Maintenance mode is **off** — updates run on schedule."
+            return self.t("chan_maint_off")
         if parsed is None:
             _enable(self.config, hours=None)
-            return "🔧 Maintenance mode is **on** until you turn it off."
+            return self.t("chan_maint_on")
         until = _enable(self.config, hours=parsed)
         return f"🔧 Maintenance mode is **on** until {until.strftime('%H:%M')}."
 
@@ -1984,7 +1984,7 @@ class DiscordBot:
         own backend, then act through that host's state view."""
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/setlink <container> [url]`"
+            return self.t("setlink_usage")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -2289,7 +2289,7 @@ class DiscordBot:
         from update_engine import host_name_of
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/update <container>`"
+            return self.t("update_usage")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))

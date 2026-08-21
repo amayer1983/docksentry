@@ -866,5 +866,10 @@
   "chan_no_backend": "कोई कंटेनर बैकएंड उपलब्ध नहीं है।",
   "chan_unknown_button": "मैं इस बटन को नहीं पहचानता।",
   "chan_cancelled": "रद्द किया गया — कुछ भी नहीं बदला।",
-  "chan_confirm_not_yours": "केवल वही पुष्टि कर सकता है जिसने कमांड चलाया।"
+  "chan_confirm_not_yours": "केवल वही पुष्टि कर सकता है जिसने कमांड चलाया।",
+  "chan_usage_autoupdate": "उपयोग: `/autoupdate <कंटेनर>`",
+  "chan_usage_protect": "उपयोग: `/protect <कंटेनर>`",
+  "chan_usage_cooldown": "उपयोग: `/cooldown <कंटेनर> <सेकंड>`",
+  "chan_maint_off": "🔧 रखरखाव मोड **बंद** है — अपडेट समय-सारणी के अनुसार चलते हैं।",
+  "chan_maint_on": "🔧 रखरखाव मोड **चालू** है जब तक आप इसे बंद न करें।"
 }

@@ -866,5 +866,10 @@
   "chan_no_backend": "لا يتوفر خلفية حاويات.",
   "chan_unknown_button": "لا أعرف هذا الزر.",
   "chan_cancelled": "أُلغي — لم يتغيّر شيء.",
-  "chan_confirm_not_yours": "يمكن للشخص الذي نفّذ الأمر وحده تأكيده."
+  "chan_confirm_not_yours": "يمكن للشخص الذي نفّذ الأمر وحده تأكيده.",
+  "chan_usage_autoupdate": "الاستخدام: `/autoupdate <حاوية>`",
+  "chan_usage_protect": "الاستخدام: `/protect <حاوية>`",
+  "chan_usage_cooldown": "الاستخدام: `/cooldown <حاوية> <ثوانٍ>`",
+  "chan_maint_off": "🔧 وضع الصيانة **مُعطَّل** — التحديثات تعمل وفق الجدول.",
+  "chan_maint_on": "🔧 وضع الصيانة **مُفعَّل** حتى تُعطّله."
 }

@@ -866,5 +866,10 @@
   "chan_no_backend": "Geen container-backend beschikbaar.",
   "chan_unknown_button": "Ik herken die knop niet.",
   "chan_cancelled": "Geannuleerd — er is niets gewijzigd.",
-  "chan_confirm_not_yours": "Alleen wie de opdracht uitvoerde, kan die bevestigen."
+  "chan_confirm_not_yours": "Alleen wie de opdracht uitvoerde, kan die bevestigen.",
+  "chan_usage_autoupdate": "Gebruik: `/autoupdate <container>`",
+  "chan_usage_protect": "Gebruik: `/protect <container>`",
+  "chan_usage_cooldown": "Gebruik: `/cooldown <container> <seconden>`",
+  "chan_maint_off": "🔧 Onderhoudsmodus staat **uit** — updates volgen het schema.",
+  "chan_maint_on": "🔧 Onderhoudsmodus staat **aan** totdat je hem uitzet."
 }

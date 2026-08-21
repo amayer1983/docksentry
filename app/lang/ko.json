@@ -866,5 +866,10 @@
   "chan_no_backend": "사용 가능한 컨테이너 백엔드가 없습니다.",
   "chan_unknown_button": "이 버튼은 알 수 없습니다.",
   "chan_cancelled": "취소했습니다 — 아무것도 변경되지 않았습니다.",
-  "chan_confirm_not_yours": "명령을 실행한 사람만 확인할 수 있습니다."
+  "chan_confirm_not_yours": "명령을 실행한 사람만 확인할 수 있습니다.",
+  "chan_usage_autoupdate": "사용법: `/autoupdate <컨테이너>`",
+  "chan_usage_protect": "사용법: `/protect <컨테이너>`",
+  "chan_usage_cooldown": "사용법: `/cooldown <컨테이너> <초>`",
+  "chan_maint_off": "🔧 유지 보수 모드가 **꺼짐** — 업데이트는 일정대로 실행됩니다.",
+  "chan_maint_on": "🔧 유지 보수 모드는 끄기 전까지 **켜짐** 상태입니다."
 }

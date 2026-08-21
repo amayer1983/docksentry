@@ -866,5 +866,10 @@
   "chan_no_backend": "没有可用的容器后端。",
   "chan_unknown_button": "我不认识这个按钮。",
   "chan_cancelled": "已取消 — 未做任何更改。",
-  "chan_confirm_not_yours": "只有执行该命令的人才能确认。"
+  "chan_confirm_not_yours": "只有执行该命令的人才能确认。",
+  "chan_usage_autoupdate": "用法：`/autoupdate <容器>`",
+  "chan_usage_protect": "用法：`/protect <容器>`",
+  "chan_usage_cooldown": "用法：`/cooldown <容器> <秒>`",
+  "chan_maint_off": "🔧 维护模式**已关闭** — 更新按计划运行。",
+  "chan_maint_on": "🔧 维护模式**已开启**，直到你关闭为止。"
 }

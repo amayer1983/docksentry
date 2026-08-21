@@ -866,5 +866,10 @@
   "chan_no_backend": "Kein Container-Backend verfügbar.",
   "chan_unknown_button": "Diesen Knopf kenne ich nicht.",
   "chan_cancelled": "Abgebrochen — nichts wurde geändert.",
-  "chan_confirm_not_yours": "Nur wer den Befehl ausgeführt hat, kann ihn bestätigen."
+  "chan_confirm_not_yours": "Nur wer den Befehl ausgeführt hat, kann ihn bestätigen.",
+  "chan_usage_autoupdate": "Verwendung: `/autoupdate <Container>`",
+  "chan_usage_protect": "Verwendung: `/protect <Container>`",
+  "chan_usage_cooldown": "Verwendung: `/cooldown <Container> <Sekunden>`",
+  "chan_maint_off": "🔧 Wartungsmodus ist **aus** — Updates laufen nach Zeitplan.",
+  "chan_maint_on": "🔧 Wartungsmodus ist **an**, bis du ihn ausschaltest."
 }

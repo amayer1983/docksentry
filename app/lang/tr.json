@@ -866,5 +866,10 @@
   "chan_no_backend": "Kullanılabilir kapsayıcı arka ucu yok.",
   "chan_unknown_button": "Bu düğmeyi tanımıyorum.",
   "chan_cancelled": "İptal edildi — hiçbir şey değişmedi.",
-  "chan_confirm_not_yours": "Komutu yalnızca çalıştıran kişi onaylayabilir."
+  "chan_confirm_not_yours": "Komutu yalnızca çalıştıran kişi onaylayabilir.",
+  "chan_usage_autoupdate": "Kullanım: `/autoupdate <kapsayıcı>`",
+  "chan_usage_protect": "Kullanım: `/protect <kapsayıcı>`",
+  "chan_usage_cooldown": "Kullanım: `/cooldown <kapsayıcı> <saniye>`",
+  "chan_maint_off": "🔧 Bakım modu **kapalı** — güncellemeler zamanlamaya göre çalışır.",
+  "chan_maint_on": "🔧 Bakım modu siz kapatana kadar **açık**."
 }
