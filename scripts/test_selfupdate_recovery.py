@@ -12,6 +12,7 @@ No Docker, no real waits. Exits non-zero on any failure.
 import sys, os, tempfile, subprocess, stat, shlex
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 from telegram_bot import TelegramBot
 
 
@@ -30,7 +31,7 @@ def _run(fail_run):
     for b in ("docker", "sleep"):
         p = os.path.join(bindir, b)
         os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    script = TelegramBot._build_selfupdate_script("ds", "-e X=1", "img:latest")
+    script = selfupdate.build_script("ds", "-e X=1", "img:latest")
     env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""),
                FAIL_RUN="1" if fail_run else "0")
     subprocess.run(["sh", "-c", script], env=env, timeout=30)
@@ -60,7 +61,7 @@ def _run_with_run_parts(run_args):
         os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     # Mirror the production line in _do_selfupdate exactly.
     run_parts = " ".join(shlex.quote(a) for a in run_args)
-    script = TelegramBot._build_selfupdate_script("ds", run_parts, "img:latest")
+    script = selfupdate.build_script("ds", run_parts, "img:latest")
     env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""),
                FAIL_RUN="0")
     r = subprocess.run(["sh", "-c", script], env=env, timeout=30,

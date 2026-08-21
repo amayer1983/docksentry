@@ -19,6 +19,7 @@ Pure logic — prune and docker calls are stubbed. Exits non-zero on failure.
 import sys, os, threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 from telegram_bot import TelegramBot
 from update_engine import UpdateEngine
 
@@ -82,7 +83,10 @@ def main():
     # ── 2. queued selfupdate runs after cleanup ──
     bot3 = make_bot()
     ran = []
-    bot3._selfupdate_locked = lambda target=None: ran.append(target)
+    # The body moved into the neutral `selfupdate` module (#63), so the
+    # seam to stand in for is `selfupdate.run(ctx, target)`, not a method
+    # on the bot.
+    selfupdate.run = lambda ctx, target=None: ran.append(target)
     bot3._queued_selfupdate = ("1.9.9",)
     bot3.cleanup_guarded(FakeChecker())
     checks["queued selfupdate runs after cleanup"] = ran == ["1.9.9"]

@@ -13,6 +13,7 @@ stale (>1h) → ignore; absent → not a self-update. Exits non-zero on failure.
 import sys, os, json, time, tempfile, types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 from container_store import atomic_write_json
 from telegram_bot import TelegramBot
 from update_checker import UpdateChecker
@@ -52,7 +53,7 @@ def main():
     # since v1.26.2). The write must then round-trip through the consume logic.
     wp = os.path.join(d, "selfupdate_restart_write.json")
     bot = types.SimpleNamespace(config=types.SimpleNamespace(selfupdate_marker_file=wp))
-    TelegramBot._write_selfupdate_marker(bot, "repo:latest")
+    selfupdate.write_marker(bot, "repo:latest")
     written = os.path.exists(wp)
     roundtrip = written and consume(wp) is True
 
@@ -63,10 +64,10 @@ def main():
     _orig_lbl = UpdateChecker.image_version_label
     try:
         UpdateChecker.image_version_label = staticmethod(lambda img: "9.9.9")
-        line = TelegramBot._selfupdate_version_line(vbot, "img")
+        line = selfupdate.version_line(vbot, "img")
         line_ok = (f"v{VERSION}" in line) and ("v9.9.9" in line) and line.endswith("\n")
         UpdateChecker.image_version_label = staticmethod(lambda img: "")
-        empty_ok = TelegramBot._selfupdate_version_line(vbot, "img") == ""
+        empty_ok = selfupdate.version_line(vbot, "img") == ""
     finally:
         UpdateChecker.image_version_label = staticmethod(_orig_lbl)
 
@@ -74,7 +75,7 @@ def main():
     # The self-update helper must mount the SAME host socket Docksentry uses,
     # not a hardcoded /var/run/docker.sock — rootless Podman maps a different
     # host path to /var/run/docker.sock inside the container.
-    hs = TelegramBot._host_docker_socket
+    hs = selfupdate.host_docker_socket
     podman_cfg = {"Mounts": [{"Destination": "/var/run/docker.sock",
                               "Source": "/run/user/1002/podman/podman.sock"}]}
     sock_podman = hs(podman_cfg) == "/run/user/1002/podman/podman.sock"

@@ -108,8 +108,15 @@ class Bot(telegram_bot.TelegramBot):
     def t(self, key, **kw):
         return key
 
-    def _selfupdate_locked(self, target):
-        raise RuntimeError("pull failed")
+
+# The body that fails. It used to be `Bot._selfupdate_locked`; it lives in
+# the neutral `selfupdate` module now (#63), so that is what stands in
+# here. Left as a bot method, the stub simply stopped being called — the
+# test still passed, but because the REAL body ran against a bot with no
+# config, which is not what it means to assert.
+import selfupdate  # noqa: E402
+selfupdate.run = lambda ctx, target=None: (_ for _ in ()).throw(
+    RuntimeError("pull failed"))
 
 
 eng = Boom()

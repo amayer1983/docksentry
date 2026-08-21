@@ -22,6 +22,19 @@ import sys, os, threading
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
 from update_engine import UpdateEngine
+import selfupdate
+
+
+def stub_body(fn):
+    """Stand in for the self-update body.
+
+    It used to be `bot._selfupdate_locked`, so each section stubbed it on
+    its own bot. The body lives in the neutral `selfupdate` module now
+    (#63) and `_handle_selfupdate` calls `selfupdate.run(self, target)`,
+    so the seam to stand in for is that function. `fn` is called with the
+    target only — the ctx is the bot, which every section already holds.
+    """
+    selfupdate.run = lambda ctx, target=None: fn(target)
 
 
 def make_bot():
@@ -48,7 +61,7 @@ def main():
     # ── 1. lock held → queued, body not run ──
     bot = make_bot()
     ran = []
-    bot._selfupdate_locked = lambda target=None: ran.append(target)
+    stub_body(lambda target=None: ran.append(target))
     bot._update_lock.acquire()
     bot._handle_selfupdate("1.2.3")
     checks["queued while batch runs"] = bot._queued_selfupdate == ("1.2.3",)
@@ -68,8 +81,8 @@ def main():
     # ── 3. lock free → body runs under lock, released after ──
     bot2 = make_bot()
     held_during = []
-    bot2._selfupdate_locked = lambda target=None: held_during.append(
-        bot2._update_lock.locked())
+    stub_body(lambda target=None: held_during.append(
+        bot2._update_lock.locked()))
     bot2._handle_selfupdate()
     checks["body runs when lock free"] = held_during == [True]
     checks["lock released after no-update path"] = not bot2._update_lock.locked()
@@ -78,14 +91,14 @@ def main():
     bot3 = make_bot()
     def fake_swap(target=None):
         bot3._swap_in_flight = True
-    bot3._selfupdate_locked = fake_swap
+    stub_body(fake_swap)
     bot3._handle_selfupdate()
     checks["lock kept once swap in flight"] = bot3._update_lock.locked()
 
     # ── 3c. queued None target works (plain /selfupdate) ──
     bot4 = make_bot()
     ran4 = []
-    bot4._selfupdate_locked = lambda target=None: ran4.append(target)
+    stub_body(lambda target=None: ran4.append(target))
     bot4._update_lock.acquire()
     bot4._handle_selfupdate()
     checks["plain selfupdate queues as (None,)"] = bot4._queued_selfupdate == (None,)
@@ -122,7 +135,7 @@ def main():
     # message goes out. The queue must be dropped with an honest message.
     bot8 = make_bot()
     ran8 = []
-    bot8._selfupdate_locked = lambda target=None: ran8.append(target)
+    stub_body(lambda target=None: ran8.append(target))
     bot8._queued_selfupdate = (None,)
     try:
         try:
@@ -140,7 +153,7 @@ def main():
     bot7 = make_bot()
     def boom(target=None):
         raise RuntimeError("swap exploded")
-    bot7._selfupdate_locked = boom
+    stub_body(boom)
     bot7._queued_selfupdate = (None,)
     try:
         bot7._run_queued_selfupdate()

@@ -8,9 +8,10 @@ any failure.
 import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 from telegram_bot import TelegramBot
 
-f = TelegramBot._should_retag_moving
+f = selfupdate.should_retag_moving
 
 
 class _S:

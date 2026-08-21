@@ -15,6 +15,7 @@ Pure logic. Exits non-zero on any failure.
 import sys, os, tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 from telegram_bot import TelegramBot
 
 
@@ -22,7 +23,7 @@ def main():
     checks = {}
 
     # ── _host_mount_source ──
-    hm = TelegramBot._host_mount_source
+    hm = selfupdate.host_mount_source
     cfg = {"Mounts": [
         {"Destination": "/var/run/docker.sock", "Source": "/run/user/1002/podman/podman.sock"},
         {"Destination": "/data", "Source": "/opt/podman.d/dockersentry/data"},

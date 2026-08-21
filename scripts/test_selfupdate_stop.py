@@ -35,34 +35,35 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import selfupdate  # noqa: E402
 
 from telegram_bot import TelegramBot  # noqa: E402
 
 checks = {}
 
 # ── the stop the helper actually runs ────────────────────────────────
-script = TelegramBot._build_selfupdate_script(
+script = selfupdate.build_script(
     "DockSentry", "--name DockSentry", "img:latest", stop_timeout=60)
 checks["the swap stops us with an explicit timeout"] = (
     "docker stop -t 60 DockSentry" in script)
 checks["…never bare, which would mean Docker's ten seconds"] = (
     "docker stop DockSentry" not in script)
 checks["…and the default is generous rather than Docker's"] = (
-    "stop -t 60 " in TelegramBot._build_selfupdate_script("a", "b", "c"))
+    "stop -t 60 " in selfupdate.build_script("a", "b", "c"))
 # The rest of the swap has to be untouched — this is the script that can
 # leave Docksentry dead if it goes wrong (#43).
 for step in ("docker rename", "docker run -d", "docker rm ",
              "Selfupdate backup failed", "Selfupdate recreate failed"):
     checks[f"the swap still does: {step.strip()}"] = step in script
 
+# The swap moved into the neutral `selfupdate` module (#63); the caller
+# that decides the timeout moved with it, so the check follows.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                        "telegram_bot.py"), encoding="utf-8").read()
+                        "selfupdate.py"), encoding="utf-8").read()
 checks["the timeout comes from DOCKER_STOP_TIMEOUT"] = (
-    'getattr(self.config,\n                                             '
-    '"docker_stop_timeout", 60)' in src
-    or 'docker_stop_timeout' in src.split("_build_selfupdate_script(\n")[1][:300])
+    'docker_stop_timeout' in src.split("build_script(\n")[1][:300])
 checks["…with the same floor the rest of the shutdown path uses"] = (
-    "max(30, int(getattr(self.config" in src)
+    "max(30, int(getattr(ctx.config" in src)
 
 # ── telling a finished shutdown from a killed one ────────────────────
 main = open(os.path.join(os.path.dirname(__file__), "..", "app",
