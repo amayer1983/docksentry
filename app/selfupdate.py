@@ -18,7 +18,6 @@ names — measured, not guessed:
     ctx.t(key, **kw)            the translated text
     ctx.send_message(text)      where the report goes
     ctx.config                  the settings
-    ctx.notifier                the other channels, for update results
     ctx._swap_in_flight         set once the helper is launched, so the
                                 caller knows not to release the lock on
                                 a process that is about to be replaced
@@ -38,6 +37,147 @@ import shlex
 import subprocess
 
 import changelog
+
+class Context:
+    """What a self-update needs from whoever drives it, in one object.
+
+    Assembled once in main.py and shared by both front ends, so neither
+    has to reach through the other to start one. Seven names, and the
+    decoupling test counts them out of this module rather than trusting
+    the list:
+
+        t / send_message      what it says, and where that goes
+        config                the settings
+        _update_lock          the mutex every update flow shares
+        _queued_selfupdate    what waits behind a running batch
+        _swap_in_flight       set once the helper is launched
+
+    `send_message` goes through the all-channel seam, not through
+    Telegram. That is the fix for the half of this that was a bug: of the
+    thirteen reports in here, exactly ONE was ever given a second
+    recipient — "update found, restarting", fanned out by hand for #19.
+    "Already up to date", "pull failed", every refusal: Telegram only. So
+    a /selfupdate started from Discord answered "started" and then went
+    silent, which is what @NotRetarded reported (#63). Reported by the
+    seam, all thirteen reach every channel that is switched on.
+
+    Translation is resolved per call from `config.language` rather than
+    held: /lang changes that setting at runtime, and a translator cached
+    here would keep answering in the old language. It also means nothing
+    has to write a new translator onto anybody.
+    """
+
+    def __init__(self, engine, config, say, log=print):
+        self.engine = engine
+        self.config = config
+        self._say = say
+        self.log = log
+
+    @property
+    def t(self):
+        from i18n import get_translator
+        return get_translator(getattr(self.config, "language", "en") or "en")
+
+    def send_message(self, text, **kw):
+        """Report. `kw` is swallowed: a keyboard is Telegram's alone and
+        nothing in here sends one."""
+        self._say(text)
+
+    @property
+    def _update_lock(self):
+        return self.engine._update_lock
+
+    @property
+    def _queued_selfupdate(self):
+        return self.engine._queued_selfupdate
+
+    @_queued_selfupdate.setter
+    def _queued_selfupdate(self, value):
+        self.engine._queued_selfupdate = value
+
+    @property
+    def _swap_in_flight(self):
+        return self.engine._swap_in_flight
+
+    @_swap_in_flight.setter
+    def _swap_in_flight(self, value):
+        self.engine._swap_in_flight = value
+
+
+def start(ctx, target=None):
+    """Pull a target image and recreate own container.
+
+    Coordinates with every other update flow via `_update_lock`:
+    - Lock held (a container batch is running): the self-update is
+      QUEUED and runs automatically when the batch finishes — a
+      restart mid-batch aborted the running updates (#2, @famewolf)
+      and could have orphaned a container mid-recreate.
+    - Lock free: held for the whole self-update, so no batch can
+      start while the swap is in flight. Released on every no-update
+      path; deliberately kept once the helper is launched (this
+      process is about to be stopped).
+
+    Args:
+        target: optional version override:
+            None       → whatever tag the container currently runs (usually :latest)
+            "previous" → last released version older than the running one
+            "X.Y.Z"    → a specific semver tag
+    """
+    if not ctx._update_lock.acquire(blocking=False):
+        ctx._queued_selfupdate = (target,)
+        ctx.send_message(ctx.t("selfupdate_queued"))
+        return
+    try:
+        run(ctx, target)
+    finally:
+        # Nothing in here may stop the release. This block raised
+        # once — `_swap_in_flight` had been orphaned out of
+        # UpdateEngine.__init__ by an unrelated edit, so reading it
+        # threw AttributeError *before* release() was reached, and
+        # the update lock stayed held for the life of the process.
+        # Every later update on that instance answered "an update is
+        # already running" and queued behind a batch that had
+        # finished 40 minutes earlier. One attribute wedged the whole
+        # machine, silently.
+        try:
+            swap = bool(getattr(ctx, "_swap_in_flight", False))
+        except Exception:
+            swap = False
+        if not swap:
+            ctx._update_lock.release()
+
+
+def run_queued(ctx):
+    """Run a self-update that was queued behind a container batch.
+    Called by every update flow right after it releases the lock;
+    no-op when nothing is queued. Never raises (a queue hiccup must
+    not mask the batch result it runs after).
+
+    Per-container update FAILURES don't stop the queued run: they are
+    normal batch results — reported, rolled back / left in place —
+    and a Docksentry restart can't make them worse. But when we're
+    called during an exception unwind (the batch flow itself crashed,
+    state unknown, error not yet reported), restarting on top of that
+    would be reckless and could kill the process before the error
+    message ever goes out — so the queued self-update is CANCELLED
+    with an honest message instead (#2 follow-up, @famewolf)."""
+    q = ctx._queued_selfupdate
+    if q is None:
+        return
+    ctx._queued_selfupdate = None
+    import sys as _sys
+    if _sys.exc_info()[0] is not None:
+        try:
+            ctx.send_message(ctx.t("selfupdate_queue_cancelled"))
+        except Exception:
+            pass
+        return
+    try:
+        ctx.send_message(ctx.t("selfupdate_dequeued"))
+        start(ctx, q[0])
+    except Exception as e:
+        print(f"Queued selfupdate error: {e}")
+
 
 def run(ctx, target=None):
     """Body of _handle_selfupdate; only ever called with the update
@@ -131,12 +271,10 @@ def run(ctx, target=None):
         + ctx.t("selfupdate_releases_link") + "\n\n"
         + ctx.t("selfupdate_restarting")
     )
+    # One send. This message used to be fanned out to the other channels
+    # by hand right here — the only one of the thirteen that was (#19).
+    # Every report goes through the seam now, so they all arrive.
     ctx.send_message(msg)
-    # Also fan out to Discord / generic webhook so non-Telegram
-    # users actually see self-update events (#19). Same pattern as
-    # main.py's startup-message handling.
-    if ctx.notifier and ctx.notifier.has_channels():
-        ctx.notifier.send_message(msg)
 
     # Record in history BEFORE _do_selfupdate kills us — otherwise the
     # entry never gets written (#13).

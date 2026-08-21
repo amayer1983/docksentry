@@ -234,6 +234,9 @@ class TelegramBot:
         #: main.py so both front ends share one. `announce()` builds
         #: a local one when nothing wired it up.
         self.broadcast = None
+        #: The self-update context (`selfupdate.Context`), set by
+        #: main.py so both front ends drive one machine.
+        self.selfupdate_ctx = None
         # Container repo/changelog link resolution (#52) — a neutral,
         # Telegram-agnostic module so the Web UI (and, in v2, Discord)
         # resolve links through the same code instead of reaching into
@@ -2144,47 +2147,23 @@ class TelegramBot:
 
 
 
-    def _handle_selfupdate(self, target=None):
-        """Pull a target image and recreate own container.
+    def _selfupdate_ctx(self):
+        """The context a self-update runs in.
 
-        Coordinates with every other update flow via `_update_lock`:
-        - Lock held (a container batch is running): the self-update is
-          QUEUED and runs automatically when the batch finishes — a
-          restart mid-batch aborted the running updates (#2, @famewolf)
-          and could have orphaned a container mid-recreate.
-        - Lock free: held for the whole self-update, so no batch can
-          start while the swap is in flight. Released on every no-update
-          path; deliberately kept once the helper is launched (this
-          process is about to be stopped).
-
-        Args:
-            target: optional version override:
-                None       → whatever tag the container currently runs (usually :latest)
-                "previous" → last released version older than the running one
-                "X.Y.Z"    → a specific semver tag
+        main.py builds one and shares it with the Discord side, so both
+        report through the same all-channel seam. Without one — a bare
+        bot in a test, or anything constructing its own — this instance
+        stands in, which is exactly what it did before the extraction.
         """
-        if not self._update_lock.acquire(blocking=False):
-            self._queued_selfupdate = (target,)
-            self.send_message(self.t("selfupdate_queued"))
-            return
-        try:
-            selfupdate.run(self, target)
-        finally:
-            # Nothing in here may stop the release. This block raised
-            # once — `_swap_in_flight` had been orphaned out of
-            # UpdateEngine.__init__ by an unrelated edit, so reading it
-            # threw AttributeError *before* release() was reached, and
-            # the update lock stayed held for the life of the process.
-            # Every later update on that instance answered "an update is
-            # already running" and queued behind a batch that had
-            # finished 40 minutes earlier. One attribute wedged the whole
-            # machine, silently.
-            try:
-                swap = bool(getattr(self, "_swap_in_flight", False))
-            except Exception:
-                swap = False
-            if not swap:
-                self._update_lock.release()
+        return getattr(self, "selfupdate_ctx", None) or self
+
+    def _handle_selfupdate(self, target=None):
+        """Start a self-update. The coordination lives in the core (#63).
+
+        Kept as a method because the Web UI and the update flows call it
+        by this name; it hands straight through to `selfupdate.start`.
+        """
+        selfupdate.start(self._selfupdate_ctx(), target)
 
     def cleanup_guarded(self, checker):
         """Run image cleanup under the shared update mutex (#2 follow-up,
@@ -2210,35 +2189,13 @@ class TelegramBot:
             self._run_queued_selfupdate()
 
     def _run_queued_selfupdate(self):
-        """Run a self-update that was queued behind a container batch.
-        Called by every update flow right after it releases the lock;
-        no-op when nothing is queued. Never raises (a queue hiccup must
-        not mask the batch result it runs after).
+        """Run a self-update that queued behind a container batch.
 
-        Per-container update FAILURES don't stop the queued run: they are
-        normal batch results — reported, rolled back / left in place —
-        and a Docksentry restart can't make them worse. But when we're
-        called during an exception unwind (the batch flow itself crashed,
-        state unknown, error not yet reported), restarting on top of that
-        would be reckless and could kill the process before the error
-        message ever goes out — so the queued self-update is CANCELLED
-        with an honest message instead (#2 follow-up, @famewolf)."""
-        q = self._queued_selfupdate
-        if q is None:
-            return
-        self._queued_selfupdate = None
-        import sys as _sys
-        if _sys.exc_info()[0] is not None:
-            try:
-                self.send_message(self.t("selfupdate_queue_cancelled"))
-            except Exception:
-                pass
-            return
-        try:
-            self.send_message(self.t("selfupdate_dequeued"))
-            self._handle_selfupdate(q[0])
-        except Exception as e:
-            print(f"Queued selfupdate error: {e}")
+        Called by every update flow right after it releases the lock. The
+        rule about what may and may not run after a crashed batch lives
+        in the core with the rest of the coordination (#63).
+        """
+        selfupdate.run_queued(self._selfupdate_ctx())
 
 
 

@@ -41,6 +41,7 @@ from discord_rest import DiscordREST, DiscordRESTError
 from errfmt import clip
 import container_info
 import selfrestart
+import selfupdate
 
 #: Discord-side gating, applied to every command below by
 #: `_harden_commands()`. Two flags, and they are defence in depth — the
@@ -393,7 +394,8 @@ class DiscordBot:
     """
 
     def __init__(self, config, store, engine, hosts=None, checker=None,
-                 log=print, telegram=None, broadcast=None):
+                 log=print, telegram=None, broadcast=None,
+                 selfupdate_ctx=None):
         self.config = config
         self.store = store
         self.engine = engine
@@ -428,6 +430,9 @@ class DiscordBot:
         #: Set by a bare /restart, read once its answer is posted.
         #: See `_shutdown_if_asked` for why it cannot go down itself.
         self._shutdown_after_answer = False
+        #: The shared self-update machine (`selfupdate.Context`),
+        #: the same one the Telegram bot drives.
+        self.selfupdate_ctx = selfupdate_ctx
         #: Pending confirmations, token → record. Written on `/stop` and
         #: `/updateall`, claimed by the button press. A plain dict: the
         #: single-use property comes from `dict.pop`, which is atomic
@@ -1885,19 +1890,24 @@ class DiscordBot:
         return "\n\n".join(blocks)[:1800]
 
     def _cmd_selfupdate(self, opts):
-        bot = getattr(self, "telegram", None)
-        if bot is None or not hasattr(bot, "_handle_selfupdate"):
+        """Start a self-update. Reports through the shared seam, so what
+        it finds lands here too — not only on Telegram (#63)."""
+        ctx = getattr(self, "selfupdate_ctx", None)
+        if ctx is None:
             return "⚠️ Not available."
         target = (opts.get("version") or "").strip() or None
-        # In the background so this reply goes out now: _handle_selfupdate
+        # In the background so this reply goes out now: the self-update
         # blocks through the pull and recreate, and then the swap helper
-        # stops this process. It reports its own progress through the same
-        # machinery /selfupdate uses on Telegram. This used to call
-        # `bot.check_selfupdate`, which does not exist — an AttributeError
-        # that left /selfupdate broken on Discord, the whole time (#63,
-        # found during the core-extraction pass).
+        # stops this process.
+        #
+        # It used to hand the work to the Telegram bot's method — which
+        # first called `bot.check_selfupdate`, a name that does not exist
+        # (an AttributeError that left the command broken the whole
+        # time), and then, once fixed, reported to Telegram: twelve of
+        # its thirteen messages had no second recipient, so this answered
+        # "started" and went quiet. Both are gone with the extraction.
         import threading
-        threading.Thread(target=bot._handle_selfupdate, args=(target,),
+        threading.Thread(target=selfupdate.start, args=(ctx, target),
                          daemon=True).start()
         return ("⬆️ Self-update started — I will report in the channel when "
                 "it finishes, and restart if there is something to apply.")
@@ -2158,11 +2168,11 @@ class DiscordBot:
         Discord-triggered update would sit there until some other
         front-end happened to release the lock next."""
         self._lock().release()
-        runner = getattr(self.telegram, "_run_queued_selfupdate", None)
-        if runner is None:
+        ctx = getattr(self, "selfupdate_ctx", None)
+        if ctx is None:
             return
         try:
-            runner()
+            selfupdate.run_queued(ctx)
         except Exception as e:
             self.log(f"Discord: queued self-update handoff failed: {e}")
 

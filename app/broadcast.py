@@ -55,3 +55,28 @@ class Broadcast:
                 notifier.send_message(text)
         except Exception as e:
             self.log(f"Could not fan out an announcement: {e}")
+
+    def tell(self, text):
+        """Every channel, and not silenced by quiet hours.
+
+        `announce` marks its Telegram message as unattended, which is
+        what quiet hours suppress — right for a notification nobody
+        asked for. Wrong for the report on something a person just
+        started: a self-update at 23:00 must still say how it went, and
+        it always has. So this is the same fan-out with the Telegram
+        message sent as an answer rather than an announcement.
+
+        The difference is one flag, and it is deliberately not a
+        parameter on `announce`: which of the two a message is, is a
+        property of the message, and a caller that has to pass a boolean
+        gets it wrong eventually.
+        """
+        tg = self.telegram
+        if tg is not None and getattr(tg, "enabled", False):
+            tg.send_message(text)
+        notifier = self.notifier
+        try:
+            if notifier is not None and notifier.has_channels():
+                notifier.send_message(text)
+        except Exception as e:
+            self.log(f"Could not fan out a report: {e}")

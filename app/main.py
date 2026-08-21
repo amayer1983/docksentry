@@ -25,6 +25,7 @@ from update_checker import UpdateChecker
 from scheduler import Scheduler
 from notifier import Notifier
 from broadcast import Broadcast
+import selfupdate
 
 
 def _setup_docker_auth(config):
@@ -138,6 +139,12 @@ def main():
     # Telegram alone" happened three times (#57, #61).
     broadcast = Broadcast(telegram=bot, notifier=notifier)
     bot.broadcast = broadcast
+    # One self-update machine, shared by both front ends (#63). It reports
+    # through the seam above rather than through Telegram, which is what
+    # gives a /selfupdate started from Discord anything to say past
+    # "started" — twelve of its thirteen reports were Telegram-only.
+    su_ctx = selfupdate.Context(engine, config, broadcast.tell)
+    bot.selfupdate_ctx = su_ctx
     checker = host_registry.local.checker
     if host_registry.is_multi:
         print(f"Managing {len(host_registry)} hosts: "
@@ -427,7 +434,7 @@ def main():
         # into the Telegram bot for anything else.
         discord_bot = DiscordBot(config, store, engine, hosts=host_registry,
                                  checker=checker, telegram=bot,
-                                 broadcast=broadcast)
+                                 broadcast=broadcast, selfupdate_ctx=su_ctx)
         discord_bot.audit = audit_log
         if discord_bot.enabled:
             if discord_bot.start():
@@ -463,7 +470,7 @@ def main():
         try:
             fresh = DiscordBot(config, store, engine, hosts=host_registry,
                                checker=checker, telegram=bot,
-                               broadcast=broadcast)
+                               broadcast=broadcast, selfupdate_ctx=su_ctx)
             fresh.audit = audit_log
             if not fresh.enabled:
                 # No token, or a token with no application id. This is

@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Every Telegram-bot method Discord borrows actually exists (#63).
+"""Discord borrows no behaviour from the Telegram bot (#63).
 
-Discord's front end reaches into the Telegram bot instance for the bits
-of shared machinery that have not been pulled into a neutral core yet
-(self-update, restart). Nothing checked that the borrowed names were real
-— so `/selfupdate` called `bot.check_selfupdate`, which never existed,
-and the command just AttributeError'd. Exactly like `/changelog` did on a
-different call. The real fix is the extraction that removes the borrowing
-entirely; until then, this keeps the borrows honest.
+This started as a guard: the Discord front end reached into the Telegram
+bot instance for machinery that had not been pulled into a neutral core
+yet, and nothing checked that the borrowed names were real — so
+`/selfupdate` called `bot.check_selfupdate`, which never existed, and the
+command just AttributeError'd. Exactly like `/changelog` did on a
+different call, and `/restart` on a third.
+
+The extraction is finished, so the guard states the finished thing: the
+list of borrowed methods is EMPTY. What is left is one attribute WRITE —
+`bot.t`, when /lang switches the language — and that is named here rather
+than waved through, so it cannot quietly grow company.
 
 Scanned over the AST, not with a regex over the text. The first version
 did use a regex, and it matched only a CALL — `bot.NAME(`, with its
@@ -71,36 +75,69 @@ for name in written:
     borrowed.pop(name, None)
 
 checks = {}
-checks["something is actually borrowed (the scan found names)"] = bool(borrowed)
+checks["Discord borrows no method from the Telegram bot"] = not borrowed
+if borrowed:
+    print("  → geborgt: " + ", ".join(
+        f"{n} (line {ln})" for n, ln in sorted(borrowed.items())))
 
+# Should one come back, it must at least be real — the check that caught
+# the three broken commands, kept for the borrow that has not happened.
 missing = sorted(f"{n} (line {ln})" for n, ln in borrowed.items()
-                 if getattr(TelegramBot, n, None) is None)
-checks["every borrowed name exists on TelegramBot"] = not missing
+                 if not callable(getattr(TelegramBot, n, None)))
+checks["…and were one to come back, it would have to exist"] = not missing
 if missing:
     print("  → not on TelegramBot: " + ", ".join(missing))
 
-not_callable = sorted(f"{n} (line {ln})" for n, ln in borrowed.items()
-                      if getattr(TelegramBot, n, None) is not None
-                      and not callable(getattr(TelegramBot, n)))
-checks["…and every one of them is callable"] = not not_callable
-if not_callable:
-    print("  → not callable: " + ", ".join(not_callable))
+# The one write, stated by name. `t` is replaced on the Telegram bot when
+# Discord's /lang switches the language, because the bot holds its
+# translator rather than resolving it from `config.language`. Removing it
+# means making `t` resolve itself — a change across every call site in
+# the project, which is not something to do in the last step of a large
+# extraction. It is the last thread, and this is where it is recorded.
+checks["the only thing written on the bot is the translator"] = (
+    written == {"t"})
+if written != {"t"}:
+    print(f"  → geschrieben: {sorted(written)}")
 
-# The specific one that was broken, still wired to the real method.
+# The three commands that were broken, each now on the core.
 i = dsrc.index("def _cmd_selfupdate")
 body = dsrc[i:dsrc.index("\n    def ", i + 10)]
-checks["/selfupdate calls the real _handle_selfupdate"] = (
-    "_handle_selfupdate" in body)
-checks["…and no longer calls the phantom check_selfupdate"] = (
-    "check_selfupdate(" not in body)
+checks["/selfupdate drives the shared self-update"] = (
+    "selfupdate.start" in body and "check_selfupdate(" not in body)
+i = dsrc.index("def _cmd_changelog")
+body = dsrc[i:dsrc.index("\n    def ", i + 10)]
+checks["/changelog reads the shared changelog"] = "changelog." in body
+i = dsrc.index("def _cmd_restart_self")
+body = dsrc[i:dsrc.index("\n    def ", i + 10)]
+checks["/restart asks the shared restart guard"] = "selfrestart.policy" in body
 
 # The scan must see the forms the regex could not. Both are real call
 # sites in the file; if the extraction removes them, this check is what
 # says so out loud rather than the scan quietly going blind.
-checks["the scan sees bare references and getattr lookups"] = (
-    "_handle_selfupdate" in borrowed and "_run_queued_selfupdate" in borrowed)
+# The scan must not go blind while reporting "nothing borrowed". Feed it
+# both forms the regex version missed and check it still sees them.
+PROBE = '''
+class X:
+    def a(self):
+        threading.Thread(target=bot._bare_reference)
+        runner = getattr(self.telegram, "_by_string", None)
+        bot.plain_call()
+'''
+probe_tree = ast.parse(PROBE)
+probe = set()
+for node in ast.walk(probe_tree):
+    if isinstance(node, ast.Attribute) and _is_the_bot(node.value):
+        probe.add(node.attr)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in ("getattr", "hasattr", "delattr")
+            and len(node.args) >= 2 and _is_the_bot(node.args[0])
+            and isinstance(node.args[1], ast.Constant)):
+        probe.add(node.args[1].value)
+checks["the scan still sees all three shapes it is meant to catch"] = (
+    probe == {"_bare_reference", "_by_string", "plain_call"})
 
-print(f"  borrowed: {', '.join(sorted(borrowed))}")
+print(f"  geborgt: {', '.join(sorted(borrowed)) or '— nichts'}"
+      f"   | geschrieben: {', '.join(sorted(written)) or '—'}")
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

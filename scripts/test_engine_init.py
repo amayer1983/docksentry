@@ -143,13 +143,19 @@ except Exception:
 checks["…and so does the scheduled one"] = (
     eng2._update_lock.acquire(blocking=False))
 
+# The self-update coordination moved into the neutral module (#63); the
+# auto path is still on the bot. Both guards are checked where they live.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()
+susrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                          "selfupdate.py"), encoding="utf-8").read()
 checks["no release is guarded by a bare attribute read"] = (
     "if not self._swap_in_flight:\n                self._update_lock.release()"
-    not in src)
+    not in src
+    and "if not ctx._swap_in_flight:" not in susrc)
 checks["…they read it defensively instead"] = (
-    src.count('swap = bool(getattr(self, "_swap_in_flight", False))') == 2)
+    src.count('swap = bool(getattr(self, "_swap_in_flight", False))')
+    + susrc.count('swap = bool(getattr(ctx, "_swap_in_flight", False))') == 2)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

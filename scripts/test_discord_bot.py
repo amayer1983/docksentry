@@ -1061,10 +1061,13 @@ checks["an interaction type we don't handle is ignored"] = abot.rest.calls == []
 
 # releasing the shared lock hands a queued self-update on
 handoffs = []
+# The handoff goes through the shared self-update machine now, not
+# through the Telegram bot (#63) — so that is what stands in for it.
+import selfupdate  # noqa: E402
+selfupdate.run_queued = lambda ctx: handoffs.append(1)
 qbot = DiscordBot(scfg2, real_store, engine, hosts=sreg,
                   checker=LOCAL_CHECKER, log=lambda *_: None,
-                  telegram=types.SimpleNamespace(
-                      _run_queued_selfupdate=lambda: handoffs.append(1)))
+                  selfupdate_ctx=object())
 _set_pending([{"name": "web", "image": "nginx:2", "host": "local"}])
 qbot._dispatch({"data": {"name": "update",
                          "options": [{"name": "container", "value": "web"}]}})

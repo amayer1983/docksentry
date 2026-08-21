@@ -54,8 +54,13 @@ tree = ast.parse(src)
 needed = sorted({n.attr for n in ast.walk(tree)
                  if isinstance(n, ast.Attribute)
                  and isinstance(n.value, ast.Name) and n.value.id == "ctx"})
-ALLOWED = ["_swap_in_flight", "config", "notifier", "send_message", "t"]
-checks["the module asks its caller for exactly five names"] = needed == ALLOWED
+# Six, after the queue-and-lock coordination followed the machinery in
+# (#63). `notifier` left in the same step: the one message that fanned
+# out to the other channels by hand no longer has to, because every
+# report goes through the seam the context carries.
+ALLOWED = ["_queued_selfupdate", "_swap_in_flight", "_update_lock",
+           "config", "send_message", "t"]
+checks["the module asks its caller for exactly six names"] = needed == ALLOWED
 if needed != ALLOWED:
     print(f"  → verlangt: {needed}")
     print(f"  → erlaubt : {ALLOWED}")
@@ -116,6 +121,76 @@ checks["should_retag_moving: a moving tag is re-pinned"] = (
 checks["…and an explicit version is not"] = (
     selfupdate.should_retag_moving(v, "1.2.3", "repo/ds:latest",
                                    "repo/ds:1.2.3") is False)
+
+# ── the report reaches every channel, which is the bug half ──────────
+# @NotRetarded, #63: "The self update on Discord doesn't respond with
+# anything useful past the action, unlike Telegram which at least says
+# it's up to date." Measured cause: of the thirteen reports, exactly one
+# was fanned out to the other channels by hand. "Already up to date" was
+# not among them. This drives a real Context through a real Broadcast
+# and checks both sides hear the same thing.
+import threading  # noqa: E402
+from broadcast import Broadcast  # noqa: E402
+
+class Engine:
+    def __init__(self):
+        self._update_lock = threading.Lock()
+        self._queued_selfupdate = None
+        self._swap_in_flight = False
+
+class Telegram:
+    enabled = True
+    def __init__(self):
+        self.sent = []
+    def send_message(self, text, **kw):
+        self.sent.append(text)
+
+class Channels:
+    def __init__(self):
+        self.sent = []
+    def has_channels(self):
+        return True
+    def send_message(self, text):
+        self.sent.append(text)
+
+tg, others = Telegram(), Channels()
+seam = Broadcast(telegram=tg, notifier=others)
+ctx = selfupdate.Context(Engine(), types.SimpleNamespace(language="en"),
+                         seam.tell)
+
+_real_run = selfupdate.run
+selfupdate.run = lambda c, target=None: c.send_message(
+    c.t("selfupdate_up_to_date"))
+try:
+    selfupdate.start(ctx, None)
+    checks["the 'already up to date' report reaches Telegram"] = len(tg.sent) == 1
+    checks["…and every other channel too"] = others.sent == tg.sent
+    checks["…and the lock is free afterwards"] = not ctx._update_lock.locked()
+
+    tg.sent.clear(); others.sent.clear()
+    ctx._update_lock.acquire()
+    selfupdate.start(ctx, "1.2.3")
+    checks["a self-update behind a running batch queues"] = (
+        ctx._queued_selfupdate == ("1.2.3",))
+    checks["…and says so on every channel"] = (
+        len(tg.sent) == 1 and others.sent == tg.sent)
+    ctx._update_lock.release()
+finally:
+    selfupdate.run = _real_run
+
+# The translator is resolved from the setting, not held — /lang used to
+# be why Discord had to write one onto the Telegram bot.
+de = selfupdate.Context(Engine(), types.SimpleNamespace(language="de"),
+                        lambda t: None)
+checks["the context translates from config.language"] = (
+    de.t("selfupdate_up_to_date") != ctx.t("selfupdate_up_to_date"))
+cfg = types.SimpleNamespace(language="en")
+switching = selfupdate.Context(Engine(), cfg, lambda t: None)
+before = switching.t("selfupdate_up_to_date")
+cfg.language = "de"
+checks["…and follows it when it changes at runtime"] = (
+    switching.t("selfupdate_up_to_date") != before)
+
 
 failed = [k for k, val in checks.items() if not val]
 for k, val in checks.items():
