@@ -54,13 +54,18 @@ tree = ast.parse(src)
 needed = sorted({n.attr for n in ast.walk(tree)
                  if isinstance(n, ast.Attribute)
                  and isinstance(n.value, ast.Name) and n.value.id == "ctx"})
-# Six, after the queue-and-lock coordination followed the machinery in
-# (#63). `notifier` left in the same step: the one message that fanned
-# out to the other channels by hand no longer has to, because every
-# report goes through the seam the context carries.
+# Seven, after the queue-and-lock coordination followed the machinery in
+# (#63). `notifier` left in the same step: the context carries the seam.
+#
+# `tell` is the seventh, and it is the difference between the two ways
+# this can go wrong. `send_message` answers whoever STARTED the run;
+# `tell` reaches every channel. Collapsing them either way has already
+# shipped once each: reporting only to Telegram left a Discord
+# /selfupdate silent after "started", and reporting everything through
+# the seam made one command answer in both chats fourteen times over.
 ALLOWED = ["_queued_selfupdate", "_swap_in_flight", "_update_lock",
-           "config", "send_message", "t"]
-checks["the module asks its caller for exactly six names"] = needed == ALLOWED
+           "config", "send_message", "t", "tell"]
+checks["the module asks its caller for exactly seven names"] = needed == ALLOWED
 if needed != ALLOWED:
     print(f"  → verlangt: {needed}")
     print(f"  → erlaubt : {ALLOWED}")

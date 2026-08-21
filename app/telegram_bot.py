@@ -2163,7 +2163,11 @@ class TelegramBot:
         Kept as a method because the Web UI and the update flows call it
         by this name; it hands straight through to `selfupdate.start`.
         """
-        selfupdate.start(self._selfupdate_ctx(), target)
+        # Replies go back here — the person asked in Telegram. The
+        # events (found an update, restarting) still reach every channel
+        # through the shared seam (#63).
+        selfupdate.start(self._selfupdate_ctx(), target,
+                         reply=self.send_message)
 
     def cleanup_guarded(self, checker):
         """Run image cleanup under the shared update mutex (#2 follow-up,

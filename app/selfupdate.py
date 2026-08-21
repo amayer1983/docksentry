@@ -67,10 +67,24 @@ class Context:
     has to write a new translator onto anybody.
     """
 
-    def __init__(self, engine, config, say, log=print):
+    def __init__(self, engine, config, say, log=print, reply=None):
         self.engine = engine
         self.config = config
+        #: The all-channel seam — for the EVENTS: "an update was found,
+        #: restarting". Those concern everyone watching, whichever front
+        #: end started the update.
         self._say = say
+        #: Where a REPLY goes: back to whoever asked. Supplied by the
+        #: front end that started this run; absent for the scheduled path,
+        #: which has no asker and falls back to the seam.
+        #:
+        #: The split matters. Routing every report through the seam made
+        #: /selfupdate answer in Telegram AND Discord for one command —
+        #: fourteen messages, all channels, for a question one person
+        #: asked. Routing none of them through it is how a Discord
+        #: /selfupdate went silent (@NotRetarded, #63). A reply belongs to
+        #: the asker; an event belongs to everyone.
+        self._reply = reply or say
         self.log = log
 
     @property
@@ -79,9 +93,28 @@ class Context:
         return get_translator(getattr(self.config, "language", "en") or "en")
 
     def send_message(self, text, **kw):
-        """Report. `kw` is swallowed: a keyboard is Telegram's alone and
-        nothing in here sends one."""
+        """Answer the person who started this. `kw` is swallowed: a
+        keyboard is Telegram's alone and nothing in here sends one."""
+        self._reply(text)
+
+    def tell(self, text):
+        """An event everyone watching should see, whoever started it."""
         self._say(text)
+
+    def with_reply(self, reply):
+        """A copy of this context whose replies go back to `reply`.
+
+        The two front ends share ONE context (main.py builds it), so the
+        asker cannot live on it — it belongs to the run. A front end that
+        starts a self-update hands its own sender in here; the events
+        still go to the shared seam either way.
+        """
+        if reply is None:
+            return self
+        import copy as _copy
+        clone = _copy.copy(self)
+        clone._reply = reply
+        return clone
 
     @property
     def _update_lock(self):
@@ -104,7 +137,7 @@ class Context:
         self.engine._swap_in_flight = value
 
 
-def start(ctx, target=None):
+def start(ctx, target=None, reply=None):
     """Pull a target image and recreate own container.
 
     Coordinates with every other update flow via `_update_lock`:
@@ -123,6 +156,12 @@ def start(ctx, target=None):
             "previous" → last released version older than the running one
             "X.Y.Z"    → a specific semver tag
     """
+    # `with_reply` when the caller handed a real Context; the Telegram bot
+    # doubles as its own context on installs where main.py never wired one
+    # (tests, embedders), and it answers in Telegram either way.
+    _wr = getattr(ctx, "with_reply", None)
+    if reply is not None and _wr is not None:
+        ctx = _wr(reply)
     if not ctx._update_lock.acquire(blocking=False):
         ctx._queued_selfupdate = (target,)
         ctx.send_message(ctx.t("selfupdate_queued"))
@@ -271,10 +310,11 @@ def run(ctx, target=None):
         + ctx.t("selfupdate_releases_link") + "\n\n"
         + ctx.t("selfupdate_restarting")
     )
-    # One send. This message used to be fanned out to the other channels
-    # by hand right here — the only one of the thirteen that was (#19).
-    # Every report goes through the seam now, so they all arrive.
-    ctx.send_message(msg)
+    # An EVENT, not a reply: Docksentry is about to restart itself, which
+    # everyone watching wants to know regardless of who asked. This is one
+    # of exactly two messages the pre-extraction code fanned out by hand
+    # (#19); the other is the scheduled path's equivalent below.
+    ctx.tell(msg)
 
     # Record in history BEFORE _do_selfupdate kills us — otherwise the
     # entry never gets written (#13).

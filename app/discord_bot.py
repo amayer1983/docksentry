@@ -1906,8 +1906,15 @@ class DiscordBot:
         # time), and then, once fixed, reported to Telegram: twelve of
         # its thirteen messages had no second recipient, so this answered
         # "started" and went quiet. Both are gone with the extraction.
+        #
+        # Replies come back HERE — to the Discord channel — because that
+        # is where the person asked. Routing every report through the
+        # all-channel seam instead was the overcorrection: one /selfupdate
+        # then answered in Telegram AND Discord, fourteen times over. The
+        # events (found an update, restarting) still reach every channel.
         import threading
         threading.Thread(target=selfupdate.start, args=(ctx, target),
+                         kwargs={"reply": self.announce},
                          daemon=True).start()
         return ("⬆️ Self-update started — I will report in the channel when "
                 "it finishes, and restart if there is something to apply.")
