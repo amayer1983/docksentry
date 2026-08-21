@@ -871,5 +871,11 @@
   "chan_usage_protect": "Kullanım: `/protect <kapsayıcı>`",
   "chan_usage_cooldown": "Kullanım: `/cooldown <kapsayıcı> <saniye>`",
   "chan_maint_off": "🔧 Bakım modu **kapalı** — güncellemeler zamanlamaya göre çalışır.",
-  "chan_maint_on": "🔧 Bakım modu siz kapatana kadar **açık**."
+  "chan_maint_on": "🔧 Bakım modu siz kapatana kadar **açık**.",
+  "chan_unknown_command": "Bilinmeyen komut `{name}`.",
+  "chan_lang_unknown": "⚠️ Bilinmeyen dil `{code}`. Kullanılabilir: {langs}",
+  "chan_history_none_for": "`{name}` için güncelleme geçmişi yok.",
+  "chan_cooldown_bad_number": "`{value}` tam sayı saniye değil.",
+  "chan_maint_on_until": "🔧 Bakım modu {until} tarihine kadar **açık**.",
+  "chan_maint_remaining": "🔧 Bakım modu **açık** — {remaining} kaldı."
 }

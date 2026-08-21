@@ -871,5 +871,11 @@
   "chan_usage_protect": "الاستخدام: `/protect <حاوية>`",
   "chan_usage_cooldown": "الاستخدام: `/cooldown <حاوية> <ثوانٍ>`",
   "chan_maint_off": "🔧 وضع الصيانة **مُعطَّل** — التحديثات تعمل وفق الجدول.",
-  "chan_maint_on": "🔧 وضع الصيانة **مُفعَّل** حتى تُعطّله."
+  "chan_maint_on": "🔧 وضع الصيانة **مُفعَّل** حتى تُعطّله.",
+  "chan_unknown_command": "أمر غير معروف `{name}`.",
+  "chan_lang_unknown": "⚠️ لغة غير معروفة `{code}`. المتاحة: {langs}",
+  "chan_history_none_for": "لا يوجد سجل تحديثات لـ `{name}`.",
+  "chan_cooldown_bad_number": "`{value}` ليس عددًا صحيحًا من الثواني.",
+  "chan_maint_on_until": "🔧 وضع الصيانة **مُفعَّل** حتى {until}.",
+  "chan_maint_remaining": "🔧 وضع الصيانة **مُفعَّل** — يتبقى {remaining}."
 }

@@ -871,5 +871,11 @@
   "chan_usage_protect": "使い方: `/protect <コンテナ>`",
   "chan_usage_cooldown": "使い方: `/cooldown <コンテナ> <秒>`",
   "chan_maint_off": "🔧 メンテナンスモードは**オフ**です — 更新はスケジュール通りに実行されます。",
-  "chan_maint_on": "🔧 メンテナンスモードは、オフにするまで**オン**です。"
+  "chan_maint_on": "🔧 メンテナンスモードは、オフにするまで**オン**です。",
+  "chan_unknown_command": "不明なコマンド `{name}`。",
+  "chan_lang_unknown": "⚠️ 不明な言語 `{code}`。利用可能: {langs}",
+  "chan_history_none_for": "`{name}` の更新履歴はありません。",
+  "chan_cooldown_bad_number": "`{value}` は秒の整数ではありません。",
+  "chan_maint_on_until": "🔧 メンテナンスモードは {until} まで**オン**です。",
+  "chan_maint_remaining": "🔧 メンテナンスモードは**オン** — 残り {remaining}。"
 }

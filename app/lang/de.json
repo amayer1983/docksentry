@@ -871,5 +871,11 @@
   "chan_usage_protect": "Verwendung: `/protect <Container>`",
   "chan_usage_cooldown": "Verwendung: `/cooldown <Container> <Sekunden>`",
   "chan_maint_off": "🔧 Wartungsmodus ist **aus** — Updates laufen nach Zeitplan.",
-  "chan_maint_on": "🔧 Wartungsmodus ist **an**, bis du ihn ausschaltest."
+  "chan_maint_on": "🔧 Wartungsmodus ist **an**, bis du ihn ausschaltest.",
+  "chan_unknown_command": "Unbekannter Befehl `{name}`.",
+  "chan_lang_unknown": "⚠️ Unbekannte Sprache `{code}`. Verfügbar: {langs}",
+  "chan_history_none_for": "Keine Update-Historie für `{name}`.",
+  "chan_cooldown_bad_number": "`{value}` ist keine ganze Anzahl Sekunden.",
+  "chan_maint_on_until": "🔧 Wartungsmodus ist **an** bis {until}.",
+  "chan_maint_remaining": "🔧 Wartungsmodus ist **an** — noch {remaining}."
 }

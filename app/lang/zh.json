@@ -871,5 +871,11 @@
   "chan_usage_protect": "用法：`/protect <容器>`",
   "chan_usage_cooldown": "用法：`/cooldown <容器> <秒>`",
   "chan_maint_off": "🔧 维护模式**已关闭** — 更新按计划运行。",
-  "chan_maint_on": "🔧 维护模式**已开启**，直到你关闭为止。"
+  "chan_maint_on": "🔧 维护模式**已开启**，直到你关闭为止。",
+  "chan_unknown_command": "未知命令 `{name}`。",
+  "chan_lang_unknown": "⚠️ 未知语言 `{code}`。可用：{langs}",
+  "chan_history_none_for": "`{name}` 没有更新历史。",
+  "chan_cooldown_bad_number": "`{value}` 不是整数秒。",
+  "chan_maint_on_until": "🔧 维护模式**开启**至 {until}。",
+  "chan_maint_remaining": "🔧 维护模式**开启** — 剩余 {remaining}。"
 }

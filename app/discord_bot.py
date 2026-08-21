@@ -1330,7 +1330,7 @@ class DiscordBot:
             return self._cmd_cleanup()
         if name == "checkimages":
             return self._cmd_checkimages(opts)
-        return f"Unknown command `{name}`."
+        return self.t("chan_unknown_command", name=name)
 
     def _cmd_hosts(self):
         if not self.hosts or not self.hosts.is_multi:
@@ -1580,7 +1580,7 @@ class DiscordBot:
         try:
             seconds = int(raw)
         except (TypeError, ValueError):
-            return f"`{raw}` is not a whole number of seconds."
+            return self.t("chan_cooldown_bad_number", value=raw)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -1617,8 +1617,7 @@ class DiscordBot:
                 return self.t("chan_maint_off")
             if state.get("until_iso") == "forever":
                 return self.t("chan_maint_on")
-            return ("🔧 Maintenance mode is **on** — "
-                    f"{format_remaining(state)} remaining.")
+            return self.t("chan_maint_remaining", remaining=format_remaining(state))
         try:
             parsed = parse_duration(arg)
         except (ValueError, AttributeError):
@@ -1631,7 +1630,8 @@ class DiscordBot:
             _enable(self.config, hours=None)
             return self.t("chan_maint_on")
         until = _enable(self.config, hours=parsed)
-        return f"🔧 Maintenance mode is **on** until {until.strftime('%H:%M')}."
+        return self.t("chan_maint_on_until",
+                      until=until.strftime("%H:%M"))
 
     # ── reads ─────────────────────────────────────────────────────
     def _cmd_history(self, opts):
@@ -1653,7 +1653,7 @@ class DiscordBot:
             entries = [h for h in entries
                        if wanted in str(h.get("container", "")).lower()]
         if not entries:
-            return f"No update history for `{opts.get('container')}`."
+            return self.t("chan_history_none_for", name=opts.get("container"))
         lines = []
         for h in reversed(entries[-10:]):       # newest first
             icon = "✅" if h.get("success") else "❌"
@@ -1990,8 +1990,8 @@ class DiscordBot:
         code = (opts.get("code") or "").strip().lower()
         langs = available_languages()
         if code not in langs:
-            return (f"⚠️ Unknown language `{code}`. Available: "
-                    f"{', '.join(sorted(langs))}")
+            return self.t("chan_lang_unknown", code=code,
+                          langs=", ".join(sorted(langs)))
         self.config.language = code
         self.config.save_persistent()
         bot = getattr(self, "telegram", None)

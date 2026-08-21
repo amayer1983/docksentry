@@ -871,5 +871,11 @@
   "chan_usage_protect": "Użycie: `/protect <kontener>`",
   "chan_usage_cooldown": "Użycie: `/cooldown <kontener> <sekundy>`",
   "chan_maint_off": "🔧 Tryb konserwacji jest **wyłączony** — aktualizacje działają zgodnie z harmonogramem.",
-  "chan_maint_on": "🔧 Tryb konserwacji jest **włączony**, dopóki go nie wyłączysz."
+  "chan_maint_on": "🔧 Tryb konserwacji jest **włączony**, dopóki go nie wyłączysz.",
+  "chan_unknown_command": "Nieznane polecenie `{name}`.",
+  "chan_lang_unknown": "⚠️ Nieznany język `{code}`. Dostępne: {langs}",
+  "chan_history_none_for": "Brak historii aktualizacji dla `{name}`.",
+  "chan_cooldown_bad_number": "`{value}` to nie jest całkowita liczba sekund.",
+  "chan_maint_on_until": "🔧 Tryb konserwacji jest **włączony** do {until}.",
+  "chan_maint_remaining": "🔧 Tryb konserwacji jest **włączony** — pozostało {remaining}."
 }

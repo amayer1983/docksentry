@@ -871,5 +871,11 @@
   "chan_usage_protect": "उपयोग: `/protect <कंटेनर>`",
   "chan_usage_cooldown": "उपयोग: `/cooldown <कंटेनर> <सेकंड>`",
   "chan_maint_off": "🔧 रखरखाव मोड **बंद** है — अपडेट समय-सारणी के अनुसार चलते हैं।",
-  "chan_maint_on": "🔧 रखरखाव मोड **चालू** है जब तक आप इसे बंद न करें।"
+  "chan_maint_on": "🔧 रखरखाव मोड **चालू** है जब तक आप इसे बंद न करें।",
+  "chan_unknown_command": "अज्ञात कमांड `{name}`।",
+  "chan_lang_unknown": "⚠️ अज्ञात भाषा `{code}`। उपलब्ध: {langs}",
+  "chan_history_none_for": "`{name}` के लिए कोई अपडेट इतिहास नहीं।",
+  "chan_cooldown_bad_number": "`{value}` सेकंड की पूर्ण संख्या नहीं है।",
+  "chan_maint_on_until": "🔧 रखरखाव मोड {until} तक **चालू** है।",
+  "chan_maint_remaining": "🔧 रखरखाव मोड **चालू** — {remaining} शेष।"
 }

@@ -871,5 +871,11 @@
   "chan_usage_protect": "Uso: `/protect <contêiner>`",
   "chan_usage_cooldown": "Uso: `/cooldown <contêiner> <segundos>`",
   "chan_maint_off": "🔧 O modo de manutenção está **desligado** — as atualizações seguem o agendamento.",
-  "chan_maint_on": "🔧 O modo de manutenção está **ligado** até você desligá-lo."
+  "chan_maint_on": "🔧 O modo de manutenção está **ligado** até você desligá-lo.",
+  "chan_unknown_command": "Comando desconhecido `{name}`.",
+  "chan_lang_unknown": "⚠️ Idioma desconhecido `{code}`. Disponíveis: {langs}",
+  "chan_history_none_for": "Sem histórico de atualizações para `{name}`.",
+  "chan_cooldown_bad_number": "`{value}` não é um número inteiro de segundos.",
+  "chan_maint_on_until": "🔧 O modo de manutenção está **ligado** até {until}.",
+  "chan_maint_remaining": "🔧 O modo de manutenção está **ligado** — faltam {remaining}."
 }
