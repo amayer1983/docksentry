@@ -1849,10 +1849,19 @@ class DiscordBot:
 
     def _cmd_selfupdate(self, opts):
         bot = getattr(self, "telegram", None)
-        if bot is None:
+        if bot is None or not hasattr(bot, "_handle_selfupdate"):
             return "⚠️ Not available."
         target = (opts.get("version") or "").strip() or None
-        bot.check_selfupdate(target)
+        # In the background so this reply goes out now: _handle_selfupdate
+        # blocks through the pull and recreate, and then the swap helper
+        # stops this process. It reports its own progress through the same
+        # machinery /selfupdate uses on Telegram. This used to call
+        # `bot.check_selfupdate`, which does not exist — an AttributeError
+        # that left /selfupdate broken on Discord, the whole time (#63,
+        # found during the core-extraction pass).
+        import threading
+        threading.Thread(target=bot._handle_selfupdate, args=(target,),
+                         daemon=True).start()
         return ("⬆️ Self-update started — I will report in the channel when "
                 "it finishes, and restart if there is something to apply.")
 

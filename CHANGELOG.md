@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.16] - 2026-08-21
+
+### Fixed
+- **Discord's `/selfupdate` works again.** It called a method that never existed (`check_selfupdate`), so the command just errored out — the same kind of latent break as `/changelog` had. It triggers the real self-update now, in the background so the "started" reply goes out right away. Found during the tidy-up below, and a test now checks that every method the Discord side borrows from the Telegram side actually exists.
+
+### Changed
+- **Container state, stats and disk facts moved into a neutral `container_info` module.** They had lived on the Telegram bot, and the Discord bot reached across into that instance to borrow all three; both call the shared module as equals now, so the two front ends stop depending on each other. What `/status` shows is unchanged. (Continuing the code tidy-up that started with the changelog module.)
+
 ## [2.18.0-beta.15] - 2026-08-21
 
 ### Fixed
