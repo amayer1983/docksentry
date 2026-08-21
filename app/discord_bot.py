@@ -1830,17 +1830,21 @@ class DiscordBot:
         return self._clip("\n".join(lines))
 
     def _cmd_changelog(self):
-        bot = getattr(self, "telegram", None)
-        if bot is None:
-            return "⚠️ Not available."
+        # Straight to the neutral core now — no reaching into the Telegram
+        # bot for it (#63, core extraction). And it renders the entries
+        # instead of `"\n\n".join`-ing a list of (version, date, body)
+        # TUPLES, which raised TypeError and left /changelog broken on
+        # Discord: the adapter's job is to render what the core returns.
+        import changelog
         from version import VERSION
-        ok, content = bot._fetch_changelog()
+        ok, content = changelog.fetch()
         if not ok:
             return f"⚠️ Could not fetch the changelog: {clip(content)}"
-        entries = bot._parse_changelog_entries(content, VERSION)
+        entries = changelog.parse_entries(content, VERSION)
         if not entries:
             return f"✅ You are on the newest version (v{VERSION})."
-        return "\n\n".join(entries)[:1800]
+        blocks = [f"**{v}** — {d}\n{body}" for v, d, body in entries]
+        return "\n\n".join(blocks)[:1800]
 
     def _cmd_selfupdate(self, opts):
         bot = getattr(self, "telegram", None)

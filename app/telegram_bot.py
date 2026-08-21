@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 from errfmt import clip
+import changelog
 
 
 # ── Single source of truth for all bot commands ────────────────────────
@@ -415,16 +416,6 @@ class TelegramBot:
         self._cached_own_meta = (name, image)
         return self._cached_own_meta
 
-    def _fetch_changelog(self):
-        """Fetch CHANGELOG.md from GitHub raw. Returns (ok, text_or_error)."""
-        url = "https://raw.githubusercontent.com/amayer1983/docksentry/main/CHANGELOG.md"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Docksentry/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                return True, r.read().decode("utf-8", errors="replace")
-        except Exception as e:
-            return False, str(e)[:200]
-
     def _github_md_to_telegram(self, text):
         """Adapt GitHub-flavored Markdown for Telegram's classic Markdown
         parser. Mostly: GitHub `**bold**` collides with Telegram's
@@ -439,64 +430,6 @@ class TelegramBot:
         # Strip stray "![alt](url)" image embeds
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
         return text
-
-    #: A `## [x.y.z]` or `## [x.y.z-beta.N]` changelog heading with its date.
-    #: The prerelease suffix used to be left out of the pattern, so a beta
-    #: heading matched NOTHING — and the version parse below hit a
-    #: ValueError on "0-beta", fell back to (0,0,0), and reported every one
-    #: of the 206 historical stable entries as "newer than 2.18.0-beta.12",
-    #: v2.17.0 among them. Both are fixed here (#63, owner-reported).
-    _CHANGELOG_HEADING = (
-        r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\] - (\d{4}-\d{2}-\d{2})$")
-
-    @staticmethod
-    def _version_key(vstr):
-        """A comparable key for '2.18.0' or '2.18.0-beta.12'.
-
-        A final release ranks ABOVE its own prereleases and both rank above
-        the previous version: 2.18.0 > 2.18.0-beta.12 > 2.18.0-beta.1 >
-        2.17.0. The fourth field is 1 for a final release and 0 for a
-        prerelease, so a beta sorts just below the release it leads up to.
-        """
-        import re
-        m = re.match(r"(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z]+\.?(\d+))?",
-                     (vstr or "").strip())
-        if not m:
-            return (0, 0, 0, 0, 0)
-        base = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        if m.group(4) is None:
-            return base + (1, 0)                 # final release
-        return base + (0, int(m.group(4)))       # prerelease N
-
-    def _parse_changelog_entries(self, text, after_version):
-        """Parse CHANGELOG.md, return entries newer than `after_version` as
-        (version, date, body) tuples, newest first."""
-        import re
-        pat = re.compile(self._CHANGELOG_HEADING, re.MULTILINE)
-        matches = list(pat.finditer(text))
-        entries = []
-        for i, m in enumerate(matches):
-            start = m.end()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            entries.append((m.group(1), m.group(2), text[start:end].strip()))
-        cur = self._version_key(after_version)
-        return [(v, d, b) for v, d, b in entries
-                if self._version_key(v) > cur]
-
-    def _changelog_entry_for(self, text, version):
-        """Return (version, date, body) for the exact `version` in the
-        CHANGELOG, or None. Lets `/changelog` show what the version you're
-        *already* on brought, when nothing newer exists (#2, @famewolf)."""
-        import re
-        want = (version or "").strip()
-        pat = re.compile(self._CHANGELOG_HEADING, re.MULTILINE)
-        matches = list(pat.finditer(text))
-        for i, m in enumerate(matches):
-            if m.group(1) == want:
-                start = m.end()
-                end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-                return (m.group(1), m.group(2), text[start:end].strip())
-        return None
 
     def _probe_migration_once(self):
         """Ask Telegram whether our configured chat still exists. Once.
@@ -2483,7 +2416,7 @@ class TelegramBot:
             # than what's currently running — gives the user a one-step
             # rollback target without having to look up version numbers.
             from version import VERSION
-            ok, content = self._fetch_changelog()
+            ok, content = changelog.fetch()
             if not ok:
                 return None, self.t("selfupdate_previous_fetch_failed", error=content)
             import re
@@ -2514,7 +2447,7 @@ class TelegramBot:
         (major, minor, patch) tuple, or None if it can't be fetched or
         parsed. Used to warn a user pinned to an old :X.Y.Z image tag
         that a newer release exists (#2)."""
-        ok, content = self._fetch_changelog()
+        ok, content = changelog.fetch()
         if not ok:
             return None
         import re
@@ -4160,17 +4093,17 @@ class TelegramBot:
         elif text == "/changelog":
             from version import VERSION
             self.send_message(self.t("changelog_fetching"))
-            ok, content = self._fetch_changelog()
+            ok, content = changelog.fetch()
             if not ok:
                 self.send_message(self.t("changelog_fetch_failed", error=content))
                 return
-            new_entries = self._parse_changelog_entries(content, VERSION)
+            new_entries = changelog.parse_entries(content, VERSION)
             if not new_entries:
                 # Up to date — but show what the version you're ON brought,
                 # so a post-/selfupdate "what did I just get?" is answerable
                 # (#2, @famewolf). Fall back to the plain message if the
                 # current version isn't in the changelog yet.
-                cur = self._changelog_entry_for(content, VERSION)
+                cur = changelog.entry_for(content, VERSION)
                 if cur:
                     v, d, body = cur
                     tg = self._github_md_to_telegram(body)

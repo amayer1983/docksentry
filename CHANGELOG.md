@@ -2,6 +2,14 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.15] - 2026-08-21
+
+### Fixed
+- **Discord's `/changelog` works again.** It joined a list of `(version, date, body)` tuples as though they were strings and raised a TypeError, so the command just errored out. Found while moving the changelog code into a shared module (below); the Discord side renders the entries properly now.
+
+### Changed
+- **Changelog reading and version comparison moved into a neutral `changelog.py`.** It had lived in the Telegram bot, and the Discord bot reached across into that instance to borrow it — but neither is Telegram's: it fetches a file and compares versions. Both front ends call the shared module as equals now, so neither depends on the other. What `/changelog` shows on Telegram is unchanged.
+
 ## [2.18.0-beta.14] - 2026-08-20
 
 ### Changed

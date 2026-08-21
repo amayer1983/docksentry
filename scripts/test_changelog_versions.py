@@ -19,10 +19,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
-from telegram_bot import TelegramBot
+import changelog
 
-b = TelegramBot.__new__(TelegramBot)
-key = b._version_key
+key = changelog.version_key
 
 SAMPLE = """# Changelog
 
@@ -54,14 +53,14 @@ checks["garbage sorts to the bottom, never crashes"] = (
     key("not-a-version") == (0, 0, 0, 0, 0))
 
 # ── the reported bug: on the newest beta, nothing is newer ───────────
-newer = b._parse_changelog_entries(SAMPLE, "2.18.0-beta.12")
+newer = changelog.parse_entries(SAMPLE, "2.18.0-beta.12")
 checks["on the newest beta, no entry is reported as newer"] = (
     newer == [])
 checks["…so v2.17.0 is NOT called a new version"] = (
     "2.17.0" not in [v for v, _, _ in newer])
 
 # ── from an older stable, exactly the newer ones, newest first ───────
-newer2 = b._parse_changelog_entries(SAMPLE, "2.17.0")
+newer2 = changelog.parse_entries(SAMPLE, "2.17.0")
 checks["from 2.17.0, the betas ahead of it are returned"] = (
     [v for v, _, _ in newer2] == ["2.18.0-beta.12", "2.18.0-beta.2"])
 checks["…and 2.17.0 itself is not among them"] = (
@@ -69,10 +68,10 @@ checks["…and 2.17.0 itself is not among them"] = (
 
 # ── beta headings are parseable at all (regex fix) ───────────────────
 checks["a beta heading is found by the exact-entry lookup"] = (
-    (b._changelog_entry_for(SAMPLE, "2.18.0-beta.12") or (None,))[0]
+    (changelog.entry_for(SAMPLE, "2.18.0-beta.12") or (None,))[0]
     == "2.18.0-beta.12")
 checks["…and its body comes back with it"] = (
-    "twelfth beta" in (b._changelog_entry_for(
+    "twelfth beta" in (changelog.entry_for(
         SAMPLE, "2.18.0-beta.12") or (None, None, ""))[2])
 
 failed = [k for k, v in checks.items() if not v]
