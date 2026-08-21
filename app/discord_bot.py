@@ -479,9 +479,31 @@ class DiscordBot:
 
     @property
     def t(self):
-        """The translator for the configured language."""
+        """The translator for the configured language, in Discord's markup.
+
+        The shared strings are written in Telegram's markdown, where bold
+        is `*one*` — Discord reads that as italic and wants `**two**`.
+        Converting here is the whole job of a connection: the sentence is
+        the core's, the markup is ours. Backticked spans are left alone,
+        so a `*` inside code stays a `*`.
+        """
         from i18n import get_translator
-        return get_translator(getattr(self.config, "language", "en") or "en")
+        base = get_translator(getattr(self.config, "language", "en") or "en")
+
+        def t(key, **kw):
+            return self._tg_bold_to_discord(base(key, **kw))
+
+        return t
+
+    @staticmethod
+    def _tg_bold_to_discord(text):
+        """`*bold*` → `**bold**`, leaving `**already**` and code spans be."""
+        import re as _re
+        parts = _re.split(r"(`[^`]*`)", text or "")
+        for i in range(0, len(parts), 2):        # outside backticks only
+            parts[i] = _re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)",
+                               r"**\1**", parts[i])
+        return "".join(parts)
 
     @property
     def enabled(self):
@@ -1897,11 +1919,10 @@ class DiscordBot:
         from version import VERSION
         ok, content = changelog.fetch()
         if not ok:
-            return f"⚠️ Could not fetch the changelog: {clip(content)}"
+            return self.t("changelog_fetch_failed", error=clip(content))
         rep = changelog.report(content, VERSION)
         if rep["kind"] == "unknown":
-            return (f"✅ You're on **v{VERSION}** — no newer versions in "
-                    f"the changelog.")
+            return self.t("changelog_up_to_date", version=VERSION)
         if rep["kind"] == "current":
             v, d, body = rep["current"]
             return self._clip(
@@ -1976,7 +1997,7 @@ class DiscordBot:
         bot = getattr(self, "telegram", None)
         if bot is not None:
             bot.t = get_translator(code)
-        return f"🌍 Language set to `{code}`."
+        return self.t("lang_changed")
 
     def _cmd_setlink(self, opts):
         """Same skeleton as the other per-container writes: resolve the
@@ -2027,10 +2048,10 @@ class DiscordBot:
         try:
             r = backend.run(["inspect", name], timeout=10)
             if r.returncode != 0:
-                return f"⚠️ Could not inspect `{name}`."
+                return self.t("audit_inspect_failed", name=name)
             inspect = json.loads(r.stdout)[0]
         except Exception as e:
-            return f"⚠️ Could not inspect `{name}`: {clip(e)}"
+            return self.t("audit_inspect_failed", name=name) + f" {clip(e)}"
         from update_checker import UpdateChecker as _UC
         checker = self._checker_for(host)
         findings = _UC._audit_inspect_coverage(checker, inspect)
