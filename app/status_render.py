@@ -127,7 +127,13 @@ def lines(info, *, bold="*", host_tag=""):
     if not running and info.get("exit_code") not in (None, ""):
         out.append(f"🔻 Exit code `{info['exit_code']}`")
     if info.get("probe"):
-        out.append(f"🩺 {b('Health check said:')} `{info['probe']}`")
+        # The rescue helmet, not a stethoscope: this line only appears
+        # when a container is actually unhealthy, so the alarm colour is
+        # the right one — and it survives Discord's lighter ephemeral
+        # background, where the stethoscope washed out (#63,
+        # @NotRetarded). It was the wrong icon for the header, which a
+        # healthy container also carries; here it is exactly right.
+        out.append(f"⛑️ {b('Health check said:')} `{info['probe']}`")
 
     # ── what it runs ────────────────────────────────────────────
     img = [f"📦 `{info.get('image', '?')}`"]
