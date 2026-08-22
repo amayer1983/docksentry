@@ -400,6 +400,9 @@ def reclaimable(targets, *, checker_for):
             continue
         try:
             free = int(checker.reclaimable_bytes() or 0)
+            detail = {}
+            if hasattr(checker, "reclaimable_breakdown"):
+                detail = checker.reclaimable_breakdown() or {}
         except Exception as e:
             replies.append(Reply("host_check_failed",
                                  {"host": getattr(host, "name", "local"),

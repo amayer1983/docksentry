@@ -848,8 +848,26 @@ class TelegramBot:
     def _host_tag(host):
         """` @nas` for a remote host, empty for the local one — the same
         marker `UpdateEngine._display_name` puts on remote containers, so
-        results from several hosts read the same way everywhere."""
+        results from several hosts read the same way everywhere.
+
+        Empty for local ON PURPOSE here: this goes next to a container
+        name inside a listing, and marking every local line in a
+        twenty-four-container overview is noise. When a WHOLE MESSAGE
+        belongs to one host, use `_host_message_tag` instead."""
         return "" if (host is None or host.is_local) else f" @{host.name}"
+
+    @staticmethod
+    def _host_message_tag(host):
+        """` @local` / ` @nas` — for a message that is entirely about one
+        host, and only when several are managed.
+
+        The local host is named here, unlike in `_host_tag`. `/checkimages`
+        on two hosts sent one message tagged `@podman` and one tagged
+        nothing at all, and the unlabelled one is exactly the one you have
+        to guess about (owner-reported). `/check` already named it
+        `local`; this makes the rest agree.
+        """
+        return "" if host is None else f" @{host.name}"
 
     def _run_full_check(self, checker, targets):
         """The arg-less `/check`: a full scan of every targeted host.
@@ -1992,7 +2010,15 @@ class TelegramBot:
             lines.append(f"`{ev.get('timestamp', '')}` {msg}")
         return "\n".join(lines)
 
-    def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup):
+    @staticmethod
+    def _human_gb(n):
+        """Bytes as GB from ~1 GB up, MB below — the same rule the rest of
+        the project uses, because 512 MB should not read as 0.5 GB."""
+        gib = n / (1024 ** 3)
+        return f"{gib:.1f} GB" if gib >= 1.0 else f"{n / (1024 ** 2):.0f} MB"
+
+    def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup,
+                               breakdown=None):
         """`/checkimages` reply — how much `/cleanup` would free right now.
         Nothing-to-clean and auto-cleanup states each get a clear line so
         the reply is answer-in-glance, not a puzzle."""
@@ -2007,7 +2033,26 @@ class TelegramBot:
             msg += "\n" + self.t("checkimages_auto_on")
         else:
             msg += "\n" + self.t("checkimages_auto_off")
+        if breakdown:
+            msg += self._checkimages_elsewhere(breakdown)
         return msg
+
+    def _checkimages_elsewhere(self, breakdown):
+        """Where the space that `/cleanup` will NOT free is sitting.
+
+        Worth saying because the honest number is small and the disk is
+        not: 224 MB of images next to 13.9 GB of volumes and 7.5 GB of
+        build cache. Naming the other two says which command frees them —
+        and, for volumes, that nothing here will."""
+        if not breakdown:
+            return ""
+        build = breakdown.get("build_cache", 0)
+        vols = breakdown.get("volumes", 0)
+        if build < 100 * 1024 ** 2 and vols < 100 * 1024 ** 2:
+            return ""
+        return "\n\n" + self.t("checkimages_elsewhere",
+                                build=self._human_gb(build),
+                                volumes=self._human_gb(vols))
 
     def _build_dry_run(self, updates, checker):
         """Read-only preview of what applying the pending updates WOULD do —
@@ -3597,12 +3642,14 @@ class TelegramBot:
             replies, _total = container_flags.reclaimable(
                 targets, checker_for=lambda h: self._checker_for(h, checker))
             for r in replies:
-                tag = self._host_tag(r.host) if r.host is not None else ""
+                tag = self._host_message_tag(r.host)
                 if not r.ok:
                     self.send_message(self.t(r.key, **r.params) + tag)
                     continue
                 self.send_message(
-                    self._build_checkimages_msg(r.values["bytes"], auto_on)
+                    self._build_checkimages_msg(
+                        r.values["bytes"], auto_on,
+                        breakdown=r.values.get("breakdown"))
                     + tag)
 
         elif text == "/events":

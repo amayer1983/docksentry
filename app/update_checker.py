@@ -1569,26 +1569,53 @@ class UpdateChecker:
             return 0
 
     def reclaimable_bytes(self):
-        """Total reclaimable disk space via `docker system df` (bytes). Used
-        by the disk warning to tell the user how much space `docker image
-        prune` / `/cleanup` could free — famewolf's #2 point: without that
-        number the warning looks like noise and gets ignored. Best-effort,
-        returns 0 on any failure."""
+        """What `/cleanup` would actually free, in bytes.
+
+        IMAGES ONLY, because that is all `/cleanup` prunes. It used to sum
+        every row `docker system df` prints, which on a real machine reads
+        like this:
+
+            Images          219MB
+            Containers      508kB
+            Local Volumes  13.93GB
+            Build Cache     7.53GB
+
+        — and answered "20.2 GB reclaimable". Then `/cleanup` ran and
+        freed nothing, because 13.93 GB of that is VOLUMES, which are
+        data and which nothing here will ever delete, and 7.53 GB is
+        build cache, which `image prune` does not touch either.
+
+        A dry run that promises twenty gigabytes and delivers zero is
+        worse than no dry run: it sends you looking for a bug in the
+        cleanup. `reclaimable_breakdown` carries the rest, for a message
+        that wants to say where the other space is sitting.
+        """
+        return self.reclaimable_breakdown().get("images", 0)
+
+    def reclaimable_breakdown(self):
+        """`docker system df` per type, in bytes: images, containers,
+        volumes, build_cache. Best-effort — an empty dict on any failure,
+        because a number nobody can trust is worse than no number."""
+        out = {}
         try:
             r = self.backend.run(
                 ["system", "df", "--format", "{{json .}}"], timeout=15)
-            if r.returncode != 0:
-                return 0
-            total = 0
-            for line in r.stdout.strip().splitlines():
+            if getattr(r, "returncode", 1) != 0:
+                return out
+            for line in (r.stdout or "").strip().splitlines():
                 try:
                     d = json.loads(line)
                 except (ValueError, TypeError):
                     continue
-                total += self._parse_human_size(d.get("Reclaimable", ""))
-            return total
+                kind = str(d.get("Type", "")).strip().lower()
+                key = {"images": "images", "containers": "containers",
+                       "local volumes": "volumes",
+                       "build cache": "build_cache"}.get(kind)
+                if key:
+                    out[key] = self._parse_human_size(d.get("Reclaimable", ""))
         except (subprocess.SubprocessError, OSError):
-            return 0
+            return {}
+        return out
 
     def cleanup_images(self):
         """Run image cleanup with optional pre-prune local-image backup.

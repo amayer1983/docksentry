@@ -938,5 +938,6 @@
   "major_confirming": "Major-update voor {name} bevestigen…",
   "major_skipping": "Major-update voor {name} overgeslagen.",
   "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken.",
-  "chan_nothing_to_do": "Niets te doen."
+  "chan_nothing_to_do": "Niets te doen.",
+  "checkimages_elsewhere": "Niet aangeraakt door `/cleanup`: {build} in build-cache (`docker builder prune`) en {volumes} in volumes — volumes zijn data en worden hier niet verwijderd."
 }

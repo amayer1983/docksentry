@@ -41,8 +41,20 @@ def main():
         update_checker.subprocess.run = lambda *a, **k: _Res(0, df_out)
         chk = UpdateChecker(types.SimpleNamespace(debug=False))
         total = chk.reclaimable_bytes()
-        # 20.1 GB + 43.03 MB + 2.113 MB ≈ 20.145 GB total
-        checks["reclaimable ≈ sum of all reclaimable types"] = 20_140_000_000 < total < 20_160_000_000
+        # IMAGES ONLY, because that is all `/cleanup` prunes. Summing
+        # every row is what this used to do, and on the owner's own
+        # machine it answered "20.2 GB reclaimable" — of which 13.9 GB
+        # was volumes, which are data and which nothing here deletes,
+        # and 7.5 GB was build cache, which `image prune` does not
+        # touch. `/cleanup` then freed 0 B. A dry run that promises
+        # twenty gigabytes and delivers nothing sends you hunting for a
+        # bug in the cleanup (#63, owner-reported).
+        checks["reclaimable is the images figure, not every row"] = (
+            20_090_000_000 < total < 20_110_000_000)
+        detail = chk.reclaimable_breakdown()
+        checks["…and the rest is reported separately"] = (
+            detail.get("volumes", 0) > 40_000_000
+            and detail.get("build_cache", 0) > 2_000_000)
 
         update_checker.subprocess.run = lambda *a, **k: _Res(1, "")
         checks["reclaimable: docker error → 0"] = chk.reclaimable_bytes() == 0

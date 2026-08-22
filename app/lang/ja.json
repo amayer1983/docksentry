@@ -938,5 +938,6 @@
   "major_confirming": "{name} のメジャー更新を確認しています…",
   "major_skipping": "{name} のメジャー更新をスキップしました。",
   "chat_migrated": "⚠️ このグループはスーパーグループに変更されたため、設定された `CHAT_ID={old}` は存在しません。新しいものを見つけて使用しています: `{new}`。設定に入れてください — そうしないと再起動のたびに探し直す必要があります。",
-  "chan_nothing_to_do": "することはありません。"
+  "chan_nothing_to_do": "することはありません。",
+  "checkimages_elsewhere": "`/cleanup` が触れないもの: ビルドキャッシュ {build}（`docker builder prune`）とボリューム {volumes} — ボリュームはデータなので、ここでは削除しません。"
 }

@@ -938,5 +938,6 @@
   "major_confirming": "正在确认 {name} 的大版本更新…",
   "major_skipping": "已跳过 {name} 的大版本更新。",
   "chat_migrated": "⚠️ 该群已升级为超级群，因此配置的 `CHAT_ID={old}` 不再存在。我找到了新的并正在使用：`{new}`。请写入设置 — 否则每次重启我都得重新查找。",
-  "chan_nothing_to_do": "无事可做。"
+  "chan_nothing_to_do": "无事可做。",
+  "checkimages_elsewhere": "`/cleanup` 不会触及：构建缓存 {build}（`docker builder prune`）和卷 {volumes} — 卷是数据，这里不会删除。"
 }

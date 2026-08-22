@@ -56,8 +56,12 @@ def main():
     # behaviour (#63).
     checks["/checkimages walks every managed host"] = (
         "container_flags.reclaimable(" in block or "host_checkers" in block)
+    # A whole message that belongs to one host names that host —
+    # including the local one, which used to go unlabelled and left you
+    # guessing which of two messages was which (#63, owner-reported).
     checks["…tags each answer with its host"] = (
-        "_host_tag(" in block or "@{host_name}" in block)
+        "_host_message_tag(" in block or "_host_tag(" in block
+        or "@{host_name}" in block)
     checks["…and measures on each host's own checker"] = (
         "checker_for=" in block or "host_checker.reclaimable_bytes()" in block)
 
