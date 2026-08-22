@@ -768,6 +768,27 @@ class TelegramBot:
         _, target = split_host_target(arg_text)
         return "" if target else "\n\n" + self.t("host_local_only_hint")
 
+    def _emit(self, outcome, hint=""):
+        """A core Outcome as Telegram messages — one per reply.
+
+        The other half of the split: Discord joins the same Outcome into
+        one clipped blob because an interaction is one editable answer,
+        and Telegram sends them as they come because a chat is a stream.
+        Same facts, same wording, different shape (#63).
+        """
+        if outcome.fatal is not None:
+            self.send_message(self.t(outcome.fatal.key,
+                                     **outcome.fatal.params) + hint)
+            return
+        for r in outcome.replies:
+            tag = self._host_tag(r.host) if r.host is not None else ""
+            body = self.t(r.key, **r.params) if r.key else ""
+            if r.items:
+                body += "\n" + "\n".join(f"• `{n}`{tag}" for n in r.items)
+                self.send_message(body + hint)
+                continue
+            self.send_message(body + tag + hint)
+
     def _state_targets(self, text):
         """`(args, targets, error)` for a state-changing command (#7).
 
@@ -3702,103 +3723,45 @@ class TelegramBot:
             self.send_message(self.t("history_empty"))
 
         elif text.startswith("/pin"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    pinned = self._store_for(host).get_pinned()
-                    tag = self._host_tag(host)
-                    if pinned:
-                        names = [f"• `{n}`{tag}" for n in pinned]
-                        self.send_message(self.t("pin_list") + "\n" + "\n".join(names) + hint)
-                    else:
-                        self.send_message(self.t("pin_empty") + tag + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                pinned = store.get_pinned()
-                if name not in pinned:
-                    pinned.append(name)
-                    store.save_pinned(pinned)
-                    self.send_message(self.t("pin_added", name=name) + tag + hint)
-                else:
-                    self.send_message(self.t("pin_already", name=name) + tag + hint)
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["pin"], targets or [None],
+                store_for=self._store_for, backend_for=self._backend_for,
+                partial=argv[0] if argv else None),
+                hint=self._host_hint_for(text))
 
         elif text.startswith("/unpin"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            if not argv:
-                self.send_message(self.t("unpin_usage"))
-                return
             hint = self._host_hint_for(text)
-            # For unpin, match against pinned list too
-            partial = argv[0]
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                pinned = store.get_pinned()
-                matches = [n for n in pinned if n.lower().startswith(partial.lower())]
-                if partial in pinned:
-                    name = partial
-                elif len(matches) == 1:
-                    name = matches[0]
-                elif len(matches) > 1:
-                    self.send_message(self.t("resolve_multiple", names=", ".join(f"`{m}`" for m in matches)) + tag + hint)
-                    continue
-                else:
-                    self.send_message(self.t("unpin_not_found", name=partial) + tag + hint)
-                    continue
-                pinned.remove(name)
-                store.save_pinned(pinned)
-                self.send_message(self.t("unpin_removed", name=name) + tag + hint)
+            if not argv:
+                self.send_message(self.t("unpin_usage") + hint)
+                return
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["unpin"], targets or [None],
+                store_for=self._store_for, partial=argv[0]), hint=hint)
 
         elif text.startswith("/autoupdate"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    auto_list = self._store_for(host).get_autoupdate()
-                    tag = self._host_tag(host)
-                    if auto_list:
-                        names = [f"• `{n}`{tag}" for n in auto_list]
-                        self.send_message(self.t("autoupdate_list") + "\n" + "\n".join(names) + hint)
-                    else:
-                        self.send_message(self.t("autoupdate_empty") + tag + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                auto_list = store.get_autoupdate()
-                if name in auto_list:
-                    auto_list.remove(name)
-                    store.save_autoupdate(auto_list)
-                    self.send_message(self.t("autoupdate_off", name=name) + tag + hint)
-                else:
-                    auto_list.append(name)
-                    store.save_autoupdate(auto_list)
-                    self.send_message(self.t("autoupdate_on", name=name) + tag + hint)
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["autoupdate"], targets or [None],
+                store_for=self._store_for, backend_for=self._backend_for,
+                partial=argv[0] if argv else None),
+                hint=self._host_hint_for(text))
 
         elif text.startswith("/cooldown"):
             raw_arg, targets, host_err = self._state_targets(text)
@@ -3841,36 +3804,20 @@ class TelegramBot:
                     self.send_message(self.t("cooldown_cleared", name=name) + tag + hint)
 
         elif text.startswith("/protect"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    names = self._store_for(host).get_protect_stop()
-                    tag = self._host_tag(host)
-                    if names:
-                        self.send_message(self.t("protect_list") + "\n"
-                                          + "\n".join(f"• `{n}`{tag}" for n in names) + hint)
-                    else:
-                        self.send_message(self.t("protect_empty") + tag + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                now_on = store.toggle_protect_stop(name)
-                self.send_message(
-                    self.t("protect_on" if now_on else "protect_off", name=name)
-                    + tag + hint)
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["protect"], targets or [None],
+                store_for=self._store_for, backend_for=self._backend_for,
+                partial=argv[0] if argv else None),
+                hint=self._host_hint_for(text))
 
         elif text.startswith("/note"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
@@ -3880,20 +3827,11 @@ class TelegramBot:
             if not argv:
                 self.send_message(self.t("note_usage") + hint)
                 return
-            text_part = argv[1].strip() if len(argv) > 1 else ""
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                store.set_note(name, text_part)
-                self.send_message(
-                    self.t("note_set" if text_part else "note_cleared",
-                           name=name, text=text_part) + tag + hint)
-            return
+            self._emit(container_flags.set_note(
+                targets or [None], store_for=self._store_for,
+                backend_for=self._backend_for, partial=argv[0],
+                text=argv[1].strip() if len(argv) > 1 else ""), hint=hint)
+
         elif text.startswith("/trustrunning"):
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
