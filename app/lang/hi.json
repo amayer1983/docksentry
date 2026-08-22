@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` अनुपलब्ध: {error}",
   "logs_failed": "`{name}` के लॉग नहीं पढ़ सके: {error}",
   "chan_maintenance_line": "🔧 रखरखाव: {state}",
-  "chan_audit_header": "🔍 `{name}` — वे फ़ील्ड जो हम नहीं ले जाएँगे:"
+  "chan_audit_header": "🔍 `{name}` — वे फ़ील्ड जो हम नहीं ले जाएँगे:",
+  "chan_no_backend_for": "`{name}` के लिए कोई कंटेनर बैकएंड नहीं।",
+  "lifecycle_refused_busy": "एक अपडेट चल रहा है — समाप्त होने तक `{action}` अस्वीकृत है।",
+  "chan_unknown_action": "अज्ञात क्रिया `{action}`।",
+  "chan_busy_capacity": "⏳ Docksentry पहले से ही एक साथ अधिकतम कमांड चला रहा है। **कुछ शुरू नहीं हुआ।** थोड़ी देर बाद फिर आज़माएँ।",
+  "chan_working_on_it": "⏳ काम चल रहा है — इसमें कुछ मिनट लग सकते हैं।\nयदि यह Discord की उत्तर-सीमा पार करता है, तो मैं परिणाम चैनल में भेजूँगा।",
+  "chan_late_result": "(यह उत्तर-सीमा से आगे चला गया, इसलिए परिणाम सामान्य संदेश के रूप में)",
+  "chan_confirm_expired": "वह पुष्टि समाप्त हो गई या पहले ही उपयोग हो चुकी — यदि अब भी चाहिए तो कमांड फिर चलाएँ।",
+  "chan_update_busy": "⏳ एक अपडेट पहले से चल रहा है — कुछ शुरू नहीं हुआ। समाप्त होने पर फिर आज़माएँ।",
+  "chan_something_wrong": "कुछ गड़बड़ हो गई: {error}",
+  "chan_list_failed": "कंटेनर सूचीबद्ध नहीं हो सके: {error}",
+  "chan_reclaimable_header": "**पुनः प्राप्त करने योग्य इमेज स्थान**",
+  "chan_no_pending_for": "`{name}` के लिए कोई लंबित अपडेट नहीं।"
 }

@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` nicht erreichbar: {error}",
   "logs_failed": "Logs von `{name}` nicht lesbar: {error}",
   "chan_maintenance_line": "🔧 Wartung: {state}",
-  "chan_audit_header": "🔍 `{name}` — Felder, die wir nicht übernehmen würden:"
+  "chan_audit_header": "🔍 `{name}` — Felder, die wir nicht übernehmen würden:",
+  "chan_no_backend_for": "Kein Container-Backend für `{name}` verfügbar.",
+  "lifecycle_refused_busy": "Ein Update läuft — `{action}` wird bis zum Ende abgelehnt.",
+  "chan_unknown_action": "Unbekannte Aktion `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry führt bereits so viele Befehle aus, wie gleichzeitig möglich sind. **Es wurde nichts gestartet.** Versuch es gleich nochmal.",
+  "chan_working_on_it": "⏳ Wird bearbeitet — das kann ein paar Minuten dauern.\nWenn es über Discords Antwortfenster hinausgeht, poste ich das Ergebnis stattdessen in den Kanal.",
+  "chan_late_result": "(das lief über das Antwortfenster hinaus, daher das Ergebnis als normale Nachricht)",
+  "chan_confirm_expired": "Diese Bestätigung ist abgelaufen oder wurde schon benutzt — führ den Befehl nochmal aus, wenn du ihn noch willst.",
+  "chan_update_busy": "⏳ Ein Update läuft bereits — es wurde nichts gestartet. Versuch es nach dessen Ende nochmal.",
+  "chan_something_wrong": "Etwas ist schiefgegangen: {error}",
+  "chan_list_failed": "Container konnten nicht aufgelistet werden: {error}",
+  "chan_reclaimable_header": "**Freigebbarer Image-Speicher**",
+  "chan_no_pending_for": "Kein offenes Update für `{name}`."
 }

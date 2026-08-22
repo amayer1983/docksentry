@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}`에 연결할 수 없습니다: {error}",
   "logs_failed": "`{name}`의 로그를 읽지 못했습니다: {error}",
   "chan_maintenance_line": "🔧 유지 보수: {state}",
-  "chan_audit_header": "🔍 `{name}` — 이전하지 않는 필드:"
+  "chan_audit_header": "🔍 `{name}` — 이전하지 않는 필드:",
+  "chan_no_backend_for": "`{name}`에 사용할 컨테이너 백엔드가 없습니다.",
+  "lifecycle_refused_busy": "업데이트가 실행 중입니다 — 끝날 때까지 `{action}`은 거부됩니다.",
+  "chan_unknown_action": "알 수 없는 동작 `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry가 동시에 실행할 수 있는 최대 명령을 이미 처리 중입니다. **아무것도 시작되지 않았습니다.** 잠시 후 다시 시도하세요.",
+  "chan_working_on_it": "⏳ 처리 중입니다 — 몇 분 걸릴 수 있습니다.\nDiscord 응답 시간을 넘기면 결과를 채널에 올리겠습니다.",
+  "chan_late_result": "(응답 시간을 넘겨서 결과를 일반 메시지로 보냅니다)",
+  "chan_confirm_expired": "해당 확인은 만료되었거나 이미 사용되었습니다 — 여전히 필요하면 명령을 다시 실행하세요.",
+  "chan_update_busy": "⏳ 이미 업데이트가 실행 중입니다 — 아무것도 시작되지 않았습니다. 끝난 후 다시 시도하세요.",
+  "chan_something_wrong": "문제가 발생했습니다: {error}",
+  "chan_list_failed": "컨테이너 목록을 가져오지 못했습니다: {error}",
+  "chan_reclaimable_header": "**확보 가능한 이미지 공간**",
+  "chan_no_pending_for": "`{name}`에 대기 중인 업데이트가 없습니다."
 }

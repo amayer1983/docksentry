@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` erişilemiyor: {error}",
   "logs_failed": "`{name}` günlükleri okunamadı: {error}",
   "chan_maintenance_line": "🔧 Bakım: {state}",
-  "chan_audit_header": "🔍 `{name}` — taşımayacağımız alanlar:"
+  "chan_audit_header": "🔍 `{name}` — taşımayacağımız alanlar:",
+  "chan_no_backend_for": "`{name}` için kapsayıcı arka ucu yok.",
+  "lifecycle_refused_busy": "Bir güncelleme çalışıyor — bitene kadar `{action}` reddedilir.",
+  "chan_unknown_action": "Bilinmeyen eylem `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry aynı anda çalıştırabileceği kadar komutu zaten çalıştırıyor. **Hiçbir şey başlatılmadı.** Birazdan tekrar deneyin.",
+  "chan_working_on_it": "⏳ Üzerinde çalışıyorum — birkaç dakika sürebilir.\nDiscord'un yanıt penceresini aşarsa sonucu kanala göndereceğim.",
+  "chan_late_result": "(bu yanıt penceresini aştı, bu yüzden sonuç normal mesaj olarak)",
+  "chan_confirm_expired": "Bu onay süresi doldu veya zaten kullanıldı — hâlâ istiyorsanız komutu tekrar çalıştırın.",
+  "chan_update_busy": "⏳ Zaten bir güncelleme çalışıyor — hiçbir şey başlatılmadı. Bitince tekrar deneyin.",
+  "chan_something_wrong": "Bir şeyler ters gitti: {error}",
+  "chan_list_failed": "Kapsayıcılar listelenemedi: {error}",
+  "chan_reclaimable_header": "**Geri kazanılabilir imaj alanı**",
+  "chan_no_pending_for": "`{name}` için bekleyen güncelleme yok."
 }

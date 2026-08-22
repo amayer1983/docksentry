@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` 无法访问：{error}",
   "logs_failed": "无法读取 `{name}` 的日志：{error}",
   "chan_maintenance_line": "🔧 维护：{state}",
-  "chan_audit_header": "🔍 `{name}` — 我们不会保留的字段："
+  "chan_audit_header": "🔍 `{name}` — 我们不会保留的字段：",
+  "chan_no_backend_for": "没有可用于 `{name}` 的容器后端。",
+  "lifecycle_refused_busy": "更新正在进行 — 在完成前拒绝 `{action}`。",
+  "chan_unknown_action": "未知操作 `{action}`。",
+  "chan_busy_capacity": "⏳ Docksentry 已在同时运行其能承受的最多命令。**未启动任何操作。** 请稍后再试。",
+  "chan_working_on_it": "⏳ 正在处理 — 可能需要几分钟。\n如果超过 Discord 的回复窗口，我会把结果发到频道里。",
+  "chan_late_result": "（这超过了回复窗口，因此以普通消息发送结果）",
+  "chan_confirm_expired": "该确认已过期或已被使用 — 如果仍需要，请重新运行命令。",
+  "chan_update_busy": "⏳ 已有更新在运行 — 未启动任何操作。请在其完成后重试。",
+  "chan_something_wrong": "出了点问题：{error}",
+  "chan_list_failed": "无法列出容器：{error}",
+  "chan_reclaimable_header": "**可回收的镜像空间**",
+  "chan_no_pending_for": "`{name}` 没有待处理的更新。"
 }

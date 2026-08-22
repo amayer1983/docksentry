@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` unreachable: {error}",
   "logs_failed": "Could not read `{name}` logs: {error}",
   "chan_maintenance_line": "🔧 Maintenance: {state}",
-  "chan_audit_header": "🔍 `{name}` — fields we would not carry over:"
+  "chan_audit_header": "🔍 `{name}` — fields we would not carry over:",
+  "chan_no_backend_for": "No container backend available for `{name}`.",
+  "lifecycle_refused_busy": "An update is running — `{action}` is refused until it finishes.",
+  "chan_unknown_action": "Unknown action `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry is already running as many commands as it can at once. **Nothing was started.** Try again in a moment.",
+  "chan_working_on_it": "⏳ Working on it — this can take a few minutes.\nIf it runs past Discord's reply window I will post the result in the channel instead.",
+  "chan_late_result": "(this ran past the reply window, so here is the result as a normal message)",
+  "chan_confirm_expired": "That confirmation has expired or was already used — run the command again if you still want it.",
+  "chan_update_busy": "⏳ An update is already running — nothing was started. Try again once it finishes.",
+  "chan_something_wrong": "Something went wrong: {error}",
+  "chan_list_failed": "Could not list containers: {error}",
+  "chan_reclaimable_header": "**Reclaimable image space**",
+  "chan_no_pending_for": "No pending update for `{name}`."
 }

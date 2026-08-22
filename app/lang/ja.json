@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` に到達できません: {error}",
   "logs_failed": "`{name}` のログを読み取れませんでした: {error}",
   "chan_maintenance_line": "🔧 メンテナンス: {state}",
-  "chan_audit_header": "🔍 `{name}` — 引き継がないフィールド:"
+  "chan_audit_header": "🔍 `{name}` — 引き継がないフィールド:",
+  "chan_no_backend_for": "`{name}` に利用できるコンテナバックエンドがありません。",
+  "lifecycle_refused_busy": "更新の実行中です — 完了するまで `{action}` は拒否されます。",
+  "chan_unknown_action": "不明な操作 `{action}`。",
+  "chan_busy_capacity": "⏳ Docksentry は同時実行できる上限までコマンドを処理中です。**何も開始していません。** 少し後にもう一度お試しください。",
+  "chan_working_on_it": "⏳ 処理中です — 数分かかることがあります。\nDiscord の応答時間を超えた場合は、結果をチャンネルに投稿します。",
+  "chan_late_result": "（応答時間を超えたため、結果を通常のメッセージとして送ります）",
+  "chan_confirm_expired": "その確認は期限切れか、すでに使用されています — まだ必要なら、もう一度コマンドを実行してください。",
+  "chan_update_busy": "⏳ すでに更新が実行中です — 何も開始していません。完了後にもう一度お試しください。",
+  "chan_something_wrong": "問題が発生しました: {error}",
+  "chan_list_failed": "コンテナを一覧できませんでした: {error}",
+  "chan_reclaimable_header": "**解放可能なイメージ容量**",
+  "chan_no_pending_for": "`{name}` に保留中の更新はありません。"
 }

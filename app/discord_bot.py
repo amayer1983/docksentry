@@ -1166,11 +1166,11 @@ class DiscordBot:
         Telegram resolver: running *and* stopped (you want `/logs` of the
         container that just died), minus our `_old` rollback leftovers."""
         if backend is None:
-            return None, "No container backend available for that host."
+            return None, self.t("chan_no_backend")
         try:
             result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
         except Exception as e:
-            return None, f"Could not list containers: {str(e)[:80]}"
+            return None, self.t("chan_list_failed", error=str(e)[:80])
         names = [n.strip() for n in (result.stdout or "").strip().split("\n")
                  if n.strip() and not n.strip().endswith("_old")]
         if partial in names:
@@ -1179,9 +1179,9 @@ class DiscordBot:
         if len(matches) == 1:
             return matches[0], None
         if len(matches) > 1:
-            return None, ("Several containers match `%s`: %s" %
-                          (partial, ", ".join(f"`{m}`" for m in matches)))
-        return None, f"No container matches `{partial}`."
+            return None, self.t("resolve_multiple",
+                                names=", ".join(f"`{m}`" for m in matches))
+        return None, self.t("resolve_not_found", name=partial)
 
     # ── autocomplete ─────────────────────────────────────────────────
     def _autocomplete(self, data):
@@ -1521,9 +1521,9 @@ class DiscordBot:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            return "!Several match `%s`: %s" % (
-                partial, ", ".join(f"`{m}`" for m in matches))
-        return "!" + self.t("chan_not_in_list", name=partial)
+            return "!" + self.t("resolve_multiple",
+                            names=", ".join(f"`{m}`" for m in matches))
+        return "!" + self.t("unpin_not_found", name=partial)
 
     def _cmd_autoupdate(self, opts):
         arg = (opts.get("container") or "").strip()
@@ -2318,7 +2318,7 @@ class DiscordBot:
             jobs.append((host, next(u for u in entries if u["name"] == name)))
         if not jobs:
             return self._clip("\n".join(errors)
-                              or f"No pending update for `{arg}`.")
+                              or self.t("chan_no_pending_for", name=arg))
         if not self._lock().acquire(blocking=False):
             return self._BUSY
         try:
@@ -2535,41 +2535,39 @@ class DiscordBot:
         and taking it would let a `/restart` block the scheduler.
         """
         if checker is None or backend is None:
-            return False, f"No container backend available for `{name}`."
+            return False, self.t("chan_no_backend_for", name=name)
         if action in ("stop", "restart") and checker._would_kill_self(name):
-            return False, (f"Refusing to {action} `{name}` — that is "
-                           "Docksentry itself.")
+            return False, self.t("lifecycle_refused_self", action=action, name=name)
         if self.engine.update_running:
-            return False, (f"An update is running — `{action}` is refused "
-                           "until it finishes.")
+            return False, self.t("lifecycle_refused_busy", action=action)
         if action == "stop" and self._is_protected(name, checker, store):
             return False, self._protected_msg(name)
         if action == "stop":
             ok, detail = checker._stop_container(name)
             if ok:
-                return True, f"Stopped `{name}`."
-            return False, f"Could not stop `{name}`: {str(detail)[:120]}"
+                return True, self.t("lifecycle_stopped", name=name)
+            return False, self.t("lifecycle_stop_failed", name=name, error=str(detail)[:120])
         if action == "start":
             try:
                 r = backend.run(["start", name], timeout=30)
             except Exception as e:
-                return False, f"Could not start `{name}`: {str(e)[:120]}"
+                return False, self.t("lifecycle_start_failed", name=name, error=str(e)[:120])
             if r.returncode == 0:
-                return True, f"Started `{name}`."
-            return False, (f"Could not start `{name}`: "
-                           f"{(r.stderr or '').strip()[:120]}")
+                return True, self.t("lifecycle_started", name=name)
+            return False, self.t("lifecycle_start_failed", name=name,
+                                 error=(r.stderr or "").strip()[:120])
         if action == "restart":
             # Graceful stop + start, with a generous timeout: gitlab and
             # gluetun both take their time coming down.
             try:
                 r = backend.run(["restart", "--time", "30", name], timeout=120)
             except Exception as e:
-                return False, f"Could not restart `{name}`: {str(e)[:120]}"
+                return False, self.t("lifecycle_restart_failed", name=name, error=str(e)[:120])
             if r.returncode == 0:
-                return True, f"Restarted `{name}`."
-            return False, (f"Could not restart `{name}`: "
-                           f"{(r.stderr or '').strip()[:120]}")
-        return False, f"Unknown action `{action}`."
+                return True, self.t("lifecycle_restarted", name=name)
+            return False, self.t("lifecycle_restart_failed", name=name,
+                                 error=(r.stderr or "").strip()[:120])
+        return False, self.t("chan_unknown_action", action=action)
 
     # ── /cleanup, /checkimages ────────────────────────────────────
     def _cmd_cleanup(self):
@@ -2640,7 +2638,7 @@ class DiscordBot:
                 lines.append(self.t("chan_autocleanup_on"))
             else:
                 lines.append(self.t("chan_run_cleanup_hint"))
-        return self._clip("**Reclaimable image space**\n" + "\n".join(lines))
+        return self._clip(self.t("chan_reclaimable_header") + "\n" + "\n".join(lines))
 
     def _unknown_host(self, name):
         known = ", ".join(f"`{n}`" for n in self.hosts.names) if self.hosts else ""

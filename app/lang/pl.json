@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` nieosiągalny: {error}",
   "logs_failed": "Nie można odczytać logów `{name}`: {error}",
   "chan_maintenance_line": "🔧 Konserwacja: {state}",
-  "chan_audit_header": "🔍 `{name}` — pola, których nie przeniesiemy:"
+  "chan_audit_header": "🔍 `{name}` — pola, których nie przeniesiemy:",
+  "chan_no_backend_for": "Brak backendu kontenerów dla `{name}`.",
+  "lifecycle_refused_busy": "Trwa aktualizacja — `{action}` jest odrzucane do jej zakończenia.",
+  "chan_unknown_action": "Nieznana akcja `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry wykonuje już tyle poleceń, ile może naraz. **Nic nie uruchomiono.** Spróbuj za chwilę.",
+  "chan_working_on_it": "⏳ Pracuję nad tym — może to potrwać kilka minut.\nJeśli przekroczy okno odpowiedzi Discorda, opublikuję wynik na kanale.",
+  "chan_late_result": "(to przekroczyło okno odpowiedzi, więc oto wynik jako zwykła wiadomość)",
+  "chan_confirm_expired": "To potwierdzenie wygasło lub zostało już użyte — uruchom polecenie ponownie, jeśli nadal go chcesz.",
+  "chan_update_busy": "⏳ Aktualizacja już trwa — nic nie uruchomiono. Spróbuj po jej zakończeniu.",
+  "chan_something_wrong": "Coś poszło nie tak: {error}",
+  "chan_list_failed": "Nie udało się wypisać kontenerów: {error}",
+  "chan_reclaimable_header": "**Odzyskiwalne miejsce obrazów**",
+  "chan_no_pending_for": "Brak oczekującej aktualizacji dla `{name}`."
 }

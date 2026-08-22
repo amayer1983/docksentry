@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` inacessível: {error}",
   "logs_failed": "Não foi possível ler os logs de `{name}`: {error}",
   "chan_maintenance_line": "🔧 Manutenção: {state}",
-  "chan_audit_header": "🔍 `{name}` — campos que não levaríamos:"
+  "chan_audit_header": "🔍 `{name}` — campos que não levaríamos:",
+  "chan_no_backend_for": "Nenhum backend de contêineres para `{name}`.",
+  "lifecycle_refused_busy": "Uma atualização está em andamento — `{action}` é recusado até terminar.",
+  "chan_unknown_action": "Ação desconhecida `{action}`.",
+  "chan_busy_capacity": "⏳ O Docksentry já executa o máximo de comandos simultâneos. **Nada foi iniciado.** Tente de novo daqui a pouco.",
+  "chan_working_on_it": "⏳ Trabalhando nisso — pode levar alguns minutos.\nSe passar da janela de resposta do Discord, publicarei o resultado no canal.",
+  "chan_late_result": "(isto passou da janela de resposta, então aqui está o resultado como mensagem normal)",
+  "chan_confirm_expired": "Essa confirmação expirou ou já foi usada — execute o comando de novo se ainda quiser.",
+  "chan_update_busy": "⏳ Já há uma atualização em andamento — nada foi iniciado. Tente quando terminar.",
+  "chan_something_wrong": "Algo deu errado: {error}",
+  "chan_list_failed": "Não foi possível listar os contêineres: {error}",
+  "chan_reclaimable_header": "**Espaço de imagens recuperável**",
+  "chan_no_pending_for": "Nenhuma atualização pendente para `{name}`."
 }

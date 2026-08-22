@@ -485,7 +485,8 @@ checks["/unpin removes the local pin"] = LOCAL_STORE.get_pinned() == []
 checks["…and leaves the other host pinned"] = NAS_STORE.get_pinned() == ["web"]
 checks["/unpin confirms"] = _EN["unpin_removed"].format(name="web") in out
 out = call("unpin", container="web")
-checks["/unpin of something unpinned says so"] = "not in that list" in out
+checks["/unpin of something unpinned says so"] = (
+    _EN["unpin_not_found"].format(name="web") in out)
 out = call("unpin", container="web", host="zzz")
 checks["/unpin on an unknown host errors"] = "Unknown host" in out
 checks["…and the real pin survives"] = NAS_STORE.get_pinned() == ["web"]
@@ -553,7 +554,8 @@ checks["…and writes nothing"] = NAS_STORE.get_cooldown("web") == 30
 
 # ── an unknown CONTAINER is refused per host, nothing is written ─────
 out = call("pin", container="nosuchthing")
-checks["an unknown container is reported"] = "No container matches" in out
+checks["an unknown container is reported"] = (
+    _EN["resolve_not_found"].format(name="nosuchthing") in out)
 checks["…and nothing is pinned"] = LOCAL_STORE.get_pinned() == []
 
 # ── /history ─────────────────────────────────────────────────────────
@@ -619,7 +621,8 @@ checks["…and the remote log is labelled"] = "@nas" in out
 out = call("logs", container="web", host="zzz")
 checks["/logs on an unknown host errors"] = "Unknown host" in out
 out = call("logs", container="nosuchthing")
-checks["/logs of an unknown container is reported"] = "No container matches" in out
+checks["/logs of an unknown container is reported"] = (
+    "resolve_not_found" and _EN["resolve_not_found"].split("`")[0] in out)
 
 # a log longer than Discord allows must come back clipped AND fenced
 noisy = _state_host("noisy", ["chatty"], local=True)
@@ -731,7 +734,7 @@ checks["…and only that entry leaves the pending file"] = (
 engine.batches.clear()
 out = call("update", container="db")
 checks["/update of a container with no pending update says so"] = (
-    "No pending updates" in out or "not in that list" in out)
+    _EN["no_pending_updates"] in out or _EN["unpin_not_found"].split("`")[0] in out)
 checks["…and runs nothing"] = engine.batches == []
 
 # unknown host → nothing runs, nothing is written
@@ -868,7 +871,7 @@ stop_id = reply.components[0]["components"][0]["custom_id"]
 checks["the stop button carries the stop action"] = stop_id.startswith("ds:stop:")
 out = press(stop_id)
 checks["the press stops it"] = LOCAL_CHECKER.stopped == ["db"]
-checks["…and confirms it"] = "Stopped `db`" in out
+checks["…and confirms it"] = _EN["lifecycle_stopped"].format(name="db") in out
 
 # writes stay local: `web` exists on both hosts
 LOCAL_CHECKER.stopped.clear()
@@ -919,11 +922,11 @@ LOCAL_CHECKER.labels.pop("db")
 lbackend = sreg.get("local").backend
 lbackend.calls.clear()
 out = call("restart", container="web")
-checks["/restart restarts"] = "Restarted `web`" in out
+checks["/restart restarts"] = _EN["lifecycle_restarted"].format(name="web") in out
 checks["…with a graceful timeout"] = ["restart", "--time", "30", "web"] in \
     lbackend.calls
 out = call("start", container="db")
-checks["/start starts"] = "Started `db`" in out and ["start", "db"] in \
+checks["/start starts"] = _EN["lifecycle_started"].format(name="db") in out and ["start", "db"] in \
     lbackend.calls
 nbackend = sreg.get("nas").backend
 nbackend.calls.clear()
@@ -953,12 +956,13 @@ LOCAL_CHECKER.self_named = "web"
 lbackend.calls.clear()
 out = call("restart", container="web")
 checks["/restart refuses to restart Docksentry itself"] = (
-    "Docksentry itself" in out and not any(c[0] == "restart"
-                                           for c in lbackend.calls))
+    _EN["lifecycle_refused_self"].split("{")[0] in out
+    and not any(c[0] == "restart" for c in lbackend.calls))
 reply = call("stop", container="web")
 out = press(reply.components[0]["components"][0]["custom_id"])
 checks["/stop refuses to stop Docksentry itself"] = (
-    "Docksentry itself" in out and LOCAL_CHECKER.stopped == [])
+    _EN["lifecycle_refused_self"].split("{")[0] in out
+    and LOCAL_CHECKER.stopped == [])
 LOCAL_CHECKER.self_named = None
 
 # ── /cleanup ─────────────────────────────────────────────────────────

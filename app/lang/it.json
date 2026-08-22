@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` irraggiungibile: {error}",
   "logs_failed": "Impossibile leggere i log di `{name}`: {error}",
   "chan_maintenance_line": "🔧 Manutenzione: {state}",
-  "chan_audit_header": "🔍 `{name}` — campi che non riporteremmo:"
+  "chan_audit_header": "🔍 `{name}` — campi che non riporteremmo:",
+  "chan_no_backend_for": "Nessun backend container per `{name}`.",
+  "lifecycle_refused_busy": "Un aggiornamento è in corso — `{action}` è rifiutato finché non termina.",
+  "chan_unknown_action": "Azione sconosciuta `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry sta già eseguendo il massimo di comandi contemporanei. **Non è stato avviato nulla.** Riprova tra poco.",
+  "chan_working_on_it": "⏳ Ci sto lavorando — può richiedere qualche minuto.\nSe supera la finestra di risposta di Discord, pubblicherò il risultato nel canale.",
+  "chan_late_result": "(ha superato la finestra di risposta, quindi ecco il risultato come messaggio normale)",
+  "chan_confirm_expired": "Quella conferma è scaduta o è già stata usata — esegui di nuovo il comando se lo vuoi ancora.",
+  "chan_update_busy": "⏳ Un aggiornamento è già in corso — non è stato avviato nulla. Riprova al termine.",
+  "chan_something_wrong": "Qualcosa è andato storto: {error}",
+  "chan_list_failed": "Impossibile elencare i container: {error}",
+  "chan_reclaimable_header": "**Spazio immagini recuperabile**",
+  "chan_no_pending_for": "Nessun aggiornamento in sospeso per `{name}`."
 }

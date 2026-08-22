@@ -921,5 +921,17 @@
   "host_unreachable_short": "⚠ `{host}` onbereikbaar: {error}",
   "logs_failed": "Kon logboek van `{name}` niet lezen: {error}",
   "chan_maintenance_line": "🔧 Onderhoud: {state}",
-  "chan_audit_header": "🔍 `{name}` — velden die we niet zouden overnemen:"
+  "chan_audit_header": "🔍 `{name}` — velden die we niet zouden overnemen:",
+  "chan_no_backend_for": "Geen container-backend voor `{name}`.",
+  "lifecycle_refused_busy": "Er loopt een update — `{action}` wordt geweigerd tot die klaar is.",
+  "chan_unknown_action": "Onbekende actie `{action}`.",
+  "chan_busy_capacity": "⏳ Docksentry voert al zoveel opdrachten uit als tegelijk kan. **Er is niets gestart.** Probeer het zo weer.",
+  "chan_working_on_it": "⏳ Bezig — dit kan een paar minuten duren.\nAls het buiten Discords antwoordvenster valt, plaats ik het resultaat in het kanaal.",
+  "chan_late_result": "(dit viel buiten het antwoordvenster, dus hier is het resultaat als gewoon bericht)",
+  "chan_confirm_expired": "Die bevestiging is verlopen of al gebruikt — voer de opdracht opnieuw uit als je hem nog wilt.",
+  "chan_update_busy": "⏳ Er loopt al een update — er is niets gestart. Probeer het opnieuw als die klaar is.",
+  "chan_something_wrong": "Er ging iets mis: {error}",
+  "chan_list_failed": "Kon containers niet opsommen: {error}",
+  "chan_reclaimable_header": "**Vrij te maken image-ruimte**",
+  "chan_no_pending_for": "Geen openstaande update voor `{name}`."
 }
