@@ -939,5 +939,6 @@
   "major_skipping": "Pominięto aktualizację major dla {name}.",
   "chat_migrated": "⚠️ Ta grupa stała się supergrupą, więc skonfigurowane `CHAT_ID={old}` już nie istnieje. Znalazłem nowe i go używam: `{new}`. Wpisz je w ustawieniach — inaczej muszę je odnajdywać po każdym restarcie.",
   "chan_nothing_to_do": "Nie ma nic do zrobienia.",
-  "checkimages_elsewhere": "Nietykane przez `/cleanup`: {build} w pamięci podręcznej builda (`docker builder prune`) i {volumes} w wolumenach — wolumeny to dane i nic ich tu nie usuwa."
+  "checkimages_elsewhere": "Nietykane przez `/cleanup`: {build} w pamięci podręcznej builda (`docker builder prune`) i {volumes} w wolumenach — wolumeny to dane i nic ich tu nie usuwa.",
+  "checkimages_grace_held": "⏳ {held} z {total} nieużywanych obrazów jest młodszych niż {hours}-godzinna karencja (`CLEANUP_GRACE_HOURS`), więc `/cleanup` je na razie zostawi — dlatego może zgłosić 0 B."
 }

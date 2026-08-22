@@ -939,5 +939,6 @@
   "major_skipping": "{name}의 메이저 업데이트를 건너뛰었습니다.",
   "chat_migrated": "⚠️ 이 그룹이 슈퍼그룹으로 전환되어 설정된 `CHAT_ID={old}`가 더 이상 없습니다. 새 값을 찾아 사용 중입니다: `{new}`. 설정에 넣어 주세요 — 그러지 않으면 재시작할 때마다 다시 찾아야 합니다.",
   "chan_nothing_to_do": "할 일이 없습니다.",
-  "checkimages_elsewhere": "`/cleanup`가 건드리지 않는 것: 빌드 캐시 {build}(`docker builder prune`)와 볼륨 {volumes} — 볼륨은 데이터라 여기서 삭제하지 않습니다."
+  "checkimages_elsewhere": "`/cleanup`가 건드리지 않는 것: 빌드 캐시 {build}(`docker builder prune`)와 볼륨 {volumes} — 볼륨은 데이터라 여기서 삭제하지 않습니다.",
+  "checkimages_grace_held": "⏳ 사용하지 않는 이미지 {total}개 중 {held}개가 {hours}시간 유예(`CLEANUP_GRACE_HOURS`)보다 최근이라 `/cleanup`이 지금은 남겨둡니다 — 0 B로 보고되는 이유입니다."
 }

@@ -939,5 +939,6 @@
   "major_skipping": "تم تخطي التحديث الرئيسي لـ {name}.",
   "chat_migrated": "⚠️ تمت ترقية هذه المجموعة إلى مجموعة كبرى، لذا لم يعد `CHAT_ID={old}` المُعد موجودًا. وجدت الجديد وأستخدمه: `{new}`. ضعه في إعداداتك — وإلا سأضطر لاكتشافه بعد كل إعادة تشغيل.",
   "chan_nothing_to_do": "لا شيء لفعله.",
-  "checkimages_elsewhere": "لا يمسّها `/cleanup`: {build} في ذاكرة البناء (`docker builder prune`) و{volumes} في وحدات التخزين — وحدات التخزين بيانات ولا يحذفها شيء هنا."
+  "checkimages_elsewhere": "لا يمسّها `/cleanup`: {build} في ذاكرة البناء (`docker builder prune`) و{volumes} في وحدات التخزين — وحدات التخزين بيانات ولا يحذفها شيء هنا.",
+  "checkimages_grace_held": "⏳ {held} من أصل {total} صورة غير مستخدمة أحدث من مهلة {hours} ساعة (`CLEANUP_GRACE_HOURS`)، لذا سيتركها `/cleanup` الآن — ولهذا قد يبلّغ 0 بايت."
 }

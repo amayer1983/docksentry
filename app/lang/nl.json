@@ -939,5 +939,6 @@
   "major_skipping": "Major-update voor {name} overgeslagen.",
   "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken.",
   "chan_nothing_to_do": "Niets te doen.",
-  "checkimages_elsewhere": "Niet aangeraakt door `/cleanup`: {build} in build-cache (`docker builder prune`) en {volumes} in volumes — volumes zijn data en worden hier niet verwijderd."
+  "checkimages_elsewhere": "Niet aangeraakt door `/cleanup`: {build} in build-cache (`docker builder prune`) en {volumes} in volumes — volumes zijn data en worden hier niet verwijderd.",
+  "checkimages_grace_held": "⏳ {held} van de {total} ongebruikte images zijn jonger dan de {hours} uur respijt (`CLEANUP_GRACE_HOURS`), dus `/cleanup` laat ze voorlopig staan — daarom kan het 0 B melden."
 }

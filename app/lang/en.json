@@ -939,5 +939,6 @@
   "major_skipping": "Skipped major update for {name}.",
   "chat_migrated": "⚠️ This group was upgraded to a supergroup, so the configured `CHAT_ID={old}` no longer exists. I found the new one and I am using it: `{new}`. Please put that in your settings — until you do, I have to rediscover it after every restart.",
   "chan_nothing_to_do": "Nothing to do.",
-  "checkimages_elsewhere": "Not touched by `/cleanup`: {build} in build cache (`docker builder prune`) and {volumes} in volumes — volumes are data, so nothing here deletes them."
+  "checkimages_elsewhere": "Not touched by `/cleanup`: {build} in build cache (`docker builder prune`) and {volumes} in volumes — volumes are data, so nothing here deletes them.",
+  "checkimages_grace_held": "⏳ {held} of {total} unused images are younger than the {hours}h grace (`CLEANUP_GRACE_HOURS`), so `/cleanup` will leave them for now — that is why it can report 0 B."
 }

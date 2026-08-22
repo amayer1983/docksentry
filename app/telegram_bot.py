@@ -2018,7 +2018,7 @@ class TelegramBot:
         return f"{gib:.1f} GB" if gib >= 1.0 else f"{n / (1024 ** 2):.0f} MB"
 
     def _build_checkimages_msg(self, reclaim_bytes, auto_cleanup,
-                               breakdown=None):
+                               breakdown=None, grace=None):
         """`/checkimages` reply — how much `/cleanup` would free right now.
         Nothing-to-clean and auto-cleanup states each get a clear line so
         the reply is answer-in-glance, not a puzzle."""
@@ -2033,6 +2033,10 @@ class TelegramBot:
             msg += "\n" + self.t("checkimages_auto_on")
         else:
             msg += "\n" + self.t("checkimages_auto_off")
+        if grace and grace[1]:
+            prunable, held, hours = grace
+            msg += "\n" + self.t("checkimages_grace_held", held=held,
+                                 total=prunable + held, hours=hours)
         if breakdown:
             msg += self._checkimages_elsewhere(breakdown)
         return msg
@@ -3649,7 +3653,8 @@ class TelegramBot:
                 self.send_message(
                     self._build_checkimages_msg(
                         r.values["bytes"], auto_on,
-                        breakdown=r.values.get("breakdown"))
+                        breakdown=r.values.get("breakdown"),
+                        grace=r.values.get("grace"))
                     + tag)
 
         elif text == "/events":

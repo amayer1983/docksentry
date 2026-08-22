@@ -1592,6 +1592,48 @@ class UpdateChecker:
         """
         return self.reclaimable_breakdown().get("images", 0)
 
+    def grace_holds_back(self):
+        """How many unused images the grace period is protecting.
+
+        `(prunable, held, grace_hours)` — COUNTS, not bytes, and that is
+        deliberate: image sizes overlap, because layers are shared. Summing
+        `docker images` sizes on this machine gives 5.4 GB where
+        `system df` correctly reports 224 MB actually reclaimable, so a
+        byte figure per image would be a confident lie. The count is exact
+        and answers the question that matters: is the cleanup going to do
+        anything right now, or is everything still inside its grace?
+
+        This is what turned "224 MB reclaimable" into a cleanup that freed
+        nothing: thirty-three unused images on a machine that builds a
+        lot, every one younger than the 72-hour CLEANUP_GRACE_HOURS
+        (#63, owner-reported).
+        """
+        grace = int(getattr(self.config, "cleanup_grace_hours", 24) or 24)
+        try:
+            r = self.backend.run(
+                ["images", "--filter", "dangling=true", "--format",
+                 "{{.CreatedAt}}"], timeout=20)
+            if getattr(r, "returncode", 1) != 0:
+                return 0, 0, grace
+        except (subprocess.SubprocessError, OSError):
+            return 0, 0, grace
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=grace)
+        prunable = held = 0
+        for line in (r.stdout or "").strip().splitlines():
+            when = None
+            for fmt in ("%Y-%m-%d %H:%M:%S %z %Z", "%Y-%m-%d %H:%M:%S %z"):
+                try:
+                    when = datetime.strptime(line.strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+            if when is None or when < cutoff:
+                prunable += 1        # undatable: assume the prune takes it
+            else:
+                held += 1
+        return prunable, held, grace
+
     def reclaimable_breakdown(self):
         """`docker system df` per type, in bytes: images, containers,
         volumes, build_cache. Best-effort — an empty dict on any failure,

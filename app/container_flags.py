@@ -403,6 +403,9 @@ def reclaimable(targets, *, checker_for):
             detail = {}
             if hasattr(checker, "reclaimable_breakdown"):
                 detail = checker.reclaimable_breakdown() or {}
+            grace = None
+            if hasattr(checker, "grace_holds_back"):
+                grace = checker.grace_holds_back()
         except Exception as e:
             replies.append(Reply("host_check_failed",
                                  {"host": getattr(host, "name", "local"),
