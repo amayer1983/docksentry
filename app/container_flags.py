@@ -416,5 +416,7 @@ def reclaimable(targets, *, checker_for):
         replies.append(Reply("chan_reclaim_none" if free <= 0
                              else "chan_reclaim_some",
                              {"tag": "", "size": free}, host=host,
-                             host_is_local=local, values={"bytes": free}))
+                             host_is_local=local,
+                             values={"bytes": free, "breakdown": detail,
+                                     "grace": grace}))
     return tuple(replies), total
