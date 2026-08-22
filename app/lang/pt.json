@@ -939,6 +939,5 @@
   "major_skipping": "Atualização maior de {name} ignorada.",
   "chat_migrated": "⚠️ Este grupo virou supergrupo, então o `CHAT_ID={old}` configurado não existe mais. Encontrei o novo e estou usando: `{new}`. Coloque-o nas configurações — até lá preciso redescobri-lo a cada reinício.",
   "chan_nothing_to_do": "Nada a fazer.",
-  "checkimages_elsewhere": "Não tocado por `/cleanup`: {build} em cache de build (`docker builder prune`) e {volumes} em volumes — volumes são dados e nada aqui os apaga.",
   "checkimages_grace_held": "⏳ {held} das {total} imagens não usadas são mais recentes que a carência de {hours} h (`CLEANUP_GRACE_HOURS`), então `/cleanup` as deixa por ora — por isso pode relatar 0 B."
 }

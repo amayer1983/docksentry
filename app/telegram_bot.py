@@ -2037,26 +2037,7 @@ class TelegramBot:
             prunable, held, hours = grace
             msg += "\n" + self.t("checkimages_grace_held", held=held,
                                  total=prunable + held, hours=hours)
-        if breakdown:
-            msg += self._checkimages_elsewhere(breakdown)
         return msg
-
-    def _checkimages_elsewhere(self, breakdown):
-        """Where the space that `/cleanup` will NOT free is sitting.
-
-        Worth saying because the honest number is small and the disk is
-        not: 224 MB of images next to 13.9 GB of volumes and 7.5 GB of
-        build cache. Naming the other two says which command frees them —
-        and, for volumes, that nothing here will."""
-        if not breakdown:
-            return ""
-        build = breakdown.get("build_cache", 0)
-        vols = breakdown.get("volumes", 0)
-        if build < 100 * 1024 ** 2 and vols < 100 * 1024 ** 2:
-            return ""
-        return "\n\n" + self.t("checkimages_elsewhere",
-                                build=self._human_gb(build),
-                                volumes=self._human_gb(vols))
 
     def _build_dry_run(self, updates, checker):
         """Read-only preview of what applying the pending updates WOULD do —
