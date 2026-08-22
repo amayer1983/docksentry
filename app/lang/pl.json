@@ -875,11 +875,9 @@
   "chan_unknown_command": "Nieznane polecenie `{name}`.",
   "chan_lang_unknown": "⚠️ Nieznany język `{code}`. Dostępne: {langs}",
   "chan_history_none_for": "Brak historii aktualizacji dla `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` to nie jest całkowita liczba sekund.",
   "chan_maint_on_until": "🔧 Tryb konserwacji jest **włączony** do {until}.",
   "chan_maint_remaining": "🔧 Tryb konserwacji jest **włączony** — pozostało {remaining}.",
   "chan_restore_restart_hint": "Niektóre ustawienia działają dopiero po restarcie — `/restart` bez kontenera to zrobi.",
-  "chan_not_in_list": "`{name}` nie ma na tej liście.",
   "chan_bad_duration": "Nie można odczytać `{value}` jako czasu. Spróbuj `2h`, `30m`, `1d`, `forever` lub `off`.",
   "chan_backup_upload_failed": "⚠️ Kopia powstała, ale czat nie przyjął pliku. Pobierz ją z interfejsu webowego.",
   "chan_file_too_large": "⚠️ {size} MB to za dużo jak na plik kopii. Nic nie pobrano.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} kontenerów stało się oczekujących po zapytaniu i NIE zostało zaktualizowanych — uruchom `/updateall` ponownie.",
   "major_confirming": "Potwierdzanie aktualizacji major dla {name}…",
   "major_skipping": "Pominięto aktualizację major dla {name}.",
-  "chat_migrated": "⚠️ Ta grupa stała się supergrupą, więc skonfigurowane `CHAT_ID={old}` już nie istnieje. Znalazłem nowe i go używam: `{new}`. Wpisz je w ustawieniach — inaczej muszę je odnajdywać po każdym restarcie."
+  "chat_migrated": "⚠️ Ta grupa stała się supergrupą, więc skonfigurowane `CHAT_ID={old}` już nie istnieje. Znalazłem nowe i go używam: `{new}`. Wpisz je w ustawieniach — inaczej muszę je odnajdywać po każdym restarcie.",
+  "chan_nothing_to_do": "Nie ma nic do zrobienia."
 }

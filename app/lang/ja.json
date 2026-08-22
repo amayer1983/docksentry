@@ -875,11 +875,9 @@
   "chan_unknown_command": "不明なコマンド `{name}`。",
   "chan_lang_unknown": "⚠️ 不明な言語 `{code}`。利用可能: {langs}",
   "chan_history_none_for": "`{name}` の更新履歴はありません。",
-  "chan_cooldown_bad_number": "`{value}` は秒の整数ではありません。",
   "chan_maint_on_until": "🔧 メンテナンスモードは {until} まで**オン**です。",
   "chan_maint_remaining": "🔧 メンテナンスモードは**オン** — 残り {remaining}。",
   "chan_restore_restart_hint": "一部の設定は再起動後にのみ有効になります — コンテナを指定しない `/restart` で行えます。",
-  "chan_not_in_list": "`{name}` はそのリストにありません。",
   "chan_bad_duration": "`{value}` を期間として読み取れません。`2h`、`30m`、`1d`、`forever`、`off` を試してください。",
   "chan_backup_upload_failed": "⚠️ バックアップは作成されましたが、チャットがファイルを受け取りませんでした。ウェブ画面からダウンロードしてください。",
   "chan_file_too_large": "⚠️ {size} MB はバックアップファイルとして大きすぎます。何もダウンロードしていません。",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ 確認後に {count} 個が新たに保留となり、更新されていません — `/updateall` をもう一度実行してください。",
   "major_confirming": "{name} のメジャー更新を確認しています…",
   "major_skipping": "{name} のメジャー更新をスキップしました。",
-  "chat_migrated": "⚠️ このグループはスーパーグループに変更されたため、設定された `CHAT_ID={old}` は存在しません。新しいものを見つけて使用しています: `{new}`。設定に入れてください — そうしないと再起動のたびに探し直す必要があります。"
+  "chat_migrated": "⚠️ このグループはスーパーグループに変更されたため、設定された `CHAT_ID={old}` は存在しません。新しいものを見つけて使用しています: `{new}`。設定に入れてください — そうしないと再起動のたびに探し直す必要があります。",
+  "chan_nothing_to_do": "することはありません。"
 }

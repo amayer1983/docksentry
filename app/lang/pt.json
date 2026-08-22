@@ -875,11 +875,9 @@
   "chan_unknown_command": "Comando desconhecido `{name}`.",
   "chan_lang_unknown": "⚠️ Idioma desconhecido `{code}`. Disponíveis: {langs}",
   "chan_history_none_for": "Sem histórico de atualizações para `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` não é um número inteiro de segundos.",
   "chan_maint_on_until": "🔧 O modo de manutenção está **ligado** até {until}.",
   "chan_maint_remaining": "🔧 O modo de manutenção está **ligado** — faltam {remaining}.",
   "chan_restore_restart_hint": "Algumas configurações só entram em vigor após reiniciar — `/restart` sem contêiner faz isso.",
-  "chan_not_in_list": "`{name}` não está nessa lista.",
   "chan_bad_duration": "Não foi possível ler `{value}` como duração. Tente `2h`, `30m`, `1d`, `forever` ou `off`.",
   "chan_backup_upload_failed": "⚠️ O backup foi criado, mas o chat não aceitou o arquivo. Baixe-o pela interface web.",
   "chan_file_too_large": "⚠️ {size} MB é grande demais para um arquivo de backup. Nada foi baixado.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} contêineres ficaram pendentes após a pergunta e NÃO foram atualizados — execute `/updateall` de novo.",
   "major_confirming": "Confirmando a atualização maior de {name}…",
   "major_skipping": "Atualização maior de {name} ignorada.",
-  "chat_migrated": "⚠️ Este grupo virou supergrupo, então o `CHAT_ID={old}` configurado não existe mais. Encontrei o novo e estou usando: `{new}`. Coloque-o nas configurações — até lá preciso redescobri-lo a cada reinício."
+  "chat_migrated": "⚠️ Este grupo virou supergrupo, então o `CHAT_ID={old}` configurado não existe mais. Encontrei o novo e estou usando: `{new}`. Coloque-o nas configurações — até lá preciso redescobri-lo a cada reinício.",
+  "chan_nothing_to_do": "Nada a fazer."
 }

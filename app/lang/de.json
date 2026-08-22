@@ -875,11 +875,9 @@
   "chan_unknown_command": "Unbekannter Befehl `{name}`.",
   "chan_lang_unknown": "⚠️ Unbekannte Sprache `{code}`. Verfügbar: {langs}",
   "chan_history_none_for": "Keine Update-Historie für `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` ist keine ganze Anzahl Sekunden.",
   "chan_maint_on_until": "🔧 Wartungsmodus ist **an** bis {until}.",
   "chan_maint_remaining": "🔧 Wartungsmodus ist **an** — noch {remaining}.",
   "chan_restore_restart_hint": "Manche Einstellungen greifen erst nach einem Neustart — `/restart` ohne Container erledigt das.",
-  "chan_not_in_list": "`{name}` steht nicht in dieser Liste.",
   "chan_bad_duration": "`{value}` ist keine lesbare Dauer. Versuch `2h`, `30m`, `1d`, `forever` oder `off`.",
   "chan_backup_upload_failed": "⚠️ Das Backup wurde erstellt, aber der Chat nahm die Datei nicht an. Lade es stattdessen über die Weboberfläche herunter.",
   "chan_file_too_large": "⚠️ {size} MB sind zu groß für eine Backup-Datei. Es wurde nichts heruntergeladen.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} neu offene Container kamen nach der Abfrage dazu und wurden NICHT aktualisiert — dafür `/updateall` erneut ausführen.",
   "major_confirming": "Major-Update für {name} wird bestätigt…",
   "major_skipping": "Major-Update für {name} übersprungen.",
-  "chat_migrated": "⚠️ Diese Gruppe wurde zu einer Supergruppe, daher gibt es die eingestellte `CHAT_ID={old}` nicht mehr. Ich habe die neue gefunden und nutze sie: `{new}`. Trag sie bitte in die Einstellungen ein — sonst muss ich sie nach jedem Neustart neu suchen."
+  "chat_migrated": "⚠️ Diese Gruppe wurde zu einer Supergruppe, daher gibt es die eingestellte `CHAT_ID={old}` nicht mehr. Ich habe die neue gefunden und nutze sie: `{new}`. Trag sie bitte in die Einstellungen ein — sonst muss ich sie nach jedem Neustart neu suchen.",
+  "chan_nothing_to_do": "Nichts zu tun."
 }

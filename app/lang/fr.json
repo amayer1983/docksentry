@@ -875,11 +875,9 @@
   "chan_unknown_command": "Commande inconnue `{name}`.",
   "chan_lang_unknown": "⚠️ Langue inconnue `{code}`. Disponibles : {langs}",
   "chan_history_none_for": "Aucun historique de mise à jour pour `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` n'est pas un nombre entier de secondes.",
   "chan_maint_on_until": "🔧 Le mode maintenance est **activé** jusqu'à {until}.",
   "chan_maint_remaining": "🔧 Le mode maintenance est **activé** — il reste {remaining}.",
   "chan_restore_restart_hint": "Certains réglages ne prennent effet qu'après un redémarrage — `/restart` sans conteneur s'en charge.",
-  "chan_not_in_list": "`{name}` ne figure pas dans cette liste.",
   "chan_bad_duration": "Impossible de lire `{value}` comme durée. Essayez `2h`, `30m`, `1d`, `forever` ou `off`.",
   "chan_backup_upload_failed": "⚠️ La sauvegarde a été créée mais le chat a refusé le fichier. Téléchargez-la depuis l'interface web.",
   "chan_file_too_large": "⚠️ {size} Mo, c'est trop pour un fichier de sauvegarde. Rien n'a été téléchargé.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} conteneurs sont devenus en attente après la question et n'ont PAS été mis à jour — relancez `/updateall`.",
   "major_confirming": "Confirmation de la mise à jour majeure de {name}…",
   "major_skipping": "Mise à jour majeure de {name} ignorée.",
-  "chat_migrated": "⚠️ Ce groupe est devenu un supergroupe, donc le `CHAT_ID={old}` configuré n'existe plus. J'ai trouvé le nouveau et je l'utilise : `{new}`. Mettez-le dans vos réglages — sinon je dois le redécouvrir à chaque redémarrage."
+  "chat_migrated": "⚠️ Ce groupe est devenu un supergroupe, donc le `CHAT_ID={old}` configuré n'existe plus. J'ai trouvé le nouveau et je l'utilise : `{new}`. Mettez-le dans vos réglages — sinon je dois le redécouvrir à chaque redémarrage.",
+  "chan_nothing_to_do": "Rien à faire."
 }

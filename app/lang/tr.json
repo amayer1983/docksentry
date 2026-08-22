@@ -875,11 +875,9 @@
   "chan_unknown_command": "Bilinmeyen komut `{name}`.",
   "chan_lang_unknown": "⚠️ Bilinmeyen dil `{code}`. Kullanılabilir: {langs}",
   "chan_history_none_for": "`{name}` için güncelleme geçmişi yok.",
-  "chan_cooldown_bad_number": "`{value}` tam sayı saniye değil.",
   "chan_maint_on_until": "🔧 Bakım modu {until} tarihine kadar **açık**.",
   "chan_maint_remaining": "🔧 Bakım modu **açık** — {remaining} kaldı.",
   "chan_restore_restart_hint": "Bazı ayarlar yalnızca yeniden başlatmadan sonra geçerli olur — kapsayıcısız `/restart` bunu yapar.",
-  "chan_not_in_list": "`{name}` bu listede yok.",
   "chan_bad_duration": "`{value}` süre olarak okunamadı. `2h`, `30m`, `1d`, `forever` veya `off` deneyin.",
   "chan_backup_upload_failed": "⚠️ Yedek oluşturuldu ama sohbet dosyayı kabul etmedi. Bunun yerine web arayüzünden indirin.",
   "chan_file_too_large": "⚠️ {size} MB bir yedek dosyası için çok büyük. Hiçbir şey indirilmedi.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ Soru sorulduktan sonra {count} kapsayıcı beklemeye girdi ve güncellenMEdi — `/updateall` komutunu tekrar çalıştırın.",
   "major_confirming": "{name} için büyük güncelleme onaylanıyor…",
   "major_skipping": "{name} için büyük güncelleme atlandı.",
-  "chat_migrated": "⚠️ Bu grup süper gruba yükseltildi, bu yüzden ayarlı `CHAT_ID={old}` artık yok. Yenisini buldum ve kullanıyorum: `{new}`. Lütfen ayarlarınıza yazın — yoksa her yeniden başlatmada yeniden bulmam gerekiyor."
+  "chat_migrated": "⚠️ Bu grup süper gruba yükseltildi, bu yüzden ayarlı `CHAT_ID={old}` artık yok. Yenisini buldum ve kullanıyorum: `{new}`. Lütfen ayarlarınıza yazın — yoksa her yeniden başlatmada yeniden bulmam gerekiyor.",
+  "chan_nothing_to_do": "Yapılacak bir şey yok."
 }

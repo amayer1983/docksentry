@@ -544,7 +544,10 @@ out = call("cooldown", container="web", seconds=0)
 checks["/cooldown 0 clears it"] = (
     "cleared" in out and LOCAL_STORE.get_cooldown("web") == 0)
 out = call("cooldown", container="web", seconds="not-a-number")
-checks["/cooldown rejects a non-number"] = "whole number" in out
+# One key for the outcome, and it is the one that states the valid range
+# — Discord had its own that only echoed the input (#63).
+checks["/cooldown rejects a non-number"] = (
+    _EN["cooldown_bad_value"].split("(")[0].strip() in out)
 out = call("cooldown", container="web", seconds=30, host="nas")
 checks["/cooldown host:nas targets that host"] = NAS_STORE.get_cooldown("web") == 30
 checks["…and the local one is still clear"] = LOCAL_STORE.get_cooldown("web") == 0

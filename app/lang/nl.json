@@ -875,11 +875,9 @@
   "chan_unknown_command": "Onbekende opdracht `{name}`.",
   "chan_lang_unknown": "⚠️ Onbekende taal `{code}`. Beschikbaar: {langs}",
   "chan_history_none_for": "Geen updategeschiedenis voor `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` is geen heel aantal seconden.",
   "chan_maint_on_until": "🔧 Onderhoudsmodus staat **aan** tot {until}.",
   "chan_maint_remaining": "🔧 Onderhoudsmodus staat **aan** — nog {remaining}.",
   "chan_restore_restart_hint": "Sommige instellingen werken pas na een herstart — `/restart` zonder container doet dat.",
-  "chan_not_in_list": "`{name}` staat niet in die lijst.",
   "chan_bad_duration": "Kon `{value}` niet als duur lezen. Probeer `2h`, `30m`, `1d`, `forever` of `off`.",
   "chan_backup_upload_failed": "⚠️ De back-up is gemaakt, maar de chat accepteerde het bestand niet. Download hem via de webinterface.",
   "chan_file_too_large": "⚠️ {size} MB is te groot voor een back-upbestand. Er is niets gedownload.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} containers kwamen na de vraag open te staan en zijn NIET bijgewerkt — voer `/updateall` opnieuw uit.",
   "major_confirming": "Major-update voor {name} bevestigen…",
   "major_skipping": "Major-update voor {name} overgeslagen.",
-  "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken."
+  "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken.",
+  "chan_nothing_to_do": "Niets te doen."
 }

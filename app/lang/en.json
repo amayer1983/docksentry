@@ -875,11 +875,9 @@
   "chan_unknown_command": "Unknown command `{name}`.",
   "chan_lang_unknown": "⚠️ Unknown language `{code}`. Available: {langs}",
   "chan_history_none_for": "No update history for `{name}`.",
-  "chan_cooldown_bad_number": "`{value}` is not a whole number of seconds.",
   "chan_maint_on_until": "🔧 Maintenance mode is **on** until {until}.",
   "chan_maint_remaining": "🔧 Maintenance mode is **on** — {remaining} remaining.",
   "chan_restore_restart_hint": "Some settings only take effect after a restart — `/restart` with no container does it.",
-  "chan_not_in_list": "`{name}` is not in that list.",
   "chan_bad_duration": "Could not read `{value}` as a duration. Try `2h`, `30m`, `1d`, `forever` or `off`.",
   "chan_backup_upload_failed": "⚠️ The backup was built but the chat would not take the file. Download it from the Web UI instead.",
   "chan_file_too_large": "⚠️ {size} MB is too large for a backup file. Nothing was downloaded.",
@@ -942,5 +940,6 @@
   "chan_newly_pending": "ℹ {count} newly pending container(s) appeared after you were asked and were NOT updated — run `/updateall` again for those.",
   "major_confirming": "Confirming major update for {name}…",
   "major_skipping": "Skipped major update for {name}.",
-  "chat_migrated": "⚠️ This group was upgraded to a supergroup, so the configured `CHAT_ID={old}` no longer exists. I found the new one and I am using it: `{new}`. Please put that in your settings — until you do, I have to rediscover it after every restart."
+  "chat_migrated": "⚠️ This group was upgraded to a supergroup, so the configured `CHAT_ID={old}` no longer exists. I found the new one and I am using it: `{new}`. Please put that in your settings — until you do, I have to rediscover it after every restart.",
+  "chan_nothing_to_do": "Nothing to do."
 }

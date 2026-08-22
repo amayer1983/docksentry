@@ -1107,14 +1107,16 @@ class DiscordBot:
         host's `nginx` — that is the #7 state collision, and the Telegram
         side already draws the line here (`_resolve_targets(write=True)`).
         """
-        if not self.hosts:
-            return [None]
-        if not name:
-            # On a single-host install this is the same one-element list
-            # `_hosts_for` returns, so nothing about that path changes.
-            return [self.hosts.local] if self.hosts.is_multi else list(self.hosts)
-        host = self.hosts.get(name)
-        return [host] if host else None
+        # Through the core, which is what finally gives Discord `@all`:
+        # this used to look the name up directly and had no branch for the
+        # sentinel, so `host: all` came back as an unknown host (#63).
+        import container_flags
+        from hosts import ALL_HOSTS
+        token = None
+        if name:
+            token = ALL_HOSTS if name.strip().lower() == "all" else name
+        targets, fatal = container_flags.targets_for_write(self.hosts, token)
+        return None if fatal else targets
 
     def _checker_for(self, host):
         if host is None or getattr(host, "is_local", False):
@@ -1459,42 +1461,47 @@ class DiscordBot:
     # then flip the flag in that host's own state view. The per-host
     # resolution is the whole point — none of them may touch self.store.
 
+    def _render(self, outcome):
+        """A core Outcome as Discord text.
+
+        This is the whole of what a connection does with a result: pick
+        the wording from the shared keys, add the host tag if there is
+        one, join into a single reply because an interaction is one
+        editable answer. Telegram renders the same Outcome as one message
+        per host — same facts, different shape, which is the split (#63).
+        """
+        if outcome.fatal is not None:
+            return self.t(outcome.fatal.key, **outcome.fatal.params)
+        lines = []
+        for r in outcome.replies:
+            tag = self._label(r.host) if r.host is not None else ""
+            body = self.t(r.key, **r.params) if r.key else ""
+            if r.items:
+                body += "\n" + "\n".join(f"• `{n}`" for n in r.items)
+            lines.append(body + tag)
+        return "\n".join(lines) or self.t("chan_nothing_to_do")
+
     def _cmd_pin(self, opts, *, remove):
+        """Pin or unpin. The work is `container_flags`; this renders it.
+
+        `/unpin` matches against the pin LIST rather than against what is
+        running — a container removed from the host can still hold a
+        stale pin, and refusing to lift it because `ps` no longer lists
+        it would strand the entry. That rule is one field in the core's
+        spec table now, not a comment in two files (#63).
+        """
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_unpin" if remove else "chan_usage_pin")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        for host in targets:
-            store = self._store_for(host)
-            tag = self._label(host)
-            pinned = store.get_pinned()
-            if remove:
-                # Unpin matches against the PIN LIST, not against what is
-                # running: a container that was removed from the host can
-                # still hold a stale pin, and refusing to unpin it because
-                # `ps` no longer lists it would strand that entry.
-                name = self._match_in(arg, pinned)
-                if name.startswith("!"):
-                    lines.append(name[1:] + tag)
-                    continue
-                pinned.remove(name)
-                store.save_pinned(pinned)
-                lines.append(self.t("unpin_removed", name=name) + tag)
-                continue
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + tag)
-                continue
-            if name in pinned:
-                lines.append(self.t("pin_already", name=name) + tag)
-                continue
-            pinned.append(name)
-            store.save_pinned(pinned)
-            lines.append(self.t("pin_added", name=name) + tag)
-        return self._clip("\n".join(lines) or "Nothing to do.")
+        out = container_flags.apply_flag(
+            container_flags.FLAGS["unpin" if remove else "pin"], targets,
+            store_for=self._store_for, backend_for=self._backend_for,
+            partial=arg)
+        return self._clip(self._render(out))
 
     def _match_in(self, partial, names):
         """Resolve `partial` against an in-memory list. Returns the name,
@@ -1512,80 +1519,45 @@ class DiscordBot:
         return "!" + self.t("unpin_not_found", name=partial)
 
     def _cmd_autoupdate(self, opts):
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_autoupdate")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        for host in targets:
-            store = self._store_for(host)
-            tag = self._label(host)
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + tag)
-                continue
-            auto = store.get_autoupdate()
-            if name in auto:
-                auto.remove(name)
-                store.save_autoupdate(auto)
-                lines.append(self.t("autoupdate_off", name=name) + tag)
-            else:
-                auto.append(name)
-                store.save_autoupdate(auto)
-                lines.append(self.t("autoupdate_on", name=name) + tag)
-        return self._clip("\n".join(lines) or "Nothing to do.")
+        return self._clip(self._render(container_flags.apply_flag(
+            container_flags.FLAGS["autoupdate"], targets,
+            store_for=self._store_for, backend_for=self._backend_for,
+            partial=arg)))
 
     def _cmd_protect(self, opts):
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_protect")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        for host in targets:
-            store = self._store_for(host)
-            tag = self._label(host)
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + tag)
-                continue
-            now_on = store.toggle_protect_stop(name)
-            lines.append(self.t("protect_on" if now_on else "protect_off",
-                                name=name) + tag)
-        return self._clip("\n".join(lines) or "Nothing to do.")
+        return self._clip(self._render(container_flags.apply_flag(
+            container_flags.FLAGS["protect"], targets,
+            store_for=self._store_for, backend_for=self._backend_for,
+            partial=arg)))
 
     def _cmd_cooldown(self, opts):
+        """The number is parsed in the core, before any host is touched —
+        so a value that will not parse writes nothing anywhere (#63)."""
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_cooldown")
-        raw = opts.get("seconds")
-        try:
-            seconds = int(raw)
-        except (TypeError, ValueError):
-            return self.t("chan_cooldown_bad_number", value=raw)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        for host in targets:
-            store = self._store_for(host)
-            tag = self._label(host)
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + tag)
-                continue
-            # The store clamps to its own [0, 600] range and returns what
-            # it actually stored, so report that rather than what was
-            # asked for — otherwise `/cooldown x 9999` reads as accepted.
-            applied = store.set_cooldown(name, seconds)
-            lines.append((self.t("cooldown_set", name=name, seconds=applied)
-                              if applied
-                              else self.t("cooldown_cleared", name=name))
-                             + tag)
-        return self._clip("\n".join(lines) or "Nothing to do.")
+        return self._clip(self._render(container_flags.set_cooldown(
+            targets, store_for=self._store_for,
+            backend_for=self._backend_for, partial=arg,
+            seconds=opts.get("seconds"))))
 
     def _cmd_maintenance(self, opts):
         """Show maintenance state, or set it.
@@ -2046,48 +2018,31 @@ class DiscordBot:
         return "\n".join(out)[:1800]
 
     def _cmd_note(self, opts):
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("note_usage")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        note = (opts.get("text") or "").strip()
-        lines = []
-        for host in targets:
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + self._label(host))
-                continue
-            self._store_for(host).set_note(name, note)
-            lines.append(
-                (f"📝 Note on `{name}`: {note}" if note
-                 else f"📝 Note cleared on `{name}`") + self._label(host))
-        return "\n".join(lines)
+        return self._clip(self._render(container_flags.set_note(
+            targets, store_for=self._store_for,
+            backend_for=self._backend_for, partial=arg,
+            text=(opts.get("text") or "").strip())))
 
     def _cmd_flag(self, which, opts):
         """`/trustrunning` and `/askmajor` — same skeleton, one toggle."""
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_container", command=which)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        for host in targets:
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + self._label(host))
-                continue
-            store = self._store_for(host)
-            if which == "trustrunning":
-                on = store.toggle_trust_running(name)
-                key = "trust_on" if on else "trust_off"
-            else:
-                on = store.toggle_ask_before_major(name)
-                key = "askmajor_on" if on else "askmajor_off"
-            lines.append(self.t(key, name=name) + self._label(host))
-        return "\n".join(lines)
+        return self._clip(self._render(container_flags.apply_flag(
+            container_flags.FLAGS[which], targets,
+            store_for=self._store_for, backend_for=self._backend_for,
+            partial=arg)))
 
     def _cmd_testchannel(self):
         """More useful from a chat than from the Web UI: you are already
