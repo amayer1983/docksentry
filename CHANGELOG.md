@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.18] - 2026-08-22
+
+### Changed
+- **Every channel announces the same thing, in your language.** ntfy, e-mail, Gotify, Matrix, Apprise and the Discord webhook each wrote their own English for the two structured notifications — "updates available" and the result of one update — in six slightly different wordings. An instance set to German announced updates in German on Telegram and in English everywhere else. They all read the same translated sentences now; each channel still decides its own bullet character, embed shape and whether it sends HTML, which is presentation and stays where it belongs.
+
+### Fixed
+- **Four of six channels left out which host a container is on.** `plex` on the NAS and `plex` at home are different containers, and which one had an update depended on which channel you happened to read. The host tag is part of the shared line now, so every channel carries it.
+- **Matrix said one thing in its plain text and another in its HTML** — the intro line was in one and not the other. Both carry it now.
+
 ## [2.18.0-beta.17] - 2026-08-22
 
 ### Changed
