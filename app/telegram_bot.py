@@ -2024,10 +2024,11 @@ class TelegramBot:
         the reply is answer-in-glance, not a puzzle."""
         if reclaim_bytes <= 0:
             return self.t("checkimages_none")
-        gib = reclaim_bytes / (1024 ** 3)
-        # Show GB only from ~1 GB up — a "0.2 GB" or "150 MB" reads much
-        # better than "0.2 GB", and 512 MB shouldn't get rounded to "0.5 GB".
-        size = f"{gib:.1f} GB" if gib >= 1.0 else f"{reclaim_bytes / (1024 ** 2):.0f} MB"
+        # One decimal and a space before the unit, the same as every
+        # other size this project prints: Docker's own "8.534MB" reads as
+        # 8534 MB wherever a dot is the thousands separator (#63).
+        from update_checker import UpdateChecker as _UC
+        size = _UC._human_bytes(reclaim_bytes)
         msg = self.t("checkimages_reclaimable", size=size)
         if auto_cleanup:
             msg += "\n" + self.t("checkimages_auto_on")
@@ -3990,21 +3991,14 @@ class TelegramBot:
                 self.send_message(self.t("backup_send_failed"))
             return
         elif text.startswith("/audit"):
-            # /audit <container> — run UpdateChecker._audit_inspect_coverage
-            # against the target's docker inspect and report any non-
-            # default HostConfig / Config fields we don't restore on
-            # recreate. Mirror of the DEBUG-mode logging in v1.19.0 but
-            # actionable from chat (#2 + audit story closure).
+            # Which non-default inspect fields a recreate would NOT carry
+            # over. The finding lives in the core, so Telegram and Discord
+            # cannot disagree about what was found (#63).
+            import container_flags
             parts = text.split(maxsplit=1)
             if len(parts) < 2:
                 self.send_message(self.t("audit_usage"))
                 return
-            # `@host` narrows, `@all` widens; without a token this read
-            # sweeps every managed host (#7). /audit inspected only the
-            # local box until beta.9 — the same lag /checkimages had,
-            # while its Discord twin was host-aware all along. A remote
-            # container's dropped-field audit is exactly what you want
-            # when its update fails on that host, so it must reach it.
             arg, audit_targets, host_err = self._resolve_targets(
                 parts[1], write=False)
             if host_err:
@@ -4013,67 +4007,42 @@ class TelegramBot:
             if not arg:
                 self.send_message(self.t("audit_usage"))
                 return
-            from update_checker import UpdateChecker as _UC
-            shown = False
-            first_err = None
-            for host in (audit_targets or [None]):
-                backend = self._backend_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(arg, backend=backend)
-                if err:
-                    # A container lives on one host as a rule; a host that
-                    # doesn't have it stays quiet, and only a sweep that
-                    # found it nowhere answers "not found" (like /status).
-                    first_err = first_err or (err + tag)
-                    continue
-                try:
-                    r = backend.run(["inspect", name], timeout=10)
-                    if r.returncode != 0:
-                        self.send_message(
-                            self.t("audit_inspect_failed", name=name) + tag)
-                        shown = True
-                        continue
-                    inspect = json.loads(r.stdout)[0]
-                except (subprocess.SubprocessError, json.JSONDecodeError,
-                        IndexError):
-                    self.send_message(
-                        self.t("audit_inspect_failed", name=name) + tag)
-                    shown = True
-                    continue
-                shown = True
-                findings = _UC._audit_inspect_coverage(
-                    self._checker_for(host, checker), inspect)
-                host_keys = findings.get("host_unknown") or []
-                cfg_keys = findings.get("config_unknown") or []
-                dropped = findings.get("host_dropped") or []
-                if not host_keys and not cfg_keys and not dropped:
-                    self.send_message(self.t("audit_clean", name=name) + tag)
-                    continue
-                lines = [self.t("audit_findings_header", name=name) + tag]
-                if dropped:
-                    # The fields we skip on purpose, said out loud. This
-                    # list existed silently while the owner's GPU
-                    # container failed every update on a field sitting in
-                    # it (#62's neighbour) — the audit command stayed
-                    # quiet about the one thing that mattered.
-                    lines.append(self.t("audit_section_dropped"))
-                    lines.extend(f"  • `HostConfig.{k}`" for k in dropped)
-                if host_keys:
-                    lines.append(self.t("audit_section_host"))
-                    lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
-                if cfg_keys:
-                    lines.append(self.t("audit_section_config"))
-                    lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
-                # "Please open an issue" belongs under UNKNOWN fields
-                # only. The deliberately-skipped section is a statement
-                # of policy, not a coverage gap — asking people to file
-                # issues about it invites reports we would close as
-                # intended behaviour.
-                if host_keys or cfg_keys:
-                    lines.append(self.t("audit_footer"))
-                self.send_message("\n".join(lines))
-            if not shown and first_err:
-                self.send_message(first_err)
+            name, host, findings, err = container_flags.audit_container(
+                audit_targets or [None], backend_for=self._backend_for,
+                checker_for=lambda h: self._checker_for(h, checker),
+                partial=arg.split()[0])
+            if err is not None:
+                self.send_message(self.t(err.key, **err.params)
+                                  + (self._host_tag(err.host)
+                                     if err.host is not None else ""))
+                return
+            tag = self._host_tag(host)
+            host_keys = findings.get("host_unknown") or []
+            cfg_keys = findings.get("config_unknown") or []
+            dropped = findings.get("host_dropped") or []
+            if not host_keys and not cfg_keys and not dropped:
+                self.send_message(self.t("audit_clean", name=name) + tag)
+                return
+            lines = [self.t("audit_findings_header", name=name) + tag]
+            if dropped:
+                # The fields we skip on purpose, said out loud. This list
+                # existed silently while the owner's GPU container failed
+                # every update on a field sitting in it (#62's neighbour).
+                lines.append(self.t("audit_section_dropped"))
+                lines.extend(f"  • `HostConfig.{k}`" for k in dropped)
+            if host_keys:
+                lines.append(self.t("audit_section_host"))
+                lines.extend(f"  • `HostConfig.{k}`" for k in host_keys)
+            if cfg_keys:
+                lines.append(self.t("audit_section_config"))
+                lines.extend(f"  • `Config.{k}`" for k in cfg_keys)
+            # "Please open an issue" belongs under UNKNOWN fields only.
+            # The deliberately-skipped section is a statement of policy,
+            # not a coverage gap — asking people to file issues about it
+            # invites reports we would close as intended behaviour.
+            if host_keys or cfg_keys:
+                lines.append(self.t("audit_footer"))
+            self.send_message("\n".join(lines))
 
         elif text.startswith("/setlink"):
             import container_flags

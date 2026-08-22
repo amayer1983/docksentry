@@ -30,7 +30,10 @@ def main():
     checks["msg: nothing → NO reclaimable line"] = "reclaimable" not in msg_nothing
 
     msg_gb_off = build(20 * 1024**3, False)
-    checks["msg: 20 GB reclaimable formatted"] = "20.0 GB" in msg_gb_off and "reclaimable" in msg_gb_off
+    # Decimal SI, one place for gigabytes, a space before the unit —
+    # ours rather than the runtime's "21.47GB", because a dot is the
+    # thousands separator wherever the reader is German (#63).
+    checks["msg: 20 GiB shows as decimal GB"] = "21.5 GB" in msg_gb_off
     checks["msg: auto-cleanup OFF hint present"] = "OFF" in msg_gb_off
 
     msg_gb_on = build(20 * 1024**3, True)
@@ -38,7 +41,8 @@ def main():
     checks["msg: no OFF hint when ON"] = "OFF" not in msg_gb_on
 
     msg_mb = build(150 * 1024**2, False)
-    checks["msg: small totals fall back to MB"] = "150 MB" in msg_mb
+    # Whole megabytes: a megabyte is not worth a decimal.
+    checks["msg: small totals are whole megabytes"] = "157 MB" in msg_mb
 
     # ── /checkimages walks every host, like /cleanup (#2, @famewolf:
     # "take a pass across all the commands and ensure they act on the
@@ -110,8 +114,8 @@ def main():
 
     checks["walk: every host produces a line"] = len(sent) == 3
     checks["walk: the reachable hosts report their size"] = (
-        any("20.0 GB" in m and "@local" in m for m in sent)
-        and any("5.0 GB" in m and "@docknas" in m for m in sent))
+        any("21.5 GB" in m and "@local" in m for m in sent)
+        and any("5.4 GB" in m and "@docknas" in m for m in sent))
     checks["walk: the unreachable host is reported, not skipped"] = (
         any("❌ @dock8520" in m for m in sent))
 

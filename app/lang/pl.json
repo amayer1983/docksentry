@@ -21,7 +21,7 @@
   "help_checkimages": "How much space /cleanup would free (dry-run)",
   "help_detail_checkimages": "*/checkimages* — dry-run for /cleanup.\n\nShows how much disk space would be reclaimed by running `/cleanup` right now (unused images + build cache), read from `docker system df`. Also flags whether auto-cleanup on the disk warning is currently ON or OFF.",
   "checkimages_none": "🧹 Nothing to clean up right now — no unused images or build cache.",
-  "checkimages_reclaimable": "🧹 *{size}* reclaimable via `/cleanup` (unused images / build cache).",
+  "checkimages_reclaimable": "🧹 Nawet *{size}* mogłoby zwolnić `/cleanup` — to szacunek środowiska, czyli górna granica.",
   "checkimages_auto_on": "✅ Auto-cleanup on disk warning: ON.",
   "checkimages_auto_off": "💡 Auto-cleanup on disk warning: OFF — set `DISK_WARN_AUTO_CLEANUP=true` (or enable it in Web UI → Settings) to reclaim automatically.",
   "cleanup_starting": "🧹 Czyszczenie starych obrazów...",

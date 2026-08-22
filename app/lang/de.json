@@ -23,7 +23,7 @@
   "help_checkimages": "Wie viel Platz /cleanup freimachen würde (Trockenlauf)",
   "help_detail_checkimages": "*/checkimages* — Trockenlauf für /cleanup.\n\nZeigt, wie viel Speicherplatz `/cleanup` gerade freimachen würde (unbenutzte Images + Build-Cache), gelesen aus `docker system df`. Zeigt außerdem an, ob Auto-Cleanup bei der Speicher-Warnung aktuell AN oder AUS ist.",
   "checkimages_none": "🧹 Aktuell nichts aufzuräumen — keine unbenutzten Images oder Build-Cache.",
-  "checkimages_reclaimable": "🧹 *{size}* über `/cleanup` freimachbar (unbenutzte Images / Build-Cache).",
+  "checkimages_reclaimable": "🧹 Bis zu *{size}* könnte `/cleanup` freimachen — Schätzung der Laufzeitumgebung, also eine Obergrenze.",
   "checkimages_auto_on": "✅ Auto-Cleanup bei Speicher-Warnung: AN.",
   "checkimages_auto_off": "💡 Auto-Cleanup bei Speicher-Warnung: AUS — setze `DISK_WARN_AUTO_CLEANUP=true` (oder aktiviere es in der Web-UI → Einstellungen), um automatisch freizumachen.",
   "cleanup_starting": "🧹 Räume alte Images auf...",

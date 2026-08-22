@@ -1569,7 +1569,14 @@ class UpdateChecker:
             return 0
 
     def reclaimable_bytes(self):
-        """What `/cleanup` would actually free, in bytes.
+        """What `/cleanup` COULD free, in bytes — an upper bound.
+
+        Not a prediction, and the wording of the message says so. The
+        runtime's own `system df` is the only source for this and it is
+        optimistic in two directions we cannot correct for: it ignores
+        the grace period, and on Podman it counted 112 MB on a host with
+        exactly one unused image, where the prune then freed 8.5 MB
+        (#63, owner-reported, measured on his two hosts).
 
         IMAGES ONLY, because that is all `/cleanup` prunes. It used to sum
         every row `docker system df` prints, which on a real machine reads
@@ -1591,6 +1598,34 @@ class UpdateChecker:
         that wants to say where the other space is sitting.
         """
         return self.reclaimable_breakdown().get("images", 0)
+
+    @staticmethod
+    def _human_bytes(n):
+        """`8.5 MB` — one decimal, a space, the unit.
+
+        Ours rather than the runtime's, because Docker prints `8.534MB`
+        and a dot is the thousands separator in half of Europe. Reading
+        that as 8534 MB is not a mistake; it is what the string says
+        there."""
+        try:
+            n = float(n)
+        except (TypeError, ValueError):
+            return ""
+        if n <= 0:
+            return "0 B"
+        # Whole numbers up to megabytes — a megabyte is not worth a
+        # decimal any more, as the owner put it. Gigabytes keep one,
+        # because 0.5 GB is half a gigabyte and rounding it to "0" or "1"
+        # loses the half that matters.
+        for unit in ("B", "kB", "MB"):
+            if n < 1000:
+                return f"{n:.0f} {unit}"
+            n /= 1000
+        for unit in ("GB", "TB"):
+            if n < 1000:
+                return f"{n:.1f} {unit}"
+            n /= 1000
+        return f"{n:.1f} PB"
 
     def grace_holds_back(self):
         """How many unused images the grace period is protecting.
@@ -1707,8 +1742,15 @@ class UpdateChecker:
             # Docker says "Total reclaimed space: 662.9MB" in English no
             # matter what language the reader has set. Keep the number,
             # say the sentence ourselves (#63).
-            size = space_line.split(":", 1)[-1].strip() if ":" in space_line \
+            # Reformatted rather than passed through. Docker writes
+            # "8.534MB" — a dot as the decimal point and no space before
+            # the unit — which in German reads as 8534 MB, and did: the
+            # owner read a 8.5 MB cleanup as 8 GB (#63). One decimal, a
+            # space, and the unit says the same thing unambiguously in
+            # every language that uses a comma.
+            raw = space_line.split(":", 1)[-1].strip() if ":" in space_line \
                 else space_line.strip()
+            size = self._human_bytes(self._parse_human_size(raw)) or raw
             msg = self._t("cleanup_reclaimed", size=size) + backup_msg
             if untagged:
                 preview = ", ".join(untagged[:6])

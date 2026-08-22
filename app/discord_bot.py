@@ -1948,48 +1948,40 @@ class DiscordBot:
             url=(opts.get("url") or "").strip())))
 
     def _cmd_audit(self, opts):
-        """Which non-default inspect fields we would not restore.
+        """Which non-default inspect fields a recreate would not restore.
 
-        Reuses `UpdateChecker._audit_inspect_coverage`, the same function
-        Telegram's `/audit` calls — the value of this command is the
-        finding, and two implementations of a finding is two findings.
+        The finding is the core's — two implementations of a finding is
+        two findings — and it sweeps every host now. This one looked at
+        the first target only, so a container on the second managed host
+        came back as not found while Telegram found it (#63).
         """
-        import json
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("audit_usage")
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        host = targets[0]
-        backend = self._backend_for(host)
-        name, err = self._resolve_container(arg, backend)
-        if err:
-            return err
-        try:
-            r = backend.run(["inspect", name], timeout=10)
-            if r.returncode != 0:
-                return self.t("audit_inspect_failed", name=name)
-            inspect = json.loads(r.stdout)[0]
-        except Exception as e:
-            return self.t("audit_inspect_failed", name=name) + f" {clip(e)}"
-        from update_checker import UpdateChecker as _UC
-        checker = self._checker_for(host)
-        findings = _UC._audit_inspect_coverage(checker, inspect)
+        name, host, findings, err = container_flags.audit_container(
+            targets, backend_for=self._backend_for,
+            checker_for=self._checker_for, partial=arg)
+        if err is not None:
+            return self.t(err.key, **err.params) + (
+                self._label(err.host) if err.host is not None else "")
         host_keys = findings.get("host_unknown") or []
         cfg_keys = findings.get("config_unknown") or []
         dropped = findings.get("host_dropped") or []
         if not host_keys and not cfg_keys and not dropped:
-            return self.t("audit_clean", name=name)
-        out = [self.t("chan_audit_header", name=name)]
+            return self.t("audit_clean", name=name) + self._label(host)
+        out = [self.t("chan_audit_header", name=name) + self._label(host)]
         if dropped:
             out.append(self.t("audit_section_dropped"))
             out += [f"  • `{k}`" for k in dropped]
         if host_keys:
-            out.append("**HostConfig**")
+            out.append(self.t("audit_section_host"))
             out += [f"  • `{k}`" for k in host_keys]
         if cfg_keys:
-            out.append("**Config**")
+            out.append(self.t("audit_section_config"))
             out += [f"  • `{k}`" for k in cfg_keys]
         return "\n".join(out)[:1800]
 

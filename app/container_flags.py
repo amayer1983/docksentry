@@ -420,3 +420,43 @@ def reclaimable(targets, *, checker_for):
                              values={"bytes": free, "breakdown": detail,
                                      "grace": grace}))
     return tuple(replies), total
+
+
+def audit_container(targets, *, backend_for, checker_for, partial):
+    """Which inspect fields a recreate would NOT carry over.
+
+    Returns `(name, host, findings, Reply|None)`. `findings` is the dict
+    `UpdateChecker._audit_inspect_coverage` produces — `host_unknown`,
+    `config_unknown`, `host_dropped` — and the front ends lay it out.
+
+    Sweeps the hosts like `/logs` does, first one that has the container
+    wins. Discord used to look at `targets[0]` alone, so `/audit` on a
+    container that lives on the second managed host answered "not found"
+    while Telegram found it (#63).
+    """
+    import json as _json
+    first_err = None
+    for host in targets:
+        backend = backend_for(host)
+        name, err = resolve_container(partial, backend=backend)
+        if err:
+            if first_err is None:
+                first_err = Reply(err.key, err.params, host=host,
+                                  host_is_local=_is_local(host), ok=False)
+            continue
+        try:
+            r = backend.run(["inspect", name], timeout=10)
+            if getattr(r, "returncode", 1) != 0:
+                return name, host, None, Reply(
+                    "audit_inspect_failed", {"name": name}, host=host,
+                    host_is_local=_is_local(host), ok=False)
+            inspect = _json.loads(r.stdout)[0]
+        except Exception as e:
+            return name, host, None, Reply(
+                "audit_inspect_failed", {"name": name, "error": str(e)[:80]},
+                host=host, host_is_local=_is_local(host), ok=False)
+        from update_checker import UpdateChecker
+        findings = UpdateChecker._audit_inspect_coverage(
+            checker_for(host), inspect)
+        return name, host, findings, None
+    return None, None, None, first_err
