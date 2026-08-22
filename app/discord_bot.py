@@ -2508,40 +2508,35 @@ class DiscordBot:
         return f"{num / (1024 ** 2):.0f} MB"
 
     def _cmd_checkimages(self, opts):
-        """Dry-run counterpart to `/cleanup`: how much it would free
-        right now, plus whether auto-cleanup is on. A read, so with no
-        host given it answers for every host."""
+        """Dry-run counterpart to `/cleanup`: how much it would free right
+        now. The per-host measurement is the core's; the header, the sizes
+        and the trailing hint are Discord's shape (#63)."""
+        import container_flags
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        lines = []
-        total = 0
-        for host in targets:
-            checker = self._checker_for(host)
-            if checker is None:
-                continue
-            tag = self._label(host) or " (local)"
-            try:
-                reclaim = int(checker.reclaimable_bytes() or 0)
-            except Exception as e:
-                lines.append(self.t("host_check_failed",
-                                    host=getattr(host, "name", "local"),
-                                    error=str(e)[:80]))
-                continue
-            total += reclaim
-            if reclaim <= 0:
-                lines.append(self.t("chan_reclaim_none", tag=tag))
-            else:
-                lines.append(self.t("chan_reclaim_some", tag=tag,
-                                    size=self._human_size(reclaim)))
-        if not lines:
+        replies, total = container_flags.reclaimable(
+            targets, checker_for=self._checker_for)
+        if not replies:
             return self.t("chan_no_backend")
-        if total > 0:
-            if getattr(self.config, "disk_warn_auto_cleanup", False):
-                lines.append(self.t("chan_autocleanup_on"))
+        lines = []
+        for r in replies:
+            tag = (self._label(r.host) or " (local)") if r.ok else ""
+            if r.key == "chan_reclaim_some":
+                lines.append(self.t(r.key, tag=tag,
+                                    size=self._human_size(
+                                        r.values["bytes"])))
+            elif r.key == "chan_reclaim_none":
+                lines.append(self.t(r.key, tag=tag))
             else:
-                lines.append(self.t("chan_run_cleanup_hint"))
-        return self._clip(self.t("chan_reclaimable_header") + "\n" + "\n".join(lines))
+                lines.append(self.t(r.key, **r.params))
+        if total > 0:
+            lines.append(self.t("chan_autocleanup_on")
+                         if getattr(self.config, "disk_warn_auto_cleanup",
+                                    False)
+                         else self.t("chan_run_cleanup_hint"))
+        return self._clip(self.t("chan_reclaimable_header") + "\n"
+                          + "\n".join(lines))
 
     def _unknown_host(self, name):
         known = ", ".join(f"`{n}`" for n in self.hosts.names) if self.hosts else ""

@@ -50,13 +50,16 @@ def main():
                            "telegram_bot.py"), encoding="utf-8").read()
     i = tb.index('elif text == "/checkimages"')
     block = tb[i:i + 1400]
-    checks["/checkimages walks every managed host"] = "host_checkers" in block
-    checks["…tags each answer with its host"] = "@{host_name}" in block
-    checks["…and one dead host does not stop the rest"] = (
-        "except Exception" in block and "continue" in block)
-    # It must ask each host's OWN checker, never a single shared one.
-    checks["…measuring on each host's own checker"] = (
-        "host_checker.reclaimable_bytes()" in block)
+    # Stated as the intent, not as one spelling of it: the per-host walk
+    # moved into `container_flags.reclaimable`, and a check that insisted
+    # on the old lines would have failed the extraction rather than the
+    # behaviour (#63).
+    checks["/checkimages walks every managed host"] = (
+        "container_flags.reclaimable(" in block or "host_checkers" in block)
+    checks["…tags each answer with its host"] = (
+        "_host_tag(" in block or "@{host_name}" in block)
+    checks["…and measures on each host's own checker"] = (
+        "checker_for=" in block or "host_checker.reclaimable_bytes()" in block)
 
     # Behaviourally: three hosts, one unreachable, all three answer.
     class FakeChecker:

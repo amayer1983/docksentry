@@ -3587,29 +3587,23 @@ class TelegramBot:
 
         elif text == "/checkimages":
             # Dry-run counterpart to /cleanup — how much would `/cleanup`
-            # free right now (unused images / build cache), plus the
-            # AUTO_CLEANUP status (#2, @famewolf: if you're not running
-            # auto-cleanup, being able to check on demand is valuable).
-            #
-            # Every managed host, like /cleanup itself (#2, @famewolf:
-            # "take a pass across all the commands and ensure they act
-            # on the appropriate host"). Answering only for the local
-            # box while /cleanup walks all of them is exactly the kind
-            # of quiet inconsistency that made a remote disaster look
-            # local. One unreachable host reports and does not stop the
-            # rest.
+            # free right now, plus the AUTO_CLEANUP status (#2, @famewolf).
+            # Every managed host, like /cleanup itself; the per-host
+            # measurement lives in the core, so one dead host is reported
+            # rather than stopping the rest, in both front ends (#63).
+            import container_flags
             auto_on = bool(getattr(self.config, "disk_warn_auto_cleanup", False))
-            from hosts import host_checkers
-            for host_checker, host_name in host_checkers(self.hosts,
-                                                         checker):
-                tag = f" @{host_name}" if host_name else ""
-                try:
-                    reclaim = host_checker.reclaimable_bytes()
-                except Exception as e:
-                    self.send_message(f"❌{tag} {clip(e)}")
+            targets = list(self.hosts) if self._multi() else [None]
+            replies, _total = container_flags.reclaimable(
+                targets, checker_for=lambda h: self._checker_for(h, checker))
+            for r in replies:
+                tag = self._host_tag(r.host) if r.host is not None else ""
+                if not r.ok:
+                    self.send_message(self.t(r.key, **r.params) + tag)
                     continue
                 self.send_message(
-                    self._build_checkimages_msg(reclaim, auto_on) + tag)
+                    self._build_checkimages_msg(r.values["bytes"], auto_on)
+                    + tag)
 
         elif text == "/events":
             # Telegram parity for the Web UI's Container Events section
