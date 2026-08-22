@@ -933,5 +933,14 @@
   "chan_something_wrong": "Bir şeyler ters gitti: {error}",
   "chan_list_failed": "Kapsayıcılar listelenemedi: {error}",
   "chan_reclaimable_header": "**Geri kazanılabilir imaj alanı**",
-  "chan_no_pending_for": "`{name}` için bekleyen güncelleme yok."
+  "chan_no_pending_for": "`{name}` için bekleyen güncelleme yok.",
+  "chan_backup_caption": "📦 Docksentry yedeği — web arayüzü → Ayarlar → İçe Aktar ile geri yükleyin.",
+  "chan_restore_warning": "Geri yükleme **bu** örneğin ayarlarını, gruplarını, sabitlerini, notlarını, bağlantılarını ve güncelleme pencerelerini üzerine yazar.",
+  "chan_confirm_stop": "⚠ `{name}` durdurulsun mu? Bir şey yeniden başlatana kadar kapalı kalır.",
+  "chan_updateall_confirm": "Her biri indirilip yeniden oluşturulur. Devam etmek için düğmeye basın.",
+  "chan_skipped_not_pending": "ℹ Onayladığınız {total} kapsayıcıdan {count} tanesi artık beklemiyordu ve atlandı.",
+  "chan_newly_pending": "ℹ Soru sorulduktan sonra {count} kapsayıcı beklemeye girdi ve güncellenMEdi — `/updateall` komutunu tekrar çalıştırın.",
+  "major_confirming": "{name} için büyük güncelleme onaylanıyor…",
+  "major_skipping": "{name} için büyük güncelleme atlandı.",
+  "chat_migrated": "⚠️ Bu grup süper gruba yükseltildi, bu yüzden ayarlı `CHAT_ID={old}` artık yok. Yenisini buldum ve kullanıyorum: `{new}`. Lütfen ayarlarınıza yazın — yoksa her yeniden başlatmada yeniden bulmam gerekiyor."
 }

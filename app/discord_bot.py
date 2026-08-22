@@ -655,10 +655,6 @@ class DiscordBot:
                 self._workers.discard(threading.current_thread())
             self._worker_sem.release()
 
-    _BUSY_WORKERS = ("⏳ Docksentry is already running as many commands as it "
-                     "can at once. **Nothing was started** — try again in a "
-                     "moment.")
-
     def _refuse_busy(self, data):
         """Tell an interaction we have no capacity for it.
 
@@ -678,7 +674,7 @@ class DiscordBot:
         def _say():
             try:
                 self.rest.interaction_response(data["id"], data["token"],
-                                               self._BUSY_WORKERS,
+                                               self.t("chan_busy_capacity"),
                                                ephemeral=self._replies_private())
             except Exception as e:
                 self.log(f"Discord: could not refuse an interaction: {e}")
@@ -844,7 +840,7 @@ class DiscordBot:
             text = self._dispatch(data)
         except Exception as e:
             self.log(f"Discord command error: {e}")
-            text = f"Something went wrong: {clip(e)}"
+            text = self.t("chan_something_wrong", error=clip(e))
         self._deliver(data, started, text)
         self._shutdown_if_asked()
 
@@ -862,13 +858,9 @@ class DiscordBot:
             text = self._on_component(cid, data)
         except Exception as e:
             self.log(f"Discord component error: {e}")
-            text = f"Something went wrong: {clip(e)}"
+            text = self.t("chan_something_wrong", error=clip(e))
         self._deliver(data, started, text)
         self._shutdown_if_asked()
-
-    _SLOW_NOTE = ("⏳ Working on it — this can take a few minutes.\n"
-                  "If it runs past Discord's 15-minute reply window I'll "
-                  "post the result in the channel instead.")
 
     def _warn_slow(self, data):
         """Fill the deferred answer in with a heads-up before the slow
@@ -876,7 +868,7 @@ class DiscordBot:
         never stop the thing that takes a while."""
         try:
             self.rest.edit_original_response(self.application_id,
-                                             data["token"], self._SLOW_NOTE)
+                                             data["token"], self.t("chan_working_on_it"))
         except DiscordRESTError as e:
             self.log(f"Discord: could not post the progress note: {e}")
         except Exception:
@@ -968,9 +960,6 @@ class DiscordBot:
             return False
         return code in (10015, 50027)
 
-    _LATE_NOTE = ("(this ran past Discord's 15-minute reply window, so "
-                  "here's the result as a normal message)")
-
     def _post_to_channel(self, data, body):
         channel = data.get("channel_id") or (data.get("channel") or {}).get("id")
         if not channel:
@@ -981,7 +970,7 @@ class DiscordBot:
         prefix = f"<@{user}> " if user else ""
         try:
             self.rest.create_message(
-                channel, self._clip(f"{prefix}{self._LATE_NOTE}\n{body}"))
+                channel, self._clip(f"{prefix}{self.t("chan_late_result")}\n{body}"))
         except DiscordRESTError as e:
             self.log(f"Discord: channel fallback failed too: {e}")
 
@@ -1028,9 +1017,6 @@ class DiscordBot:
              "custom_id": f"ds:cancel:{token}"},
         ]}]
 
-    _CONFIRM_GONE = ("That confirmation has expired or was already used — "
-                     "run the command again if you still want it.")
-
     def _on_component(self, custom_id, data):
         """Resolve a button press to an action, or explain why not.
 
@@ -1049,7 +1035,7 @@ class DiscordBot:
             return self.t("chan_cancelled")
         rec = self._confirmations.get(token)
         if rec is None or rec["action"] != action:
-            return self._CONFIRM_GONE
+            return self.t("chan_confirm_expired")
         # Bind to the asker before claiming the token: a failed identity
         # check must leave the confirmation pressable by its owner.
         #
@@ -1063,12 +1049,12 @@ class DiscordBot:
             return self.t("chan_confirm_not_yours")
         if self._now() - rec["created"] > CONFIRM_TTL:
             self._confirmations.pop(token, None)
-            return self._CONFIRM_GONE
+            return self.t("chan_confirm_expired")
         # Claim it. From here the button is spent whatever happens —
         # a press that fails is not an invitation to press again.
         rec = self._confirmations.pop(token, None)
         if rec is None:
-            return self._CONFIRM_GONE
+            return self.t("chan_confirm_expired")
         self._retire_buttons(rec)
         if action == "stop":
             return self._do_stop(rec["params"])
@@ -1076,7 +1062,7 @@ class DiscordBot:
             return self._do_updateall(rec["params"])
         if action == "restore":
             return self._run_restore(rec["params"])
-        return self._CONFIRM_GONE
+        return self.t("chan_confirm_expired")
 
     def _retire_buttons(self, rec):
         """Strip the buttons off the message that asked the question, so
@@ -1791,7 +1777,7 @@ class DiscordBot:
             self.rest.upload_followup(
                 self.application_id, data.get("token"),
                 fname, payload,
-                "📦 Docksentry backup — restore via Web UI → Settings → Import.")
+                self.t("chan_backup_caption"))
         except Exception as e:
             self.log(f"Discord: backup upload failed: {e}")
             return self.t("chan_backup_upload_failed")
@@ -1870,14 +1856,11 @@ class DiscordBot:
                  if bundle.get(k)]
         token = self._new_confirmation("restore", {"bundle": bundle}, data)
         return Reply(
-            f"📥 **A backup arrived**\n`{name}`\n"
-            f"From: **{bundle.get('instance') or '?'}** · "
-            f"{str(bundle.get('generated_at') or '?')[:16]} · "
-            f"v{bundle.get('docksentry_version') or '?'}\n"
-            f"Contains: {', '.join(parts) or '—'}\n\n"
-            f"Restoring overwrites the settings, groups, pins, notes, links "
-            f"and update windows on **this** instance. Nothing has been "
-            f"changed yet.",
+            self.t("restore_offer", name=name,
+                   instance=bundle.get("instance") or "?",
+                   made=str(bundle.get("generated_at") or "?")[:16],
+                   version=bundle.get("docksentry_version") or "?",
+                   parts=", ".join(parts) or "—"),
             self._confirm_components("restore", token, "♻️ Restore"))
 
     def _cmd_help(self):
@@ -1919,11 +1902,10 @@ class DiscordBot:
         if rep["kind"] == "current":
             v, d, body = rep["current"]
             return self._clip(
-                f"📄 **You're on the latest — v{v}** ({d})\n"
-                f"What this version brought:\n\n"
-                f"{changelog.render_body(body, bold='**')}")
+                self.t("changelog_current", version=v, date=d)
+                + "\n\n" + changelog.render_body(body, bold="**"))
         entries = rep["entries"]
-        parts = [f"📋 **{len(entries)} new version(s) since v{VERSION}:**"]
+        parts = [self.t("changelog_title", count=len(entries), current=VERSION)]
         total, truncated = len(parts[0]), False
         cap = 1800
         for v, d, body in entries:
@@ -2100,14 +2082,11 @@ class DiscordBot:
             store = self._store_for(host)
             if which == "trustrunning":
                 on = store.toggle_trust_running(name)
-                what = ("running-but-unhealthy will be accepted"
-                        if on else "health must be green again")
+                key = "trust_on" if on else "trust_off"
             else:
                 on = store.toggle_ask_before_major(name)
-                what = ("major updates will ask first"
-                        if on else "major updates apply like any other")
-            lines.append(f"{'✅' if on else '⬜'} `{name}`: {what}"
-                         + self._label(host))
+                key = "askmajor_on" if on else "askmajor_off"
+            lines.append(self.t(key, name=name) + self._label(host))
         return "\n".join(lines)
 
     def _cmd_testchannel(self):
@@ -2206,9 +2185,6 @@ class DiscordBot:
     # And when the lock is held we say so and stop. No queue, no wait: a
     # slash command that silently sits on a mutex for six minutes and
     # then acts is worse than one that tells you to try again.
-
-    _BUSY = ("⏳ An update is already running — nothing was started. "
-             "Try again once it finishes.")
 
     def _lock(self):
         return self.engine._update_lock
@@ -2320,7 +2296,7 @@ class DiscordBot:
             return self._clip("\n".join(errors)
                               or self.t("chan_no_pending_for", name=arg))
         if not self._lock().acquire(blocking=False):
-            return self._BUSY
+            return self.t("chan_update_busy")
         try:
             lines = list(errors)
             for host, target in jobs:
@@ -2367,8 +2343,7 @@ class DiscordBot:
         where = self._label(targets[0]).strip() or "this host"
         prompt = (f"⚠ Update **{len(preview)}** container(s) on {where}?\n"
                   + "\n".join(preview)
-                  + "\n\nEach one is pulled and recreated. Press the button "
-                    "to go ahead.")
+                  + "\n\n" + self.t("chan_updateall_confirm"))
         return Reply(self._clip(prompt),
                      self._confirm_components(
                          "updateall", token,
@@ -2410,14 +2385,12 @@ class DiscordBot:
             return self.t("no_pending_updates")
         note = ""
         if gone > 0:
-            note = (f"\nℹ {gone} of the {len(approved_set)} container(s) you "
-                    "approved were no longer pending and were skipped.")
+            note = "\n" + self.t("chan_skipped_not_pending", count=gone,
+                                  total=len(approved_set))
         if skipped > 0:
-            note += (f"\nℹ {skipped} newly pending container(s) appeared after "
-                     "you were asked and were NOT updated — run `/updateall` "
-                     "again for those.")
+            note += "\n" + self.t("chan_newly_pending", count=skipped)
         if not self._lock().acquire(blocking=False):
-            return self._BUSY
+            return self.t("chan_update_busy")
         try:
             lines = []
             for host, entries in batches:
@@ -2468,8 +2441,7 @@ class DiscordBot:
         token = self._new_confirmation(
             "stop", {"host": opts.get("host"), "container": name}, data)
         return Reply(
-            self._clip(f"⚠ Stop `{name}`{tag}? It stays down until "
-                       "something starts it again."),
+            self._clip(self.t("chan_confirm_stop", name=name) + tag),
             self._confirm_components("stop", token, f"Stop {name}"[:80]))
 
     def _do_stop(self, params):

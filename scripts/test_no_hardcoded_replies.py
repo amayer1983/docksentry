@@ -83,6 +83,12 @@ def _skip_ids(tree):
             if name in ("log", "print", "_warn_rejected_once"):
                 for child in ast.walk(node):
                     skip.add(id(child))
+        # A string compared against, not sent: `text in ("/check --dry-run",
+        # …)` is how a connection recognises its own syntax. Input, not
+        # output.
+        if isinstance(node, ast.Compare):
+            for child in ast.walk(node):
+                skip.add(id(child))
         # The command tables: `{"name": …, "description": …}` on Discord
         # and the `("status", "Container overview…", …)` tuples Telegram
         # hands to setMyCommands. Both are registered with the platform,

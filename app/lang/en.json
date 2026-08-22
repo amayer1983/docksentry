@@ -933,5 +933,14 @@
   "chan_something_wrong": "Something went wrong: {error}",
   "chan_list_failed": "Could not list containers: {error}",
   "chan_reclaimable_header": "**Reclaimable image space**",
-  "chan_no_pending_for": "No pending update for `{name}`."
+  "chan_no_pending_for": "No pending update for `{name}`.",
+  "chan_backup_caption": "📦 Docksentry backup — restore via Web UI → Settings → Import.",
+  "chan_restore_warning": "Restoring overwrites the settings, groups, pins, notes, links and update windows on **this** instance.",
+  "chan_confirm_stop": "⚠ Stop `{name}`? It stays down until something starts it again.",
+  "chan_updateall_confirm": "Each one is pulled and recreated. Press the button to go ahead.",
+  "chan_skipped_not_pending": "ℹ {count} of the {total} container(s) you approved were no longer pending and were skipped.",
+  "chan_newly_pending": "ℹ {count} newly pending container(s) appeared after you were asked and were NOT updated — run `/updateall` again for those.",
+  "major_confirming": "Confirming major update for {name}…",
+  "major_skipping": "Skipped major update for {name}.",
+  "chat_migrated": "⚠️ This group was upgraded to a supergroup, so the configured `CHAT_ID={old}` no longer exists. I found the new one and I am using it: `{new}`. Please put that in your settings — until you do, I have to rediscover it after every restart."
 }

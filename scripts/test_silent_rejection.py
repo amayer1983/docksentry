@@ -69,6 +69,10 @@ def bot(chat_id="-52123456", allowed=None, debug=False):
     b.config = types.SimpleNamespace(
         chat_id=chat_id, telegram_allowed_users=allowed or [], debug=debug,
         bot_token="123:abc", bot_label="", telegram_topic_id=None)
+    # The real bot holds a translator; the migration notice reads from the
+    # shared strings now, so a bare fixture needs one too (#63).
+    from i18n import get_translator
+    b.t = get_translator("en")
     b.calls = []
     return b
 

@@ -933,5 +933,14 @@
   "chan_something_wrong": "Quelque chose s'est mal passé : {error}",
   "chan_list_failed": "Impossible de lister les conteneurs : {error}",
   "chan_reclaimable_header": "**Espace d'images récupérable**",
-  "chan_no_pending_for": "Aucune mise à jour en attente pour `{name}`."
+  "chan_no_pending_for": "Aucune mise à jour en attente pour `{name}`.",
+  "chan_backup_caption": "📦 Sauvegarde Docksentry — restaurez via l'interface web → Réglages → Import.",
+  "chan_restore_warning": "La restauration écrase les réglages, groupes, épingles, notes, liens et fenêtres de mise à jour de **cette** instance.",
+  "chan_confirm_stop": "⚠ Arrêter `{name}` ? Il restera à l'arrêt jusqu'à ce que quelque chose le relance.",
+  "chan_updateall_confirm": "Chacun est téléchargé et recréé. Appuyez sur le bouton pour continuer.",
+  "chan_skipped_not_pending": "ℹ {count} des {total} conteneurs approuvés n'étaient plus en attente et ont été ignorés.",
+  "chan_newly_pending": "ℹ {count} conteneurs sont devenus en attente après la question et n'ont PAS été mis à jour — relancez `/updateall`.",
+  "major_confirming": "Confirmation de la mise à jour majeure de {name}…",
+  "major_skipping": "Mise à jour majeure de {name} ignorée.",
+  "chat_migrated": "⚠️ Ce groupe est devenu un supergroupe, donc le `CHAT_ID={old}` configuré n'existe plus. J'ai trouvé le nouveau et je l'utilise : `{new}`. Mettez-le dans vos réglages — sinon je dois le redécouvrir à chaque redémarrage."
 }

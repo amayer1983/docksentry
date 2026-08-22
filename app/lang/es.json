@@ -933,5 +933,14 @@
   "chan_something_wrong": "Algo salió mal: {error}",
   "chan_list_failed": "No se pudieron listar los contenedores: {error}",
   "chan_reclaimable_header": "**Espacio de imágenes recuperable**",
-  "chan_no_pending_for": "No hay actualización pendiente para `{name}`."
+  "chan_no_pending_for": "No hay actualización pendiente para `{name}`.",
+  "chan_backup_caption": "📦 Copia de Docksentry: restaura desde la interfaz web → Ajustes → Importar.",
+  "chan_restore_warning": "Restaurar sobrescribe los ajustes, grupos, pines, notas, enlaces y ventanas de actualización de **esta** instancia.",
+  "chan_confirm_stop": "⚠ ¿Detener `{name}`? Seguirá parado hasta que algo lo inicie de nuevo.",
+  "chan_updateall_confirm": "Cada uno se descarga y se recrea. Pulsa el botón para continuar.",
+  "chan_skipped_not_pending": "ℹ {count} de los {total} contenedores aprobados ya no estaban pendientes y se omitieron.",
+  "chan_newly_pending": "ℹ Aparecieron {count} contenedores pendientes tras preguntarte y NO se actualizaron: ejecuta `/updateall` de nuevo.",
+  "major_confirming": "Confirmando la actualización mayor de {name}…",
+  "major_skipping": "Actualización mayor de {name} omitida.",
+  "chat_migrated": "⚠️ Este grupo pasó a supergrupo, así que el `CHAT_ID={old}` configurado ya no existe. Encontré el nuevo y lo estoy usando: `{new}`. Ponlo en tus ajustes — hasta entonces tengo que redescubrirlo tras cada reinicio."
 }

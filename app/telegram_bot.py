@@ -1029,12 +1029,8 @@ class TelegramBot:
         # its own, and only ever once.
         if getattr(self, "_migration_notice_pending", False):
             self._migration_notice_pending = False
-            text = (f"⚠️ This group was upgraded to a supergroup, so the "
-                    f"configured `CHAT_ID={self.config.chat_id}` no longer "
-                    f"exists. I found the new one and I am using it: "
-                    f"`{self._migrated_chat_id}`. Please put that in your "
-                    f"settings — until you do, I have to rediscover it after "
-                    f"every restart.\n\n" + text)
+            text = (self.t("chat_migrated", old=self.config.chat_id,
+                           new=self._migrated_chat_id) + "\n\n" + text)
 
         # Over Telegram's limit the whole message is rejected and lost —
         # measured against @LeeNX's three-container rollback report, which
@@ -2733,7 +2729,8 @@ class TelegramBot:
             from container_store import split_host_key
             key = data.split(":", 1)[1]
             name = split_host_key(key)[1]
-            self.answer_callback(callback["id"], f"Confirming major update for {name}...")
+            self.answer_callback(callback["id"],
+                                 self.t("major_confirming", name=name))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             t = threading.Thread(target=self._confirm_major_update,
@@ -2743,7 +2740,8 @@ class TelegramBot:
             from container_store import split_host_key
             key = data.split(":", 1)[1]
             host_name, name = split_host_key(key)
-            self.answer_callback(callback["id"], f"Skipped major update for {name}.")
+            self.answer_callback(callback["id"],
+                                 self.t("major_skipping", name=name))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             self._store_for(host_name).remove_pending_major(name)

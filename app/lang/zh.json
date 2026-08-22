@@ -933,5 +933,14 @@
   "chan_something_wrong": "出了点问题：{error}",
   "chan_list_failed": "无法列出容器：{error}",
   "chan_reclaimable_header": "**可回收的镜像空间**",
-  "chan_no_pending_for": "`{name}` 没有待处理的更新。"
+  "chan_no_pending_for": "`{name}` 没有待处理的更新。",
+  "chan_backup_caption": "📦 Docksentry 备份 — 通过网页界面 → 设置 → 导入 进行恢复。",
+  "chan_restore_warning": "恢复会覆盖**此**实例的设置、分组、固定、备注、链接和更新时段。",
+  "chan_confirm_stop": "⚠ 停止 `{name}`？在有东西再次启动它之前会一直停着。",
+  "chan_updateall_confirm": "每个都会被拉取并重新创建。按下按钮以继续。",
+  "chan_skipped_not_pending": "ℹ 你批准的 {total} 个容器中有 {count} 个已不再待处理，已跳过。",
+  "chan_newly_pending": "ℹ 询问之后有 {count} 个容器变为待处理且未更新 — 请再次运行 `/updateall`。",
+  "major_confirming": "正在确认 {name} 的大版本更新…",
+  "major_skipping": "已跳过 {name} 的大版本更新。",
+  "chat_migrated": "⚠️ 该群已升级为超级群，因此配置的 `CHAT_ID={old}` 不再存在。我找到了新的并正在使用：`{new}`。请写入设置 — 否则每次重启我都得重新查找。"
 }

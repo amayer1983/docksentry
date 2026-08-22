@@ -933,5 +933,14 @@
   "chan_something_wrong": "問題が発生しました: {error}",
   "chan_list_failed": "コンテナを一覧できませんでした: {error}",
   "chan_reclaimable_header": "**解放可能なイメージ容量**",
-  "chan_no_pending_for": "`{name}` に保留中の更新はありません。"
+  "chan_no_pending_for": "`{name}` に保留中の更新はありません。",
+  "chan_backup_caption": "📦 Docksentry のバックアップ — ウェブ画面 → 設定 → インポートから復元します。",
+  "chan_restore_warning": "復元すると、**この**インスタンスの設定・グループ・ピン・メモ・リンク・更新ウィンドウが上書きされます。",
+  "chan_confirm_stop": "⚠ `{name}` を停止しますか？何かが再び起動するまで停止したままです。",
+  "chan_updateall_confirm": "それぞれを取得して作り直します。続けるにはボタンを押してください。",
+  "chan_skipped_not_pending": "ℹ 承認した {total} 個のうち {count} 個は保留ではなくなっていたためスキップしました。",
+  "chan_newly_pending": "ℹ 確認後に {count} 個が新たに保留となり、更新されていません — `/updateall` をもう一度実行してください。",
+  "major_confirming": "{name} のメジャー更新を確認しています…",
+  "major_skipping": "{name} のメジャー更新をスキップしました。",
+  "chat_migrated": "⚠️ このグループはスーパーグループに変更されたため、設定された `CHAT_ID={old}` は存在しません。新しいものを見つけて使用しています: `{new}`。設定に入れてください — そうしないと再起動のたびに探し直す必要があります。"
 }

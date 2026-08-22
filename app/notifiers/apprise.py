@@ -107,9 +107,10 @@ class AppriseNotifier(BaseNotifier):
             # credential in `docker logs` and in every log aggregator
             # downstream of it. The status code says what went wrong;
             # Apprise's own log says the rest, on the box that owns them.
-            hint = " — check APPRISE_URL and APPRISE_URLS" if e.code < 500 else ""
-            print(f"Apprise notification failed: HTTP {e.code}{hint} "
-                  "(response body withheld: it can echo APPRISE_URLS)")
+            print(f"Apprise notification failed: HTTP {e.code}"
+                  + (" — check APPRISE_URL and APPRISE_URLS"
+                     if e.code < 500 else "")
+                  + " (response body withheld: it can echo APPRISE_URLS)")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             print(f"Apprise notification failed: {e}")
         return None

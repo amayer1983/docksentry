@@ -1023,8 +1023,10 @@ checks["…it is posted into the channel instead"] = (
     dbot.rest.calls[-1][0] == "channel" and dbot.rest.calls[-1][1] == "chan")
 checks["…addressed to whoever asked"] = "<@42>" in dbot.rest.calls[-1][2]
 checks["…carrying the result itself"] = "late answer" in dbot.rest.calls[-1][2]
+# The reason travels in the shared string; the number of minutes is
+# Discord's and moved out of the wording when it became translatable.
 checks["…and explaining why it is not ephemeral"] = (
-    "15-minute" in dbot.rest.calls[-1][2])
+    _EN["chan_late_result"].split("(")[1][:20] in dbot.rest.calls[-1][2])
 
 # an edit that fails inside the window falls back the same way
 dbot.rest.calls.clear()
@@ -1056,7 +1058,8 @@ dbot.rest.calls.clear()
 dbot._run_command({"id": "9", "token": "tk", "channel_id": "chan",
                    "data": {"name": "cleanup", "options": []}}, dbot._now())
 checks["a slow command warns before it starts"] = (
-    dbot.rest.calls[0][0] == "edit" and "15-minute" in dbot.rest.calls[0][1])
+    dbot.rest.calls[0][0] == "edit"
+    and _EN["chan_working_on_it"].split("\n")[0][:20] in dbot.rest.calls[0][1])
 checks["…and still delivers the real answer afterwards"] = (
     dbot.rest.calls[-1][0] == "edit" and "15-minute" not in dbot.rest.calls[-1][1])
 
@@ -1127,7 +1130,8 @@ pbot._on_event("INTERACTION_CREATE",
                 "data": {"name": "hosts", "options": []}})
 _over = _await_calls(pbot.rest, "ack")
 checks["an over-limit interaction is answered, not silently dropped"] = (
-    len(_over) == 1 and "try again" in (_over[0][3] or ""))
+    len(_over) == 1
+    and _EN["chan_busy_capacity"].split("—")[-1].strip()[:12] in (_over[0][3] or ""))
 checks["…and told plainly that nothing was started"] = (
     "Nothing was started" in (_over[0][3] or ""))
 checks["…with an immediate reply, not a deferred promise it can't keep"] = (

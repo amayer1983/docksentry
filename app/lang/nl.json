@@ -933,5 +933,14 @@
   "chan_something_wrong": "Er ging iets mis: {error}",
   "chan_list_failed": "Kon containers niet opsommen: {error}",
   "chan_reclaimable_header": "**Vrij te maken image-ruimte**",
-  "chan_no_pending_for": "Geen openstaande update voor `{name}`."
+  "chan_no_pending_for": "Geen openstaande update voor `{name}`.",
+  "chan_backup_caption": "📦 Docksentry-back-up — herstel via de webinterface → Instellingen → Importeren.",
+  "chan_restore_warning": "Herstellen overschrijft de instellingen, groepen, pins, notities, links en updatevensters van **deze** installatie.",
+  "chan_confirm_stop": "⚠ `{name}` stoppen? Hij blijft uit tot iets hem weer start.",
+  "chan_updateall_confirm": "Elk wordt opgehaald en opnieuw aangemaakt. Druk op de knop om door te gaan.",
+  "chan_skipped_not_pending": "ℹ {count} van de {total} goedgekeurde containers stonden niet meer open en zijn overgeslagen.",
+  "chan_newly_pending": "ℹ {count} containers kwamen na de vraag open te staan en zijn NIET bijgewerkt — voer `/updateall` opnieuw uit.",
+  "major_confirming": "Major-update voor {name} bevestigen…",
+  "major_skipping": "Major-update voor {name} overgeslagen.",
+  "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken."
 }

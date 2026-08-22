@@ -933,5 +933,14 @@
   "chan_something_wrong": "문제가 발생했습니다: {error}",
   "chan_list_failed": "컨테이너 목록을 가져오지 못했습니다: {error}",
   "chan_reclaimable_header": "**확보 가능한 이미지 공간**",
-  "chan_no_pending_for": "`{name}`에 대기 중인 업데이트가 없습니다."
+  "chan_no_pending_for": "`{name}`에 대기 중인 업데이트가 없습니다.",
+  "chan_backup_caption": "📦 Docksentry 백업 — 웹 화면 → 설정 → 가져오기에서 복원하세요.",
+  "chan_restore_warning": "복원하면 **이** 인스턴스의 설정, 그룹, 고정, 메모, 링크, 업데이트 창을 덮어씁니다.",
+  "chan_confirm_stop": "⚠ `{name}`을(를) 중지할까요? 무언가 다시 시작할 때까지 꺼진 채로 있습니다.",
+  "chan_updateall_confirm": "각각을 내려받아 다시 만듭니다. 계속하려면 버튼을 누르세요.",
+  "chan_skipped_not_pending": "ℹ 승인한 {total}개 중 {count}개는 더 이상 대기 중이 아니어서 건너뛰었습니다.",
+  "chan_newly_pending": "ℹ 확인 후 {count}개가 새로 대기 상태가 되어 업데이트되지 않았습니다 — `/updateall`을 다시 실행하세요.",
+  "major_confirming": "{name}의 메이저 업데이트를 확인하는 중…",
+  "major_skipping": "{name}의 메이저 업데이트를 건너뛰었습니다.",
+  "chat_migrated": "⚠️ 이 그룹이 슈퍼그룹으로 전환되어 설정된 `CHAT_ID={old}`가 더 이상 없습니다. 새 값을 찾아 사용 중입니다: `{new}`. 설정에 넣어 주세요 — 그러지 않으면 재시작할 때마다 다시 찾아야 합니다."
 }
