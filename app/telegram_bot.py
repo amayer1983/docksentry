@@ -4049,19 +4049,7 @@ class TelegramBot:
                 self.send_message(first_err)
 
         elif text.startswith("/setlink"):
-            # Telegram-side affordance for the per-container link store —
-            # mirror of the Web UI Status page link icon. Without this
-            # users had to leave Telegram to set a custom changelog /
-            # repo URL. Requested by @famewolf + @NotRetarded in #2 for
-            # CGNAT-hosted setups where the Web UI isn't easily reachable.
-            #
-            # Usage:
-            #   /setlink <container> <url>    → save (validates http(s)://)
-            #   /setlink <container>          → clear (back to OCI labels)
-            #
-            # The URL replaces the auto-resolved OCI source URL in both
-            # the update-notification repo link AND /changelog output —
-            # they share `container_store.get_link()`.
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
@@ -4070,24 +4058,11 @@ class TelegramBot:
             if not argv:
                 self.send_message(self.t("setlink_usage"))
                 return
-            hint = self._host_hint_for(text)
-            partial = argv[0].strip()
-            url = argv[1].strip() if len(argv) > 1 else ""
-            for host in (targets or [None]):
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    partial, backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                ok = self._store_for(host).set_link(name, url)
-                if not ok:
-                    self.send_message(self.t("setlink_invalid"))
-                    return
-                if url:
-                    self.send_message(self.t("setlink_set", name=name, url=url) + tag + hint)
-                else:
-                    self.send_message(self.t("setlink_cleared", name=name) + tag + hint)
+            self._emit(container_flags.set_link(
+                targets or [None], store_for=self._store_for,
+                backend_for=self._backend_for, partial=argv[0].strip(),
+                url=argv[1].strip() if len(argv) > 1 else ""),
+                hint=self._host_hint_for(text))
 
         elif text.startswith("/groups ") and len(text.split(maxsplit=1)) > 1:
             raw_arg, targets, host_err = self._resolve_targets(

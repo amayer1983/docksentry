@@ -308,3 +308,39 @@ def set_cooldown(targets, *, store_for, backend_for, partial, seconds,
                              {"name": name, "seconds": applied}, host=host,
                              host_is_local=local))
     return Outcome(tuple(replies), None, defaulted_to_local, changed)
+
+
+def set_link(targets, *, store_for, backend_for, partial, url,
+             defaulted_to_local=False):
+    """`/setlink` — the repo or changelog link for one container.
+
+    The store validates the URL and says whether it took it: anything but
+    http(s) is refused there, because a link is the one thing a chat and
+    the Web UI both render as clickable, and the check belongs where the
+    write happens rather than in each front end.
+    """
+    replies = []
+    changed = False
+    for host in targets:
+        store = store_for(host)
+        local = _is_local(host)
+        name, err = resolve_container(partial, backend=backend_for(host))
+        if err:
+            replies.append(Reply(err.key, err.params, host=host,
+                                 host_is_local=local, ok=False))
+            continue
+        if not url:
+            store.set_link(name, "")
+            changed = True
+            replies.append(Reply("setlink_cleared", {"name": name}, host=host,
+                                 host_is_local=local))
+        elif store.set_link(name, url):
+            changed = True
+            replies.append(Reply("setlink_set", {"name": name, "url": url},
+                                 host=host, host_is_local=local))
+        else:
+            # The store refused it. Telegram's wording says what IS
+            # accepted, which is the more useful half of the answer.
+            replies.append(Reply("setlink_invalid", {"url": url}, host=host,
+                                 host_is_local=local, ok=False))
+    return Outcome(tuple(replies), None, defaulted_to_local, changed)

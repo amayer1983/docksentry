@@ -1945,31 +1945,19 @@ class DiscordBot:
         return self.t("lang_changed")
 
     def _cmd_setlink(self, opts):
-        """Same skeleton as the other per-container writes: resolve the
-        host with the WRITE default, then the container on that host's
-        own backend, then act through that host's state view."""
+        """The link write, decided in the core like the other per-container
+        writes; this only renders it (#63)."""
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("setlink_usage")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        url = (opts.get("url") or "").strip()
-        lines = []
-        for host in targets:
-            name, err = self._resolve_container(arg, self._backend_for(host))
-            if err:
-                lines.append(err + self._label(host))
-                continue
-            store = self._store_for(host)
-            if not url:
-                store.set_link(name, "")
-                lines.append(self.t("link_cleared", name=name) + self._label(host))
-            elif store.set_link(name, url):
-                lines.append(self.t("link_set", name=name) + self._label(host))
-            else:
-                lines.append(self.t("link_unsafe", url=url))
-        return "\n".join(lines)
+        return self._clip(self._render(container_flags.set_link(
+            targets, store_for=self._store_for,
+            backend_for=self._backend_for, partial=arg,
+            url=(opts.get("url") or "").strip())))
 
     def _cmd_audit(self, opts):
         """Which non-default inspect fields we would not restore.
