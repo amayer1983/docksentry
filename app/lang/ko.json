@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}`은(는) 정수 초가 아닙니다.",
   "chan_maint_on_until": "🔧 유지 보수 모드가 {until}까지 **켜짐**입니다.",
   "chan_maint_remaining": "🔧 유지 보수 모드 **켜짐** — {remaining} 남음.",
-  "chan_restore_restart_hint": "일부 설정은 재시작 후에만 적용됩니다 — 컨테이너 없이 `/restart`를 실행하면 됩니다."
+  "chan_restore_restart_hint": "일부 설정은 재시작 후에만 적용됩니다 — 컨테이너 없이 `/restart`를 실행하면 됩니다.",
+  "chan_not_in_list": "`{name}`은(는) 해당 목록에 없습니다.",
+  "chan_bad_duration": "`{value}`을(를) 기간으로 읽을 수 없습니다. `2h`, `30m`, `1d`, `forever` 또는 `off`를 사용하세요.",
+  "chan_backup_upload_failed": "⚠️ 백업은 만들어졌지만 채팅이 파일을 받지 않았습니다. 웹 화면에서 내려받으세요.",
+  "chan_file_too_large": "⚠️ {size} MB는 백업 파일로 너무 큽니다. 아무것도 내려받지 않았습니다.",
+  "chan_attachment_http": "⚠️ 채팅이 그 파일을 주지 않았습니다 — **HTTP {code}** 응답. 다시 첨부해 보세요.",
+  "chan_attachment_failed": "⚠️ 첨부 파일을 가져오지 못했습니다: `{error}`",
+  "chan_selfupdate_started": "⬆️ 자체 업데이트를 시작했습니다 — 완료되면 채널에 알리고, 적용할 것이 있으면 재시작합니다.",
+  "chan_usage_container": "사용법: `/{command} <컨테이너>`",
+  "chan_nothing_left": "업데이트할 것이 없습니다 — 승인한 모든 컨테이너가 이미 업데이트되었습니다.",
+  "chan_debug_toggled": "🔍 디버그 로깅 **{status}**. 모든 레지스트리 호출과 스캔의 컨테이너별 기록을 보여줍니다."
 }

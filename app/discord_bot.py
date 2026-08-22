@@ -1509,8 +1509,7 @@ class DiscordBot:
             lines.append(f"📌 Pinned `{name}`{tag} — it will not be updated.")
         return self._clip("\n".join(lines) or "Nothing to do.")
 
-    @staticmethod
-    def _match_in(partial, names):
+    def _match_in(self, partial, names):
         """Resolve `partial` against an in-memory list. Returns the name,
         or an error string prefixed with `!` — the marker keeps the two
         apart without a second return value, since a container name can
@@ -1523,7 +1522,7 @@ class DiscordBot:
         if len(matches) > 1:
             return "!Several match `%s`: %s" % (
                 partial, ", ".join(f"`{m}`" for m in matches))
-        return f"!`{partial}` is not in that list."
+        return "!" + self.t("chan_not_in_list", name=partial)
 
     def _cmd_autoupdate(self, opts):
         arg = (opts.get("container") or "").strip()
@@ -1621,8 +1620,7 @@ class DiscordBot:
         try:
             parsed = parse_duration(arg)
         except (ValueError, AttributeError):
-            return (f"Could not read `{arg}` as a duration. "
-                    "Try `2h`, `30m`, `1d`, `forever` or `off`.")
+            return self.t("chan_bad_duration", value=arg)
         if parsed is False:
             _disable(self.config)
             return self.t("chan_maint_off")
@@ -1723,7 +1721,7 @@ class DiscordBot:
                 continue
             output = (r.stdout or "") or (r.stderr or "")
             if not output.strip():
-                return f"`{name}`{self._label(host)} has produced no log output."
+                return self.t("logs_empty", name=name) + self._label(host)
             # Budget the body BEFORE the fences go on: `_clip` cuts blind,
             # and a cut that lands inside a code fence leaves it unclosed
             # and mangles the whole message. Keep the tail — the newest
@@ -1787,7 +1785,7 @@ class DiscordBot:
             payload = _backup.payload(self.config, self.store, _V)
             fname = _backup.filename(self.config)
         except Exception as e:
-            return f"⚠️ Could not build the backup: {str(e)[:150]}"
+            return self.t("backup_failed", error=str(e)[:150])
         try:
             self.rest.upload_followup(
                 self.application_id, data.get("token"),
@@ -1795,8 +1793,7 @@ class DiscordBot:
                 "📦 Docksentry backup — restore via Web UI → Settings → Import.")
         except Exception as e:
             self.log(f"Discord: backup upload failed: {e}")
-            return ("⚠️ The backup was built but Discord would not take the "
-                    "file. Download it from the Web UI under Settings.")
+            return self.t("chan_backup_upload_failed")
         try:
             _backup.write_local(self.config, self.store, _V)
         except Exception:
@@ -1827,10 +1824,10 @@ class DiscordBot:
         size = int(chosen.get("size") or 0)
         url = chosen.get("url") or ""
         if not name.lower().endswith(".json"):
-            return "⚠️ That is not a `.json` file, so it is not a Docksentry backup."
+            return self.t("restore_not_json")
         if size > self.RESTORE_MAX_BYTES:
-            return (f"⚠️ {size / 1024 / 1024:.1f} MB is too large for a backup "
-                    f"file. Nothing was downloaded.")
+            return self.t("chan_file_too_large",
+                          size=f"{size / 1024 / 1024:.1f}")
         # `json` is imported here because this module has no module-level
         # import of it — every other user does the same. Leaving it out is
         # what actually broke `/restore` for @NotRetarded (#2): the
@@ -1855,22 +1852,17 @@ class DiscordBot:
                 raw = r.read(self.RESTORE_MAX_BYTES + 1)
         except urllib.error.HTTPError as e:
             self.log(f"Discord: attachment fetch returned {e.code}: {url[:120]}")
-            return (f"⚠️ Discord would not hand me that file — its CDN "
-                    f"answered **HTTP {e.code}**. Try attaching it again; if "
-                    f"it keeps happening, the link may have expired.")
+            return self.t("chan_attachment_http", code=e.code)
         except Exception as e:
             self.log(f"Discord: could not fetch the attachment: {e}")
-            return (f"⚠️ I could not fetch that attachment: "
-                    f"`{str(e)[:120]}`")
+            return self.t("chan_attachment_failed", error=str(e)[:120])
         try:
             bundle = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
             self.log(f"Discord: attachment was not JSON: {e}")
-            return (f"⚠️ That file is not JSON, so it is not a Docksentry "
-                    f"backup: `{str(e)[:100]}`")
+            return self.t("restore_not_json") + f" `{str(e)[:100]}`"
         if not isinstance(bundle, dict) or "schema_version" not in bundle:
-            return ("⚠️ That is JSON, but not a Docksentry backup — no "
-                    "`schema_version` in it.")
+            return self.t("restore_not_a_backup")
 
         parts = [k for k in ("settings", "groups", "pinned", "autoupdate",
                              "notes", "links", "update_windows", "ask_major")
@@ -1975,15 +1967,13 @@ class DiscordBot:
         threading.Thread(target=selfupdate.start, args=(ctx, target),
                          kwargs={"reply": self.announce},
                          daemon=True).start()
-        return ("⬆️ Self-update started — I will report in the channel when "
-                "it finishes, and restart if there is something to apply.")
+        return self.t("chan_selfupdate_started")
 
     def _cmd_debug(self):
         self.config.debug = not getattr(self.config, "debug", False)
         self.config.save_persistent()
         state = "on" if self.config.debug else "off"
-        return (f"🔍 Debug logging **{state}**. It shows every registry call "
-                f"and the per-container bookkeeping of each scan.")
+        return self.t("chan_debug_toggled", status=state)
 
     def _cmd_lang(self, opts):
         from i18n import available_languages, get_translator
@@ -2059,8 +2049,7 @@ class DiscordBot:
         cfg_keys = findings.get("config_unknown") or []
         dropped = findings.get("host_dropped") or []
         if not host_keys and not cfg_keys and not dropped:
-            return (f"✅ `{name}`: every non-default field we found is one "
-                    f"we restore on recreate.")
+            return self.t("audit_clean", name=name)
         out = [f"🔍 `{name}` — fields we would not carry over:"]
         if dropped:
             out.append("**Skipped on purpose** (set on this container, "
@@ -2098,7 +2087,7 @@ class DiscordBot:
         """`/trustrunning` and `/askmajor` — same skeleton, one toggle."""
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return f"Usage: `/{which} <container>`"
+            return self.t("chan_usage_container", command=which)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
@@ -2416,9 +2405,7 @@ class DiscordBot:
             gone = len(approved_set) - still_there
         if not batches:
             if approved_set:
-                return ("Nothing left to update — every container you "
-                        "approved has already been updated or is no longer "
-                        "pending.")
+                return self.t("chan_nothing_left")
             return self.t("no_pending_updates")
         note = ""
         if gone > 0:
@@ -2457,7 +2444,7 @@ class DiscordBot:
     def _cmd_lifecycle(self, action, opts, data):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return f"Usage: `/{action} <container>`"
+            return self.t("chan_usage_container", command=action)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))

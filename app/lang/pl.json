@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` to nie jest całkowita liczba sekund.",
   "chan_maint_on_until": "🔧 Tryb konserwacji jest **włączony** do {until}.",
   "chan_maint_remaining": "🔧 Tryb konserwacji jest **włączony** — pozostało {remaining}.",
-  "chan_restore_restart_hint": "Niektóre ustawienia działają dopiero po restarcie — `/restart` bez kontenera to zrobi."
+  "chan_restore_restart_hint": "Niektóre ustawienia działają dopiero po restarcie — `/restart` bez kontenera to zrobi.",
+  "chan_not_in_list": "`{name}` nie ma na tej liście.",
+  "chan_bad_duration": "Nie można odczytać `{value}` jako czasu. Spróbuj `2h`, `30m`, `1d`, `forever` lub `off`.",
+  "chan_backup_upload_failed": "⚠️ Kopia powstała, ale czat nie przyjął pliku. Pobierz ją z interfejsu webowego.",
+  "chan_file_too_large": "⚠️ {size} MB to za dużo jak na plik kopii. Nic nie pobrano.",
+  "chan_attachment_http": "⚠️ Czat nie przekazał mi tego pliku — odpowiedział **HTTP {code}**. Spróbuj załączyć ponownie.",
+  "chan_attachment_failed": "⚠️ Nie udało się pobrać tego załącznika: `{error}`",
+  "chan_selfupdate_started": "⬆️ Samoaktualizacja rozpoczęta — zgłoszę się na kanale po zakończeniu i zrestartuję, jeśli będzie co zastosować.",
+  "chan_usage_container": "Użycie: `/{command} <kontener>`",
+  "chan_nothing_left": "Nie ma nic do aktualizacji — każdy zatwierdzony kontener jest już zaktualizowany.",
+  "chan_debug_toggled": "🔍 Logowanie diagnostyczne **{status}**. Pokazuje każde wywołanie rejestru i szczegóły skanu dla każdego kontenera."
 }

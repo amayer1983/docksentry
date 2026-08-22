@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` ist keine ganze Anzahl Sekunden.",
   "chan_maint_on_until": "🔧 Wartungsmodus ist **an** bis {until}.",
   "chan_maint_remaining": "🔧 Wartungsmodus ist **an** — noch {remaining}.",
-  "chan_restore_restart_hint": "Manche Einstellungen greifen erst nach einem Neustart — `/restart` ohne Container erledigt das."
+  "chan_restore_restart_hint": "Manche Einstellungen greifen erst nach einem Neustart — `/restart` ohne Container erledigt das.",
+  "chan_not_in_list": "`{name}` steht nicht in dieser Liste.",
+  "chan_bad_duration": "`{value}` ist keine lesbare Dauer. Versuch `2h`, `30m`, `1d`, `forever` oder `off`.",
+  "chan_backup_upload_failed": "⚠️ Das Backup wurde erstellt, aber der Chat nahm die Datei nicht an. Lade es stattdessen über die Weboberfläche herunter.",
+  "chan_file_too_large": "⚠️ {size} MB sind zu groß für eine Backup-Datei. Es wurde nichts heruntergeladen.",
+  "chan_attachment_http": "⚠️ Der Chat gab mir die Datei nicht — er antwortete **HTTP {code}**. Häng sie noch einmal an.",
+  "chan_attachment_failed": "⚠️ Ich konnte den Anhang nicht holen: `{error}`",
+  "chan_selfupdate_started": "⬆️ Selbst-Update gestartet — ich melde mich im Kanal, wenn es fertig ist, und starte neu, falls es etwas anzuwenden gibt.",
+  "chan_usage_container": "Verwendung: `/{command} <Container>`",
+  "chan_nothing_left": "Nichts mehr zu aktualisieren — jeder freigegebene Container ist bereits aktualisiert.",
+  "chan_debug_toggled": "🔍 Debug-Protokollierung **{status}**. Sie zeigt jeden Registry-Aufruf und die Buchführung pro Container bei einem Durchlauf."
 }

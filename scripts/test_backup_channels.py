@@ -455,12 +455,17 @@ checks["the attachment fetch identifies itself"] = (
     'headers={"User-Agent": USER_AGENT}' in _fetch)
 checks["…with the same agent every other call uses"] = (
     "from discord_rest import USER_AGENT" in _fetch)
+# Checked by KEY, not by wording: every Discord reply reads from the
+# shared translations now (#63), so the sentence lives in one place and a
+# test that re-typed it would be the second place it could drift. What
+# matters is that the failure still carries its detail — the status code,
+# the error text — which is what the old silent message did not.
 checks["an HTTP refusal reports its status code"] = (
-    "HTTP {e.code}" in _fetch)
+    'chan_attachment_http", code=e.code' in _fetch)
 checks["…and a network failure reports what went wrong"] = (
-    "could not fetch that attachment" in _fetch and "str(e)[:120]" in _fetch)
+    "chan_attachment_failed" in _fetch and "str(e)[:120]" in _fetch)
 checks["…and a file that is not JSON says which part failed"] = (
-    "not JSON, so it is not a Docksentry" in _fetch)
+    "restore_not_json" in _fetch and "str(e)[:100]" in _fetch)
 # The old message told the user nothing and put the reason in a log they
 # had no reason to open. That is the failure mode this whole thread has
 # been about.

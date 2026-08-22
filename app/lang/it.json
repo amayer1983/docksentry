@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` non è un numero intero di secondi.",
   "chan_maint_on_until": "🔧 La modalità manutenzione è **attiva** fino a {until}.",
   "chan_maint_remaining": "🔧 La modalità manutenzione è **attiva** — mancano {remaining}.",
-  "chan_restore_restart_hint": "Alcune impostazioni hanno effetto solo dopo un riavvio — `/restart` senza container lo fa."
+  "chan_restore_restart_hint": "Alcune impostazioni hanno effetto solo dopo un riavvio — `/restart` senza container lo fa.",
+  "chan_not_in_list": "`{name}` non è in quell'elenco.",
+  "chan_bad_duration": "Impossibile leggere `{value}` come durata. Prova `2h`, `30m`, `1d`, `forever` o `off`.",
+  "chan_backup_upload_failed": "⚠️ Il backup è stato creato ma la chat non ha accettato il file. Scaricalo dall'interfaccia web.",
+  "chan_file_too_large": "⚠️ {size} MB sono troppi per un file di backup. Non è stato scaricato nulla.",
+  "chan_attachment_http": "⚠️ La chat non mi ha passato quel file — ha risposto **HTTP {code}**. Prova ad allegarlo di nuovo.",
+  "chan_attachment_failed": "⚠️ Non sono riuscito a scaricare l'allegato: `{error}`",
+  "chan_selfupdate_started": "⬆️ Auto-aggiornamento avviato — avviserò nel canale al termine e riavvierò se c'è qualcosa da applicare.",
+  "chan_usage_container": "Uso: `/{command} <container>`",
+  "chan_nothing_left": "Nulla da aggiornare — ogni container approvato è già aggiornato.",
+  "chan_debug_toggled": "🔍 Log di debug **{status}**. Mostra ogni chiamata al registry e il dettaglio per container di una scansione."
 }

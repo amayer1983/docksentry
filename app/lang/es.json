@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` no es un número entero de segundos.",
   "chan_maint_on_until": "🔧 El modo de mantenimiento está **activado** hasta {until}.",
   "chan_maint_remaining": "🔧 El modo de mantenimiento está **activado**: quedan {remaining}.",
-  "chan_restore_restart_hint": "Algunos ajustes solo se aplican tras reiniciar: `/restart` sin contenedor lo hace."
+  "chan_restore_restart_hint": "Algunos ajustes solo se aplican tras reiniciar: `/restart` sin contenedor lo hace.",
+  "chan_not_in_list": "`{name}` no está en esa lista.",
+  "chan_bad_duration": "No se pudo leer `{value}` como duración. Prueba `2h`, `30m`, `1d`, `forever` u `off`.",
+  "chan_backup_upload_failed": "⚠️ La copia se creó, pero el chat no aceptó el archivo. Descárgala desde la interfaz web.",
+  "chan_file_too_large": "⚠️ {size} MB es demasiado para un archivo de copia. No se descargó nada.",
+  "chan_attachment_http": "⚠️ El chat no me entregó ese archivo: respondió **HTTP {code}**. Intenta adjuntarlo de nuevo.",
+  "chan_attachment_failed": "⚠️ No pude obtener ese adjunto: `{error}`",
+  "chan_selfupdate_started": "⬆️ Autoactualización iniciada: avisaré en el canal cuando termine y reiniciaré si hay algo que aplicar.",
+  "chan_usage_container": "Uso: `/{command} <contenedor>`",
+  "chan_nothing_left": "No queda nada por actualizar: todos los contenedores aprobados ya están actualizados.",
+  "chan_debug_toggled": "🔍 Registro de depuración **{status}**. Muestra cada llamada al registro y el detalle por contenedor de un escaneo."
 }

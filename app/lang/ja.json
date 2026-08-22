@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` は秒の整数ではありません。",
   "chan_maint_on_until": "🔧 メンテナンスモードは {until} まで**オン**です。",
   "chan_maint_remaining": "🔧 メンテナンスモードは**オン** — 残り {remaining}。",
-  "chan_restore_restart_hint": "一部の設定は再起動後にのみ有効になります — コンテナを指定しない `/restart` で行えます。"
+  "chan_restore_restart_hint": "一部の設定は再起動後にのみ有効になります — コンテナを指定しない `/restart` で行えます。",
+  "chan_not_in_list": "`{name}` はそのリストにありません。",
+  "chan_bad_duration": "`{value}` を期間として読み取れません。`2h`、`30m`、`1d`、`forever`、`off` を試してください。",
+  "chan_backup_upload_failed": "⚠️ バックアップは作成されましたが、チャットがファイルを受け取りませんでした。ウェブ画面からダウンロードしてください。",
+  "chan_file_too_large": "⚠️ {size} MB はバックアップファイルとして大きすぎます。何もダウンロードしていません。",
+  "chan_attachment_http": "⚠️ チャットがそのファイルを渡しませんでした — **HTTP {code}** が返りました。もう一度添付してください。",
+  "chan_attachment_failed": "⚠️ その添付ファイルを取得できませんでした: `{error}`",
+  "chan_selfupdate_started": "⬆️ 自己更新を開始しました — 完了したらチャンネルで報告し、適用するものがあれば再起動します。",
+  "chan_usage_container": "使い方: `/{command} <コンテナ>`",
+  "chan_nothing_left": "更新するものはありません — 承認したコンテナはすべて更新済みです。",
+  "chan_debug_toggled": "🔍 デバッグログ **{status}**。レジストリ呼び出しとスキャンのコンテナごとの記録をすべて表示します。"
 }

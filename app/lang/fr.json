@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` n'est pas un nombre entier de secondes.",
   "chan_maint_on_until": "🔧 Le mode maintenance est **activé** jusqu'à {until}.",
   "chan_maint_remaining": "🔧 Le mode maintenance est **activé** — il reste {remaining}.",
-  "chan_restore_restart_hint": "Certains réglages ne prennent effet qu'après un redémarrage — `/restart` sans conteneur s'en charge."
+  "chan_restore_restart_hint": "Certains réglages ne prennent effet qu'après un redémarrage — `/restart` sans conteneur s'en charge.",
+  "chan_not_in_list": "`{name}` ne figure pas dans cette liste.",
+  "chan_bad_duration": "Impossible de lire `{value}` comme durée. Essayez `2h`, `30m`, `1d`, `forever` ou `off`.",
+  "chan_backup_upload_failed": "⚠️ La sauvegarde a été créée mais le chat a refusé le fichier. Téléchargez-la depuis l'interface web.",
+  "chan_file_too_large": "⚠️ {size} Mo, c'est trop pour un fichier de sauvegarde. Rien n'a été téléchargé.",
+  "chan_attachment_http": "⚠️ Le chat ne m'a pas transmis ce fichier — il a répondu **HTTP {code}**. Réessayez de le joindre.",
+  "chan_attachment_failed": "⚠️ Je n'ai pas pu récupérer cette pièce jointe : `{error}`",
+  "chan_selfupdate_started": "⬆️ Mise à jour automatique lancée — je préviendrai dans le canal à la fin et redémarrerai s'il y a quelque chose à appliquer.",
+  "chan_usage_container": "Utilisation : `/{command} <conteneur>`",
+  "chan_nothing_left": "Plus rien à mettre à jour — tous les conteneurs approuvés le sont déjà.",
+  "chan_debug_toggled": "🔍 Journalisation de débogage **{status}**. Elle montre chaque appel au registre et le détail par conteneur d'un scan."
 }

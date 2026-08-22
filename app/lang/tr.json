@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` tam sayı saniye değil.",
   "chan_maint_on_until": "🔧 Bakım modu {until} tarihine kadar **açık**.",
   "chan_maint_remaining": "🔧 Bakım modu **açık** — {remaining} kaldı.",
-  "chan_restore_restart_hint": "Bazı ayarlar yalnızca yeniden başlatmadan sonra geçerli olur — kapsayıcısız `/restart` bunu yapar."
+  "chan_restore_restart_hint": "Bazı ayarlar yalnızca yeniden başlatmadan sonra geçerli olur — kapsayıcısız `/restart` bunu yapar.",
+  "chan_not_in_list": "`{name}` bu listede yok.",
+  "chan_bad_duration": "`{value}` süre olarak okunamadı. `2h`, `30m`, `1d`, `forever` veya `off` deneyin.",
+  "chan_backup_upload_failed": "⚠️ Yedek oluşturuldu ama sohbet dosyayı kabul etmedi. Bunun yerine web arayüzünden indirin.",
+  "chan_file_too_large": "⚠️ {size} MB bir yedek dosyası için çok büyük. Hiçbir şey indirilmedi.",
+  "chan_attachment_http": "⚠️ Sohbet o dosyayı vermedi — **HTTP {code}** yanıtladı. Yeniden eklemeyi deneyin.",
+  "chan_attachment_failed": "⚠️ O eki alamadım: `{error}`",
+  "chan_selfupdate_started": "⬆️ Kendini güncelleme başladı — bitince kanalda haber vereceğim ve uygulanacak bir şey varsa yeniden başlayacağım.",
+  "chan_usage_container": "Kullanım: `/{command} <kapsayıcı>`",
+  "chan_nothing_left": "Güncellenecek bir şey kalmadı — onayladığınız her kapsayıcı zaten güncellendi.",
+  "chan_debug_toggled": "🔍 Hata ayıklama günlüğü **{status}**. Her kayıt defteri çağrısını ve taramanın kapsayıcı başına kaydını gösterir."
 }

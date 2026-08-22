@@ -878,5 +878,15 @@
   "chan_cooldown_bad_number": "`{value}` não é um número inteiro de segundos.",
   "chan_maint_on_until": "🔧 O modo de manutenção está **ligado** até {until}.",
   "chan_maint_remaining": "🔧 O modo de manutenção está **ligado** — faltam {remaining}.",
-  "chan_restore_restart_hint": "Algumas configurações só entram em vigor após reiniciar — `/restart` sem contêiner faz isso."
+  "chan_restore_restart_hint": "Algumas configurações só entram em vigor após reiniciar — `/restart` sem contêiner faz isso.",
+  "chan_not_in_list": "`{name}` não está nessa lista.",
+  "chan_bad_duration": "Não foi possível ler `{value}` como duração. Tente `2h`, `30m`, `1d`, `forever` ou `off`.",
+  "chan_backup_upload_failed": "⚠️ O backup foi criado, mas o chat não aceitou o arquivo. Baixe-o pela interface web.",
+  "chan_file_too_large": "⚠️ {size} MB é grande demais para um arquivo de backup. Nada foi baixado.",
+  "chan_attachment_http": "⚠️ O chat não me entregou esse arquivo — respondeu **HTTP {code}**. Tente anexá-lo novamente.",
+  "chan_attachment_failed": "⚠️ Não consegui obter esse anexo: `{error}`",
+  "chan_selfupdate_started": "⬆️ Autoatualização iniciada — avisarei no canal ao terminar e reiniciarei se houver algo a aplicar.",
+  "chan_usage_container": "Uso: `/{command} <contêiner>`",
+  "chan_nothing_left": "Nada mais a atualizar — todos os contêineres aprovados já foram atualizados.",
+  "chan_debug_toggled": "🔍 Registro de depuração **{status}**. Mostra cada chamada ao registry e o detalhe por contêiner de uma varredura."
 }
