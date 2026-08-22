@@ -903,5 +903,9 @@
   "restart_policy_is_none": "het herstartbeleid van deze container is `{policy}`.",
   "major_confirm_prompt": "⚠️ *Major-update voor* `{name}`{tag}\n  {old} → *{new}*\n\nGrote versiesprongen kunnen configuraties breken. Bevestig om door te gaan.",
   "selfupdate_helper_pull_failed": "❌ Zelfupdate mislukt: hulp-image `docker:cli` kon niet worden opgehaald — {error}",
-  "selfupdate_failed": "❌ Zelfupdate mislukt: {error}"
+  "selfupdate_failed": "❌ Zelfupdate mislukt: {error}",
+  "notify_updates_title": "{count} Docker-update(s) beschikbaar",
+  "notify_updates_intro": "Docksentry vond updates voor:",
+  "notify_result_ok": "Update geslaagd: {name}",
+  "notify_result_failed": "Update MISLUKT: {name}"
 }

@@ -903,5 +903,9 @@
   "restart_policy_is_none": "このコンテナの再起動ポリシーは `{policy}` です。",
   "major_confirm_prompt": "⚠️ *`{name}`{tag} のメジャー更新*\n  {old} → *{new}*\n\nメジャーバージョンの変更は設定を壊すことがあります。続行するには確認してください。",
   "selfupdate_helper_pull_failed": "❌ 自己更新に失敗: 補助イメージ `docker:cli` を取得できませんでした — {error}",
-  "selfupdate_failed": "❌ 自己更新に失敗しました: {error}"
+  "selfupdate_failed": "❌ 自己更新に失敗しました: {error}",
+  "notify_updates_title": "Docker の更新が {count} 件あります",
+  "notify_updates_intro": "Docksentry は次の更新を見つけました:",
+  "notify_result_ok": "更新に成功: {name}",
+  "notify_result_failed": "更新に失敗: {name}"
 }

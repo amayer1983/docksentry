@@ -46,8 +46,13 @@ class DiscordNotifier(BaseNotifier):
                 link_line = f"\n[Source ↗]({u['source_url']})"
             ver = self.version_str(u)
             ver_line = f"\n🔖 {ver}" if ver else ""
+            # The host belongs in the name: `plex` on the NAS and `plex`
+            # at home are two containers, and this embed used to leave
+            # the difference out while other channels showed it (#63).
+            _host = u.get("host") if isinstance(u, dict) else None
+            _where = f" @{_host}" if _host and _host != "local" else ""
             fields.append({
-                "name": f"📦 {u['name']}{compose_tag}",
+                "name": f"📦 {u['name']}{_where}{compose_tag}",
                 "value": f"`{u['image']}`{ver_line}\n📦 {u.get('size', '?')} · 🗓️ {u.get('created', '?')}{link_line}",
                 "inline": True,
             })
@@ -62,9 +67,14 @@ class DiscordNotifier(BaseNotifier):
         chunks = [fields[i:i + 25] for i in range(0, len(fields), 25)] or [[]]
         for idx, chunk in enumerate(chunks, 1):
             part = f" ({idx}/{len(chunks)})" if len(chunks) > 1 else ""
+            # The embed's shape is Discord's own; its WORDS are the
+            # shared ones, so the same event does not read differently
+            # here than on ntfy or in an e-mail (#63).
+            import notify_text
+            _title, _ = notify_text.updates_available(
+                updates, lang=notify_text.lang_of(self))
             embed = {
-                "title": (f"{title_prefix}🔄 Docker Updates Available "
-                          f"({len(updates)}){part}"),
+                "title": f"{title_prefix}🔄 {_title}{part}",
                 "color": 0x58a6ff,  # Blue
                 "fields": chunk,
                 "footer": {"text": self._footer_text()},
@@ -81,16 +91,20 @@ class DiscordNotifier(BaseNotifier):
         # does this for fields, and the Telegram side does it for
         # both pre/post-update message types since v1.19.2).
         name_md = f"[**{name}**]({source_url})" if source_url else f"**{name}**"
+        import notify_text
+        _title, _ = notify_text.update_result(
+            name, image, success,
+            lang=notify_text.lang_of(self))
         if success:
             embed = {
-                "title": f"{title_prefix}✅ Update Successful",
+                "title": f"{title_prefix}✅ {_title}",
                 "description": f"{name_md} (`{image}`)\n{detail}",
                 "color": 0x3fb950,  # Green
                 "footer": {"text": self._footer_text()},
             }
         else:
             embed = {
-                "title": f"{title_prefix}❌ Update Failed",
+                "title": f"{title_prefix}❌ {_title}",
                 "description": f"{name_md} (`{image}`)\n{detail}",
                 "color": 0xf85149,  # Red
                 "footer": {"text": self._footer_text()},

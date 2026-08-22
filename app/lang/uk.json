@@ -903,5 +903,9 @@
   "restart_policy_is_none": "політика перезапуску цього контейнера — `{policy}`.",
   "major_confirm_prompt": "⚠️ *Мажорне оновлення для* `{name}`{tag}\n  {old} → *{new}*\n\nВеликі стрибки версій можуть зламати конфігурації. Підтвердьте продовження.",
   "selfupdate_helper_pull_failed": "❌ Самооновлення не вдалося: не вдалося завантажити допоміжний образ `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Самооновлення не вдалося: {error}"
+  "selfupdate_failed": "❌ Самооновлення не вдалося: {error}",
+  "notify_updates_title": "Доступно оновлень Docker: {count}",
+  "notify_updates_intro": "Docksentry знайшов оновлення для:",
+  "notify_result_ok": "Оновлення виконано: {name}",
+  "notify_result_failed": "Оновлення НЕ ВДАЛОСЯ: {name}"
 }

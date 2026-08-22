@@ -903,5 +903,9 @@
   "restart_policy_is_none": "la restart policy di questo container è `{policy}`.",
   "major_confirm_prompt": "⚠️ *Aggiornamento major per* `{name}`{tag}\n  {old} → *{new}*\n\nI salti di versione major possono rompere le configurazioni. Conferma per procedere.",
   "selfupdate_helper_pull_failed": "❌ Auto-aggiornamento fallito: impossibile scaricare l'immagine di supporto `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Auto-aggiornamento fallito: {error}"
+  "selfupdate_failed": "❌ Auto-aggiornamento fallito: {error}",
+  "notify_updates_title": "{count} aggiornamento/i Docker disponibili",
+  "notify_updates_intro": "Docksentry ha trovato aggiornamenti per:",
+  "notify_result_ok": "Aggiornamento riuscito: {name}",
+  "notify_result_failed": "Aggiornamento FALLITO: {name}"
 }

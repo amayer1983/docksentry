@@ -156,22 +156,32 @@ class MatrixNotifier(BaseNotifier):
     def send_updates_available(self, updates):
         if not updates:
             return
-        head = self._prefix(f"{len(updates)} update(s) available")
-        lines, html_lines = [], []
-        for u in updates:
-            host = u.get("host") if isinstance(u, dict) else None
-            where = f" @{host}" if host and host != "local" else ""
-            lines.append(f"• {u['name']}{where} ({u['image']})"
-                         f"{self.version_str(u)}")
-            html_lines.append(f"<li><b>{_esc(u['name'])}</b>{_esc(where)} "
-                              f"<code>{_esc(u['image'])}</code></li>")
-        self._send(head + "\n" + "\n".join(lines),
-                   f"<b>{_esc(head)}</b><ul>{''.join(html_lines)}</ul>")
+        import notify_text
+        title, body = notify_text.updates_available(
+            updates, lang=notify_text.lang_of(self),
+            version_of=self.version_str)
+        head = self._prefix(title)
+        # The rich form is Matrix's own presentation of the SAME text —
+        # a list instead of bullet characters. Built from the shared
+        # per-container line so the two forms cannot say different
+        # things (#63).
+        html_lines = [f"<li>{_esc(notify_text.container_line(u, self.version_str(u), bullet='').strip())}</li>"
+                      for u in updates]
+        intro = body.split("\n\n", 1)[0]
+        # Both forms carry the intro. The first cut of this dropped it
+        # from the plain text and kept it in the HTML — two renderings of
+        # one event saying different things, which is the whole failure
+        # this change exists to remove.
+        self._send(head + "\n" + body,
+                   f"<b>{_esc(head)}</b><p>{_esc(intro)}</p>"
+                   f"<ul>{''.join(html_lines)}</ul>")
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
+        import notify_text
         mark = "✅" if success else "❌"
-        head = self._prefix(f"{mark} {name} "
-                            f"{'updated' if success else 'FAILED'}")
+        title, _body = notify_text.update_result(
+            name, image, success, lang=notify_text.lang_of(self))
+        head = self._prefix(f"{mark} {title}")
         plain = f"{head}\n{image}"
         rich = f"<b>{_esc(head)}</b><br/><code>{_esc(image)}</code>"
         if detail:

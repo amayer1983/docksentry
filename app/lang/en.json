@@ -903,5 +903,9 @@
   "restart_policy_is_none": "this container's restart policy is `{policy}`.",
   "major_confirm_prompt": "⚠️ *Major update for* `{name}`{tag}\n  {old} → *{new}*\n\nMajor version bumps can break configs. Confirm to proceed.",
   "selfupdate_helper_pull_failed": "❌ Self-update failed: couldn't pull helper image `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Self-update failed: {error}"
+  "selfupdate_failed": "❌ Self-update failed: {error}",
+  "notify_updates_title": "{count} Docker update(s) available",
+  "notify_updates_intro": "Docksentry found updates for:",
+  "notify_result_ok": "Update OK: {name}",
+  "notify_result_failed": "Update FAILED: {name}"
 }

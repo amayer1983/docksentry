@@ -903,5 +903,9 @@
   "restart_policy_is_none": "سياسة إعادة تشغيل هذه الحاوية هي `{policy}`.",
   "major_confirm_prompt": "⚠️ *تحديث رئيسي لـ* `{name}`{tag}\n  {old} → *{new}*\n\nقفزات الإصدارات الكبيرة قد تكسر الإعدادات. أكّد للمتابعة.",
   "selfupdate_helper_pull_failed": "❌ فشل التحديث الذاتي: تعذّر سحب صورة المساعد `docker:cli` — {error}",
-  "selfupdate_failed": "❌ فشل التحديث الذاتي: {error}"
+  "selfupdate_failed": "❌ فشل التحديث الذاتي: {error}",
+  "notify_updates_title": "يتوفر {count} تحديث لـ Docker",
+  "notify_updates_intro": "عثر Docksentry على تحديثات لـ:",
+  "notify_result_ok": "نجح التحديث: {name}",
+  "notify_result_failed": "فشل التحديث: {name}"
 }

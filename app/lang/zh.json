@@ -903,5 +903,9 @@
   "restart_policy_is_none": "该容器的重启策略是 `{policy}`。",
   "major_confirm_prompt": "⚠️ *`{name}`{tag} 的大版本更新*\n  {old} → *{new}*\n\n大版本跳跃可能破坏配置。确认以继续。",
   "selfupdate_helper_pull_failed": "❌ 自我更新失败：无法拉取辅助镜像 `docker:cli` — {error}",
-  "selfupdate_failed": "❌ 自我更新失败：{error}"
+  "selfupdate_failed": "❌ 自我更新失败：{error}",
+  "notify_updates_title": "有 {count} 个 Docker 更新可用",
+  "notify_updates_intro": "Docksentry 找到以下更新：",
+  "notify_result_ok": "更新成功：{name}",
+  "notify_result_failed": "更新失败：{name}"
 }

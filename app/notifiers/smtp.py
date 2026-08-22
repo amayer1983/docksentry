@@ -113,19 +113,18 @@ class SmtpNotifier(BaseNotifier):
 
     # ── payloads ─────────────────────────────────────────────────────
     def send_updates_available(self, updates):
-        lines = [f"- {u['name']} ({u['image']})"
-                 + (f" {self.version_str(u)}" if self.version_str(u) else "")
-                 + f" — {u.get('size','?')}, {u.get('created','?')}"
-                 for u in updates]
-        self.send_raw(f"{len(updates)} Docker update(s) available",
-                      "Docksentry found updates for:\n\n" + "\n".join(lines))
+        import notify_text
+        subject, body = notify_text.updates_available(
+            updates, lang=notify_text.lang_of(self),
+            version_of=self.version_str, bullet="-")
+        self.send_raw(subject, body)
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
-        status = "OK" if success else "FAILED"
-        body = f"{name} ({image})\n\n{detail}"
-        if source_url:
-            body += f"\n\n{source_url}"
-        self.send_raw(f"Update {status}: {name}", body)
+        import notify_text
+        subject, body = notify_text.update_result(
+            name, image, success, detail, source_url,
+            lang=notify_text.lang_of(self))
+        self.send_raw(subject, body)
 
     def send_message(self, text):
         # Strip Telegram *bold* markers for a clean plain-text mail.

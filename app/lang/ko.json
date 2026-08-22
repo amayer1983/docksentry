@@ -903,5 +903,9 @@
   "restart_policy_is_none": "이 컨테이너의 재시작 정책은 `{policy}`입니다.",
   "major_confirm_prompt": "⚠️ *`{name}`{tag}의 메이저 업데이트*\n  {old} → *{new}*\n\n메이저 버전 변경은 설정을 망가뜨릴 수 있습니다. 계속하려면 확인하세요.",
   "selfupdate_helper_pull_failed": "❌ 자체 업데이트 실패: 보조 이미지 `docker:cli`를 받지 못했습니다 — {error}",
-  "selfupdate_failed": "❌ 자체 업데이트 실패: {error}"
+  "selfupdate_failed": "❌ 자체 업데이트 실패: {error}",
+  "notify_updates_title": "Docker 업데이트 {count}건 사용 가능",
+  "notify_updates_intro": "Docksentry가 다음 업데이트를 찾았습니다:",
+  "notify_result_ok": "업데이트 성공: {name}",
+  "notify_result_failed": "업데이트 실패: {name}"
 }

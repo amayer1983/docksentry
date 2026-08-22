@@ -903,5 +903,9 @@
   "restart_policy_is_none": "polityka restartu tego kontenera to `{policy}`.",
   "major_confirm_prompt": "⚠️ *Aktualizacja major dla* `{name}`{tag}\n  {old} → *{new}*\n\nDuże skoki wersji mogą zepsuć konfiguracje. Potwierdź, aby kontynuować.",
   "selfupdate_helper_pull_failed": "❌ Samoaktualizacja nieudana: nie udało się pobrać obrazu pomocniczego `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Samoaktualizacja nieudana: {error}"
+  "selfupdate_failed": "❌ Samoaktualizacja nieudana: {error}",
+  "notify_updates_title": "Dostępne aktualizacje Dockera: {count}",
+  "notify_updates_intro": "Docksentry znalazł aktualizacje dla:",
+  "notify_result_ok": "Aktualizacja udana: {name}",
+  "notify_result_failed": "Aktualizacja NIEUDANA: {name}"
 }

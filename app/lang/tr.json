@@ -903,5 +903,9 @@
   "restart_policy_is_none": "bu kapsayıcının yeniden başlatma ilkesi `{policy}`.",
   "major_confirm_prompt": "⚠️ *`{name}`{tag} için büyük güncelleme*\n  {old} → *{new}*\n\nBüyük sürüm atlamaları yapılandırmaları bozabilir. Devam etmek için onaylayın.",
   "selfupdate_helper_pull_failed": "❌ Kendini güncelleme başarısız: yardımcı imaj `docker:cli` çekilemedi — {error}",
-  "selfupdate_failed": "❌ Kendini güncelleme başarısız: {error}"
+  "selfupdate_failed": "❌ Kendini güncelleme başarısız: {error}",
+  "notify_updates_title": "{count} Docker güncellemesi mevcut",
+  "notify_updates_intro": "Docksentry şunlar için güncelleme buldu:",
+  "notify_result_ok": "Güncelleme başarılı: {name}",
+  "notify_result_failed": "Güncelleme BAŞARISIZ: {name}"
 }

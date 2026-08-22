@@ -124,23 +124,18 @@ class AppriseNotifier(BaseNotifier):
     def send_updates_available(self, updates):
         if not updates:
             return
-        lines = []
-        for u in updates:
-            host = u.get("host") if isinstance(u, dict) else None
-            where = f" @{host}" if host and host != "local" else ""
-            lines.append(f"• {u['name']}{where} ({u['image']})"
-                         f"{self.version_str(u)}")
-        self._post(self._title(f"{len(updates)} update(s) available"),
-                   "\n".join(lines), TYPE_INFO)
+        import notify_text
+        title, body = notify_text.updates_available(
+            updates, lang=notify_text.lang_of(self),
+            version_of=self.version_str)
+        self._post(self._title(title), body, TYPE_INFO)
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
-        status = "updated" if success else "FAILED"
-        body = f"{name} ({image})"
-        if detail:
-            body += f"\n{detail}"
-        if source_url:
-            body += f"\n{source_url}"
-        self._post(self._title(f"{name} {status}"), body,
+        import notify_text
+        title, body = notify_text.update_result(
+            name, image, success, detail, source_url,
+            lang=notify_text.lang_of(self))
+        self._post(self._title(title), body,
                    TYPE_SUCCESS if success else TYPE_FAILURE)
 
     def send_message(self, text):

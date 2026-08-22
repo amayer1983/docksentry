@@ -108,24 +108,19 @@ class GotifyNotifier(BaseNotifier):
     def send_updates_available(self, updates):
         if not updates:
             return
-        lines = []
-        for u in updates:
-            host = u.get("host") if isinstance(u, dict) else None
-            where = f" @{host}" if host and host != "local" else ""
-            lines.append(f"• {u['name']}{where} ({u['image']})"
-                         f"{self.version_str(u)}")
-        self._post(self._title(f"{len(updates)} update(s) available"),
-                   "\n".join(lines), PRIO_NORMAL)
+        import notify_text
+        title, body = notify_text.updates_available(
+            updates, lang=notify_text.lang_of(self),
+            version_of=self.version_str)
+        self._post(self._title(title), body, PRIO_NORMAL)
 
     def send_update_result(self, name, image, success, detail="", source_url=""):
-        status = "updated" if success else "FAILED"
-        body = f"{name} ({image})"
-        if detail:
-            body += f"\n{detail}"
-        if source_url:
-            body += f"\n{source_url}"
+        import notify_text
+        title, body = notify_text.update_result(
+            name, image, success, detail, source_url,
+            lang=notify_text.lang_of(self))
         # A failure is the one thing worth waking someone for.
-        self._post(self._title(f"{name} {status}"), body,
+        self._post(self._title(title), body,
                    PRIO_NORMAL if success else PRIO_HIGH)
 
     def send_message(self, text):

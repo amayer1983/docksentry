@@ -903,5 +903,9 @@
   "restart_policy_is_none": "la politique de redémarrage de ce conteneur est `{policy}`.",
   "major_confirm_prompt": "⚠️ *Mise à jour majeure de* `{name}`{tag}\n  {old} → *{new}*\n\nUn saut de version majeure peut casser des configurations. Confirmez pour continuer.",
   "selfupdate_helper_pull_failed": "❌ Échec de la mise à jour : impossible de récupérer l'image auxiliaire `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Échec de la mise à jour automatique : {error}"
+  "selfupdate_failed": "❌ Échec de la mise à jour automatique : {error}",
+  "notify_updates_title": "{count} mise(s) à jour Docker disponible(s)",
+  "notify_updates_intro": "Docksentry a trouvé des mises à jour pour :",
+  "notify_result_ok": "Mise à jour réussie : {name}",
+  "notify_result_failed": "Échec de la mise à jour : {name}"
 }

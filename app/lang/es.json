@@ -903,5 +903,9 @@
   "restart_policy_is_none": "la política de reinicio de este contenedor es `{policy}`.",
   "major_confirm_prompt": "⚠️ *Actualización mayor de* `{name}`{tag}\n  {old} → *{new}*\n\nLos saltos de versión mayor pueden romper configuraciones. Confirma para continuar.",
   "selfupdate_helper_pull_failed": "❌ Falló la autoactualización: no se pudo descargar la imagen auxiliar `docker:cli` — {error}",
-  "selfupdate_failed": "❌ Falló la autoactualización: {error}"
+  "selfupdate_failed": "❌ Falló la autoactualización: {error}",
+  "notify_updates_title": "{count} actualización(es) de Docker disponibles",
+  "notify_updates_intro": "Docksentry encontró actualizaciones para:",
+  "notify_result_ok": "Actualización correcta: {name}",
+  "notify_result_failed": "Actualización FALLIDA: {name}"
 }

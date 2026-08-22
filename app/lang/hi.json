@@ -903,5 +903,9 @@
   "restart_policy_is_none": "इस कंटेनर की रीस्टार्ट नीति `{policy}` है।",
   "major_confirm_prompt": "⚠️ *`{name}`{tag} के लिए मेजर अपडेट*\n  {old} → *{new}*\n\nबड़े वर्शन बदलाव कॉन्फ़िग तोड़ सकते हैं। जारी रखने के लिए पुष्टि करें।",
   "selfupdate_helper_pull_failed": "❌ सेल्फ-अपडेट विफल: सहायक इमेज `docker:cli` नहीं मिली — {error}",
-  "selfupdate_failed": "❌ सेल्फ-अपडेट विफल: {error}"
+  "selfupdate_failed": "❌ सेल्फ-अपडेट विफल: {error}",
+  "notify_updates_title": "{count} Docker अपडेट उपलब्ध",
+  "notify_updates_intro": "Docksentry को इनके लिए अपडेट मिले:",
+  "notify_result_ok": "अपडेट सफल: {name}",
+  "notify_result_failed": "अपडेट विफल: {name}"
 }

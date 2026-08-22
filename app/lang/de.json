@@ -903,5 +903,9 @@
   "restart_policy_is_none": "die Restart-Policy dieses Containers ist `{policy}`.",
   "major_confirm_prompt": "⚠️ *Major-Update für* `{name}`{tag}\n  {old} → *{new}*\n\nGroße Versionssprünge können Konfigurationen brechen. Zum Fortfahren bestätigen.",
   "selfupdate_helper_pull_failed": "❌ Selbst-Update fehlgeschlagen: Helfer-Image `docker:cli` konnte nicht geladen werden — {error}",
-  "selfupdate_failed": "❌ Selbst-Update fehlgeschlagen: {error}"
+  "selfupdate_failed": "❌ Selbst-Update fehlgeschlagen: {error}",
+  "notify_updates_title": "{count} Docker-Update(s) verfügbar",
+  "notify_updates_intro": "Docksentry hat Updates gefunden für:",
+  "notify_result_ok": "Update erfolgreich: {name}",
+  "notify_result_failed": "Update fehlgeschlagen: {name}"
 }
