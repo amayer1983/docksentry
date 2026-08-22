@@ -909,5 +909,17 @@
   "notify_result_ok": "업데이트 성공: {name}",
   "notify_result_failed": "업데이트 실패: {name}",
   "chan_usage_unpin": "사용법: `/unpin <컨테이너>`",
-  "chan_usage_pin": "사용법: `/pin <컨테이너>`"
+  "chan_usage_pin": "사용법: `/pin <컨테이너>`",
+  "groups_empty": "구성된 컨테이너 그룹이 없습니다.",
+  "link_set": "🔗 `{name}`의 링크를 설정했습니다",
+  "link_cleared": "🔗 `{name}`의 링크를 지웠습니다",
+  "link_unsafe": "⚠️ `{url}`은(는) 안전한 링크가 아닙니다 — http(s)만 가능합니다.",
+  "chan_reclaim_none": "🧹{tag} — 확보할 것이 없습니다.",
+  "chan_reclaim_some": "🧹{tag} — {size} 확보 가능.",
+  "chan_autocleanup_on": "자동 정리가 **켜져** 있습니다 — 저절로 수행됩니다.",
+  "chan_run_cleanup_hint": "확보하려면 `/cleanup`을 실행하세요.",
+  "host_unreachable_short": "⚠ `{host}`에 연결할 수 없습니다: {error}",
+  "logs_failed": "`{name}`의 로그를 읽지 못했습니다: {error}",
+  "chan_maintenance_line": "🔧 유지 보수: {state}",
+  "chan_audit_header": "🔍 `{name}` — 이전하지 않는 필드:"
 }

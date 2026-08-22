@@ -909,5 +909,17 @@
   "notify_result_ok": "अपडेट सफल: {name}",
   "notify_result_failed": "अपडेट विफल: {name}",
   "chan_usage_unpin": "उपयोग: `/unpin <कंटेनर>`",
-  "chan_usage_pin": "उपयोग: `/pin <कंटेनर>`"
+  "chan_usage_pin": "उपयोग: `/pin <कंटेनर>`",
+  "groups_empty": "कोई कंटेनर समूह कॉन्फ़िगर नहीं है।",
+  "link_set": "🔗 `{name}` के लिए लिंक सेट",
+  "link_cleared": "🔗 `{name}` का लिंक हटाया गया",
+  "link_unsafe": "⚠️ `{url}` सुरक्षित लिंक नहीं है — केवल http(s)।",
+  "chan_reclaim_none": "🧹{tag} — पुनः प्राप्त करने को कुछ नहीं।",
+  "chan_reclaim_some": "🧹{tag} — {size} पुनः प्राप्त किया जा सकता है।",
+  "chan_autocleanup_on": "स्वतः सफ़ाई **चालू** है — यह अपने आप होता है।",
+  "chan_run_cleanup_hint": "इसे मुक्त करने के लिए `/cleanup` चलाएँ।",
+  "host_unreachable_short": "⚠ `{host}` अनुपलब्ध: {error}",
+  "logs_failed": "`{name}` के लॉग नहीं पढ़ सके: {error}",
+  "chan_maintenance_line": "🔧 रखरखाव: {state}",
+  "chan_audit_header": "🔍 `{name}` — वे फ़ील्ड जो हम नहीं ले जाएँगे:"
 }

@@ -909,5 +909,17 @@
   "notify_result_ok": "Оновлення виконано: {name}",
   "notify_result_failed": "Оновлення НЕ ВДАЛОСЯ: {name}",
   "chan_usage_unpin": "Використання: `/unpin <контейнер>`",
-  "chan_usage_pin": "Використання: `/pin <контейнер>`"
+  "chan_usage_pin": "Використання: `/pin <контейнер>`",
+  "groups_empty": "Групи контейнерів не налаштовано.",
+  "link_set": "🔗 Посилання встановлено для `{name}`",
+  "link_cleared": "🔗 Посилання видалено для `{name}`",
+  "link_unsafe": "⚠️ `{url}` — небезпечне посилання, лише http(s).",
+  "chan_reclaim_none": "🧹{tag} — немає чого звільняти.",
+  "chan_reclaim_some": "🧹{tag} — можна звільнити {size}.",
+  "chan_autocleanup_on": "Автоочищення **увімкнено** — це відбувається саме.",
+  "chan_run_cleanup_hint": "Запустіть `/cleanup`, щоб звільнити.",
+  "host_unreachable_short": "⚠ `{host}` недоступний: {error}",
+  "logs_failed": "Не вдалося прочитати логи `{name}`: {error}",
+  "chan_maintenance_line": "🔧 Обслуговування: {state}",
+  "chan_audit_header": "🔍 `{name}` — поля, які ми не перенесемо:"
 }

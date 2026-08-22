@@ -909,5 +909,17 @@
   "notify_result_ok": "更新に成功: {name}",
   "notify_result_failed": "更新に失敗: {name}",
   "chan_usage_unpin": "使い方: `/unpin <コンテナ>`",
-  "chan_usage_pin": "使い方: `/pin <コンテナ>`"
+  "chan_usage_pin": "使い方: `/pin <コンテナ>`",
+  "groups_empty": "コンテナグループは設定されていません。",
+  "link_set": "🔗 `{name}` のリンクを設定しました",
+  "link_cleared": "🔗 `{name}` のリンクを削除しました",
+  "link_unsafe": "⚠️ `{url}` は安全なリンクではありません — http(s) のみ。",
+  "chan_reclaim_none": "🧹{tag} — 解放できるものはありません。",
+  "chan_reclaim_some": "🧹{tag} — {size} を解放できます。",
+  "chan_autocleanup_on": "自動クリーンアップは**オン**です — 自動的に行われます。",
+  "chan_run_cleanup_hint": "解放するには `/cleanup` を実行してください。",
+  "host_unreachable_short": "⚠ `{host}` に到達できません: {error}",
+  "logs_failed": "`{name}` のログを読み取れませんでした: {error}",
+  "chan_maintenance_line": "🔧 メンテナンス: {state}",
+  "chan_audit_header": "🔍 `{name}` — 引き継がないフィールド:"
 }

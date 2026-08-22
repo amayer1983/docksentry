@@ -19,7 +19,10 @@ What is deliberately NOT flagged:
     registers those with its API, which has its own rules about them;
   * short markers and separators, log lines, and anything under a few
     words, which carry no sentence;
-  * the `!` prefix on `_match_in`'s answer, a sentinel the caller strips.
+  * the `!` prefix on `_match_in`'s answer, a sentinel the caller strips;
+  * the documentation URL under `/help`, which is an address, not a
+    sentence — translating it would be inventing a link that does not
+    exist.
 
 A new connection (Matrix, whatever comes next) should be held to this
 too the day it can answer a command.
@@ -56,10 +59,42 @@ def _branches(value):
 
 
 def sentences_returned(path):
-    """Literal sentences a method hands back to a user."""
+    """Literal sentences a method hands to a user — by any route.
+
+    Three routes, all of them real, all of them found the hard way:
+
+      * `return "…"` — the obvious one;
+      * `return A if cond else B` — a ternary, which the first version of
+        this check walked straight past while two Usage lines sat in it;
+      * `lines.append("…")` and its siblings, where a reply is assembled
+        piece by piece and returned as one joined string at the end. That
+        route alone was hiding twenty-one English sentences AFTER this
+        check reported none.
+
+    A guard that only sees one shape is worse than no guard, because
+    people believe it. So it looks at all three.
+    """
     src = open(path, encoding="utf-8").read()
     out = []
+    #: An address, not a sentence — see the docstring.
+    ALLOWED = ("github.com/amayer1983/docksentry",)
     for node in ast.walk(ast.parse(src)):
+        # Sentences appended into a reply that is joined and returned.
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("append", "extend", "insert")):
+            for arg in node.args:
+                for v in _branches(arg):
+                    text = None
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                        text = v.value
+                    elif isinstance(v, ast.JoinedStr):
+                        text = "".join(p.value for p in v.values
+                                       if isinstance(p, ast.Constant))
+                    if (text and len(text.strip()) >= SENTENCE
+                            and " " in text.strip()
+                            and not any(a in text for a in ALLOWED)):
+                        out.append((node.lineno, text.strip()))
         if not isinstance(node, ast.Return) or node.value is None:
             continue
         # Every shape a returned sentence can take. The first version
@@ -74,7 +109,9 @@ def sentences_returned(path):
             elif isinstance(v, ast.JoinedStr):
                 text = "".join(p.value for p in v.values
                                if isinstance(p, ast.Constant))
-            if text and len(text.strip()) >= SENTENCE and " " in text.strip():
+            if (text and len(text.strip()) >= SENTENCE
+                    and " " in text.strip()
+                    and not any(a in text for a in ALLOWED)):
                 out.append((node.lineno, text.strip()))
     return out
 

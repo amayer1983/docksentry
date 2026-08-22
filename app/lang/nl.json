@@ -909,5 +909,17 @@
   "notify_result_ok": "Update geslaagd: {name}",
   "notify_result_failed": "Update MISLUKT: {name}",
   "chan_usage_unpin": "Gebruik: `/unpin <container>`",
-  "chan_usage_pin": "Gebruik: `/pin <container>`"
+  "chan_usage_pin": "Gebruik: `/pin <container>`",
+  "groups_empty": "Geen containergroepen ingesteld.",
+  "link_set": "🔗 Link ingesteld voor `{name}`",
+  "link_cleared": "🔗 Link gewist voor `{name}`",
+  "link_unsafe": "⚠️ `{url}` is geen veilige link — alleen http(s).",
+  "chan_reclaim_none": "🧹{tag} — niets vrij te maken.",
+  "chan_reclaim_some": "🧹{tag} — {size} vrij te maken.",
+  "chan_autocleanup_on": "Automatisch opruimen staat **aan** — dat gebeurt vanzelf.",
+  "chan_run_cleanup_hint": "Voer `/cleanup` uit om het vrij te maken.",
+  "host_unreachable_short": "⚠ `{host}` onbereikbaar: {error}",
+  "logs_failed": "Kon logboek van `{name}` niet lezen: {error}",
+  "chan_maintenance_line": "🔧 Onderhoud: {state}",
+  "chan_audit_header": "🔍 `{name}` — velden die we niet zouden overnemen:"
 }

@@ -909,5 +909,17 @@
   "notify_result_ok": "Güncelleme başarılı: {name}",
   "notify_result_failed": "Güncelleme BAŞARISIZ: {name}",
   "chan_usage_unpin": "Kullanım: `/unpin <kapsayıcı>`",
-  "chan_usage_pin": "Kullanım: `/pin <kapsayıcı>`"
+  "chan_usage_pin": "Kullanım: `/pin <kapsayıcı>`",
+  "groups_empty": "Yapılandırılmış kapsayıcı grubu yok.",
+  "link_set": "🔗 `{name}` için bağlantı ayarlandı",
+  "link_cleared": "🔗 `{name}` için bağlantı kaldırıldı",
+  "link_unsafe": "⚠️ `{url}` güvenli bir bağlantı değil — yalnızca http(s).",
+  "chan_reclaim_none": "🧹{tag} — geri kazanılacak bir şey yok.",
+  "chan_reclaim_some": "🧹{tag} — {size} geri kazanılabilir.",
+  "chan_autocleanup_on": "Otomatik temizleme **açık** — bu kendiliğinden olur.",
+  "chan_run_cleanup_hint": "Boşaltmak için `/cleanup` çalıştırın.",
+  "host_unreachable_short": "⚠ `{host}` erişilemiyor: {error}",
+  "logs_failed": "`{name}` günlükleri okunamadı: {error}",
+  "chan_maintenance_line": "🔧 Bakım: {state}",
+  "chan_audit_header": "🔍 `{name}` — taşımayacağımız alanlar:"
 }

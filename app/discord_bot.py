@@ -1401,8 +1401,9 @@ class DiscordBot:
                 # that protects PID 1 (#16).
                 containers = checker.get_running_containers(include_self=True)
             except Exception as e:
-                lines.append(f"⚠ `{getattr(host, 'name', 'local')}` "
-                             f"unreachable: {clip(e)}")
+                lines.append(self.t("host_unreachable_short",
+                                    host=getattr(host, "name", "local"),
+                                    error=clip(e)))
                 continue
             tag = self._label(host)
             for c in containers:
@@ -1433,8 +1434,9 @@ class DiscordBot:
             try:
                 updates = checker.check_all()
             except Exception as e:
-                found.append(f"⚠ `{getattr(host, 'name', 'local')}` check failed: "
-                             f"{str(e)[:80]}")
+                found.append(self.t("host_check_failed",
+                                    host=getattr(host, "name", "local"),
+                                    error=str(e)[:80]))
                 continue
             for u in updates:
                 found.append(f"• `{u['name']}`{self._label(host)} — {u['image']}")
@@ -1494,18 +1496,18 @@ class DiscordBot:
                     continue
                 pinned.remove(name)
                 store.save_pinned(pinned)
-                lines.append(f"📌 Unpinned `{name}`{tag}.")
+                lines.append(self.t("unpin_removed", name=name) + tag)
                 continue
             name, err = self._resolve_container(arg, self._backend_for(host))
             if err:
                 lines.append(err + tag)
                 continue
             if name in pinned:
-                lines.append(f"📌 `{name}`{tag} is already pinned.")
+                lines.append(self.t("pin_already", name=name) + tag)
                 continue
             pinned.append(name)
             store.save_pinned(pinned)
-            lines.append(f"📌 Pinned `{name}`{tag} — it will not be updated.")
+            lines.append(self.t("pin_added", name=name) + tag)
         return self._clip("\n".join(lines) or "Nothing to do.")
 
     def _match_in(self, partial, names):
@@ -1542,11 +1544,11 @@ class DiscordBot:
             if name in auto:
                 auto.remove(name)
                 store.save_autoupdate(auto)
-                lines.append(f"⚡ Auto-update is now **off** for `{name}`{tag}.")
+                lines.append(self.t("autoupdate_off", name=name) + tag)
             else:
                 auto.append(name)
                 store.save_autoupdate(auto)
-                lines.append(f"⚡ Auto-update is now **on** for `{name}`{tag}.")
+                lines.append(self.t("autoupdate_on", name=name) + tag)
         return self._clip("\n".join(lines) or "Nothing to do.")
 
     def _cmd_protect(self, opts):
@@ -1565,9 +1567,8 @@ class DiscordBot:
                 lines.append(err + tag)
                 continue
             now_on = store.toggle_protect_stop(name)
-            lines.append(f"🛡 Stop-protection is now **on** for `{name}`{tag}."
-                         if now_on else
-                         f"🛡 Stop-protection is now **off** for `{name}`{tag}.")
+            lines.append(self.t("protect_on" if now_on else "protect_off",
+                                name=name) + tag)
         return self._clip("\n".join(lines) or "Nothing to do.")
 
     def _cmd_cooldown(self, opts):
@@ -1594,9 +1595,10 @@ class DiscordBot:
             # it actually stored, so report that rather than what was
             # asked for — otherwise `/cooldown x 9999` reads as accepted.
             applied = store.set_cooldown(name, seconds)
-            lines.append(f"⏳ Cooldown for `{name}`{tag} set to {applied}s."
-                         if applied else
-                         f"⏳ Cooldown for `{name}`{tag} cleared.")
+            lines.append((self.t("cooldown_set", name=name, seconds=applied)
+                              if applied
+                              else self.t("cooldown_cleared", name=name))
+                             + tag)
         return self._clip("\n".join(lines) or "Nothing to do.")
 
     def _cmd_maintenance(self, opts):
@@ -1715,8 +1717,8 @@ class DiscordBot:
                 # argv here bypassed that and dropped half the output.
                 r = backend.logs(name, tail=tail, timeout=10)
             except Exception as e:
-                errors.append(f"Could not read `{name}`{self._label(host)} "
-                              f"logs: {str(e)[:80]}")
+                errors.append(self.t("logs_failed", name=name,
+                                     error=str(e)[:80]) + self._label(host))
                 continue
             output = (r.stdout or "") or (r.stderr or "")
             if not output.strip():
@@ -1739,7 +1741,7 @@ class DiscordBot:
             tag = self._label(host)
             groups = store.get_groups() or {}
             if not groups:
-                lines.append(f"No container groups configured{tag}.")
+                lines.append(self.t("groups_empty") + tag)
                 continue
             for gid, g in groups.items():
                 members = g.get("containers") or []
@@ -2008,11 +2010,11 @@ class DiscordBot:
             store = self._store_for(host)
             if not url:
                 store.set_link(name, "")
-                lines.append(f"🔗 Link cleared for `{name}`{self._label(host)}")
+                lines.append(self.t("link_cleared", name=name) + self._label(host))
             elif store.set_link(name, url):
-                lines.append(f"🔗 Link set for `{name}`{self._label(host)}")
+                lines.append(self.t("link_set", name=name) + self._label(host))
             else:
-                lines.append(f"⚠️ `{url}` is not a safe link — http(s) only.")
+                lines.append(self.t("link_unsafe", url=url))
         return "\n".join(lines)
 
     def _cmd_audit(self, opts):
@@ -2049,10 +2051,9 @@ class DiscordBot:
         dropped = findings.get("host_dropped") or []
         if not host_keys and not cfg_keys and not dropped:
             return self.t("audit_clean", name=name)
-        out = [f"🔍 `{name}` — fields we would not carry over:"]
+        out = [self.t("chan_audit_header", name=name)]
         if dropped:
-            out.append("**Skipped on purpose** (set on this container, "
-                       "known, not carried):")
+            out.append(self.t("audit_section_dropped"))
             out += [f"  • `{k}`" for k in dropped]
         if host_keys:
             out.append("**HostConfig**")
@@ -2189,7 +2190,7 @@ class DiscordBot:
             active = bool(get_state(cfg).get("active"))
         except Exception:
             active = False
-        lines.append(f"🔧 Maintenance: {on_off(active)}")
+        lines.append(self.t("chan_maintenance_line", state=on_off(active)))
         return self._clip("\n".join(lines))
 
     # ── the commands that change things ───────────────────────────
@@ -2308,7 +2309,7 @@ class DiscordBot:
             tag = self._label(host)
             entries = self._pending_for(host)
             if not entries:
-                errors.append(f"No pending updates{tag or ' on this host'}.")
+                errors.append(self.t("no_pending_updates") + tag)
                 continue
             name = self._match_in(arg, [u["name"] for u in entries])
             if name.startswith("!"):
@@ -2622,22 +2623,23 @@ class DiscordBot:
             try:
                 reclaim = int(checker.reclaimable_bytes() or 0)
             except Exception as e:
-                lines.append(f"⚠ `{getattr(host, 'name', 'local')}` check "
-                             f"failed: {str(e)[:80]}")
+                lines.append(self.t("host_check_failed",
+                                    host=getattr(host, "name", "local"),
+                                    error=str(e)[:80]))
                 continue
             total += reclaim
             if reclaim <= 0:
-                lines.append(f"🧹{tag} — nothing to reclaim.")
+                lines.append(self.t("chan_reclaim_none", tag=tag))
             else:
-                lines.append(f"🧹{tag} — {self._human_size(reclaim)} "
-                             "reclaimable.")
+                lines.append(self.t("chan_reclaim_some", tag=tag,
+                                    size=self._human_size(reclaim)))
         if not lines:
             return self.t("chan_no_backend")
         if total > 0:
             if getattr(self.config, "disk_warn_auto_cleanup", False):
-                lines.append("Auto-cleanup is **on** — this happens by itself.")
+                lines.append(self.t("chan_autocleanup_on"))
             else:
-                lines.append("Run `/cleanup` to free it.")
+                lines.append(self.t("chan_run_cleanup_hint"))
         return self._clip("**Reclaimable image space**\n" + "\n".join(lines))
 
     def _unknown_host(self, name):

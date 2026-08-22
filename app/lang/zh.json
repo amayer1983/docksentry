@@ -909,5 +909,17 @@
   "notify_result_ok": "更新成功：{name}",
   "notify_result_failed": "更新失败：{name}",
   "chan_usage_unpin": "用法：`/unpin <容器>`",
-  "chan_usage_pin": "用法：`/pin <容器>`"
+  "chan_usage_pin": "用法：`/pin <容器>`",
+  "groups_empty": "未配置容器组。",
+  "link_set": "🔗 已为 `{name}` 设置链接",
+  "link_cleared": "🔗 已清除 `{name}` 的链接",
+  "link_unsafe": "⚠️ `{url}` 不是安全链接 — 仅支持 http(s)。",
+  "chan_reclaim_none": "🧹{tag} — 没有可回收的内容。",
+  "chan_reclaim_some": "🧹{tag} — 可回收 {size}。",
+  "chan_autocleanup_on": "自动清理**已开启** — 这会自动进行。",
+  "chan_run_cleanup_hint": "运行 `/cleanup` 以释放。",
+  "host_unreachable_short": "⚠ `{host}` 无法访问：{error}",
+  "logs_failed": "无法读取 `{name}` 的日志：{error}",
+  "chan_maintenance_line": "🔧 维护：{state}",
+  "chan_audit_header": "🔍 `{name}` — 我们不会保留的字段："
 }

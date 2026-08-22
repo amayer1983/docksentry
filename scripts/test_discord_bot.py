@@ -451,7 +451,13 @@ NAS_STORE = sreg.get("nas").store
 
 # ── /pin, and the per-host isolation that is the point of it ─────────
 out = call("pin", container="web")
-checks["/pin confirms the pin"] = "Pinned `web`" in out
+# Against the shared translation, not a copy of its wording: Discord and
+# Telegram read the same keys now, so the sentence lives in one place and
+# a test that re-typed it would be the second place it could drift (#63).
+import json as _json
+_EN = _json.load(open(os.path.join(os.path.dirname(__file__), "..", "app",
+                                   "lang", "en.json"), encoding="utf-8"))
+checks["/pin confirms the pin"] = _EN["pin_added"].format(name="web") in out
 checks["/pin writes to the local host"] = LOCAL_STORE.get_pinned() == ["web"]
 checks["/pin with no host does NOT touch the other host"] = (
     NAS_STORE.get_pinned() == [])
@@ -477,7 +483,7 @@ checks["…and never falls back to local"] = "Pinned" not in out
 out = call("unpin", container="web")
 checks["/unpin removes the local pin"] = LOCAL_STORE.get_pinned() == []
 checks["…and leaves the other host pinned"] = NAS_STORE.get_pinned() == ["web"]
-checks["/unpin confirms"] = "Unpinned `web`" in out
+checks["/unpin confirms"] = _EN["unpin_removed"].format(name="web") in out
 out = call("unpin", container="web")
 checks["/unpin of something unpinned says so"] = "not in that list" in out
 out = call("unpin", container="web", host="zzz")
@@ -489,12 +495,14 @@ checks["/unpin host:nas clears it there"] = NAS_STORE.get_pinned() == []
 # ── /autoupdate toggles and reports the NEW state ────────────────────
 out = call("autoupdate", container="web")
 checks["/autoupdate turns it on"] = (
-    "**on**" in out and LOCAL_STORE.get_autoupdate() == ["web"])
+    _EN["autoupdate_on"].format(name="web").replace("*", "") in out.replace("*", "")
+    and LOCAL_STORE.get_autoupdate() == ["web"])
 checks["/autoupdate does not leak to the other host"] = (
     NAS_STORE.get_autoupdate() == [])
 out = call("autoupdate", container="web")
 checks["/autoupdate toggles back off"] = (
-    "**off**" in out and LOCAL_STORE.get_autoupdate() == [])
+    _EN["autoupdate_off"].format(name="web").replace("*", "") in out.replace("*", "")
+    and LOCAL_STORE.get_autoupdate() == [])
 out = call("autoupdate", container="plex", host="nas")
 checks["/autoupdate host:nas targets that host"] = (
     NAS_STORE.get_autoupdate() == ["plex"])
@@ -508,12 +516,14 @@ checks["/autoupdate on an unknown host errors"] = "Unknown host" in out
 # store, so compare sorted — the assertion is about membership, not shape.
 out = call("protect", container="db")
 checks["/protect turns protection on"] = (
-    "**on**" in out and sorted(LOCAL_STORE.get_protect_stop()) == ["db"])
+    _EN["protect_on"].format(name="db").replace("*", "") in out.replace("*", "")
+    and sorted(LOCAL_STORE.get_protect_stop()) == ["db"])
 checks["/protect does not leak across hosts"] = (
     sorted(NAS_STORE.get_protect_stop()) == [])
 out = call("protect", container="db")
 checks["/protect toggles back off"] = (
-    "**off**" in out and sorted(LOCAL_STORE.get_protect_stop()) == [])
+    _EN["protect_off"].format(name="db").replace("*", "") in out.replace("*", "")
+    and sorted(LOCAL_STORE.get_protect_stop()) == [])
 out = call("protect", container="plex", host="nas")
 checks["/protect host:nas targets that host"] = (
     sorted(NAS_STORE.get_protect_stop()) == ["plex"])
@@ -633,7 +643,7 @@ checks["/groups lists the group"] = "Media Stack" in out
 checks["/groups shows the members"] = "`web`" in out and "`db`" in out
 checks["/groups marks the leader"] = "👑" in out
 checks["a group is per host — the other host has none"] = (
-    "No container groups configured @nas" in out)
+    _EN["groups_empty"] in out and "@nas" in out)
 checks["…and the group carries its host marker"] = "@local" in out
 LOCAL_STORE.delete_group("media")
 

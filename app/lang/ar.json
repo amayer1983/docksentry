@@ -909,5 +909,17 @@
   "notify_result_ok": "نجح التحديث: {name}",
   "notify_result_failed": "فشل التحديث: {name}",
   "chan_usage_unpin": "الاستخدام: `/unpin <حاوية>`",
-  "chan_usage_pin": "الاستخدام: `/pin <حاوية>`"
+  "chan_usage_pin": "الاستخدام: `/pin <حاوية>`",
+  "groups_empty": "لا توجد مجموعات حاويات مُهيّأة.",
+  "link_set": "🔗 تم تعيين الرابط لـ `{name}`",
+  "link_cleared": "🔗 تم مسح الرابط لـ `{name}`",
+  "link_unsafe": "⚠️ `{url}` ليس رابطًا آمنًا — http(s) فقط.",
+  "chan_reclaim_none": "🧹{tag} — لا شيء لاستعادته.",
+  "chan_reclaim_some": "🧹{tag} — يمكن استعادة {size}.",
+  "chan_autocleanup_on": "التنظيف التلقائي **مُفعَّل** — يحدث من تلقاء نفسه.",
+  "chan_run_cleanup_hint": "شغّل `/cleanup` لتحريرها.",
+  "host_unreachable_short": "⚠ `{host}` غير قابل للوصول: {error}",
+  "logs_failed": "تعذّرت قراءة سجلات `{name}`: {error}",
+  "chan_maintenance_line": "🔧 الصيانة: {state}",
+  "chan_audit_header": "🔍 `{name}` — الحقول التي لن ننقلها:"
 }

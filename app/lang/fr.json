@@ -909,5 +909,17 @@
   "notify_result_ok": "Mise à jour réussie : {name}",
   "notify_result_failed": "Échec de la mise à jour : {name}",
   "chan_usage_unpin": "Utilisation : `/unpin <conteneur>`",
-  "chan_usage_pin": "Utilisation : `/pin <conteneur>`"
+  "chan_usage_pin": "Utilisation : `/pin <conteneur>`",
+  "groups_empty": "Aucun groupe de conteneurs configuré.",
+  "link_set": "🔗 Lien défini pour `{name}`",
+  "link_cleared": "🔗 Lien supprimé pour `{name}`",
+  "link_unsafe": "⚠️ `{url}` n'est pas un lien sûr — http(s) uniquement.",
+  "chan_reclaim_none": "🧹{tag} — rien à récupérer.",
+  "chan_reclaim_some": "🧹{tag} — {size} récupérables.",
+  "chan_autocleanup_on": "Le nettoyage automatique est **activé** — cela se fait tout seul.",
+  "chan_run_cleanup_hint": "Lancez `/cleanup` pour le libérer.",
+  "host_unreachable_short": "⚠ `{host}` injoignable : {error}",
+  "logs_failed": "Impossible de lire les journaux de `{name}` : {error}",
+  "chan_maintenance_line": "🔧 Maintenance : {state}",
+  "chan_audit_header": "🔍 `{name}` — champs que nous ne reprendrions pas :"
 }

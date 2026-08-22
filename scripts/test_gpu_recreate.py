@@ -115,7 +115,8 @@ tsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
 dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "discord_bot.py"), encoding="utf-8").read()
 checks["Telegram's /audit shows it"] = "audit_section_dropped" in tsrc
-checks["…and Discord's"] = "Skipped on purpose" in dsrc
+# Both fronts name the section through the same key now (#63).
+checks["…and Discord's"] = "audit_section_dropped" in dsrc
 
 # ═══ Docker's own defaults are not findings ══════════════════════════
 # The owner ran /audit against a stock ollama and got four findings —

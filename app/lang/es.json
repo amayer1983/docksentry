@@ -909,5 +909,17 @@
   "notify_result_ok": "Actualización correcta: {name}",
   "notify_result_failed": "Actualización FALLIDA: {name}",
   "chan_usage_unpin": "Uso: `/unpin <contenedor>`",
-  "chan_usage_pin": "Uso: `/pin <contenedor>`"
+  "chan_usage_pin": "Uso: `/pin <contenedor>`",
+  "groups_empty": "No hay grupos de contenedores configurados.",
+  "link_set": "🔗 Enlace establecido para `{name}`",
+  "link_cleared": "🔗 Enlace eliminado para `{name}`",
+  "link_unsafe": "⚠️ `{url}` no es un enlace seguro: solo http(s).",
+  "chan_reclaim_none": "🧹{tag}: nada que recuperar.",
+  "chan_reclaim_some": "🧹{tag}: {size} recuperables.",
+  "chan_autocleanup_on": "La limpieza automática está **activada**: ocurre sola.",
+  "chan_run_cleanup_hint": "Ejecuta `/cleanup` para liberarlo.",
+  "host_unreachable_short": "⚠ `{host}` inaccesible: {error}",
+  "logs_failed": "No se pudieron leer los registros de `{name}`: {error}",
+  "chan_maintenance_line": "🔧 Mantenimiento: {state}",
+  "chan_audit_header": "🔍 `{name}`: campos que no se transferirían:"
 }

@@ -909,5 +909,17 @@
   "notify_result_ok": "Aktualizacja udana: {name}",
   "notify_result_failed": "Aktualizacja NIEUDANA: {name}",
   "chan_usage_unpin": "Użycie: `/unpin <kontener>`",
-  "chan_usage_pin": "Użycie: `/pin <kontener>`"
+  "chan_usage_pin": "Użycie: `/pin <kontener>`",
+  "groups_empty": "Nie skonfigurowano grup kontenerów.",
+  "link_set": "🔗 Ustawiono link dla `{name}`",
+  "link_cleared": "🔗 Usunięto link dla `{name}`",
+  "link_unsafe": "⚠️ `{url}` nie jest bezpiecznym linkiem — tylko http(s).",
+  "chan_reclaim_none": "🧹{tag} — nie ma czego odzyskać.",
+  "chan_reclaim_some": "🧹{tag} — do odzyskania {size}.",
+  "chan_autocleanup_on": "Automatyczne czyszczenie jest **włączone** — dzieje się samo.",
+  "chan_run_cleanup_hint": "Uruchom `/cleanup`, aby to zwolnić.",
+  "host_unreachable_short": "⚠ `{host}` nieosiągalny: {error}",
+  "logs_failed": "Nie można odczytać logów `{name}`: {error}",
+  "chan_maintenance_line": "🔧 Konserwacja: {state}",
+  "chan_audit_header": "🔍 `{name}` — pola, których nie przeniesiemy:"
 }
