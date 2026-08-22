@@ -39,6 +39,19 @@ checks = {}
 #: reads — not a marker, a separator or a format fragment.
 SENTENCE = 12
 
+#: …and it has to contain real words. A format skeleton like
+#: `• {name} ({image})\n  📦 {size} | 🗓️ {date}` is long and has spaces,
+#: but every word in it is a placeholder the core fills — that is layout,
+#: which is the connection's own business. Three plain words is the line.
+WORDS = 3
+
+
+def _is_sentence(text):
+    import re as _re
+    body = _re.sub(r"`[^`]*`", " ", text)          # code spans are data
+    words = _re.findall(r"[A-Za-zÄÖÜäöüß]{3,}", body)
+    return len(words) >= WORDS
+
 
 
 def _branches(value):
@@ -92,7 +105,7 @@ def sentences_returned(path):
                         text = "".join(p.value for p in v.values
                                        if isinstance(p, ast.Constant))
                     if (text and len(text.strip()) >= SENTENCE
-                            and " " in text.strip()
+                            and _is_sentence(text)
                             and not any(a in text for a in ALLOWED)):
                         out.append((node.lineno, text.strip()))
         if not isinstance(node, ast.Return) or node.value is None:
@@ -110,17 +123,33 @@ def sentences_returned(path):
                 text = "".join(p.value for p in v.values
                                if isinstance(p, ast.Constant))
             if (text and len(text.strip()) >= SENTENCE
-                    and " " in text.strip()
+                    and _is_sentence(text)
                     and not any(a in text for a in ALLOWED)):
                 out.append((node.lineno, text.strip()))
     return out
 
 
-found = sentences_returned(os.path.join(APP, "discord_bot.py"))
-checks["the Discord connection returns no sentences of its own"] = not found
+#: Every connection, not just the one that was worst. Telegram was the
+#: original home of the shared wording, so it reads from the keys by
+#: construction — but nothing was checking that it stayed that way, and
+#: the six notification channels were each writing their own English
+#: until the day this list grew to include them.
+CONNECTIONS = ["discord_bot.py", "telegram_bot.py",
+               os.path.join("notifiers", "ntfy.py"),
+               os.path.join("notifiers", "smtp.py"),
+               os.path.join("notifiers", "gotify.py"),
+               os.path.join("notifiers", "matrix.py"),
+               os.path.join("notifiers", "apprise.py"),
+               os.path.join("notifiers", "discord.py")]
+
+found = []
+for rel in CONNECTIONS:
+    for ln, text in sentences_returned(os.path.join(APP, rel)):
+        found.append((rel, ln, text))
+checks["no connection writes sentences of its own"] = not found
 if found:
-    for ln, t in found[:10]:
-        print(f"  → line {ln}: {t[:70]!r}")
+    for rel, ln, t in found[:12]:
+        print(f"  → {rel}:{ln}: {t[:70]!r}")
 
 # It must actually be reading the shared translations, not just be quiet.
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
