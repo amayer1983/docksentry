@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ 自己更新を開始しました — 完了したらチャンネルで報告し、適用するものがあれば再起動します。",
   "chan_usage_container": "使い方: `/{command} <コンテナ>`",
   "chan_nothing_left": "更新するものはありません — 承認したコンテナはすべて更新済みです。",
-  "chan_debug_toggled": "🔍 デバッグログ **{status}**。レジストリ呼び出しとスキャンのコンテナごとの記録をすべて表示します。"
+  "chan_debug_toggled": "🔍 デバッグログ **{status}**。レジストリ呼び出しとスキャンのコンテナごとの記録をすべて表示します。",
+  "status_bot_uptime": "ボット稼働時間",
+  "cleanup_reclaimed": "解放された合計容量: {size}",
+  "cleanup_failed": "クリーンアップに失敗しました: {error}",
+  "major_none_pending": "⚠️ `{name}` に保留中のメジャー更新はありません。",
+  "major_skipped": "⏭ `{name}`{tag} のメジャー更新をスキップしました。",
+  "window_skipped": "⏰ メンテナンス時間外 — 次の自動更新をスキップしました: {names}",
+  "cleanup_auto_prefix": "🧹 自動クリーンアップ: {message}",
+  "bot_connected": "✅ Docksentry {version} — ボットが接続しました。",
+  "restart_no_own_name": "自分がどのコンテナか判別できません。",
+  "restart_daemon_silent": "デーモンが応答しませんでした: {error}",
+  "restart_no_policy_reported": "デーモンは再起動ポリシーを報告しませんでした。",
+  "restart_policy_is_none": "このコンテナの再起動ポリシーは `{policy}` です。",
+  "major_confirm_prompt": "⚠️ *`{name}`{tag} のメジャー更新*\n  {old} → *{new}*\n\nメジャーバージョンの変更は設定を壊すことがあります。続行するには確認してください。",
+  "selfupdate_helper_pull_failed": "❌ 自己更新に失敗: 補助イメージ `docker:cli` を取得できませんでした — {error}",
+  "selfupdate_failed": "❌ 自己更新に失敗しました: {error}"
 }

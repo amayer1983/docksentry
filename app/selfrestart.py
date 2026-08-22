@@ -30,31 +30,37 @@ import threading
 import time
 
 
-def policy(backend, checker):
+def policy(backend, checker, lang="en"):
     """(policy name, explanation). An empty name means "do not stop".
 
     `checker` answers which container we are; `backend` asks the daemon
     what that container's restart policy is. Both are required — see the
     module docstring for what the optional one cost.
+
+    The explanation is read by a person in a chat, so it comes from the
+    shared translations (#63); `lang` says which. It defaults to English
+    for the callers that have no config to hand.
     """
+    from i18n import get_translator
+    t = get_translator(lang or "en")
     own = ""
     try:
         own = (checker._own_container_name() if checker else "") or ""
     except Exception:
         own = ""
     if not own:
-        return "", "I cannot tell which container I am."
+        return "", t("restart_no_own_name")
     try:
         r = backend.run(
             ["inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}",
              own], timeout=15)
     except Exception as e:
-        return "", f"the daemon would not answer: {str(e)[:80]}"
+        return "", t("restart_daemon_silent", error=str(e)[:80])
     name = (getattr(r, "stdout", "") or "").strip()
     if getattr(r, "returncode", 1) != 0 or not name:
-        return "", "the daemon did not report a restart policy."
+        return "", t("restart_no_policy_reported")
     if name in ("no", "none", "<no value>"):
-        return "", f"this container's restart policy is `{name}`."
+        return "", t("restart_policy_is_none", policy=name)
     return name, ""
 
 

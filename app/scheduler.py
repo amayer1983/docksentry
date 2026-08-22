@@ -437,7 +437,7 @@ class Scheduler:
                             print(f"Auto cleanup: {msg}")
                             notifier = getattr(self.bot, "notifier", None)
                             if ok and notifier and notifier.has_channels():
-                                notifier.send_message(f"🧹 Auto cleanup: {msg}")
+                                notifier.send_message(self.bot.t("cleanup_auto_prefix", message=msg))
                             if ok and self.bot.enabled:
                                 self.bot.send_message(f"🧹 {msg}", auto=True)
                     except Exception as e:

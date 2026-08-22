@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Mise à jour automatique lancée — je préviendrai dans le canal à la fin et redémarrerai s'il y a quelque chose à appliquer.",
   "chan_usage_container": "Utilisation : `/{command} <conteneur>`",
   "chan_nothing_left": "Plus rien à mettre à jour — tous les conteneurs approuvés le sont déjà.",
-  "chan_debug_toggled": "🔍 Journalisation de débogage **{status}**. Elle montre chaque appel au registre et le détail par conteneur d'un scan."
+  "chan_debug_toggled": "🔍 Journalisation de débogage **{status}**. Elle montre chaque appel au registre et le détail par conteneur d'un scan.",
+  "status_bot_uptime": "Durée d'activité du bot",
+  "cleanup_reclaimed": "Espace total récupéré : {size}",
+  "cleanup_failed": "Le nettoyage a échoué : {error}",
+  "major_none_pending": "⚠️ Aucune mise à jour majeure en attente pour `{name}`.",
+  "major_skipped": "⏭ Mise à jour majeure de `{name}`{tag} ignorée.",
+  "window_skipped": "⏰ Hors de la fenêtre de maintenance — mise à jour automatique ignorée pour : {names}",
+  "cleanup_auto_prefix": "🧹 Nettoyage automatique : {message}",
+  "bot_connected": "✅ Docksentry {version} — bot connecté.",
+  "restart_no_own_name": "Je ne peux pas déterminer quel conteneur je suis.",
+  "restart_daemon_silent": "le démon n'a pas répondu : {error}",
+  "restart_no_policy_reported": "le démon n'a signalé aucune politique de redémarrage.",
+  "restart_policy_is_none": "la politique de redémarrage de ce conteneur est `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Mise à jour majeure de* `{name}`{tag}\n  {old} → *{new}*\n\nUn saut de version majeure peut casser des configurations. Confirmez pour continuer.",
+  "selfupdate_helper_pull_failed": "❌ Échec de la mise à jour : impossible de récupérer l'image auxiliaire `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Échec de la mise à jour automatique : {error}"
 }

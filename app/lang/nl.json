@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Zelfupdate gestart — ik meld het in het kanaal als het klaar is en herstart als er iets toe te passen valt.",
   "chan_usage_container": "Gebruik: `/{command} <container>`",
   "chan_nothing_left": "Niets meer bij te werken — elke goedgekeurde container is al bijgewerkt.",
-  "chan_debug_toggled": "🔍 Debug-logboek **{status}**. Het toont elke registry-aanroep en de administratie per container van een scan."
+  "chan_debug_toggled": "🔍 Debug-logboek **{status}**. Het toont elke registry-aanroep en de administratie per container van een scan.",
+  "status_bot_uptime": "Bot-uptime",
+  "cleanup_reclaimed": "Totaal vrijgemaakt: {size}",
+  "cleanup_failed": "Opruimen mislukt: {error}",
+  "major_none_pending": "⚠️ Geen openstaande major-update voor `{name}`.",
+  "major_skipped": "⏭ Major-update voor `{name}`{tag} overgeslagen.",
+  "window_skipped": "⏰ Buiten het onderhoudsvenster — auto-update overgeslagen voor: {names}",
+  "cleanup_auto_prefix": "🧹 Automatisch opruimen: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot verbonden.",
+  "restart_no_own_name": "Ik kan niet bepalen welke container ik ben.",
+  "restart_daemon_silent": "de daemon antwoordde niet: {error}",
+  "restart_no_policy_reported": "de daemon meldde geen herstartbeleid.",
+  "restart_policy_is_none": "het herstartbeleid van deze container is `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Major-update voor* `{name}`{tag}\n  {old} → *{new}*\n\nGrote versiesprongen kunnen configuraties breken. Bevestig om door te gaan.",
+  "selfupdate_helper_pull_failed": "❌ Zelfupdate mislukt: hulp-image `docker:cli` kon niet worden opgehaald — {error}",
+  "selfupdate_failed": "❌ Zelfupdate mislukt: {error}"
 }

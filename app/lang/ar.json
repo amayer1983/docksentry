@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ بدأ التحديث الذاتي — سأبلغ في القناة عند الانتهاء وسأعيد التشغيل إن كان هناك ما يُطبَّق.",
   "chan_usage_container": "الاستخدام: `/{command} <حاوية>`",
   "chan_nothing_left": "لا شيء متبقٍ للتحديث — كل حاوية وافقت عليها جرى تحديثها بالفعل.",
-  "chan_debug_toggled": "🔍 سجل التصحيح **{status}**. يعرض كل نداء للسجل والتفاصيل لكل حاوية أثناء الفحص."
+  "chan_debug_toggled": "🔍 سجل التصحيح **{status}**. يعرض كل نداء للسجل والتفاصيل لكل حاوية أثناء الفحص.",
+  "status_bot_uptime": "مدة تشغيل البوت",
+  "cleanup_reclaimed": "إجمالي المساحة المستردة: {size}",
+  "cleanup_failed": "فشل التنظيف: {error}",
+  "major_none_pending": "⚠️ لا يوجد تحديث رئيسي معلّق لـ `{name}`.",
+  "major_skipped": "⏭ تم تخطي التحديث الرئيسي لـ `{name}`{tag}.",
+  "window_skipped": "⏰ خارج نافذة الصيانة — تم تخطي التحديث التلقائي لـ: {names}",
+  "cleanup_auto_prefix": "🧹 تنظيف تلقائي: {message}",
+  "bot_connected": "✅ Docksentry {version} — تم اتصال البوت.",
+  "restart_no_own_name": "لا أستطيع تحديد أي حاوية أنا.",
+  "restart_daemon_silent": "لم يستجب الخفي: {error}",
+  "restart_no_policy_reported": "لم يُبلغ الخفي عن سياسة إعادة تشغيل.",
+  "restart_policy_is_none": "سياسة إعادة تشغيل هذه الحاوية هي `{policy}`.",
+  "major_confirm_prompt": "⚠️ *تحديث رئيسي لـ* `{name}`{tag}\n  {old} → *{new}*\n\nقفزات الإصدارات الكبيرة قد تكسر الإعدادات. أكّد للمتابعة.",
+  "selfupdate_helper_pull_failed": "❌ فشل التحديث الذاتي: تعذّر سحب صورة المساعد `docker:cli` — {error}",
+  "selfupdate_failed": "❌ فشل التحديث الذاتي: {error}"
 }

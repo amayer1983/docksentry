@@ -602,7 +602,7 @@ class DiscordBot:
         # The one thing the bot could never say. Only when a channel was
         # configured — silence is the old behaviour and stays the default.
         from version import VERSION as _V
-        self.announce(f"✅ Docksentry {_V} — bot connected.")
+        self.announce(self.t("bot_connected", version=_V))
         return True
 
     def stop(self, timeout=SHUTDOWN_GRACE):
@@ -2116,8 +2116,7 @@ class DiscordBot:
         seam = getattr(self, "broadcast", None)
         if seam is None:
             return self.t("chan_not_available")
-        seam.announce("🔔 Test notification — if you can read this on a "
-                      "channel, that channel works.")
+        seam.announce(self.t("testchannel_message"))
         return self.t("chan_testchannel_sent")
 
     def _cmd_restart_self(self):
@@ -2132,7 +2131,9 @@ class DiscordBot:
         had. Both bots ask the neutral core now, each with its own
         checker (#63).
         """
-        name, why = selfrestart.policy(self._backend_for(None), self.checker)
+        name, why = selfrestart.policy(
+            self._backend_for(None), self.checker,
+            lang=getattr(self.config, "language", "en"))
         if not name:
             return self.t("restart_no_policy", detail=why)
         selfrestart.record_request(self.config, by="discord")

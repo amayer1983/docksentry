@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Autoactualización iniciada: avisaré en el canal cuando termine y reiniciaré si hay algo que aplicar.",
   "chan_usage_container": "Uso: `/{command} <contenedor>`",
   "chan_nothing_left": "No queda nada por actualizar: todos los contenedores aprobados ya están actualizados.",
-  "chan_debug_toggled": "🔍 Registro de depuración **{status}**. Muestra cada llamada al registro y el detalle por contenedor de un escaneo."
+  "chan_debug_toggled": "🔍 Registro de depuración **{status}**. Muestra cada llamada al registro y el detalle por contenedor de un escaneo.",
+  "status_bot_uptime": "Tiempo activo del bot",
+  "cleanup_reclaimed": "Espacio total recuperado: {size}",
+  "cleanup_failed": "Falló la limpieza: {error}",
+  "major_none_pending": "⚠️ No hay actualización mayor pendiente para `{name}`.",
+  "major_skipped": "⏭ Actualización mayor de `{name}`{tag} omitida.",
+  "window_skipped": "⏰ Fuera de la ventana de mantenimiento: actualización automática omitida para {names}",
+  "cleanup_auto_prefix": "🧹 Limpieza automática: {message}",
+  "bot_connected": "✅ Docksentry {version}: bot conectado.",
+  "restart_no_own_name": "No puedo saber qué contenedor soy.",
+  "restart_daemon_silent": "el demonio no respondió: {error}",
+  "restart_no_policy_reported": "el demonio no informó una política de reinicio.",
+  "restart_policy_is_none": "la política de reinicio de este contenedor es `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Actualización mayor de* `{name}`{tag}\n  {old} → *{new}*\n\nLos saltos de versión mayor pueden romper configuraciones. Confirma para continuar.",
+  "selfupdate_helper_pull_failed": "❌ Falló la autoactualización: no se pudo descargar la imagen auxiliar `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Falló la autoactualización: {error}"
 }

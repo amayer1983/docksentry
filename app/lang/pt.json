@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Autoatualização iniciada — avisarei no canal ao terminar e reiniciarei se houver algo a aplicar.",
   "chan_usage_container": "Uso: `/{command} <contêiner>`",
   "chan_nothing_left": "Nada mais a atualizar — todos os contêineres aprovados já foram atualizados.",
-  "chan_debug_toggled": "🔍 Registro de depuração **{status}**. Mostra cada chamada ao registry e o detalhe por contêiner de uma varredura."
+  "chan_debug_toggled": "🔍 Registro de depuração **{status}**. Mostra cada chamada ao registry e o detalhe por contêiner de uma varredura.",
+  "status_bot_uptime": "Tempo ativo do bot",
+  "cleanup_reclaimed": "Espaço total recuperado: {size}",
+  "cleanup_failed": "A limpeza falhou: {error}",
+  "major_none_pending": "⚠️ Nenhuma atualização maior pendente para `{name}`.",
+  "major_skipped": "⏭ Atualização maior de `{name}`{tag} ignorada.",
+  "window_skipped": "⏰ Fora da janela de manutenção — atualização automática ignorada para: {names}",
+  "cleanup_auto_prefix": "🧹 Limpeza automática: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot conectado.",
+  "restart_no_own_name": "Não consigo saber qual contêiner eu sou.",
+  "restart_daemon_silent": "o daemon não respondeu: {error}",
+  "restart_no_policy_reported": "o daemon não informou uma política de reinício.",
+  "restart_policy_is_none": "a política de reinício deste contêiner é `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Atualização maior de* `{name}`{tag}\n  {old} → *{new}*\n\nSaltos de versão maior podem quebrar configurações. Confirme para prosseguir.",
+  "selfupdate_helper_pull_failed": "❌ Autoatualização falhou: não foi possível baixar a imagem auxiliar `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Autoatualização falhou: {error}"
 }

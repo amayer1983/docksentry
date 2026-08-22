@@ -179,6 +179,19 @@ class UpdateChecker:
         self._token_cache = {}
         self._auth_kind = "anonymous"
 
+    def _t(self, key, **kw):
+        """A user-facing line, in the configured language.
+
+        The checker's results are read by people in a chat, so its words
+        belong in the shared translations like everyone else's (#63).
+        Resolved per call from `config.language`, so /lang applies at
+        once. Falls back to the key when no config is around — the bare
+        `__new__` instances a few tests build.
+        """
+        from i18n import get_translator
+        lang = getattr(getattr(self, "config", None), "language", "en") or "en"
+        return get_translator(lang)(key, **kw)
+
     def _debug(self, msg):
         """A diagnostic line. Always printed, on purpose.
 
@@ -1613,15 +1626,21 @@ class UpdateChecker:
             result = self.backend.image_prune(
                 all=True, force=True, until=f"{grace}h", timeout=180)
             if result.returncode != 0:
-                return False, f"Cleanup failed: {result.stderr.strip()[:200]}"
+                return False, self._t("cleanup_failed",
+                                      error=result.stderr.strip()[:200])
             lines = result.stdout.strip().split("\n")
             space_line = next((l for l in lines if "reclaimed" in l.lower()), "")
             untagged = sorted({l[len("Untagged: "):].split("@")[0]
                                for l in lines if l.startswith("Untagged: ")})
 
             if not space_line:
-                return True, "Nothing to clean up." + backup_msg
-            msg = space_line + backup_msg
+                return True, self._t("cleanup_none") + backup_msg
+            # Docker says "Total reclaimed space: 662.9MB" in English no
+            # matter what language the reader has set. Keep the number,
+            # say the sentence ourselves (#63).
+            size = space_line.split(":", 1)[-1].strip() if ":" in space_line \
+                else space_line.strip()
+            msg = self._t("cleanup_reclaimed", size=size) + backup_msg
             if untagged:
                 preview = ", ".join(untagged[:6])
                 if len(untagged) > 6:

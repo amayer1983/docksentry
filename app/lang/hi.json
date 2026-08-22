@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ सेल्फ-अपडेट शुरू — पूरा होने पर चैनल में बताऊँगा, और लागू करने योग्य कुछ हुआ तो पुनः आरंभ करूँगा।",
   "chan_usage_container": "उपयोग: `/{command} <कंटेनर>`",
   "chan_nothing_left": "अपडेट करने को कुछ नहीं बचा — आपके स्वीकृत सभी कंटेनर पहले ही अपडेट हो चुके हैं।",
-  "chan_debug_toggled": "🔍 डिबग लॉगिंग **{status}**। यह हर रजिस्ट्री कॉल और स्कैन का प्रति-कंटेनर विवरण दिखाता है।"
+  "chan_debug_toggled": "🔍 डिबग लॉगिंग **{status}**। यह हर रजिस्ट्री कॉल और स्कैन का प्रति-कंटेनर विवरण दिखाता है।",
+  "status_bot_uptime": "बॉट अपटाइम",
+  "cleanup_reclaimed": "कुल पुनः प्राप्त स्थान: {size}",
+  "cleanup_failed": "सफ़ाई विफल: {error}",
+  "major_none_pending": "⚠️ `{name}` के लिए कोई लंबित मेजर अपडेट नहीं।",
+  "major_skipped": "⏭ `{name}`{tag} के लिए मेजर अपडेट छोड़ा गया।",
+  "window_skipped": "⏰ रखरखाव विंडो के बाहर — इनके लिए ऑटो-अपडेट छोड़ा गया: {names}",
+  "cleanup_auto_prefix": "🧹 स्वतः सफ़ाई: {message}",
+  "bot_connected": "✅ Docksentry {version} — बॉट जुड़ा।",
+  "restart_no_own_name": "मैं यह नहीं बता सकता कि मैं कौन सा कंटेनर हूँ।",
+  "restart_daemon_silent": "डेमॉन ने उत्तर नहीं दिया: {error}",
+  "restart_no_policy_reported": "डेमॉन ने कोई रीस्टार्ट नीति नहीं बताई।",
+  "restart_policy_is_none": "इस कंटेनर की रीस्टार्ट नीति `{policy}` है।",
+  "major_confirm_prompt": "⚠️ *`{name}`{tag} के लिए मेजर अपडेट*\n  {old} → *{new}*\n\nबड़े वर्शन बदलाव कॉन्फ़िग तोड़ सकते हैं। जारी रखने के लिए पुष्टि करें।",
+  "selfupdate_helper_pull_failed": "❌ सेल्फ-अपडेट विफल: सहायक इमेज `docker:cli` नहीं मिली — {error}",
+  "selfupdate_failed": "❌ सेल्फ-अपडेट विफल: {error}"
 }

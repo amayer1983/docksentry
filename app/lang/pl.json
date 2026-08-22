@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Samoaktualizacja rozpoczęta — zgłoszę się na kanale po zakończeniu i zrestartuję, jeśli będzie co zastosować.",
   "chan_usage_container": "Użycie: `/{command} <kontener>`",
   "chan_nothing_left": "Nie ma nic do aktualizacji — każdy zatwierdzony kontener jest już zaktualizowany.",
-  "chan_debug_toggled": "🔍 Logowanie diagnostyczne **{status}**. Pokazuje każde wywołanie rejestru i szczegóły skanu dla każdego kontenera."
+  "chan_debug_toggled": "🔍 Logowanie diagnostyczne **{status}**. Pokazuje każde wywołanie rejestru i szczegóły skanu dla każdego kontenera.",
+  "status_bot_uptime": "Czas działania bota",
+  "cleanup_reclaimed": "Łącznie odzyskano: {size}",
+  "cleanup_failed": "Czyszczenie nie powiodło się: {error}",
+  "major_none_pending": "⚠️ Brak oczekującej aktualizacji major dla `{name}`.",
+  "major_skipped": "⏭ Pominięto aktualizację major dla `{name}`{tag}.",
+  "window_skipped": "⏰ Poza oknem konserwacji — pominięto autoaktualizację dla: {names}",
+  "cleanup_auto_prefix": "🧹 Automatyczne czyszczenie: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot połączony.",
+  "restart_no_own_name": "Nie mogę ustalić, którym kontenerem jestem.",
+  "restart_daemon_silent": "demon nie odpowiedział: {error}",
+  "restart_no_policy_reported": "demon nie zgłosił polityki restartu.",
+  "restart_policy_is_none": "polityka restartu tego kontenera to `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Aktualizacja major dla* `{name}`{tag}\n  {old} → *{new}*\n\nDuże skoki wersji mogą zepsuć konfiguracje. Potwierdź, aby kontynuować.",
+  "selfupdate_helper_pull_failed": "❌ Samoaktualizacja nieudana: nie udało się pobrać obrazu pomocniczego `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Samoaktualizacja nieudana: {error}"
 }

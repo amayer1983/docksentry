@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Kendini güncelleme başladı — bitince kanalda haber vereceğim ve uygulanacak bir şey varsa yeniden başlayacağım.",
   "chan_usage_container": "Kullanım: `/{command} <kapsayıcı>`",
   "chan_nothing_left": "Güncellenecek bir şey kalmadı — onayladığınız her kapsayıcı zaten güncellendi.",
-  "chan_debug_toggled": "🔍 Hata ayıklama günlüğü **{status}**. Her kayıt defteri çağrısını ve taramanın kapsayıcı başına kaydını gösterir."
+  "chan_debug_toggled": "🔍 Hata ayıklama günlüğü **{status}**. Her kayıt defteri çağrısını ve taramanın kapsayıcı başına kaydını gösterir.",
+  "status_bot_uptime": "Bot çalışma süresi",
+  "cleanup_reclaimed": "Toplam geri kazanılan alan: {size}",
+  "cleanup_failed": "Temizleme başarısız: {error}",
+  "major_none_pending": "⚠️ `{name}` için bekleyen büyük güncelleme yok.",
+  "major_skipped": "⏭ `{name}`{tag} için büyük güncelleme atlandı.",
+  "window_skipped": "⏰ Bakım penceresi dışında — şunlar için otomatik güncelleme atlandı: {names}",
+  "cleanup_auto_prefix": "🧹 Otomatik temizleme: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot bağlandı.",
+  "restart_no_own_name": "Hangi kapsayıcı olduğumu belirleyemiyorum.",
+  "restart_daemon_silent": "arka plan hizmeti yanıt vermedi: {error}",
+  "restart_no_policy_reported": "arka plan hizmeti bir yeniden başlatma ilkesi bildirmedi.",
+  "restart_policy_is_none": "bu kapsayıcının yeniden başlatma ilkesi `{policy}`.",
+  "major_confirm_prompt": "⚠️ *`{name}`{tag} için büyük güncelleme*\n  {old} → *{new}*\n\nBüyük sürüm atlamaları yapılandırmaları bozabilir. Devam etmek için onaylayın.",
+  "selfupdate_helper_pull_failed": "❌ Kendini güncelleme başarısız: yardımcı imaj `docker:cli` çekilemedi — {error}",
+  "selfupdate_failed": "❌ Kendini güncelleme başarısız: {error}"
 }

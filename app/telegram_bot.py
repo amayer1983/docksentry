@@ -1160,7 +1160,9 @@ class TelegramBot:
         `self.checker` when omitted — an attribute this class does not
         have, which is precisely how the Discord bug stayed invisible.
         """
-        name, why = selfrestart.policy(self.backend, checker)
+        name, why = selfrestart.policy(
+            self.backend, checker,
+            lang=getattr(self.config, "language", "en"))
         if not name:
             self.send_message(self.t("restart_no_policy", detail=why))
             return False
@@ -1554,7 +1556,7 @@ class TelegramBot:
         store = self._store_for(host_name)
         pending = store.get_pending_major().get(name)
         if not pending:
-            self.send_message(f"⚠️ No pending major update for `{name}`.")
+            self.send_message(self.t("major_none_pending", name=name))
             return
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
@@ -1780,8 +1782,7 @@ class TelegramBot:
         if skipped_window:
             names = ", ".join(f"`{u['name']}`" for u in skipped_window)
             self.send_message(
-                f"⏰ Outside maintenance window — auto-update skipped for: {names}",
-                auto=True,
+                self.t("window_skipped", names=names), auto=True,
             )
 
         # Policy-held: tell the user once per container that a newer version
@@ -1816,10 +1817,9 @@ class TelegramBot:
                 {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
             ]]}
             self.send_message(
-                f"⚠️ *Major update for* `{name}`"
-                f"{self._entry_host_tag({'host': host_name})}\n"
-                f"  {old_ver} → *{new_ver}*\n\n"
-                f"Major version bumps can break configs. Confirm to proceed.",
+                self.t("major_confirm_prompt", name=name,
+                       tag=self._entry_host_tag({"host": host_name}),
+                       old=old_ver, new=new_ver),
                 reply_markup=keyboard,
                 auto=True,
             )
@@ -2748,7 +2748,7 @@ class TelegramBot:
                 self.remove_buttons(chat_id, msg_id)
             self._store_for(host_name).remove_pending_major(name)
             tag = self._entry_host_tag({"host": host_name})
-            self.send_message(f"⏭ Major update for `{name}`{tag} skipped.")
+            self.send_message(self.t("major_skipped", name=name, tag=tag))
 
         elif data.startswith("lifecycle:"):
             # Inline-button action under /status <name>. Format:
@@ -3135,7 +3135,7 @@ class TelegramBot:
             header = (
                 f"{self.t('container_status')}\n\n"
                 f"{summary}\n"
-                f"🤖 Bot Uptime: {bot_uptime}\n"
+                f"🤖 {self.t('status_bot_uptime')}: {bot_uptime}\n"
             )
             if pinned_count:
                 header += f"📌 {self.t('status_pinned')}: {pinned_count}\n"

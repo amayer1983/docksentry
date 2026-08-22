@@ -558,10 +558,9 @@ def swap(ctx, config, own_name, own_image):
         capture_output=True, text=True, timeout=120,
     )
     if helper_pull.returncode != 0:
-        ctx.send_message(
-            f"❌ Selfupdate failed: couldn't pull helper image `docker:cli` — "
-            f"{(helper_pull.stderr or helper_pull.stdout or 'unknown').strip()[:200]}"
-        )
+        ctx.send_message(ctx.t("selfupdate_helper_pull_failed", error=(
+            helper_pull.stderr or helper_pull.stdout or "unknown"
+        ).strip()[:200]))
         return
 
     # Mount the SAME host socket Docksentry itself uses (not a hardcoded
@@ -588,7 +587,7 @@ def swap(ctx, config, own_name, own_image):
     result = subprocess.run(helper_args, capture_output=True, text=True, timeout=30)
 
     if result.returncode != 0:
-        ctx.send_message(f"❌ Selfupdate failed: {result.stderr[:200]}")
+        ctx.send_message(ctx.t("selfupdate_failed", error=result.stderr[:200]))
         return
 
     # The helper container will stop us in ~3 seconds. Keep the update

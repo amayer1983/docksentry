@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ 自我更新已开始 — 完成后我会在频道中报告，若有内容需应用则会重启。",
   "chan_usage_container": "用法：`/{command} <容器>`",
   "chan_nothing_left": "没有需要更新的内容 — 你批准的每个容器都已更新。",
-  "chan_debug_toggled": "🔍 调试日志 **{status}**。它会显示每次注册表调用以及扫描中每个容器的记录。"
+  "chan_debug_toggled": "🔍 调试日志 **{status}**。它会显示每次注册表调用以及扫描中每个容器的记录。",
+  "status_bot_uptime": "机器人运行时间",
+  "cleanup_reclaimed": "总共回收空间：{size}",
+  "cleanup_failed": "清理失败：{error}",
+  "major_none_pending": "⚠️ `{name}` 没有待处理的大版本更新。",
+  "major_skipped": "⏭ 已跳过 `{name}`{tag} 的大版本更新。",
+  "window_skipped": "⏰ 不在维护时段 — 已跳过以下容器的自动更新：{names}",
+  "cleanup_auto_prefix": "🧹 自动清理：{message}",
+  "bot_connected": "✅ Docksentry {version} — 机器人已连接。",
+  "restart_no_own_name": "我无法确定自己是哪个容器。",
+  "restart_daemon_silent": "守护进程没有响应：{error}",
+  "restart_no_policy_reported": "守护进程未报告重启策略。",
+  "restart_policy_is_none": "该容器的重启策略是 `{policy}`。",
+  "major_confirm_prompt": "⚠️ *`{name}`{tag} 的大版本更新*\n  {old} → *{new}*\n\n大版本跳跃可能破坏配置。确认以继续。",
+  "selfupdate_helper_pull_failed": "❌ 自我更新失败：无法拉取辅助镜像 `docker:cli` — {error}",
+  "selfupdate_failed": "❌ 自我更新失败：{error}"
 }

@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Self-update started — I will report in the channel when it finishes, and restart if there is something to apply.",
   "chan_usage_container": "Usage: `/{command} <container>`",
   "chan_nothing_left": "Nothing left to update — every container you approved has already been updated.",
-  "chan_debug_toggled": "🔍 Debug logging **{status}**. It shows every registry call and the per-container bookkeeping of a scan."
+  "chan_debug_toggled": "🔍 Debug logging **{status}**. It shows every registry call and the per-container bookkeeping of a scan.",
+  "status_bot_uptime": "Bot uptime",
+  "cleanup_reclaimed": "Total reclaimed space: {size}",
+  "cleanup_failed": "Cleanup failed: {error}",
+  "major_none_pending": "⚠️ No pending major update for `{name}`.",
+  "major_skipped": "⏭ Major update for `{name}`{tag} skipped.",
+  "window_skipped": "⏰ Outside maintenance window — auto-update skipped for: {names}",
+  "cleanup_auto_prefix": "🧹 Auto cleanup: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot connected.",
+  "restart_no_own_name": "I cannot tell which container I am.",
+  "restart_daemon_silent": "the daemon would not answer: {error}",
+  "restart_no_policy_reported": "the daemon did not report a restart policy.",
+  "restart_policy_is_none": "this container's restart policy is `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Major update for* `{name}`{tag}\n  {old} → *{new}*\n\nMajor version bumps can break configs. Confirm to proceed.",
+  "selfupdate_helper_pull_failed": "❌ Self-update failed: couldn't pull helper image `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Self-update failed: {error}"
 }

@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Auto-aggiornamento avviato — avviserò nel canale al termine e riavvierò se c'è qualcosa da applicare.",
   "chan_usage_container": "Uso: `/{command} <container>`",
   "chan_nothing_left": "Nulla da aggiornare — ogni container approvato è già aggiornato.",
-  "chan_debug_toggled": "🔍 Log di debug **{status}**. Mostra ogni chiamata al registry e il dettaglio per container di una scansione."
+  "chan_debug_toggled": "🔍 Log di debug **{status}**. Mostra ogni chiamata al registry e il dettaglio per container di una scansione.",
+  "status_bot_uptime": "Tempo di attività del bot",
+  "cleanup_reclaimed": "Spazio totale recuperato: {size}",
+  "cleanup_failed": "Pulizia non riuscita: {error}",
+  "major_none_pending": "⚠️ Nessun aggiornamento major in sospeso per `{name}`.",
+  "major_skipped": "⏭ Aggiornamento major per `{name}`{tag} saltato.",
+  "window_skipped": "⏰ Fuori dalla finestra di manutenzione — aggiornamento automatico saltato per: {names}",
+  "cleanup_auto_prefix": "🧹 Pulizia automatica: {message}",
+  "bot_connected": "✅ Docksentry {version} — bot connesso.",
+  "restart_no_own_name": "Non riesco a capire quale container sono.",
+  "restart_daemon_silent": "il daemon non ha risposto: {error}",
+  "restart_no_policy_reported": "il daemon non ha riportato una restart policy.",
+  "restart_policy_is_none": "la restart policy di questo container è `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Aggiornamento major per* `{name}`{tag}\n  {old} → *{new}*\n\nI salti di versione major possono rompere le configurazioni. Conferma per procedere.",
+  "selfupdate_helper_pull_failed": "❌ Auto-aggiornamento fallito: impossibile scaricare l'immagine di supporto `docker:cli` — {error}",
+  "selfupdate_failed": "❌ Auto-aggiornamento fallito: {error}"
 }

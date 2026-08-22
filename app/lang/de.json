@@ -888,5 +888,20 @@
   "chan_selfupdate_started": "⬆️ Selbst-Update gestartet — ich melde mich im Kanal, wenn es fertig ist, und starte neu, falls es etwas anzuwenden gibt.",
   "chan_usage_container": "Verwendung: `/{command} <Container>`",
   "chan_nothing_left": "Nichts mehr zu aktualisieren — jeder freigegebene Container ist bereits aktualisiert.",
-  "chan_debug_toggled": "🔍 Debug-Protokollierung **{status}**. Sie zeigt jeden Registry-Aufruf und die Buchführung pro Container bei einem Durchlauf."
+  "chan_debug_toggled": "🔍 Debug-Protokollierung **{status}**. Sie zeigt jeden Registry-Aufruf und die Buchführung pro Container bei einem Durchlauf.",
+  "status_bot_uptime": "Bot-Laufzeit",
+  "cleanup_reclaimed": "Insgesamt freigegeben: {size}",
+  "cleanup_failed": "Aufräumen fehlgeschlagen: {error}",
+  "major_none_pending": "⚠️ Kein offenes Major-Update für `{name}`.",
+  "major_skipped": "⏭ Major-Update für `{name}`{tag} übersprungen.",
+  "window_skipped": "⏰ Außerhalb des Wartungsfensters — Auto-Update übersprungen für: {names}",
+  "cleanup_auto_prefix": "🧹 Automatisches Aufräumen: {message}",
+  "bot_connected": "✅ Docksentry {version} — Bot verbunden.",
+  "restart_no_own_name": "Ich kann nicht feststellen, welcher Container ich bin.",
+  "restart_daemon_silent": "der Daemon antwortete nicht: {error}",
+  "restart_no_policy_reported": "der Daemon meldete keine Restart-Policy.",
+  "restart_policy_is_none": "die Restart-Policy dieses Containers ist `{policy}`.",
+  "major_confirm_prompt": "⚠️ *Major-Update für* `{name}`{tag}\n  {old} → *{new}*\n\nGroße Versionssprünge können Konfigurationen brechen. Zum Fortfahren bestätigen.",
+  "selfupdate_helper_pull_failed": "❌ Selbst-Update fehlgeschlagen: Helfer-Image `docker:cli` konnte nicht geladen werden — {error}",
+  "selfupdate_failed": "❌ Selbst-Update fehlgeschlagen: {error}"
 }
