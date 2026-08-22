@@ -1651,6 +1651,9 @@ class DiscordBot:
         return self._clip("**Container events**\n" + "\n".join(lines))
 
     def _cmd_logs(self, opts):
+        """Which host has it, and what it said — decided in the core; the
+        fences and the length budget are Discord's (#63)."""
+        import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("logs_usage")
@@ -1662,35 +1665,20 @@ class DiscordBot:
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
-        errors = []
-        for host in targets:
-            backend = self._backend_for(host)
-            name, err = self._resolve_container(arg, backend)
-            if err:
-                errors.append(err + self._label(host))
-                continue
-            try:
-                # Same seam as the Web UI and Telegram: `backend.logs()`
-                # merges stdout and stderr in write order. Building the
-                # argv here bypassed that and dropped half the output.
-                r = backend.logs(name, tail=tail, timeout=10)
-            except Exception as e:
-                errors.append(self.t("logs_failed", name=name,
-                                     error=str(e)[:80]) + self._label(host))
-                continue
-            output = (r.stdout or "") or (r.stderr or "")
-            if not output.strip():
-                return self.t("logs_empty", name=name) + self._label(host)
-            # Budget the body BEFORE the fences go on: `_clip` cuts blind,
-            # and a cut that lands inside a code fence leaves it unclosed
-            # and mangles the whole message. Keep the tail — the newest
-            # lines are the ones someone running /logs is after.
-            body = output.strip()
-            if len(body) > 1600:
-                body = "…\n" + body[-1600:]
-            return self._clip(f"**Logs — `{name}`{self._label(host)}** "
-                              f"(last {tail})\n```\n{body}\n```")
-        return self._clip("\n".join(errors) or f"No container matches `{arg}`.")
+        name, host, body, reply = container_flags.read_logs(
+            targets, backend_for=self._backend_for, partial=arg, tail=tail)
+        if reply is not None:
+            return self._clip(self.t(reply.key, **reply.params)
+                              + (self._label(reply.host)
+                                 if reply.host is not None else ""))
+        # Budget the body BEFORE the fences go on: `_clip` cuts blind, and
+        # a cut inside a code fence leaves it unclosed and mangles the
+        # whole message. Keep the tail — the newest lines are the ones
+        # someone running /logs is after.
+        if len(body) > 1600:
+            body = "…\n" + body[-1600:]
+        return self._clip(self.t("logs_title", name=name)
+                          + self._label(host) + f"\n```\n{body}\n```")
 
     def _cmd_groups(self):
         lines = []

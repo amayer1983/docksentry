@@ -4109,16 +4109,13 @@ class TelegramBot:
             )
 
         elif text.startswith("/logs"):
+            import container_flags
             parts = text.split()
             if len(parts) < 2:
                 self.send_message(self.t("logs_usage"))
                 return
             # `@host` narrows, `@all` widens; without a token this read
-            # sweeps every managed host (#7). /logs read only the local
-            # box until beta.9 — the same lag /checkimages and /audit
-            # had, while their Discord twins were host-aware. The logs of
-            # a remote container that just failed to update are exactly
-            # what you reach for, so the command has to reach that host.
+            # sweeps every managed host (#7).
             arg, log_targets, host_err = self._resolve_targets(
                 " ".join(parts[1:]), write=False)
             if host_err:
@@ -4128,36 +4125,20 @@ class TelegramBot:
             if not arg:
                 self.send_message(self.t("logs_usage"))
                 return
-            shown = False
-            first_err = None
-            for host in (log_targets or [None]):
-                backend = self._backend_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(arg, backend=backend)
-                if err:
-                    # A container lives on one host as a rule; a host that
-                    # doesn't have it stays quiet, and only a sweep that
-                    # found it nowhere answers "not found" (like /status).
-                    first_err = first_err or (err + tag)
-                    continue
-                shown = True
-                # `backend.logs()`, not a hand-built `["logs", …]` — the
-                # stream merge from v1.73.0 lives in that method, and this
-                # call site never got it. A container writing its errors
-                # to stderr showed half its output in `/logs` and the
-                # missing half was the half worth reading (#2, @NotRetarded).
-                result = backend.logs(name, tail=30, timeout=10)
-                output = result.stdout or result.stderr
-                if output.strip():
-                    # Telegram message limit is 4096, truncate if needed
-                    if len(output) > 3500:
-                        output = output[-3500:]
-                    self.send_message(self.t("logs_title", name=name) + tag
-                                      + f"\n```\n{output.strip()}\n```")
-                else:
-                    self.send_message(self.t("logs_empty", name=name) + tag)
-            if not shown and first_err:
-                self.send_message(first_err)
+            name, host, body, reply = container_flags.read_logs(
+                log_targets or [None], backend_for=self._backend_for,
+                partial=arg, tail=30)
+            if reply is not None:
+                self.send_message(self.t(reply.key, **reply.params)
+                                  + (self._host_tag(reply.host)
+                                     if reply.host is not None else ""))
+                return
+            # Telegram's own limit is 4096; keep the newest lines.
+            if len(body) > 3500:
+                body = body[-3500:]
+            self.send_message(self.t("logs_title", name=name)
+                              + self._host_tag(host)
+                              + f"\n```\n{body}\n```")
 
         elif text.startswith("/help ") or text.startswith("/start "):
             # /help <command> — per-command detailed help (#15, @famewolf).

@@ -344,3 +344,71 @@ def set_link(targets, *, store_for, backend_for, partial, url,
             replies.append(Reply("setlink_invalid", {"url": url}, host=host,
                                  host_is_local=local, ok=False))
     return Outcome(tuple(replies), None, defaulted_to_local, changed)
+
+
+def read_logs(targets, *, backend_for, partial, tail=30):
+    """The last `tail` log lines of one container, from whichever host has
+    it. Returns `(name, host, text, Reply|None)`.
+
+    A container lives on one host as a rule, so the first host that has it
+    wins and the misses stay quiet — the same rule `/status` follows.
+    Only a sweep that found it nowhere answers with the error.
+
+    `backend.logs()` rather than a hand-built argv: the stdout/stderr
+    merge lives in that method, and a call site that built its own
+    dropped half the output — the half worth reading (#2, @NotRetarded).
+    """
+    first_err = None
+    for host in targets:
+        backend = backend_for(host)
+        name, err = resolve_container(partial, backend=backend)
+        if err:
+            if first_err is None:
+                first_err = Reply(err.key, err.params, host=host,
+                                  host_is_local=_is_local(host), ok=False)
+            continue
+        try:
+            r = backend.logs(name, tail=tail, timeout=10)
+        except Exception as e:
+            return name, host, "", Reply("logs_failed",
+                                         {"name": name, "error": str(e)[:80]},
+                                         host=host,
+                                         host_is_local=_is_local(host),
+                                         ok=False)
+        text = (getattr(r, "stdout", "") or "") or (getattr(r, "stderr", "") or "")
+        if not text.strip():
+            return name, host, "", Reply("logs_empty", {"name": name},
+                                         host=host,
+                                         host_is_local=_is_local(host))
+        return name, host, text.strip(), None
+    return None, None, "", first_err
+
+
+def reclaimable(targets, *, checker_for):
+    """How much each host could free. Returns `(replies, total)`.
+
+    A host that will not answer is reported rather than dropped: silence
+    there reads as "nothing to reclaim", which is the opposite of what an
+    unreachable host means.
+    """
+    replies = []
+    total = 0
+    for host in targets:
+        checker = checker_for(host)
+        local = _is_local(host)
+        if checker is None:
+            continue
+        try:
+            free = int(checker.reclaimable_bytes() or 0)
+        except Exception as e:
+            replies.append(Reply("host_check_failed",
+                                 {"host": getattr(host, "name", "local"),
+                                  "error": str(e)[:80]},
+                                 host=host, host_is_local=local, ok=False))
+            continue
+        total += free
+        replies.append(Reply("chan_reclaim_none" if free <= 0
+                             else "chan_reclaim_some",
+                             {"tag": "", "size": free}, host=host,
+                             host_is_local=local, values={"bytes": free}))
+    return tuple(replies), total

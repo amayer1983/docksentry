@@ -64,14 +64,18 @@ for cmd in HOST_COMMANDS:
     routed = any(r in body for r in ROUTERS)
     checks[f"{cmd} routes by host, not local-only"] = routed
 
-# The specific regression: /logs and /audit must resolve the container
-# on a per-host backend, never the bot's own self.backend.
+# The specific regression: /logs and /audit must act on the host's own
+# backend, never the bot's. Stated as the intent rather than as one
+# spelling of it — /logs hands `backend_for` to the shared core now, and
+# a check that insisted on the old line would have failed the fix (#63).
 for cmd in ("/logs", "/audit"):
     body = blocks.get(cmd, "")
-    checks[f"{cmd} resolves the container on a per-host backend"] = (
-        "_resolve_container(arg, backend=backend)" in body)
-    checks[f"{cmd} runs against that host's backend, not self.backend"] = (
-        "backend.run(" in body or "backend.logs(" in body)
+    checks[f"{cmd} works through a per-host backend"] = (
+        "_resolve_container(arg, backend=backend)" in body
+        or "backend_for=self._backend_for" in body)
+    checks[f"{cmd} reaches that host, not the bot's own"] = (
+        "backend.run(" in body or "backend.logs(" in body
+        or "container_flags." in body)
     # It must NOT fall back to the bot's own local backend for the action.
     checks[f"{cmd} does not act through self.backend"] = (
         "self.backend.run(" not in body and "self.backend.logs(" not in body)
