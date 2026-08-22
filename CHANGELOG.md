@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.17] - 2026-08-22
+
+### Changed
+- **Every line Docksentry says now comes from one place, in your language, whichever chat you asked in.** The Discord bot carried seventy-two of its own hardcoded English sentences while Telegram read the shared translations — so an instance set to German answered German in Telegram and English in Discord to the same question. All of them read the same wording now, and the thirty-three sentences Discord had that Telegram never said went into the translations in all sixteen languages, where any connection can use them. Each chat still chooses its own markup and length limit; that part is genuinely its own.
+
+  The same sweep found English left in the machinery behind the chats: the status header's uptime label, Docker's own "Total reclaimed space" passed straight through from `image prune`, the maintenance-window skip, the major-update prompt, the auto-cleanup line, the self-update failures and the restart-policy refusals. Fifteen more shared keys. A check now scans every module that sends text and fails on any sentence written into the code.
+
+- **`/changelog` says the same thing in both chats (#63, @NotRetarded).** He put them side by side and they disagreed: Telegram showed what your current version brought and adapted GitHub's markdown, Discord printed headings raw and cut mid-entry without saying so. The decision — which of the three things to say — is made once now, and each chat lays it out.
+
+- **The health-check line wears a rescue helmet instead of a stethoscope**, which washed out on both clients' backgrounds. It only appears when a container is actually unhealthy, so the alarm colour fits.
+
+### Fixed
+- **A self-update answered in both chats at once.** Pulling the shared machinery apart routed every one of its reports through the all-channel seam, so one `/selfupdate` reported fourteen times, everywhere. A reply goes back to whoever asked now; the events — an update was found, restarting — still reach every channel, which is what they are for.
+
 ## [2.18.0-beta.16] - 2026-08-21
 
 ### Fixed
