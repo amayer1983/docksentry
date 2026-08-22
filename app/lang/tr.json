@@ -907,5 +907,7 @@
   "notify_updates_title": "{count} Docker güncellemesi mevcut",
   "notify_updates_intro": "Docksentry şunlar için güncelleme buldu:",
   "notify_result_ok": "Güncelleme başarılı: {name}",
-  "notify_result_failed": "Güncelleme BAŞARISIZ: {name}"
+  "notify_result_failed": "Güncelleme BAŞARISIZ: {name}",
+  "chan_usage_unpin": "Kullanım: `/unpin <kapsayıcı>`",
+  "chan_usage_pin": "Kullanım: `/pin <kapsayıcı>`"
 }

@@ -907,5 +907,7 @@
   "notify_updates_title": "有 {count} 个 Docker 更新可用",
   "notify_updates_intro": "Docksentry 找到以下更新：",
   "notify_result_ok": "更新成功：{name}",
-  "notify_result_failed": "更新失败：{name}"
+  "notify_result_failed": "更新失败：{name}",
+  "chan_usage_unpin": "用法：`/unpin <容器>`",
+  "chan_usage_pin": "用法：`/pin <容器>`"
 }

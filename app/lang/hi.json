@@ -907,5 +907,7 @@
   "notify_updates_title": "{count} Docker अपडेट उपलब्ध",
   "notify_updates_intro": "Docksentry को इनके लिए अपडेट मिले:",
   "notify_result_ok": "अपडेट सफल: {name}",
-  "notify_result_failed": "अपडेट विफल: {name}"
+  "notify_result_failed": "अपडेट विफल: {name}",
+  "chan_usage_unpin": "उपयोग: `/unpin <कंटेनर>`",
+  "chan_usage_pin": "उपयोग: `/pin <कंटेनर>`"
 }

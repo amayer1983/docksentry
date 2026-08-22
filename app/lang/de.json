@@ -907,5 +907,7 @@
   "notify_updates_title": "{count} Docker-Update(s) verfügbar",
   "notify_updates_intro": "Docksentry hat Updates gefunden für:",
   "notify_result_ok": "Update erfolgreich: {name}",
-  "notify_result_failed": "Update fehlgeschlagen: {name}"
+  "notify_result_failed": "Update fehlgeschlagen: {name}",
+  "chan_usage_unpin": "Verwendung: `/unpin <Container>`",
+  "chan_usage_pin": "Verwendung: `/pin <Container>`"
 }

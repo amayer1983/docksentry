@@ -907,5 +907,7 @@
   "notify_updates_title": "Доступно оновлень Docker: {count}",
   "notify_updates_intro": "Docksentry знайшов оновлення для:",
   "notify_result_ok": "Оновлення виконано: {name}",
-  "notify_result_failed": "Оновлення НЕ ВДАЛОСЯ: {name}"
+  "notify_result_failed": "Оновлення НЕ ВДАЛОСЯ: {name}",
+  "chan_usage_unpin": "Використання: `/unpin <контейнер>`",
+  "chan_usage_pin": "Використання: `/pin <контейнер>`"
 }

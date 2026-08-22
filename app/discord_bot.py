@@ -1474,8 +1474,7 @@ class DiscordBot:
     def _cmd_pin(self, opts, *, remove):
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return "Usage: `/unpin <container>`" if remove else \
-                   "Usage: `/pin <container>`"
+            return self.t("chan_usage_unpin" if remove else "chan_usage_pin")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))

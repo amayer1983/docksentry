@@ -907,5 +907,7 @@
   "notify_updates_title": "Docker の更新が {count} 件あります",
   "notify_updates_intro": "Docksentry は次の更新を見つけました:",
   "notify_result_ok": "更新に成功: {name}",
-  "notify_result_failed": "更新に失敗: {name}"
+  "notify_result_failed": "更新に失敗: {name}",
+  "chan_usage_unpin": "使い方: `/unpin <コンテナ>`",
+  "chan_usage_pin": "使い方: `/pin <コンテナ>`"
 }

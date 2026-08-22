@@ -37,6 +37,24 @@ checks = {}
 SENTENCE = 12
 
 
+
+def _branches(value):
+    """Every expression a `return` can hand back, flattened.
+
+    A ternary returns two, a boolean chain returns each side; anything
+    else returns itself. Written out because the missed case was exactly
+    the one nobody thinks to write a test for.
+    """
+    if isinstance(value, ast.IfExp):
+        return _branches(value.body) + _branches(value.orelse)
+    if isinstance(value, ast.BoolOp):
+        out = []
+        for v in value.values:
+            out += _branches(v)
+        return out
+    return [value]
+
+
 def sentences_returned(path):
     """Literal sentences a method hands back to a user."""
     src = open(path, encoding="utf-8").read()
@@ -44,15 +62,20 @@ def sentences_returned(path):
     for node in ast.walk(ast.parse(src)):
         if not isinstance(node, ast.Return) or node.value is None:
             continue
-        v = node.value
-        text = None
-        if isinstance(v, ast.Constant) and isinstance(v.value, str):
-            text = v.value
-        elif isinstance(v, ast.JoinedStr):
-            text = "".join(p.value for p in v.values
-                           if isinstance(p, ast.Constant))
-        if text and len(text.strip()) >= SENTENCE and " " in text.strip():
-            out.append((node.lineno, text.strip()))
+        # Every shape a returned sentence can take. The first version
+        # looked at plain constants and f-strings only, and missed
+        # `return A if cond else B` — which is how two `Usage:` lines sat
+        # in the file while the check reported none. A guard with a hole
+        # is worse than no guard: it is a guard people trust.
+        for v in _branches(node.value):
+            text = None
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                text = v.value
+            elif isinstance(v, ast.JoinedStr):
+                text = "".join(p.value for p in v.values
+                               if isinstance(p, ast.Constant))
+            if text and len(text.strip()) >= SENTENCE and " " in text.strip():
+                out.append((node.lineno, text.strip()))
     return out
 
 

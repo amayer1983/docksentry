@@ -907,5 +907,7 @@
   "notify_updates_title": "يتوفر {count} تحديث لـ Docker",
   "notify_updates_intro": "عثر Docksentry على تحديثات لـ:",
   "notify_result_ok": "نجح التحديث: {name}",
-  "notify_result_failed": "فشل التحديث: {name}"
+  "notify_result_failed": "فشل التحديث: {name}",
+  "chan_usage_unpin": "الاستخدام: `/unpin <حاوية>`",
+  "chan_usage_pin": "الاستخدام: `/pin <حاوية>`"
 }

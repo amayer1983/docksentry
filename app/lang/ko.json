@@ -907,5 +907,7 @@
   "notify_updates_title": "Docker 업데이트 {count}건 사용 가능",
   "notify_updates_intro": "Docksentry가 다음 업데이트를 찾았습니다:",
   "notify_result_ok": "업데이트 성공: {name}",
-  "notify_result_failed": "업데이트 실패: {name}"
+  "notify_result_failed": "업데이트 실패: {name}",
+  "chan_usage_unpin": "사용법: `/unpin <컨테이너>`",
+  "chan_usage_pin": "사용법: `/pin <컨테이너>`"
 }

@@ -907,5 +907,7 @@
   "notify_updates_title": "{count} Docker-update(s) beschikbaar",
   "notify_updates_intro": "Docksentry vond updates voor:",
   "notify_result_ok": "Update geslaagd: {name}",
-  "notify_result_failed": "Update MISLUKT: {name}"
+  "notify_result_failed": "Update MISLUKT: {name}",
+  "chan_usage_unpin": "Gebruik: `/unpin <container>`",
+  "chan_usage_pin": "Gebruik: `/pin <container>`"
 }

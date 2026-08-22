@@ -907,5 +907,7 @@
   "notify_updates_title": "Dostępne aktualizacje Dockera: {count}",
   "notify_updates_intro": "Docksentry znalazł aktualizacje dla:",
   "notify_result_ok": "Aktualizacja udana: {name}",
-  "notify_result_failed": "Aktualizacja NIEUDANA: {name}"
+  "notify_result_failed": "Aktualizacja NIEUDANA: {name}",
+  "chan_usage_unpin": "Użycie: `/unpin <kontener>`",
+  "chan_usage_pin": "Użycie: `/pin <kontener>`"
 }

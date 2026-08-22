@@ -907,5 +907,7 @@
   "notify_updates_title": "{count} atualização(ões) do Docker disponíveis",
   "notify_updates_intro": "O Docksentry encontrou atualizações para:",
   "notify_result_ok": "Atualização concluída: {name}",
-  "notify_result_failed": "Atualização FALHOU: {name}"
+  "notify_result_failed": "Atualização FALHOU: {name}",
+  "chan_usage_unpin": "Uso: `/unpin <contêiner>`",
+  "chan_usage_pin": "Uso: `/pin <contêiner>`"
 }
