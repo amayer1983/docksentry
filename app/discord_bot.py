@@ -1479,7 +1479,7 @@ class DiscordBot:
         lines = []
         for r in outcome.replies:
             tag = self._label(r.host) if r.host is not None else ""
-            body = self.t(r.key, **r.params) if r.key else ""
+            body = self.t(r.key, **r.params) if r.key else r.text
             if r.items:
                 rows = [container_flags.item_parts(i) for i in r.items]
                 body += "\n" + "\n".join(
@@ -2396,29 +2396,40 @@ class DiscordBot:
     # depending on which app you had open. It is `lifecycle.act` now.
     # ── /cleanup, /checkimages ────────────────────────────────────
     def _cmd_cleanup(self):
-        """Guarded image cleanup on the local host.
+        """Guarded image cleanup, on every managed host.
 
         `image prune -a` filters on image CREATION time, so an image
         built upstream days ago but pulled seconds ago is fair game —
         pruning inside an update's pull→run window would delete the image
         that update is about to run. Hence the same mutex, and hence
         "busy" means skip rather than wait: the next cleanup simply runs
-        it. No host option, because cleanup is a write and writes stay
-        local.
+        it.
+
+        This used to answer for the local host only, on the grounds that
+        cleanup is a write and writes stay local. The grounds were sound
+        and the conclusion still wrong: @famewolf's dockmox was the box
+        that was full, and it was not the local one (#2). Telegram walked
+        them all; this did not. It does now, through the same core.
         """
-        host = (self._write_hosts_for(None) or [None])[0]
-        checker = self._checker_for(host)
-        if checker is None:
-            return self.t("chan_no_backend")
+        import container_flags
+        # `_hosts_for(None)` — every host, the read-command default. A
+        # cleanup IS a write, and writes stay local everywhere else; this
+        # is the deliberate exception, because the box you need to clean
+        # is the one that filled up, and that is rarely the local one.
+        return self._clip(self._render(container_flags.cleanup(
+            self._hosts_for(None), checker_for=self._checker_for,
+            guarded_run=self._cleanup_guarded)))
+
+    def _cleanup_guarded(self, checker):
+        """`(ok, message)` from a prune, or `(None, busy)` if an update
+        flow holds the mutex — the same contract as the Telegram bot's
+        `cleanup_guarded`, which the scheduler and the Web UI also use."""
         if not self._lock().acquire(blocking=False):
-            return self.t("cleanup_busy")
+            return None, self.t("cleanup_busy")
         try:
-            ok, msg = checker.cleanup_images()
+            return checker.cleanup_images()
         finally:
             self._release_lock()
-        if ok and "Nothing" in str(msg):
-            return self.t("cleanup_none")
-        return self._clip(("✅ " if ok else "❌ ") + str(msg))
 
     @staticmethod
     def _human_size(num):

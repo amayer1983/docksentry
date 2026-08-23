@@ -887,8 +887,8 @@
   "chan_nothing_left": "अपडेट करने को कुछ नहीं बचा — आपके स्वीकृत सभी कंटेनर पहले ही अपडेट हो चुके हैं।",
   "chan_debug_toggled": "🔍 डिबग लॉगिंग **{status}**। यह हर रजिस्ट्री कॉल और स्कैन का प्रति-कंटेनर विवरण दिखाता है।",
   "status_bot_uptime": "बॉट अपटाइम",
-  "cleanup_reclaimed": "कुल पुनः प्राप्त स्थान: {size}",
-  "cleanup_failed": "सफ़ाई विफल: {error}",
+  "cleanup_reclaimed": "✅ कुल पुनः प्राप्त स्थान: {size}",
+  "cleanup_failed": "❌ सफ़ाई विफल: {error}",
   "major_none_pending": "⚠️ `{name}` के लिए कोई लंबित मेजर अपडेट नहीं।",
   "major_skipped": "⏭ `{name}`{tag} के लिए मेजर अपडेट छोड़ा गया।",
   "window_skipped": "⏰ रखरखाव विंडो के बाहर — इनके लिए ऑटो-अपडेट छोड़ा गया: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "{name} के लिए मेजर अपडेट छोड़ा गया।",
   "chat_migrated": "⚠️ यह समूह सुपरग्रुप बन गया, इसलिए सेट किया गया `CHAT_ID={old}` अब मौजूद नहीं है। मैंने नया ढूँढ़ लिया और उसका उपयोग कर रहा हूँ: `{new}`। कृपया इसे सेटिंग्स में डालें — वरना हर पुनरारंभ के बाद मुझे इसे फिर खोजना पड़ेगा।",
   "chan_nothing_to_do": "कुछ करने को नहीं।",
-  "checkimages_grace_held": "⏳ {total} अप्रयुक्त इमेज में से {held} {hours} घंटे की छूट (`CLEANUP_GRACE_HOURS`) से नई हैं, इसलिए `/cleanup` उन्हें अभी छोड़ देगा — इसीलिए वह 0 B बता सकता है।"
+  "checkimages_grace_held": "⏳ {total} अप्रयुक्त इमेज में से {held} {hours} घंटे की छूट (`CLEANUP_GRACE_HOURS`) से नई हैं, इसलिए `/cleanup` उन्हें अभी छोड़ देगा — इसीलिए वह 0 B बता सकता है।",
+  "cleanup_backed_up": " {count} स्थानीय इमेज का बैकअप लिया → {dir}।",
+  "cleanup_removed": "हटाया गया: {images}",
+  "cleanup_more": "+{count} और",
+  "cleanup_error": "❌ क्लीनअप त्रुटि: {error}"
 }

@@ -887,8 +887,8 @@
   "chan_nothing_left": "Niets meer bij te werken — elke goedgekeurde container is al bijgewerkt.",
   "chan_debug_toggled": "🔍 Debug-logboek **{status}**. Het toont elke registry-aanroep en de administratie per container van een scan.",
   "status_bot_uptime": "Bot-uptime",
-  "cleanup_reclaimed": "Totaal vrijgemaakt: {size}",
-  "cleanup_failed": "Opruimen mislukt: {error}",
+  "cleanup_reclaimed": "✅ Totaal vrijgemaakt: {size}",
+  "cleanup_failed": "❌ Opruimen mislukt: {error}",
   "major_none_pending": "⚠️ Geen openstaande major-update voor `{name}`.",
   "major_skipped": "⏭ Major-update voor `{name}`{tag} overgeslagen.",
   "window_skipped": "⏰ Buiten het onderhoudsvenster — auto-update overgeslagen voor: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "Major-update voor {name} overgeslagen.",
   "chat_migrated": "⚠️ Deze groep is een supergroep geworden, dus de ingestelde `CHAT_ID={old}` bestaat niet meer. Ik vond de nieuwe en gebruik die: `{new}`. Zet hem in je instellingen — anders moet ik hem na elke herstart opnieuw zoeken.",
   "chan_nothing_to_do": "Niets te doen.",
-  "checkimages_grace_held": "⏳ {held} van de {total} ongebruikte images zijn jonger dan de {hours} uur respijt (`CLEANUP_GRACE_HOURS`), dus `/cleanup` laat ze voorlopig staan — daarom kan het 0 B melden."
+  "checkimages_grace_held": "⏳ {held} van de {total} ongebruikte images zijn jonger dan de {hours} uur respijt (`CLEANUP_GRACE_HOURS`), dus `/cleanup` laat ze voorlopig staan — daarom kan het 0 B melden.",
+  "cleanup_backed_up": " {count} lokale image(s) geback-upt → {dir}.",
+  "cleanup_removed": "Verwijderd: {images}",
+  "cleanup_more": "+{count} meer",
+  "cleanup_error": "❌ Opruimfout: {error}"
 }

@@ -887,8 +887,8 @@
   "chan_nothing_left": "Nichts mehr zu aktualisieren — jeder freigegebene Container ist bereits aktualisiert.",
   "chan_debug_toggled": "🔍 Debug-Protokollierung **{status}**. Sie zeigt jeden Registry-Aufruf und die Buchführung pro Container bei einem Durchlauf.",
   "status_bot_uptime": "Bot-Laufzeit",
-  "cleanup_reclaimed": "Insgesamt freigegeben: {size}",
-  "cleanup_failed": "Aufräumen fehlgeschlagen: {error}",
+  "cleanup_reclaimed": "✅ Insgesamt freigegeben: {size}",
+  "cleanup_failed": "❌ Aufräumen fehlgeschlagen: {error}",
   "major_none_pending": "⚠️ Kein offenes Major-Update für `{name}`.",
   "major_skipped": "⏭ Major-Update für `{name}`{tag} übersprungen.",
   "window_skipped": "⏰ Außerhalb des Wartungsfensters — Auto-Update übersprungen für: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "Major-Update für {name} übersprungen.",
   "chat_migrated": "⚠️ Diese Gruppe wurde zu einer Supergruppe, daher gibt es die eingestellte `CHAT_ID={old}` nicht mehr. Ich habe die neue gefunden und nutze sie: `{new}`. Trag sie bitte in die Einstellungen ein — sonst muss ich sie nach jedem Neustart neu suchen.",
   "chan_nothing_to_do": "Nichts zu tun.",
-  "checkimages_grace_held": "⏳ {held} von {total} ungenutzten Images sind jünger als die {hours}-Stunden-Karenz (`CLEANUP_GRACE_HOURS`), `/cleanup` lässt sie also noch stehen — darum kann es 0 B melden."
+  "checkimages_grace_held": "⏳ {held} von {total} ungenutzten Images sind jünger als die {hours}-Stunden-Karenz (`CLEANUP_GRACE_HOURS`), `/cleanup` lässt sie also noch stehen — darum kann es 0 B melden.",
+  "cleanup_backed_up": " {count} lokale(s) Image(s) gesichert → {dir}.",
+  "cleanup_removed": "Entfernt: {images}",
+  "cleanup_more": "+{count} weitere",
+  "cleanup_error": "❌ Fehler beim Aufräumen: {error}"
 }

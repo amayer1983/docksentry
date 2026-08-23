@@ -887,8 +887,8 @@
   "chan_nothing_left": "Nie ma nic do aktualizacji — każdy zatwierdzony kontener jest już zaktualizowany.",
   "chan_debug_toggled": "🔍 Logowanie diagnostyczne **{status}**. Pokazuje każde wywołanie rejestru i szczegóły skanu dla każdego kontenera.",
   "status_bot_uptime": "Czas działania bota",
-  "cleanup_reclaimed": "Łącznie odzyskano: {size}",
-  "cleanup_failed": "Czyszczenie nie powiodło się: {error}",
+  "cleanup_reclaimed": "✅ Łącznie odzyskano: {size}",
+  "cleanup_failed": "❌ Czyszczenie nie powiodło się: {error}",
   "major_none_pending": "⚠️ Brak oczekującej aktualizacji major dla `{name}`.",
   "major_skipped": "⏭ Pominięto aktualizację major dla `{name}`{tag}.",
   "window_skipped": "⏰ Poza oknem konserwacji — pominięto autoaktualizację dla: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "Pominięto aktualizację major dla {name}.",
   "chat_migrated": "⚠️ Ta grupa stała się supergrupą, więc skonfigurowane `CHAT_ID={old}` już nie istnieje. Znalazłem nowe i go używam: `{new}`. Wpisz je w ustawieniach — inaczej muszę je odnajdywać po każdym restarcie.",
   "chan_nothing_to_do": "Nie ma nic do zrobienia.",
-  "checkimages_grace_held": "⏳ {held} z {total} nieużywanych obrazów jest młodszych niż {hours}-godzinna karencja (`CLEANUP_GRACE_HOURS`), więc `/cleanup` je na razie zostawi — dlatego może zgłosić 0 B."
+  "checkimages_grace_held": "⏳ {held} z {total} nieużywanych obrazów jest młodszych niż {hours}-godzinna karencja (`CLEANUP_GRACE_HOURS`), więc `/cleanup` je na razie zostawi — dlatego może zgłosić 0 B.",
+  "cleanup_backed_up": " Zapisano kopię {count} lokalnego obrazu → {dir}.",
+  "cleanup_removed": "Usunięto: {images}",
+  "cleanup_more": "+{count} więcej",
+  "cleanup_error": "❌ Błąd czyszczenia: {error}"
 }

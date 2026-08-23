@@ -887,8 +887,8 @@
   "chan_nothing_left": "Plus rien à mettre à jour — tous les conteneurs approuvés le sont déjà.",
   "chan_debug_toggled": "🔍 Journalisation de débogage **{status}**. Elle montre chaque appel au registre et le détail par conteneur d'un scan.",
   "status_bot_uptime": "Durée d'activité du bot",
-  "cleanup_reclaimed": "Espace total récupéré : {size}",
-  "cleanup_failed": "Le nettoyage a échoué : {error}",
+  "cleanup_reclaimed": "✅ Espace total récupéré : {size}",
+  "cleanup_failed": "❌ Le nettoyage a échoué : {error}",
   "major_none_pending": "⚠️ Aucune mise à jour majeure en attente pour `{name}`.",
   "major_skipped": "⏭ Mise à jour majeure de `{name}`{tag} ignorée.",
   "window_skipped": "⏰ Hors de la fenêtre de maintenance — mise à jour automatique ignorée pour : {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "Mise à jour majeure de {name} ignorée.",
   "chat_migrated": "⚠️ Ce groupe est devenu un supergroupe, donc le `CHAT_ID={old}` configuré n'existe plus. J'ai trouvé le nouveau et je l'utilise : `{new}`. Mettez-le dans vos réglages — sinon je dois le redécouvrir à chaque redémarrage.",
   "chan_nothing_to_do": "Rien à faire.",
-  "checkimages_grace_held": "⏳ {held} des {total} images inutilisées sont plus récentes que le délai de {hours} h (`CLEANUP_GRACE_HOURS`), `/cleanup` les laisse donc pour l'instant — d'où un résultat de 0 B."
+  "checkimages_grace_held": "⏳ {held} des {total} images inutilisées sont plus récentes que le délai de {hours} h (`CLEANUP_GRACE_HOURS`), `/cleanup` les laisse donc pour l'instant — d'où un résultat de 0 B.",
+  "cleanup_backed_up": " {count} image(s) locale(s) sauvegardée(s) → {dir}.",
+  "cleanup_removed": "Supprimé : {images}",
+  "cleanup_more": "+{count} autres",
+  "cleanup_error": "❌ Erreur de nettoyage : {error}"
 }

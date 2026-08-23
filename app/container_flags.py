@@ -59,6 +59,13 @@ class Reply:
     #: numbers when the flag has any (cooldown).
     items: tuple = ()
     values: dict = None
+    #: An already-translated sentence, for the one case where the
+    #: producer is not us: `cleanup_images` assembles its own message
+    #: from four keys and a docker size, and re-deriving that here would
+    #: mean re-implementing it. Set INSTEAD of `key`, never alongside.
+    #: Everything else on this dataclass is a key, and should stay that
+    #: way — this field is a door, not a corridor.
+    text: str = ""
 
 
 @dataclass(frozen=True)
@@ -461,6 +468,49 @@ def reclaimable(targets, *, checker_for):
                                      "grace": grace}))
     return tuple(replies), total
 
+
+
+def cleanup(targets, *, checker_for, guarded_run, defaulted_to_local=False):
+    """Run image cleanup on every named host. Returns an `Outcome`.
+
+    `guarded_run(checker)` is the caller's mutex wrapper — it returns
+    `(ok, message)` from `cleanup_images`, or `(None, message)` when an
+    update flow holds the lock. It stays outside because the lock lives
+    on the engine, and because the scheduler and the Web UI call the same
+    wrapper without going anywhere near a chat.
+
+    Every managed host, not just the local one. @famewolf ran `/cleanup`
+    while dockmox was drowning in wrongly-pulled images and got an answer
+    for one machine out of three — "the cleanup is only running
+    locally?" (#2). Telegram learned to walk them all; Discord did not,
+    and this is where that stops being a per-chat decision.
+
+    One unreachable host reports and does not stop the rest: the whole
+    point of running this is the box that is full, and giving up at the
+    first refused connection is how you never reach it.
+    """
+    replies = []
+    changed = False
+    for host in targets:
+        local = _is_local(host)
+        checker = checker_for(host)
+        if checker is None:
+            replies.append(Reply("chan_no_backend", host=host,
+                                 host_is_local=local, ok=False))
+            continue
+        try:
+            ok, msg = guarded_run(checker)
+        except Exception as e:
+            replies.append(Reply("cleanup_error", {"error": str(e)[:200]},
+                                 host=host, host_is_local=local, ok=False))
+            continue
+        # `ok is None` means "skipped, an update holds the lock" — not a
+        # failure, and it must not be dressed as one. The message is
+        # already the translated `cleanup_busy`.
+        replies.append(Reply("", host=host, host_is_local=local,
+                             ok=ok is not False, text=str(msg)))
+        changed = changed or bool(ok)
+    return Outcome(tuple(replies), None, defaulted_to_local, changed)
 
 def audit_container(targets, *, backend_for, checker_for, partial):
     """Which inspect fields a recreate would NOT carry over.

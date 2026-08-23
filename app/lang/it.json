@@ -887,8 +887,8 @@
   "chan_nothing_left": "Nulla da aggiornare — ogni container approvato è già aggiornato.",
   "chan_debug_toggled": "🔍 Log di debug **{status}**. Mostra ogni chiamata al registry e il dettaglio per container di una scansione.",
   "status_bot_uptime": "Tempo di attività del bot",
-  "cleanup_reclaimed": "Spazio totale recuperato: {size}",
-  "cleanup_failed": "Pulizia non riuscita: {error}",
+  "cleanup_reclaimed": "✅ Spazio totale recuperato: {size}",
+  "cleanup_failed": "❌ Pulizia non riuscita: {error}",
   "major_none_pending": "⚠️ Nessun aggiornamento major in sospeso per `{name}`.",
   "major_skipped": "⏭ Aggiornamento major per `{name}`{tag} saltato.",
   "window_skipped": "⏰ Fuori dalla finestra di manutenzione — aggiornamento automatico saltato per: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "Aggiornamento major per {name} saltato.",
   "chat_migrated": "⚠️ Questo gruppo è diventato un supergruppo, quindi il `CHAT_ID={old}` configurato non esiste più. Ho trovato il nuovo e lo sto usando: `{new}`. Inseriscilo nelle impostazioni — altrimenti devo ritrovarlo a ogni riavvio.",
   "chan_nothing_to_do": "Niente da fare.",
-  "checkimages_grace_held": "⏳ {held} delle {total} immagini inutilizzate sono più recenti del margine di {hours} h (`CLEANUP_GRACE_HOURS`), quindi `/cleanup` le lascia per ora — ecco perché può riportare 0 B."
+  "checkimages_grace_held": "⏳ {held} delle {total} immagini inutilizzate sono più recenti del margine di {hours} h (`CLEANUP_GRACE_HOURS`), quindi `/cleanup` le lascia per ora — ecco perché può riportare 0 B.",
+  "cleanup_backed_up": " {count} immagine/i locale/i salvata/e → {dir}.",
+  "cleanup_removed": "Rimosso: {images}",
+  "cleanup_more": "+{count} altri",
+  "cleanup_error": "❌ Errore di pulizia: {error}"
 }

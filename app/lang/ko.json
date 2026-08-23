@@ -887,8 +887,8 @@
   "chan_nothing_left": "업데이트할 것이 없습니다 — 승인한 모든 컨테이너가 이미 업데이트되었습니다.",
   "chan_debug_toggled": "🔍 디버그 로깅 **{status}**. 모든 레지스트리 호출과 스캔의 컨테이너별 기록을 보여줍니다.",
   "status_bot_uptime": "봇 가동 시간",
-  "cleanup_reclaimed": "확보한 총 공간: {size}",
-  "cleanup_failed": "정리에 실패했습니다: {error}",
+  "cleanup_reclaimed": "✅ 확보한 총 공간: {size}",
+  "cleanup_failed": "❌ 정리에 실패했습니다: {error}",
   "major_none_pending": "⚠️ `{name}`에 대기 중인 메이저 업데이트가 없습니다.",
   "major_skipped": "⏭ `{name}`{tag}의 메이저 업데이트를 건너뛰었습니다.",
   "window_skipped": "⏰ 유지 보수 시간 외 — 다음 항목의 자동 업데이트를 건너뜀: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "{name}의 메이저 업데이트를 건너뛰었습니다.",
   "chat_migrated": "⚠️ 이 그룹이 슈퍼그룹으로 전환되어 설정된 `CHAT_ID={old}`가 더 이상 없습니다. 새 값을 찾아 사용 중입니다: `{new}`. 설정에 넣어 주세요 — 그러지 않으면 재시작할 때마다 다시 찾아야 합니다.",
   "chan_nothing_to_do": "할 일이 없습니다.",
-  "checkimages_grace_held": "⏳ 사용하지 않는 이미지 {total}개 중 {held}개가 {hours}시간 유예(`CLEANUP_GRACE_HOURS`)보다 최근이라 `/cleanup`이 지금은 남겨둡니다 — 0 B로 보고되는 이유입니다."
+  "checkimages_grace_held": "⏳ 사용하지 않는 이미지 {total}개 중 {held}개가 {hours}시간 유예(`CLEANUP_GRACE_HOURS`)보다 최근이라 `/cleanup`이 지금은 남겨둡니다 — 0 B로 보고되는 이유입니다.",
+  "cleanup_backed_up": " 로컬 이미지 {count}개를 백업했습니다 → {dir}",
+  "cleanup_removed": "삭제됨: {images}",
+  "cleanup_more": "외 {count}개",
+  "cleanup_error": "❌ 정리 오류: {error}"
 }

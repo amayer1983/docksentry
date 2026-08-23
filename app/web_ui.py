@@ -6624,7 +6624,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     print(f"Cleanup skipped: {msg}")
                     return
                 if bot.enabled:
-                    bot.send_message(f"{'✅' if ok else '❌'} {msg}")
+                    # No icon added here: `cleanup_images` returns a
+                    # message that already starts with ✅ or ❌, and this
+                    # used to put a second one in front of it.
+                    bot.send_message(msg)
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(f"🧹 Cleanup: {msg}")
                 print(f"Cleanup: {msg}")

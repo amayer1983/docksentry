@@ -887,8 +887,8 @@
   "chan_nothing_left": "لا شيء متبقٍ للتحديث — كل حاوية وافقت عليها جرى تحديثها بالفعل.",
   "chan_debug_toggled": "🔍 سجل التصحيح **{status}**. يعرض كل نداء للسجل والتفاصيل لكل حاوية أثناء الفحص.",
   "status_bot_uptime": "مدة تشغيل البوت",
-  "cleanup_reclaimed": "إجمالي المساحة المستردة: {size}",
-  "cleanup_failed": "فشل التنظيف: {error}",
+  "cleanup_reclaimed": "✅ إجمالي المساحة المستردة: {size}",
+  "cleanup_failed": "❌ فشل التنظيف: {error}",
   "major_none_pending": "⚠️ لا يوجد تحديث رئيسي معلّق لـ `{name}`.",
   "major_skipped": "⏭ تم تخطي التحديث الرئيسي لـ `{name}`{tag}.",
   "window_skipped": "⏰ خارج نافذة الصيانة — تم تخطي التحديث التلقائي لـ: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "تم تخطي التحديث الرئيسي لـ {name}.",
   "chat_migrated": "⚠️ تمت ترقية هذه المجموعة إلى مجموعة كبرى، لذا لم يعد `CHAT_ID={old}` المُعد موجودًا. وجدت الجديد وأستخدمه: `{new}`. ضعه في إعداداتك — وإلا سأضطر لاكتشافه بعد كل إعادة تشغيل.",
   "chan_nothing_to_do": "لا شيء لفعله.",
-  "checkimages_grace_held": "⏳ {held} من أصل {total} صورة غير مستخدمة أحدث من مهلة {hours} ساعة (`CLEANUP_GRACE_HOURS`)، لذا سيتركها `/cleanup` الآن — ولهذا قد يبلّغ 0 بايت."
+  "checkimages_grace_held": "⏳ {held} من أصل {total} صورة غير مستخدمة أحدث من مهلة {hours} ساعة (`CLEANUP_GRACE_HOURS`)، لذا سيتركها `/cleanup` الآن — ولهذا قد يبلّغ 0 بايت.",
+  "cleanup_backed_up": " تم نسخ {count} صورة محلية احتياطيًا ← {dir}.",
+  "cleanup_removed": "تمت الإزالة: {images}",
+  "cleanup_more": "و{count} أخرى",
+  "cleanup_error": "❌ خطأ في التنظيف: {error}"
 }

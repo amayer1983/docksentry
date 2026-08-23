@@ -981,10 +981,17 @@ engine._update_lock.release()
 checks["…and left the lock alone"] = engine._update_lock.acquire(blocking=False)
 engine._update_lock.release()
 
-# cleanup is a write: it stays on the local host
+# /cleanup walks every managed host — the deliberate exception to
+# "writes stay local". This used to assert the opposite, and the opposite
+# was what @famewolf hit: he ran it while dockmox was drowning in
+# wrongly-pulled images and got an answer for one machine out of three
+# (#2). Telegram already walked them all; this side did not.
+LOCAL_CHECKER.cleanups = 0
 NAS_CHECKER.cleanups = 0
-call("cleanup")
-checks["/cleanup never touches another host"] = NAS_CHECKER.cleanups == 0
+out = call("cleanup")
+checks["/cleanup reaches the other host too"] = NAS_CHECKER.cleanups == 1
+checks["…and still cleans the local one"] = LOCAL_CHECKER.cleanups == 1
+checks["…and names each host in its answer"] = "nas" in out
 
 # ── /checkimages ─────────────────────────────────────────────────────
 LOCAL_CHECKER.reclaim = 3 * 1024 ** 3

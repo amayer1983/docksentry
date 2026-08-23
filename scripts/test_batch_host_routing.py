@@ -132,15 +132,28 @@ checks["a pull whose inspect failed is not a success"] = (
 checks["…it says the container was NOT updated"] = (
     "container NOT updated" in src)
 
-# /cleanup walks every host, like /check.
+# /cleanup walks every host, like /check. Stated as the intent, not as
+# one spelling of it: the walk moved into `container_flags.cleanup`, and
+# a check that insisted on the old `host_checkers` line would have failed
+# the extraction rather than the behaviour (#63). What the walk actually
+# DOES — every host, tagged, one dead box not stopping the rest — is
+# driven for real in test_cleanup_shared.py.
 tsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "telegram_bot.py"), encoding="utf-8").read()
+dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "discord_bot.py"), encoding="utf-8").read()
 i = tsrc.index('elif text == "/cleanup"')
 block = tsrc[i:i + 1200]
-checks["/cleanup walks every managed host"] = "host_checkers" in block
-checks["…tagging each answer with its host"] = '@{host_name}' in block
-checks["…and one dead host does not stop the rest"] = (
-    "except Exception" in block)
+checks["/cleanup walks every managed host"] = (
+    "container_flags.cleanup(" in block or "host_checkers" in block)
+checks["…and hands it every host, not just the local one"] = (
+    "list(self.hosts)" in block or "host_checkers" in block)
+# Discord did this locally-only until the walk was shared (#2, @famewolf:
+# the full box was dockmox, not the local one).
+j = dsrc.index("def _cmd_cleanup")
+dblock = dsrc[j:dsrc.index("\n    def ", j + 10)]
+checks["…and Discord's /cleanup walks them too"] = (
+    "container_flags.cleanup(" in dblock and "_hosts_for(None)" in dblock)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

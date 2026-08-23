@@ -705,13 +705,14 @@ class TelegramBot:
             lines = []
             for r in outcome.replies:
                 tag = self._host_tag(r.host) if r.host is not None else ""
-                lines.append((self.t(r.key, **r.params) if r.key else "") + tag)
+                lines.append((self.t(r.key, **r.params) if r.key
+                              else r.text) + tag)
             if lines:
                 self.send_message("\n".join(lines) + hint)
             return
         for r in outcome.replies:
             tag = self._host_tag(r.host) if r.host is not None else ""
-            body = self.t(r.key, **r.params) if r.key else ""
+            body = self.t(r.key, **r.params) if r.key else r.text
             if r.items:
                 import container_flags as _cf
                 rows = [_cf.item_parts(i) for i in r.items]
@@ -3533,29 +3534,18 @@ class TelegramBot:
                                               until=until.strftime("%H:%M")))
 
         elif text == "/cleanup":
+            import container_flags
+            self.send_message(self.t("cleanup_starting"))
             # Every managed host, not just this one. @famewolf ran it
             # while dockmox was drowning in wrongly-pulled images and it
-            # answered for one machine out of three — "the cleanup is
-            # only running locally?" (#2). Same host walk as /check;
-            # one unreachable box reports and does not stop the rest.
-            self.send_message(self.t("cleanup_starting"))
-            from hosts import host_checkers
-            for host_checker, host_name in host_checkers(self.hosts,
-                                                         checker):
-                tag = f" @{host_name}" if host_name else ""
-                try:
-                    ok, msg = self.cleanup_guarded(host_checker)
-                except Exception as e:
-                    self.send_message(f"❌{tag} {clip(e)}")
-                    continue
-                if ok is None:
-                    self.send_message(msg + tag)
-                elif ok and "Nothing" in msg:
-                    self.send_message(self.t("cleanup_none") + tag)
-                elif ok:
-                    self.send_message(f"✅{tag} {msg}")
-                else:
-                    self.send_message(f"❌{tag} {msg}")
+            # answered for one machine out of three (#2). The walk, the
+            # skip-when-busy and the wording are the core's now; Discord
+            # gets the same walk for free.
+            targets = list(self.hosts) if self._multi() else [None]
+            self._emit(container_flags.cleanup(
+                targets,
+                checker_for=lambda h: self._checker_for(h, checker),
+                guarded_run=self.cleanup_guarded))
 
         elif text == "/checkimages":
             # Dry-run counterpart to /cleanup — how much would `/cleanup`

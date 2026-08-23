@@ -1720,7 +1720,9 @@ class UpdateChecker:
             try:
                 backed_up = self._backup_local_unused_images()
                 if backed_up:
-                    backup_msg = f" Backed up {len(backed_up)} local image(s) → {self.config.cleanup_backup_dir}."
+                    backup_msg = self._t(
+                        "cleanup_backed_up", count=len(backed_up),
+                        dir=self.config.cleanup_backup_dir)
                 self._prune_old_backups()
             except Exception as e:
                 self._debug(f"  Backup step failed: {e}")
@@ -1755,11 +1757,12 @@ class UpdateChecker:
             if untagged:
                 preview = ", ".join(untagged[:6])
                 if len(untagged) > 6:
-                    preview += f", +{len(untagged) - 6} more"
-                msg += f"\nRemoved: {preview}"
+                    preview += ", " + self._t("cleanup_more",
+                                              count=len(untagged) - 6)
+                msg += "\n" + self._t("cleanup_removed", images=preview)
             return True, msg
         except Exception as e:
-            return False, f"Cleanup error: {str(e)[:200]}"
+            return False, self._t("cleanup_error", error=str(e)[:200])
 
     def _backup_local_unused_images(self):
         """Save unused, locally-built images (no RepoDigests) as tarballs.

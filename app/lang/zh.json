@@ -887,8 +887,8 @@
   "chan_nothing_left": "没有需要更新的内容 — 你批准的每个容器都已更新。",
   "chan_debug_toggled": "🔍 调试日志 **{status}**。它会显示每次注册表调用以及扫描中每个容器的记录。",
   "status_bot_uptime": "机器人运行时间",
-  "cleanup_reclaimed": "总共回收空间：{size}",
-  "cleanup_failed": "清理失败：{error}",
+  "cleanup_reclaimed": "✅ 总共回收空间：{size}",
+  "cleanup_failed": "❌ 清理失败：{error}",
   "major_none_pending": "⚠️ `{name}` 没有待处理的大版本更新。",
   "major_skipped": "⏭ 已跳过 `{name}`{tag} 的大版本更新。",
   "window_skipped": "⏰ 不在维护时段 — 已跳过以下容器的自动更新：{names}",
@@ -937,5 +937,9 @@
   "major_skipping": "已跳过 {name} 的大版本更新。",
   "chat_migrated": "⚠️ 该群已升级为超级群，因此配置的 `CHAT_ID={old}` 不再存在。我找到了新的并正在使用：`{new}`。请写入设置 — 否则每次重启我都得重新查找。",
   "chan_nothing_to_do": "无事可做。",
-  "checkimages_grace_held": "⏳ {total} 个未使用镜像中有 {held} 个比 {hours} 小时宽限期（`CLEANUP_GRACE_HOURS`）更新，因此 `/cleanup` 暂时保留它们 — 这就是它可能报告 0 B 的原因。"
+  "checkimages_grace_held": "⏳ {total} 个未使用镜像中有 {held} 个比 {hours} 小时宽限期（`CLEANUP_GRACE_HOURS`）更新，因此 `/cleanup` 暂时保留它们 — 这就是它可能报告 0 B 的原因。",
+  "cleanup_backed_up": " 已备份 {count} 个本地镜像 → {dir}。",
+  "cleanup_removed": "已删除：{images}",
+  "cleanup_more": "还有 {count} 个",
+  "cleanup_error": "❌ 清理错误：{error}"
 }

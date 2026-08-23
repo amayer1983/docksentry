@@ -887,8 +887,8 @@
   "chan_nothing_left": "更新するものはありません — 承認したコンテナはすべて更新済みです。",
   "chan_debug_toggled": "🔍 デバッグログ **{status}**。レジストリ呼び出しとスキャンのコンテナごとの記録をすべて表示します。",
   "status_bot_uptime": "ボット稼働時間",
-  "cleanup_reclaimed": "解放された合計容量: {size}",
-  "cleanup_failed": "クリーンアップに失敗しました: {error}",
+  "cleanup_reclaimed": "✅ 解放された合計容量: {size}",
+  "cleanup_failed": "❌ クリーンアップに失敗しました: {error}",
   "major_none_pending": "⚠️ `{name}` に保留中のメジャー更新はありません。",
   "major_skipped": "⏭ `{name}`{tag} のメジャー更新をスキップしました。",
   "window_skipped": "⏰ メンテナンス時間外 — 次の自動更新をスキップしました: {names}",
@@ -937,5 +937,9 @@
   "major_skipping": "{name} のメジャー更新をスキップしました。",
   "chat_migrated": "⚠️ このグループはスーパーグループに変更されたため、設定された `CHAT_ID={old}` は存在しません。新しいものを見つけて使用しています: `{new}`。設定に入れてください — そうしないと再起動のたびに探し直す必要があります。",
   "chan_nothing_to_do": "することはありません。",
-  "checkimages_grace_held": "⏳ 未使用イメージ {total} 件のうち {held} 件が {hours} 時間の猶予（`CLEANUP_GRACE_HOURS`）より新しいため、`/cleanup` は今回は残します — 0 B と報告されるのはこのためです。"
+  "checkimages_grace_held": "⏳ 未使用イメージ {total} 件のうち {held} 件が {hours} 時間の猶予（`CLEANUP_GRACE_HOURS`）より新しいため、`/cleanup` は今回は残します — 0 B と報告されるのはこのためです。",
+  "cleanup_backed_up": " ローカルイメージ {count} 件をバックアップしました → {dir}",
+  "cleanup_removed": "削除しました: {images}",
+  "cleanup_more": "他 {count} 件",
+  "cleanup_error": "❌ クリーンアップエラー: {error}"
 }
