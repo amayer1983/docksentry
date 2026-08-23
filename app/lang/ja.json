@@ -941,5 +941,7 @@
   "cleanup_backed_up": " ローカルイメージ {count} 件をバックアップしました → {dir}",
   "cleanup_removed": "削除しました: {images}",
   "cleanup_more": "他 {count} 件",
-  "cleanup_error": "❌ クリーンアップエラー: {error}"
+  "cleanup_error": "❌ クリーンアップエラー: {error}",
+  "confirm_stop_many": "⚠ `{pattern}` に一致する {count} 個のコンテナを停止しますか？\n何かが再起動するまで停止したままになります。\n{names}",
+  "confirm_stop_btn": "🟥 停止"
 }

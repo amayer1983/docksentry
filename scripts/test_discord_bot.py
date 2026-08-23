@@ -961,11 +961,15 @@ out = call("restart", container="web")
 checks["/restart refuses to restart Docksentry itself"] = (
     _EN["lifecycle_refused_self"].split("{")[0] in out
     and not any(c[0] == "restart" for c in lbackend.calls))
-reply = call("stop", container="web")
-out = press(reply.components[0]["components"][0]["custom_id"])
+# The refusal comes BEFORE the button now: being asked "are you sure?"
+# and only then told no is a worse answer than being told straight away.
+out = call("stop", container="web")
 checks["/stop refuses to stop Docksentry itself"] = (
-    _EN["lifecycle_refused_self"].split("{")[0] in out
+    _EN["lifecycle_refused_self"].split("{")[0] in str(
+        getattr(out, "content", out))
     and LOCAL_CHECKER.stopped == [])
+checks["…without offering a button for it first"] = (
+    getattr(out, "components", None) is None)
 LOCAL_CHECKER.self_named = None
 
 # ── /cleanup ─────────────────────────────────────────────────────────

@@ -941,5 +941,7 @@
   "cleanup_backed_up": " 로컬 이미지 {count}개를 백업했습니다 → {dir}",
   "cleanup_removed": "삭제됨: {images}",
   "cleanup_more": "외 {count}개",
-  "cleanup_error": "❌ 정리 오류: {error}"
+  "cleanup_error": "❌ 정리 오류: {error}",
+  "confirm_stop_many": "⚠ `{pattern}`과(와) 일치하는 컨테이너 {count}개를 중지할까요?\n무언가 다시 시작할 때까지 꺼진 상태로 남습니다.\n{names}",
+  "confirm_stop_btn": "🟥 중지"
 }

@@ -137,6 +137,103 @@ def _run(action, name, checker, backend):
                  ok=False)
 
 
+def plan(action, targets, *, backend_for, checker_for, store_for, partial,
+         update_running=False, defaulted_to_local=False):
+    """What `act` WOULD do, without doing any of it.
+
+    Returns `(outcome, work)`. `work` is a list of `(host, names)` for
+    what would actually run; `outcome` carries whatever can already be
+    answered — a container that does not exist, a glob that matches
+    nothing, a stop that is going to be refused anyway.
+
+    This exists so a confirmation asks about something real. Being asked
+    "are you sure you want to stop gluetun?", pressing yes, and THEN
+    being told gluetun is stop-protected is a worse answer than being
+    told straight away — Discord got that right from the start and the
+    core is where the rule belongs, now that both chats ask.
+
+    The plan is not a promise. Between the question and the press a
+    container can stop existing, an update can start, protection can be
+    switched on. `act` re-runs every guard on the way through; this only
+    decides whether asking is worth anyone's time.
+    """
+    if not (partial or "").strip():
+        return Outcome((), Reply("lifecycle_usage", ok=False),
+                       defaulted_to_local, False), []
+    partial = partial.strip()
+    work, refusals = [], []
+
+    if is_glob(partial):
+        matched_any = False
+        for host in targets:
+            names = match_glob(partial, backend=backend_for(host))
+            if not names:
+                continue
+            matched_any = True
+            checker, store = checker_for(host), store_for(host)
+            keep = []
+            for name in names:
+                # Guarded here too, so `/stop *` asks about the containers
+                # it will actually stop and says up front which ones it
+                # will not. Asking "stop 24 containers?" and then refusing
+                # two of them after the press is the same bad answer the
+                # single-container path already avoids.
+                r = _guard(action, name, checker, store, update_running)
+                if r is None:
+                    keep.append(name)
+                else:
+                    refusals.append(Reply(r.key, r.params, host=host,
+                                          host_is_local=_is_local(host),
+                                          ok=False))
+            if keep:
+                work.append((host, keep))
+        if not matched_any:
+            return Outcome((), Reply("glob_no_match", {"pattern": partial},
+                                     ok=False), defaulted_to_local, False), []
+        return Outcome(tuple(refusals), None, defaulted_to_local,
+                       False), work
+
+    first_err = None
+    for host in targets:
+        name, err = resolve_container(partial, backend=backend_for(host))
+        if err:
+            first_err = first_err or err
+            continue
+        r = _guard(action, name, checker_for(host), store_for(host),
+                   update_running)
+        if r is not None:
+            refusals.append(Reply(r.key, r.params, host=host,
+                                  host_is_local=_is_local(host), ok=False))
+            continue
+        work.append((host, [name]))
+    if not work:
+        if refusals:
+            # Every host refused, and for a reason worth saying now
+            # rather than after a button press.
+            return Outcome(tuple(refusals), None, defaulted_to_local,
+                           False), []
+        return Outcome((), first_err or Reply("resolve_not_found",
+                                              {"name": partial}, ok=False),
+                       defaulted_to_local, False), []
+    return Outcome(tuple(refusals), None, defaulted_to_local, False), work
+
+
+def confirm_question(action, work, *, partial):
+    """The sentence a chat asks before it stops something.
+
+    One `Reply`, so both chats ask it in the same words in the reader's
+    own language, and neither invents its own phrasing for the same
+    question.
+    """
+    names = [n for _host, ns in work for n in ns]
+    if len(names) == 1:
+        return Reply("chan_confirm_stop", {"name": names[0]})
+    return Reply("confirm_stop_many",
+                 {"count": len(names), "pattern": partial,
+                  "names": ", ".join(f"`{n}`" for n in names[:12])
+                           + (", …" if len(names) > 12 else "")})
+
+
 def act(action, targets, *, backend_for, checker_for, store_for, partial,
         update_running=False, defaulted_to_local=False):
     """Run `action` on whatever `partial` names — one container or a glob.

@@ -941,5 +941,7 @@
   "cleanup_backed_up": " {count} image(s) locale(s) sauvegardée(s) → {dir}.",
   "cleanup_removed": "Supprimé : {images}",
   "cleanup_more": "+{count} autres",
-  "cleanup_error": "❌ Erreur de nettoyage : {error}"
+  "cleanup_error": "❌ Erreur de nettoyage : {error}",
+  "confirm_stop_many": "⚠ Arrêter {count} conteneurs correspondant à `{pattern}` ?\nIls resteront arrêtés jusqu'à ce que quelque chose les relance.\n{names}",
+  "confirm_stop_btn": "🟥 Arrêter"
 }

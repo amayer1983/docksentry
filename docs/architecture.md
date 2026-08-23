@@ -51,7 +51,7 @@ Each one answers a question that was never Telegram's:
 | `app/notify_text.py` | What does an unattended notification *say*, translated? |
 | `app/backup.py` | What is in a backup bundle, and what does restoring one do? |
 | `app/container_flags.py` | Every per-container flag, note, link, cooldown and audit — set it, clear it, list it, on whichever hosts were named. |
-| `app/lifecycle.py` | May this container be stopped, started or restarted, and what happened when we tried? Glob matching lives here too. |
+| `app/lifecycle.py` | May this container be stopped, started or restarted, and what happened when we tried? Glob matching and the "are you sure?" question live here too. |
 
 Shared underneath them: `app/i18n.py` with 16 language files under
 `app/lang/` (923 keys in `en.json`), the `UpdateEngine`, the per-host
@@ -188,6 +188,9 @@ has found something wrong that had been wrong for a long time:
   matching sat inside a front end.
 * A stop refused during an update said two different sentences depending
   on which app you had open.
+* Discord asked before stopping a container; Telegram just stopped. Both
+  ask now, and the plan behind the question is shared — so neither asks
+  about a container it is going to refuse a moment later.
 
 Nothing caught any of it, because there were two implementations and
 only one of each pair was ever exercised.

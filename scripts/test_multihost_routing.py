@@ -166,9 +166,34 @@ def drive(bot, cmd, checker):
     """Run one command; return the list of reply texts."""
     bot.sent = []
     bot.markups = []
+    bot._check_auth = lambda *a, **k: True
+    bot.answer_callback = lambda *a: None
+    bot.remove_buttons = lambda *a: None
     bot._handle_message({"text": cmd, "from": {"id": 1}, "chat": {"id": 1}},
                         checker, None)
     time.sleep(0.05)          # /update dispatches through a thread
+    return list(bot.sent)
+
+
+def confirm(bot, checker):
+    """Press the confirm button on the question just asked.
+
+    `/stop` asks first now, in both chats — so a routing test that only
+    sends the command watches nothing happen. The token is re-derived on
+    the press, which is exactly the routing this file cares about.
+    """
+    token = next((b["callback_data"]
+                  for m in (bot.markups or []) if m
+                  for row in m.get("inline_keyboard", [])
+                  for b in row
+                  if str(b.get("callback_data", "")).startswith("stop_go:")),
+                 None)
+    if token is None:
+        return []
+    bot.sent = []
+    bot._handle_callback({"data": token, "id": "c", "from": {"id": 1},
+                          "message": {"message_id": 1, "chat": {"id": 1}}},
+                         checker)
     return list(bot.sent)
 
 
@@ -263,7 +288,7 @@ checks["write /update: reply carries the local-only hint"] = any(
     "Local host only" in t and "`@all`" in t for t in out)
 
 bot, checker, cfg, hosts = multi_bot()
-out = drive(bot, "/stop web", checker)
+out = drive(bot, "/stop web", checker) + confirm(bot, checker)
 checks["write /stop: acted on the local host only"] = (
     hosts.hosts[0].checker.stopped == ["web"]
     and hosts.hosts[1].checker.stopped == [])
@@ -281,7 +306,7 @@ checks["@nas: no local-only hint when aimed explicitly"] = not any(
     "Local host only" in t for t in out)
 
 bot, checker, cfg, hosts = multi_bot()
-out = drive(bot, "/stop plex @nas", checker)
+out = drive(bot, "/stop plex @nas", checker) + confirm(bot, checker)
 checks["@nas: lifecycle hit the remote host"] = (
     hosts.hosts[1].checker.stopped == ["plex"]
     and hosts.hosts[0].checker.stopped == [])

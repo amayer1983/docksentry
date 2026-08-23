@@ -2330,6 +2330,7 @@ class DiscordBot:
 
     # ── /start, /stop, /restart ───────────────────────────────────
     def _cmd_lifecycle(self, action, opts, data):
+        import lifecycle
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("chan_usage_container", command=action)
@@ -2338,30 +2339,41 @@ class DiscordBot:
             return self._unknown_host(opts.get("host"))
         if action != "stop":
             return self._run_lifecycle(action, arg, targets)
-        # `/stop` asks first. Resolve and run the refusals BEFORE
-        # offering the button: being asked "are you sure?" about a
-        # container that is stop-protected — and then refused — is a
-        # worse answer than being told straight away.
-        # A write always resolves to exactly one host (that is what
-        # `_write_hosts_for` is for), so there is one thing to confirm.
-        host = targets[0]
-        tag = self._label(host)
-        name, err = self._resolve_container(arg, self._backend_for(host))
-        if err:
-            return self._clip(err + tag)
-        checker = self._checker_for(host)
-        if self._is_protected(name, checker, self._store_for(host)):
-            return self._clip(self._protected_msg(name) + tag)
+
+        # `/stop` asks first, and the refusals run BEFORE the button is
+        # offered: being asked "are you sure?" about a stop-protected
+        # container and THEN refused is a worse answer than being told
+        # straight away. Telegram asks the same question now, from the
+        # same plan, in the same words (#63).
+        outcome, work = lifecycle.plan(
+            "stop", targets, backend_for=self._backend_for,
+            checker_for=self._checker_for, store_for=self._store_for,
+            partial=arg, update_running=self.engine.update_running)
+        if outcome.fatal is not None or not work:
+            return self._clip(self._render(outcome))
         token = self._new_confirmation(
-            "stop", {"host": opts.get("host"), "container": name}, data)
+            "stop", {"host": opts.get("host"), "container": arg}, data)
+        question = lifecycle.confirm_question("stop", work, partial=arg)
+        # `_render` of an empty outcome says "nothing to do", which is
+        # exactly wrong here — there IS something to do, we are asking
+        # about it.
+        head = self._render(outcome) if outcome.replies else ""
+        body = self.t(question.key, **question.params)
+        names = [n for _h, ns in work for n in ns]
+        label = (f"Stop {names[0]}" if len(names) == 1
+                 else f"Stop {len(names)} containers")
         return Reply(
-            self._clip(self.t("chan_confirm_stop", name=name) + tag),
-            self._confirm_components("stop", token, f"Stop {name}"[:80]))
+            self._clip("\n".join(x for x in (head, body) if x)),
+            self._confirm_components("stop", token, label[:80]))
 
     def _do_stop(self, params):
         targets = self._write_hosts_for(params.get("host"))
         if targets is None:
             return self._unknown_host(params.get("host"))
+        # The raw argument, not a resolved name: a glob has to survive
+        # the round trip, and re-resolving on the press is what makes the
+        # guards run against the world as it is now rather than as it was
+        # when the question was asked.
         return self._run_lifecycle("stop", params.get("container") or "",
                                    targets)
 
@@ -2383,18 +2395,9 @@ class DiscordBot:
         the configured language."""
         return self.t("lifecycle_refused_protected", name=name)
 
-    def _is_protected(self, name, checker, store):
-        """True if `name` must not be stopped — asked here only so the
-        confirm button is never offered for a stop that will be refused
-        anyway. The rule itself is `lifecycle.is_protected`."""
-        import lifecycle
-        return lifecycle.is_protected(name, checker, store)
-
-    # `_lifecycle_action` used to live here — the same three refusals and
-    # the same two CLI calls the Telegram bot had, worded just differently
-    # enough that a busy update refused a stop in two different sentences
-    # depending on which app you had open. It is `lifecycle.act` now.
-    # ── /cleanup, /checkimages ────────────────────────────────────
+    # `_is_protected` was here so `/stop` could refuse before offering a
+    # button. `lifecycle.plan` runs that check now, together with the
+    # other two, so the question and the refusal come from one place.
     def _cmd_cleanup(self):
         """Guarded image cleanup, on every managed host.
 

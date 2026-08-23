@@ -941,5 +941,7 @@
   "cleanup_backed_up": " Zapisano kopię {count} lokalnego obrazu → {dir}.",
   "cleanup_removed": "Usunięto: {images}",
   "cleanup_more": "+{count} więcej",
-  "cleanup_error": "❌ Błąd czyszczenia: {error}"
+  "cleanup_error": "❌ Błąd czyszczenia: {error}",
+  "confirm_stop_many": "⚠ Zatrzymać {count} kontenerów pasujących do `{pattern}`?\nPozostaną wyłączone, dopóki coś ich nie uruchomi.\n{names}",
+  "confirm_stop_btn": "🟥 Zatrzymaj"
 }

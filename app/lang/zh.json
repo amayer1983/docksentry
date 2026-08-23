@@ -941,5 +941,7 @@
   "cleanup_backed_up": " 已备份 {count} 个本地镜像 → {dir}。",
   "cleanup_removed": "已删除：{images}",
   "cleanup_more": "还有 {count} 个",
-  "cleanup_error": "❌ 清理错误：{error}"
+  "cleanup_error": "❌ 清理错误：{error}",
+  "confirm_stop_many": "⚠ 停止与 `{pattern}` 匹配的 {count} 个容器？\n在有东西重新启动它们之前，它们会一直停着。\n{names}",
+  "confirm_stop_btn": "🟥 停止"
 }

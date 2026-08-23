@@ -941,5 +941,7 @@
   "cleanup_backed_up": " {count} yerel imaj yedeklendi → {dir}.",
   "cleanup_removed": "Kaldırıldı: {images}",
   "cleanup_more": "+{count} daha",
-  "cleanup_error": "❌ Temizleme hatası: {error}"
+  "cleanup_error": "❌ Temizleme hatası: {error}",
+  "confirm_stop_many": "⚠ `{pattern}` ile eşleşen {count} kapsayıcı durdurulsun mu?\nBir şey yeniden başlatana kadar kapalı kalırlar.\n{names}",
+  "confirm_stop_btn": "🟥 Durdur"
 }

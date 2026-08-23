@@ -941,5 +941,7 @@
   "cleanup_backed_up": " Сохранено локальных образов: {count} → {dir}.",
   "cleanup_removed": "Удалено: {images}",
   "cleanup_more": "ещё {count}",
-  "cleanup_error": "❌ Ошибка очистки: {error}"
+  "cleanup_error": "❌ Ошибка очистки: {error}",
+  "confirm_stop_many": "⚠ Остановить контейнеров: {count} по шаблону `{pattern}`?\nОни останутся выключенными, пока их что-нибудь не запустит.\n{names}",
+  "confirm_stop_btn": "🟥 Остановить"
 }

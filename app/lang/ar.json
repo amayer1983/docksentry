@@ -941,5 +941,7 @@
   "cleanup_backed_up": " تم نسخ {count} صورة محلية احتياطيًا ← {dir}.",
   "cleanup_removed": "تمت الإزالة: {images}",
   "cleanup_more": "و{count} أخرى",
-  "cleanup_error": "❌ خطأ في التنظيف: {error}"
+  "cleanup_error": "❌ خطأ في التنظيف: {error}",
+  "confirm_stop_many": "⚠ إيقاف {count} حاوية تطابق `{pattern}`؟\nستبقى متوقفة حتى يعيد شيء ما تشغيلها.\n{names}",
+  "confirm_stop_btn": "🟥 إيقاف"
 }

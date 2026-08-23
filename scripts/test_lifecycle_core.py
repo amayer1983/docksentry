@@ -256,8 +256,13 @@ checks["Telegram's lifecycle branch calls the core"] = (
     "lifecycle.act(" in tb)
 checks["Discord's lifecycle path calls the core"] = ("lifecycle.act(" in db)
 checks["the status button calls it too"] = tb.count("lifecycle.act(") >= 2
+# Telegram still asks the question (to hide a Stop button that would be
+# refused); Discord asks it through `lifecycle.plan`. Neither has a
+# second implementation of the rule.
 checks["neither reimplements the protect rule"] = (
-    "lifecycle.is_protected(" in tb and "lifecycle.is_protected(" in db)
+    "lifecycle.is_protected(" in tb
+    and "def _is_protected" not in db
+    and "label_bool(" not in db)
 checks["neither reimplements glob matching"] = (
     "fnmatch" not in tb and "fnmatch" not in db)
 

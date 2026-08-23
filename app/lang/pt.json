@@ -941,5 +941,7 @@
   "cleanup_backed_up": " {count} imagem(ns) local(is) salva(s) → {dir}.",
   "cleanup_removed": "Removido: {images}",
   "cleanup_more": "+{count} mais",
-  "cleanup_error": "❌ Erro de limpeza: {error}"
+  "cleanup_error": "❌ Erro de limpeza: {error}",
+  "confirm_stop_many": "⚠ Parar {count} contêineres que correspondem a `{pattern}`?\nEles ficam parados até que algo os inicie novamente.\n{names}",
+  "confirm_stop_btn": "🟥 Parar"
 }

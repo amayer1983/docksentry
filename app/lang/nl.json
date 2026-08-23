@@ -941,5 +941,7 @@
   "cleanup_backed_up": " {count} lokale image(s) geback-upt → {dir}.",
   "cleanup_removed": "Verwijderd: {images}",
   "cleanup_more": "+{count} meer",
-  "cleanup_error": "❌ Opruimfout: {error}"
+  "cleanup_error": "❌ Opruimfout: {error}",
+  "confirm_stop_many": "⚠ {count} containers stoppen die overeenkomen met `{pattern}`?\nZe blijven uit tot iets ze weer start.\n{names}",
+  "confirm_stop_btn": "🟥 Stoppen"
 }

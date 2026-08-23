@@ -941,5 +941,7 @@
   "cleanup_backed_up": " {count} lokale(s) Image(s) gesichert → {dir}.",
   "cleanup_removed": "Entfernt: {images}",
   "cleanup_more": "+{count} weitere",
-  "cleanup_error": "❌ Fehler beim Aufräumen: {error}"
+  "cleanup_error": "❌ Fehler beim Aufräumen: {error}",
+  "confirm_stop_many": "⚠ {count} Container passend zu `{pattern}` stoppen?\nSie bleiben unten, bis sie etwas wieder startet.\n{names}",
+  "confirm_stop_btn": "🟥 Stoppen"
 }

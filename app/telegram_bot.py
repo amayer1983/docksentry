@@ -1100,6 +1100,32 @@ class TelegramBot:
                  "callback_data": "restore_cancel"},
             ]]})
 
+    def _offer_stop(self, arg, raw_arg, question, hint=""):
+        """Ask before stopping, then let the button be the decision.
+
+        The same shape as `_offer_restore`: the token goes in the
+        callback, never the payload, and the payload is re-derived on the
+        press rather than captured here. Minutes can pass between the
+        question and the answer, and in that time a container can vanish,
+        an update can start, protection can be switched on — so the press
+        runs `lifecycle.act` from scratch, guards and all.
+        """
+        import secrets as _secrets
+        token = _secrets.token_hex(6)
+        pending = getattr(self, "_pending_stops", None)
+        if pending is None:
+            pending = self._pending_stops = {}
+        pending.clear()                      # one at a time; the newest wins
+        pending[token] = {"arg": arg, "raw": raw_arg}
+        self.send_message(
+            self.t(question.key, **question.params) + hint,
+            reply_markup={"inline_keyboard": [[
+                {"text": self.t("confirm_stop_btn"),
+                 "callback_data": f"stop_go:{token}"},
+                {"text": self.t("restore_cancel_btn"),
+                 "callback_data": "stop_cancel"},
+            ]]})
+
     def _download_file(self, file_id):
         """Fetch an attachment's bytes, or None."""
         if not file_id:
@@ -2610,6 +2636,46 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("not_authorized"))
             return
 
+        if data == "stop_cancel":
+            self.answer_callback(callback["id"], self.t("chan_cancelled"))
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            getattr(self, "_pending_stops", {}).clear()
+            return
+
+        if data.startswith("stop_go:"):
+            # Buttons off first, token popped, so a double tap cannot
+            # stop the same thing twice. Everything else is re-derived —
+            # `lifecycle.act` runs every guard again, because minutes may
+            # have passed since the question was asked.
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            rec = getattr(self, "_pending_stops", {}).pop(
+                data.split(":", 1)[1], None)
+            if rec is None:
+                # The message keeps the answer; the toast only points at
+                # it. Saying the same sentence twice in a row reads like
+                # a glitch.
+                self.answer_callback(callback["id"], "⏳")
+                self.send_message(self.t("chan_confirm_expired"))
+                return
+            self.answer_callback(callback["id"],
+                                 self.t("lifecycle_running", action="stop"))
+            import lifecycle
+            _arg, _targets, _err = self._resolve_targets(rec["raw"],
+                                                         write=True)
+            if _err:
+                self.send_message(_err)
+                return
+            self._emit(lifecycle.act(
+                "stop", _targets or [None],
+                backend_for=self._backend_for,
+                checker_for=lambda h: self._checker_for(h, checker),
+                store_for=self._store_for, partial=rec["arg"],
+                update_running=self.update_running),
+                hint=self._host_hint(rec["raw"]))
+            return
+
         if data == "restore_cancel":
             self.answer_callback(callback["id"], self.t("restore_cancelled"))
             if msg_id and chat_id:
@@ -3592,13 +3658,29 @@ class TelegramBot:
             if host_err:
                 self.send_message(host_err)
                 return
-            self._emit(lifecycle.act(
-                action, targets or [None],
-                backend_for=self._backend_for,
-                checker_for=lambda h: self._checker_for(h, checker),
-                store_for=self._store_for, partial=arg,
-                update_running=self.update_running),
-                hint=self._host_hint(raw_arg))
+            hint = self._host_hint(raw_arg)
+            targets = targets or [None]
+            core = dict(backend_for=self._backend_for,
+                        checker_for=lambda h: self._checker_for(h, checker),
+                        store_for=self._store_for,
+                        update_running=self.update_running)
+            if action != "stop":
+                self._emit(lifecycle.act(action, targets, partial=arg,
+                                         **core), hint=hint)
+                return
+            # A stop asks first. Start and restart do not: a container
+            # that comes back up is a decision you can take back, and a
+            # stopped one stays stopped until somebody notices.
+            outcome, work = lifecycle.plan("stop", targets, partial=arg,
+                                           **core)
+            if outcome.fatal is not None or not work:
+                self._emit(outcome, hint=hint)          # nothing to ask about
+                return
+            self._emit(outcome, hint=hint)              # per-host refusals
+            self._offer_stop(arg, raw_arg,
+                             lifecycle.confirm_question("stop", work,
+                                                        partial=arg),
+                             hint=hint)
 
         elif text == "/selfupdate":
             self._handle_selfupdate()
