@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "Only the person who ran the command can confirm it.",
   "chan_usage_autoupdate": "Usage: `/autoupdate <container>`",
   "chan_usage_protect": "Usage: `/protect <container>`",
-  "chan_usage_cooldown": "Usage: `/cooldown <container> <seconds>`",
   "chan_maint_off": "🔧 Maintenance mode is **off** — updates run on schedule.",
   "chan_maint_on": "🔧 Maintenance mode is **on** until you turn it off.",
   "chan_unknown_command": "Unknown command `{name}`.",

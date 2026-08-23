@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "Nur wer den Befehl ausgeführt hat, kann ihn bestätigen.",
   "chan_usage_autoupdate": "Verwendung: `/autoupdate <Container>`",
   "chan_usage_protect": "Verwendung: `/protect <Container>`",
-  "chan_usage_cooldown": "Verwendung: `/cooldown <Container> <Sekunden>`",
   "chan_maint_off": "🔧 Wartungsmodus ist **aus** — Updates laufen nach Zeitplan.",
   "chan_maint_on": "🔧 Wartungsmodus ist **an**, bis du ihn ausschaltest.",
   "chan_unknown_command": "Unbekannter Befehl `{name}`.",

@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "只有执行该命令的人才能确认。",
   "chan_usage_autoupdate": "用法：`/autoupdate <容器>`",
   "chan_usage_protect": "用法：`/protect <容器>`",
-  "chan_usage_cooldown": "用法：`/cooldown <容器> <秒>`",
   "chan_maint_off": "🔧 维护模式**已关闭** — 更新按计划运行。",
   "chan_maint_on": "🔧 维护模式**已开启**，直到你关闭为止。",
   "chan_unknown_command": "未知命令 `{name}`。",

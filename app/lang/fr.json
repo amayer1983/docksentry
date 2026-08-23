@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "Seule la personne qui a lancé la commande peut la confirmer.",
   "chan_usage_autoupdate": "Utilisation : `/autoupdate <conteneur>`",
   "chan_usage_protect": "Utilisation : `/protect <conteneur>`",
-  "chan_usage_cooldown": "Utilisation : `/cooldown <conteneur> <secondes>`",
   "chan_maint_off": "🔧 Le mode maintenance est **désactivé** — les mises à jour suivent la planification.",
   "chan_maint_on": "🔧 Le mode maintenance est **activé** jusqu'à ce que vous le désactiviez.",
   "chan_unknown_command": "Commande inconnue `{name}`.",

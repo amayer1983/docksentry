@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "コマンドを実行した本人のみが確認できます。",
   "chan_usage_autoupdate": "使い方: `/autoupdate <コンテナ>`",
   "chan_usage_protect": "使い方: `/protect <コンテナ>`",
-  "chan_usage_cooldown": "使い方: `/cooldown <コンテナ> <秒>`",
   "chan_maint_off": "🔧 メンテナンスモードは**オフ**です — 更新はスケジュール通りに実行されます。",
   "chan_maint_on": "🔧 メンテナンスモードは、オフにするまで**オン**です。",
   "chan_unknown_command": "不明なコマンド `{name}`。",

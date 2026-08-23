@@ -784,7 +784,11 @@ class TelegramBot:
             tag = self._host_tag(r.host) if r.host is not None else ""
             body = self.t(r.key, **r.params) if r.key else ""
             if r.items:
-                body += "\n" + "\n".join(f"• `{n}`{tag}" for n in r.items)
+                import container_flags as _cf
+                rows = [_cf.item_parts(i) for i in r.items]
+                body += "\n" + "\n".join(
+                    f"• `{n}`{tag}" + (f": {d}" if d else "")
+                    for n, d in rows)
                 self.send_message(body + hint)
                 continue
             self.send_message(body + tag + hint)
@@ -3795,44 +3799,18 @@ class TelegramBot:
                 hint=self._host_hint_for(text))
 
         elif text.startswith("/cooldown"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    cds = self._store_for(host).get_cooldowns()
-                    tag = self._host_tag(host)
-                    if cds:
-                        lines = [f"• `{n}`{tag}: {s}s" for n, s in cds.items()]
-                        self.send_message(self.t("cooldown_list") + "\n" + "\n".join(lines) + hint)
-                    else:
-                        self.send_message(self.t("cooldown_empty") + tag + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                if len(argv) < 2:
-                    self.send_message(self.t("cooldown_current", name=name,
-                                             seconds=store.get_cooldown(name)) + tag + hint)
-                    continue
-                try:
-                    secs = int(argv[1])
-                except ValueError:
-                    self.send_message(self.t("cooldown_bad_value"))
-                    return
-                applied = store.set_cooldown(name, secs)
-                if applied:
-                    self.send_message(self.t("cooldown_set", name=name, seconds=applied) + tag + hint)
-                else:
-                    self.send_message(self.t("cooldown_cleared", name=name) + tag + hint)
+            self._emit(container_flags.set_cooldown(
+                targets or [None], store_for=self._store_for,
+                backend_for=self._backend_for,
+                partial=argv[0] if argv else None,
+                seconds=argv[1] if len(argv) > 1 else None),
+                hint=self._host_hint_for(text))
 
         elif text.startswith("/protect"):
             import container_flags
@@ -3864,63 +3842,31 @@ class TelegramBot:
                 text=argv[1].strip() if len(argv) > 1 else ""), hint=hint)
 
         elif text.startswith("/trustrunning"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    names = self._store_for(host).get_trust_running()
-                    tag = self._host_tag(host)
-                    self.send_message(
-                        (self.t("trust_list") + "\n"
-                         + "\n".join(f"• `{n}`{tag}" for n in names)
-                         if names else self.t("trust_empty") + tag) + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                now_on = store.toggle_trust_running(name)
-                self.send_message(
-                    self.t("trust_on" if now_on else "trust_off", name=name)
-                    + tag + hint)
-            return
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["trustrunning"], targets or [None],
+                store_for=self._store_for, backend_for=self._backend_for,
+                partial=argv[0] if argv else None),
+                hint=self._host_hint_for(text))
+
         elif text.startswith("/askmajor"):
+            import container_flags
             raw_arg, targets, host_err = self._state_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
             argv = raw_arg.split()
-            hint = self._host_hint_for(text)
-            if not argv:
-                for host in (targets or [None]):
-                    names = self._store_for(host).get_ask_before_major()
-                    tag = self._host_tag(host)
-                    self.send_message(
-                        (self.t("askmajor_list") + "\n"
-                         + "\n".join(f"• `{n}`{tag}" for n in names)
-                         if names else self.t("askmajor_empty") + tag) + hint)
-                return
-            for host in (targets or [None]):
-                store = self._store_for(host)
-                tag = self._host_tag(host)
-                name, err = self._resolve_container(
-                    argv[0], backend=self._backend_for(host))
-                if err:
-                    self.send_message(err + tag + hint)
-                    continue
-                now_on = store.toggle_ask_before_major(name)
-                self.send_message(
-                    self.t("askmajor_on" if now_on else "askmajor_off",
-                           name=name) + tag + hint)
-            return
+            self._emit(container_flags.apply_flag(
+                container_flags.FLAGS["askmajor"], targets or [None],
+                store_for=self._store_for, backend_for=self._backend_for,
+                partial=argv[0] if argv else None),
+                hint=self._host_hint_for(text))
+
         elif text.startswith("/testchannel"):
             # The one command that is more useful from the chat than from
             # the Web UI: you are already standing where the message has

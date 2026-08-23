@@ -114,6 +114,20 @@ FLAGS = {
 }
 
 
+def item_parts(item):
+    """One list entry as `(name, detail)`.
+
+    Most lists are bare names; `/cooldown` carries a value per name. The
+    front ends render both shapes through this rather than each deciding
+    what a tuple in `items` means — the last time two connections each
+    made that call, one of them grew a feature the other did not have.
+    """
+    if isinstance(item, (tuple, list)):
+        name = item[0]
+        return name, (item[1] if len(item) > 1 else "")
+    return item, ""
+
+
 def _is_local(host):
     return host is None or bool(getattr(host, "is_local", False))
 
@@ -270,13 +284,34 @@ def set_cooldown(targets, *, store_for, backend_for, partial, seconds,
                  defaulted_to_local=False):
     """`/cooldown` — set, show or clear the per-container cooldown.
 
-    `seconds` is the raw argument. It is parsed ONCE, before any host is
+    `partial` of None lists every container that has one. `seconds` is
+    the raw argument. It is parsed ONCE, before any host is
     touched, so a value that will not parse writes nothing anywhere;
     Telegram used to parse inside the loop and abort halfway, having
     already answered for the first host. `None` means "show the current
     value". The [0, 600] clamp stays in the store, which returns what it
     actually stored — so `9999` is answered as `600`, not as accepted.
     """
+    if partial is None:
+        # No container named: list what is set, the way every other flag
+        # command lists its members. Telegram could do this and Discord
+        # could not, which is the asymmetry this module exists to end —
+        # and asking "which of my containers have a cooldown?" is a
+        # perfectly reasonable question from either chat.
+        replies = []
+        for host in targets:
+            local = _is_local(host)
+            cds = dict(getattr(store_for(host), "get_cooldowns")() or {})
+            if cds:
+                replies.append(Reply("cooldown_list", host=host,
+                                     host_is_local=local,
+                                     items=tuple((n, f"{v}s")
+                                                 for n, v in cds.items())))
+            else:
+                replies.append(Reply("cooldown_empty", host=host,
+                                     host_is_local=local))
+        return Outcome(tuple(replies), None, defaulted_to_local, False)
+
     show = seconds is None
     value = None
     if not show:

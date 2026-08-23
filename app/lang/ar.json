@@ -869,7 +869,6 @@
   "chan_confirm_not_yours": "يمكن للشخص الذي نفّذ الأمر وحده تأكيده.",
   "chan_usage_autoupdate": "الاستخدام: `/autoupdate <حاوية>`",
   "chan_usage_protect": "الاستخدام: `/protect <حاوية>`",
-  "chan_usage_cooldown": "الاستخدام: `/cooldown <حاوية> <ثوانٍ>`",
   "chan_maint_off": "🔧 وضع الصيانة **مُعطَّل** — التحديثات تعمل وفق الجدول.",
   "chan_maint_on": "🔧 وضع الصيانة **مُفعَّل** حتى تُعطّله.",
   "chan_unknown_command": "أمر غير معروف `{name}`.",

@@ -192,13 +192,16 @@ COMMANDS = [
           "type": 3, "required": False},
      ]},
     {"name": "cooldown",
-     "description": "Set a container's update cooldown in seconds",
+     # Both arguments optional, which gives the same three behaviours
+     # Telegram has always had from one command: no container lists what
+     # is set, a container alone shows its value, both together set it.
+     "description": "Show, set or list per-container update cooldowns",
      "type": 1,
      "options": [
          {"name": "container", "description": "Container to configure",
-          "type": 3, "required": True},
+          "type": 3, "required": False},
          {"name": "seconds", "description": "Cooldown seconds (0 clears it)",
-          "type": 4, "required": True},
+          "type": 4, "required": False},
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
@@ -1470,6 +1473,7 @@ class DiscordBot:
         editable answer. Telegram renders the same Outcome as one message
         per host — same facts, different shape, which is the split (#63).
         """
+        import container_flags
         if outcome.fatal is not None:
             return self.t(outcome.fatal.key, **outcome.fatal.params)
         lines = []
@@ -1477,7 +1481,9 @@ class DiscordBot:
             tag = self._label(r.host) if r.host is not None else ""
             body = self.t(r.key, **r.params) if r.key else ""
             if r.items:
-                body += "\n" + "\n".join(f"• `{n}`" for n in r.items)
+                rows = [container_flags.item_parts(i) for i in r.items]
+                body += "\n" + "\n".join(
+                    f"• `{n}`" + (f": {d}" if d else "") for n, d in rows)
             lines.append(body + tag)
         return "\n".join(lines) or self.t("chan_nothing_to_do")
 
@@ -1545,18 +1551,19 @@ class DiscordBot:
             partial=arg)))
 
     def _cmd_cooldown(self, opts):
-        """The number is parsed in the core, before any host is touched —
-        so a value that will not parse writes nothing anywhere (#63)."""
+        """Set it, show it, or — with no container — list them all.
+
+        The number is parsed in the core, before any host is touched, so
+        a value that will not parse writes nothing anywhere (#63).
+        """
         import container_flags
         arg = (opts.get("container") or "").strip()
-        if not arg:
-            return self.t("chan_usage_cooldown")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.set_cooldown(
             targets, store_for=self._store_for,
-            backend_for=self._backend_for, partial=arg,
+            backend_for=self._backend_for, partial=arg or None,
             seconds=opts.get("seconds"))))
 
     def _cmd_maintenance(self, opts):
