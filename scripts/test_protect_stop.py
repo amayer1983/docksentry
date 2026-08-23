@@ -2,7 +2,7 @@
 """Test for the per-container stop-protection flag (#38, @LeeNX).
 
   - store toggle/is roundtrip
-  - _lifecycle_action refuses STOP for a protected container (before touching
+  - lifecycle.act refuses STOP for a protected container (before touching
     Docker), but still allows RESTART
 
 Uses a real throwaway container + real store/checker. Requires Docker.
@@ -47,17 +47,27 @@ def main():
     store = ContainerStore(cfg)
     checker = UpdateChecker(cfg)
 
-    # _lifecycle_action issues start/restart through the container backend
-    # seam, so the stub carries one like a real bot does.
-    bot = types.SimpleNamespace(store=store, t=get_translator("en"),
-                                backend=get_backend(None))
-    # _lifecycle_action now resolves stop-protection via _is_protected (label
-    # override + store fallback, #42) — bind the real method so the stub
-    # exercises the actual path (the throwaway container has no docksentry.*
-    # labels, so it falls back to the store toggle).
-    bot._is_protected = lambda *a, **k: TelegramBot._is_protected(bot, *a, **k)
-    bot.update_running = False
-    act = lambda a: TelegramBot._lifecycle_action(bot, a, NAME, checker)
+    # The action itself is `lifecycle.act` now — shared with Discord, so
+    # this exercises what BOTH chats do rather than one of them (#63).
+    # Against a real container, because the point of this test is that
+    # the refusal happens before docker is touched, and a stub backend
+    # cannot show that.
+    import lifecycle
+    backend = get_backend(None)
+    t = get_translator("en")
+
+    def act(action):
+        """`(ok, message)` — the old shape, so the checks below still read
+        as "was it stopped and what did it say"."""
+        o = lifecycle.act(action, [None],
+                          backend_for=lambda h: backend,
+                          checker_for=lambda h: checker,
+                          store_for=lambda h: store,
+                          partial=NAME, update_running=False)
+        if o.fatal is not None:
+            return False, t(o.fatal.key, **o.fatal.params)
+        r = o.replies[0]
+        return r.ok, t(r.key, **r.params)
 
     subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
     subprocess.run(["docker", "run", "-d", "--name", NAME, "alpine", "sleep", "300"],

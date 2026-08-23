@@ -917,7 +917,6 @@
   "chan_maintenance_line": "🔧 メンテナンス: {state}",
   "chan_audit_header": "🔍 `{name}` — 引き継がないフィールド:",
   "chan_no_backend_for": "`{name}` に利用できるコンテナバックエンドがありません。",
-  "lifecycle_refused_busy": "更新の実行中です — 完了するまで `{action}` は拒否されます。",
   "chan_unknown_action": "不明な操作 `{action}`。",
   "chan_busy_capacity": "⏳ Docksentry は同時実行できる上限までコマンドを処理中です。**何も開始していません。** 少し後にもう一度お試しください。",
   "chan_working_on_it": "⏳ 処理中です — 数分かかることがあります。\nDiscord の応答時間を超えた場合は、結果をチャンネルに投稿します。",

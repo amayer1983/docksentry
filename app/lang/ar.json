@@ -917,7 +917,6 @@
   "chan_maintenance_line": "🔧 الصيانة: {state}",
   "chan_audit_header": "🔍 `{name}` — الحقول التي لن ننقلها:",
   "chan_no_backend_for": "لا تتوفر خلفية حاويات لـ `{name}`.",
-  "lifecycle_refused_busy": "هناك تحديث قيد التشغيل — يُرفض `{action}` حتى ينتهي.",
   "chan_unknown_action": "إجراء غير معروف `{action}`.",
   "chan_busy_capacity": "⏳ يشغّل Docksentry بالفعل أقصى عدد ممكن من الأوامر في آنٍ واحد. **لم يُبدأ أي شيء.** حاول بعد قليل.",
   "chan_working_on_it": "⏳ جارٍ العمل — قد يستغرق بضع دقائق.\nإن تجاوز نافذة رد Discord فسأنشر النتيجة في القناة.",

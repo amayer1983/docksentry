@@ -917,7 +917,6 @@
   "chan_maintenance_line": "🔧 Bakım: {state}",
   "chan_audit_header": "🔍 `{name}` — taşımayacağımız alanlar:",
   "chan_no_backend_for": "`{name}` için kapsayıcı arka ucu yok.",
-  "lifecycle_refused_busy": "Bir güncelleme çalışıyor — bitene kadar `{action}` reddedilir.",
   "chan_unknown_action": "Bilinmeyen eylem `{action}`.",
   "chan_busy_capacity": "⏳ Docksentry aynı anda çalıştırabileceği kadar komutu zaten çalıştırıyor. **Hiçbir şey başlatılmadı.** Birazdan tekrar deneyin.",
   "chan_working_on_it": "⏳ Üzerinde çalışıyorum — birkaç dakika sürebilir.\nDiscord'un yanıt penceresini aşarsa sonucu kanala göndereceğim.",

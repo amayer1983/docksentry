@@ -917,7 +917,6 @@
   "chan_maintenance_line": "🔧 Manutenção: {state}",
   "chan_audit_header": "🔍 `{name}` — campos que não levaríamos:",
   "chan_no_backend_for": "Nenhum backend de contêineres para `{name}`.",
-  "lifecycle_refused_busy": "Uma atualização está em andamento — `{action}` é recusado até terminar.",
   "chan_unknown_action": "Ação desconhecida `{action}`.",
   "chan_busy_capacity": "⏳ O Docksentry já executa o máximo de comandos simultâneos. **Nada foi iniciado.** Tente de novo daqui a pouco.",
   "chan_working_on_it": "⏳ Trabalhando nisso — pode levar alguns minutos.\nSe passar da janela de resposta do Discord, publicarei o resultado no canal.",

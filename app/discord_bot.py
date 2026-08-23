@@ -2366,19 +2366,15 @@ class DiscordBot:
                                    targets)
 
     def _run_lifecycle(self, action, arg, targets):
-        lines = []
-        for host in targets:
-            tag = self._label(host)
-            backend = self._backend_for(host)
-            name, err = self._resolve_container(arg, backend)
-            if err:
-                lines.append(err + tag)
-                continue
-            ok, msg = self._lifecycle_action(action, name,
-                                             self._checker_for(host), backend,
-                                             self._store_for(host))
-            lines.append(("✅ " if ok else "❌ ") + msg + tag)
-        return self._clip("\n".join(lines) or "Nothing to do.")
+        """The guards, the CLI call and the wording all live in the core
+        now — this only renders. Globs came along with it: `/stop web*`
+        worked in Telegram and not here, because the matching sat in the
+        other front end (#40, @LeeNX)."""
+        import lifecycle
+        return self._clip(self._render(lifecycle.act(
+            action, targets, backend_for=self._backend_for,
+            checker_for=self._checker_for, store_for=self._store_for,
+            partial=arg, update_running=self.engine.update_running)))
 
     def _protected_msg(self, name):
         """Why a stop was refused — the shared sentence Telegram uses for
@@ -2388,73 +2384,16 @@ class DiscordBot:
         return self.t("lifecycle_refused_protected", name=name)
 
     def _is_protected(self, name, checker, store):
-        """True if `name` must not be stopped. A `docksentry.protect`
-        container label wins over the stored toggle, exactly as it does
-        on the Telegram and Web UI sides; a failing inspect falls back to
-        the toggle, so a flaky host can never accidentally unprotect."""
-        try:
-            lab = checker.label_bool(checker.get_container_labels(name),
-                                     "protect")
-        except Exception:
-            lab = None
-        if lab is not None:
-            return lab
-        if store is None:
-            return False
-        return store.is_protect_stop(name)
+        """True if `name` must not be stopped — asked here only so the
+        confirm button is never offered for a stop that will be refused
+        anyway. The rule itself is `lifecycle.is_protected`."""
+        import lifecycle
+        return lifecycle.is_protected(name, checker, store)
 
-    def _lifecycle_action(self, action, name, checker, backend, store):
-        """Run stop/start/restart on an already-resolved container.
-        Returns `(ok, message)` — same contract as the Telegram bot's
-        method of the same name, and deliberately the same three
-        refusals in the same order:
-
-        * never stop or restart Docksentry itself (PID 1 dies before the
-          recreate — #16),
-        * nothing while an update flow runs, because a stop during the
-          post-update health wait reads as unhealthy and triggers a bogus
-          rollback of a good update,
-        * never stop a stop-protected container (#38).
-
-        This does NOT take the update lock. It doesn't need it — it
-        checks that no update is running and then issues one CLI call —
-        and taking it would let a `/restart` block the scheduler.
-        """
-        if checker is None or backend is None:
-            return False, self.t("chan_no_backend_for", name=name)
-        if action in ("stop", "restart") and checker._would_kill_self(name):
-            return False, self.t("lifecycle_refused_self", action=action, name=name)
-        if self.engine.update_running:
-            return False, self.t("lifecycle_refused_busy", action=action)
-        if action == "stop" and self._is_protected(name, checker, store):
-            return False, self._protected_msg(name)
-        if action == "stop":
-            ok, detail = checker._stop_container(name)
-            if ok:
-                return True, self.t("lifecycle_stopped", name=name)
-            return False, self.t("lifecycle_stop_failed", name=name, error=str(detail)[:120])
-        if action == "start":
-            try:
-                r = backend.run(["start", name], timeout=30)
-            except Exception as e:
-                return False, self.t("lifecycle_start_failed", name=name, error=str(e)[:120])
-            if r.returncode == 0:
-                return True, self.t("lifecycle_started", name=name)
-            return False, self.t("lifecycle_start_failed", name=name,
-                                 error=(r.stderr or "").strip()[:120])
-        if action == "restart":
-            # Graceful stop + start, with a generous timeout: gitlab and
-            # gluetun both take their time coming down.
-            try:
-                r = backend.run(["restart", "--time", "30", name], timeout=120)
-            except Exception as e:
-                return False, self.t("lifecycle_restart_failed", name=name, error=str(e)[:120])
-            if r.returncode == 0:
-                return True, self.t("lifecycle_restarted", name=name)
-            return False, self.t("lifecycle_restart_failed", name=name,
-                                 error=(r.stderr or "").strip()[:120])
-        return False, self.t("chan_unknown_action", action=action)
-
+    # `_lifecycle_action` used to live here — the same three refusals and
+    # the same two CLI calls the Telegram bot had, worded just differently
+    # enough that a busy update refused a stop in two different sentences
+    # depending on which app you had open. It is `lifecycle.act` now.
     # ── /cleanup, /checkimages ────────────────────────────────────
     def _cmd_cleanup(self):
         """Guarded image cleanup on the local host.

@@ -72,6 +72,11 @@ class Outcome:
     #: Telegram appends a hint; Discord says it in the option description.
     defaulted_to_local: bool = False
     changed: bool = False
+    #: One logical answer, however many replies it took. `/stop web*`
+    #: across twenty containers is ONE thing the user asked, and Telegram
+    #: sending it as twenty-one messages is a flood, not a report.
+    #: Discord joins everything anyway, so this only changes one side.
+    grouped: bool = False
 
 
 @dataclass(frozen=True)

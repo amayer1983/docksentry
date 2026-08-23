@@ -917,7 +917,6 @@
   "chan_maintenance_line": "🔧 रखरखाव: {state}",
   "chan_audit_header": "🔍 `{name}` — वे फ़ील्ड जो हम नहीं ले जाएँगे:",
   "chan_no_backend_for": "`{name}` के लिए कोई कंटेनर बैकएंड नहीं।",
-  "lifecycle_refused_busy": "एक अपडेट चल रहा है — समाप्त होने तक `{action}` अस्वीकृत है।",
   "chan_unknown_action": "अज्ञात क्रिया `{action}`।",
   "chan_busy_capacity": "⏳ Docksentry पहले से ही एक साथ अधिकतम कमांड चला रहा है। **कुछ शुरू नहीं हुआ।** थोड़ी देर बाद फिर आज़माएँ।",
   "chan_working_on_it": "⏳ काम चल रहा है — इसमें कुछ मिनट लग सकते हैं।\nयदि यह Discord की उत्तर-सीमा पार करता है, तो मैं परिणाम चैनल में भेजूँगा।",

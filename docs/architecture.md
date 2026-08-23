@@ -37,8 +37,8 @@ content difference, and it belongs in the core.
 
 ### The core
 
-Eight modules were pulled out of `telegram_bot.py` between 20 and 22
-August. Each one answers a question that was never Telegram's:
+Ten modules were pulled out of `telegram_bot.py` from 20 August onward.
+Each one answers a question that was never Telegram's:
 
 | Module | What it answers |
 |---|---|
@@ -50,6 +50,8 @@ August. Each one answers a question that was never Telegram's:
 | `app/broadcast.py` | One text to every channel that is switched on. |
 | `app/notify_text.py` | What does an unattended notification *say*, translated? |
 | `app/backup.py` | What is in a backup bundle, and what does restoring one do? |
+| `app/container_flags.py` | Every per-container flag, note, link, cooldown and audit — set it, clear it, list it, on whichever hosts were named. |
+| `app/lifecycle.py` | May this container be stopped, started or restarted, and what happened when we tried? Glob matching lives here too. |
 
 Shared underneath them: `app/i18n.py` with 16 language files under
 `app/lang/` (923 keys in `en.json`), the `UpdateEngine`, the per-host
@@ -151,37 +153,49 @@ front ends hold.
 
 ## What is not done yet
 
-The send side is shared. **The receive side is not.**
+The send side is shared. **The receive side is roughly half shared.**
 
-Both front ends implement the same 35 commands, separately. Discord has 32
-`_cmd_*` methods spanning 960 lines (a few serve two commands each —
-`_cmd_pin` covers `/pin` and `/unpin`, `_cmd_flag` covers `/askmajor` and
-`/trustrunning`). Telegram's `_handle_message` is a single 1498-line
-branch chain covering the same ground.
+Both front ends implement the same 35 commands. Sixteen of them now do
+nothing but parse their own syntax, call a core function and render the
+`Outcome` that comes back:
 
-How much of that Discord code is delegation? Measured over those 960
-lines: 18 lines name one of the eight core modules — 1.9 per cent.
-Widening the count to *any* outward delegation (the update engine, a host
-state view, a backend, a checker) reaches 53 lines, 5.5 per cent. 27 of
-the 32 methods name no core module at all. Whichever definition you
-prefer, the overwhelming majority of a command method is logic the
-connection wrote for itself, and the same logic exists again in
-`telegram_bot.py`.
+`/status`, `/audit`, `/logs`, `/history`, `/changelog`, `/checkimages`,
+`/pin`, `/unpin`, `/autoupdate`, `/protect`, `/trustrunning`,
+`/askmajor`, `/cooldown`, `/note`, `/setlink`, and the lifecycle trio
+`/stop` `/start` `/restart`.
 
-This matters for a reason that is not aesthetic. Three Discord
-commands — `/changelog`, `/selfupdate` and `/restart` — were broken for a
-long time on every setup, while the same three commands worked perfectly
-in Telegram. `/selfupdate` called `bot.check_selfupdate`, a method that
-does not exist, and simply raised. `/restart` with no container named
-always answered "I cannot tell which container I am" and refused, because
-the borrowed helper fell back to an attribute the Telegram bot does not
-have. Nothing caught any of it, because there were two implementations and
-only one of them was ever exercised.
+The rest still carry their own logic, twice: `/update`, `/updateall`,
+`/updates`, `/check`, `/cleanup`, `/groups`, `/maintenance`, `/events`,
+`/settings`, `/backup`, `/restore`, `/selfupdate`, `/hosts`, `/lang`,
+`/help`, `/debug`, `/testchannel`, `/restart` (the self-restart one).
+Some of those are thin and instance-global and will stay that way;
+`/update`, `/updateall`, `/check` and `/cleanup` are the ones that
+matter, because they are the ones that act.
 
-Sharing the command layer is the next step. It means a command becomes a
-declaration — name, parameters, permissions, and a core function that
-returns a result — with each connection responsible only for parsing its
-own syntax into that call and rendering what comes back.
+This matters for a reason that is not aesthetic. Every extraction so far
+has found something wrong that had been wrong for a long time:
+
+* Three Discord commands — `/changelog`, `/selfupdate` and `/restart` —
+  were broken on every setup while the same three worked in Telegram.
+  `/selfupdate` called `bot.check_selfupdate`, a method that does not
+  exist, and simply raised.
+* Discord's `/note`, `/trustrunning` and `/askmajor` silently acted on
+  the local host only, on a multi-host install, with no way to say
+  otherwise. Discord had no `@all` at all.
+* Telegram's `/logs` and `/audit` did the same in the other direction —
+  local-only where their Discord twins already walked every host.
+* `/stop web*` worked in one chat and not the other, because the glob
+  matching sat inside a front end.
+* A stop refused during an update said two different sentences depending
+  on which app you had open.
+
+Nothing caught any of it, because there were two implementations and
+only one of each pair was ever exercised.
+
+Finishing the receive side means a command becomes a declaration — name,
+parameters, permissions, and a core function returning an `Outcome` —
+with each connection responsible only for parsing its own syntax into
+that call and rendering what comes back.
 
 ## Adding a new connection
 

@@ -34,6 +34,16 @@ class FakeChecker:
         return False
 
 
+class FakeBackend:
+    """Enough to resolve a name — and no more, so a guard that fails to
+    trip shows up as a docker call that should never have happened."""
+    def run(self, argv, timeout=None):
+        import types as _t
+        if argv[:1] == ["ps"]:
+            return _t.SimpleNamespace(returncode=0, stdout="myapp\n", stderr="")
+        raise AssertionError(f"guard let {argv!r} through")
+
+
 def make_bot():
     bot = TelegramBot.__new__(TelegramBot)
     # The lock and the two flags now live on the engine; the bot mirrors
@@ -92,21 +102,45 @@ def main():
     checks["queued selfupdate runs after cleanup"] = ran == ["1.9.9"]
 
     # ── 3. lifecycle actions vs updates ──
+    # The refusal itself moved into `lifecycle.act` (#63) and is pinned in
+    # test_lifecycle_core. What belongs HERE is the coordination half: the
+    # update lock is what makes `update_running` true, and the bot passes
+    # that through rather than deciding for itself.
+    import lifecycle
     bot4 = make_bot()
     ck4 = FakeChecker()
-    bot4._is_protected = lambda name, checker: False
     bot4._update_lock.acquire()
-    ok, msg = bot4._lifecycle_action("stop", "myapp", ck4)
-    checks["lifecycle: stop refused while updating"] = ok is False and msg == "lifecycle_busy"
-    ok, msg = bot4._lifecycle_action("restart", "myapp", ck4)
-    checks["lifecycle: restart refused while updating"] = ok is False and msg == "lifecycle_busy"
-    ok, msg = bot4._lifecycle_action("start", "myapp", ck4)
-    checks["lifecycle: start refused while updating"] = ok is False and msg == "lifecycle_busy"
+    checks["lifecycle: the lock is what says 'busy'"] = bot4.update_running is True
+
+    def act(action):
+        o = lifecycle.act(action, [None],
+                          backend_for=lambda h: FakeBackend(),
+                          checker_for=lambda h: ck4,
+                          store_for=lambda h: None,
+                          partial="myapp",
+                          update_running=bot4.update_running)
+        r = o.fatal or o.replies[0]
+        return r.ok, r.key
+
+    for action in ("stop", "restart", "start"):
+        ok, key = act(action)
+        checks[f"lifecycle: {action} refused while updating"] = (
+            ok is False and key == "lifecycle_busy")
+
     bot4._update_lock.release()
+    checks["lifecycle: the lock releasing clears it"] = bot4.update_running is False
     # Lock free: the guard must NOT trip — "unknown action" proves we got
     # past it without touching docker.
-    ok, msg = bot4._lifecycle_action("nosuch", "myapp", ck4)
-    checks["lifecycle: passes guard when free"] = ok is False and "unknown action" in msg
+    ok, key = act("nosuch")
+    checks["lifecycle: passes guard when free"] = (
+        ok is False and key == "chan_unknown_action")
+
+    # And the Telegram branch really does hand the lock's answer over,
+    # rather than having quietly kept a guard of its own.
+    tb = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                           "telegram_bot.py"), encoding="utf-8").read()
+    checks["lifecycle: the bot passes update_running to the core"] = (
+        tb.count("update_running=self.update_running") >= 2)
 
     for k, v in checks.items():
         print(("  PASS" if v else "  FAIL"), k)

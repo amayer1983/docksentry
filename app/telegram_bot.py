@@ -528,21 +528,15 @@ class TelegramBot:
         self.store.save_autoupdate(containers)
 
     def _is_protected(self, name, checker, store=None):
-        """True if `name` is protected from /stop. A `docksentry.protect`
-        container label overrides the stored toggle when present (#42,
-        @LeeNX) — GitOps-style config in the compose file; otherwise the
-        bot/Web-UI toggle (#38) applies. Label failures fall back to the
-        toggle so a flaky inspect can never accidentally unprotect.
+        """True if `name` is protected from /stop — asked here only so a
+        Stop button is never offered for a stop that would be refused.
+        The rule itself is `lifecycle.is_protected`, shared with Discord.
 
         `store` is the state view of the host `name` lives on (#7);
         omitted it is this instance's own — i.e. the local host."""
-        try:
-            lab = checker.label_bool(checker.get_container_labels(name), "protect")
-        except Exception:
-            lab = None
-        if lab is not None:
-            return lab
-        return (store if store is not None else self.store).is_protect_stop(name)
+        import lifecycle
+        return lifecycle.is_protected(
+            name, checker, store if store is not None else self.store)
 
     @staticmethod
     def _help_alias(text):
@@ -553,76 +547,10 @@ class TelegramBot:
             return "/help " + text.split()[0].lstrip("/")
         return text
 
-    def _lifecycle_action(self, action, name, checker, backend=None, host=None):
-        """Execute a lifecycle action (stop/start/restart) on a resolved
-        container. Returns (ok: bool, message: str — already i18n'd).
-
-        Reuses the v1.17.7 _would_kill_self guard for stop/restart so
-        the bot can't stop / restart itself by accident (PID 1 would
-        die before the recreate, same class of bug as #16).
-
-        `checker` and `backend` together say WHICH host to act on (#7) —
-        they have to agree, so callers pass the pair belonging to one
-        managed host. Both default to the local machine's; the default is
-        resolved only in the branches that actually run a command, so the
-        guards below still refuse without touching a backend at all.
-        `host` completes the set: it picks whose stop-protection list the
-        refusal below is read from.
-        """
-        from update_engine import host_store
-        if action in ("stop", "restart") and checker._would_kill_self(name):
-            return False, self.t("lifecycle_refused_self", action=action, name=name)
-
-        # No user lifecycle actions while any update flow runs (#2
-        # follow-up, @famewolf's "other fringe cases"). A stop during the
-        # post-update health wait reads as unhealthy and triggers a bogus
-        # rollback of a good update; a restart can hit a container that is
-        # mid stop/rename/recreate. The update machinery itself doesn't go
-        # through this method (it calls _stop_container / docker restart
-        # directly), so this can never block an update's own steps.
-        if self.update_running:
-            return False, self.t("lifecycle_busy", action=action)
-
-        # Stop-protection (#38): a container the user marked must not be
-        # stopped (e.g. the VPN/tunnel carrying their remote access).
-        # Restart stays allowed — brief downtime during update/rollback is
-        # acceptable, a permanent stop is the dangerous one.
-        if action == "stop" and self._is_protected(name, checker,
-                                                   host_store(self, host)):
-            return False, self.t("lifecycle_refused_protected", name=name)
-
-        if action == "stop":
-            ok, detail = checker._stop_container(name)
-            if ok:
-                return True, self.t("lifecycle_stopped", name=name)
-            return False, self.t("lifecycle_stop_failed", name=name, error=detail)
-
-        if action == "start":
-            try:
-                r = (backend or self.backend).run(
-                    ["start", name], timeout=30)
-                if r.returncode == 0:
-                    return True, self.t("lifecycle_started", name=name)
-                return False, self.t("lifecycle_start_failed", name=name,
-                                      error=(r.stderr or "").strip()[:200])
-            except subprocess.SubprocessError as e:
-                return False, self.t("lifecycle_start_failed", name=name, error=str(e)[:200])
-
-        if action == "restart":
-            # docker restart is graceful stop + start; use generous
-            # timeout because some apps (gitlab, gluetun) take a while.
-            try:
-                r = (backend or self.backend).run(
-                    ["restart", "--time", "30", name], timeout=120)
-                if r.returncode == 0:
-                    return True, self.t("lifecycle_restarted", name=name)
-                return False, self.t("lifecycle_restart_failed", name=name,
-                                      error=(r.stderr or "").strip()[:200])
-            except subprocess.SubprocessError as e:
-                return False, self.t("lifecycle_restart_failed", name=name, error=str(e)[:200])
-
-        return False, f"unknown action: {action}"
-
+    # `_lifecycle_action` lived here. Discord had its own copy of the same
+    # three refusals and the same two CLI calls, worded just differently
+    # enough that a busy update refused a stop in two different sentences
+    # depending on which app you had open. Both call `lifecycle.act` now.
     def _resolve_container(self, partial, include_stopped=True, backend=None):
         """Resolve a partial container name. Returns (full_name, error_msg).
 
@@ -671,24 +599,17 @@ class TelegramBot:
     @staticmethod
     def _is_glob(s):
         """True if `s` looks like a glob pattern (vs. a plain/partial name)."""
-        return any(c in s for c in "*?[")
+        import lifecycle
+        return lifecycle.is_glob(s)
 
     def _match_glob(self, pattern, include_stopped=True, backend=None):
-        """Return sorted container names matching a glob pattern (`*`, `?`,
-        `[...]`), case-insensitively — running + stopped, minus our `_old`
-        rollback leftovers. Empty list if nothing matches (#40, @LeeNX).
-        `backend` picks the host to match on (#7); default is the local one."""
-        import fnmatch
-        # argv without the CLI name — the backend prepends it, so the
-        # "-a" insert index shifts down by one accordingly.
-        cmd = ["ps", "--format", "{{.Names}}"]
-        if include_stopped:
-            cmd.insert(1, "-a")
-        result = (backend or self.backend).run(cmd)
-        names = [n.strip() for n in result.stdout.strip().split("\n")
-                 if n.strip() and not n.strip().endswith("_old")]
-        pl = pattern.lower()
-        return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
+        """Sorted container names matching a glob (#40, @LeeNX).
+        `backend` picks the host to match on (#7); default is the local
+        one. The matching is `lifecycle.match_glob` — shared, so `/stop
+        web*` means the same set of containers in either chat."""
+        import lifecycle
+        return lifecycle.match_glob(pattern, backend=backend or self.backend,
+                                    include_stopped=include_stopped)
 
     def _select_containers(self, arg, backend=None):
         """Resolve a /check or /update argument to a list of container names.
@@ -779,6 +700,14 @@ class TelegramBot:
         if outcome.fatal is not None:
             self.send_message(self.t(outcome.fatal.key,
                                      **outcome.fatal.params) + hint)
+            return
+        if getattr(outcome, "grouped", False):
+            lines = []
+            for r in outcome.replies:
+                tag = self._host_tag(r.host) if r.host is not None else ""
+                lines.append((self.t(r.key, **r.params) if r.key else "") + tag)
+            if lines:
+                self.send_message("\n".join(lines) + hint)
             return
         for r in outcome.replies:
             tag = self._host_tag(r.host) if r.host is not None else ""
@@ -2821,8 +2750,16 @@ class TelegramBot:
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
             self.answer_callback(callback["id"], self.t("lifecycle_running", action=action))
-            ok, msg = self._lifecycle_action(action, target, checker)
-            self.send_message(msg)
+            # Local host only, and deliberately: the callback carries a
+            # bare container name, so a button under a remote container
+            # would act on the wrong box. `_build_status_detail` offers
+            # no buttons there for the same reason.
+            import lifecycle
+            self._emit(lifecycle.act(
+                action, [None], backend_for=self._backend_for,
+                checker_for=lambda h: self._checker_for(h, checker),
+                store_for=self._store_for, partial=target,
+                update_running=self.update_running))
 
         elif data.startswith("restart_deps:"):
             # Manual restart-dependents cascade from /groups <name>.
@@ -3033,7 +2970,7 @@ class TelegramBot:
                         buttons.append({"text": self.t("lifecycle_btn_restart"),
                                         "callback_data": f"lifecycle:restart:{resolved}"})
                         # Stop hidden for protected containers (#38). The callback is
-                        # also guarded in _lifecycle_action, so a stale button can't
+                        # also guarded in lifecycle.act, so a stale button can't
                         # slip a stop through either.
                         if not self._is_protected(resolved,
                                                   self._checker_for(host, checker),
@@ -3653,12 +3590,10 @@ class TelegramBot:
         # refuse on the Docksentry container itself (#16 / #17). Code
         # path is shared with the inline buttons in /status <name>.
         elif text.startswith("/stop ") or text.startswith("/start ") or text.startswith("/restart "):
+            import lifecycle
             parts = text.split(maxsplit=1)
-            if len(parts) < 2:
-                self.send_message(self.t("lifecycle_usage"))
-                return
-            action = parts[0][1:]  # strip leading "/"
-            raw_arg = parts[1].strip()
+            action = parts[0][1:]                       # strip the slash
+            raw_arg = parts[1].strip() if len(parts) > 1 else ""
             # Lifecycle commands intervene, so with no `@host` token they
             # stay on the local machine (#7) — stopping the wrong box's
             # container because you forgot where you were is exactly the
@@ -3667,50 +3602,13 @@ class TelegramBot:
             if host_err:
                 self.send_message(host_err)
                 return
-            if not arg:
-                self.send_message(self.t("lifecycle_usage"))
-                return
-            hint = self._host_hint(raw_arg)
-            # Glob → bulk action on every match (#40). Each goes through the
-            # same _lifecycle_action, so the self-kill and protect-from-stop
-            # guards still apply per container; results are aggregated.
-            if self._is_glob(arg):
-                matched_any = False
-                for host in (targets or [None]):
-                    backend = self._backend_for(host)
-                    names = self._match_glob(arg, backend=backend)
-                    if not names:
-                        continue
-                    matched_any = True
-                    lines = [self.t("glob_action_header", action=action,
-                                    count=len(names), pattern=arg)]
-                    for nm in names:
-                        ok, msg = self._lifecycle_action(
-                            action, nm, self._checker_for(host, checker),
-                            backend=backend, host=host)
-                        lines.append(("✅ " if ok else "❌ ") + msg
-                                     + self._host_tag(host))
-                    self.send_message("\n".join(lines) + hint)
-                if not matched_any:
-                    self.send_message(self.t("glob_no_match", pattern=arg) + hint)
-                return
-            # include_stopped is now the default — see _resolve_container
-            # docstring for rationale (#25).
-            resolved_any = False
-            first_err = None
-            for host in (targets or [None]):
-                backend = self._backend_for(host)
-                resolved, err = self._resolve_container(arg, backend=backend)
-                if not resolved:
-                    first_err = first_err or err
-                    continue
-                resolved_any = True
-                ok, msg = self._lifecycle_action(
-                    action, resolved, self._checker_for(host, checker),
-                    backend=backend, host=host)
-                self.send_message(msg + self._host_tag(host) + hint)
-            if not resolved_any:
-                self.send_message(first_err + hint)
+            self._emit(lifecycle.act(
+                action, targets or [None],
+                backend_for=self._backend_for,
+                checker_for=lambda h: self._checker_for(h, checker),
+                store_for=self._store_for, partial=arg,
+                update_running=self.update_running),
+                hint=self._host_hint(raw_arg))
 
         elif text == "/selfupdate":
             self._handle_selfupdate()
