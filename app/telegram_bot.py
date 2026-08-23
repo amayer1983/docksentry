@@ -3734,21 +3734,24 @@ class TelegramBot:
                 self.send_message(self.t("lang_usage") + f"\n\n📂 {', '.join(langs)}")
 
         elif text == "/history":
-            if os.path.exists(self.config.history_file):
-                with open(self.config.history_file) as f:
-                    history = json.load(f)
-                if history:
-                    # Show last 10 entries, newest first
-                    lines = []
-                    for h in reversed(history[-10:]):
-                        icon = "✅" if h["success"] else "❌"
-                        # Normalize legacy v1.16.1 calendar glyph in stored
-                        # detail strings — see CHANGELOG v1.16.2.
-                        detail = h.get("detail", "").replace("📅", "🗓️")
-                        lines.append(f"{icon} `{h['container']}` — {h['timestamp']}\n    {detail}")
-                    self.send_message(self.t("history_title") + "\n\n" + "\n".join(lines))
-                    return
-            self.send_message(self.t("history_empty"))
+            # Instance-wide, not per host: an update on the NAS and one at
+            # home go into the same log. Read by the core so both front
+            # ends show the same rows, normalised the same way (#63).
+            import container_flags
+            rows, err = container_flags.update_history(
+                getattr(self.config, "history_file", ""))
+            if err is not None:
+                self.send_message(self.t(err.key, **err.params))
+                return
+            lines = []
+            for h in rows:
+                icon = "✅" if h.get("success") else "❌"
+                line = f"{icon} `{h.get('container', '?')}` — {h.get('timestamp', '')}"
+                if h.get("detail"):
+                    line += f"\n    {h['detail']}"
+                lines.append(line)
+            self.send_message(self.t("history_title") + "\n\n"
+                              + "\n".join(lines))
 
         elif text.startswith("/pin"):
             import container_flags

@@ -1592,37 +1592,21 @@ class DiscordBot:
 
     # ── reads ─────────────────────────────────────────────────────
     def _cmd_history(self, opts):
-        import json
-        import os
-        wanted = (opts.get("container") or "").strip().lower()
-        path = getattr(self.config, "history_file", "")
-        if not path or not os.path.exists(path):
-            return self.t("history_empty")
-        try:
-            with open(path) as f:
-                history = json.load(f)
-        except (OSError, ValueError):
-            return self.t("history_empty")
-        if not isinstance(history, list) or not history:
-            return self.t("history_empty")
-        entries = [h for h in history if isinstance(h, dict)]
-        if wanted:
-            entries = [h for h in entries
-                       if wanted in str(h.get("container", "")).lower()]
-        if not entries:
-            return self.t("chan_history_none_for", name=opts.get("container"))
+        """The update log, read by the core and laid out here (#63)."""
+        import container_flags
+        rows, err = container_flags.update_history(
+            getattr(self.config, "history_file", ""),
+            wanted=(opts.get("container") or "").strip())
+        if err is not None:
+            return self.t(err.key, **err.params)
         lines = []
-        for h in reversed(entries[-10:]):       # newest first
+        for h in rows:
             icon = "✅" if h.get("success") else "❌"
-            # Legacy v1.16.1 rows stored a different calendar glyph; the
-            # Telegram side normalises it too, so both front-ends render
-            # the same stored string.
-            detail = str(h.get("detail", "")).replace("📅", "🗓️")
             line = f"{icon} `{h.get('container', '?')}` — {h.get('timestamp', '')}"
-            if detail:
-                line += f"\n    {detail}"
+            if h.get("detail"):
+                line += f"\n    {h['detail']}"
             lines.append(line)
-        return self._clip("**Update history**\n" + "\n".join(lines))
+        return self._clip(self.t("history_title") + "\n" + "\n".join(lines))
 
     def _cmd_events(self, limit=15):
         import json

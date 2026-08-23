@@ -460,3 +460,44 @@ def audit_container(targets, *, backend_for, checker_for, partial):
             checker_for(host), inspect)
         return name, host, findings, None
     return None, None, None, first_err
+
+
+def update_history(path, *, wanted="", limit=10):
+    """The last `limit` update-history rows, newest first.
+
+    Returns `(rows, Reply|None)`. A row is a plain dict — the front ends
+    render the icon, the indent and the container name themselves.
+
+    The file is instance-wide, not per host: an update on the NAS and one
+    at home go into the same log, which is why this takes a path rather
+    than a host. Both front ends read it separately before, with their
+    own idea of how many rows to show and what a missing file means.
+    """
+    import json as _json
+    import os as _os
+    if not path or not _os.path.exists(path):
+        return [], Reply("history_empty", ok=False)
+    try:
+        with open(path) as f:
+            history = _json.load(f)
+    except (OSError, ValueError):
+        return [], Reply("history_empty", ok=False)
+    if not isinstance(history, list) or not history:
+        return [], Reply("history_empty", ok=False)
+    rows = [h for h in history if isinstance(h, dict)]
+    if wanted:
+        needle = wanted.strip().lower()
+        rows = [h for h in rows
+                if needle in str(h.get("container", "")).lower()]
+        if not rows:
+            return [], Reply("chan_history_none_for", {"name": wanted},
+                             ok=False)
+    # Legacy v1.16.1 rows carry a different calendar glyph. Normalised
+    # here so both front ends render the same stored string — they each
+    # did their own replace before, which is two chances to forget.
+    out = []
+    for h in reversed(rows[-limit:]):
+        h = dict(h)
+        h["detail"] = str(h.get("detail", "")).replace("📅", "🗓️")
+        out.append(h)
+    return out, None
