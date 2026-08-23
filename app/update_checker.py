@@ -2535,6 +2535,7 @@ class UpdateChecker:
             text = text.strip()
             if not text:
                 return ""
+            text = self._collapse_repeats(text)
             # Hard cap: ~1500 chars so the Telegram message stays under
             # the 4096-char limit even with other fields stuffed in.
             if len(text) > 1500:
@@ -2542,6 +2543,50 @@ class UpdateChecker:
             return text
         except subprocess.SubprocessError:
             return ""
+
+    @staticmethod
+    def _state_note(state, health):
+        """`state=restarting` or `state=running, health=unhealthy`.
+
+        A container without a health probe has no health to report, and
+        the bare `health=` we used to print read like a broken template
+        rather than like "there is nothing here" (#63, the owner's tika
+        rollback, which is exactly that case).
+        """
+        return f"state={state}" + (f", health={health}" if health else "")
+
+    @staticmethod
+    def _collapse_repeats(text):
+        """Fold a repeating tail into one copy, counted.
+
+        A crash-restart loop writes the same thing on every attempt, so
+        the log tail is one stack trace five times over — which is how
+        the owner's `tika` rollback filled a phone screen with a single
+        error (#63). Folding it keeps the whole diagnostic and leaves
+        room for the lines that differ, which are the ones worth reading.
+
+        Blocks, not lines: the repeat is `Error: …` / `Caused by: …` /
+        `…ClassNotFoundException: …` over and over, and a line-by-line
+        fold sees no two identical lines in a row at all.
+        """
+        lines = (text or "").split("\n")
+        n = len(lines)
+        if n < 4:
+            return text
+        # Smallest block that the tail repeats — smallest, so the count is
+        # as high as it can honestly be.
+        for size in range(1, n // 2 + 1):
+            block = lines[-size:]
+            reps = 1
+            while (reps + 1) * size <= n and \
+                    lines[-(reps + 1) * size:-reps * size] == block:
+                reps += 1
+            if reps >= 3:
+                head = lines[:n - reps * size]
+                folded = block + [f"   (the {size} line(s) above repeated "
+                                  f"{reps}× — folded)"]
+                return "\n".join(head + folded).strip()
+        return text
 
     def _restart_count(self, name):
         """Current Docker RestartCount for a container (0 on any error).
@@ -3411,9 +3456,13 @@ class UpdateChecker:
             tail = self._tail_logs(name, lines=10)
             probe = self._health_output(name)
             if outcome == "crashloop":
-                msg = f"Update produced a crash-restart loop (state={state}, health={health}) — left in place (compose)"
+                msg = (f"Update produced a crash-restart loop "
+                       f"({self._state_note(state, health)}) "
+                       f"— left in place (compose)")
             else:
-                msg = f"Health check failed (state={state}, health={health}) — container left in place (compose)"
+                msg = (f"Health check failed "
+                       f"({self._state_note(state, health)}) "
+                       f"— container left in place (compose)")
             if probe:
                 msg += f"\nHealth check said:\n```\n{probe}\n```"
             if tail:
@@ -4609,7 +4658,8 @@ class UpdateChecker:
                 if outcome in ("unhealthy", "crashloop"):
                     tail = self._tail_logs(name, lines=10)
                     problem = ("is crash-looping" if outcome == "crashloop"
-                               else f"health check failed (state={state}, health={health})")
+                               else "health check failed "
+                                    f"({self._state_note(state, health)})")
                     msg = (f"⚠ Recreated after auto-remove, but {problem}. No "
                            f"rollback target exists for a --rm container — "
                            f"left running. ({detail})")
@@ -4731,10 +4781,19 @@ class UpdateChecker:
                 # exists). Replaces the old stop+rm+rename+start sequence
                 # that silently failed when the new container wouldn't stop.
                 self._rollback_to_old(name, old_name)
+                # An empty health value renders as a bare `health=`, which
+                # reads like a broken template rather than "this container
+                # has no health probe" — which is what it means, and which
+                # is the common case for the crash-loop path (#63, the
+                # owner's tika rollback).
                 if outcome == "crashloop":
-                    msg = f"Update produced a crash-restart loop (state={state}, health={health}) — rolled back"
+                    msg = (f"Update produced a crash-restart loop "
+                           f"({self._state_note(state, health)}) "
+                           f"— rolled back")
                 else:
-                    msg = f"Health check failed (state={state}, health={health}) — rolled back"
+                    msg = (f"Health check failed "
+                           f"({self._state_note(state, health)}) "
+                           f"— rolled back")
                 if probe:
                     msg += f"\nHealth check said:\n```\n{probe}\n```"
                 if tail:
