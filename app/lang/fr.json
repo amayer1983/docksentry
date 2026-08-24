@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Nettoyage : {message}",
   "cleanup_enospc": "🧹 {host} : nettoyage d'urgence après saturation du disque — {message}",
   "cleanup_between_updates": "🧹 Disque local à {pct}% (≥{threshold}%) — nettoyé entre les mises à jour : {message}",
-  "cleanup_attempt_failed": "🧹 Échec de la tentative de nettoyage : {error}"
+  "cleanup_attempt_failed": "🧹 Échec de la tentative de nettoyage : {error}",
+  "compose_fallback": "ℹ️ C'est un conteneur Compose, mais `{file}` n'est pas accessible depuis Docksentry — il a été reconstruit à partir de ses données d'inspection avec `docker run` au lieu de `docker compose up`. Montez ce répertoire dans le conteneur Docksentry pour utiliser le chemin Compose."
 }

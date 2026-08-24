@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Temizlik: {message}",
   "cleanup_enospc": "🧹 {host}: disk dolduktan sonra acil temizlik — {message}",
   "cleanup_between_updates": "🧹 Yerel disk %{pct} (≥%{threshold}) — güncellemeler arasında temizlendi: {message}",
-  "cleanup_attempt_failed": "🧹 Temizlik denemesi başarısız: {error}"
+  "cleanup_attempt_failed": "🧹 Temizlik denemesi başarısız: {error}",
+  "compose_fallback": "ℹ️ Bu bir Compose kapsayıcısı, ancak `{file}` Docksentry içinden erişilebilir değil — inspect verilerinden `docker compose up` yerine `docker run` ile yeniden oluşturuldu. Compose yolunu kullanmak için o dizini Docksentry kapsayıcısına bağlayın."
 }

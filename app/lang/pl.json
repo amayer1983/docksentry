@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Czyszczenie: {message}",
   "cleanup_enospc": "🧹 {host}: awaryjne czyszczenie po zapełnieniu dysku — {message}",
   "cleanup_between_updates": "🧹 Dysk lokalny na {pct}% (≥{threshold}%) — wyczyszczono między aktualizacjami: {message}",
-  "cleanup_attempt_failed": "🧹 Próba czyszczenia nie powiodła się: {error}"
+  "cleanup_attempt_failed": "🧹 Próba czyszczenia nie powiodła się: {error}",
+  "compose_fallback": "ℹ️ To kontener Compose, ale `{file}` jest nieosiągalny z wnętrza Docksentry — został odtworzony z danych inspect przez `docker run` zamiast `docker compose up`. Zamontuj ten katalog w kontenerze Docksentry, aby użyć ścieżki Compose."
 }

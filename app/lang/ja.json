@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 クリーンアップ: {message}",
   "cleanup_enospc": "🧹 {host}: ディスク不足による緊急クリーンアップ — {message}",
   "cleanup_between_updates": "🧹 ローカルディスク {pct}%（≥{threshold}%）— 更新の合間にクリーンアップしました: {message}",
-  "cleanup_attempt_failed": "🧹 クリーンアップに失敗しました: {error}"
+  "cleanup_attempt_failed": "🧹 クリーンアップに失敗しました: {error}",
+  "compose_fallback": "ℹ️ これは Compose のコンテナですが、Docksentry の中から `{file}` に到達できません — `docker compose up` ではなく inspect のデータから `docker run` で再作成しました。Compose の経路を使うには、そのディレクトリを Docksentry コンテナにマウントしてください。"
 }

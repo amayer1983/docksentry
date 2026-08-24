@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 تنظيف: {message}",
   "cleanup_enospc": "🧹 {host}: تنظيف طارئ بعد امتلاء القرص — {message}",
   "cleanup_between_updates": "🧹 القرص المحلي عند {pct}% (≥{threshold}%) — تم التنظيف بين التحديثات: {message}",
-  "cleanup_attempt_failed": "🧹 فشلت محاولة التنظيف: {error}"
+  "cleanup_attempt_failed": "🧹 فشلت محاولة التنظيف: {error}",
+  "compose_fallback": "ℹ️ هذه حاوية Compose، لكن `{file}` غير متاح من داخل Docksentry — أُعيد إنشاؤها من بيانات inspect باستخدام `docker run` بدلاً من `docker compose up`. اربط ذلك المجلد بحاوية Docksentry لاستخدام مسار Compose."
 }

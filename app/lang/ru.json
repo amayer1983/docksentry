@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Очистка: {message}",
   "cleanup_enospc": "🧹 {host}: аварийная очистка после нехватки места — {message}",
   "cleanup_between_updates": "🧹 Локальный диск на {pct}% (≥{threshold}%) — очищено между обновлениями: {message}",
-  "cleanup_attempt_failed": "🧹 Попытка очистки не удалась: {error}"
+  "cleanup_attempt_failed": "🧹 Попытка очистки не удалась: {error}",
+  "compose_fallback": "ℹ️ Это контейнер Compose, но `{file}` недоступен изнутри Docksentry — он был пересоздан из данных inspect через `docker run`, а не `docker compose up`. Подключите этот каталог в контейнер Docksentry, чтобы использовать путь Compose."
 }

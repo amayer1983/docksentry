@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 정리: {message}",
   "cleanup_enospc": "🧹 {host}: 디스크가 가득 차서 긴급 정리 — {message}",
   "cleanup_between_updates": "🧹 로컬 디스크 {pct}%(≥{threshold}%) — 업데이트 사이에 정리했습니다: {message}",
-  "cleanup_attempt_failed": "🧹 정리 시도가 실패했습니다: {error}"
+  "cleanup_attempt_failed": "🧹 정리 시도가 실패했습니다: {error}",
+  "compose_fallback": "ℹ️ Compose 컨테이너이지만 Docksentry 안에서 `{file}`에 접근할 수 없습니다 — `docker compose up` 대신 inspect 데이터로 `docker run`을 사용해 다시 만들었습니다. Compose 경로를 쓰려면 해당 디렉터리를 Docksentry 컨테이너에 마운트하세요."
 }

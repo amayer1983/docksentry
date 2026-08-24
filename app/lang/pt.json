@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Limpeza: {message}",
   "cleanup_enospc": "🧹 {host}: limpeza de emergência após o disco encher — {message}",
   "cleanup_between_updates": "🧹 Disco local em {pct}% (≥{threshold}%) — limpo entre atualizações: {message}",
-  "cleanup_attempt_failed": "🧹 A tentativa de limpeza falhou: {error}"
+  "cleanup_attempt_failed": "🧹 A tentativa de limpeza falhou: {error}",
+  "compose_fallback": "ℹ️ É um contentor Compose, mas `{file}` não está acessível a partir do Docksentry — foi reconstruído a partir dos dados de inspect com `docker run` em vez de `docker compose up`. Monte essa pasta no contentor do Docksentry para usar o caminho Compose."
 }

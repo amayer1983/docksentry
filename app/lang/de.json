@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Aufräumen: {message}",
   "cleanup_enospc": "🧹 {host}: Notfall-Aufräumen nach vollem Datenträger — {message}",
   "cleanup_between_updates": "🧹 Lokaler Datenträger bei {pct}% (≥{threshold}%) — zwischen Updates aufgeräumt: {message}",
-  "cleanup_attempt_failed": "🧹 Aufräumversuch fehlgeschlagen: {error}"
+  "cleanup_attempt_failed": "🧹 Aufräumversuch fehlgeschlagen: {error}",
+  "compose_fallback": "ℹ️ Das ist ein Compose-Container, aber `{file}` ist aus Docksentry heraus nicht erreichbar — er wurde aus den inspect-Daten mit `docker run` nachgebaut statt mit `docker compose up`. Hänge das Verzeichnis in den Docksentry-Container ein, damit der Compose-Weg genutzt wird."
 }

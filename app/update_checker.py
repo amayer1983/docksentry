@@ -3380,8 +3380,20 @@ class UpdateChecker:
         # Check if compose file is accessible
         compose_files = self._compose_files(config_file)
         if not compose_files or not all(os.path.isfile(f) for f in compose_files):
+            # Say it, do not just log it. Docksentry runs in a container,
+            # so a compose file living on the host is invisible unless it
+            # is mounted in — and then the update silently changes
+            # strategy, rebuilding a compose-managed container from its
+            # inspect data with `docker run`. That is a different code
+            # path with different failure modes, and the owner has no way
+            # to know it was taken (#2, @famewolf). One line in the
+            # result is the difference between "why did this fail?" and
+            # "ah, I need to mount that directory."
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
-            return self._update_standalone(name, image, netns_name=netns_name)
+            ok, msg = self._update_standalone(name, image,
+                                              netns_name=netns_name)
+            note = self._t("compose_fallback", file=config_file or "?")
+            return ok, f"{msg}\n{note}"
 
         # Base compose invocation. When the stack was originally started from
         # a different directory than the compose file's (label

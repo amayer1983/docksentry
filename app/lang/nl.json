@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 Opruimen: {message}",
   "cleanup_enospc": "🧹 {host}: noodopruiming nadat de schijf vol raakte — {message}",
   "cleanup_between_updates": "🧹 Lokale schijf op {pct}% (≥{threshold}%) — tussen updates opgeruimd: {message}",
-  "cleanup_attempt_failed": "🧹 Opruimpoging mislukt: {error}"
+  "cleanup_attempt_failed": "🧹 Opruimpoging mislukt: {error}",
+  "compose_fallback": "ℹ️ Dit is een Compose-container, maar `{file}` is niet bereikbaar vanuit Docksentry — hij is uit zijn inspect-gegevens herbouwd met `docker run` in plaats van `docker compose up`. Koppel die map in de Docksentry-container om het Compose-pad te gebruiken."
 }

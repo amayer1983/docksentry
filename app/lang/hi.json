@@ -946,5 +946,6 @@
   "cleanup_manual_prefix": "🧹 सफ़ाई: {message}",
   "cleanup_enospc": "🧹 {host}: डिस्क भर जाने के बाद आपातकालीन सफ़ाई — {message}",
   "cleanup_between_updates": "🧹 स्थानीय डिस्क {pct}% पर (≥{threshold}%) — अपडेट के बीच साफ़ किया: {message}",
-  "cleanup_attempt_failed": "🧹 सफ़ाई का प्रयास विफल: {error}"
+  "cleanup_attempt_failed": "🧹 सफ़ाई का प्रयास विफल: {error}",
+  "compose_fallback": "ℹ️ यह एक Compose कंटेनर है, लेकिन Docksentry के अंदर से `{file}` तक पहुँच नहीं है — इसे `docker compose up` के बजाय inspect डेटा से `docker run` द्वारा फिर से बनाया गया। Compose पथ उपयोग करने के लिए उस डायरेक्टरी को Docksentry कंटेनर में माउंट करें।"
 }

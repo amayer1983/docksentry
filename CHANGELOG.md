@@ -173,6 +173,12 @@ First release through the beta channel — features settle on `:beta` before the
 - **Network and disk I/O in the `/status` detail.** `docker stats` hands them over in the same call that already fetches CPU and memory, so the two extra fields cost nothing. A runtime that reports fewer fields still yields the two that matter.
 - **The `beta` channel, documented.** New features land on `amayer1983/docksentry:beta` first and move to `:latest` once they have settled — `:latest` is never moved by a pre-release, so `AUTO_SELFUPDATE` only ever pulls settled versions.
 
+## [2.17.1] - 2026-08-24
+
+### Fixed
+- **A recreate could lose its log driver (#2, @famewolf).** A container created with the `json-file` log driver and a `max-size` option, on a host whose daemon default is `journald`, got the option without the driver — and journald refuses `max-size`, so the recreate failed outright. `json-file` is only the factory default, not necessarily the daemon's; log options now always carry their driver.
+- **A Compose stack rebuilt as standalone now says so.** Docksentry runs in a container, so a compose file living on the host is invisible unless the directory is mounted in. When it is, the update quietly switches strategy and rebuilds the container from its inspect data with `docker run` instead of `docker compose up` — a different code path with different failure modes, recorded only in a debug line nobody sees. The result now names the unreachable file and says that mounting its directory restores the Compose path.
+
 ## [2.17.0] - 2026-08-18
 
 ### Fixed
