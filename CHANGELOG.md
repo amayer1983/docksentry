@@ -2,6 +2,38 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.19] - 2026-08-24
+
+### Changed
+- **`/stop` asks first, in Telegram too.** Discord already did. A container that comes back up is a decision you can take back; a stopped one stays stopped until somebody notices. Both chats ask the same question now, and the refusals run *before* it — being asked "are you sure about `gluetun`?", pressing yes and only then being told it is stop-protected is a worse answer than being told straight away. That holds for patterns too: `/stop *` says up front which ones it will skip and asks about the rest. `/start` and `/restart` do not ask.
+
+- **`/stop web*` works in Discord.** Globs only ever worked in Telegram because the matching lived inside that file. Stop, start and restart are one implementation now, shared by both chats and the Web UI — same three refusals, same wording, same two CLI calls.
+
+- **`/cleanup` reaches every host from Discord.** It cleaned the local machine only, on the reasoning that cleanup is a write and writes stay local. Sound reasoning, wrong conclusion: the box that fills up is rarely the local one (#2, @famewolf). Telegram walked them all; both do now, and one unreachable host reports instead of stopping the rest.
+
+- **`/cooldown` with no container lists what is set**, in both chats. Telegram could; Discord required a container and a number.
+
+- **`/checkimages` says it is an estimate.** It reports an upper bound and names what the grace period is holding back, rather than promising a figure `/cleanup` then does not deliver. Sizes are formatted by us in both chats now — Docker writes `8.534MB`, which reads as 8534 MB wherever a dot is the thousands separator.
+
+### Fixed
+- **The Web UI's Start / Stop / Restart buttons did nothing.** They had stopped working when the lifecycle code moved into the shared core: the Web UI still called a method that no longer existed, the error was swallowed, and the page reloaded as if it had worked. Fixed, and on the way it gained the two guards it never had — it only ever checked "would this stop Docksentry itself?", so its Stop button could take down a container both chats refuse to touch, which for most people is the VPN carrying their remote access.
+
+- **A recreate could lose its log driver (#2, @famewolf).** A container on `json-file` with a `max-size` option, on a host whose daemon default is `journald`, got the option without the driver — and journald refuses `max-size`, so the recreate failed outright. Log options now always carry their driver.
+
+- **`/note web something` confirmed with an empty note.** It saved correctly and reported "📝 Note on `web`: —", in both chats, in every language.
+
+- **`/updateall @nas` updated every host.** The host was never parsed. On a multi-host setup "just the NAS please" meant everything, everywhere, without a confirmation. It filters by host now, and a container name gets a usage line instead of a silent full run.
+
+- **`/note`, `/trustrunning`, `/askmajor` and `/setlink` were permanently local in Discord.** All four accepted a host internally; none of them offered the option, so it was always empty.
+
+- **`/cleanup` said ✅ twice.** Both chats and the Web UI checked the result for an English word the message stopped containing a while ago, so the check never fired and a second checkmark got stuck in front. The most common outcome of the most-run maintenance command, in every language. Four more places put their own icon in front of that message, and their labels were hardcoded English in an otherwise translated report — five new keys.
+
+- **A crash-restart loop printed its stack trace five times.** That is what a restart loop writes: the same error on every attempt. It is folded to one copy with a count now, so the lines that differ are the ones you see. Crash messages no longer show a bare `health=` for containers that have no health probe.
+
+- **A stop refused during an update** said two different sentences depending on which chat you had open.
+
+- **Telegram's stop confirmation now expires** after fifteen minutes, like Discord's, and only the person who asked can press it.
+
 ## [2.18.0-beta.18] - 2026-08-22
 
 ### Changed
