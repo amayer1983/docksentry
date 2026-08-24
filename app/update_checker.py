@@ -3882,12 +3882,22 @@ class UpdateChecker:
         if runtime and runtime not in ("runc", "oci"):
             args.extend(["--runtime", runtime])
 
-        # ── Logging driver (skip Docker default json-file/empty) ─
+        # ── Logging driver ──────────────────────────────────────
+        # Skipping `json-file` as "the default" is only safe while the
+        # container carries no log options: json-file is the FACTORY
+        # default, but daemon.json can set any other driver as the
+        # daemon's default. @famewolf's llama-server had json-file with
+        # `max-size` while his daemon default was journald — dropping
+        # the driver flag but keeping the opts handed journald an option
+        # it refuses, and the recreate died with "unknown log opt
+        # 'max-size' for journald log driver" (#2). Options only mean
+        # anything next to their driver, so the opts imply the flag.
         log = host.get("LogConfig") or {}
         log_type = log.get("Type", "")
-        if log_type and log_type not in ("json-file", ""):
+        log_opts = log.get("Config") or {}
+        if log_type and (log_opts or log_type != "json-file"):
             args.extend(["--log-driver", log_type])
-        for k, v in (log.get("Config") or {}).items():
+        for k, v in log_opts.items():
             args.extend(["--log-opt", f"{k}={v}"])
 
         # ── Memory limits ──────────────────────────────────────
