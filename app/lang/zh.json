@@ -944,5 +944,10 @@
   "cleanup_error": "❌ 清理错误：{error}",
   "confirm_stop_many": "⚠ 停止与 `{pattern}` 匹配的 {count} 个容器？\n在有东西重新启动它们之前，它们会一直停着。\n{names}",
   "confirm_stop_btn": "🟥 停止",
-  "updateall_usage": "`/updateall` 会更新所有有待处理更新的容器。它只接受主机参数（`@nas`、`@all`）——单个容器请用 `/update <名称>`。"
+  "updateall_usage": "`/updateall` 会更新所有有待处理更新的容器。它只接受主机参数（`@nas`、`@all`）——单个容器请用 `/update <名称>`。",
+  "cleanup_disk_prefix": "🧹 自动清理（磁盘空间不足）：{message}",
+  "cleanup_manual_prefix": "🧹 清理：{message}",
+  "cleanup_enospc": "🧹 {host}：磁盘写满后的紧急清理 — {message}",
+  "cleanup_between_updates": "🧹 本地磁盘已用 {pct}%（≥{threshold}%）— 已在更新之间清理：{message}",
+  "cleanup_attempt_failed": "🧹 清理尝试失败：{error}"
 }

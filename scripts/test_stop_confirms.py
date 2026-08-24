@@ -92,7 +92,10 @@ def make_bot(lang="en"):
     bot._check_auth = lambda *a, **k: True
     bot.sent = []
     bot.send_message = lambda m, **k: bot.sent.append((m, k.get("reply_markup")))
-    bot.answer_callback = lambda *a: None
+    bot.toasts = []
+    # "That is not your button" belongs in a toast, not in the chat — it
+    # is an answer to the person who tapped, not news for the room.
+    bot.answer_callback = lambda _id, text="": bot.toasts.append(text)
     bot.remove_buttons = lambda *a: None
     return bot, ck
 
@@ -109,6 +112,15 @@ def buttons(rows):
         if kb:
             return [b["callback_data"] for r in kb["inline_keyboard"] for b in r]
     return []
+
+
+def press_as(bot, data, user="1"):
+    bot.sent.clear()
+    TelegramBot._handle_callback(bot, {"data": data, "id": "c",
+                                       "from": {"id": user},
+                                       "message": {"message_id": 9,
+                                                   "chat": {"id": 1}}}, None)
+    return list(bot.sent)
 
 
 def press(bot, data):
@@ -200,6 +212,52 @@ rows = cmd(bot, "/stop nothing*")
 checks["a glob matching nothing is answered, not asked about"] = (
     buttons(rows) == [])
 
+# ── whose button is it, and for how long ─────────────────────────────
+# Discord recorded the asker and a 15-minute TTL from the start. This
+# side recorded neither: any authorised user could press somebody else's
+# button, and a question left unanswered on Monday was still live on
+# Friday when someone scrolled up and tapped it.
+import time as _time  # noqa: E402
+
+bot, ck = make_bot()
+btns = buttons(cmd(bot, "/stop web"))
+press_as(bot, btns[0], user="999")
+checks["another user cannot press your confirmation"] = ck.stopped == []
+checks["…and is told why, in a toast rather than in the chat"] = (
+    any(EN["chan_confirm_not_yours"].split(".")[0] in t
+        for t in bot.toasts) and bot.sent == [])
+press(bot, btns[0])
+checks["…and the button still works for the person who asked"] = (
+    ck.stopped == ["web"])
+
+# A record with no asker fails closed too — that is the shape that let
+# Discord's own check be bypassed before it was tightened.
+bot, ck = make_bot()
+btns = buttons(cmd(bot, "/stop web"))
+bot._pending_stops[btns[0].split(":", 1)[1]]["user"] = ""
+press(bot, btns[0])
+checks["a record with no asker is refused, not waved through"] = (
+    ck.stopped == [])
+
+bot, ck = make_bot()
+btns = buttons(cmd(bot, "/stop web"))
+rec = bot._pending_stops[btns[0].split(":", 1)[1]]
+rec["created"] = _time.time() - (bot.STOP_CONFIRM_TTL + 1)
+out = press(bot, btns[0])
+checks["a confirmation older than the TTL is dead"] = ck.stopped == []
+checks["…and says so"] = (
+    EN["chan_confirm_expired"].split("—")[0].strip() in str(out[-1][0]))
+
+bot, ck = make_bot()
+btns = buttons(cmd(bot, "/stop web"))
+bot._pending_stops[btns[0].split(":", 1)[1]]["created"] = (
+    _time.time() - (bot.STOP_CONFIRM_TTL - 60))
+press(bot, btns[0])
+checks["…but one just inside it still works"] = ck.stopped == ["web"]
+
+checks["the TTL matches Discord's"] = (
+    TelegramBot.STOP_CONFIRM_TTL == 15 * 60)
+
 # ── the question itself is shared ────────────────────────────────────
 work = [(None, ["web"])]
 checks["one container gets the singular question"] = (
@@ -225,8 +283,12 @@ checks["neither keeps its own protect check for it"] = (
 
 # The press re-derives rather than replaying: `act` is what runs, not a
 # stored list of names.
+# Sliced at the branch boundary, not at a byte count: the first version
+# of this took a fixed 1600-character window, and adding the TTL check
+# pushed `lifecycle.act` out of it — the test failed on its own arbitrary
+# number rather than on the behaviour it names.
 i = tb.index('if data.startswith("stop_go:")')
-block = tb[i:i + 1600]
+block = tb[i:tb.index("\n        if data ==", i + 10)]
 checks["the press re-runs the guards"] = "lifecycle.act(" in block
 checks["…from the raw argument, not a captured name list"] = (
     'rec["arg"]' in block)

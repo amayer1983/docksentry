@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Ошибка очистки: {error}",
   "confirm_stop_many": "⚠ Остановить контейнеров: {count} по шаблону `{pattern}`?\nОни останутся выключенными, пока их что-нибудь не запустит.\n{names}",
   "confirm_stop_btn": "🟥 Остановить",
-  "updateall_usage": "`/updateall` обновляет всё, для чего есть обновление. Принимает только хост (`@nas`, `@all`) — для одного контейнера используйте `/update <имя>`."
+  "updateall_usage": "`/updateall` обновляет всё, для чего есть обновление. Принимает только хост (`@nas`, `@all`) — для одного контейнера используйте `/update <имя>`.",
+  "cleanup_disk_prefix": "🧹 Автоочистка (мало места): {message}",
+  "cleanup_manual_prefix": "🧹 Очистка: {message}",
+  "cleanup_enospc": "🧹 {host}: аварийная очистка после нехватки места — {message}",
+  "cleanup_between_updates": "🧹 Локальный диск на {pct}% (≥{threshold}%) — очищено между обновлениями: {message}",
+  "cleanup_attempt_failed": "🧹 Попытка очистки не удалась: {error}"
 }

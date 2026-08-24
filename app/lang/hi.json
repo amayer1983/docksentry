@@ -944,5 +944,10 @@
   "cleanup_error": "❌ क्लीनअप त्रुटि: {error}",
   "confirm_stop_many": "⚠ `{pattern}` से मेल खाने वाले {count} कंटेनर रोकें?\nजब तक कुछ उन्हें फिर से शुरू न करे, वे बंद रहेंगे।\n{names}",
   "confirm_stop_btn": "🟥 रोकें",
-  "updateall_usage": "`/updateall` उन सभी को अपडेट करता है जिनके लिए अपडेट प्रतीक्षारत है। यह केवल एक होस्ट लेता है (`@nas`, `@all`) — एक कंटेनर के लिए `/update <नाम>` उपयोग करें।"
+  "updateall_usage": "`/updateall` उन सभी को अपडेट करता है जिनके लिए अपडेट प्रतीक्षारत है। यह केवल एक होस्ट लेता है (`@nas`, `@all`) — एक कंटेनर के लिए `/update <नाम>` उपयोग करें।",
+  "cleanup_disk_prefix": "🧹 स्वचालित सफ़ाई (डिस्क कम): {message}",
+  "cleanup_manual_prefix": "🧹 सफ़ाई: {message}",
+  "cleanup_enospc": "🧹 {host}: डिस्क भर जाने के बाद आपातकालीन सफ़ाई — {message}",
+  "cleanup_between_updates": "🧹 स्थानीय डिस्क {pct}% पर (≥{threshold}%) — अपडेट के बीच साफ़ किया: {message}",
+  "cleanup_attempt_failed": "🧹 सफ़ाई का प्रयास विफल: {error}"
 }

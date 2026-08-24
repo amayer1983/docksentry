@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Fehler beim Aufräumen: {error}",
   "confirm_stop_many": "⚠ {count} Container passend zu `{pattern}` stoppen?\nSie bleiben unten, bis sie etwas wieder startet.\n{names}",
   "confirm_stop_btn": "🟥 Stoppen",
-  "updateall_usage": "`/updateall` aktualisiert alles, wofür ein Update bereitliegt. Es nimmt einen Host (`@nas`, `@all`) und sonst nichts — für einen einzelnen Container `/update <Name>`."
+  "updateall_usage": "`/updateall` aktualisiert alles, wofür ein Update bereitliegt. Es nimmt einen Host (`@nas`, `@all`) und sonst nichts — für einen einzelnen Container `/update <Name>`.",
+  "cleanup_disk_prefix": "🧹 Automatisches Aufräumen (wenig Platz): {message}",
+  "cleanup_manual_prefix": "🧹 Aufräumen: {message}",
+  "cleanup_enospc": "🧹 {host}: Notfall-Aufräumen nach vollem Datenträger — {message}",
+  "cleanup_between_updates": "🧹 Lokaler Datenträger bei {pct}% (≥{threshold}%) — zwischen Updates aufgeräumt: {message}",
+  "cleanup_attempt_failed": "🧹 Aufräumversuch fehlgeschlagen: {error}"
 }

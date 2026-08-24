@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Erro de limpeza: {error}",
   "confirm_stop_many": "⚠ Parar {count} contêineres que correspondem a `{pattern}`?\nEles ficam parados até que algo os inicie novamente.\n{names}",
   "confirm_stop_btn": "🟥 Parar",
-  "updateall_usage": "`/updateall` atualiza tudo o que tem uma atualização pendente. Aceita um host (`@nas`, `@all`) e mais nada — para um contêiner use `/update <nome>`."
+  "updateall_usage": "`/updateall` atualiza tudo o que tem uma atualização pendente. Aceita um host (`@nas`, `@all`) e mais nada — para um contêiner use `/update <nome>`.",
+  "cleanup_disk_prefix": "🧹 Limpeza automática (pouco espaço): {message}",
+  "cleanup_manual_prefix": "🧹 Limpeza: {message}",
+  "cleanup_enospc": "🧹 {host}: limpeza de emergência após o disco encher — {message}",
+  "cleanup_between_updates": "🧹 Disco local em {pct}% (≥{threshold}%) — limpo entre atualizações: {message}",
+  "cleanup_attempt_failed": "🧹 A tentativa de limpeza falhou: {error}"
 }

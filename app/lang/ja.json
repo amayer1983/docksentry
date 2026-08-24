@@ -944,5 +944,10 @@
   "cleanup_error": "❌ クリーンアップエラー: {error}",
   "confirm_stop_many": "⚠ `{pattern}` に一致する {count} 個のコンテナを停止しますか？\n何かが再起動するまで停止したままになります。\n{names}",
   "confirm_stop_btn": "🟥 停止",
-  "updateall_usage": "`/updateall` は更新待ちのものをすべて更新します。指定できるのはホスト (`@nas`、`@all`) だけです — 単一コンテナには `/update <名前>` を使ってください。"
+  "updateall_usage": "`/updateall` は更新待ちのものをすべて更新します。指定できるのはホスト (`@nas`、`@all`) だけです — 単一コンテナには `/update <名前>` を使ってください。",
+  "cleanup_disk_prefix": "🧹 自動クリーンアップ（空き容量不足）: {message}",
+  "cleanup_manual_prefix": "🧹 クリーンアップ: {message}",
+  "cleanup_enospc": "🧹 {host}: ディスク不足による緊急クリーンアップ — {message}",
+  "cleanup_between_updates": "🧹 ローカルディスク {pct}%（≥{threshold}%）— 更新の合間にクリーンアップしました: {message}",
+  "cleanup_attempt_failed": "🧹 クリーンアップに失敗しました: {error}"
 }

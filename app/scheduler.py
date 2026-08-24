@@ -439,7 +439,10 @@ class Scheduler:
                             if ok and notifier and notifier.has_channels():
                                 notifier.send_message(self.bot.t("cleanup_auto_prefix", message=msg))
                             if ok and self.bot.enabled:
-                                self.bot.send_message(f"🧹 {msg}", auto=True)
+                                # No 🧹 in front: `cleanup_images` already
+                                # opens with ✅ or ❌, and two status icons
+                                # back to back read as a rendering fault.
+                                self.bot.send_message(msg, auto=True)
                     except Exception as e:
                         print(f"Auto cleanup error: {e}")
 
@@ -524,7 +527,7 @@ class Scheduler:
             if ok is None:
                 print(f"Disk auto cleanup skipped: {cmsg}")
                 return
-            full = f"🧹 Auto cleanup (disk): {cmsg}"
+            full = self.bot.t("cleanup_disk_prefix", message=cmsg)
             if notifier and notifier.has_channels():
                 notifier.send_message(full)
             if self.bot.enabled:

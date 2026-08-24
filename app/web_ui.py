@@ -6637,7 +6637,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # used to put a second one in front of it.
                     bot.send_message(msg)
                 if bot.notifier and bot.notifier.has_channels():
-                    bot.notifier.send_message(f"🧹 Cleanup: {msg}")
+                    bot.notifier.send_message(
+                        bot.t("cleanup_manual_prefix", message=msg))
                 print(f"Cleanup: {msg}")
             except Exception as e:
                 print(f"Web UI cleanup error: {e}")

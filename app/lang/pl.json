@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Błąd czyszczenia: {error}",
   "confirm_stop_many": "⚠ Zatrzymać {count} kontenerów pasujących do `{pattern}`?\nPozostaną wyłączone, dopóki coś ich nie uruchomi.\n{names}",
   "confirm_stop_btn": "🟥 Zatrzymaj",
-  "updateall_usage": "`/updateall` aktualizuje wszystko, co ma oczekującą aktualizację. Przyjmuje host (`@nas`, `@all`) i nic więcej — dla jednego kontenera użyj `/update <nazwa>`."
+  "updateall_usage": "`/updateall` aktualizuje wszystko, co ma oczekującą aktualizację. Przyjmuje host (`@nas`, `@all`) i nic więcej — dla jednego kontenera użyj `/update <nazwa>`.",
+  "cleanup_disk_prefix": "🧹 Automatyczne czyszczenie (mało miejsca): {message}",
+  "cleanup_manual_prefix": "🧹 Czyszczenie: {message}",
+  "cleanup_enospc": "🧹 {host}: awaryjne czyszczenie po zapełnieniu dysku — {message}",
+  "cleanup_between_updates": "🧹 Dysk lokalny na {pct}% (≥{threshold}%) — wyczyszczono między aktualizacjami: {message}",
+  "cleanup_attempt_failed": "🧹 Próba czyszczenia nie powiodła się: {error}"
 }

@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Opruimfout: {error}",
   "confirm_stop_many": "⚠ {count} containers stoppen die overeenkomen met `{pattern}`?\nZe blijven uit tot iets ze weer start.\n{names}",
   "confirm_stop_btn": "🟥 Stoppen",
-  "updateall_usage": "`/updateall` werkt alles bij waarvoor een update klaarstaat. Het accepteert een host (`@nas`, `@all`) en verder niets — voor één container gebruik je `/update <naam>`."
+  "updateall_usage": "`/updateall` werkt alles bij waarvoor een update klaarstaat. Het accepteert een host (`@nas`, `@all`) en verder niets — voor één container gebruik je `/update <naam>`.",
+  "cleanup_disk_prefix": "🧹 Automatisch opruimen (weinig ruimte): {message}",
+  "cleanup_manual_prefix": "🧹 Opruimen: {message}",
+  "cleanup_enospc": "🧹 {host}: noodopruiming nadat de schijf vol raakte — {message}",
+  "cleanup_between_updates": "🧹 Lokale schijf op {pct}% (≥{threshold}%) — tussen updates opgeruimd: {message}",
+  "cleanup_attempt_failed": "🧹 Opruimpoging mislukt: {error}"
 }

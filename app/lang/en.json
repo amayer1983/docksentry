@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Cleanup error: {error}",
   "confirm_stop_many": "⚠ Stop {count} containers matching `{pattern}`?\nThey stay down until something starts them again.\n{names}",
   "confirm_stop_btn": "🟥 Stop",
-  "updateall_usage": "`/updateall` updates everything that has an update waiting. It takes a host (`@nas`, `@all`) and nothing else — for one container use `/update <name>`."
+  "updateall_usage": "`/updateall` updates everything that has an update waiting. It takes a host (`@nas`, `@all`) and nothing else — for one container use `/update <name>`.",
+  "cleanup_disk_prefix": "🧹 Auto cleanup (low disk): {message}",
+  "cleanup_manual_prefix": "🧹 Cleanup: {message}",
+  "cleanup_enospc": "🧹 {host}: emergency cleanup after running out of disk — {message}",
+  "cleanup_between_updates": "🧹 Local disk at {pct}% (≥{threshold}%) — cleaned between updates: {message}",
+  "cleanup_attempt_failed": "🧹 Cleanup attempt failed: {error}"
 }

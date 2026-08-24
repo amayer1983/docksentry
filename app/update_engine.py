@@ -71,6 +71,18 @@ def host_store(owner, host):
 
 
 class UpdateEngine:
+    def _t(self, key, **kw):
+        """A user-facing line, in the configured language.
+
+        The batch report is read by people in a chat, so its words belong
+        in the shared translations like everyone else's (#63). Resolved
+        per call from `config.language`, so `/lang` applies at once — the
+        same shape `UpdateChecker._t` uses.
+        """
+        from i18n import get_translator
+        lang = getattr(getattr(self, "config", None), "language", "en") or "en"
+        return get_translator(lang)(key, **kw)
+
     def __init__(self, config, store, link_resolver=None, hosts=None):
         self.config = config
         self.store = store
@@ -658,9 +670,9 @@ class UpdateEngine:
                 try:
                     if not success and "no space left" in str(msg).lower():
                         _ok, _cmsg = u_checker.cleanup_images()
-                        results.append(
-                            f"🧹 {_host_of(u) or 'local'}: emergency cleanup "
-                            f"after ENOSPC — {_cmsg}")
+                        results.append(self._t(
+                            "cleanup_enospc",
+                            host=_host_of(u) or "local", message=_cmsg))
                     elif (getattr(self.config, "disk_warn_auto_cleanup", False)
                           and not getattr(self, "_batch_cleaned", False)):
                         # Measurement and cleanup on the SAME machine:
@@ -681,11 +693,12 @@ class UpdateEngine:
                         if _pct and _pct >= _thr:
                             self._batch_cleaned = True
                             _ok, _cmsg = _lc.cleanup_images()
-                            results.append(
-                                f"🧹 local disk at {_pct}% (≥{_thr}%) — "
-                                f"cleaned between updates: {_cmsg}")
+                            results.append(self._t(
+                                "cleanup_between_updates",
+                                pct=_pct, threshold=_thr, message=_cmsg))
                 except Exception as _ce:
-                    results.append(f"🧹 cleanup attempt failed: {_ce}")
+                    results.append(self._t("cleanup_attempt_failed",
+                                           error=str(_ce)[:120]))
                 if self.notifier:
                     self.notifier.send_update_result(u["name"], u["image"], success, msg,
                                                      source_url=u.get("source_url", ""))

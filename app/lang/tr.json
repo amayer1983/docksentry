@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Temizleme hatası: {error}",
   "confirm_stop_many": "⚠ `{pattern}` ile eşleşen {count} kapsayıcı durdurulsun mu?\nBir şey yeniden başlatana kadar kapalı kalırlar.\n{names}",
   "confirm_stop_btn": "🟥 Durdur",
-  "updateall_usage": "`/updateall` güncellemesi bekleyen her şeyi günceller. Yalnızca bir ana makine alır (`@nas`, `@all`) — tek kapsayıcı için `/update <ad>` kullanın."
+  "updateall_usage": "`/updateall` güncellemesi bekleyen her şeyi günceller. Yalnızca bir ana makine alır (`@nas`, `@all`) — tek kapsayıcı için `/update <ad>` kullanın.",
+  "cleanup_disk_prefix": "🧹 Otomatik temizlik (disk doluyor): {message}",
+  "cleanup_manual_prefix": "🧹 Temizlik: {message}",
+  "cleanup_enospc": "🧹 {host}: disk dolduktan sonra acil temizlik — {message}",
+  "cleanup_between_updates": "🧹 Yerel disk %{pct} (≥%{threshold}) — güncellemeler arasında temizlendi: {message}",
+  "cleanup_attempt_failed": "🧹 Temizlik denemesi başarısız: {error}"
 }

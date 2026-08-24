@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Erreur de nettoyage : {error}",
   "confirm_stop_many": "⚠ Arrêter {count} conteneurs correspondant à `{pattern}` ?\nIls resteront arrêtés jusqu'à ce que quelque chose les relance.\n{names}",
   "confirm_stop_btn": "🟥 Arrêter",
-  "updateall_usage": "`/updateall` met à jour tout ce qui a une mise à jour en attente. Il accepte un hôte (`@nas`, `@all`) et rien d'autre — pour un seul conteneur, utilisez `/update <nom>`."
+  "updateall_usage": "`/updateall` met à jour tout ce qui a une mise à jour en attente. Il accepte un hôte (`@nas`, `@all`) et rien d'autre — pour un seul conteneur, utilisez `/update <nom>`.",
+  "cleanup_disk_prefix": "🧹 Nettoyage auto (disque plein) : {message}",
+  "cleanup_manual_prefix": "🧹 Nettoyage : {message}",
+  "cleanup_enospc": "🧹 {host} : nettoyage d'urgence après saturation du disque — {message}",
+  "cleanup_between_updates": "🧹 Disque local à {pct}% (≥{threshold}%) — nettoyé entre les mises à jour : {message}",
+  "cleanup_attempt_failed": "🧹 Échec de la tentative de nettoyage : {error}"
 }

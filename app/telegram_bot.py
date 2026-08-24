@@ -7,6 +7,7 @@ import socket
 import subprocess
 import os
 import threading
+import time
 import urllib.error
 import urllib.request
 import urllib.parse
@@ -1040,6 +1041,10 @@ class TelegramBot:
     #: not one, and downloading it to find that out is somebody else's
     #: bandwidth.
     RESTORE_MAX_BYTES = 2 * 1024 * 1024
+    #: How long a `/stop` confirmation stays pressable. Discord has
+    #: had the same 15 minutes from the start; this side had none, so
+    #: a question asked on Monday was still live on Friday.
+    STOP_CONFIRM_TTL = 15 * 60
 
     def _offer_restore(self, doc):
         """A file arrived. Say what it is and ask, do not act.
@@ -1100,7 +1105,7 @@ class TelegramBot:
                  "callback_data": "restore_cancel"},
             ]]})
 
-    def _offer_stop(self, arg, raw_arg, question, hint=""):
+    def _offer_stop(self, arg, raw_arg, question, hint="", asker=None):
         """Ask before stopping, then let the button be the decision.
 
         The same shape as `_offer_restore`: the token goes in the
@@ -1111,12 +1116,19 @@ class TelegramBot:
         runs `lifecycle.act` from scratch, guards and all.
         """
         import secrets as _secrets
+        import time as _time
         token = _secrets.token_hex(6)
         pending = getattr(self, "_pending_stops", None)
         if pending is None:
             pending = self._pending_stops = {}
         pending.clear()                      # one at a time; the newest wins
-        pending[token] = {"arg": arg, "raw": raw_arg}
+        # Who asked, and when. Discord recorded both from the start; this
+        # side recorded neither, so any authorised user could press
+        # somebody else's button and a question left unanswered on Monday
+        # was still live on Friday when someone scrolled up and tapped.
+        pending[token] = {"arg": arg, "raw": raw_arg,
+                          "user": str(asker) if asker is not None else "",
+                          "created": _time.time()}
         self.send_message(
             self.t(question.key, **question.params) + hint,
             reply_markup={"inline_keyboard": [[
@@ -2650,8 +2662,23 @@ class TelegramBot:
             # have passed since the question was asked.
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
-            rec = getattr(self, "_pending_stops", {}).pop(
-                data.split(":", 1)[1], None)
+            _pending = getattr(self, "_pending_stops", {})
+            _tok = data.split(":", 1)[1]
+            rec = _pending.get(_tok)
+            # Fail closed, the way Discord does: no record, no recorded
+            # asker, or a different one, and nothing happens. A stop is
+            # not the place to be generous about who is allowed to answer.
+            if rec is not None and (not rec.get("user")
+                                    or rec["user"] != user_id):
+                self.answer_callback(callback["id"],
+                                     self.t("chan_confirm_not_yours"))
+                return
+            if rec is not None and time.time() - rec.get("created", 0) > \
+                    self.STOP_CONFIRM_TTL:
+                _pending.pop(_tok, None)
+                rec = None
+            else:
+                rec = _pending.pop(_tok, None)
             if rec is None:
                 # The message keeps the answer; the toast only points at
                 # it. Saying the same sentence twice in a row reads like
@@ -3681,7 +3708,7 @@ class TelegramBot:
             self._offer_stop(arg, raw_arg,
                              lifecycle.confirm_question("stop", work,
                                                         partial=arg),
-                             hint=hint)
+                             hint=hint, asker=user_id)
 
         elif text == "/selfupdate":
             self._handle_selfupdate()

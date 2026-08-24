@@ -944,5 +944,10 @@
   "cleanup_error": "❌ Errore di pulizia: {error}",
   "confirm_stop_many": "⚠ Fermare {count} container corrispondenti a `{pattern}`?\nRestano fermi finché qualcosa non li riavvia.\n{names}",
   "confirm_stop_btn": "🟥 Ferma",
-  "updateall_usage": "`/updateall` aggiorna tutto ciò che ha un aggiornamento in attesa. Accetta un host (`@nas`, `@all`) e nient'altro — per un singolo container usa `/update <nome>`."
+  "updateall_usage": "`/updateall` aggiorna tutto ciò che ha un aggiornamento in attesa. Accetta un host (`@nas`, `@all`) e nient'altro — per un singolo container usa `/update <nome>`.",
+  "cleanup_disk_prefix": "🧹 Pulizia automatica (poco spazio): {message}",
+  "cleanup_manual_prefix": "🧹 Pulizia: {message}",
+  "cleanup_enospc": "🧹 {host}: pulizia d'emergenza dopo esaurimento del disco — {message}",
+  "cleanup_between_updates": "🧹 Disco locale al {pct}% (≥{threshold}%) — pulito tra un aggiornamento e l'altro: {message}",
+  "cleanup_attempt_failed": "🧹 Tentativo di pulizia fallito: {error}"
 }

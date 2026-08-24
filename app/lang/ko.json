@@ -944,5 +944,10 @@
   "cleanup_error": "❌ 정리 오류: {error}",
   "confirm_stop_many": "⚠ `{pattern}`과(와) 일치하는 컨테이너 {count}개를 중지할까요?\n무언가 다시 시작할 때까지 꺼진 상태로 남습니다.\n{names}",
   "confirm_stop_btn": "🟥 중지",
-  "updateall_usage": "`/updateall`은 업데이트가 대기 중인 모든 항목을 업데이트합니다. 호스트(`@nas`, `@all`)만 받습니다 — 컨테이너 하나는 `/update <이름>`을 사용하세요."
+  "updateall_usage": "`/updateall`은 업데이트가 대기 중인 모든 항목을 업데이트합니다. 호스트(`@nas`, `@all`)만 받습니다 — 컨테이너 하나는 `/update <이름>`을 사용하세요.",
+  "cleanup_disk_prefix": "🧹 자동 정리(디스크 부족): {message}",
+  "cleanup_manual_prefix": "🧹 정리: {message}",
+  "cleanup_enospc": "🧹 {host}: 디스크가 가득 차서 긴급 정리 — {message}",
+  "cleanup_between_updates": "🧹 로컬 디스크 {pct}%(≥{threshold}%) — 업데이트 사이에 정리했습니다: {message}",
+  "cleanup_attempt_failed": "🧹 정리 시도가 실패했습니다: {error}"
 }
