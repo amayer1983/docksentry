@@ -178,6 +178,17 @@ class UpdateChecker:
         self._token_cache = {}
         self._auth_kind = "anonymous"
 
+    def _t(self, key, **kw):
+        """A user-facing line, in the configured language.
+
+        The checker's results are read by people in a chat, so its words
+        belong in the shared translations like everyone else's. Resolved
+        per call from `config.language`, so `/lang` applies at once.
+        """
+        from i18n import get_translator
+        lang = getattr(getattr(self, "config", None), "language", "en") or "en"
+        return get_translator(lang)(key, **kw)
+
     def _debug(self, msg):
         """A diagnostic line. Always printed, on purpose.
 
@@ -3161,8 +3172,20 @@ class UpdateChecker:
         # Check if compose file is accessible
         compose_files = self._compose_files(config_file)
         if not compose_files or not all(os.path.isfile(f) for f in compose_files):
+            # Say it, do not just log it. Docksentry runs in a container,
+            # so a compose file living on the host is invisible unless it
+            # is mounted in — and then the update silently changes
+            # strategy, rebuilding a compose-managed container from its
+            # inspect data with `docker run`. That is a different code
+            # path with different failure modes, and the owner has no way
+            # to know it was taken (#2, @famewolf). One line in the
+            # result is the difference between "why did this fail?" and
+            # "ah, I need to mount that directory."
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
-            return self._update_standalone(name, image, netns_name=netns_name)
+            ok, msg = self._update_standalone(name, image,
+                                              netns_name=netns_name)
+            note = self._t("compose_fallback", file=config_file or "?")
+            return ok, f"{msg}\n{note}"
 
         # Base compose invocation. When the stack was originally started from
         # a different directory than the compose file's (label
@@ -3657,12 +3680,22 @@ class UpdateChecker:
         if runtime and runtime not in ("runc", "oci"):
             args.extend(["--runtime", runtime])
 
-        # ── Logging driver (skip Docker default json-file/empty) ─
+        # ── Logging driver ──────────────────────────────────────
+        # Skipping `json-file` as "the default" is only safe while the
+        # container carries no log options: json-file is the FACTORY
+        # default, but daemon.json can set any other driver as the
+        # daemon's default. @famewolf's llama-server had json-file with
+        # `max-size` while his daemon default was journald — dropping
+        # the driver flag but keeping the opts handed journald an option
+        # it refuses, and the recreate died with "unknown log opt
+        # 'max-size' for journald log driver" (#2). Options only mean
+        # anything next to their driver, so the opts imply the flag.
         log = host.get("LogConfig") or {}
         log_type = log.get("Type", "")
-        if log_type and log_type not in ("json-file", ""):
+        log_opts = log.get("Config") or {}
+        if log_type and (log_opts or log_type != "json-file"):
             args.extend(["--log-driver", log_type])
-        for k, v in (log.get("Config") or {}).items():
+        for k, v in log_opts.items():
             args.extend(["--log-opt", f"{k}={v}"])
 
         # ── Memory limits ──────────────────────────────────────
