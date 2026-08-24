@@ -74,6 +74,29 @@ def _de():
         return {}
 
 
+#: Languages that do not use the Latin alphabet. In those files, a run of
+#: Latin words IS the signal — far stronger than any word list. It catches
+#: what `looks_english` cannot: `help_detail_lifecycle` sat untranslated in
+#: Ukrainian carrying an OLD English wording, so it was neither
+#: byte-identical to `en.json` nor rich enough in function words to trip
+#: the two-hit threshold. A translator found it by reading.
+NON_LATIN = {"ru", "uk", "ar", "hi", "ja", "ko", "zh"}
+
+#: Latin tokens that mean nothing about the language: OCI label names,
+#: slash commands, env vars, hostnames, e-mail addresses, file names.
+_IDENTIFIER = re.compile(r"[./@_\\-]")
+
+
+def latin_prose(value, minimum=4):
+    """True if `value` reads as Latin-script prose, not as identifiers."""
+    bare = re.sub(r"[{][^}]*[}]|`[^`]*`|https?://\S+", " ", value)
+    words = [w for w in bare.split() if not _IDENTIFIER.search(w)]
+    if not words:
+        return False
+    latin = [w for w in words if re.fullmatch(r"[A-Za-z]{3,}", w)]
+    return len(latin) >= minimum and len(latin) / len(words) > 0.6
+
+
 def translatable(v, key=None, de=None):
     if key is not None and de:
         other = de.get(key)

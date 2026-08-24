@@ -106,7 +106,7 @@ def translatable(v):
 # that entirely; a Dutch translator found five such keys by reading them,
 # which is not a method that scales to fifteen languages.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lang_todo import looks_english  # noqa: E402
+from lang_todo import NON_LATIN, latin_prose, looks_english  # noqa: E402
 
 tr = [k for k, v in EN.items() if isinstance(v, str) and translatable(v)]
 remaining, stale = {}, {}
@@ -126,6 +126,25 @@ for path in LANGS:
 if stale:
     print("  veraltetes Englisch (nicht byte-gleich, liest sich englisch):")
     for c, ks in sorted(stale.items(), key=lambda x: -len(x[1])):
+        print(f"    {c}: {len(ks)}  z.B. {', '.join(sorted(ks)[:4])}")
+
+# In a file written in another script, Latin prose IS the evidence — and
+# a far stronger one than any word list. `help_detail_lifecycle` sat
+# untranslated in Ukrainian carrying an OLD English wording: neither
+# byte-identical to en.json nor rich enough in function words to trip the
+# stopword test. A translator found it by reading, which does not scale.
+latin = {}
+for path in LANGS:
+    code = os.path.basename(path)[:-5]
+    if code not in NON_LATIN:
+        continue
+    d = json.load(open(path, encoding="utf-8"))
+    ks = [k for k, v in d.items() if isinstance(v, str) and latin_prose(v)]
+    if ks:
+        latin[code] = ks
+if latin:
+    print("  lateinischer Fließtext in nicht-lateinischer Schrift:")
+    for c, ks in sorted(latin.items(), key=lambda x: -len(x[1])):
         print(f"    {c}: {len(ks)}  z.B. {', '.join(sorted(ks)[:4])}")
 if remaining:
     print("  noch englisch: " + ", ".join(
