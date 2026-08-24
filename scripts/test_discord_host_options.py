@@ -83,6 +83,78 @@ checks["no command offers a host option it ignores"] = unread == []
 if unread:
     print("  ignoriert:", "; ".join(unread))
 
+# ── list mode: "which of mine have this set?" ────────────────────────
+# Telegram answered that for every flag command; Discord answered it for
+# none of them, because the `container` option was mandatory. The core
+# has handled `partial=None` since the flags moved into it — only the
+# schema stood in the way.
+LISTS = ["pin", "autoupdate", "protect", "trustrunning", "askmajor",
+         "cooldown"]
+for cmd in LISTS:
+    required = {o["name"] for o in
+                next(c for c in D.COMMANDS if c["name"] == cmd)
+                .get("options", ()) if o.get("required")}
+    checks[f"/{cmd} can be asked with no container"] = (
+        "container" not in required)
+
+# `/unpin` is the exception, and on purpose: its spec carries no list
+# keys, so the core would answer with an empty message — and the list it
+# would show is the one `/pin` already shows.
+unpin_req = {o["name"] for o in
+             next(c for c in D.COMMANDS if c["name"] == "unpin")
+             .get("options", ()) if o.get("required")}
+checks["/unpin still needs a container"] = "container" in unpin_req
+import container_flags as _cf  # noqa: E402
+checks["…because its spec has no list keys"] = (
+    _cf.FLAGS["unpin"].k_list is None and _cf.FLAGS["unpin"].k_empty is None)
+
+# Behaviourally: an empty list and a filled one, through the real handler.
+import types as _types  # noqa: E402
+
+
+class _Store:
+    def __init__(self):
+        self.pinned = ["nginx"]
+        self.auto = []
+
+    def get_pinned(self):
+        return list(self.pinned)
+
+    def get_autoupdate(self):
+        return list(self.auto)
+
+
+class _Backend:
+    def run(self, argv, timeout=None):
+        return _types.SimpleNamespace(returncode=0, stdout="nginx\n",
+                                      stderr="")
+
+
+_bot = D.DiscordBot.__new__(D.DiscordBot)
+_bot.config = _types.SimpleNamespace(language="en")
+_bot.hosts = None
+_bot._store_for = lambda h: _Store()
+_bot._backend_for = lambda h: _Backend()
+_bot._write_hosts_for = lambda n: [None]
+_bot._clip = lambda x: x
+out = _bot._cmd_pin({}, remove=False)
+checks["/pin with no container lists what is pinned"] = "nginx" in out
+out = _bot._cmd_autoupdate({})
+checks["…and an empty list says so rather than nothing"] = (
+    len(_bot._cmd_autoupdate({}).strip()) > 5)
+
+# The usage lines those commands used to answer with are gone from every
+# language, not just from en — a key nothing reaches is a key that rots.
+import glob as _glob  # noqa: E402
+import json as _json  # noqa: E402
+_langs = sorted(_glob.glob(os.path.join(APP, "lang", "*.json")))
+checks["all 16 languages are checked"] = len(_langs) == 16
+_left = [os.path.basename(f) for f in _langs
+         for d in [_json.load(open(f, encoding="utf-8"))]
+         if any(k in d for k in ("chan_usage_pin", "chan_usage_autoupdate",
+                                 "chan_usage_protect"))]
+checks["the usage keys they replaced are gone everywhere"] = _left == []
+
 # The same number, the same words. Discord divided by 1024 and Telegram
 # by 1000, so one measurement read as "214 MB" in one chat and "224 MB"
 # in the other.

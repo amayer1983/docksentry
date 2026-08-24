@@ -99,7 +99,7 @@ COMMANDS = [
      "Accept running-but-unhealthy for a container", "type": 1,
      "options": [
          {"name": "container", "description": "Container name", "type": 3,
-          "required": True},
+          "required": False},
               {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
 ]},
@@ -107,7 +107,7 @@ COMMANDS = [
      "Ask before applying a major update", "type": 1,
      "options": [
          {"name": "container", "description": "Container name", "type": 3,
-          "required": True},
+          "required": False},
               {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
 ]},
@@ -171,7 +171,7 @@ COMMANDS = [
      "type": 1,
      "options": [
          {"name": "container", "description": "Container to pin",
-          "type": 3, "required": True},
+          "type": 3, "required": False},
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
@@ -187,7 +187,7 @@ COMMANDS = [
      "description": "Toggle auto-update for a container", "type": 1,
      "options": [
          {"name": "container", "description": "Container to toggle",
-          "type": 3, "required": True},
+          "type": 3, "required": False},
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
@@ -195,7 +195,7 @@ COMMANDS = [
      "description": "Toggle stop-protection for a container", "type": 1,
      "options": [
          {"name": "container", "description": "Container to toggle",
-          "type": 3, "required": True},
+          "type": 3, "required": False},
          {"name": "host", "description": "Host to act on (default: local)",
           "type": 3, "required": False},
      ]},
@@ -1506,15 +1506,19 @@ class DiscordBot:
         """
         import container_flags
         arg = (opts.get("container") or "").strip()
-        if not arg:
-            return self.t("chan_usage_unpin" if remove else "chan_usage_pin")
+        # `/pin` with nothing named lists what is pinned, the way Telegram
+        # has always done. `/unpin` cannot: its spec has no list keys —
+        # the list it would show is the one `/pin` already shows, and an
+        # empty key renders as an empty message (#63).
+        if remove and not arg:
+            return self.t("chan_usage_unpin")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         out = container_flags.apply_flag(
             container_flags.FLAGS["unpin" if remove else "pin"], targets,
             store_for=self._store_for, backend_for=self._backend_for,
-            partial=arg)
+            partial=arg or None)
         return self._clip(self._render(out))
 
     def _match_in(self, partial, names):
@@ -1534,29 +1538,33 @@ class DiscordBot:
 
     def _cmd_autoupdate(self, opts):
         import container_flags
+        # No container named: list what is set. The core has done this
+        # since the flags moved in; only the option was mandatory here,
+        # so the question "which of mine have it?" was answerable in one
+        # chat and not the other (#63).
         arg = (opts.get("container") or "").strip()
-        if not arg:
-            return self.t("chan_usage_autoupdate")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(
             container_flags.FLAGS["autoupdate"], targets,
             store_for=self._store_for, backend_for=self._backend_for,
-            partial=arg)))
+            partial=arg or None)))
 
     def _cmd_protect(self, opts):
         import container_flags
+        # No container named: list what is set. The core has done this
+        # since the flags moved in; only the option was mandatory here,
+        # so the question "which of mine have it?" was answerable in one
+        # chat and not the other (#63).
         arg = (opts.get("container") or "").strip()
-        if not arg:
-            return self.t("chan_usage_protect")
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(
             container_flags.FLAGS["protect"], targets,
             store_for=self._store_for, backend_for=self._backend_for,
-            partial=arg)))
+            partial=arg or None)))
 
     def _cmd_cooldown(self, opts):
         """Set it, show it, or — with no container — list them all.
@@ -1998,18 +2006,20 @@ class DiscordBot:
             text=(opts.get("text") or "").strip())))
 
     def _cmd_flag(self, which, opts):
-        """`/trustrunning` and `/askmajor` — same skeleton, one toggle."""
+        """`/trustrunning` and `/askmajor` — same skeleton, one toggle.
+
+        With no container named, both list what is set, like every other
+        flag command. The core could always do it; the option was simply
+        mandatory on this side."""
         import container_flags
         arg = (opts.get("container") or "").strip()
-        if not arg:
-            return self.t("chan_usage_container", command=which)
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(
             container_flags.FLAGS[which], targets,
             store_for=self._store_for, backend_for=self._backend_for,
-            partial=arg)))
+            partial=arg or None)))
 
     def _cmd_testchannel(self):
         """More useful from a chat than from the Web UI: you are already
