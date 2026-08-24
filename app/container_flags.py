@@ -286,8 +286,12 @@ def set_note(targets, *, store_for, backend_for, partial, text,
             continue
         store.set_note(name, text)
         changed = True
+        # `text`, not `note`: that is what the template says, in all
+        # sixteen languages. Renaming it during the extraction turned
+        # every `/note` confirmation into "📝 Note on `web`: —" — saved
+        # correctly, reported as nothing, in both chats at once (#63).
         replies.append(Reply("note_set" if text else "note_cleared",
-                             {"name": name, "note": text}, host=host,
+                             {"name": name, "text": text}, host=host,
                              host_is_local=local))
     return Outcome(tuple(replies), None, defaulted_to_local, changed)
 
@@ -537,9 +541,14 @@ def audit_container(targets, *, backend_for, checker_for, partial):
         try:
             r = backend.run(["inspect", name], timeout=10)
             if getattr(r, "returncode", 1) != 0:
+                # The daemon's own words. "Couldn't inspect `web`" on its
+                # own tells you nothing you did not already know from the
+                # command not working.
                 return name, host, None, Reply(
-                    "audit_inspect_failed", {"name": name}, host=host,
-                    host_is_local=_is_local(host), ok=False)
+                    "audit_inspect_failed",
+                    {"name": name,
+                     "error": (getattr(r, "stderr", "") or "").strip()[:80]},
+                    host=host, host_is_local=_is_local(host), ok=False)
             inspect = _json.loads(r.stdout)[0]
         except Exception as e:
             return name, host, None, Reply(

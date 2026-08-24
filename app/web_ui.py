@@ -2575,25 +2575,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 action = params.get("action", [""])[0]
                 if target is not None and action in ("start", "stop", "restart"):
                     _h, name, _be, _ck, _st = target
-                    # Self-detection resolves the container THIS process runs
-                    # in, which is by definition local — running it against a
-                    # remote host would refuse a legitimate action on a
-                    # same-named container over there.
-                    if (action in ("stop", "restart") and _h == _LOCAL_HOST
-                            and checker._would_kill_self(name)):
-                        # Silently no-op — the Web UI shouldn't have shown
-                        # the button in the first place, but defense in depth.
-                        pass
-                    else:
-                        # Reuse the bot's lifecycle helper for consistent
-                        # behaviour (graceful timeout, error reporting). The
-                        # checker/backend/host triple has to describe ONE
-                        # machine, so all three come from the same target.
-                        try:
-                            bot._lifecycle_action(action, name, _ck,
-                                                  backend=_be, host=_h)
-                        except Exception as e:
-                            print(f"Lifecycle action failed: {e}")
+                    # The same `lifecycle.act` both chats use, so the Web
+                    # UI cannot drift from them — and so it gets the two
+                    # guards it never had. It only ever checked "would
+                    # this stop me?"; stop-protection (#38) and "an update
+                    # is running" were missing here, which meant the
+                    # button could stop the VPN container the chats
+                    # refuse to touch.
+                    #
+                    # Every host, not just the local one: `_would_kill_self`
+                    # compares full container IDs through the host's own
+                    # backend, so a same-named container elsewhere has a
+                    # different ID and is not mistaken for us.
+                    import lifecycle
+                    try:
+                        outcome = lifecycle.act(
+                            action, [None],
+                            backend_for=lambda _x: _be,
+                            checker_for=lambda _x: _ck,
+                            store_for=lambda _x: _st,
+                            partial=name,
+                            update_running=bot.update_running)
+                        for _r in ((outcome.fatal,) if outcome.fatal
+                                   else outcome.replies):
+                            print(f"Lifecycle {action} {name}: "
+                                  f"{bot.t(_r.key, **_r.params)}")
+                    except Exception as e:
+                        print(f"Lifecycle action failed: {e}")
                 ref = self.headers.get("Referer", "/")
                 ref_path = urlparse(ref).path or "/"
                 self._send_redirect(ref_path)

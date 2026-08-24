@@ -37,6 +37,7 @@ import types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import web_ui                                            # noqa: E402
+from i18n import get_translator                          # noqa: E402
 from hosts import HostRegistry, ManagedHost              # noqa: E402
 from container_store import ContainerStore, HostScopedStore, host_key  # noqa: E402
 
@@ -93,6 +94,12 @@ class FakeBackend:
     def run(self, args, **kw):
         self.calls.append(tuple(args))
         self._guard()
+        # `lifecycle.resolve_container` asks the backend what it is
+        # running. Answering here is what lets the Web UI tests drive the
+        # REAL core instead of a stub method on the bot — which is how a
+        # dead Start/Stop button stayed invisible for a whole release.
+        if args[:1] == ["ps"]:
+            return CP("\n".join(self.names))
         return CP("")
 
 
@@ -101,7 +108,19 @@ class FakeChecker:
         self.name, self._own = name, own
         self.checked = []
         self.updated = []
+        self.stopped = []
         self.debug_log = []
+
+    # ── what `lifecycle.act` needs of a checker ──
+    def _stop_container(self, name):
+        self.stopped.append(name)
+        return True, ""
+
+    def get_container_labels(self, name):
+        return {}
+
+    def label_bool(self, labels, key):
+        return labels.get(key)
 
     def _own_container_name(self):
         return self._own
@@ -126,6 +145,13 @@ class FakeEngine:
         self._update_lock = threading.Lock()
         self.batches = []
 
+    @property
+    def update_running(self):
+        """The lock IS the answer, same as the real engine — a fixed
+        `False` here would let a guard that reads it pass while doing
+        nothing."""
+        return self._update_lock.locked()
+
     def _process_update_batch(self, updates, checker, *, auto):
         # Record WHICH checker recreated WHICH containers — the whole
         # point of the routing under test.
@@ -137,25 +163,23 @@ class FakeEngine:
 
 class FakeBot:
     enabled = False
-    update_running = False
     notifier = None
 
     def __init__(self):
         self.engine = FakeEngine()
+        self.t = get_translator("en")
         self.removed = []
-        self.lifecycle = []
         self.major = []
+
+    @property
+    def update_running(self):
+        return self.engine.update_running
 
     def _remove_from_pending(self, keys):
         self.removed.extend(keys)
 
     def _run_queued_selfupdate(self):
         pass
-
-    def _lifecycle_action(self, action, name, checker, backend=None, host=None):
-        self.lifecycle.append((action, name, checker.name,
-                               getattr(backend, "name", None), host))
-        return True, "ok"
 
     def _confirm_major_update(self, checker, container_key):
         self.major.append(container_key)
@@ -439,17 +463,28 @@ checks["a remote per-container form returns to the table, not to a "
     not r.startswith("/container/") for r in m2.h.redirects)
 
 # ── 5. lifecycle routes to the right host ─────────────────────────────
+# Read off the real backends and checkers, not off a stub method on the
+# bot. That stub is why nobody noticed the Web UI's Start/Stop/Restart
+# buttons had been dead since the lifecycle move: the bot no longer had
+# the method the Web UI called, the AttributeError was swallowed, and
+# this file was asserting against its own invention.
+
+def restarts(be):
+    return [c for c in be.calls if c[:1] == ("restart",)]
+
 
 m3 = build(tempfile.mkdtemp())
 post(m3.h, "/api/lifecycle", "name=nas%2Fplex&action=restart")
-checks["lifecycle on a remote row uses that host's checker AND backend"] = (
-    m3.bot.lifecycle == [("restart", "plex", "nas", "nas", "nas")])
+checks["lifecycle on a remote row uses that host's backend"] = (
+    restarts(m3.nb) == [("restart", "--time", "30", "plex")])
+checks["…and leaves the local host alone"] = restarts(m3.lb) == []
 post(m3.h, "/api/lifecycle", "name=db&action=restart")
 checks["lifecycle with no host given stays local"] = (
-    m3.bot.lifecycle[-1] == ("restart", "db", "local", "local", "local"))
+    restarts(m3.lb) == [("restart", "--time", "30", "db")]
+    and len(restarts(m3.nb)) == 1)
 post(m3.h, "/api/lifecycle", "name=typo%2Fdb&action=restart")
 checks["lifecycle naming an unmanaged host does nothing"] = (
-    len(m3.bot.lifecycle) == 2)
+    len(restarts(m3.lb)) == 1 and len(restarts(m3.nb)) == 1)
 
 # The self-kill guard is about THIS process, which is local by definition.
 m4 = build(tempfile.mkdtemp())
@@ -457,10 +492,31 @@ m4.lc._own = "web"
 m4.nc._own = ""
 post(m4.h, "/api/lifecycle", "name=web&action=stop")
 checks["the self-kill guard still refuses a local stop of ourselves"] = (
-    m4.bot.lifecycle == [])
+    m4.lc.stopped == [])
 post(m4.h, "/api/lifecycle", "name=nas%2Fweb&action=stop")
 checks["the self-kill guard does not refuse a same-named remote container"] = (
-    m4.bot.lifecycle == [("stop", "web", "nas", "nas", "nas")])
+    m4.nc.stopped == ["web"])
+
+# The two guards the Web UI never had. It only ever asked "would this
+# stop me?" — so its Stop button could take down a container both chats
+# refuse to touch, which for most people is the VPN carrying their
+# remote access (#38).
+m5b = build(tempfile.mkdtemp())
+HostScopedStore(m5b.store, "local").toggle_protect_stop("db")
+post(m5b.h, "/api/lifecycle", "name=db&action=stop")
+checks["a stop-protected container is refused in the Web UI too"] = (
+    m5b.lc.stopped == [])
+post(m5b.h, "/api/lifecycle", "name=db&action=restart")
+checks["…and restart is still allowed on it"] = (
+    restarts(m5b.lb) == [("restart", "--time", "30", "db")])
+
+m5c = build(tempfile.mkdtemp())
+m5c.bot.engine._update_lock.acquire()
+post(m5c.h, "/api/lifecycle", "name=db&action=stop")
+checks["nothing runs while an update holds the lock"] = m5c.lc.stopped == []
+m5c.bot.engine._update_lock.release()
+post(m5c.h, "/api/lifecycle", "name=db&action=stop")
+checks["…and it works again once the lock is free"] = m5c.lc.stopped == ["db"]
 
 # ── 6. updates: right pending entries, right checker, one lock ────────
 

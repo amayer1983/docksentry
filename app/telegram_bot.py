@@ -2626,7 +2626,7 @@ class TelegramBot:
 
         print("Bot listener stopped.")
 
-    def _handle_callback(self, callback, checker):
+    def _handle_callback(self, callback, checker, snapshot=None):
         data = callback.get("data", "")
         user_id = str(callback["from"]["id"])
         msg_id = callback.get("message", {}).get("message_id")
@@ -2716,7 +2716,8 @@ class TelegramBot:
             # (no token) is the legacy form from notifications sent by
             # older versions still sitting in the chat — fall back to the
             # current pending file as before.
-            snapshot = None
+            # `snapshot` may arrive pre-filtered from `/updateall @host`;
+            # the button path passes none and looks its own up by token.
             if data.startswith("update_all:"):
                 token = data.split(":", 1)[1]
                 snapshot = self._update_snapshots.get(token)
@@ -3869,14 +3870,38 @@ class TelegramBot:
             self.send_message(self.t("restore_how"))
             return
         elif text.startswith("/updateall"):
-            # The same path the "Update all" button takes, so the two
-            # cannot drift — the button is just this with a snapshot.
+            # `/updateall @nas` used to drop the `@nas` on the floor and
+            # update every host — the argument was never parsed at all,
+            # and the answer to "just the NAS please" was "everything,
+            # everywhere, no questions asked" (#2, three-host setup).
+            _raw = text.split(maxsplit=1)
+            _raw = _raw[1].strip() if len(_raw) > 1 else ""
+            _arg, _targets, _err = self._resolve_targets(_raw, write=True)
+            if _err:
+                self.send_message(_err)
+                return
+            if _arg:
+                # `/updateall` takes a host and nothing else. A container
+                # name here means the user wanted `/update`, and quietly
+                # updating everything instead is the worst reading.
+                self.send_message(self.t("updateall_usage"))
+                return
+            _snapshot = None
+            if _targets is not None:
+                _names = {h.name for h in _targets}
+                _snapshot = [u for u in read_pending(self.config.pending_file)
+                             if (u.get("host") or self.hosts.local.name)
+                             in _names]
+                if not _snapshot:
+                    self.send_message(self.t("no_pending_updates")
+                                      + self._host_hint(_raw))
+                    return
             self._handle_callback({"data": "update_all",
                                    "from": {"id": user_id},
                                    "id": "cmd",
                                    "message": {"message_id": None,
                                                "chat": {"id": chat_id}}},
-                                  checker)
+                                  checker, snapshot=_snapshot)
             return
         elif text.startswith("/backup"):
             # Hand the backup over in the one place he is already

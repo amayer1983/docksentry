@@ -500,7 +500,7 @@
   "help_detail_help": "*/help* — Command reference\n\n`/help` — list of all commands with a one-line summary\n`/help <command>` — detailed help for a specific command (synopsis, parameters, examples)\n\n📌 The autocomplete picker (type `/` in this chat) is faster for discovery — try it.",
   "help_audit": "/audit — Audit container inspect coverage",
   "audit_usage": "Usage: `/audit container_name` — checks the container's inspect for fields we don't restore on recreate.",
-  "audit_inspect_failed": "❌ Couldn't inspect `{name}`.",
+  "audit_inspect_failed": "❌ Couldn't inspect `{name}`: {error}",
   "audit_clean": "✅ `{name}`: clean — every non-default HostConfig and Config field is restored on recreate.",
   "audit_findings_header": "🔍 *Audit for* `{name}`:\n\nThe following fields are non-default in your inspect but NOT restored by `_build_run_args`. On recreate they'd be silently dropped.",
   "audit_section_host": "\n*HostConfig:*",
@@ -943,5 +943,6 @@
   "cleanup_more": "외 {count}개",
   "cleanup_error": "❌ 정리 오류: {error}",
   "confirm_stop_many": "⚠ `{pattern}`과(와) 일치하는 컨테이너 {count}개를 중지할까요?\n무언가 다시 시작할 때까지 꺼진 상태로 남습니다.\n{names}",
-  "confirm_stop_btn": "🟥 중지"
+  "confirm_stop_btn": "🟥 중지",
+  "updateall_usage": "`/updateall`은 업데이트가 대기 중인 모든 항목을 업데이트합니다. 호스트(`@nas`, `@all`)만 받습니다 — 컨테이너 하나는 `/update <이름>`을 사용하세요."
 }

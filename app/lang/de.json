@@ -102,7 +102,7 @@
   "help_detail_help": "*/help* — Befehls-Referenz\n\n`/help` — Liste aller Befehle mit Ein-Zeilen-Summary\n`/help <befehl>` — Detail-Hilfe für einen bestimmten Befehl (Synopsis, Parameter, Beispiele)\n\n📌 Die Autocomplete-Auswahl (tippe `/` in diesem Chat) ist schneller fürs Discovern — probier's.",
   "help_audit": "/audit — Container Inspect-Coverage prüfen",
   "audit_usage": "Verwendung: `/audit container_name` — prüft das Inspect des Containers auf Felder die wir beim Recreate nicht wiederherstellen.",
-  "audit_inspect_failed": "❌ Kann `{name}` nicht inspecten.",
+  "audit_inspect_failed": "❌ Kann `{name}` nicht inspecten: {error}",
   "audit_clean": "✅ `{name}`: sauber — jedes non-default HostConfig- und Config-Feld wird beim Recreate wiederhergestellt.",
   "audit_findings_header": "🔍 *Audit für* `{name}`:\n\nFolgende Felder sind non-default im Inspect aber werden von `_build_run_args` NICHT wiederhergestellt. Beim Recreate würden sie still verloren gehen.",
   "audit_section_host": "\n*HostConfig:*",
@@ -943,5 +943,6 @@
   "cleanup_more": "+{count} weitere",
   "cleanup_error": "❌ Fehler beim Aufräumen: {error}",
   "confirm_stop_many": "⚠ {count} Container passend zu `{pattern}` stoppen?\nSie bleiben unten, bis sie etwas wieder startet.\n{names}",
-  "confirm_stop_btn": "🟥 Stoppen"
+  "confirm_stop_btn": "🟥 Stoppen",
+  "updateall_usage": "`/updateall` aktualisiert alles, wofür ein Update bereitliegt. Es nimmt einen Host (`@nas`, `@all`) und sonst nichts — für einen einzelnen Container `/update <Name>`."
 }

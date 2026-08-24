@@ -500,7 +500,7 @@
   "help_detail_help": "*/help* — Command reference\n\n`/help` — list of all commands with a one-line summary\n`/help <command>` — detailed help for a specific command (synopsis, parameters, examples)\n\n📌 The autocomplete picker (type `/` in this chat) is faster for discovery — try it.",
   "help_audit": "/audit — Audit container inspect coverage",
   "audit_usage": "Usage: `/audit container_name` — checks the container's inspect for fields we don't restore on recreate.",
-  "audit_inspect_failed": "❌ Couldn't inspect `{name}`.",
+  "audit_inspect_failed": "❌ Couldn't inspect `{name}`: {error}",
   "audit_clean": "✅ `{name}`: clean — every non-default HostConfig and Config field is restored on recreate.",
   "audit_findings_header": "🔍 *Audit for* `{name}`:\n\nThe following fields are non-default in your inspect but NOT restored by `_build_run_args`. On recreate they'd be silently dropped.",
   "audit_section_host": "\n*HostConfig:*",
@@ -943,5 +943,6 @@
   "cleanup_more": "还有 {count} 个",
   "cleanup_error": "❌ 清理错误：{error}",
   "confirm_stop_many": "⚠ 停止与 `{pattern}` 匹配的 {count} 个容器？\n在有东西重新启动它们之前，它们会一直停着。\n{names}",
-  "confirm_stop_btn": "🟥 停止"
+  "confirm_stop_btn": "🟥 停止",
+  "updateall_usage": "`/updateall` 会更新所有有待处理更新的容器。它只接受主机参数（`@nas`、`@all`）——单个容器请用 `/update <名称>`。"
 }

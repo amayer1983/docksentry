@@ -998,8 +998,12 @@ checks["…and still cleans the local one"] = LOCAL_CHECKER.cleanups == 1
 checks["…and names each host in its answer"] = "nas" in out
 
 # ── /checkimages ─────────────────────────────────────────────────────
-LOCAL_CHECKER.reclaim = 3 * 1024 ** 3
-NAS_CHECKER.reclaim = 400 * 1024 ** 2
+# Decimal, because that is what both chats print now. This used to
+# expect "3.0 GB" for 3 GiB, which was Discord dividing by 1024 while
+# Telegram divided by 1000 — one measurement, two answers depending on
+# which app you had open (#63).
+LOCAL_CHECKER.reclaim = 3 * 1000 ** 3
+NAS_CHECKER.reclaim = 400 * 1000 ** 2
 out = call("checkimages")
 checks["/checkimages is a read — it spans every host"] = (
     "3.0 GB" in out and "400 MB" in out)

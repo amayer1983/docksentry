@@ -92,19 +92,25 @@ COMMANDS = [
           "required": True},
          {"name": "text", "description": "The note (omit to clear)",
           "type": 3, "required": False},
-     ]},
+              {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+]},
     {"name": "trustrunning", "description":
      "Accept running-but-unhealthy for a container", "type": 1,
      "options": [
          {"name": "container", "description": "Container name", "type": 3,
           "required": True},
-     ]},
+              {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+]},
     {"name": "askmajor", "description":
      "Ask before applying a major update", "type": 1,
      "options": [
          {"name": "container", "description": "Container name", "type": 3,
           "required": True},
-     ]},
+              {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+]},
     {"name": "testchannel", "description":
      "Send a test notification to every channel", "type": 1},
     {"name": "changelog", "description":
@@ -130,7 +136,9 @@ COMMANDS = [
           "type": 3, "required": True},
          {"name": "url", "description": "Link (omit to clear)",
           "type": 3, "required": False},
-     ]},
+              {"name": "host", "description": "Host to act on (default: local)",
+          "type": 3, "required": False},
+]},
     {"name": "audit", "description":
      "Audit container inspect coverage", "type": 1,
      "options": [
@@ -2436,12 +2444,17 @@ class DiscordBot:
 
     @staticmethod
     def _human_size(num):
-        """GB from ~1 GB up, MB below — "512 MB" reads better than
-        "0.5 GB", same rule the Telegram reply uses."""
-        gib = num / (1024 ** 3)
-        if gib >= 1.0:
-            return f"{gib:.1f} GB"
-        return f"{num / (1024 ** 2):.0f} MB"
+        """Sizes exactly as the other chat prints them.
+
+        This used to divide by 1024 while Telegram divided by 1000, so
+        the same 224 MB of reclaimable images read as "214 MB" here and
+        "224 MB" there — one number, two answers, depending on which app
+        you had open. `_human_bytes` is the one that knows why: docker
+        writes "8.534MB", which reads as 8534 MB wherever a dot is the
+        thousands separator (#63).
+        """
+        from update_checker import UpdateChecker
+        return UpdateChecker._human_bytes(num)
 
     def _cmd_checkimages(self, opts):
         """Dry-run counterpart to `/cleanup`: how much it would free right
