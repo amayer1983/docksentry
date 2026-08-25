@@ -1320,9 +1320,11 @@ class TelegramBot:
             "reply_markup": json.dumps({"inline_keyboard": []})
         })
 
-    def _remove_single_button(self, chat_id, message_id, callback_data):
+    def _remove_single_button(self, chat_id, message_id, callback_data,
+                              existing_keyboard):
         """Mark clicked button as done, keep remaining buttons."""
-        keyboard = self._rebuild_keyboard_without(callback_data)
+        keyboard = self._rebuild_keyboard_without(callback_data,
+                                                  existing_keyboard)
         self.api_call("editMessageReplyMarkup", {
             "chat_id": chat_id,
             "message_id": message_id,
@@ -1349,30 +1351,51 @@ class TelegramBot:
         host = self._pending_host(entry)
         return "" if host == LOCAL_HOST else f" @{host}"
 
-    def _rebuild_keyboard_without(self, callback_data):
-        """Rebuild keyboard marking the clicked container as done."""
-        if not os.path.exists(self.config.pending_file):
-            return {"inline_keyboard": []}
+    def _rebuild_keyboard_without(self, callback_data, existing_keyboard):
+        """Rebuild the keyboard marking the clicked container as done.
 
-        with open(self.config.pending_file) as f:
-            updates = json.load(f)
-
+        Rebuilds from the buttons ALREADY on the message — NOT from a
+        fresh read of the global `pending_updates.json`. A host-scoped
+        notification (`/check @srv30`) carries only that host's buttons;
+        re-reading the global file here leaked every host's pending
+        containers back into the reply and made each a live cross-host
+        action — tapping a `gitlab` button (local) from a reply about
+        srv30 recreated the LOCAL gitlab — and degraded the tokenised
+        "Update all" to the bare global form that updates every host. The
+        Web UI fixed the same class by host-filtering (`_get_pending`);
+        here the message's own keyboard already IS the correct scope, so
+        we rebuild from it and touch nothing global (#7).
+        """
         keyboard = []
-        for u in updates:
-            btn_data = f"update_one:{self._update_one_key(u)}"
-            label = u["name"] + self._entry_host_tag(u)
-            if btn_data == callback_data:
-                keyboard.append([{"text": f"✅ {label}", "callback_data": "noop"}])
-            else:
-                keyboard.append([{"text": f"🔄 {label}", "callback_data": btn_data}])
-
-        remaining = [u for u in updates
-                     if f"update_one:{self._update_one_key(u)}" != callback_data]
-        if remaining:
-            keyboard.append([
-                {"text": self.t("update_all_btn"), "callback_data": "update_all"},
-                {"text": self.t("manual_btn"), "callback_data": "update_skip"}
-            ])
+        control_row = None
+        still_pending = False
+        for row in existing_keyboard or []:
+            # The all/manual control row is preserved verbatim — keeping
+            # its `update_all:<token>` snapshot binding — and only re-added
+            # if a container button is still actionable after this tap.
+            if any((b.get("callback_data") or "").startswith("update_all")
+                   for b in row):
+                control_row = row
+                continue
+            new_row = []
+            for btn in row:
+                data = btn.get("callback_data") or ""
+                if data == callback_data:
+                    # The one just tapped → mark done and de-activate it.
+                    # Its label already carries name/host/size; keep all of
+                    # that, only swap the leading 🔄 marker for ✅.
+                    label = btn.get("text", "")
+                    label = label.split(" ", 1)[-1] if " " in label else label
+                    new_row.append({"text": f"✅ {label}",
+                                    "callback_data": "noop"})
+                else:
+                    if data.startswith("update_one:"):
+                        still_pending = True
+                    new_row.append(btn)
+            if new_row:
+                keyboard.append(new_row)
+        if still_pending and control_row is not None:
+            keyboard.append(control_row)
 
         return {"inline_keyboard": keyboard}
 
@@ -2819,9 +2842,14 @@ class TelegramBot:
             container_key = data.split(":", 1)[1]
             container_name = split_host_key(container_key)[1]
             self.answer_callback(callback["id"], f"Update {container_name}...")
-            # Remove only this button, keep the rest
+            # Remove only this button, keep the rest — rebuilt from the
+            # message's OWN keyboard so a host-scoped reply keeps its scope
+            # (a global pending re-read leaked every host's buttons, #7).
             if msg_id and chat_id:
-                self._remove_single_button(chat_id, msg_id, data)
+                existing_kb = (callback.get("message", {})
+                               .get("reply_markup", {})
+                               .get("inline_keyboard", []))
+                self._remove_single_button(chat_id, msg_id, data, existing_kb)
             t = threading.Thread(target=self._run_single_update, args=(checker, container_key))
             t.start()
         elif data.startswith("confirm_major:"):
