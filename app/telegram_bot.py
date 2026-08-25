@@ -3715,7 +3715,16 @@ class TelegramBot:
         # Same partial-name matching as /pin / /logs. Stop and restart
         # refuse on the Docksentry container itself (#16 / #17). Code
         # path is shared with the inline buttons in /status <name>.
-        elif text.startswith("/stop ") or text.startswith("/start ") or text.startswith("/restart "):
+        elif text.startswith("/stop") or text.startswith("/restart") \
+                or text.startswith("/start "):
+            # Bare `/stop` and `/restart` land here too, so they answer
+            # with the usage line instead of the silence a trailing-space
+            # match left them in — `/logs` and `/audit` already did. Bare
+            # `/start` is deliberately excluded (only `/start <name>`
+            # routes here): it is the Telegram greeting, handled below,
+            # not "start a container with no name". A stray suffix like
+            # `/stopx` becomes action `stopx`, which the core answers with
+            # "unknown action" rather than silence.
             import lifecycle
             parts = text.split(maxsplit=1)
             action = parts[0][1:]                       # strip the slash

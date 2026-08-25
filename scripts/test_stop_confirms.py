@@ -305,6 +305,27 @@ for key, needed in (("confirm_stop_many", ("{count}", "{pattern}", "{names}")),
             bad.append(os.path.basename(f))
     checks[f"{key} is complete in every language"] = bad == []
 
+# ── bare /stop and /restart answer, they do not go silent ────────────
+# The lifecycle branch matched "/stop " with a trailing space, so a bare
+# /stop fell through the dispatcher into nothing — while /logs and /audit
+# answered with their usage line. It says what to type now.
+bot, ck = make_bot()
+rows = cmd(bot, "/stop")
+checks["bare /stop answers with usage, not silence"] = (
+    len(rows) >= 1 and EN["lifecycle_usage"].split("`")[0].strip()[:6]
+    in rows[-1][0])
+checks["…and offers no button"] = buttons(rows) == []
+bot, ck = make_bot()
+rows = cmd(bot, "/restart")
+checks["bare /restart answers too"] = (
+    len(rows) >= 1 and "restart" in rows[-1][0].lower())
+# bare /start stays the greeting, not a lifecycle usage — it must NOT be
+# swallowed by the lifecycle branch.
+bot, ck = make_bot()
+rows = cmd(bot, "/start")
+checks["bare /start is not captured as a lifecycle usage"] = (
+    not any(EN["lifecycle_usage"][:20] in m for m, _ in rows))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")
