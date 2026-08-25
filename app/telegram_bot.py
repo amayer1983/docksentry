@@ -3110,28 +3110,47 @@ class TelegramBot:
             # which host it was about (#2).
             from container_store import LOCAL_HOST
             unreachable = []
+            def _mark_unreachable(_host, _why):
+                # The host's own diagnostic hint (SSH auth, wrong socket …)
+                # appended when hostdiag has one.
+                try:
+                    import hostdiag
+                    _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why)
+                    if _h:
+                        _why += "\n" + _h
+                except Exception:
+                    pass
+                unreachable.append(
+                    (getattr(_host, "name", "") or LOCAL_HOST, _why))
+
             for _host in (status_targets or [None]):
                 _b = self._backend_for(_host)
-                ids_p = _b.run(
-                    ["ps", "-q"])
+                # A dead host does not answer at all: `ps` runs into its
+                # timeout and RAISES, where an SSH-auth failure merely
+                # returns non-zero. Both mean "unreachable", and neither
+                # may take the whole overview down — but a raise did,
+                # until a genuinely dead host (srv20) proved it: the
+                # timeout escaped this loop into the poll thread and
+                # `/status` produced nothing at all (#2).
+                try:
+                    ids_p = _b.run(["ps", "-q"])
+                except Exception as _e:
+                    _mark_unreachable(_host, clip(str(_e)))
+                    continue
                 if getattr(ids_p, "returncode", 0) != 0:
-                    _why = (clip(getattr(ids_p, "stderr", "") or "")
-                            or f"exit {ids_p.returncode}")
-                    try:
-                        import hostdiag
-                        _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why)
-                        if _h:
-                            _why += "\n" + _h
-                    except Exception:
-                        pass
-                    unreachable.append((
-                        getattr(_host, "name", "") or LOCAL_HOST, _why))
+                    _mark_unreachable(
+                        _host,
+                        clip(getattr(ids_p, "stderr", "") or "")
+                        or f"exit {ids_p.returncode}")
                     continue
                 ids = [i for i in ids_p.stdout.strip().split("\n") if i]
                 if not ids:
                     continue
-                ins_p = _b.run(
-                    ["inspect", *ids])
+                try:
+                    ins_p = _b.run(["inspect", *ids])
+                except Exception as _e:
+                    _mark_unreachable(_host, clip(str(_e)))
+                    continue
                 try:
                     _cfgs = json.loads(ins_p.stdout) or []
                 except (json.JSONDecodeError, ValueError):

@@ -80,6 +80,26 @@ class FakeBackend:
         return [c for c in self.calls if c and c[0] in ("start", "stop", "restart")]
 
 
+class DeadBackend:
+    """A host that does not answer at all. `run` RAISES — the way a real
+    unreachable host's `docker ps` runs into its timeout and raises,
+    where an auth failure would merely return non-zero. This is the case
+    that took `/status` down: the exception escaped the overview loop into
+    the poll thread and the command produced nothing at all (srv20, #2)."""
+
+    def __init__(self, name):
+        self.name = name
+        self.calls = []
+
+    def run(self, args, **kw):
+        self.calls.append(list(args))
+        import subprocess
+        raise subprocess.TimeoutExpired(list(args), 30)
+
+    def lifecycle_calls(self):
+        return []
+
+
 class FakeChecker:
     """Reports an update for every container in `outdated`."""
 
@@ -381,6 +401,35 @@ checks["/help documents the read/write split"] = (
     and "/status" in help_text and "/update" in help_text)
 checks["/help lists the managed hosts"] = (
     "`local`" in help_text and "`nas`" in help_text)
+
+
+# ── 8. a genuinely DEAD host does not take /status down ───────────────
+# The overview handled a host that RETURNS an error, but not one that
+# RAISES (a timeout). A real dead host (srv20) proved it live: `/status`
+# produced nothing and the exception surfaced as "Bot listener error".
+from hosts import HostRegistry as _Reg
+from container_store import LOCAL_HOST as _LH
+
+_alive = ManagedHost("local", FakeBackend("local", ["web", "db"]),
+                     FakeChecker("local", []), FakeStore(), is_local=True)
+_dead = ManagedHost("srv20", DeadBackend("srv20"),
+                    FakeChecker("srv20", []), FakeStore(),
+                    endpoint="tcp://10.10.10.20:2375")
+_hosts = _Reg([_alive, _dead])
+_bot, _chk, _cfg = make_bot(_hosts)
+
+_raised = False
+try:
+    _out = drive(_bot, "/status", _chk)
+except Exception:
+    _raised = True
+checks["/status survives a host that times out (does not raise)"] = not _raised
+checks["…and still shows the reachable host's containers"] = (
+    not _raised and any("web" in m for m in _out))
+checks["…and names the dead host as unreachable"] = (
+    not _raised and any("srv20" in m for m in _out))
+checks["…and actually tried the dead host (its run was called)"] = (
+    bool(_dead.backend.calls))
 
 
 def main():
