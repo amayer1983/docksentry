@@ -950,12 +950,19 @@ class ContainerMonitor:
             code = detail.get("code", "?")
             out.append(f"===== {self._label(name)} (exit {code}) =====")
             try:
-                tail = self.checker._tail_logs(name, lines=40)
+                # none_on_error tells a failed fetch (None) from a silent
+                # container ("") — reporting a container that simply logged
+                # nothing as "host unreachable" is a false alarm (#63).
+                tail = self.checker._tail_logs(name, lines=40, none_on_error=True)
             except Exception:
-                tail = ""
-            out.append(tail.strip() if tail.strip()
-                       else "(logs unavailable — host unreachable, or the "
-                            "container is gone)")
+                tail = None
+            if tail is None:
+                out.append("(logs unavailable — host unreachable, or the "
+                           "container is gone)")
+            elif not tail.strip():
+                out.append("(container ran but produced no log output)")
+            else:
+                out.append(tail.strip())
             out.append("")
         return "\n".join(out)
 

@@ -1596,8 +1596,17 @@ class UpdateChecker:
         worse than no dry run: it sends you looking for a bug in the
         cleanup. `reclaimable_breakdown` carries the rest, for a message
         that wants to say where the other space is sitting.
+
+        `reclaimable_breakdown` now RAISES when `system df` fails so the
+        `/checkimages` dry-run can report an unreadable host honestly. This
+        figure feeds the auto-cleanup disk warning instead, where a host we
+        cannot measure means "no reclaim hint / don't act" — so the raise is
+        swallowed back to 0 here, and only here.
         """
-        return self.reclaimable_breakdown().get("images", 0)
+        try:
+            return self.reclaimable_breakdown().get("images", 0)
+        except Exception:
+            return 0
 
     @staticmethod
     def _human_bytes(n):
@@ -1671,27 +1680,48 @@ class UpdateChecker:
 
     def reclaimable_breakdown(self):
         """`docker system df` per type, in bytes: images, containers,
-        volumes, build_cache. Best-effort — an empty dict on any failure,
-        because a number nobody can trust is worse than no number."""
+        volumes, build_cache.
+
+        RAISES when the `system df` command itself fails — a non-zero exit
+        (a socket-proxy that blocks `/system/df` answers HTTP 403, so the
+        CLI exits 1) or a subprocess error. The human-facing caller
+        (`container_flags.reclaimable`) turns that into an explicit "host
+        could not be checked" instead of a silent "nothing to reclaim": an
+        endpoint we are blocked from reading as "all clean" is the exact
+        false-negative the update path guards against too (wud#116,
+        wud#419). `reclaimable_bytes` deliberately swallows the raise back
+        to 0 for the auto-cleanup path, where "can't read it" means "don't
+        act". A run that SUCCEEDS but reports nothing reclaimable returns a
+        normal (possibly empty) dict — that is a real zero, not a failure.
+
+        Stage 2 (2.19.0, deferred): compute the reclaimable IMAGE figure
+        ourselves from `docker images` + container reference counting
+        (IMAGES=1, which a socket-proxy already grants) so the dry-run does
+        not depend on `/system/df` at all — see [[project_core_refactor_pending]].
+        """
+        r = self.backend.run(
+            ["system", "df", "--format", "{{json .}}"], timeout=15)
+        if getattr(r, "returncode", 1) != 0:
+            err = (getattr(r, "stderr", "") or "").strip()
+            low = err.lower()
+            if "403" in low or "forbidden" in low:
+                # Kept short: the human-facing reply clips the error to 80
+                # chars, and SYSTEM=1 is the actionable half — it must survive.
+                raise RuntimeError(
+                    "system df blocked (403) — socket-proxy may need SYSTEM=1")
+            raise RuntimeError(err[:70] or "docker system df failed")
         out = {}
-        try:
-            r = self.backend.run(
-                ["system", "df", "--format", "{{json .}}"], timeout=15)
-            if getattr(r, "returncode", 1) != 0:
-                return out
-            for line in (r.stdout or "").strip().splitlines():
-                try:
-                    d = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-                kind = str(d.get("Type", "")).strip().lower()
-                key = {"images": "images", "containers": "containers",
-                       "local volumes": "volumes",
-                       "build cache": "build_cache"}.get(kind)
-                if key:
-                    out[key] = self._parse_human_size(d.get("Reclaimable", ""))
-        except (subprocess.SubprocessError, OSError):
-            return {}
+        for line in (r.stdout or "").strip().splitlines():
+            try:
+                d = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            kind = str(d.get("Type", "")).strip().lower()
+            key = {"images": "images", "containers": "containers",
+                   "local volumes": "volumes",
+                   "build cache": "build_cache"}.get(kind)
+            if key:
+                out[key] = self._parse_human_size(d.get("Reclaimable", ""))
         return out
 
     def cleanup_images(self):
@@ -2518,12 +2548,21 @@ class UpdateChecker:
                 return "\n".join(out)
         return ""
 
-    def _tail_logs(self, name, lines=10):
+    def _tail_logs(self, name, lines=10, *, none_on_error=False):
         """Return the last N log lines as a single string, trimmed for
         Telegram. Best-effort — failures return empty string. Used to
         attach diagnostic context to health-check warnings so the user
         can see in chat what the container was last doing instead of
-        having to SSH to the host."""
+        having to SSH to the host.
+
+        `none_on_error=True` returns None on a real fetch failure — a
+        non-zero `docker logs` exit (host unreachable, container gone) or
+        a subprocess error — so the caller can tell it apart from a
+        container that ran but logged nothing (which returns ""). The
+        mass-death digest needs the distinction: reporting a silent
+        container as "host unreachable" is a scary false alarm (#63,
+        @famewolf). The default path is unchanged for every other caller.
+        """
         try:
             # The comment that used to sit here said "docker logs
             # interleaves stdout+stderr — combine both" and then
@@ -2534,6 +2573,11 @@ class UpdateChecker:
             # exactly the wrong thing for a crash report. `backend.logs()`
             # merges them at the pipe, in the order the container wrote.
             r = self.backend.logs(name, tail=lines, timeout=10)
+            if none_on_error and getattr(r, "returncode", 0) != 0:
+                # A failed fetch (unreachable host, no such container) — not
+                # a silent one. Only surfaced when the caller asked to tell
+                # them apart; the default path keeps its old behaviour.
+                return None
             text = (r.stdout or "") + (r.stderr or "")
             text = text.strip()
             if not text:
@@ -2545,7 +2589,7 @@ class UpdateChecker:
                 text = "…" + text[-1500:]
             return text
         except subprocess.SubprocessError:
-            return ""
+            return None if none_on_error else ""
 
     @staticmethod
     def _state_note(state, health):

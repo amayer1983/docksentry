@@ -469,10 +469,18 @@ def reclaimable(targets, *, checker_for):
         if checker is None:
             continue
         try:
-            free = int(checker.reclaimable_bytes() or 0)
+            # Prefer the breakdown: it RAISES when `docker system df` itself
+            # fails (e.g. a socket-proxy blocking /system/df, HTTP 403), so a
+            # host we cannot read surfaces as "could not be checked" below
+            # instead of a silent "nothing to reclaim". reclaimable_bytes()
+            # deliberately swallows that to 0 for the auto-cleanup path, so it
+            # cannot be the signal here — read the breakdown directly.
             detail = {}
             if hasattr(checker, "reclaimable_breakdown"):
                 detail = checker.reclaimable_breakdown() or {}
+                free = int(detail.get("images", 0) or 0)
+            else:
+                free = int(checker.reclaimable_bytes() or 0)
             grace = None
             if hasattr(checker, "grace_holds_back"):
                 grace = checker.grace_holds_back()

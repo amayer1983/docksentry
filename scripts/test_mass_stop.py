@@ -52,7 +52,7 @@ def make_monitor(*, mass=True, host_name="dock8520", logs="log tail here"):
     m.checker = types.SimpleNamespace(
         label_bool=UpdateChecker.label_bool,
         _own_container_name=lambda: "docksentry",
-        _tail_logs=lambda name, lines=10: logs,
+        _tail_logs=lambda name, lines=10, none_on_error=False: logs,
     )
     m._memory_snapshot = lambda top=3: ""
     m._cpu_snapshot = lambda top=3: ""
@@ -226,6 +226,44 @@ def main():
     checks["mass stop and a genuine unhealthy flip both get through"] = (
         any("appears to have gone down" in s for s in m8.sent)
         and "🔴" in joined or "unhealthy" in joined.lower())
+
+    # ── the digest file tells "silent" from "unreachable" (#63) ─────────
+    # A container that ran but logged nothing must NOT read as a dead or
+    # unreachable host in the attached file — measured live: five
+    # `sleep infinity` containers (no output) all printed "host unreachable,
+    # or the container is gone", a scary false alarm on a reachable host.
+    m9 = make_monitor(logs="")                     # ran, but no output
+    m9.snapshot = lambda: running(twelve)
+    m9.tick()
+    m9.snapshot = lambda: all_exited(twelve)
+    m9.tick()
+    body9 = m9.docs[0][1].decode()
+    checks["silent container reads as 'no output', not 'unreachable'"] = (
+        "no log output" in body9 and "host unreachable" not in body9)
+
+    m10 = make_monitor(logs=None)                  # fetch failed (unreachable/gone)
+    m10.snapshot = lambda: running(twelve)
+    m10.tick()
+    m10.snapshot = lambda: all_exited(twelve)
+    m10.tick()
+    body10 = m10.docs[0][1].decode()
+    checks["a failed log fetch still reads as unreachable/gone"] = (
+        "host unreachable" in body10)
+
+    # ── _tail_logs(none_on_error=True): rc!=0 → None, empty → "" ─────────
+    def tl(rc, out, err="", none=False):
+        u = UpdateChecker.__new__(UpdateChecker)
+        # `backend` is a read-only property backed by `_backend`.
+        u._backend = types.SimpleNamespace(
+            logs=lambda name, *, tail=None, timeout=None:
+                types.SimpleNamespace(returncode=rc, stdout=out, stderr=err))
+        u._collapse_repeats = lambda s: s
+        return UpdateChecker._tail_logs(u, "x", none_on_error=none)
+    checks["_tail_logs none_on_error: failed fetch → None"] = tl(1, "", none=True) is None
+    checks["_tail_logs none_on_error: silent → ''"] = tl(0, "", none=True) == ""
+    checks["_tail_logs none_on_error: has output → text"] = tl(0, "hi", none=True) == "hi"
+    # default path unchanged for every other caller: failure still yields ""
+    checks["_tail_logs default path: failure → '' (contract kept)"] = tl(1, "") == ""
 
     for k, v in checks.items():
         print(("  PASS" if v else "  FAIL"), k)
