@@ -215,20 +215,33 @@ def apply_flag(spec, targets, *, store_for, backend_for=None, partial=None,
     """
     replies = []
     changed = False
+
+    if partial is None:                           # list mode — a read
+        # An empty host is silence, not a "nothing here" line of its own:
+        # a pin set on @srv30 must not come buried under four "none"s from
+        # the hosts that have none. Only when nothing is set on ANY host
+        # does one empty line answer the question — and a single-host
+        # install still gets exactly that one line, host-less, byte-for-
+        # byte as before (#7).
+        any_listed = False
+        for host in targets:
+            current = list(getattr(store_for(host), spec.read)() or [])
+            if current:
+                any_listed = True
+                replies.append(Reply(spec.k_list or "", host=host,
+                                     host_is_local=_is_local(host),
+                                     items=tuple(sorted(current))))
+        if not any_listed:
+            _h = targets[0] if len(targets) == 1 else None
+            replies.append(Reply(spec.k_empty or "", host=_h,
+                                 host_is_local=(_is_local(_h)
+                                                if _h is not None else True)))
+        return Outcome(tuple(replies), None, defaulted_to_local, False)
+
     for host in targets:
         store = store_for(host)
         local = _is_local(host)
         current = list(getattr(store, spec.read)() or [])
-
-        if partial is None:                       # list mode
-            if current:
-                replies.append(Reply(spec.k_list or "", host=host,
-                                     host_is_local=local,
-                                     items=tuple(sorted(current))))
-            else:
-                replies.append(Reply(spec.k_empty or "", host=host,
-                                     host_is_local=local))
-            continue
 
         if spec.resolve == FROM_STORE:
             name, err = resolve_container(partial, names=current)
@@ -314,18 +327,24 @@ def set_cooldown(targets, *, store_for, backend_for, partial, seconds,
         # could not, which is the asymmetry this module exists to end —
         # and asking "which of my containers have a cooldown?" is a
         # perfectly reasonable question from either chat.
+        # Empty hosts stay silent, one "none" only when nothing is set
+        # anywhere — same rule as apply_flag's list mode, so a cooldown on
+        # @srv30 is not buried under the others' "none"s.
         replies = []
+        any_listed = False
         for host in targets:
-            local = _is_local(host)
             cds = dict(getattr(store_for(host), "get_cooldowns")() or {})
             if cds:
+                any_listed = True
                 replies.append(Reply("cooldown_list", host=host,
-                                     host_is_local=local,
+                                     host_is_local=_is_local(host),
                                      items=tuple((n, f"{v}s")
                                                  for n, v in cds.items())))
-            else:
-                replies.append(Reply("cooldown_empty", host=host,
-                                     host_is_local=local))
+        if not any_listed:
+            _h = targets[0] if len(targets) == 1 else None
+            replies.append(Reply("cooldown_empty", host=_h,
+                                 host_is_local=(_is_local(_h)
+                                                if _h is not None else True)))
         return Outcome(tuple(replies), None, defaulted_to_local, False)
 
     show = seconds is None

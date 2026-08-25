@@ -1515,7 +1515,10 @@ class DiscordBot:
         # empty key renders as an empty message (#63).
         if remove and not arg:
             return self.t("chan_usage_unpin")
-        targets = self._write_hosts_for(opts.get("host"))
+        # Listing (no container) is a read — every host, like /status.
+        # Setting one stays a write — local unless aimed.
+        targets = (self._hosts_for(opts.get("host")) if not arg
+                   else self._write_hosts_for(opts.get("host")))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         out = container_flags.apply_flag(
@@ -1546,7 +1549,10 @@ class DiscordBot:
         # so the question "which of mine have it?" was answerable in one
         # chat and not the other (#63).
         arg = (opts.get("container") or "").strip()
-        targets = self._write_hosts_for(opts.get("host"))
+        # Listing (no container) is a read — every host, like /status.
+        # Setting one stays a write — local unless aimed.
+        targets = (self._hosts_for(opts.get("host")) if not arg
+                   else self._write_hosts_for(opts.get("host")))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(
@@ -1561,7 +1567,10 @@ class DiscordBot:
         # so the question "which of mine have it?" was answerable in one
         # chat and not the other (#63).
         arg = (opts.get("container") or "").strip()
-        targets = self._write_hosts_for(opts.get("host"))
+        # Listing (no container) is a read — every host, like /status.
+        # Setting one stays a write — local unless aimed.
+        targets = (self._hosts_for(opts.get("host")) if not arg
+                   else self._write_hosts_for(opts.get("host")))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(
@@ -1577,7 +1586,10 @@ class DiscordBot:
         """
         import container_flags
         arg = (opts.get("container") or "").strip()
-        targets = self._write_hosts_for(opts.get("host"))
+        # Listing (no container) is a read — every host, like /status.
+        # Setting one stays a write — local unless aimed.
+        targets = (self._hosts_for(opts.get("host")) if not arg
+                   else self._write_hosts_for(opts.get("host")))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.set_cooldown(
@@ -2016,7 +2028,10 @@ class DiscordBot:
         mandatory on this side."""
         import container_flags
         arg = (opts.get("container") or "").strip()
-        targets = self._write_hosts_for(opts.get("host"))
+        # Listing (no container) is a read — every host, like /status.
+        # Setting one stays a write — local unless aimed.
+        targets = (self._hosts_for(opts.get("host")) if not arg
+                   else self._write_hosts_for(opts.get("host")))
         if targets is None:
             return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.apply_flag(

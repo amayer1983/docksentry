@@ -743,6 +743,25 @@ class TelegramBot:
         raw_arg = parts[1].strip() if len(parts) > 1 else ""
         return self._resolve_targets(raw_arg, write=True)
 
+    def _flag_targets(self, text):
+        """`(container_arg, targets, error, hint)` for a flag command.
+
+        Listing (no container named) is a READ — it shows every host's
+        entries, the way `/status` and `/check` default to every host, so
+        someone who pins on `@srv30` and then types `/pin` to check is not
+        told the local host has none. Setting one stays a WRITE — the
+        local host unless an `@host` / `@all` token aims it. The
+        local-default hint is for the write case only; a listing that
+        already spans every host has nothing to add.
+        """
+        parts = text.split(maxsplit=1)
+        raw = parts[1].strip() if len(parts) > 1 else ""
+        from hosts import split_host_target
+        cleaned, _tok = split_host_target(raw)
+        listing = not cleaned.strip()
+        arg, targets, err = self._resolve_targets(raw, write=not listing)
+        return arg, targets, err, ("" if listing else self._host_hint(raw))
+
     def _host_hint_for(self, text):
         """`_host_hint` for a whole command line rather than its args."""
         parts = text.split(maxsplit=1)
@@ -3780,7 +3799,7 @@ class TelegramBot:
 
         elif text.startswith("/pin"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3789,7 +3808,7 @@ class TelegramBot:
                 container_flags.FLAGS["pin"], targets or [None],
                 store_for=self._store_for, backend_for=self._backend_for,
                 partial=argv[0] if argv else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/unpin"):
             import container_flags
@@ -3808,7 +3827,7 @@ class TelegramBot:
 
         elif text.startswith("/autoupdate"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3817,11 +3836,11 @@ class TelegramBot:
                 container_flags.FLAGS["autoupdate"], targets or [None],
                 store_for=self._store_for, backend_for=self._backend_for,
                 partial=argv[0] if argv else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/cooldown"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3831,11 +3850,11 @@ class TelegramBot:
                 backend_for=self._backend_for,
                 partial=argv[0] if argv else None,
                 seconds=argv[1] if len(argv) > 1 else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/protect"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3844,7 +3863,7 @@ class TelegramBot:
                 container_flags.FLAGS["protect"], targets or [None],
                 store_for=self._store_for, backend_for=self._backend_for,
                 partial=argv[0] if argv else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/note"):
             import container_flags
@@ -3864,7 +3883,7 @@ class TelegramBot:
 
         elif text.startswith("/trustrunning"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3873,11 +3892,11 @@ class TelegramBot:
                 container_flags.FLAGS["trustrunning"], targets or [None],
                 store_for=self._store_for, backend_for=self._backend_for,
                 partial=argv[0] if argv else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/askmajor"):
             import container_flags
-            raw_arg, targets, host_err = self._state_targets(text)
+            raw_arg, targets, host_err, hint = self._flag_targets(text)
             if host_err:
                 self.send_message(host_err)
                 return
@@ -3886,7 +3905,7 @@ class TelegramBot:
                 container_flags.FLAGS["askmajor"], targets or [None],
                 store_for=self._store_for, backend_for=self._backend_for,
                 partial=argv[0] if argv else None),
-                hint=self._host_hint_for(text))
+                hint=hint)
 
         elif text.startswith("/testchannel"):
             # The one command that is more useful from the chat than from
