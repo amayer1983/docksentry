@@ -293,7 +293,11 @@ COMMANDS = [
           "type": 3, "required": False},
      ]},
     {"name": "cleanup", "description": "Remove unused images and build cache",
-     "type": 1},
+     "type": 1,
+     "options": [
+         {"name": "host", "description": "Host to clean (default: all)",
+          "type": 3, "required": False},
+     ]},
     {"name": "checkimages",
      "description": "How much space /cleanup would free (dry-run)", "type": 1,
      "options": [
@@ -1326,7 +1330,7 @@ class DiscordBot:
         if name in ("restart", "stop", "start"):
             return self._cmd_lifecycle(name, opts, data)
         if name == "cleanup":
-            return self._cmd_cleanup()
+            return self._cmd_cleanup(opts)
         if name == "checkimages":
             return self._cmd_checkimages(opts)
         return self.t("chan_unknown_command", name=name)
@@ -2434,7 +2438,7 @@ class DiscordBot:
     # `_is_protected` was here so `/stop` could refuse before offering a
     # button. `lifecycle.plan` runs that check now, together with the
     # other two, so the question and the refusal come from one place.
-    def _cmd_cleanup(self):
+    def _cmd_cleanup(self, opts):
         """Guarded image cleanup, on every managed host.
 
         `image prune -a` filters on image CREATION time, so an image
@@ -2451,12 +2455,16 @@ class DiscordBot:
         them all; this did not. It does now, through the same core.
         """
         import container_flags
-        # `_hosts_for(None)` — every host, the read-command default. A
+        # `_hosts_for(host)` — every host by default, or the one named.
+        # `_hosts_for(None)` is the read-command default (all); a
         # cleanup IS a write, and writes stay local everywhere else; this
         # is the deliberate exception, because the box you need to clean
         # is the one that filled up, and that is rarely the local one.
+        targets = self._hosts_for(opts.get("host"))
+        if targets is None:
+            return self._unknown_host(opts.get("host"))
         return self._clip(self._render(container_flags.cleanup(
-            self._hosts_for(None), checker_for=self._checker_for,
+            targets, checker_for=self._checker_for,
             guarded_run=self._cleanup_guarded)))
 
     def _cleanup_guarded(self, checker):

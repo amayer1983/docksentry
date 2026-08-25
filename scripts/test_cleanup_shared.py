@@ -165,7 +165,7 @@ checks["a host with no backend says so"] = (
 # ── both front ends go through it ────────────────────────────────────
 tb = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
 db = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = tb.index('elif text == "/cleanup":')
+i = tb.index('elif text == "/cleanup"')
 tg_block = tb[i:tb.index("\n        elif text ==", i + 10)]
 checks["Telegram /cleanup calls the core"] = "container_flags.cleanup(" in tg_block
 checks["…and keeps no per-host loop of its own"] = "for host" not in tg_block
@@ -173,7 +173,7 @@ checks["…and keeps no per-host loop of its own"] = "for host" not in tg_block
 j = db.index("def _cmd_cleanup")
 dc_block = db[j:db.index("\n    def ", j + 10)]
 checks["Discord /cleanup calls the core"] = "container_flags.cleanup(" in dc_block
-checks["…and no longer stops at the local host"] = "_hosts_for(None)" in dc_block
+checks["…and no longer stops at the local host"] = "_hosts_for(" in dc_block
 
 # The four new keys exist everywhere, with their placeholders intact —
 # a key that exists but drops {size} renders a sentence with a hole in it.

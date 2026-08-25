@@ -3669,29 +3669,42 @@ class TelegramBot:
                     self.send_message(self.t("maintenance_enabled",
                                               until=until.strftime("%H:%M")))
 
-        elif text == "/cleanup":
+        elif text == "/cleanup" or text.startswith("/cleanup "):
             import container_flags
+            # Default is every managed host, not just the local one —
+            # @famewolf ran it while dockmox was drowning in wrongly-
+            # pulled images and it answered for one machine out of three
+            # (#2). `@srv30` narrows it to one host, `@all` is the same as
+            # the default. The walk, the skip-when-busy and the wording
+            # are the core's now; Discord gets the same walk for free.
+            _raw = text.split(maxsplit=1)
+            _raw = _raw[1].strip() if len(_raw) > 1 else ""
+            _arg, targets, host_err = self._resolve_targets(_raw, write=False)
+            if host_err:
+                self.send_message(host_err)
+                return
             self.send_message(self.t("cleanup_starting"))
-            # Every managed host, not just this one. @famewolf ran it
-            # while dockmox was drowning in wrongly-pulled images and it
-            # answered for one machine out of three (#2). The walk, the
-            # skip-when-busy and the wording are the core's now; Discord
-            # gets the same walk for free.
-            targets = list(self.hosts) if self._multi() else [None]
             self._emit(container_flags.cleanup(
-                targets,
+                targets or [None],
                 checker_for=lambda h: self._checker_for(h, checker),
                 guarded_run=self.cleanup_guarded))
 
-        elif text == "/checkimages":
+        elif text == "/checkimages" or text.startswith("/checkimages "):
             # Dry-run counterpart to /cleanup — how much would `/cleanup`
             # free right now, plus the AUTO_CLEANUP status (#2, @famewolf).
-            # Every managed host, like /cleanup itself; the per-host
-            # measurement lives in the core, so one dead host is reported
-            # rather than stopping the rest, in both front ends (#63).
+            # Every managed host by default, like /cleanup itself; `@srv30`
+            # narrows it. The per-host measurement lives in the core, so
+            # one dead host is reported rather than stopping the rest, in
+            # both front ends (#63).
             import container_flags
             auto_on = bool(getattr(self.config, "disk_warn_auto_cleanup", False))
-            targets = list(self.hosts) if self._multi() else [None]
+            _raw = text.split(maxsplit=1)
+            _raw = _raw[1].strip() if len(_raw) > 1 else ""
+            _arg, targets, host_err = self._resolve_targets(_raw, write=False)
+            if host_err:
+                self.send_message(host_err)
+                return
+            targets = targets or [None]
             replies, _total = container_flags.reclaimable(
                 targets, checker_for=lambda h: self._checker_for(h, checker))
             for r in replies:

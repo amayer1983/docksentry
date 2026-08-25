@@ -147,7 +147,8 @@ block = tsrc[i:i + 1200]
 checks["/cleanup walks every managed host"] = (
     "container_flags.cleanup(" in block or "host_checkers" in block)
 checks["…and hands it every host, not just the local one"] = (
-    "list(self.hosts)" in block or "host_checkers" in block)
+    "write=False" in block or "list(self.hosts)" in block
+    or "host_checkers" in block)
 # Discord did this locally-only until the walk was shared (#2, @famewolf:
 # the full box was dockmox, not the local one).
 j = dsrc.index("def _cmd_cleanup")
