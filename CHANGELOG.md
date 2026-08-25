@@ -2,6 +2,22 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.20] - 2026-08-25
+
+The multi-host pass, tested end to end on a real five-host bed — local Docker, local Podman, a box behind a TCP socket-proxy, a box over SSH, and one host left deliberately dead. Every host-touching command was walked through by hand and checked on the far side. Three bugs turned up on the way and are fixed here.
+
+### Changed
+- **Reads reach every host, writes stay home, `@host` decides.** A flag with no container name lists what is set on *every* managed host, not just the local one. `/cleanup` and `/checkimages` take a `@host` like the commands beside them — the box that fills up is rarely the local one. Writes still default to the local machine; `@host` narrows and `@all` widens, one rule everywhere.
+- **All sixteen languages are fully translated.** Fourteen of them were still half English; they are not any more.
+- **`/checkimages` tells you when it could not look.** Behind a socket-proxy that does not expose `system df`, it used to answer "nothing to reclaim" — about a host it never actually measured. It reports "could not be checked" now, and names the missing permission (`SYSTEM=1`).
+
+### Fixed
+- **An update button kept the whole fleet's containers after one tap.** A host-scoped `/check @srv30` showed srv30's buttons, but tapping one rebuilt the keyboard from the global pending list — so every other host's containers reappeared as live buttons, and tapping one recreated the wrong host's container. "Update all" went global too. The scope, and the per-notification snapshot token, survive the tap now.
+- **A silent container read as an unreachable host.** When several containers stop at once the alerts collapse into one digest with a log file; a container that had logged nothing printed "host unreachable, or the container is gone" in it — an alarming claim about a host that was fine. It says "no log output" now, and keeps the unreachable wording for a fetch that actually failed.
+- **`/status` died on a dead host, and made the rest wait.** One unreachable box threw the whole overview, and where it did answer it spent 30 seconds doing it. A dead host is reported now, in its place, after 10 seconds, and the reachable hosts answer regardless.
+- **Bare `/stop` and `/restart` went silent.** With no container name they matched nothing and said nothing; they answer with the usage line now, the way `/logs` and `/audit` already did.
+- **Help text showed a literal `\n`.** Three `/help` details carried the two characters instead of the line break they were meant to be.
+
 ## [2.18.0-beta.19] - 2026-08-24
 
 ### Changed
