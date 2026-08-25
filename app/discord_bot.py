@@ -1398,7 +1398,10 @@ class DiscordBot:
                 # hides the very container answering it confused its
                 # reporter twice over. The update path keeps the filter
                 # that protects PID 1 (#16).
-                containers = checker.get_running_containers(include_self=True)
+                # 10s like the Web UI and Telegram overview — a dead
+                # host is caught below, but must not cost 30s first.
+                containers = checker.get_running_containers(
+                    include_self=True, timeout=10)
             except Exception as e:
                 lines.append(self.t("host_unreachable_short",
                                     host=getattr(host, "name", "local"),

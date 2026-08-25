@@ -3132,8 +3132,12 @@ class TelegramBot:
                 # until a genuinely dead host (srv20) proved it: the
                 # timeout escaped this loop into the poll thread and
                 # `/status` produced nothing at all (#2).
+                # 10s like the Web UI: a host that cannot answer a
+                # liveness probe in ten seconds is unreachable for an
+                # interactive command — no reason to make everyone
+                # wait out the full 30s backend timeout for it.
                 try:
-                    ids_p = _b.run(["ps", "-q"])
+                    ids_p = _b.run(["ps", "-q"], timeout=10)
                 except Exception as _e:
                     _mark_unreachable(_host, clip(str(_e)))
                     continue
@@ -3147,7 +3151,7 @@ class TelegramBot:
                 if not ids:
                     continue
                 try:
-                    ins_p = _b.run(["inspect", *ids])
+                    ins_p = _b.run(["inspect", *ids], timeout=10)
                 except Exception as _e:
                     _mark_unreachable(_host, clip(str(_e)))
                     continue

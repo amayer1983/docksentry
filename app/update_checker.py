@@ -291,13 +291,13 @@ class UpdateChecker:
                 out[nm] = cfg.get("Labels") or {}
         return out
 
-    def get_running_containers(self, include_self=False):
+    def get_running_containers(self, include_self=False, timeout=None):
         # `{{.Labels}}` deliberately dropped from this format string — see
         # `_labels_for`. Names and image references cannot contain a
         # newline, so without it a `ps` line can no longer be truncated
         # mid-container either.
         result = self.backend.run(
-            ["ps", "--format", "{{.Names}}|{{.Image}}"])
+            ["ps", "--format", "{{.Names}}|{{.Image}}"], timeout=timeout)
         # A failing `ps` — daemon down, socket-proxy denial, remote host
         # unreachable — produced empty stdout and therefore an empty list,
         # which is indistinguishable from a host that genuinely runs

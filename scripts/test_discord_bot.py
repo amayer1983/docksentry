@@ -101,7 +101,7 @@ class FakeChecker:
         self.self_named = None      # name _would_kill_self says yes to
         self.labels = {}            # name -> {"protect": True/False}
 
-    def get_running_containers(self, include_self=False):
+    def get_running_containers(self, include_self=False, timeout=None):
         # Mirrors the real signature — /status passes include_self=True
         # since the self-hiding fix (#2), and a fake without the
         # parameter answered that call with a TypeError, which the
