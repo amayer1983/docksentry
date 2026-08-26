@@ -2463,6 +2463,14 @@ class UpdateChecker:
             r = self.backend.stop(name, time=effective_stop,
                                   timeout=subprocess_timeout)
             if r.returncode == 0:
+                # `docker stop` returns success whether the container
+                # exited on SIGTERM or had to be SIGKILLed once the grace
+                # ran out, so its return code can't tell the two apart.
+                # Inspect the real exit code so the recreate can report a
+                # force-kill instead of a plain ✅ (#62, @NotRetarded).
+                if self._container_exit_code(name) == 137:
+                    return True, (f"force-killed after {effective_stop}s "
+                                  f"(exit 137 — did not stop on SIGTERM)")
                 return True, "stopped"
             err = (r.stderr or "").strip()[:200]
             # Fall through to kill if the stop reported failure but the
@@ -2480,6 +2488,23 @@ class UpdateChecker:
             return False, f"stop+kill both failed: {(kill.stderr or '').strip()[:120]}"
         except subprocess.SubprocessError as e:
             return False, f"kill failed: {e}"
+
+    def _container_exit_code(self, name):
+        """The container's last exit code as an int, or None if unreadable.
+
+        Used right after a stop to tell a graceful exit (0/143) from a
+        SIGKILL (137) — `docker stop` alone can't (#62, @NotRetarded).
+        """
+        try:
+            r = self.backend.run(
+                ["inspect", "--format", "{{.State.ExitCode}}", name], timeout=5)
+            if r.returncode == 0:
+                raw = (r.stdout or "").strip()
+                if raw and raw != "<no value>":
+                    return int(raw)
+        except (subprocess.SubprocessError, ValueError):
+            pass
+        return None
 
     def _get_start_period_seconds(self, name):
         """Read the image's own Healthcheck.StartPeriod from `docker
@@ -3482,7 +3507,15 @@ class UpdateChecker:
         # is actually replaced: a plain `up -d` can leave the old container
         # (and old image) running if Compose judges the service "unchanged",
         # so the new image gets pulled but never loaded (#35).
-        up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate", service]
+        # Give the old container the same stop grace as the standalone
+        # path (docker_stop_timeout, default 60s). Without --timeout,
+        # compose uses its own 10s default, so a container that ignores
+        # SIGTERM gets SIGKILLed (exit 137) far sooner here than under a
+        # `docker run` recreate — the inconsistency behind "random" 137s
+        # on compose containers (#62, @NotRetarded).
+        stop_grace = int(getattr(self.config, "docker_stop_timeout", 60) or 60)
+        up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate",
+                                 "--timeout", str(stop_grace), service]
         self._debug(f"  Running: {' '.join(up_cmd)}")
         result = self.backend.run(up_cmd[1:], timeout=120)
         if result.returncode != 0:
@@ -4923,6 +4956,12 @@ class UpdateChecker:
             self._debug(f"  Recreated successfully: {name} (health: {health or 'ok'})")
 
             detail = f"🗓️ {old_created} → {new_created}, 📦 {new_size}{getattr(self, '_version_arrow', '')}"
+            if "force-killed" in (stop_detail or ""):
+                # The old container ignored SIGTERM and had to be SIGKILLed
+                # (exit 137). Say so, rather than a bare ✅ that leaves the
+                # user cross-checking an external monitor to find out (#62,
+                # @NotRetarded).
+                detail += " · ⚠️ old container force-killed (ignored SIGTERM)"
             self._save_history(name, image, True, detail)
             self._clear_inflight()
             return True, f"OK ({detail})"
