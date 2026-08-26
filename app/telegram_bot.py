@@ -3752,6 +3752,21 @@ class TelegramBot:
             # (#2): same persisted log, same monitor_* message keys.
             self.send_message(self._build_events_msg())
 
+        # Bare `/restart` restarts DOCKSENTRY, and it has to be tested
+        # for BEFORE the lifecycle branch below: that one matches
+        # `startswith("/restart")` without a space, so it swallowed the
+        # bare form too and this branch became unreachable the moment
+        # the bare forms were routed there (2f73b59 — in beta.20 and
+        # beta.21; 2.17.1 is unaffected). `/restart` then answered with
+        # the lifecycle usage line instead of restarting anything.
+        # Exact match here, so `/restart web` and `/restartx` still go
+        # exactly where they went before.
+        elif text == "/restart":
+            # Asked for by the owner after the restore button shipped: a
+            # restart you can only reach by restoring something first is
+            # a restart you cannot reach.
+            self.restart_self(checker)
+            return
         # Container lifecycle commands — start / stop / restart.
         # Same partial-name matching as /pin / /logs. Stop and restart
         # refuse on the Docksentry container itself (#16 / #17). Code
@@ -3963,12 +3978,6 @@ class TelegramBot:
             # to arrive, so "did it work?" answers itself.
             self.send_message(self.t("testchannel_sending"))
             self.announce(self.t("testchannel_message"))
-            return
-        elif text.startswith("/restart"):
-            # Asked for by the owner after the restore button shipped: a
-            # restart you can only reach by restoring something first is
-            # a restart you cannot reach.
-            self.restart_self(checker)
             return
         elif text.startswith("/hosts"):
             if not self.hosts or not getattr(self.hosts, "is_multi", False):

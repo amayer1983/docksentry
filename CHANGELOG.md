@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.22] - 2026-08-26
+
+One regression from beta.20, found while mapping the dispatcher.
+
+### Fixed
+- **`/restart` restarts Docksentry again.** The lifecycle branch matches `/restart` without requiring a space after it, so once bare `/stop` and `/restart` were routed there to answer with a usage line instead of silence (beta.20), it swallowed the bare form as well — and the branch that restarts Docksentry itself sat below it, unreachable. `/restart` answered "usage: /restart <name>" and restarted nothing. It is tested for first now, on an exact match, so `/restart <name>` and `/restartx` go exactly where they went before. 2.17.1 is unaffected; only beta.20 and beta.21 carry this.
+
 ## [2.18.0-beta.21] - 2026-08-26
 
 Two follow-ups from @NotRetarded's #62.

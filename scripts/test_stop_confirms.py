@@ -315,10 +315,19 @@ checks["bare /stop answers with usage, not silence"] = (
     len(rows) >= 1 and EN["lifecycle_usage"].split("`")[0].strip()[:6]
     in rows[-1][0])
 checks["…and offers no button"] = buttons(rows) == []
+# Bare /restart is NOT a lifecycle usage line: it restarts Docksentry.
+# This block used to assert the opposite, and in doing so it pinned the
+# very bug it was next to — the lifecycle branch matches "/restart"
+# without a space, so it swallowed the bare form and the self-restart
+# branch below became unreachable (beta.20, fixed in beta.22). A test
+# that asserts the broken behaviour cannot report the break.
 bot, ck = make_bot()
+called = []
+bot.restart_self = lambda _ck: called.append(True)
 rows = cmd(bot, "/restart")
-checks["bare /restart answers too"] = (
-    len(rows) >= 1 and "restart" in rows[-1][0].lower())
+checks["bare /restart restarts Docksentry"] = called == [True]
+checks["…and does not answer with the lifecycle usage"] = (
+    not any(EN["lifecycle_usage"][:20] in m for m, _ in rows))
 # bare /start stays the greeting, not a lifecycle usage — it must NOT be
 # swallowed by the lifecycle branch.
 bot, ck = make_bot()
