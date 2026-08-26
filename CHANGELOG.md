@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.21] - 2026-08-26
+
+Two follow-ups from @NotRetarded's #62.
+
+### Fixed
+- **An update tells you when a container had to be force-killed.** When we recreate a container we stop the old one; if the app ignores SIGTERM, Docker SIGKILLs it after the grace and it exits 137. `docker stop` reports success either way, so the result used to read a bare "✅ updated" and you'd only learn of the hard-kill from an external monitor. The recreate now checks the old container's exit code and adds "⚠️ old container force-killed (ignored SIGTERM)" when it happened.
+
+### Changed
+- **A Compose recreate gets the same stop grace as a `docker run` one.** A standalone recreate gave the old container ~60s to stop (`DOCKER_STOP_TIMEOUT`); the compose recreate passed no `--timeout`, so Compose fell back to its own 10s default — making a 137 far likelier on compose containers for no reason other than the shorter default. It passes the configured timeout now.
+
 ## [2.18.0-beta.20] - 2026-08-25
 
 The multi-host pass, tested end to end on a real five-host bed — local Docker, local Podman, a box behind a TCP socket-proxy, a box over SSH, and one host left deliberately dead. Every host-touching command was walked through by hand and checked on the far side. Three bugs turned up on the way and are fixed here.
