@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.2] - 2026-08-27
+
+One fix, reported by @famewolf in #2.
+
+### Fixed
+- **A compose update is no longer cut off after two minutes.** `docker compose up -d --force-recreate` ran under a fixed 120-second wait. That wait is there to stop a hung command from blocking the update loop forever — it was never meant to bound normal work, and at 120 seconds it was doing the second job badly: the number never scaled with anything, and a service that has to rejoin a VPN network namespace on start runs past it. The failure reads `timed out after 120 seconds`, which is Docksentry's own message rather than Docker's. The wait is 600 seconds now, the same reasoning the compose *pull* beside it has always followed at 1800.
+
 ## [2.17.1] - 2026-08-24
 
 ### Fixed

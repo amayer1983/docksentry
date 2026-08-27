@@ -3230,7 +3230,16 @@ class UpdateChecker:
         # so the new image gets pulled but never loaded (#35).
         up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate", service]
         self._debug(f"  Running: {' '.join(up_cmd)}")
-        result = self.backend.run(up_cmd[1:], timeout=120)
+        # This wait exists to stop a hung command from blocking the update
+        # loop forever. It was never meant to bound normal work, and at
+        # 120 seconds it was doing the second job badly: the number was
+        # fixed, it never scaled with anything, and a service that has to
+        # rejoin a VPN network namespace on start runs past it — reported
+        # as `timed out after 120 seconds`, which is OUR message, not
+        # Docker's (#2, @famewolf). The pull beside it has always been
+        # allowed 1800s for the same reason: a slow operation is not a
+        # stuck one.
+        result = self.backend.run(up_cmd[1:], timeout=600)
         if result.returncode != 0:
             msg = f"Compose up failed: {result.stderr[:200]}"
             self._save_history(name, image, False, msg)
