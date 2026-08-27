@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.23] - 2026-08-27
+
+One regression from beta.21, reported by @famewolf in #2.
+
+### Fixed
+- **A compose update no longer runs out of time because we gave it more grace.** beta.21 passed `--timeout <DOCKER_STOP_TIMEOUT>` to the compose recreate so a slow container would stop on its own terms instead of being SIGKILLed after Compose's 10s default. The grace was right; the wait around it stayed a flat 120 seconds, so the budget left for pull, create and start fell from 110s to 60s — and a stack whose container has to rejoin a VPN network namespace ran out of it, reporting `timed out after 120 seconds`. The wait now contains the grace it grants (`stop_grace + 120`), the same shape the standalone path has always used. 2.17.1 is unaffected — it never passed `--timeout` at all.
+
 ## [2.18.0-beta.22] - 2026-08-26
 
 One regression from beta.20, found while mapping the dispatcher.

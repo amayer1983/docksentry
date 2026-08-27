@@ -3517,7 +3517,19 @@ class UpdateChecker:
         up_cmd = compose_base + ["up", "-d", "--no-deps", "--force-recreate",
                                  "--timeout", str(stop_grace), service]
         self._debug(f"  Running: {' '.join(up_cmd)}")
-        result = self.backend.run(up_cmd[1:], timeout=120)
+        # The wait has to CONTAIN the grace we just granted. beta.21 gave
+        # compose `--timeout 60` so a slow container would not be killed
+        # early, but left this at a flat 120s — so the budget for pull,
+        # create and start fell from 110s to 60s, and a stack whose
+        # container has to rejoin a VPN network namespace ran out of it
+        # (#2, @famewolf: "timed out after 120 seconds" on a gluetun
+        # service). Measured here: a container that ignores SIGTERM
+        # spends the full 60s stopping, against 10s before.
+        #
+        # Same shape the standalone path already uses — it waits
+        # `effective_stop + 30` rather than a fixed number, for exactly
+        # this reason. Granting more grace must never cost working time.
+        result = self.backend.run(up_cmd[1:], timeout=stop_grace + 120)
         if result.returncode != 0:
             msg = f"Compose up failed: {result.stderr[:200]}"
             self._save_history(name, image, False, msg)
