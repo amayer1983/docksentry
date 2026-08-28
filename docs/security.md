@@ -6,7 +6,8 @@
 - `no-new-privileges` security option recommended
 - Zero external dependencies — Python standard library + Docker CLI only (no supply-chain risk)
 - Docker credentials mounted read-only
-- Web UI password hashed (SHA-256), never stored in plain text
+- Web UI password set in the interface is hashed with **scrypt** (n=16384, r=8, p=1, per-password salt) before it reaches `settings.json`
+- A password supplied as `WEB_PASSWORD` is **not** hashed — an environment variable is plain text by nature, and it is compared as such. Set it in the interface if you would rather it were not
 - Sensitive values (Bot Token, Chat ID) masked in Web UI
 
 ## Docker Socket Proxy (recommended)

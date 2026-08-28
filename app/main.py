@@ -782,8 +782,6 @@ def main():
             bot.send_message(notice)
         if notifier.has_channels():
             notifier.send_message(notice)
-        if notifier.has_channels():
-            notifier.send_message(startup_msg)
 
     # Start bot listener (blocking).
     # When Telegram is off this just blocks until shutdown — scheduler/Web UI

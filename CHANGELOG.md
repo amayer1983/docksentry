@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.5] - 2026-08-28
+
+One crash, and three lines of documentation that were simply wrong.
+
+### Fixed
+- **Docksentry could refuse to start after a self-update.** A stray line sent the startup banner a third time, from inside the one-shot migration that removes Docksentry's own name from the auto-update list — outside the block where that message is built. Both conditions together (own name still in the list, and a start right after a self-update) meant `UnboundLocalError` before the bot listener came up. Reproduced on the released 2.17.4 image and confirmed fixed on the same fixture. It also took less than it looked: the self-update check only asks whether the marker file *exists*, so a leftover or unreadable `deferred_check.json` was enough. Short of the crash, it sent the same banner twice to every non-Telegram channel.
+
+### Changed
+- **`TZ` is documented as `Europe/Berlin`, which is what the image actually sets.** The README said `UTC` while `docs/configuration.md` said the truth — and every schedule, quiet-hours window and update window runs on that clock.
+- **The health check waits up to 600 seconds, not 30.** The documented 30 was a different setting entirely (the stability window *after* a container already looks healthy). A slow-starting container was never being given 30 seconds and failed for it.
+- **The Web UI password is hashed with scrypt, not SHA-256** — and a password supplied as `WEB_PASSWORD` is not hashed at all, because an environment variable is plain text by nature. Both documents claimed SHA-256 and "never stored in plain text"; one of them was the security document.
+
 ## [2.17.4] - 2026-08-28
 
 One message and one page of documentation, made honest.

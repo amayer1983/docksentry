@@ -118,6 +118,6 @@ the same values, so they cannot disagree about a container's state.
 ## Security
 
 - Password protection via Basic Auth (`WEB_PASSWORD`)
-- Password hashed with SHA-256, never stored in plain text
+- A password set here is hashed with **scrypt** before it is stored; one supplied as `WEB_PASSWORD` stays plain text, because an environment variable is
 - Sensitive values (Bot Token, Chat ID) are masked in the UI
 - For HTTPS, use a reverse proxy — see [Security](security.md)

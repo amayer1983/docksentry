@@ -24,7 +24,7 @@ When updates are found, you receive a Telegram message with image sizes, dates, 
 1. Pull the new image
 2. Stop the old container and rename it as backup
 3. Recreate the container with the same configuration (ports, volumes, environment, labels, networks)
-4. Run a **health check** — wait up to 30 seconds, verify the container is running (and healthy if a Docker HEALTHCHECK is defined)
+4. Run a **health check** — wait up to `HEALTHCHECK_MAX_STARTING` (default **600 s**), or longer if the image declares a `start_period` (that value × 1.5), and verify the container is running (and healthy if a Docker HEALTHCHECK is defined)
 5. On success: remove the backup and log the update to history
 6. On failure: **automatically roll back** to the previous container
 

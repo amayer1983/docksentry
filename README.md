@@ -339,7 +339,7 @@ These are the ones worth knowing on the first day. **[Every variable, with its d
 | `WEB_UI` | `false` | Turn the web interface on. Set this and you can do everything from a browser. |
 | `WEB_PORT` | `8080` | Port it listens on. |
 | `WEB_PASSWORD` | | Password for the web interface. Empty means no login — fine on a trusted LAN, not otherwise. |
-| `TZ` | `UTC` | Your timezone. Worth setting: every time Docksentry prints is this clock. |
+| `TZ` | `Europe/Berlin` | Your timezone. Worth setting: every time Docksentry prints is this clock. |
 | `CRON_SCHEDULE` | `0 18 * * *` | When it checks for updates. |
 | `LANGUAGE` | `en` | One of 16. |
 | `EXCLUDE_CONTAINERS` | | Containers to leave alone entirely, comma-separated. |
