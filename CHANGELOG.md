@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.3] - 2026-08-28
+
+One fix, from @LeeNX's report in #65.
+
+### Fixed
+- **A Compose stack whose file label is relative is no longer rebuilt as standalone.** Docker records the compose file on the container as `com.docker.compose.project.config_files`. That is usually an absolute path — but not always, and a label written as plain `compose.yml` turns up in the wild. Docksentry checked it against its own working directory, which inside a container is `/app`, so the file was never found and the update dropped silently into the standalone `docker run` recreate. That path rebuilds the container from its inspect data and can lose the healthcheck, which is the failure that was reported. A relative label is now resolved against `com.docker.compose.project.working_dir`, which Docker records absolute beside it. An absolute label, or a container with no `working_dir`, behaves exactly as before.
+
 ## [2.17.2] - 2026-08-27
 
 One fix, reported by @famewolf in #2.

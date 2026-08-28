@@ -3108,8 +3108,22 @@ class UpdateChecker:
         return self._update_standalone(name, image, netns_name=netns_name)
 
     @staticmethod
-    def _compose_files(config_file):
+    def _compose_files(config_file, working_dir=None):
         """The compose files behind `config_files`, as a list.
+
+        `com.docker.compose.project.config_files` is an absolute path on
+        modern Compose, but not always: a label written as plain
+        `compose.yml` turns up in the wild, and @LeeNX's is exactly that
+        (#65). Relative to what? Not to our own working directory — we
+        run in a container — but to
+        `com.docker.compose.project.working_dir`, which Docker records
+        absolute. Without resolving against it, `os.path.isfile()` on
+        such a label fails every single time and the stack drops
+        silently into the standalone `docker run` recreate, which is the
+        path that loses the healthcheck he came to report.
+
+        An already-absolute path, or no `working_dir` to resolve
+        against, behaves exactly as before.
 
         Docker joins multiple compose files into ONE label value separated
         by commas — the canonical `docker-compose.yml` plus an
@@ -3127,14 +3141,19 @@ class UpdateChecker:
         split would deploy from the wrong file, which is far worse than the
         fallback it replaces.
         """
+        def _resolve(path):
+            if working_dir and path and not os.path.isabs(path):
+                return os.path.join(working_dir, path)
+            return path
+
         if not config_file:
             return []
         if "," not in config_file:
-            return [config_file]
-        parts = [p.strip() for p in config_file.split(",") if p.strip()]
+            return [_resolve(config_file)]
+        parts = [_resolve(p.strip()) for p in config_file.split(",") if p.strip()]
         if parts and all(os.path.isfile(p) for p in parts):
             return parts
-        return [config_file]
+        return [_resolve(config_file)]
 
     def _update_compose(self, name, image, project, service, config_file, working_dir, netns_name=None):
         """Update a container using Docker Compose."""
@@ -3170,7 +3189,7 @@ class UpdateChecker:
             return self._update_standalone(name, image, netns_name=netns_name)
 
         # Check if compose file is accessible
-        compose_files = self._compose_files(config_file)
+        compose_files = self._compose_files(config_file, working_dir)
         if not compose_files or not all(os.path.isfile(f) for f in compose_files):
             # Say it, do not just log it. Docksentry runs in a container,
             # so a compose file living on the host is invisible unless it
