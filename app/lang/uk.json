@@ -853,5 +853,6 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ Це контейнер Compose, але `{file}` недоступний зсередини Docksentry — його відтворено з даних inspect через `docker run`, а не `docker compose up`. Підключіть цей каталог до контейнера Docksentry, щоб використовувати шлях Compose."
+  "compose_fallback": "ℹ️ Це контейнер Compose, але `{file}` недоступний зсередини Docksentry — його відтворено з даних inspect через `docker run`, а не `docker compose up`. Підключіть цей каталог до контейнера Docksentry, щоб використовувати шлях Compose.",
+  "compose_fallback_managed": "ℹ️ `{file}` — це шлях усередині {manager}, а не на хості, тому Docksentry його не бачить. Змонтуйте каталог даних {manager} у контейнер Docksentry саме за шляхом `{mount}`, і шлях Compose знову працюватиме."
 }

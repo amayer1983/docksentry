@@ -853,5 +853,6 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ C'est un conteneur Compose, mais `{file}` n'est pas accessible depuis Docksentry — il a été reconstruit à partir de ses données d'inspection avec `docker run` au lieu de `docker compose up`. Montez ce répertoire dans le conteneur Docksentry pour utiliser le chemin Compose."
+  "compose_fallback": "ℹ️ C'est un conteneur Compose, mais `{file}` n'est pas accessible depuis Docksentry — il a été reconstruit à partir de ses données d'inspection avec `docker run` au lieu de `docker compose up`. Montez ce répertoire dans le conteneur Docksentry pour utiliser le chemin Compose.",
+  "compose_fallback_managed": "ℹ️ `{file}` est un chemin à l'intérieur de {manager}, pas sur l'hôte — c'est pourquoi Docksentry ne le voit pas. Montez le répertoire de données de {manager} dans le conteneur Docksentry exactement sur `{mount}`, et la voie Compose sera de nouveau utilisée."
 }

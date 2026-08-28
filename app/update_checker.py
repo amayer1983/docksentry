@@ -3203,7 +3203,21 @@ class UpdateChecker:
             self._debug(f"  Compose file not found: {config_file} — falling back to standalone")
             ok, msg = self._update_standalone(name, image,
                                               netns_name=netns_name)
-            note = self._t("compose_fallback", file=config_file or "?")
+            # If the path belongs to a stack manager, say whose it is.
+            # "Mount that directory" sends somebody looking for a
+            # directory that does not exist on the host: Portainer keeps
+            # stacks at `/data/compose/<id>` INSIDE its own container,
+            # Dockge and Dockhand at `/app/data/stacks`. Three people hit
+            # this in one week, each concluding their own mount was
+            # wrong (#2, #65). It was not — the advice was.
+            import compose_paths
+            _owner = compose_paths.owner(config_file)
+            if _owner:
+                note = self._t("compose_fallback_managed",
+                               file=config_file, manager=_owner,
+                               mount=compose_paths.mount_root(config_file))
+            else:
+                note = self._t("compose_fallback", file=config_file or "?")
             return ok, f"{msg}\n{note}"
 
         # Base compose invocation. When the stack was originally started from

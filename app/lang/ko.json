@@ -853,5 +853,6 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ Compose 컨테이너이지만 Docksentry 안에서 `{file}`에 접근할 수 없습니다 — `docker compose up` 대신 inspect 데이터로 `docker run`을 사용해 다시 만들었습니다. Compose 경로를 쓰려면 해당 디렉터리를 Docksentry 컨테이너에 마운트하세요."
+  "compose_fallback": "ℹ️ Compose 컨테이너이지만 Docksentry 안에서 `{file}`에 접근할 수 없습니다 — `docker compose up` 대신 inspect 데이터로 `docker run`을 사용해 다시 만들었습니다. Compose 경로를 쓰려면 해당 디렉터리를 Docksentry 컨테이너에 마운트하세요.",
+  "compose_fallback_managed": "ℹ️ `{file}` 은(는) 호스트가 아니라 {manager} 내부 경로입니다. 그래서 Docksentry가 찾지 못합니다. {manager}의 데이터 디렉터리를 Docksentry 컨테이너의 `{mount}` 에 그대로 마운트하면 Compose 경로를 다시 사용합니다."
 }

@@ -853,5 +853,6 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ هذه حاوية Compose، لكن `{file}` غير متاح من داخل Docksentry — أُعيد إنشاؤها من بيانات inspect باستخدام `docker run` بدلاً من `docker compose up`. اربط ذلك المجلد بحاوية Docksentry لاستخدام مسار Compose."
+  "compose_fallback": "ℹ️ هذه حاوية Compose، لكن `{file}` غير متاح من داخل Docksentry — أُعيد إنشاؤها من بيانات inspect باستخدام `docker run` بدلاً من `docker compose up`. اربط ذلك المجلد بحاوية Docksentry لاستخدام مسار Compose.",
+  "compose_fallback_managed": "ℹ️ المسار `{file}` موجود داخل {manager} وليس على المضيف — لذلك لا يجده Docksentry. قم بتركيب دليل بيانات {manager} داخل حاوية Docksentry في المسار `{mount}` بالضبط، ليعود استخدام مسار Compose."
 }

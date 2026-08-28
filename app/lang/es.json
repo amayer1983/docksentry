@@ -853,5 +853,6 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ Es un contenedor de Compose, pero `{file}` no es accesible desde Docksentry — se reconstruyó a partir de sus datos de inspect con `docker run` en lugar de `docker compose up`. Monta ese directorio en el contenedor de Docksentry para usar la vía de Compose."
+  "compose_fallback": "ℹ️ Es un contenedor de Compose, pero `{file}` no es accesible desde Docksentry — se reconstruyó a partir de sus datos de inspect con `docker run` en lugar de `docker compose up`. Monta ese directorio en el contenedor de Docksentry para usar la vía de Compose.",
+  "compose_fallback_managed": "ℹ️ `{file}` es una ruta dentro de {manager}, no en el host: por eso Docksentry no la encuentra. Monta el directorio de datos de {manager} en el contenedor de Docksentry exactamente en `{mount}` y se volverá a usar la vía Compose."
 }

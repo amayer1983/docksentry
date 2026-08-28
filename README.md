@@ -128,8 +128,10 @@ services:
       # to a standalone `docker run` recreate from the container's
       # inspect data — works for almost everything but loses some
       # compose-only metadata. See "Compose-managed containers" below.
-      # - /opt/stacks:/opt/stacks:ro
-      # - /mnt/dockerdata:/mnt/dockerdata:ro
+      # The path has to match the compose file's label EXACTLY — see
+      # "Compose-managed containers" below, and check the label first.
+      # - /opt/stacks:/opt/stacks:ro              # started on the host
+      # - /share/stacks:/app/data/stacks:ro       # created by a stack manager
     security_opt:
       - no-new-privileges:true
 
@@ -139,7 +141,24 @@ volumes:
 
 ### Compose-managed containers
 
-When a container was started by `docker compose`, its inspect data records the **host-side path** of the compose file (e.g. `/opt/stacks/myapp/docker-compose.yml`). Docksentry runs inside its own container and can't see that path unless you mount it.
+When a container was started by `docker compose`, Docker records the path of the compose file on the container — as **whatever created the stack saw it**. That is not always a host path, and this is where most of the confusion comes from:
+
+- You ran `docker compose` **on the host** → the label holds a host path, e.g. `/opt/stacks/myapp/docker-compose.yml`. Mount that directory at the same path and you are done.
+- A **stack manager created it** → the label holds *its* internal path. Portainer records `/data/compose/<id>/docker-compose.yml`, Dockhand and Dockge-style managers `/app/data/stacks/...`. Neither of those exists on your host.
+
+Docksentry only ever gets that one string, and looks for the file at exactly that path inside its own container. So check the label before you mount anything:
+
+```bash
+docker inspect <container> --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+```
+
+Then mount your stacks directory so that this exact path resolves inside Docksentry. If the label says `/app/data/stacks/QNAP/dozzle/compose.yaml` and your stacks live at `/share/stacks`, that is:
+
+```yaml
+- /share/stacks:/app/data/stacks:ro
+```
+
+Note that everything after `stacks/` in the label — `QNAP/dozzle/…` — stays *inside* the mount. One mount covers every stack the manager holds.
 
 | Mount setup | Update path |
 |---|---|

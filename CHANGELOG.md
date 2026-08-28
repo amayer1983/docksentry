@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.4] - 2026-08-28
+
+One message and one page of documentation, made honest.
+
+### Fixed
+- **The README said the compose label holds the host path. It does not.** It holds the path *whatever created the stack* saw — a host path when you ran `docker compose` yourself, and a container-internal one when a stack manager did. The example alongside it (`/opt/stacks:/opt/stacks`) reinforced the wrong idea, and at least one person set up their mount from it and then spent a week wondering why nothing matched (#2, @NotRetarded). The section now says which case is which, and shows the one command that answers it: read the label first, then mount so that this exact path resolves.
+
+### Changed
+- **When a compose file cannot be reached, the message says whose path it is.** `com.docker.compose.project.config_files` records the path the thing that *created* the stack saw — and that is usually another container: Portainer keeps stacks at `/data/compose/<id>/` inside itself, Dockge and Dockhand at `/app/data/stacks/`. None of those exist on the host, so "mount that directory into the Docksentry container" sent people looking for a directory that is not there. Three did in one week, each with a different manager, and each concluded their own mount was wrong. It was not. A recognised path now names the manager and the exact mount point to use; an unrecognised one keeps the general advice, because a confident wrong name is worse than no name. Only managers whose internal path actually differs from the host's are listed — Dockge mounts its stacks at the identical path, so there is nothing to map and nothing to warn about.
+
 ## [2.17.3] - 2026-08-28
 
 One fix, from @LeeNX's report in #65.
