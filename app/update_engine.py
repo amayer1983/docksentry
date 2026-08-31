@@ -23,7 +23,8 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 import subprocess
 import threading
 
-from container_store import LOCAL_HOST, HostScopedStore, entry_host
+from container_store import (LOCAL_HOST, HostScopedStore, entry_host,
+                             host_key)
 from errfmt import clip
 
 
@@ -118,6 +119,19 @@ class UpdateEngine:
         # what it is dropping and why.
         self._update_queue = []
         self._update_queue_lock = threading.Lock()
+        # Which container the held lock is currently busy with, and what
+        # it is moving to: `{host key: target version}`. `update_running`
+        # above already says "an update is in flight" but cannot say for
+        # whom, which is why the yellow "update" badge kept claiming an
+        # update was merely *available* while the log said it was running
+        # (#2, @LeeNX). This is that same fact with the name attached —
+        # not a second source of truth: it is written only between the two
+        # lines that call `update_container`, so it is empty whenever the
+        # lock is free. In memory and never persisted, for the same reason
+        # the queue is not: a restart mid-update leaves the crash-recovery
+        # journal to sort it out, and a stale "updating…" surviving a
+        # reboot would be a lie the UI could never clear.
+        self._updating = {}
         # True once the helper container is launched — the process is
         # about to be stopped, so the wrapper keeps the update lock held
         # (nothing may start an update in the final seconds).
@@ -157,6 +171,33 @@ class UpdateEngine:
                 (taken if (predicate is None or predicate(k)) else keep).append(k)
             self._update_queue = keep
             return taken
+
+    def mark_updating(self, key, version=""):
+        """Note that `key` is being updated right now, to `version`.
+
+        `version` is best-effort: it comes from the pending entry's
+        `new_version`, which only exists when the remote image carries an
+        OCI version label. An empty string is a normal answer and the
+        callers render "updating" without a target rather than inventing
+        one.
+        """
+        with self._update_queue_lock:
+            self._updating[key] = version or ""
+
+    def clear_updating(self, key):
+        """Forget `key` — the update finished, failed or was rolled back."""
+        with self._update_queue_lock:
+            self._updating.pop(key, None)
+
+    @property
+    def updating(self):
+        """`{host key: target version}` for what is being updated now.
+
+        A copy, so a caller iterating it cannot trip over the update
+        thread finishing underneath it.
+        """
+        with self._update_queue_lock:
+            return dict(self._updating)
 
     def _store_for(self, host):
         """Container state scoped to `host` (a `ManagedHost`, a host name,
@@ -583,9 +624,20 @@ class UpdateEngine:
 
             try:
                 compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                success, msg = checker.update_container(
-                    u["name"], u["image"],
-                    netns_name=u.get("netns_name"), **compose_kwargs)
+                # Marked around this one call and nothing else, so the
+                # window the UI reads is exactly the window the container
+                # is being pulled and recreated in. `finally`, because a
+                # failed update must clear it too — a badge stuck on
+                # "updating…" after a rollback would be the same wrong
+                # answer in the other direction.
+                _u_key = host_key(_host_of(u), u["name"])
+                self.mark_updating(_u_key, u.get("new_version") or "")
+                try:
+                    success, msg = checker.update_container(
+                        u["name"], u["image"],
+                        netns_name=u.get("netns_name"), **compose_kwargs)
+                finally:
+                    self.clear_updating(_u_key)
                 status = "✅" if success else "❌"
                 results.append(f"{status} {self._display_name(u)}: {msg}")
                 if self.notifier:

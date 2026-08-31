@@ -861,5 +861,9 @@
   "compose_fallback_managed": "ℹ️ `{file}` — це шлях усередині {manager}, а не на хості, тому Docksentry його не бачить. Змонтуйте каталог даних {manager} у контейнер Docksentry саме за шляхом `{mount}`, і шлях Compose знову працюватиме.",
   "compose_fallback_lost": "⚠️ Перезбирання пережило не все — цих налаштувань із вашого файлу Compose на новому контейнері немає: {fields}.",
   "compose_fallback_remote": "ℹ️ Це контейнер Compose на `{host}`, а файл Compose можна прочитати лише на машині, де працює сам Docksentry, — тому його перезібрано з даних inspect через `docker run`.",
-  "compose_fallback_nolabel": "ℹ️ Цей контейнер має мітки Compose, але не має читабельного шляху в `com.docker.compose.project.config_files`, тому його перезібрано з даних inspect через `docker run`, а не через `docker compose up`."
+  "compose_fallback_nolabel": "ℹ️ Цей контейнер має мітки Compose, але не має читабельного шляху в `com.docker.compose.project.config_files`, тому його перезібрано з даних inspect через `docker run`, а не через `docker compose up`.",
+  "web_badge_updating": "updating to {version}",
+  "web_badge_updating_now": "updating",
+  "web_badge_updating_tt": "This update is running right now — it will clear itself when it finishes.",
+  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container."
 }

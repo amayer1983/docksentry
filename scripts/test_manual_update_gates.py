@@ -48,6 +48,11 @@ def main():
     bot._enrich_with_source_url = lambda u: None
     bot._display_name = lambda u: u["name"]
     bot._maybe_cooldown = lambda *a, **k: None
+    # The batch says which container it is busy with while it is busy
+    # with it; a stub missing the two calls takes the update down with
+    # an AttributeError instead of testing anything.
+    bot.mark_updating = lambda *a, **k: None
+    bot.clear_updating = lambda *a, **k: None
     bot._remove_from_pending = lambda names: None
     bot._restart_group_dependents = lambda *a, **k: "cascade"
     # run_updates now delegates the per-container loop to the shared engine

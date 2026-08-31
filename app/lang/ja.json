@@ -861,5 +861,9 @@
   "compose_fallback_managed": "ℹ️ `{file}` はホストではなく {manager} の内部パスです。そのため Docksentry からは見えません。{manager} のデータディレクトリを Docksentry コンテナの `{mount}` にそのままマウントすると、Compose 経路が再び使われます。",
   "compose_fallback_lost": "⚠️ 再作成で失われたものがあります — Compose ファイルにあるこれらの設定が新しいコンテナにはありません: {fields}。",
   "compose_fallback_remote": "ℹ️ これは `{host}` 上の Compose コンテナです。Compose ファイルは Docksentry 自身が動いているマシンでしか読めないため、inspect のデータから `docker run` で再作成しました。",
-  "compose_fallback_nolabel": "ℹ️ このコンテナには Compose のラベルはありますが、`com.docker.compose.project.config_files` に読めるパスがありません。そのため `docker compose up` ではなく inspect のデータから `docker run` で再作成しました。"
+  "compose_fallback_nolabel": "ℹ️ このコンテナには Compose のラベルはありますが、`com.docker.compose.project.config_files` に読めるパスがありません。そのため `docker compose up` ではなく inspect のデータから `docker run` で再作成しました。",
+  "web_badge_updating": "updating to {version}",
+  "web_badge_updating_now": "updating",
+  "web_badge_updating_tt": "This update is running right now — it will clear itself when it finishes.",
+  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container."
 }

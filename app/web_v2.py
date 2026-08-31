@@ -55,12 +55,18 @@ def _repo_of(image):
     return last.split("@", 1)[0].split(":", 1)[0]
 
 
-def container_rows(views, host_key):
+def container_rows(views, host_key, updating_label=None):
     """Every container on every host, flattened, as plain dicts.
 
     Built from the same `_status_view` dicts the old table renders from,
     so the two cannot disagree about what is pinned, pending or on
     auto-update — there is one reader of the store, not two.
+
+    `updating_label(version) -> str` renders the "an update is running"
+    text. It is passed in rather than built here because the labels in
+    this list are the one part of V2 the browser does not translate — the
+    JS carries a hardcoded English/German table — and a new string had to
+    go through `app/lang/` like everything else, so the server words it.
     """
     rows = []
     for view in views:
@@ -73,6 +79,7 @@ def container_rows(views, host_key):
         links = view["links"] or {}
         advisories = view.get("advisories") or {}
         own = view.get("own_name") or ""
+        updating = view.get("updating") or {}
         for c in view["containers"]:
             name = c["name"]
             key = host_key(host, name)
@@ -90,6 +97,12 @@ def container_rows(views, host_key):
                 "state": c.get("state", "") or "running",
                 # The one thing the old row never said.
                 "update": name in pending or key in pending,
+                # …and the one it said wrongly: "update available" stayed
+                # up while the update was already running (#2, @LeeNX).
+                "updating": name in updating,
+                "updating_label": (updating_label(updating[name])
+                                   if (name in updating and updating_label)
+                                   else ""),
                 "pinned": name in pinned or key in pinned,
                 "auto": name in auto or key in auto,
                 "self": bool(own and name == own),
@@ -121,9 +134,9 @@ def capabilities(read_only=False):
     return {c: not read_only for c in ALL_CAPS}
 
 
-def payload(views, host_key, stats=None, can=None):
+def payload(views, host_key, stats=None, can=None, updating_label=None):
     """The whole status page as one JSON document."""
-    rows = container_rows(views, host_key)
+    rows = container_rows(views, host_key, updating_label)
     hosts = []
     for v in views:
         hosts.append({"name": v["host"],

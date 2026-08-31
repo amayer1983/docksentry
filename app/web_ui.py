@@ -194,6 +194,20 @@ def _legend_word(label):
     return s[:1].upper() + s[1:]
 
 
+def _updating_label(t, version):
+    """Badge text while a container's update is actually running.
+
+    The yellow "update" badge means *available*, and it kept saying that
+    while the log already said the update was under way (#2, @LeeNX). One
+    helper so the table, the container page and the V2 list cannot word it
+    three ways. The target version is best-effort — it comes from the
+    remote image's OCI version label — so there is a wording for "we know
+    where this is going" and one for "we don't".
+    """
+    return (t("web_badge_updating", version=version) if version
+            else t("web_badge_updating_now"))
+
+
 def _icon_label(icon_key, label):
     """Return an inline SVG icon followed by a label, both inside a span."""
     return (f'<span class="icon-label">'
@@ -639,6 +653,28 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if out:
                     return out
             return []
+
+        def _updating_now(self, host_name):
+            """`{container name: target version}` being updated right now
+            on `host_name`.
+
+            Read straight off the update engine — the same object whose
+            lock every update flow takes — rather than kept a second time
+            here, so the badge cannot disagree with what the log says. An
+            install without a bot (the render tests, a bare probe) has no
+            engine and honestly reports nothing in flight.
+            """
+            from container_store import split_host_key
+            try:
+                live = bot.engine.updating
+            except Exception:
+                return {}
+            out = {}
+            for key, version in (live or {}).items():
+                khost, kname = split_host_key(key)
+                if khost == host_name:
+                    out[kname] = version or ""
+            return out
 
         def _own_container_name_safe(self):
             """Docksentry's own container name, or "" if it cannot be found."""
@@ -1332,6 +1368,48 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
             t = _web_translator(config.language)
 
+            # Self-update, in the icon bar (#2, @LeeNX: "I keep having to
+            # go looking for it in the settings and always battle to find
+            # it, as it's under Cleanup, which seems so odd"). Same POST to
+            # /api/selfupdate and the same confirm dialog as the button in
+            # Settings › Cleanup — one trigger, two places to reach it, so
+            # there is nothing to keep in step.
+            #
+            # Shown only when a self-update is possible at all, decided the
+            # way the rest of the UI decides it: whether we can identify
+            # our own container. On QNAP and some Podman setups that comes
+            # back empty, `is_self` never fires on any row, and the swap
+            # this button asks for cannot be performed either — so the
+            # button would be a promise we cannot keep.
+            #
+            # Deliberately NOT gated on "is there a newer image?": the one
+            # in Settings is not either, @LeeNX asked for "the same force
+            # update now button like the others", and answering that
+            # question means a synchronous registry round-trip on every
+            # render of every page.
+            #
+            # An inline SVG for the same reason the logout and theme icons
+            # are (#60): the emoji ⬆️ from _ICONS is a font gamble, and the
+            # three controls sit next to each other.
+            selfupdate_html = ""
+            if self._own_container_name_safe():
+                selfupdate_html = (
+                    f'<form method="POST" action="/api/selfupdate" class="header-form" '
+                    f'data-confirm="{_e(t("web_confirm_selfupdate"))}" '
+                    f'data-confirm-title="{_e(t("web_maintenance_selfupdate"))}" '
+                    f'data-confirm-label="{_e(t("web_confirm_selfupdate_btn"))}" '
+                    f'data-confirm-danger="1">'
+                    f'<button type="submit" class="btn-icon" '
+                    f'title="{_e(t("web_selfupdate_toolbar_tt"))}" '
+                    f'aria-label="{_e(t("web_maintenance_selfupdate"))}">'
+                    f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+                    f'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                    f'stroke-linejoin="round">'
+                    f'<circle cx="12" cy="12" r="9"/>'
+                    f'<polyline points="8 12 12 8 16 12"/>'
+                    f'<line x1="12" y1="8" x2="12" y2="16"/>'
+                    f'</svg></button></form>')
+
             nav_items = [
                 ("status", f'📊 {t("web_nav_status")}', "/"),
                 ("groups", f'📦 {t("web_nav_groups")}', "/groups"),
@@ -1453,7 +1531,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
      flex-child sibling (the theme button). And margin-top:0, which kills
      the remaining 4px offset coming from the global 8px form margin-top
      — both halves of the misalignment @LeeNX screenshotted in #46. -->
-<form method="POST" action="/api/ui_mode" class="header-form">
+{selfupdate_html}<form method="POST" action="/api/ui_mode" class="header-form">
 <input type="hidden" name="mode" value="{ui_mode_other}">
 <button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
 </form>
@@ -1919,7 +1997,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 body = json.dumps(web_v2.payload(
                     views, host_key, extra,
                     can=web_v2.capabilities(
-                        read_only=bool(self._api_token_name())))
+                        read_only=bool(self._api_token_name())),
+                    # The V2 client has its own hardcoded label table, so
+                    # the one new string is worded here — where `t` reads
+                    # app/lang/ like every other translation.
+                    updating_label=lambda v: _updating_label(t, v))
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -3451,6 +3533,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 "own_name": own_name,
                 "pending": pending,
                 "pending_names": [u["name"] for u in pending],
+                # What is being updated on this host at this very second,
+                # `{name: target version}`. Read once per view like every
+                # other lookup here, so the table, the cards and the V2
+                # list all render from the same answer.
+                "updating": self._updating_now(host_name),
                 "pinned": hstore.get_pinned(),
                 "auto_list": hstore.get_autoupdate(),
                 "ask_major": hstore.get_ask_before_major(),
@@ -3485,6 +3572,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             hstore = view["store"]
             own_name = view["own_name"]
             pending_names = view["pending_names"]
+            updating = view.get("updating") or {}
             pinned = view["pinned"]
             auto_list = view["auto_list"]
             ask_major = view["ask_major"]
@@ -3565,7 +3653,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             # Badges (compact, only show what's "different" from default)
             badges = ""
-            if c["name"] in pending_names:
+            # Same badge slot, two different facts. "update" is an offer;
+            # once the engine has actually claimed this container the badge
+            # says so, and where it is going (#2, @LeeNX — "I did get
+            # confused when the logs said updates were in progress, but the
+            # label was still indicating there was an update"). The running
+            # state wins, because it is the newer of the two.
+            if c["name"] in updating:
+                badges += (f' <span class="badge badge-yellow is-updating" '
+                           f'title="{_e(t("web_badge_updating_tt"))}">'
+                           f'{_e(_updating_label(t, updating[c["name"]]))}</span>')
+            elif c["name"] in pending_names:
                 badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
             if is_pinned_c:
                 badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
@@ -3680,13 +3778,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 f'data-msg-error="{_e(t("web_check_one_error"))}" '
                 f'title="{_e(t("web_check_one_tt"))}">{_ICONS["search"]}</button>'
             )
+            # Dead while its own update runs — pressing it would only earn
+            # an "already running", and a live button beside a badge that
+            # says "updating" invites exactly the second click.
+            _running = c["name"] in updating
+            _run_off = ' disabled' if _running else ''
+            _run_title = (_updating_label(t, updating[c["name"]]) if _running
+                          else t("web_update_tt"))
             update_btn = (
                 f'<form method="POST" action="/api/update" class="inline-form">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
-                f'<button type="submit"{_mo_off} class="btn-icon is-active" '
-                f'title="{_e(_mo_title or t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
+                f'<button type="submit"{_mo_off or _run_off} class="btn-icon is-active" '
+                f'title="{_e(_mo_title or _run_title)}">{_ICONS["refresh"]}</button>'
                 f'</form>'
-            ) if c["name"] in pending_names else ''
+            ) if (c["name"] in pending_names or _running) else ''
             pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
             _pin_disabled = ' disabled' if (_lab_pin is not None or _monitor_only) else ''
             # Monitor-only wins the tooltip, as it does on the auto toggle:
@@ -4526,7 +4631,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 badges.append('<span class="badge badge-blue">⚠ major-confirm</span>')
             if is_trust_c:
                 badges.append(f'<span class="badge badge-blue">{t("web_trust_running_badge")}</span>')
-            if pending_for_self:
+            # The detail page reads the LOCAL daemon, so the only claims
+            # that can be about this container are the local ones.
+            from container_store import LOCAL_HOST as _LH
+            _updating_here = self._updating_now(_LH)
+            if name in _updating_here:
+                badges.append(
+                    f'<span class="badge badge-yellow is-updating" '
+                    f'title="{_e(t("web_badge_updating_tt"))}">'
+                    f'{_e(_updating_label(t, _updating_here[name]))}</span>')
+            elif pending_for_self:
                 badges.append(f'<span class="badge badge-yellow">{t("web_badge_update")}</span>')
             badges_html = " ".join(badges)
 

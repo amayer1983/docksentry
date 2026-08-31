@@ -861,5 +861,9 @@
   "compose_fallback_managed": "ℹ️ `{file}` é um caminho dentro do {manager}, não no host — por isso o Docksentry não o encontra. Monte o diretório de dados do {manager} no contêiner do Docksentry exatamente em `{mount}` e o caminho Compose volta a ser usado.",
   "compose_fallback_lost": "⚠️ Nem tudo sobreviveu à reconstrução — estas definições do seu ficheiro Compose faltam no novo contentor: {fields}.",
   "compose_fallback_remote": "ℹ️ Este é um contentor Compose em `{host}`, e um ficheiro Compose só pode ser lido na máquina onde o Docksentry corre — por isso foi reconstruído a partir dos seus dados de inspect com `docker run`.",
-  "compose_fallback_nolabel": "ℹ️ Este contentor tem etiquetas Compose mas nenhum caminho legível em `com.docker.compose.project.config_files`, por isso foi reconstruído a partir dos seus dados de inspect com `docker run` em vez de `docker compose up`."
+  "compose_fallback_nolabel": "ℹ️ Este contentor tem etiquetas Compose mas nenhum caminho legível em `com.docker.compose.project.config_files`, por isso foi reconstruído a partir dos seus dados de inspect com `docker run` em vez de `docker compose up`.",
+  "web_badge_updating": "atualizando para {version}",
+  "web_badge_updating_now": "atualizando",
+  "web_badge_updating_tt": "Esta atualização está a decorrer agora — desaparece sozinha quando terminar.",
+  "web_selfupdate_toolbar_tt": "Atualizar o próprio Docksentry — descarrega a imagem mais recente e recria este contentor."
 }

@@ -184,7 +184,14 @@
         var sub = r.repo + (r.tag ? ':' + r.tag : '');
         // The button only exists if this caller may press it. A
         // read-only token sees the state and no controls.
-        var right = r.update
+        // While the update is actually running the row says so instead of
+        // still offering it (#2, @LeeNX). The wording arrives translated
+        // from the server — the table below only covers en/de, and this
+        // string had to go through app/lang/ like the rest.
+        var right = r.updating
+            ? '<span class="v2-pending is-updating">' +
+              esc(r.updating_label || L.pending) + '</span>'
+            : r.update
             ? '<span class="v2-pending">' + esc(L.pending) + '</span>' +
               (S.can.update
                 ? '<button type="button" class="v2-btn v2-btn-primary v2-btn-sm" ' +
@@ -233,7 +240,11 @@
             '<button type="button" class="v2-panel-close" data-act="close">×</button>' +
             '<h3>' + esc(r.name) + '</h3>' +
             '<p class="v2-sub">' + esc(r.image) + '</p>' +
-            (r.update && S.can.update
+            (r.updating
+                ? '<p class="v2-hint">' +
+                  esc(r.updating_label || L.pending) + '</p>'
+                : '') +
+            (r.update && !r.updating && S.can.update
                 ? '<div class="v2-actions">' +
                   '<button type="button" class="v2-btn v2-btn-primary" data-act="update" ' +
                   'data-key="' + esc(r.key) + '">' + esc(L.update) + '</button></div>'

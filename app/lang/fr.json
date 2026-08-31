@@ -861,5 +861,9 @@
   "compose_fallback_managed": "ℹ️ `{file}` est un chemin à l'intérieur de {manager}, pas sur l'hôte — c'est pourquoi Docksentry ne le voit pas. Montez le répertoire de données de {manager} dans le conteneur Docksentry exactement sur `{mount}`, et la voie Compose sera de nouveau utilisée.",
   "compose_fallback_lost": "⚠️ Tout n'a pas survécu à la reconstruction — ces réglages de votre fichier Compose manquent sur le nouveau conteneur : {fields}.",
   "compose_fallback_remote": "ℹ️ C'est un conteneur Compose sur `{host}`, et un fichier Compose ne peut être lu que sur la machine où tourne Docksentry — il a donc été reconstruit à partir de ses données d'inspection avec `docker run`.",
-  "compose_fallback_nolabel": "ℹ️ Ce conteneur porte des étiquettes Compose mais aucun chemin lisible dans `com.docker.compose.project.config_files` ; il a donc été reconstruit à partir de ses données d'inspection avec `docker run` au lieu de `docker compose up`."
+  "compose_fallback_nolabel": "ℹ️ Ce conteneur porte des étiquettes Compose mais aucun chemin lisible dans `com.docker.compose.project.config_files` ; il a donc été reconstruit à partir de ses données d'inspection avec `docker run` au lieu de `docker compose up`.",
+  "web_badge_updating": "mise à jour vers {version}",
+  "web_badge_updating_now": "mise à jour en cours",
+  "web_badge_updating_tt": "Cette mise à jour est en cours — l'étiquette disparaîtra d'elle-même une fois terminée.",
+  "web_selfupdate_toolbar_tt": "Mettre à jour Docksentry lui-même — télécharge la dernière image et recrée ce conteneur."
 }

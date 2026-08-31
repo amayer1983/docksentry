@@ -704,6 +704,16 @@ tr.is-hidden { display: none; }
 .badge-blue   { background: var(--info-bg); color: var(--info); }
 .badge-red    { background: var(--danger-bg); color: var(--danger); }
 .badge-purple { background: var(--special-bg); color: var(--special); }
+/* "updating to X" keeps the yellow of the "update" badge it replaces —
+   it is the same container in the same state, one step further on — and
+   breathes so a glance can tell "running" from "waiting" without reading
+   the words. Motion is opt-out, not opt-in: someone who asked their
+   system for less of it gets the colour and the text alone. */
+.badge.is-updating { animation: ds-badge-pulse 1.6s ease-in-out infinite; }
+@keyframes ds-badge-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+    .badge.is-updating { animation: none; }
+}
 .healthy { color: var(--success); }
 
 /* ── Toggle (slider) ────────────────────────────────────────── */
