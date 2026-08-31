@@ -87,7 +87,11 @@ class UpdateEngine:
         # shape the bot built before, so this is behaviour-preserving. Lazy
         # import mirrors the bot's proven pattern and sidesteps any cycle.
         from link_resolver import LinkResolver
-        self.link_resolver = link_resolver or LinkResolver(store, config)
+        # The registry goes in too (#7): an update's `host` then reaches the
+        # container reads that resolve its link, instead of every one of
+        # them asking the machine Docksentry happens to run on.
+        self.link_resolver = link_resolver or LinkResolver(store, config,
+                                                           hosts=hosts)
         # Single mutex guarding ALL update flows — manual "Update all"
         # (run_updates, bot thread), single-container update
         # (_run_single_update, bot thread), major-confirm update, AND the

@@ -237,6 +237,11 @@ class TelegramBot:
         # through the SAME instance. It's the same `LinkResolver(store,
         # config)` shape as before, so this is behaviour-preserving.
         self.link_resolver = self.engine.link_resolver
+        # Same reason as the engine's registry above: a resolver built
+        # before the registry existed would read every container's labels
+        # on the local machine (#7).
+        if hosts is not None and getattr(self.link_resolver, "hosts", None) is None:
+            self.link_resolver.hosts = hosts
         from i18n import get_translator
         self.t = get_translator(config.language)
 
