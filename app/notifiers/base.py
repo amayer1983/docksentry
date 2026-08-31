@@ -44,7 +44,7 @@ def _retry_after(err):
     except (AttributeError, TypeError, ValueError):
         return None
 
-def post_json_with_retry(url, payload, headers, channel):
+def post_json_with_retry(url, payload, headers, channel, on_network_failure=None):
     """POST a JSON body with bounded retry for transient network failures
     (timeout / connection error) — 3 attempts, 2s and 4s backoff. Same
     rationale as the Telegram retry in v1.38.1: right after a self-update
@@ -55,6 +55,11 @@ def post_json_with_retry(url, payload, headers, channel):
 
     `channel` is a label used only in the error log ("Discord webhook",
     "Webhook") so failures stay distinguishable.
+
+    `on_network_failure` is called once, with no arguments, when the three
+    attempts are spent on real network errors — and never for an HTTP
+    status. That is the whole distinction the retry queue needs: a 400 is
+    a no, an unreachable network is a not-yet (#66).
     """
     data = json.dumps(payload).encode()
     merged = {"Content-Type": "application/json", **(headers or {})}
@@ -85,6 +90,8 @@ def post_json_with_retry(url, payload, headers, channel):
                 time.sleep(2 * (attempt + 1))
                 continue
             print(f"{channel} error: {e}")
+            if on_network_failure is not None:
+                on_network_failure()
             return None
         except Exception as e:
             print(f"{channel} error: {e}")

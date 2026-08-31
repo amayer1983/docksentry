@@ -161,7 +161,7 @@ Two separate paths: a webhook that only posts, and a bot that also answers.
 | `NTFY_TOPIC` ⚙ | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
 | `NTFY_URL` ⚙ | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
 | `NTFY_USER` / `NTFY_PASSWORD` ⚙ | | ntfy credentials, if you use basic auth rather than a token |
-| `WEBHOOK_URL` ⚙ | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
+| `WEBHOOK_URL` ⚙ | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. A message the network swallowed entirely is held in memory and retried for up to 15 minutes, arriving with a `⏳ Delayed …` line in front of it; held messages are dropped on restart. |
 
 ### Switching a channel off
 

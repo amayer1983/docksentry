@@ -5,6 +5,8 @@ Byte-for-byte the same embeds the facade produced before the plugin split
 (same titles, colors, fields, footer, version badge, clickable source links).
 """
 
+import notify_retry
+
 from .base import BaseNotifier, post_json_with_retry
 
 
@@ -19,11 +21,31 @@ class DiscordNotifier(BaseNotifier):
         return bool(self.config.discord_webhook)
 
     # ── transport ────────────────────────────────────────────────────
-    def post(self, payload):
+    def post(self, payload, on_network_failure=None):
         """POST JSON to Discord webhook."""
         return post_json_with_retry(
             self.config.discord_webhook, payload,
-            {"User-Agent": "Docksentry/1.0"}, "Discord webhook")
+            {"User-Agent": "Docksentry/1.0"}, "Discord webhook",
+            on_network_failure=on_network_failure)
+
+    def _post_text(self, text):
+        """Render `text` the way this channel does, and post it.
+
+        False ONLY when the network was the reason it did not arrive, so it
+        can be handed to the retry queue as-is — the queue calls this again
+        with the delay notice prepended, and never goes through
+        `send_message`, which is what stops a resend from re-queueing
+        itself.
+        """
+        # Strip Markdown bold (*text*) for Discord
+        clean = text.replace("*", "**")
+        label = self._bot_label()
+        if label:
+            clean = f"**{label}** · {clean}"
+        reached = [True]
+        self.post({"content": clean},
+                  on_network_failure=lambda: reached.__setitem__(0, False))
+        return reached[0]
 
     def _footer_text(self):
         """Discord-embed footer text. Includes BOT_LABEL when set so
@@ -109,10 +131,11 @@ class DiscordNotifier(BaseNotifier):
             self.send_message(text)
 
     def send_message(self, text):
-        """Send plain text to Discord."""
-        # Strip Markdown bold (*text*) for Discord
-        clean = text.replace("*", "**")
-        label = self._bot_label()
-        if label:
-            clean = f"**{label}** · {clean}"
-        self.post({"content": clean})
+        """Send plain text to Discord.
+
+        Inherited unchanged by the bot channel, which only swaps the pipe.
+        """
+        if not self._post_text(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, self._post_text)
