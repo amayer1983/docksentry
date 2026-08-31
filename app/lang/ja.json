@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ これは Compose のコンテナですが、Docksentry の中から `{file}` に到達できません — `docker compose up` ではなく inspect のデータから `docker run` で再作成しました。Compose の経路を使うには、そのディレクトリを Docksentry コンテナにマウントしてください。",
-  "compose_fallback_managed": "ℹ️ `{file}` はホストではなく {manager} の内部パスです。そのため Docksentry からは見えません。{manager} のデータディレクトリを Docksentry コンテナの `{mount}` にそのままマウントすると、Compose 経路が再び使われます。"
+  "compose_fallback_managed": "ℹ️ `{file}` はホストではなく {manager} の内部パスです。そのため Docksentry からは見えません。{manager} のデータディレクトリを Docksentry コンテナの `{mount}` にそのままマウントすると、Compose 経路が再び使われます。",
+  "compose_fallback_lost": "⚠️ 再作成で失われたものがあります — Compose ファイルにあるこれらの設定が新しいコンテナにはありません: {fields}。",
+  "compose_fallback_remote": "ℹ️ これは `{host}` 上の Compose コンテナです。Compose ファイルは Docksentry 自身が動いているマシンでしか読めないため、inspect のデータから `docker run` で再作成しました。",
+  "compose_fallback_nolabel": "ℹ️ このコンテナには Compose のラベルはありますが、`com.docker.compose.project.config_files` に読めるパスがありません。そのため `docker compose up` ではなく inspect のデータから `docker run` で再作成しました。"
 }

@@ -854,5 +854,8 @@
   "web_label_card_intro": "Steht vor jeder Nachricht auf jedem Kanal — Telegram, Discord, E-Mail, ntfy, Gotify, Matrix, Apprise und Webhooks gleichermaßen. Setz sie, wenn mehr als ein Docksentry an dieselbe Stelle meldet, damit erkennbar bleibt, welche Maschine spricht.",
   "audit_section_dropped": "*Bewusst übersprungen* — an diesem Container gesetzt, uns bekannt, und beim Neuerstellen nicht übernommen:",
   "compose_fallback": "ℹ️ Das ist ein Compose-Container, aber `{file}` ist aus Docksentry heraus nicht erreichbar — er wurde aus den inspect-Daten mit `docker run` nachgebaut statt mit `docker compose up`. Hänge das Verzeichnis in den Docksentry-Container ein, damit der Compose-Weg genutzt wird.",
-  "compose_fallback_managed": "ℹ️ `{file}` ist ein Pfad **innerhalb von {manager}**, nicht auf dem Host — deshalb findet Docksentry ihn nicht. Hänge das Datenverzeichnis von {manager} unter genau `{mount}` in den Docksentry-Container ein, dann wird der Compose-Weg wieder benutzt."
+  "compose_fallback_managed": "ℹ️ `{file}` ist ein Pfad **innerhalb von {manager}**, nicht auf dem Host — deshalb findet Docksentry ihn nicht. Hänge das Datenverzeichnis von {manager} unter genau `{mount}` in den Docksentry-Container ein, dann wird der Compose-Weg wieder benutzt.",
+  "compose_fallback_lost": "⚠️ Nicht alles hat den Nachbau überlebt — diese Einstellungen aus deiner Compose-Datei fehlen dem neuen Container: {fields}.",
+  "compose_fallback_remote": "ℹ️ Das ist ein Compose-Container auf `{host}`, und eine Compose-Datei ist nur auf der Maschine lesbar, auf der Docksentry selbst läuft — deshalb wurde er aus den inspect-Daten mit `docker run` nachgebaut.",
+  "compose_fallback_nolabel": "ℹ️ Dieser Container trägt Compose-Etiketten, aber keinen lesbaren Pfad in `com.docker.compose.project.config_files` — deshalb wurde er aus den inspect-Daten mit `docker run` nachgebaut statt mit `docker compose up`."
 }

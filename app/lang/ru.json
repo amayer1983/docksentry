@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ Это контейнер Compose, но `{file}` недоступен изнутри Docksentry — он был пересоздан из данных inspect через `docker run`, а не `docker compose up`. Подключите этот каталог в контейнер Docksentry, чтобы использовать путь Compose.",
-  "compose_fallback_managed": "ℹ️ `{file}` — это путь внутри {manager}, а не на хосте, поэтому Docksentry его не видит. Смонтируйте каталог данных {manager} в контейнер Docksentry точно по пути `{mount}`, и путь Compose снова заработает."
+  "compose_fallback_managed": "ℹ️ `{file}` — это путь внутри {manager}, а не на хосте, поэтому Docksentry его не видит. Смонтируйте каталог данных {manager} в контейнер Docksentry точно по пути `{mount}`, и путь Compose снова заработает.",
+  "compose_fallback_lost": "⚠️ Пересборку пережило не всё — этих настроек из вашего файла Compose на новом контейнере нет: {fields}.",
+  "compose_fallback_remote": "ℹ️ Это контейнер Compose на `{host}`, а файл Compose читается только на той машине, где работает сам Docksentry, — поэтому контейнер пересобран из данных inspect через `docker run`.",
+  "compose_fallback_nolabel": "ℹ️ У этого контейнера есть метки Compose, но нет читаемого пути в `com.docker.compose.project.config_files`, поэтому он пересобран из данных inspect через `docker run`, а не через `docker compose up`."
 }

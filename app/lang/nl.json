@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ Dit is een Compose-container, maar `{file}` is niet bereikbaar vanuit Docksentry — hij is uit zijn inspect-gegevens herbouwd met `docker run` in plaats van `docker compose up`. Koppel die map in de Docksentry-container om het Compose-pad te gebruiken.",
-  "compose_fallback_managed": "ℹ️ `{file}` is een pad binnen {manager}, niet op de host — daarom vindt Docksentry het niet. Koppel de datamap van {manager} in de Docksentry-container precies op `{mount}`, dan wordt het Compose-pad weer gebruikt."
+  "compose_fallback_managed": "ℹ️ `{file}` is een pad binnen {manager}, niet op de host — daarom vindt Docksentry het niet. Koppel de datamap van {manager} in de Docksentry-container precies op `{mount}`, dan wordt het Compose-pad weer gebruikt.",
+  "compose_fallback_lost": "⚠️ Niet alles heeft de herbouw overleefd — deze instellingen uit je Compose-bestand ontbreken op de nieuwe container: {fields}.",
+  "compose_fallback_remote": "ℹ️ Dit is een Compose-container op `{host}`, en een Compose-bestand is alleen leesbaar op de machine waarop Docksentry zelf draait — daarom is hij uit zijn inspect-gegevens herbouwd met `docker run`.",
+  "compose_fallback_nolabel": "ℹ️ Deze container draagt Compose-labels maar geen leesbaar pad in `com.docker.compose.project.config_files`, dus is hij uit zijn inspect-gegevens herbouwd met `docker run` in plaats van `docker compose up`."
 }

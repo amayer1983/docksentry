@@ -53,6 +53,143 @@ def _auth_host(entry):
 
 
 
+#: One second, in the nanoseconds Docker's inspect output uses for
+#: healthcheck timings.
+_ONE_SECOND_NS = 1_000_000_000
+
+#: The order losses are reported in. Fixed rather than alphabetical so a
+#: message reads the same twice and a test can assert on it.
+_LOSS_ORDER = ("healthcheck", "tmpfs", "blkio_config", "cgroup_parent",
+               "device_cgroup_rules", "storage_opt", "publish all ports (-P)")
+
+
+def _healthcheck_is_lost(hc, image_hc):
+    """Whether `docker run` cannot reproduce this container's healthcheck.
+
+    Three separate ways it cannot, and only three — the rest of the
+    healthcheck round-trips exactly, which is the whole reason this
+    function exists instead of a blanket "compose containers may lose
+    their healthcheck":
+
+    * Exec form. Compose `test: ["CMD", "python", "-c", "..."]` runs the
+      binary directly. There is no `docker run` flag for that:
+      `--health-cmd` always produces `CMD-SHELL`, so _build_run_args
+      shell-joins the tokens and the check now needs `/bin/sh` in the
+      image. On distroless or scratch it stops working entirely.
+    * Sub-second timings. `interval: 500ms` is 500000000ns, and the
+      integer-division to whole seconds in _build_run_args makes that
+      `0s` — which Docker reads as "unset", not "immediately".
+    * Timings with no test to hang them on. _build_run_args emits the
+      intervals only inside `if hc_test:`, so a healthcheck block that
+      sets timings without a `test:` (and inherits none from the image)
+      loses them silently.
+
+    A healthcheck identical to the image's own is NOT a loss: it is
+    dropped on purpose so the new image can supply its own, and
+    _build_run_args does that already.
+    """
+    hc = hc or {}
+    if not hc or hc == (image_hc or {}):
+        return False
+    test = hc.get("Test") or []
+    head = test[0] if test else ""
+    if head == "CMD" and len(test) > 1:
+        return True
+    for key in ("Interval", "Timeout", "StartPeriod", "StartInterval"):
+        v = hc.get(key) or 0
+        if 0 < v < _ONE_SECOND_NS:
+            return True
+    usable = head in ("NONE",) or (head in ("CMD", "CMD-SHELL") and len(test) > 1)
+    if not usable and (any(hc.get(k) for k in
+                           ("Interval", "Timeout", "StartPeriod",
+                            "StartInterval", "Retries"))):
+        return True
+    return False
+
+
+def compose_fallback_losses(config, image_config=None):
+    """What a `docker run` rebuild of this container would actually lose.
+
+    `_build_run_args` reproduces a container from its inspect data, and it
+    reproduces nearly all of it. Until now every Compose container whose
+    file we could not read got the same note saying the rebuild "loses
+    Compose metadata" — true in the abstract, wrong for most containers,
+    and the owner sees it on all of his. @LeeNX put the same thing from
+    the other side in #65: "Maybe just throw the warning when there are
+    healthchecks, else the container is rebuilt fine, is it not?"
+
+    So: look at the container in front of us and name only what it
+    actually has set. Nothing set, no note.
+
+    Every name in the returned list is the key as it appears in a
+    compose file — `blkio_config`, not `BlkioDeviceReadBps` — because
+    that is where the reader has to go and put it back.
+
+    `image_config` is the OLD image's `Config` block (see
+    `_image_config`), needed to tell a compose healthcheck apart from
+    the image's own. Passing None means "cannot tell", and the
+    healthcheck is then treated as inherited rather than reported: a
+    false alarm on every container carrying an image HEALTHCHECK is the
+    exact noise this function was written to remove.
+
+    Deliberately NOT reported:
+
+    * `Config.ExposedPorts`. It is inert metadata — `docker run`
+      re-derives it from the new image's EXPOSE plus the `-p` flags we
+      carry, and nothing at runtime reads it (only `-P` and legacy
+      `--link` do). Nearly every image sets it, so reporting it would
+      fire on almost everything and put us straight back to a note
+      people learn to skip.
+    * `depends_on`, `profiles`, `deploy:` and friends. They never reach
+      inspect data, so they cannot be detected here — and none of them
+      changes a single container's runtime configuration, which is what
+      a recreate rebuilds.
+    """
+    config = config or {}
+    host = config.get("HostConfig") or {}
+    cfg = config.get("Config") or {}
+    lost = set()
+
+    container_hc = cfg.get("Healthcheck")
+    # No image config means we cannot separate a compose healthcheck from
+    # the image's own, so we compare the healthcheck with itself and it
+    # counts as inherited. Silence over a false alarm on every container.
+    image_hc = ((image_config or {}).get("Healthcheck")
+                if image_config is not None else container_hc)
+    if _healthcheck_is_lost(container_hc, image_hc):
+        lost.add("healthcheck")
+
+    # Long-form mounts the recreate loop has no branch for: it walks the
+    # top-level Mounts and knows `bind` and `volume` only. A compose
+    # `volumes: - {type: tmpfs, target: /run}` lands here and nowhere
+    # else — HostConfig.Tmpfs (which we DO carry, as --tmpfs) is only
+    # written by the short `tmpfs:` form.
+    for mount in (config.get("Mounts") or []):
+        mtype = (mount.get("Type") or "").strip()
+        if mtype in ("", "bind", "volume"):
+            continue
+        lost.add("tmpfs" if mtype == "tmpfs" else f"volumes (type: {mtype})")
+
+    if any(host.get(k) for k in ("BlkioDeviceReadBps", "BlkioDeviceWriteBps",
+                                 "BlkioDeviceReadIOps", "BlkioDeviceWriteIOps",
+                                 "BlkioWeightDevice")):
+        lost.add("blkio_config")
+    if host.get("CgroupParent"):
+        lost.add("cgroup_parent")
+    if host.get("DeviceCgroupRules"):
+        lost.add("device_cgroup_rules")
+    if host.get("StorageOpt"):
+        lost.add("storage_opt")
+    # `-P` asks Docker for a fresh random host port each time. The
+    # rebuild reads the concrete PortBindings instead, so the ports the
+    # last start happened to pick are nailed down permanently.
+    if host.get("PublishAllPorts"):
+        lost.add("publish all ports (-P)")
+
+    ordered = [k for k in _LOSS_ORDER if k in lost]
+    return ordered + sorted(lost - set(ordered))
+
+
 class ContainerListUnavailable(Exception):
     """`docker ps` did not answer, so we do not know what is running.
 
@@ -188,6 +325,21 @@ class UpdateChecker:
         from i18n import get_translator
         lang = getattr(getattr(self, "config", None), "language", "en") or "en"
         return get_translator(lang)(key, **kw)
+
+    def _fallback_loss_note(self):
+        """The line naming what the last `docker run` rebuild dropped.
+
+        Empty string when it dropped nothing, and the empty string is the
+        point: the note used to go out for every Compose container whose
+        file we could not read, whether or not the rebuild had cost it
+        anything. Measured on this machine before the change — 18
+        containers got it, and 3 of them were losing something.
+        """
+        losses = getattr(self, "_rebuild_losses", None) or []
+        if not losses:
+            return ""
+        return self._t("compose_fallback_lost",
+                       fields=", ".join(f"`{f}`" for f in losses))
 
     def _debug(self, msg):
         """A diagnostic line. Always printed, on purpose.
@@ -3105,7 +3257,19 @@ class UpdateChecker:
             return self._update_compose(name, image, compose_project, compose_service,
                                         compose_file, compose_dir, netns_name=netns_name)
 
-        return self._update_standalone(name, image, netns_name=netns_name)
+        ok, msg = self._update_standalone(name, image, netns_name=netns_name)
+        # A container carrying Compose labels but no usable
+        # `config_files` path never reaches `_update_compose` at all — it
+        # drops in here and, until now, was rebuilt with `docker run`
+        # without a word. Quadlets and podman-compose produce exactly
+        # that shape. Same note as the other two fallbacks, and like them
+        # only when the rebuild actually cost something.
+        if compose_project or compose_service:
+            lost = self._fallback_loss_note()
+            if lost:
+                return ok, (f"{msg}\n{self._t('compose_fallback_nolabel')}"
+                            f"\n{lost}")
+        return ok, msg
 
     @staticmethod
     def _compose_files(config_file, working_dir=None):
@@ -3186,7 +3350,18 @@ class UpdateChecker:
             self._debug(f"  {name} is compose-managed on {host_name}; compose "
                         f"files are only readable on the local host — "
                         f"recreating from inspect data instead")
-            return self._update_standalone(name, image, netns_name=netns_name)
+            ok, msg = self._update_standalone(name, image,
+                                              netns_name=netns_name)
+            # This fallback was completely silent. "Mount the directory"
+            # is no advice here — the file is on another machine and
+            # always will be — but if the rebuild dropped something, the
+            # owner still has to know which line to put back by hand.
+            lost = self._fallback_loss_note()
+            if lost:
+                return ok, (f"{msg}\n"
+                            f"{self._t('compose_fallback_remote', host=host_name)}"
+                            f"\n{lost}")
+            return ok, msg
 
         # Check if compose file is accessible
         compose_files = self._compose_files(config_file, working_dir)
@@ -3210,6 +3385,19 @@ class UpdateChecker:
             # Dockge and Dockhand at `/app/data/stacks`. Three people hit
             # this in one week, each concluding their own mount was
             # wrong (#2, #65). It was not — the advice was.
+            #
+            # …but only when the rebuild actually lost something. The note
+            # was unconditional, so every Compose container on a machine
+            # without the stack directory mounted carried it — 18 of 18
+            # here, where 3 is the true number. "The file is not
+            # reachable" on its own is not news the owner can act on: if
+            # `docker run` reproduced the container exactly, there is
+            # nothing to go and fix (#65, @LeeNX).
+            lost = self._fallback_loss_note()
+            if not lost:
+                self._debug(f"  {name} came back out of the rebuild intact — "
+                            f"no fallback note")
+                return ok, msg
             import compose_paths
             _owner = compose_paths.owner(config_file)
             if _owner:
@@ -3218,7 +3406,7 @@ class UpdateChecker:
                                mount=compose_paths.mount_root(config_file))
             else:
                 note = self._t("compose_fallback", file=config_file or "?")
-            return ok, f"{msg}\n{note}"
+            return ok, f"{msg}\n{note}\n{lost}"
 
         # Base compose invocation. When the stack was originally started from
         # a different directory than the compose file's (label
@@ -4379,6 +4567,10 @@ class UpdateChecker:
 
     def _update_standalone(self, name, image, netns_name=None):
         self._debug(f"Updating: {name} ({image})...")
+        # Cleared per call, filled once the inspect data is in hand below.
+        # The Compose callers read it afterwards to decide whether the
+        # fallback is worth a word — see `_fallback_loss_note`.
+        self._rebuild_losses = []
 
         # Get old image info before pull. We also fetch the OCI
         # `image.version` label so the history entry can record a
@@ -4453,6 +4645,17 @@ class UpdateChecker:
             # future Docker versions adding new HostConfig/Config keys
             # show up in debug logs instead of being silently dropped.
             self._audit_inspect_coverage(config)
+
+            # What this particular rebuild will not carry over. Computed
+            # here because this is where the inspect JSON already is —
+            # asking from `_update_compose` would cost a second daemon
+            # round-trip for the same data. Same stash-on-self pattern as
+            # `_version_arrow` above.
+            self._rebuild_losses = compose_fallback_losses(
+                config, self._image_config(config.get("Image")))
+            if self._rebuild_losses:
+                self._debug(f"  Rebuild of {name} drops: "
+                            f"{', '.join(self._rebuild_losses)}")
 
             # AutoRemove (`--rm`) containers are removed by Docker the
             # instant they stop. For those the normal rename-old /

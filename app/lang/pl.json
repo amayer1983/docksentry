@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ To kontener Compose, ale `{file}` jest nieosiągalny z wnętrza Docksentry — został odtworzony z danych inspect przez `docker run` zamiast `docker compose up`. Zamontuj ten katalog w kontenerze Docksentry, aby użyć ścieżki Compose.",
-  "compose_fallback_managed": "ℹ️ `{file}` to ścieżka wewnątrz {manager}, a nie na hoście — dlatego Docksentry jej nie widzi. Zamontuj katalog danych {manager} w kontenerze Docksentry dokładnie pod `{mount}`, a ścieżka Compose znów będzie używana."
+  "compose_fallback_managed": "ℹ️ `{file}` to ścieżka wewnątrz {manager}, a nie na hoście — dlatego Docksentry jej nie widzi. Zamontuj katalog danych {manager} w kontenerze Docksentry dokładnie pod `{mount}`, a ścieżka Compose znów będzie używana.",
+  "compose_fallback_lost": "⚠️ Nie wszystko przetrwało odtworzenie — tych ustawień z Twojego pliku Compose brakuje na nowym kontenerze: {fields}.",
+  "compose_fallback_remote": "ℹ️ To kontener Compose na `{host}`, a plik Compose da się odczytać tylko na maszynie, na której działa sam Docksentry — dlatego został odtworzony z danych inspect za pomocą `docker run`.",
+  "compose_fallback_nolabel": "ℹ️ Ten kontener ma etykiety Compose, ale nie ma czytelnej ścieżki w `com.docker.compose.project.config_files`, więc został odtworzony z danych inspect za pomocą `docker run` zamiast `docker compose up`."
 }

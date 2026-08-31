@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ Es un contenedor de Compose, pero `{file}` no es accesible desde Docksentry — se reconstruyó a partir de sus datos de inspect con `docker run` en lugar de `docker compose up`. Monta ese directorio en el contenedor de Docksentry para usar la vía de Compose.",
-  "compose_fallback_managed": "ℹ️ `{file}` es una ruta dentro de {manager}, no en el host: por eso Docksentry no la encuentra. Monta el directorio de datos de {manager} en el contenedor de Docksentry exactamente en `{mount}` y se volverá a usar la vía Compose."
+  "compose_fallback_managed": "ℹ️ `{file}` es una ruta dentro de {manager}, no en el host: por eso Docksentry no la encuentra. Monta el directorio de datos de {manager} en el contenedor de Docksentry exactamente en `{mount}` y se volverá a usar la vía Compose.",
+  "compose_fallback_lost": "⚠️ No todo sobrevivió a la reconstrucción — estos ajustes de tu archivo Compose faltan en el nuevo contenedor: {fields}.",
+  "compose_fallback_remote": "ℹ️ Este es un contenedor Compose en `{host}`, y un archivo Compose solo se puede leer en la máquina donde corre Docksentry — por eso se reconstruyó a partir de sus datos de inspect con `docker run`.",
+  "compose_fallback_nolabel": "ℹ️ Este contenedor lleva etiquetas de Compose pero ninguna ruta legible en `com.docker.compose.project.config_files`, así que se reconstruyó a partir de sus datos de inspect con `docker run` en lugar de `docker compose up`."
 }

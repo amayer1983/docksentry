@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ Bu bir Compose kapsayıcısı, ancak `{file}` Docksentry içinden erişilebilir değil — inspect verilerinden `docker compose up` yerine `docker run` ile yeniden oluşturuldu. Compose yolunu kullanmak için o dizini Docksentry kapsayıcısına bağlayın.",
-  "compose_fallback_managed": "ℹ️ `{file}` ana makinede değil, {manager} içindeki bir yol — Docksentry bu yüzden bulamıyor. {manager} veri dizinini Docksentry konteynerine tam olarak `{mount}` altına bağlayın, Compose yolu yeniden kullanılır."
+  "compose_fallback_managed": "ℹ️ `{file}` ana makinede değil, {manager} içindeki bir yol — Docksentry bu yüzden bulamıyor. {manager} veri dizinini Docksentry konteynerine tam olarak `{mount}` altına bağlayın, Compose yolu yeniden kullanılır.",
+  "compose_fallback_lost": "⚠️ Yeniden oluşturmadan her şey sağ çıkmadı — Compose dosyandaki şu ayarlar yeni kapsayıcıda yok: {fields}.",
+  "compose_fallback_remote": "ℹ️ Bu, `{host}` üzerindeki bir Compose kapsayıcısı ve bir Compose dosyası yalnızca Docksentry'nin kendisinin çalıştığı makinede okunabilir — bu yüzden inspect verilerinden `docker run` ile yeniden oluşturuldu.",
+  "compose_fallback_nolabel": "ℹ️ Bu kapsayıcı Compose etiketleri taşıyor ama `com.docker.compose.project.config_files` içinde okunabilir bir yol yok, bu yüzden `docker compose up` yerine inspect verilerinden `docker run` ile yeniden oluşturuldu."
 }

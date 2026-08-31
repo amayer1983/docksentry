@@ -10,7 +10,7 @@ When updating a Compose-managed container:
 2. `docker compose up -d --no-deps <service>` — recreates only the updated service
 3. Health check and automatic rollback on failure
 
-This preserves all Compose-specific configuration (depends_on, networks, deploy settings) that would be lost with a plain `docker run` recreation.
+This is the exact path Compose itself would take, so the service comes back defined by its file rather than by a reconstruction of it.
 
 ## Requirements
 
@@ -23,9 +23,25 @@ volumes:
   - /path/to/your/stacks:/stacks:ro
 ```
 
-## Portainer Stacks
+## When the Compose file can't be read
 
-If the Compose file is not accessible (e.g. Portainer-managed stacks stored in a database), the bot automatically falls back to the standard `docker run` recreation method. This still works — it just doesn't use the Compose workflow.
+If the file is not accessible — a Portainer-managed stack living inside Portainer's own container, a directory that isn't mounted, or a container on a remote host, whose file is on that machine and not this one — Docksentry rebuilds the container from its inspect data with `docker run` instead. That carries nearly everything: ports, volumes, environment, networks, restart policy, capabilities, devices, resource limits, GPUs, log driver.
+
+Nearly, not quite. Docksentry checks each container for the handful of things the rebuild really can't reproduce, and says so only when that container has one of them set:
+
+| Named in the message | Why the rebuild loses it |
+|---|---|
+| `healthcheck` | only when it's yours and in exec form (`test: ["CMD", …]`) — `docker run` can only produce the shell form, so the check then needs `/bin/sh` in the image. Also when a timing is under a second, which rounds down to "unset". A `CMD-SHELL` check, or one that came with the image, survives untouched. |
+| `tmpfs` | the long form (`volumes: - {type: tmpfs, …}`). The short `tmpfs:` list is carried. |
+| `blkio_config` | the per-device read/write limits; a plain `blkio_weight` is carried |
+| `cgroup_parent` | no flag is emitted, so the new container lands under Docker's default cgroup |
+| `device_cgroup_rules` | still out of scope |
+| `storage_opt` | driver-specific, and not restored |
+| publish all ports (`-P`) | the randomly assigned host ports get pinned instead of reassigned |
+
+Nothing from that list set means no message: the container was rebuilt exactly, and there is nothing to go and repair. Measured on one real host with 22 containers — 18 used to get the note, 3 were actually losing something.
+
+`depends_on`, `profiles` and `deploy:` are not on the list. They never reach the container's inspect data, and none of them changes how a single container runs — which is all a recreate rebuilds.
 
 ## Identification
 

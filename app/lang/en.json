@@ -854,5 +854,8 @@
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ This is a Compose container, but `{file}` is not reachable from inside Docksentry — it was rebuilt from its inspect data with `docker run` instead of `docker compose up`. Mount that directory into the Docksentry container to use the Compose path.",
-  "compose_fallback_managed": "ℹ️ `{file}` is a path inside {manager}, not on the host — that is why Docksentry cannot see it. Mount {manager}'s data directory into the Docksentry container at exactly `{mount}`, and the Compose path is used again."
+  "compose_fallback_managed": "ℹ️ `{file}` is a path inside {manager}, not on the host — that is why Docksentry cannot see it. Mount {manager}'s data directory into the Docksentry container at exactly `{mount}`, and the Compose path is used again.",
+  "compose_fallback_lost": "⚠️ Not everything survived that rebuild — these settings from your Compose file are missing on the new container: {fields}.",
+  "compose_fallback_remote": "ℹ️ This is a Compose container on `{host}`, and a Compose file can only be read on the machine Docksentry itself runs on — so it was rebuilt from its inspect data with `docker run`.",
+  "compose_fallback_nolabel": "ℹ️ This container carries Compose labels but no readable `com.docker.compose.project.config_files` path, so it was rebuilt from its inspect data with `docker run` instead of `docker compose up`."
 }
