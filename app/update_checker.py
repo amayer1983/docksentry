@@ -1508,6 +1508,15 @@ class UpdateChecker:
     #: read as a different numbering scheme rather than a newer release.
     MAX_PLAUSIBLE_MAJOR_JUMP = 3
 
+    #: How long a container has to keep looking healthy before an update
+    #: counts as a success. A container that boots fine and dies a few
+    #: seconds later — slower than one poll — would otherwise slip through.
+    #: Fixed on purpose. It used to be read through a `getattr` against the
+    #: config, which read like a setting; nothing has ever set it, and it
+    #: appears in no config file and no documentation. A knob nobody can
+    #: reach is worse than a number in the open, so here it is in the open.
+    CRASHLOOP_STABLE_SECONDS = 30
+
     def get_highest_semver_tag(self, registry, repository, current_tag,
                                *, same_major=False):
         """Return (best_tag, best_semver_tuple) — the highest SemVer-tagged
@@ -2722,7 +2731,7 @@ class UpdateChecker:
         Four return outcomes:
             "healthy"  → container reported healthy (or has no
                          healthcheck and is running) AND stayed that way,
-                         with no restarts, for `crashloop_stable_seconds`
+                         with no restarts, for `CRASHLOOP_STABLE_SECONDS`
             "unhealthy"→ healthcheck reported unhealthy, OR container
                          is not running. Caller should roll back.
             "crashloop"→ the container's RestartCount climbed while we
@@ -2765,8 +2774,8 @@ class UpdateChecker:
         # we keep watching for `stable_needed` more seconds to be sure it
         # STAYS up. Without this, a container that boots fine and then
         # crashes a few seconds later (slower than a single poll) would slip
-        # through as a successful update. 0 disables the confirmation.
-        stable_needed = getattr(self.config, "crashloop_stable_seconds", 30)
+        # through as a successful update.
+        stable_needed = self.CRASHLOOP_STABLE_SECONDS
         healthy_since = None
         elapsed = 0
         check = 0
