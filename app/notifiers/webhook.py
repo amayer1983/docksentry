@@ -5,6 +5,8 @@ Same envelope (`event`/`source`/`bot_label`) and same per-event fields
 (`old_version`/`new_version`/`source_url`, …) downstream automations rely on.
 """
 
+import notify_retry
+
 from .base import BaseNotifier, post_json_with_retry
 
 
@@ -19,7 +21,7 @@ class WebhookNotifier(BaseNotifier):
         return bool(self.config.webhook_url)
 
     # ── transport ────────────────────────────────────────────────────
-    def send_raw(self, event, data):
+    def send_raw(self, event, data, on_network_failure=None):
         """POST JSON to generic webhook URL."""
         payload = {
             "event": event,
@@ -37,7 +39,8 @@ class WebhookNotifier(BaseNotifier):
         # at a user automation (Home Assistant, ntfy, custom script), so a
         # duplicate could double-trigger something. Documented in the README.
         return post_json_with_retry(
-            self.config.webhook_url, payload, None, "Webhook")
+            self.config.webhook_url, payload, None, "Webhook",
+            on_network_failure=on_network_failure)
 
     # ── payloads ─────────────────────────────────────────────────────
     def send_weekly_report(self, stats, text, embed=None):
@@ -73,5 +76,19 @@ class WebhookNotifier(BaseNotifier):
             "source_url": source_url,
         })
 
+    def _post_text(self, text):
+        """The `message` event for `text`. False only on a network failure.
+
+        The queue's resend entry point — see `DiscordNotifier._post_text`
+        for why it is not `send_message`.
+        """
+        reached = [True]
+        self.send_raw("message", {"text": text},
+                      on_network_failure=lambda: reached.__setitem__(0, False))
+        return reached[0]
+
     def send_message(self, text):
-        self.send_raw("message", {"text": text})
+        if not self._post_text(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, self._post_text)

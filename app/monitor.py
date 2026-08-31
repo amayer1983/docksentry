@@ -936,10 +936,19 @@ class ContainerMonitor:
                 tail = ""
             if tail:
                 msg += f"\nLast logs:\n```\n{tail}\n```"
+        # The return value used to be thrown away, so a refused send left
+        # no trace at all and nobody could tell afterwards whether the
+        # alert had gone out (#66, @NotRetarded). `False` means it did not:
+        # `None` is the deliberate silences — channel off, quiet hours,
+        # maintenance — and must stay quiet here too.
         try:
-            self.bot.send_message(msg, auto=True)
+            sent = self.bot.send_message(msg, auto=True)
         except Exception as e:
             print(f"Monitor notify error: {e}")
+            sent = False
+        if sent is False:
+            print(f"Monitor notify failed: the {kind} alert for {shown} did "
+                  f"not reach Telegram")
         notifier = getattr(self.bot, "notifier", None)
         if notifier and notifier.has_channels():
             try:
