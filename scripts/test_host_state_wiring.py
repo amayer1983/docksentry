@@ -218,7 +218,7 @@ with tempfile.TemporaryDirectory() as d:
     ups = [{"name": "web", "image": "reg/web:1", "host": "nas"},
            {"name": "web", "image": "reg/web:1", "host": "local"}]
     bot.engine.link_resolver.label_link = lambda name, checker=None: ""
-    bot.engine.link_resolver.container_source_url = lambda name: ("", "none")
+    bot.engine.link_resolver.container_source_url = lambda name, checker=None: ("", "none")
     bot.engine.link_resolver.enrich_with_source_url(ups)
     checks["link resolver picks the entry's own host override"] = (
         ups[0]["source_url"] == "https://nas.example/changelog"

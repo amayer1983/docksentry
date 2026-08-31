@@ -27,6 +27,8 @@ exactly as when this lived in ``telegram_bot``.
 import subprocess
 import urllib.parse
 
+import container_backend as _cb
+
 
 #: Hostname markers for Gitea / its fork Forgejo, whose URL layout
 #: matches GitHub's closely enough that `/releases/latest` resolves
@@ -60,13 +62,37 @@ def _looks_like_forge(host):
 
 
 class LinkResolver:
-    def __init__(self, store, config):
+    def __init__(self, store, config, hosts=None):
         # `store` supplies the manual /setlink override (get_link); `config`
         # is only needed to lazily build a label-reading UpdateChecker for
         # call sites that don't already have one in scope.
         self.store = store
         self.config = config
+        # Every managed host (#7), so a link can be resolved against the
+        # machine the container actually runs on. None — or a registry
+        # holding only the local host — is the single-host case, and then
+        # every read goes to the local reader exactly as it always did.
+        self.hosts = hosts
         self._cached_label_checker = None
+
+    def reader_for(self, host=None):
+        """The label reader for `host`: that host's own `UpdateChecker`,
+        already pointed at that machine's container CLI (#7).
+
+        Falls back to the local reader when there is no registry (every
+        single-host install), when the registry holds only the local host,
+        or when the name is one it doesn't know — the last one being a
+        stale entry for a host that has since left `DOCKER_HOSTS`, which
+        has no better machine to ask than the one we run on.
+        """
+        registry = self.hosts
+        if registry is not None and getattr(registry, "is_multi", False):
+            from container_store import LOCAL_HOST
+            managed = registry.get(host or LOCAL_HOST)
+            reader = getattr(managed, "checker", None) if managed else None
+            if reader is not None:
+                return reader
+        return self.label_checker()
 
     def label_checker(self):
         """Lazily built UpdateChecker used purely as a label reader for
@@ -152,8 +178,14 @@ class LinkResolver:
         — and on every single-host install — the key is the bare container
         name it has always been.
         """
+        # The reader that can actually SEE this container (#7): the host's
+        # own checker when we know which host it runs on, the local one
+        # otherwise. Resolved once and used for BOTH label reads below, so
+        # the `docksentry.link` label and the OCI labels can't come off two
+        # different machines.
+        reader = checker if checker is not None else self.reader_for(host)
         # 0. Container label
-        labelled = self.label_link(name, checker)
+        labelled = self.label_link(name, reader)
         if labelled:
             return labelled, "label"
         # 1. Manual override
@@ -162,7 +194,7 @@ class LinkResolver:
         if manual:
             return manual, "manual"
         # 2 + 3. OCI labels
-        url, kind = self.container_source_url(name)
+        url, kind = self.container_source_url(name, reader)
         if url and kind in ("source", "url"):
             return url, kind
         # 4. Registry-overview heuristic — only when we have an image ref
@@ -172,7 +204,7 @@ class LinkResolver:
                 return guess, "registry"
         return "", "none"
 
-    def container_source_url(self, name):
+    def container_source_url(self, name, checker=None):
         """Look up the upstream source URL for a container from its OCI
         labels. Returns (url, kind) where kind is:
           - "source": from `org.opencontainers.image.source` (the gold
@@ -183,15 +215,29 @@ class LinkResolver:
 
         Used by /changelog <container> to give the user a link to the
         upstream repo instead of trying (and frequently failing) to
-        fetch + parse an arbitrary container's CHANGELOG file."""
+        fetch + parse an arbitrary container's CHANGELOG file.
+
+        `checker` says WHERE to look (#7) — the same argument `label_link`
+        takes, and only its backend is used. This used to build
+        `["docker", "inspect", …]` by hand: the last container read in the
+        app that named a CLI itself. That cost the two groups who arrived
+        this year the whole feature — a Podman install without a `docker`
+        alias has nothing to run, and with several hosts managed the
+        local machine was asked
+        about a container running on another box (and, if a container of
+        the same name existed here too, answered with ITS repo). The argv
+        is otherwise unchanged; the backend supplies the binary and, for a
+        remote host, the endpoint flag."""
+        reader = checker if checker is not None else self.label_checker()
+        backend = getattr(reader, "backend", None) if reader is not None else None
+        if backend is None:
+            backend = _cb.default_backend()
         for label in ("org.opencontainers.image.source",
                       "org.opencontainers.image.url"):
             try:
-                r = subprocess.run(
-                    ["docker", "inspect", "--format",
-                     "{{index .Config.Labels \"" + label + "\"}}", name],
-                    capture_output=True, text=True, timeout=5,
-                )
+                r = backend.inspect(
+                    name, fmt="{{index .Config.Labels \"" + label + "\"}}",
+                    timeout=5)
                 if r.returncode == 0:
                     url = r.stdout.strip()
                     if url and url not in ("<no value>", "no value"):
