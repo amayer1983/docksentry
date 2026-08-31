@@ -2,6 +2,26 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.6] - 2026-08-31
+
+The release where several things stopped being quiet about themselves.
+
+### Added
+- **The self-update sits in the icon bar now.** It was in Settings, under *Cleanup*, which is an odd place to keep the one button that updates Docksentry itself — @LeeNX said he battled to find it every time (#2). It is in the header with the same "update now" the containers have, pointed at the same self-updater, and it still asks before it fires. The old place still works; this is a second door, not a move.
+- **A container being updated says so.** The yellow `update` badge kept claiming an update was merely *available* while the log already said it was running (#2, @LeeNX). It now reads `updating to 1.26` for as long as the update holds the lock, falls back to plain `updating` when the target version is not known rather than inventing one, and the row's own update button is inert while it runs.
+- **A notification survives a short network outage.** @NotRetarded lost the network on two machines at once — a brief power cut, both boxes on UPS, both offline for about half a minute (#66). Discord's gateway reconnected on its own. Telegram got three tries over six seconds and then dropped the crash alert with nothing written down anywhere. Failed sends are now held and delivered when the connection comes back, carrying a `⏳ Delayed 12m` line so a late alert cannot read as a fresh one. Held at most 15 minutes and at most 20 messages, and never written to disk — an alert that outlives a restart is a lie the interface can never take back. Covers Telegram, the Discord bot, the Discord webhook and the generic webhook. **Not** ntfy, Gotify, Matrix, Apprise or SMTP: each has its own transport and none of them tells a network failure apart from a rejection yet.
+- **A private self-update answers privately.** Running `/selfupdate` with ephemeral replies still announced the restart to the whole channel afterwards — publishing exactly what the private mode exists to hide (#63, @NotRetarded). The result now arrives as a direct message and the channel hears nothing. If Discord will not open that DM, the message goes to the channel rather than vanishing, and says why.
+
+### Fixed
+- **Discord's `/selfupdate` never worked.** It called `bot.check_selfupdate`, a method that does not exist — so every invocation since v2.13.0 promised "Self-update started" and then answered "Something went wrong". Nobody reported it, which is its own small lesson.
+- **`/changelog` read the container's labels on the wrong machine.** The lookup ran a hardcoded `docker inspect` with no host routing: on Podman it answered nothing, and on a multi-host install it always asked the local daemon (#7). The host was being passed in and quietly dropped halfway through, so two containers with the same name on different hosts meant the local one answered — not an error, just the wrong repository linked.
+- **The Compose mount example could not work.** The docs suggested `- /path/to/your/stacks:/stacks:ro`. Docksentry opens the absolute path recorded in the container's own label, so the mount has to land on that same path — anything else counts as unreachable and quietly takes the rebuild path instead. Same class of mistake as the README line that cost someone a week.
+
+### Changed
+- **The Compose fallback only speaks up when the rebuild actually lost something.** It used to fire for every Compose container whose file was out of reach, whether or not anything was worse off for it — @LeeNX asked whether healthchecks were even the point, and on one real host with 22 containers, 18 got the note while 3 were losing anything (#65). Docksentry now looks at the container in front of it and names what it is about to drop: a Compose healthcheck in exec form, long-form `tmpfs` volumes, `blkio_config`, `cgroup_parent`, `device_cgroup_rules`, `storage_opt`, `-P`. Nothing from that list set means no message. Two paths that fell into the rebuild in total silence — a remote host, and Compose labels without a file list — now say the same thing as the rest.
+- **A crash alert says when it measured.** Two lines both read "at event time" and meant different moments: the top-consumer lists come from the snapshot taken as the container died, the line about the container itself from the sweep afterwards, when it was already booting again. @NotRetarded read 59% CPU there and reasonably took it for the state before the crash (#66). They are worded apart now. And the CPU line no longer disappears when nothing was busy — below the threshold it says so, because "nothing was going on" and "not measured" should not look identical.
+- **A stable-window that looked like a setting is a constant.** `crashloop_stable_seconds` was read through a `getattr` against the config, appeared in no config file and no documentation, and nothing has ever set it. A knob nobody can reach is worse than a number in the open.
+
 ## [2.17.5] - 2026-08-28
 
 One crash, and three lines of documentation that were simply wrong.
