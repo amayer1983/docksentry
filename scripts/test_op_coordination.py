@@ -82,7 +82,7 @@ def main():
     # ── 2. queued selfupdate runs after cleanup ──
     bot3 = make_bot()
     ran = []
-    bot3._selfupdate_locked = lambda target=None: ran.append(target)
+    bot3._selfupdate_locked = lambda target=None, reply_to=None: ran.append(target)
     bot3._queued_selfupdate = ("1.9.9",)
     bot3.cleanup_guarded(FakeChecker())
     checks["queued selfupdate runs after cleanup"] = ran == ["1.9.9"]

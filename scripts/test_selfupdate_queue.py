@@ -48,7 +48,7 @@ def main():
     # ── 1. lock held → queued, body not run ──
     bot = make_bot()
     ran = []
-    bot._selfupdate_locked = lambda target=None: ran.append(target)
+    bot._selfupdate_locked = lambda target=None, reply_to=None: ran.append(target)
     bot._update_lock.acquire()
     bot._handle_selfupdate("1.2.3")
     checks["queued while batch runs"] = bot._queued_selfupdate == ("1.2.3",)
@@ -68,7 +68,7 @@ def main():
     # ── 3. lock free → body runs under lock, released after ──
     bot2 = make_bot()
     held_during = []
-    bot2._selfupdate_locked = lambda target=None: held_during.append(
+    bot2._selfupdate_locked = lambda target=None, reply_to=None: held_during.append(
         bot2._update_lock.locked())
     bot2._handle_selfupdate()
     checks["body runs when lock free"] = held_during == [True]
@@ -76,7 +76,7 @@ def main():
 
     # ── 3b. helper launched → lock deliberately kept ──
     bot3 = make_bot()
-    def fake_swap(target=None):
+    def fake_swap(target=None, reply_to=None):
         bot3._swap_in_flight = True
     bot3._selfupdate_locked = fake_swap
     bot3._handle_selfupdate()
@@ -85,7 +85,7 @@ def main():
     # ── 3c. queued None target works (plain /selfupdate) ──
     bot4 = make_bot()
     ran4 = []
-    bot4._selfupdate_locked = lambda target=None: ran4.append(target)
+    bot4._selfupdate_locked = lambda target=None, reply_to=None: ran4.append(target)
     bot4._update_lock.acquire()
     bot4._handle_selfupdate()
     checks["plain selfupdate queues as (None,)"] = bot4._queued_selfupdate == (None,)
@@ -122,7 +122,7 @@ def main():
     # message goes out. The queue must be dropped with an honest message.
     bot8 = make_bot()
     ran8 = []
-    bot8._selfupdate_locked = lambda target=None: ran8.append(target)
+    bot8._selfupdate_locked = lambda target=None, reply_to=None: ran8.append(target)
     bot8._queued_selfupdate = (None,)
     try:
         try:
@@ -138,7 +138,7 @@ def main():
 
     # ── 5. queue survives an exception in the queued run ──
     bot7 = make_bot()
-    def boom(target=None):
+    def boom(target=None, reply_to=None):
         raise RuntimeError("swap exploded")
     bot7._selfupdate_locked = boom
     bot7._queued_selfupdate = (None,)

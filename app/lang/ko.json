@@ -137,6 +137,7 @@
   "status_containers": "컨테이너",
   "status_pinned": "고정됨",
   "status_autoupdate": "자동 업데이트",
+  "selfupdate_private_undeliverable": "⚠️ 비공개로 보낼 수 없었습니다 — Discord가 당신과의 다이렉트 메시지를 열지 못하게 합니다(서버 멤버의 DM은 보통 개인정보 설정에서 꺼져 있습니다). 결과를 잃지 않도록 여기에 적습니다:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry 시작됨* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",

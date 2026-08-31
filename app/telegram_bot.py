@@ -2578,7 +2578,7 @@ class TelegramBot:
         already on that tag — no pointless recreate."""
         return target in ("latest", "stable") and own_image != current_image
 
-    def _handle_selfupdate(self, target=None):
+    def _handle_selfupdate(self, target=None, reply_to=None):
         """Pull a target image and recreate own container.
 
         Coordinates with every other update flow via `_update_lock`:
@@ -2596,13 +2596,26 @@ class TelegramBot:
                 None       → whatever tag the container currently runs (usually :latest)
                 "previous" → last released version older than the running one
                 "X.Y.Z"    → a specific semver tag
+            reply_to: who to answer privately once we are back, as
+                `{"discord_user": "<id>"}`, or None for the ordinary
+                public announcement. Set by a front end whose replies are
+                private (#63). It goes into the self-update marker
+                because that is the only thing here that survives the
+                restart — the interaction that could have answered
+                privately does not.
         """
         if not self._update_lock.acquire(blocking=False):
-            self._queued_selfupdate = (target,)
+            # Queued with its reply route: a self-update that waits half
+            # an hour behind a container batch is still the one that was
+            # asked for privately. The second slot only appears when there
+            # IS a route, so an ordinary queued self-update is the same
+            # one-item tuple it has always been.
+            self._queued_selfupdate = ((target, reply_to) if reply_to
+                                       else (target,))
             self.send_message(self.t("selfupdate_queued"))
             return
         try:
-            self._selfupdate_locked(target)
+            self._selfupdate_locked(target, reply_to=reply_to)
         finally:
             # Nothing in here may stop the release. This block raised
             # once — `_swap_in_flight` had been orphaned out of
@@ -2670,11 +2683,12 @@ class TelegramBot:
             return
         try:
             self.send_message(self.t("selfupdate_dequeued"))
-            self._handle_selfupdate(q[0])
+            self._handle_selfupdate(q[0],
+                                    reply_to=q[1] if len(q) > 1 else None)
         except Exception as e:
             print(f"Queued selfupdate error: {e}")
 
-    def _selfupdate_locked(self, target=None):
+    def _selfupdate_locked(self, target=None, reply_to=None):
         """Body of _handle_selfupdate; only ever called with the update
         lock held (see wrapper above)."""
         # Resolve our own container robustly — handles hosts where $HOSTNAME
@@ -2733,7 +2747,8 @@ class TelegramBot:
                                          old=current_image, new=own_image))
                 self._save_selfupdate_history(own_name, own_image,
                                               old_created, new_created)
-                self._do_selfupdate(config, own_name, own_image)
+                self._do_selfupdate(config, own_name, own_image,
+                                    reply_to=reply_to)
                 return
             # Up to date for the CURRENT image tag. But if the user ran a
             # plain /selfupdate while the container is on a fixed version
@@ -2770,13 +2785,22 @@ class TelegramBot:
         # Also fan out to Discord / generic webhook so non-Telegram
         # users actually see self-update events (#19). Same pattern as
         # main.py's startup-message handling.
+        #
+        # …except into a Discord channel when this one was asked for
+        # privately: "v2.17.5 → v2.17.6, restarting" says everything the
+        # ephemeral answer was hiding, and posting it here would make the
+        # boot-side fix pointless (#63). The other channels are the
+        # operator's own and keep it.
         if self.notifier and self.notifier.has_channels():
-            self.notifier.send_message(msg)
+            from notifier import DISCORD_CHANNELS
+            self.notifier.send_message(
+                msg, skip=DISCORD_CHANNELS if reply_to else ())
 
         # Record in history BEFORE _do_selfupdate kills us — otherwise the
         # entry never gets written (#13).
         self._save_selfupdate_history(own_name, own_image, old_created, new_created)
-        self._do_selfupdate(config, own_name, own_image)
+        self._do_selfupdate(config, own_name, own_image,
+                            reply_to=reply_to)
 
     def _selfupdate_version_line(self, target_image):
         """The `v_old → v_new` line for self-update messages (#41 follow-up).
@@ -2814,7 +2838,7 @@ class TelegramBot:
                 return m["Source"]
         return "/var/run/docker.sock"
 
-    def _write_selfupdate_marker(self, image):
+    def _write_selfupdate_marker(self, image, reply_to=None):
         """Record that the imminent restart is a self-update so the next boot
         doesn't mislabel it as an external stop (#2, @famewolf).
 
@@ -2831,8 +2855,12 @@ class TelegramBot:
         try:
             import time as _time
             from container_store import atomic_write_json
-            atomic_write_json(self.config.selfupdate_marker_file,
-                              {"image": image, "ts": _time.time()})
+            mark = {"image": image, "ts": _time.time()}
+            if reply_to:
+                # The one piece of state that has to outlive the process:
+                # who asked, and that they asked in private (#63).
+                mark["reply_to"] = dict(reply_to)
+            atomic_write_json(self.config.selfupdate_marker_file, mark)
         except Exception as e:
             print(f"Could not write selfupdate marker (non-fatal): {e}")
 
@@ -2912,7 +2940,7 @@ class TelegramBot:
             f"docker rm {qname}_old"
         )
 
-    def _do_selfupdate(self, config, own_name, own_image):
+    def _do_selfupdate(self, config, own_name, own_image, reply_to=None):
         """Execute selfupdate via a temporary helper container on the host.
 
         The old approach (Popen + sys.exit) failed because Docker kills all
@@ -2924,7 +2952,7 @@ class TelegramBot:
         # SIGTERM to our old container, which the signal handler records as a
         # generic external stop — without this marker the next boot would
         # mislabel the self-update as "external restart" (#2, @famewolf).
-        self._write_selfupdate_marker(own_image)
+        self._write_selfupdate_marker(own_image, reply_to=reply_to)
         # Rebuild run command from inspect. Single source of truth via
         # UpdateChecker._build_run_args so the self-update path stays
         # in sync with the regular container-update path (#27): same

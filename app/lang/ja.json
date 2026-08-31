@@ -137,6 +137,7 @@
   "status_containers": "コンテナ",
   "status_pinned": "ピン留め",
   "status_autoupdate": "自動更新",
+  "selfupdate_private_undeliverable": "⚠️ プライベートで送れませんでした — Discord がダイレクトメッセージを開かせてくれません（サーバーメンバーからの DM はプライバシー設定で無効になっていることが多いです）。結果を失わないよう、ここに書きます:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry が起動しました* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",

@@ -108,7 +108,7 @@ class Bot(telegram_bot.TelegramBot):
     def t(self, key, **kw):
         return key
 
-    def _selfupdate_locked(self, target):
+    def _selfupdate_locked(self, target, reply_to=None):
         raise RuntimeError("pull failed")
 
 

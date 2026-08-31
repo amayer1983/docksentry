@@ -18,6 +18,14 @@ import urllib.request  # noqa: F401  (kept for test monkeypatch surface)
 from quiet_hours import is_quiet_now
 from notifiers import build_all, version_str
 
+#: The channels that put a message into a Discord channel where everyone
+#: in the server can read it — the bot speaking, and the webhook. Both
+#: are the thing an ephemeral answer exists to avoid, so both are what a
+#: privately triggered self-update withholds its restart notice from
+#: (#63). Named here rather than at the call site so a third Discord
+#: transport cannot be added without this list being the place to say so.
+DISCORD_CHANNELS = ("discord", "discordbot")
+
 
 class Notifier:
     """Dispatches notifications to every configured channel plugin."""
@@ -107,11 +115,19 @@ class Notifier:
         webhook / e-mail show the same version info."""
         return version_str(u)
 
-    def _dispatch(self, method, *args):
+    def _dispatch(self, method, *args, skip=()):
         """Call `method` on every configured plugin, best-effort: a channel
         that raises must not stop the others (each existing channel is already
-        internally best-effort; this also contains any new/buggy channel)."""
+        internally best-effort; this also contains any new/buggy channel).
+
+        `skip` names channels this particular message must not reach, by
+        plugin name. It is not a switch and not a setting — the channel
+        stays on for everything else. One message, one place it may not
+        go; see `send_message`.
+        """
         for p in self._configured_plugins():
+            if p.name in skip:
+                continue
             try:
                 getattr(p, method)(*args)
             except Exception as e:
@@ -156,11 +172,19 @@ class Notifier:
             return
         self._dispatch("send_update_result", name, image, success, detail, source_url)
 
-    def send_message(self, text):
-        """Send a plain text notification (subject to quiet hours)."""
+    def send_message(self, text, skip=()):
+        """Send a plain text notification (subject to quiet hours).
+
+        `skip` withholds this one message from the named channels. It
+        exists for the self-update someone triggered privately (#63,
+        @NotRetarded): the answer was ephemeral so the Discord server
+        would not read it, and the restart that followed announced the
+        same thing to the whole channel anyway. Empty by default, so
+        every other message goes exactly where it always did.
+        """
         if self._suppressed():
             return
-        self._dispatch("send_message", text)
+        self._dispatch("send_message", text, skip=skip)
 
     # ── Backwards-compat delegators ──────────────────────────────────
     # weekly_report.py (not part of this change) and the notifier tests

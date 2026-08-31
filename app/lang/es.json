@@ -137,6 +137,7 @@
   "status_containers": "Contenedores",
   "status_pinned": "Fijados",
   "status_autoupdate": "Auto-actualización",
+  "selfupdate_private_undeliverable": "⚠️ No he podido enviártelo en privado: Discord no me deja abrir un mensaje directo contigo (normalmente los mensajes directos de miembros del servidor están desactivados en tus ajustes de privacidad). Para no perder el resultado, aquí lo tienes:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry iniciado* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",

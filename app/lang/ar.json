@@ -137,6 +137,7 @@
   "status_containers": "حاويات",
   "status_pinned": "مثبتة",
   "status_autoupdate": "تحديث تلقائي",
+  "selfupdate_private_undeliverable": "⚠️ لم أتمكن من إرسال هذا إليك بشكل خاص — لا يسمح لي Discord بفتح رسالة مباشرة معك (عادةً ما تكون الرسائل المباشرة من أعضاء الخادم معطّلة في إعدادات الخصوصية). حتى لا تضيع النتيجة، ها هي:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
   "startup_message": "🚀 *تم تشغيل Docksentry* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",

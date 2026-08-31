@@ -229,6 +229,7 @@
   "status_containers": "Container",
   "status_pinned": "Gepinnt",
   "status_autoupdate": "Auto-Update",
+  "selfupdate_private_undeliverable": "⚠️ Ich konnte dir das nicht privat schicken — Discord lässt mich keine Direktnachricht an dich öffnen (meist sind Direktnachrichten von Server-Mitgliedern in deinen Privatsphäre-Einstellungen aus). Damit das Ergebnis nicht verloren geht, steht es hier:",
   "selfupdate_recreate_failed": "⚠️ Self-Update fehlgeschlagen: der neue Container konnte nicht erstellt werden, Docksentry ist auf die vorherige Version zurückgerollt (läuft weiter). Helper-Ausgabe:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry gestartet* (v{version})",
   "check_scoped_uptodate": "✅ {count} Container passend zu `{pattern}` sind aktuell.",

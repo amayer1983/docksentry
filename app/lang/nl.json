@@ -137,6 +137,7 @@
   "status_containers": "Containers",
   "status_pinned": "Vastgezet",
   "status_autoupdate": "Auto-update",
+  "selfupdate_private_undeliverable": "⚠️ Ik kon dit niet privé naar je sturen — Discord laat me geen direct bericht met je openen (privéberichten van serverleden staan meestal uit in je privacy-instellingen). Om het resultaat niet te verliezen, hier is het:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
   "startup_message": "🚀 *Docksentry gestart* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
