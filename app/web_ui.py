@@ -5189,12 +5189,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # differently. Absent on older events and on kinds
                     # where it means nothing — then this is simply empty.
                     res = ev.get("resources") or {}
+                    # Same two moments the alert distinguishes (#66): the
+                    # top lists were taken as the container died, the
+                    # victim line in the check that followed. Events from
+                    # before this carry no `at` and keep the death
+                    # wording — the evidence path is what they took.
+                    when = "" if res.get("at", "death") == "death" else "_after"
                     extra = ""
                     for key, tkey in (("host", "monitor_host_memory"),
                                       ("load", "monitor_host_cpu"),
                                       ("victim", "monitor_victim_usage"),
-                                      ("mem", "monitor_top_memory"),
-                                      ("cpu", "monitor_top_cpu")):
+                                      ("mem", "monitor_top_memory" + when),
+                                      ("cpu", "monitor_top_cpu" + when)):
                         if res.get(key):
                             if key == "victim":
                                 arg = {"state": res[key],
@@ -5204,6 +5210,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             else:
                                 arg = {"list": res[key]}
                             extra += f'<div>{_e(t(tkey, **arg))}</div>'
+                    # An idle host said out loud, so a row without the CPU
+                    # line cannot be mistaken for a lost measurement.
+                    if not res.get("cpu") and res.get("cpu_quiet"):
+                        extra += f'<div>{_e(t("monitor_top_cpu_quiet" + when, pct=res["cpu_quiet"]))}</div>'
                     if res.get("oom_flag"):
                         extra += f'<div>{_e(t("monitor_oom_flag_" + res["oom_flag"]))}</div>'
                     if extra:
