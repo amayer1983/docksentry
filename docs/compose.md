@@ -14,13 +14,23 @@ This is the exact path Compose itself would take, so the service comes back defi
 
 ## Requirements
 
-The Compose file must be accessible from inside the bot container. Mount the directory containing your `docker-compose.yml`:
+The Compose file has to be readable from inside the Docksentry container **at the same absolute path it has on the host**. Docksentry takes that path out of the container's own `com.docker.compose.project.config_files` label and opens exactly it — there is nothing to guess from about where you mounted it.
+
+So mount the directory onto itself:
 
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock
   - docksentry_data:/data
-  - /path/to/your/stacks:/stacks:ro
+  - /home/you/stacks:/home/you/stacks:ro
+```
+
+`- /home/you/stacks:/stacks:ro` does not work. The label still reads `/home/you/stacks/docker-compose.yml`, and that path does not exist inside the container — so the file counts as unreachable and the rebuild path is taken instead.
+
+To see which path a container reports:
+
+```
+docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' <container>
 ```
 
 ## When the Compose file can't be read
