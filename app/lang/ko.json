@@ -866,5 +866,9 @@
   "web_badge_updating": "updating to {version}",
   "web_badge_updating_now": "updating",
   "web_badge_updating_tt": "This update is running right now — it will clear itself when it finishes.",
-  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container."
+  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container.",
+  "web_compose_file": "Compose 파일",
+  "web_compose_file_found": "접근 가능",
+  "web_compose_file_missing": "접근 불가",
+  "web_compose_file_hint": "Docksentry는 자기 컨테이너 안에서 정확히 이 경로를 엽니다. 여기에서 해석되도록 Compose 디렉터리를 마운트하세요. 컨테이너 쪽은 위 경로와 일치해야 하며, 호스트에서의 이름은 상관없습니다."
 }

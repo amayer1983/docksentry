@@ -866,5 +866,9 @@
   "web_badge_updating": "updating to {version}",
   "web_badge_updating_now": "updating",
   "web_badge_updating_tt": "This update is running right now — it will clear itself when it finishes.",
-  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container."
+  "web_selfupdate_toolbar_tt": "Update Docksentry itself — pulls the latest image and recreates this container.",
+  "web_compose_file": "Файл Compose",
+  "web_compose_file_found": "доступен",
+  "web_compose_file_missing": "недоступен",
+  "web_compose_file_hint": "Docksentry открывает именно этот путь внутри собственного контейнера. Примонтируйте каталог Compose так, чтобы путь разрешался здесь — сторона контейнера должна совпадать с путём выше, как бы он ни назывался на хосте."
 }

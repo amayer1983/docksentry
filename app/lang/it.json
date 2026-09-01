@@ -866,5 +866,9 @@
   "web_badge_updating": "aggiornamento a {version}",
   "web_badge_updating_now": "aggiornamento in corso",
   "web_badge_updating_tt": "Questo aggiornamento è in corso — sparirà da solo quando avrà finito.",
-  "web_selfupdate_toolbar_tt": "Aggiorna Docksentry stesso — scarica l'ultima immagine e ricrea questo container."
+  "web_selfupdate_toolbar_tt": "Aggiorna Docksentry stesso — scarica l'ultima immagine e ricrea questo container.",
+  "web_compose_file": "File Compose",
+  "web_compose_file_found": "raggiungibile",
+  "web_compose_file_missing": "non raggiungibile",
+  "web_compose_file_hint": "Docksentry apre esattamente questo percorso dentro il proprio container. Monta la tua directory Compose in modo che si risolva qui — il lato container deve corrispondere al percorso sopra, comunque si chiami sull'host."
 }

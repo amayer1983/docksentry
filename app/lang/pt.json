@@ -866,5 +866,9 @@
   "web_badge_updating": "atualizando para {version}",
   "web_badge_updating_now": "atualizando",
   "web_badge_updating_tt": "Esta atualização está a decorrer agora — desaparece sozinha quando terminar.",
-  "web_selfupdate_toolbar_tt": "Atualizar o próprio Docksentry — descarrega a imagem mais recente e recria este contentor."
+  "web_selfupdate_toolbar_tt": "Atualizar o próprio Docksentry — descarrega a imagem mais recente e recria este contentor.",
+  "web_compose_file": "Ficheiro Compose",
+  "web_compose_file_found": "acessível",
+  "web_compose_file_missing": "não acessível",
+  "web_compose_file_hint": "O Docksentry abre exatamente este caminho dentro do seu próprio contêiner. Monte o seu diretório Compose para que ele seja resolvido aqui — o lado do contêiner tem de corresponder ao caminho acima, seja qual for o nome no host."
 }

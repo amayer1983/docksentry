@@ -866,5 +866,9 @@
   "web_badge_updating": "bijwerken naar {version}",
   "web_badge_updating_now": "bijwerken",
   "web_badge_updating_tt": "Deze update loopt op dit moment — hij verdwijnt vanzelf zodra hij klaar is.",
-  "web_selfupdate_toolbar_tt": "Docksentry zelf bijwerken — haalt de nieuwste image op en maakt deze container opnieuw aan."
+  "web_selfupdate_toolbar_tt": "Docksentry zelf bijwerken — haalt de nieuwste image op en maakt deze container opnieuw aan.",
+  "web_compose_file": "Compose-bestand",
+  "web_compose_file_found": "bereikbaar",
+  "web_compose_file_missing": "niet bereikbaar",
+  "web_compose_file_hint": "Docksentry opent precies dit pad binnen zijn eigen container. Koppel je Compose-map zo dat het hier oplost — de containerkant moet overeenkomen met het pad hierboven, hoe het op de host ook heet."
 }

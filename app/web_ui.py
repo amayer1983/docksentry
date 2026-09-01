@@ -4650,6 +4650,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<tr><td>{t("web_detail_compose")}</td>'
                     f'<td><code>{_e(compose_info.get("compose_project",""))} / {_e(compose_info.get("compose_service",""))}</code></td></tr>'
                 )
+                # The path Docksentry actually opens, and whether it is
+                # there. Without this the only way to find out was a
+                # `docker inspect` on the label (#2).
+                _paths, _ok = self._compose_reach(compose_info)
+                if _paths:
+                    _mark = ("badge-green", t("web_compose_file_found")) if _ok else \
+                            ("badge-yellow", t("web_compose_file_missing"))
+                    compose_row += (
+                        f'<tr><td>{t("web_compose_file")}</td><td>'
+                        + "<br>".join(f"<code>{_e(p)}</code>" for p in _paths)
+                        + f' <span class="badge {_mark[0]}">{_e(_mark[1])}</span>'
+                        + ("" if _ok else
+                           f'<div class="form-help" style="margin:4px 0 0">{_e(t("web_compose_file_hint"))}</div>')
+                        + '</td></tr>'
+                    )
 
             window_row = ""
             if window:
@@ -4933,7 +4948,29 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 "compose_project": project,
                 "compose_service": service,
                 "compose_file": labels.get("com.docker.compose.project.config_files", ""),
+                "compose_working_dir": labels.get("com.docker.compose.project.working_dir", ""),
             }
+
+        @staticmethod
+        def _compose_reach(info):
+            """`(paths, reachable)` for a container's compose files.
+
+            Answers the question the update path asks, with the update
+            path's own resolver — a page that says "reachable" while
+            `docker compose up` disagrees would be worse than saying
+            nothing (#2, @NotRetarded, who mounted his stacks where we
+            told him to and still could not be told what was wrong).
+            """
+            import os as _os
+            from update_checker import UpdateChecker as _UC
+            raw = info.get("compose_file", "")
+            if not raw:
+                return [], False
+            try:
+                paths = _UC._compose_files(raw, info.get("compose_working_dir") or None)
+            except Exception:
+                paths = [raw]
+            return paths, bool(paths) and all(_os.path.isfile(f) for f in paths)
 
         def _container_window_form(self, t, name, window):
             """Render the per-container update-window editor (subset of the
