@@ -17,6 +17,24 @@ LABEL org.opencontainers.image.description="Docksentry — Docker container upda
 # while the README said it worked. Measured, not inferred.
 RUN apk add --no-cache docker-cli docker-cli-compose openssh-client
 
+# Reuse one ssh connection per host instead of building a new one for
+# every command. Measured against an ssh:// host: a bare `ssh … true`
+# costs 355 ms, so three quarters of every `docker -H ssh://…` call was
+# the handshake — and the status page makes several per host. With
+# multiplexing the same call goes from 475 ms to 148 ms, and the status
+# page from 2.55 s to 1.32 s.
+#
+# In the image's own ssh_config, deliberately: the user's ~/.ssh is
+# mounted in from their host and is theirs to keep. ControlPath lives in
+# /tmp, which is ours, and the master closes after five idle minutes so a
+# host that goes away does not leave a socket behind forever.
+RUN printf '%s\n' \
+      'Host *' \
+      '    ControlMaster auto' \
+      '    ControlPath /tmp/ds-ssh-%r@%h:%p' \
+      '    ControlPersist 300' \
+    >> /etc/ssh/ssh_config
+
 WORKDIR /app
 
 COPY app/ .
