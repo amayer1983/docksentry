@@ -49,10 +49,10 @@ A Compose-managed container's detail page carries a **Compose** block: project
 and service, and under it the exact file path Docksentry opens inside its own
 container, marked `reachable` or `not reachable`. When it isn't reachable, the
 page prints the volume line that would fix it. Where the daemon knows which
-container holds those files, that line is read straight off it — marked
-experimental, because it comes from the running system rather than from
-anything I could verify for every setup; otherwise it is the directory mounted
-onto itself. One case gets no line at all: a mount that would land on
+container holds those files, that line is read straight off it and marked
+experimental — measured against 27 Compose files on one host, all 27 right,
+but that is one host; tell me if it is wrong on yours. Otherwise the line is
+the directory mounted onto itself. One case gets no line at all: a mount that would land on
 Docksentry's own data directory would hide its files, so the page says to move
 `DATA_DIR` first instead of offering it.
 
@@ -82,7 +82,7 @@ The Settings page is grouped into **five tabs**:
 | **Notifications** | Disk warning threshold + auto-cleanup-on-warning, quiet hours start/end |
 | **Channels** | Telegram topic ID, Discord webhook, generic webhook |
 
-Plus two cards always visible below the tabs:
+Plus three cards always visible below the tabs:
 - **Update Windows** (per-container HH:MM ranges + weekdays)
 - **Maintenance** (one-shot Image Cleanup / Self-Update buttons, both with confirmation dialogs)
 - **Info** (version, Telegram status, masked credentials)
