@@ -113,6 +113,38 @@ checks["the manager breaks the tie against a plain container"] = (
 checks["no mount information at all is not a guess"] = (
     _with_mounts([], ["/data/compose/2/docker-compose.yml"]) is None)
 
+# A mount we would shadow is never offered. Docksentry keeps its own state
+# in /data and so does Portainer, so the "helpful" line would have
+# read-only-mounted a stranger's volume over our own database.
+_ROWS = [
+    {"name": "portainer", "image": "portainer/portainer-ce:latest",
+     "type": "volume", "vol": "portainer_data", "src": "/x", "dest": "/data"},
+    {"name": "docksentry", "image": "docksentry", "type": "volume",
+     "vol": "docksentry_data", "src": "/y", "dest": "/data"},
+]
+
+
+def _block(rows, own, paths):
+    _HANDLER._all_mounts = staticmethod(lambda: rows)
+    _HANDLER._own_container_name_safe = lambda self: own
+    h = _HANDLER.__new__(_HANDLER)
+    try:
+        return h._compose_mount_block(
+            lambda k, **kw: k, paths, {"compose_project": "p"})
+    finally:
+        _HANDLER._all_mounts = staticmethod(_orig_all)
+
+
+_out = _block(_ROWS, "docksentry", ["/data/compose/13/docker-compose.yml"])
+checks["a mount that would shadow our own data is not offered"] = (
+    "volumes:" not in _out)
+checks["…and it says why, instead of going quiet"] = (
+    "web_compose_mount_clash" in _out)
+
+_out = _block(_ROWS, "somethingelse", ["/data/compose/13/docker-compose.yml"])
+checks["without that collision the line is still offered"] = (
+    "volumes:" in _out and "portainer_data" in _out)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

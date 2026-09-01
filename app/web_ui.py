@@ -4949,6 +4949,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             directory onto itself.
             """
             exact = self._compose_mount_exact(paths)
+            # A mount that lands where we already have something would
+            # shadow it. `/data` is the collision that matters: it is our
+            # own state directory and Portainer's as well.
+            clash = sorted({d for _l, d in (exact or [])} & self._own_mount_dests())
+            if clash:
+                return (f'<div class="form-help" style="margin:4px 0 0">'
+                        f'{_e(t("web_compose_mount_clash", path=clash[0]))}</div>')
             if exact:
                 lines = "".join(
                     f'<pre class="mount-hint">volumes:\n'
@@ -5030,7 +5037,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         for m in ins.get("Mounts") or []:
                             dest = (m.get("Destination") or "").rstrip("/")
                             if dest:
-                                rows.append({"image": img, "type": m.get("Type"),
+                                rows.append({"name": (ins.get("Name") or "").lstrip("/"),
+                                             "image": img, "type": m.get("Type"),
                                              "vol": m.get("Name") or "",
                                              "src": m.get("Source") or "",
                                              "dest": dest})
@@ -5038,6 +5046,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 rows = []
             c["t"], c["rows"] = now, rows
             return rows
+
+        def _own_mount_dests(self):
+            """Where WE already have something mounted.
+
+            A suggested mount that lands on one of these would shadow it.
+            Docksentry keeps its own state in `/data` and so does
+            Portainer — offering `portainer_data:/data:ro` to somebody
+            running both would have read-only-mounted a stranger's volume
+            over our own database (#2, caught before release).
+            """
+            own = self._own_container_name_safe()
+            if not own:
+                return set()
+            return {r["dest"] for r in self._all_mounts() if r.get("name") == own}
 
         #: Images whose name gives away a stack manager. Only used to break
         #: a tie — never to decide on its own.
