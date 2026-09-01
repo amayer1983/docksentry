@@ -870,5 +870,6 @@
   "web_compose_file": "Plik Compose",
   "web_compose_file_found": "dostępny",
   "web_compose_file_missing": "niedostępny",
-  "web_compose_file_hint": "Docksentry otwiera dokładnie tę ścieżkę wewnątrz własnego kontenera. Zamontuj katalog Compose tak, aby rozwiązywała się tutaj — strona kontenera musi odpowiadać ścieżce powyżej, niezależnie od nazwy na hoście."
+  "web_compose_file_hint": "Docksentry otwiera dokładnie tę ścieżkę wewnątrz własnego kontenera. Zamontuj katalog Compose tak, aby rozwiązywała się tutaj — strona kontenera musi odpowiadać ścieżce powyżej, niezależnie od nazwy na hoście.",
+  "web_compose_mount_lhs": "/sciezka/na/twoim/hoscie"
 }

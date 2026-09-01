@@ -870,5 +870,6 @@
   "web_compose_file": "Compose file",
   "web_compose_file_found": "reachable",
   "web_compose_file_missing": "not reachable",
-  "web_compose_file_hint": "Docksentry opens this exact path inside its own container. Mount your Compose directory so that it resolves here — the container side has to match the path above, whatever it is called on your host."
+  "web_compose_file_hint": "Docksentry opens this exact path inside its own container. Mount your Compose directory so that it resolves here — the container side has to match the path above, whatever it is called on your host.",
+  "web_compose_mount_lhs": "/path/on/your/host"
 }

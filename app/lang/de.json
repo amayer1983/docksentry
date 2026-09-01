@@ -870,5 +870,6 @@
   "web_compose_file": "Compose-Datei",
   "web_compose_file_found": "erreichbar",
   "web_compose_file_missing": "nicht erreichbar",
-  "web_compose_file_hint": "Docksentry öffnet genau diesen Pfad in seinem eigenen Container. Hänge dein Compose-Verzeichnis so ein, dass er hier auflöst — die Container-Seite muss dem Pfad oben entsprechen, egal wie er auf dem Host heißt."
+  "web_compose_file_hint": "Docksentry öffnet genau diesen Pfad in seinem eigenen Container. Hänge dein Compose-Verzeichnis so ein, dass er hier auflöst — die Container-Seite muss dem Pfad oben entsprechen, egal wie er auf dem Host heißt.",
+  "web_compose_mount_lhs": "/pfad/auf/deinem/host"
 }

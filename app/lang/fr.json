@@ -870,5 +870,6 @@
   "web_compose_file": "Fichier Compose",
   "web_compose_file_found": "accessible",
   "web_compose_file_missing": "inaccessible",
-  "web_compose_file_hint": "Docksentry ouvre exactement ce chemin dans son propre conteneur. Montez votre répertoire Compose pour qu'il y soit résolu — le côté conteneur doit correspondre au chemin ci-dessus, quel que soit son nom sur l'hôte."
+  "web_compose_file_hint": "Docksentry ouvre exactement ce chemin dans son propre conteneur. Montez votre répertoire Compose pour qu'il y soit résolu — le côté conteneur doit correspondre au chemin ci-dessus, quel que soit son nom sur l'hôte.",
+  "web_compose_mount_lhs": "/chemin/sur/votre/hote"
 }

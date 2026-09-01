@@ -746,6 +746,16 @@ tr.is-hidden { display: none; }
 .toggle input:checked + .slider:before { transform: translateX(16px); background: #fff; }
 
 /* ── Pre / code ─────────────────────────────────────────────── */
+/* The volume line the container is missing, shown under an unreachable
+   Compose path. Tighter than a normal <pre>: it sits inside a table cell,
+   where 16px of padding reads as a second panel. */
+.mount-hint {
+    padding: 8px 10px;
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 pre {
     background: var(--bg);
     border: 1px solid var(--border);

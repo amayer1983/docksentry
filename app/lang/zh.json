@@ -870,5 +870,6 @@
   "web_compose_file": "Compose 文件",
   "web_compose_file_found": "可访问",
   "web_compose_file_missing": "不可访问",
-  "web_compose_file_hint": "Docksentry 会在自己的容器内打开这个确切路径。请挂载你的 Compose 目录，使其在此处可解析——容器一侧必须与上面的路径一致，无论它在宿主机上叫什么。"
+  "web_compose_file_hint": "Docksentry 会在自己的容器内打开这个确切路径。请挂载你的 Compose 目录，使其在此处可解析——容器一侧必须与上面的路径一致，无论它在宿主机上叫什么。",
+  "web_compose_mount_lhs": "/宿主机上的路径"
 }

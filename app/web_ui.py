@@ -4662,7 +4662,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         + "<br>".join(f"<code>{_e(p)}</code>" for p in _paths)
                         + f' <span class="badge {_mark[0]}">{_e(_mark[1])}</span>'
                         + ("" if _ok else
-                           f'<div class="form-help" style="margin:4px 0 0">{_e(t("web_compose_file_hint"))}</div>')
+                           f'<div class="form-help" style="margin:4px 0 0">{_e(t("web_compose_file_hint"))}</div>'
+                           + "".join(
+                               f'<pre class="mount-hint">volumes:\n'
+                               f'  - {_e(t("web_compose_mount_lhs"))}:{_e(_m)}:ro</pre>'
+                               for _m in self._compose_mount_targets(
+                                   _paths, compose_info.get("compose_project", ""))))
                         + '</td></tr>'
                     )
 
@@ -4971,6 +4976,38 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception:
                 paths = [raw]
             return paths, bool(paths) and all(_os.path.isfile(f) for f in paths)
+
+        @staticmethod
+        def _compose_mount_targets(paths, project=""):
+            """The container-side paths a mount would have to land on.
+
+            The left half of a volume line is the user's business — only
+            they know where their files live. The right half is ours, and
+            it is the whole answer: it has to match the label, not their
+            host layout (#2, @NotRetarded, who mounted where we told him
+            and still landed nowhere).
+
+            A stack manager we recognise gets its root, because one mount
+            covers every stack it holds. Everything else gets the file's
+            own directory — always right for this container, even if it
+            means a mount per stack.
+
+            Deliberately no cleverness beyond that. Walking up to a
+            likely "stacks root" would have suggested mounting someone's
+            entire home directory for a plain `docker compose` project,
+            and a confidently wrong mount is what started this thread.
+            """
+            import os as _os
+            try:
+                from compose_paths import mount_root as _mr
+            except Exception:
+                _mr = lambda _p: None
+            out = []
+            for f in paths:
+                root = _mr(f) or _os.path.dirname(f)
+                if root and root not in out:
+                    out.append(root)
+            return out
 
         def _container_window_form(self, t, name, window):
             """Render the per-container update-window editor (subset of the

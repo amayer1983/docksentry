@@ -870,5 +870,6 @@
   "web_compose_file": "Compose ファイル",
   "web_compose_file_found": "到達可能",
   "web_compose_file_missing": "到達不可",
-  "web_compose_file_hint": "Docksentry は自身のコンテナ内でこのパスをそのまま開きます。ここで解決されるように Compose ディレクトリをマウントしてください。コンテナ側は上のパスと一致している必要があります（ホスト側の名前は問いません）。"
+  "web_compose_file_hint": "Docksentry は自身のコンテナ内でこのパスをそのまま開きます。ここで解決されるように Compose ディレクトリをマウントしてください。コンテナ側は上のパスと一致している必要があります（ホスト側の名前は問いません）。",
+  "web_compose_mount_lhs": "/ホスト上のパス"
 }

@@ -870,5 +870,6 @@
   "web_compose_file": "Archivo Compose",
   "web_compose_file_found": "accesible",
   "web_compose_file_missing": "no accesible",
-  "web_compose_file_hint": "Docksentry abre exactamente esta ruta dentro de su propio contenedor. Monta tu directorio de Compose para que se resuelva aquí — el lado del contenedor debe coincidir con la ruta de arriba, se llame como se llame en el host."
+  "web_compose_file_hint": "Docksentry abre exactamente esta ruta dentro de su propio contenedor. Monta tu directorio de Compose para que se resuelva aquí — el lado del contenedor debe coincidir con la ruta de arriba, se llame como se llame en el host.",
+  "web_compose_mount_lhs": "/ruta/en/tu/host"
 }

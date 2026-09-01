@@ -59,6 +59,21 @@ with tempfile.TemporaryDirectory() as d:
     checks["it asks the update path's own resolver"] = (
         _reach({"compose_file": f"{here},{other}"})[0] == same)
 
+# The mount line the page offers underneath an unreachable path.
+_targets = _HANDLER._compose_mount_targets
+
+checks["a recognised manager gets its root, not one mount per stack"] = (
+    _targets(["/data/compose/83/docker-compose.yml"], "foo") == ["/data/compose"])
+checks["anything else gets the file's own directory"] = (
+    _targets(["/opt/stacks/plex/compose.yaml"], "plex") == ["/opt/stacks/plex"])
+checks["a plain project is mounted onto itself, not its parent"] = (
+    _targets(["/home/you/vereinskasse/docker-compose.yml"], "vereinskasse")
+    == ["/home/you/vereinskasse"])
+checks["two files in one directory make one mount, not two"] = (
+    _targets(["/a/b/compose.yml", "/a/b/override.yml"], "b") == ["/a/b"])
+checks["two directories make two mounts"] = (
+    len(_targets(["/a/b/compose.yml", "/c/d/compose.yml"], "x")) == 2)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

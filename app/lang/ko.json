@@ -870,5 +870,6 @@
   "web_compose_file": "Compose 파일",
   "web_compose_file_found": "접근 가능",
   "web_compose_file_missing": "접근 불가",
-  "web_compose_file_hint": "Docksentry는 자기 컨테이너 안에서 정확히 이 경로를 엽니다. 여기에서 해석되도록 Compose 디렉터리를 마운트하세요. 컨테이너 쪽은 위 경로와 일치해야 하며, 호스트에서의 이름은 상관없습니다."
+  "web_compose_file_hint": "Docksentry는 자기 컨테이너 안에서 정확히 이 경로를 엽니다. 여기에서 해석되도록 Compose 디렉터리를 마운트하세요. 컨테이너 쪽은 위 경로와 일치해야 하며, 호스트에서의 이름은 상관없습니다.",
+  "web_compose_mount_lhs": "/호스트의/경로"
 }
