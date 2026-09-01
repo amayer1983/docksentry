@@ -4138,8 +4138,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Per host, and only where the live container is present:
                 # that is the proof the swap finished. A `foo_old` on one
                 # machine and a `foo` on another are unrelated.
+                # …and not while its update is still running. During the
+                # swap BOTH exist — the new container is already up and
+                # the old one is still the rollback copy — so this fired
+                # mid-update and called a live safety net "left behind
+                # from an interrupted update", with a `docker rm` next to
+                # it. Following that advice removes the one thing a
+                # failed update would have fallen back to.
+                _busy = self._updating_now(_v.get("host") or "")
                 leftovers += [n for n in _all
-                              if n.endswith("_old") and n[:-4] in _live]
+                              if n.endswith("_old") and n[:-4] in _live
+                              and n[:-4] not in _busy]
             leftovers = sorted(set(leftovers))
             leftover_banner = ""
             if leftovers:
