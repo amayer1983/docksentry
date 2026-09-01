@@ -13,7 +13,7 @@ services:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
       # Docker credentials (for authenticated pulls, avoids rate limits)
       - ${DOCKER_CONFIG:-/root/.docker/config.json}:/.docker/config.json:ro
       # Compose project directories (needed to restart containers)

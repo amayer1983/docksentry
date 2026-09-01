@@ -53,7 +53,7 @@ ENV TZ="Europe/Berlin"
 ENV PYTHONUNBUFFERED=1
 ENV DOCKER_CONFIG=/.docker
 
-VOLUME ["/data"]
+VOLUME ["/docksentry"]
 
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD python3 /app/healthcheck.py || exit 1

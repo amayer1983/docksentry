@@ -28,6 +28,26 @@ def _strip_quotes(value):
     return value
 
 
+
+#: Where our state used to live, unconditionally. `/data` is a popular
+#: name — Portainer keeps its stacks there, and so do a dozen images — so
+#: a fresh install should not claim it. But an existing one already has a
+#: volume mounted there, and moving the default out from under it would
+#: strand it on an empty directory. So: if something is mounted at
+#: `/data`, that is deliberate and it wins. Otherwise the new default.
+LEGACY_DATA_DIR = "/data"
+DEFAULT_DATA_DIR = "/docksentry"
+
+
+def _default_data_dir():
+    try:
+        if os.path.ismount(LEGACY_DATA_DIR):
+            return LEGACY_DATA_DIR
+    except OSError:
+        pass
+    return DEFAULT_DATA_DIR
+
+
 def _env(key, default=""):
     """Read an env var and strip matching outer quotes. See _strip_quotes."""
     return _strip_quotes(os.environ.get(key, default))
@@ -1253,7 +1273,7 @@ class Config:
                 c.strip() for c in _env("EXCLUDE_CONTAINERS").split(",")
                 if c.strip()
             ],
-            data_dir=_env("DATA_DIR", "/data"),
+            data_dir=_env("DATA_DIR", _default_data_dir()),
             debug=_env("DEBUG", "false").lower() in ("true", "1", "yes"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),

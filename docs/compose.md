@@ -27,7 +27,7 @@ Whatever that prints has to resolve inside Docksentry. Mount the host directory 
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock
-  - docksentry_data:/data
+  - docksentry_data:/docksentry
   - /home/you/stacks:/home/you/stacks:ro
 ```
 

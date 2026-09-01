@@ -121,7 +121,7 @@ services:
       - TZ=Europe/Berlin
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
       # Optional: mount your compose project directories so Docksentry
       # can call `docker compose up` for compose-managed containers.
       # When not mounted (or path doesn't match), Docksentry falls back
@@ -208,7 +208,7 @@ services:
     image: amayer1983/docksentry:latest
     volumes:
       - /run/podman/podman.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
     environment:
       - WEB_UI=true
       # ... rest of your config
@@ -227,7 +227,7 @@ services:
     image: amayer1983/docksentry:latest
     volumes:
       - /run/user/1000/podman/podman.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
     environment:
       - WEB_UI=true
 ```

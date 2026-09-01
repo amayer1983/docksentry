@@ -49,7 +49,7 @@ services:
       - docksentry-internal
     # No docker.sock mount needed!
     volumes:
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
     security_opt:
       - no-new-privileges:true
 
