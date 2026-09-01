@@ -39,9 +39,38 @@ LEGACY_DATA_DIR = "/data"
 DEFAULT_DATA_DIR = "/docksentry"
 
 
-def _default_data_dir():
+#: Files only we write. Presence of one of these is what makes a directory
+#: *ours* — "something is mounted there" is not the same question, and
+#: getting the two confused sends a running install to the setup screen.
+_OURS = ("update_history.json", "autoupdate_containers.json",
+         "pending_updates.json", "container_links.json")
+
+
+def _looks_like_ours(path):
     try:
-        if os.path.ismount(LEGACY_DATA_DIR):
+        return bool(set(os.listdir(path)) & set(_OURS))
+    except OSError:
+        return False
+
+
+def _default_data_dir():
+    """Where our state lives when `DATA_DIR` says nothing.
+
+    Order matters. Our own files decide it whenever they exist, because
+    `/data` is a name other people mount things at — mounting Portainer's
+    stacks there (which our own compose file used to suggest!) must not
+    turn their volume into our database.
+
+    Only when neither directory holds anything of ours does the mount
+    itself decide, and then it means "an install that has always used
+    /data, booting for the first time".
+    """
+    if _looks_like_ours(LEGACY_DATA_DIR):
+        return LEGACY_DATA_DIR
+    if _looks_like_ours(DEFAULT_DATA_DIR):
+        return DEFAULT_DATA_DIR
+    try:
+        if os.path.ismount(LEGACY_DATA_DIR) and not os.path.ismount(DEFAULT_DATA_DIR):
             return LEGACY_DATA_DIR
     except OSError:
         pass

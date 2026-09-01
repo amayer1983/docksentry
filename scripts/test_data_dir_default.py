@@ -21,20 +21,40 @@ import config as cfg  # noqa: E402
 checks = {}
 
 _real_ismount = os.path.ismount
+_real_listdir = os.listdir
 
 
-def _default_with(mounted):
-    os.path.ismount = lambda p: p == cfg.LEGACY_DATA_DIR and mounted
+def _default_with(mounts=(), files=None):
+    files = files or {}
+    os.path.ismount = lambda p: p in mounts
+    os.listdir = lambda p: files.get(p, [])
     try:
         return cfg._default_data_dir()
     finally:
         os.path.ismount = _real_ismount
+        os.listdir = _real_listdir
 
 
-checks["a volume mounted at /data wins — that install keeps working"] = (
-    _default_with(True) == "/data")
-checks["nothing mounted there: the fresh default"] = (
-    _default_with(False) == "/docksentry")
+OURS = ["update_history.json", "backups"]
+
+checks["our own files in /data decide it — that install keeps working"] = (
+    _default_with(mounts=("/data",), files={"/data": OURS}) == "/data")
+checks["our own files in the new place decide it too"] = (
+    _default_with(mounts=("/data", "/docksentry"),
+                  files={"/docksentry": OURS}) == "/docksentry")
+checks["a stranger's volume at /data is not our database"] = (
+    # Exactly the case that sent a running install to the setup screen:
+    # Portainer's stacks mounted read-only at /data while our own files
+    # sat in /docksentry.
+    _default_with(mounts=("/data", "/docksentry"),
+                  files={"/data": ["compose", "portainer.db"],
+                         "/docksentry": OURS}) == "/docksentry")
+checks["an old install booting empty for the first time keeps /data"] = (
+    _default_with(mounts=("/data",)) == "/data")
+checks["a fresh install with the new mount takes the new place"] = (
+    _default_with(mounts=("/docksentry",)) == "/docksentry")
+checks["nothing anywhere: the fresh default"] = (
+    _default_with() == "/docksentry")
 checks["the fresh default is not /data"] = (
     cfg.DEFAULT_DATA_DIR != cfg.LEGACY_DATA_DIR)
 
@@ -44,11 +64,13 @@ def _raises(_p):
 
 
 os.path.ismount = _raises
+os.listdir = _raises
 try:
     checks["a failing stat falls forward, it does not crash the boot"] = (
         cfg._default_data_dir() == "/docksentry")
 finally:
     os.path.ismount = _real_ismount
+    os.listdir = _real_listdir
 
 # DATA_DIR still beats both, which is how anyone overrides this.
 _env = os.environ.get("DATA_DIR")
