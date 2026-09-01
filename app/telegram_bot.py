@@ -2722,7 +2722,18 @@ class TelegramBot:
             capture_output=True, text=True, timeout=300
         )
         if pull.returncode != 0:
-            self.send_message(self.t("selfupdate_failed_pull", error=pull.stderr[:200]))
+            msg = self.t("selfupdate_failed_pull", error=pull.stderr[:200])
+            # "pull access denied" is the daemon's one answer for two very
+            # different situations, and Docker's own words fit neither
+            # well: an image built here has nothing to pull from, and a
+            # private registry simply wants credentials. Naming one of
+            # them would be a confident guess; naming both is the honest
+            # help — whoever reads it knows which of the two they are.
+            _low = (pull.stderr or "").lower()
+            if "access denied" in _low or "repository does not exist" in _low:
+                msg += "\n" + self.t("selfupdate_pull_denied_hint",
+                                     image=own_image)
+            self.send_message(msg)
             return
 
         # Check if image actually changed

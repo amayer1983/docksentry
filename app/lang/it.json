@@ -873,5 +873,6 @@
   "web_compose_file_hint": "Docksentry apre esattamente questo percorso dentro il proprio container. Monta la tua directory Compose in modo che si risolva qui — il lato container deve corrispondere al percorso sopra, comunque si chiami sull'host.",
   "web_compose_mount_note": "Se i tuoi file stanno altrove sull'host — un gestore di stack di solito li tiene dentro il proprio container — metti quella directory a sinistra.",
   "web_compose_mount_exact_note": "Sperimentale: questa riga viene dal container in esecuzione che contiene quei file. Fammi sapere se da te non funziona.",
-  "web_compose_mount_clash": "Qui nessun mount può risolverlo: Docksentry tiene i propri dati in `{path}`, e montarci altro li nasconderebbe. Sposta i dati di Docksentry (DATA_DIR) e il percorso sopra diventa montabile."
+  "web_compose_mount_clash": "Qui nessun mount può risolverlo: Docksentry tiene i propri dati in `{path}`, e montarci altro li nasconderebbe. Sposta i dati di Docksentry (DATA_DIR) e il percorso sopra diventa montabile.",
+  "selfupdate_pull_denied_hint": "Il registry non ha `{image}`. O è stata costruita qui — un'immagine costruita in locale non ha nulla da scaricare, e un self-update ne richiede una da un registry — oppure il registry è privato e vuole le credenziali (`DOCKER_USERNAME` / `DOCKER_PASSWORD`)."
 }
