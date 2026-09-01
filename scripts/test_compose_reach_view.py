@@ -74,6 +74,45 @@ checks["two files in one directory make one mount, not two"] = (
 checks["two directories make two mounts"] = (
     len(_targets(["/a/b/compose.yml", "/c/d/compose.yml"], "x")) == 2)
 
+# The exact line, read off whichever container already holds the files.
+# @NotRetarded's Portainer keeps its stacks in a named volume, so "mount
+# that directory" was never an instruction anyone could follow (#2).
+_M = [
+    {"image": "portainer/portainer-ce:latest", "type": "volume",
+     "vol": "portainer_data", "src": "/var/lib/docker/volumes/x/_data", "dest": "/data"},
+    {"image": "redis:7", "type": "bind",
+     "vol": "", "src": "/srv/redis", "dest": "/data"},
+    {"image": "dockhand/dockhand:latest", "type": "bind",
+     "vol": "", "src": "/share/Container/Dockhand/stacks", "dest": "/opt/stacks"},
+]
+_orig_all = _HANDLER._all_mounts
+
+
+def _with_mounts(rows, paths):
+    _HANDLER._all_mounts = staticmethod(lambda: rows)
+    try:
+        return _HANDLER._compose_mount_exact(paths)
+    finally:
+        _HANDLER._all_mounts = staticmethod(_orig_all)
+
+
+checks["a named volume is named, not turned into a directory"] = (
+    _with_mounts(_M, ["/data/compose/13/docker-compose.yml"])
+    == [("portainer_data", "/data")])
+checks["a manager we have never heard of still resolves"] = (
+    _with_mounts(_M, ["/opt/stacks/plex/compose.yaml"])
+    == [("/share/Container/Dockhand/stacks", "/opt/stacks")])
+checks["a host path resolves to nothing, so the self-mount stands"] = (
+    _with_mounts(_M, ["/home/you/stacks/docker-compose.yml"]) is None)
+checks["two equally deep mounts and no manager: say nothing"] = (
+    _with_mounts([dict(_M[1]), dict(_M[1], src="/srv/other")],
+                 ["/data/compose/13/docker-compose.yml"]) is None)
+checks["the manager breaks the tie against a plain container"] = (
+    _with_mounts(_M, ["/data/compose/2/docker-compose.yml"])
+    == [("portainer_data", "/data")])
+checks["no mount information at all is not a guess"] = (
+    _with_mounts([], ["/data/compose/2/docker-compose.yml"]) is None)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

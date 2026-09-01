@@ -4663,11 +4663,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         + f' <span class="badge {_mark[0]}">{_e(_mark[1])}</span>'
                         + ("" if _ok else
                            f'<div class="form-help" style="margin:4px 0 0">{_e(t("web_compose_file_hint"))}</div>'
-                           + "".join(
-                               f'<pre class="mount-hint">volumes:\n'
-                               f'  - {_e(t("web_compose_mount_lhs"))}:{_e(_m)}:ro</pre>'
-                               for _m in self._compose_mount_targets(
-                                   _paths, compose_info.get("compose_project", ""))))
+                           + self._compose_mount_block(t, _paths, compose_info))
                         + '</td></tr>'
                     )
 
@@ -4942,6 +4938,33 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             self._send_html(self._render_page(content, "status"))
 
+        def _compose_mount_block(self, t, paths, info):
+            """The volume line to add, and the sentence that frames it.
+
+            Two answers, and which one we can give says something: the
+            daemon knows the exact mount whenever the files live inside
+            another container, and that beats any advice we could word.
+            Only when nothing holds them — a plain `docker compose` run,
+            where the label already is a host path — is the mount the
+            directory onto itself.
+            """
+            exact = self._compose_mount_exact(paths)
+            if exact:
+                lines = "".join(
+                    f'<pre class="mount-hint">volumes:\n'
+                    f'  - {_e(lhs)}:{_e(dest)}:ro</pre>' for lhs, dest in exact)
+                note = t("web_compose_mount_exact_note")
+            else:
+                lines = "".join(
+                    f'<pre class="mount-hint">volumes:\n'
+                    f'  - {_e(m)}:{_e(m)}:ro</pre>'
+                    for m in self._compose_mount_targets(
+                        paths, info.get("compose_project", "")))
+                note = t("web_compose_mount_note")
+            return (lines
+                    + f'<div class="form-help" style="margin:4px 0 0">'
+                      f'{_e(note)}</div>')
+
         def _compose_info_for(self, meta):
             """Extract compose project/service/file from a docker-inspect result."""
             labels = meta.get("Config", {}).get("Labels", {}) or {}
@@ -4976,6 +4999,91 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception:
                 paths = [raw]
             return paths, bool(paths) and all(_os.path.isfile(f) for f in paths)
+
+        #: Container mounts, refreshed at most twice a minute. Reading every
+        #: container to answer one page would be a daemon round trip per
+        #: render, and mounts change about as often as containers do.
+        _mounts_cache = {"t": 0.0, "rows": []}
+
+        @staticmethod
+        def _all_mounts():
+            """`[{image, type, vol, src, dest}]` for every container.
+
+            The daemon knows where a container's paths really come from —
+            including the true source of a *named volume*, which is the
+            case a directory mount cannot express at all. Portainer keeps
+            its stacks in `portainer_data`, so "mount that directory" was
+            never an instruction anyone could follow (#2).
+            """
+            now = time.time()
+            c = WebHandler._mounts_cache
+            if c["rows"] and now - c["t"] < 30:
+                return c["rows"]
+            rows = []
+            try:
+                ids = backend.run(["ps", "-aq"])
+                names = ids.stdout.split() if ids.returncode == 0 else []
+                if names:
+                    r = backend.run(["inspect", *names])
+                    for ins in (json.loads(r.stdout) if r.returncode == 0 else []):
+                        img = (ins.get("Config", {}).get("Image") or "").lower()
+                        for m in ins.get("Mounts") or []:
+                            dest = (m.get("Destination") or "").rstrip("/")
+                            if dest:
+                                rows.append({"image": img, "type": m.get("Type"),
+                                             "vol": m.get("Name") or "",
+                                             "src": m.get("Source") or "",
+                                             "dest": dest})
+            except Exception:
+                rows = []
+            c["t"], c["rows"] = now, rows
+            return rows
+
+        #: Images whose name gives away a stack manager. Only used to break
+        #: a tie — never to decide on its own.
+        _MANAGER_HINTS = ("portainer", "dockge", "dockhand", "komodo", "yacht")
+
+        @staticmethod
+        def _compose_mount_exact(paths):
+            """The volume line that would make `paths` visible, or None.
+
+            Finds the container that already holds these files and reads
+            its mount straight off the daemon — so it works for a manager
+            we have never heard of, as long as it runs on this machine.
+            None when nothing holds them (the label is a host path, and
+            the self-mount is the answer) or when several containers mount
+            the same depth and none looks like a manager: a confidently
+            wrong mount is what this whole thread was about.
+            """
+            rows = WebHandler._all_mounts()
+            if not rows:
+                return None
+            try:
+                from compose_paths import owner as _owner
+            except Exception:
+                _owner = lambda _p: None
+            out = []
+            for p in paths:
+                hits = [r for r in rows
+                        if p == r["dest"] or p.startswith(r["dest"] + "/")]
+                if not hits:
+                    return None                      # a host path; not our case
+                deepest = max(len(h["dest"]) for h in hits)
+                hits = [h for h in hits if len(h["dest"]) == deepest]
+                if len(hits) > 1:
+                    own = (_owner(p) or "").lower()
+                    looks = [h for h in hits
+                             if any(k in h["image"] for k in WebHandler._MANAGER_HINTS)
+                             and (not own or any(w in h["image"]
+                                                 for w in own.split(" or ")))]
+                    if len(looks) != 1:
+                        return None                  # ambiguous: say nothing
+                    hits = looks
+                h = hits[0]
+                line = (h["vol"] if h["type"] == "volume" else h["src"], h["dest"])
+                if line not in out:
+                    out.append(line)
+            return out or None
 
         @staticmethod
         def _compose_mount_targets(paths, project=""):

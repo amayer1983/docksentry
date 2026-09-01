@@ -871,5 +871,6 @@
   "web_compose_file_found": "erişilebilir",
   "web_compose_file_missing": "erişilemiyor",
   "web_compose_file_hint": "Docksentry tam olarak bu yolu kendi konteyneri içinde açar. Compose dizinini, burada çözümlenecek şekilde bağlayın — konteyner tarafı yukarıdaki yolla eşleşmeli, ana makinede adı ne olursa olsun.",
-  "web_compose_mount_lhs": "/ana-makinedeki/yol"
+  "web_compose_mount_note": "Dosyalarınız ana makinede başka bir yerdeyse — bir yığın yöneticisi genelde onları kendi konteynerinde tutar — sol tarafa o dizini yazın.",
+  "web_compose_mount_exact_note": "Deneysel: bu satır, o dosyaları barındıran çalışan konteynerden okundu. Sizde çalışmazsa lütfen haber verin."
 }

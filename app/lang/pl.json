@@ -871,5 +871,6 @@
   "web_compose_file_found": "dostępny",
   "web_compose_file_missing": "niedostępny",
   "web_compose_file_hint": "Docksentry otwiera dokładnie tę ścieżkę wewnątrz własnego kontenera. Zamontuj katalog Compose tak, aby rozwiązywała się tutaj — strona kontenera musi odpowiadać ścieżce powyżej, niezależnie od nazwy na hoście.",
-  "web_compose_mount_lhs": "/sciezka/na/twoim/hoscie"
+  "web_compose_mount_note": "Jeśli twoje pliki są gdzie indziej na hoście — menedżer stacków zwykle trzyma je we własnym kontenerze — po lewej wpisz tamten katalog.",
+  "web_compose_mount_exact_note": "Eksperymentalnie: ta linia pochodzi z działającego kontenera, który przechowuje te pliki. Daj znać, jeśli u ciebie nie działa."
 }
