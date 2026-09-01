@@ -69,8 +69,15 @@ def _default_data_dir():
         return LEGACY_DATA_DIR
     if _looks_like_ours(DEFAULT_DATA_DIR):
         return DEFAULT_DATA_DIR
+    # Nothing of ours anywhere yet, so this is a first boot: whoever
+    # mounted something at `/data` meant it, and that is the install we
+    # must not strand. NOT also asking whether `/docksentry` is a mount —
+    # the image declares a VOLUME there, so it always is, and the extra
+    # condition made this branch unreachable. Measured: an old compose
+    # file with an empty volume at /data then wrote to the image's own
+    # anonymous volume and lost it on the next recreate.
     try:
-        if os.path.ismount(LEGACY_DATA_DIR) and not os.path.ismount(DEFAULT_DATA_DIR):
+        if os.path.ismount(LEGACY_DATA_DIR):
             return LEGACY_DATA_DIR
     except OSError:
         pass

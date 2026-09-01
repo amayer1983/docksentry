@@ -51,6 +51,12 @@ checks["a stranger's volume at /data is not our database"] = (
                          "/docksentry": OURS}) == "/docksentry")
 checks["an old install booting empty for the first time keeps /data"] = (
     _default_with(mounts=("/data",)) == "/data")
+# …and in a real container BOTH are mounts: the image declares a VOLUME at
+# the new path, so it is always one. A rule that also asked whether the new
+# path was free could therefore never fire — measured, and it wrote to the
+# image's own anonymous volume, which the next recreate throws away.
+checks["…even though the image always mounts the new path too"] = (
+    _default_with(mounts=("/data", "/docksentry")) == "/data")
 checks["a fresh install with the new mount takes the new place"] = (
     _default_with(mounts=("/docksentry",)) == "/docksentry")
 checks["nothing anywhere: the fresh default"] = (
