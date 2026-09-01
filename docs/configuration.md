@@ -31,7 +31,7 @@ The handful that decide whether Docksentry runs at all.
 |----------|---------|-------------|
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
-| `DATA_DIR` | `/data` | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Change it only if you mount the volume somewhere else; everything in it is what a backup would restore |
+| `DATA_DIR` | `/docksentry` (see below) | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Everything in it is what a backup would restore |
 | `LANGUAGE` ⚙ | `en` | Bot language ([16 available](docs/languages.md)) |
 | `TZ` | `Europe/Berlin` | Timezone |
 | `WEB_PASSWORD` ⚙ | | Web UI password (Basic Auth) |
@@ -41,6 +41,36 @@ The handful that decide whether Docksentry runs at all.
 | `WEB_UI` | `false` | Enable web dashboard |
 | `STATUS_VIEW` ⚙ | `table` | How the status page draws your containers. `table` is the original: every action on every row, wide layout. `list` is the compact one: one row per container leading with whether an update is waiting, everything else in a detail panel, and a layout that works on a phone. Also switchable in Settings › General — this variable only seeds the initial value. |
 | `WEB_USERNAME` ⚙ | | Username for the Web UI login. **Optional**: left empty, any username is accepted, which is what Docksentry did before it had a username at all (the Basic Auth header was split and the name half then ignored). Set it and only that name gets in. Also editable in Settings › General. |
+
+#### Where the data lives
+
+**If Docksentry is already running, there is nothing to do here.** A volume
+mounted at `/data` keeps being used, exactly as before.
+
+New installs get `/docksentry` instead. `/data` is a busy name — Portainer
+keeps its stacks there, and so do a dozen other images — and Docksentry
+claiming it meant the two collided on the same install. The image no longer
+reserves `/data` either.
+
+Docksentry works out which one it is on, in this order: the directory that
+already holds its files wins; failing that, a volume mounted at `/data` is
+taken as an install that has always used it; otherwise `/docksentry`.
+`DATA_DIR` overrides all of it.
+
+The one reason to move an existing install is if you need `/data` for
+something else — mounting a stack manager's volume there so Compose files
+can be read, say. Point the same volume at the new path and set nothing
+else:
+
+```yaml
+volumes:
+  - docksentry_data:/docksentry      # was docksentry_data:/data
+  - portainer_data:/data:ro          # …and now /data is free for this
+```
+
+The data comes with the volume; nothing is copied and nothing is lost. If
+you get it wrong, Docksentry says so at startup rather than quietly writing
+to a directory that disappears on the next recreate.
 
 ### Docker & Podman hosts
 

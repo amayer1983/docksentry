@@ -121,7 +121,7 @@ services:
       - TZ=Europe/Berlin
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - docksentry_data:/docksentry
+      - docksentry_data:/docksentry   # already on /data? leave it — see docs/configuration.md
       # Optional: mount your compose project directories so Docksentry
       # can call `docker compose up` for compose-managed containers.
       # When not mounted (or path doesn't match), Docksentry falls back
