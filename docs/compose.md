@@ -34,8 +34,14 @@ volumes:
 **If a stack manager created it** — Portainer, Dockge, Dockhand — the label holds a path inside *that* container, which does not exist on your host at all. The left side is then your host directory and the right side is the manager's path:
 
 ```yaml
-  - /share/Container/Dockhand/stacks:/opt/stacks:ro
+  - /srv/stack-manager/data:/app/data/stacks:ro
 ```
+
+The two internal paths I have actually seen are `/data/compose/…` (Portainer)
+and `/app/data/stacks/…` (Dockge, Dockhand). Not every manager needs mapping:
+Dockge's own default is `/opt/stacks` mounted at the identical path on the
+host, so the label is already a host path and the first form — the directory
+onto itself — is the one you want.
 
 What does not work in either case is choosing the container-side path yourself. `- /home/you/stacks:/stacks:ro` leaves the label reading `/home/you/stacks/docker-compose.yml`, which still does not exist inside Docksentry — so the file counts as unreachable and the rebuild path is taken instead.
 
@@ -47,7 +53,7 @@ Nearly, not quite. Docksentry checks each container for the handful of things th
 
 | Named in the message | Why the rebuild loses it |
 |---|---|
-| `healthcheck` | only when it's yours and in exec form (`test: ["CMD", …]`) — `docker run` can only produce the shell form, so the check then needs `/bin/sh` in the image. Also when a timing is under a second, which rounds down to "unset". A `CMD-SHELL` check, or one that came with the image, survives untouched. |
+| `healthcheck` | only when it's yours and in exec form (`test: ["CMD", …]`) — `docker run` can only produce the shell form, so the check then needs `/bin/sh` in the image. Also when a timing is under a second, which rounds down to "unset", and when the block sets timings but no `test:` of its own to hang them on. A `CMD-SHELL` check, or one that came with the image, survives untouched. |
 | `tmpfs` | the long form (`volumes: - {type: tmpfs, …}`). The short `tmpfs:` list is carried. |
 | `blkio_config` | the per-device read/write limits; a plain `blkio_weight` is carried |
 | `cgroup_parent` | no flag is emitted, so the new container lands under Docker's default cgroup |

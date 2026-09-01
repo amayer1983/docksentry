@@ -37,6 +37,32 @@ Notes:
 - Drops are silent — Docksentry doesn't queue and replay them later. The user explicitly opted into "leave me alone during these hours"
 - Both empty = feature off
 
+## When the network is down
+
+A notification that fails on a network error is not lost. It is held and
+tried again on the next scheduler pass — within 30 seconds of the connection
+coming back.
+
+**Not every channel has this.** Telegram, the Discord bot, the Discord
+webhook and the generic webhook hold a failed message. ntfy, Gotify, Matrix,
+Apprise and SMTP do not — if you only run one of those, a network blip while
+an alert fires means that alert is gone.
+
+Three limits keep the queue from becoming a second problem. Nothing is
+delivered more than 15 minutes late, because a crash alert arriving two hours
+on reads as something happening now. At most 20 messages are held at once,
+and when it overflows the oldest goes first — it is the one closest to being
+a lie anyway. Nothing is written to disk, so a restart clears the queue.
+
+A late message says so, above whatever it was going to say:
+
+```
+⏳ Delayed 12m — no network when this fired. It happened at 15:35:03.
+```
+
+This is not quiet hours. A quiet-hours drop is a decision you made and stays
+dropped; only delivery failures are replayed.
+
 ## Disk Space Warning
 
 `DISK_WARN_PERCENT` (default `85`, range `50..100`) — when the data directory's filesystem usage exceeds this percentage, Docksentry sends a warning across all configured channels. Rate-limited to **one notification per 23-hour window** to prevent log floods.
@@ -49,7 +75,7 @@ environment:
 
 When `DISK_WARN_AUTO_CLEANUP=true`, crossing the threshold also runs `docker image prune` (using the configured `CLEANUP_GRACE_HOURS` and `CLEANUP_BACKUP_LOCAL_ONLY` settings). The cleanup result is sent as a follow-up notification.
 
-> **Note:** the warning is based on the filesystem hosting `/data`. In typical setups this shares the same disk as `/var/lib/docker`. If you're running with a separate Docker storage driver mount, the percentage may not reflect Docker's actual disk usage.
+> **Note:** the warning is based on the filesystem hosting the [data directory](configuration.md#where-the-data-lives). In typical setups this shares the same disk as `/var/lib/docker`. If you're running with a separate Docker storage driver mount, the percentage may not reflect Docker's actual disk usage.
 
 ## Discord
 

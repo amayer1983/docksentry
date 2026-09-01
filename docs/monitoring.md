@@ -29,11 +29,26 @@ job, not dying.
 ```
 🔁 unifi crashed (exit 137) and was restarted by its restart policy at 16:14:47 (restart #1).
 Host memory (used/total): 14.8/15.6 GB · Swap 3.9/4.0 GB
-Top memory at event time: some-new-app 9.1GiB · unifi 2.2GiB
-Top CPU at event time: some-new-app 198%
+Host load (1 min / cores): 6.41 / 4
+unifi itself, in the check right after: 214MiB · 4%
+Not an OOM kill — the exit code came from something else.
+Top memory when it died: some-new-app 9.1GiB · unifi 2.2GiB
+Top CPU when it died: some-new-app 198%
 Last logs:
 …
 ```
+
+**Two moments, and the alert says which is which.** The top lists come from
+the runtime's event stream, so they are the instant of death, while the
+culprit still held the memory. The line about the container itself is read
+in the sweep *after* that — it is already booting again by then, which is
+why its numbers can look small. Where the event stream wasn't there to see
+it, the lists say `in the check right after` too, and then everything in the
+block is the same later moment.
+
+The OOM line is only there when the event stream saw the death. A bare "not
+an OOM kill" that actually meant "nobody looked" would send you hunting in
+the wrong direction.
 
 **The exit code is real.** `docker inspect` cannot supply it for a
 crash-restart — the policy has the container running again by the time
@@ -44,13 +59,18 @@ from the runtime's live event stream instead.
 squeezed out by a neighbour frequently dies *without* the kernel flagging
 an OOM, so these are attached to every death rather than only to OOM kills.
 
-The host line comes first on purpose. A list of top consumers on its own
+The host lines come first on purpose — memory, then load. `docker stats`
+only sees containers, so an image pull or a backup job burning the processor
+shows up in the load line and nowhere else. A list of top consumers on its own
 invites you to blame whoever is at the top — and if there were eight
 gigabytes free, that is just your biggest container minding its own
 business.
 
-**CPU appears only when something is actually holding the processor.** That
-line exists because CPU starvation kills in a way that looks exactly like
+**The CPU line is always there, even when the answer is "nobody".** Below
+50 % of one core there is no list to print, and it says so —
+`Top CPU when it died: nothing was above 50% of one core.` It used to drop
+the line instead, which made a quiet host look like a failed measurement.
+The line exists because CPU starvation kills in a way that looks exactly like
 running out of memory. Measured: the same container, the same shutdown
 handler, the same `docker stop -t 5` —
 

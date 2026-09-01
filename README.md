@@ -163,7 +163,7 @@ Note that everything after `stacks/` in the label — `QNAP/dozzle/…` — stay
 | Mount setup | Update path |
 |---|---|
 | Compose dirs mounted at the same paths inside Docksentry | `docker compose pull` + `docker compose up -d --no-deps <service>` (preserves all compose semantics) |
-| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, network aliases, fixed IPs, MAC, resource limits, healthcheck overrides, etc. |
+| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, network aliases, fixed IPs, MAC, resource limits, etc. A short list of things it genuinely cannot reproduce is in [the Compose guide](docs/compose.md#when-the-compose-file-cant-be-read) — the healthcheck is on it. |
 
 The standalone fallback is comprehensive. As of v1.19.0 it covers everything `_build_run_args()` knows to read from `docker inspect`:
 
@@ -171,7 +171,7 @@ The standalone fallback is comprehensive. As of v1.19.0 it covers everything `_b
 - **Capabilities / devices / sysctls / tmpfs / extra-hosts / DNS / security-opts** (Gluetun-style stacks).
 - **Resource limits**: memory, CPU, pids, oom, blkio, ulimits, group-add.
 - **Lifecycle**: stop-signal, stop-timeout, auto-remove (when no restart policy).
-- **Process config**: working-dir, domainname, tty, stdin, healthcheck override.
+- **Process config**: working-dir, domainname, tty, stdin, and the healthcheck — except in the few shapes `docker run` has no flag for, which Docksentry names in the update message. [Which ones, and why.](docs/compose.md#when-the-compose-file-cant-be-read)
 - **Image-default-aware Cmd / Entrypoint** — only restores container-level Cmd/Entrypoint when they actually differ from the new image's defaults, so image updates that change CMD aren't locked to the old value.
 
 If you have **compose-specific orchestration** (depends_on chains, profiles, multiple compose files merged via `-f`, project-level network options beyond defaults), mounting your compose dirs is still the cleanest path to keep those intact.
@@ -354,7 +354,7 @@ These are the ones worth knowing on the first day. **[Every variable, with its d
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 
-> **Settings saved in the Web UI win over the environment.** Roughly half of these are stored in `/data/settings.json` once saved, and the saved file is applied on top of the environment on every start — so changing the compose file afterwards does nothing. Docksentry says so at startup when it happens. [The full list and both ways out are in the reference.](docs/configuration.md)
+> **Settings saved in the Web UI win over the environment.** Roughly half of these are stored in `settings.json` in the [data directory](docs/configuration.md#where-the-data-lives) once saved, and the saved file is applied on top of the environment on every start — so changing the compose file afterwards does nothing. Docksentry says so at startup when it happens. [The full list and both ways out are in the reference.](docs/configuration.md)
 
 ### Group / Topic setup
 
