@@ -517,64 +517,56 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             views = [self._status_view(LOCAL_HOST, store_for(LOCAL_HOST),
                                        self._get_containers(), own_name,
                                        host_backend=backend)]
+            # One `ps -q` per host, and the hosts side by side. Measured
+            # against four managed hosts: an ssh endpoint cost 2.1 s of
+            # which 476 ms was a probe asking what the listing asks again,
+            # and the whole set ran one after another, so the page paid the
+            # sum. Now it pays the slowest one.
+            _todo = [h for h in (multi or ()) if not h.is_local]
+            _skip = {}
+            for _host in list(_todo):
+                _left, _cached = _hosts_mod.unreachable_for(_host.name)
+                if _left > 0:
+                    _skip[_host.name] = (_cached, int(_left))
+                    _todo.remove(_host)
+
+            def _fetch(_h):
+                """`(host, containers, error)` — never raises, so one dead
+                endpoint cannot take the others down with it."""
+                try:
+                    _p = _h.backend.ps(quiet=True, timeout=10)
+                    if getattr(_p, "returncode", 1) != 0:
+                        raise OSError((_p.stderr or "").strip() or "ps failed")
+                    _ids = [i for i in (_p.stdout or "").strip().split("\n") if i]
+                    return _h, self._containers_on(_h.backend, timeout=10,
+                                                   ids=_ids), None
+                except Exception as _e:
+                    return _h, None, _e
+
+            _results = {}
+            if _todo:
+                import concurrent.futures as _cf
+                with _cf.ThreadPoolExecutor(max_workers=min(8, len(_todo))) as _ex:
+                    for _h, _rem, _err in _ex.map(_fetch, _todo):
+                        _results[_h.name] = (_rem, _err)
+
             for _host in (multi or ()):
                 if _host.is_local:
                     continue
-                # A host we asked a moment ago and got nothing from is not
-                # asked again straight away. One dead endpoint cost ten
-                # seconds of every single page load — measured at 13.6s for
-                # a status page with one host down, against 0.08s for a page
-                # that does not build this list. Reloading to see whether it
-                # came back is exactly what a reader does, and each reload
-                # paid the wait again.
-                _left, _cached = _hosts_mod.unreachable_for(_host.name)
-                if _left > 0:
+                if _host.name in _skip:
+                    _cached, _left = _skip[_host.name]
                     views.append({"unreachable": _host.name,
                                   "endpoint": _host.endpoint,
                                   "reason": _cached,
-                                  "retry_in": int(_left),
+                                  "retry_in": _left,
                                   "contexts": []})
                     continue
-                try:
-                    # Probe before listing: a `ps` that exits non-zero comes
-                    # back as an empty list, and reporting a dead host as
-                    # "no containers running" is worse than saying nothing.
-                    # The timeout is the other half — an endpoint that never
-                    # answers must not hang the page.
-                    _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
-                    if _probe.returncode != 0:
-                        raise OSError((_probe.stderr or "").strip() or "ps failed")
-                    _remote = self._containers_on(_host.backend, timeout=10)
-                    _hosts_mod.mark_reachable(_host.name)
-                except Exception as _err:
-                    # One dead host is a line in the table, not a broken page.
-                    #
-                    # The endpoints come from DOCKER_HOSTS, typed by hand,
-                    # and a typo there is indistinguishable from a machine
-                    # that is down. Docker already knows the endpoints it
-                    # has been told about, so at the one moment somebody is
-                    # standing in front of "cannot reach nas", listing them
-                    # costs one command and may answer the question
-                    # outright. Only on failure — never as a second source
-                    # of hosts, which would be two places to keep in step.
-                    #
-                    # …and the CLI's own words go with it. Telegram and
-                    # Discord have always quoted them (`host_check_failed`);
-                    # this page threw them away and said "unreachable" for
-                    # every cause there is, which is the one word that fits
-                    # none of them. Measured against podman 4.9.3 over ssh,
-                    # the causes it flattened together were:
-                    #
-                    #   ssh: unable to authenticate, attempted methods
-                    #        [none publickey]              → wrong SSH key
-                    #   dial tcp …: connection refused     → nothing listening
-                    #   dial tcp: lookup …: no such host   → DNS / typo
-                    #   ssh: rejected: connect failed      → wrong socket path
-                    #
-                    # Only the first of those is "your key is wrong", and it
-                    # is the one a reader would never guess: they check
-                    # cables and firewalls instead. See `_why` for why the
-                    # last line is the one worth showing.
+                _remote, _err = _results.get(_host.name, (None, None))
+                if _err is not None:
+                    # One dead host is a line in the table, not a broken
+                    # page. The CLI's own words go with it: this page used
+                    # to say "unreachable" for every cause there is, which
+                    # is the one word that fits none of them.
                     _reason = self._why(_err)
                     _hosts_mod.mark_unreachable(_host.name, _reason)
                     views.append({"unreachable": _host.name,
@@ -582,8 +574,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                   "reason": _reason,
                                   "contexts": self._docker_contexts()})
                     continue
+                _hosts_mod.mark_reachable(_host.name)
                 views.append(self._status_view(_host.name, _host.store,
-                                               _remote, "",
+                                               _remote or [], own_name,
                                                host_backend=_host.backend))
             return views
 
@@ -1056,7 +1049,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             """
             return self._containers_on(backend)
 
-        def _containers_on(self, be, timeout=None):
+        def _containers_on(self, be, timeout=None, ids=None):
             # Use docker inspect (not docker ps Status-string parsing) so health
             # detection works on both Docker and Podman. Podman's REST API does
             # not append `(healthy)` to the Status field — that's a Docker CLI
@@ -1068,8 +1061,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # the local path issues byte-identical argv with identical
             # semantics. Remote callers pass a short one: an endpoint that
             # answers slowly must not hold the status page.
-            ids_p = be.ps(quiet=True, timeout=timeout)
-            ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+            # `ids` lets a caller that already ran `ps` hand its result
+            # over. The host list used to probe with one `ps` and then land
+            # here, which ran a second one — the same question twice, and
+            # over ssh that was 476 ms of the 2.1 s a remote host cost.
+            if ids is None:
+                ids_p = be.ps(quiet=True, timeout=timeout)
+                ids = [i for i in ids_p.stdout.strip().split("\n") if i]
             if not ids:
                 return []
             ins_p = be.inspect(ids, timeout=timeout)

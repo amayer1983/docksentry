@@ -266,11 +266,28 @@ _unreachable = {}
 _unreachable_lock = threading.Lock()
 
 
-def mark_unreachable(name, reason, *, cooldown=UNREACHABLE_COOLDOWN):
+#: A host that keeps failing is asked less and less often. One minute is
+#: right for a machine rebooting; it is wrong for the endpoint someone
+#: typo'd into DOCKER_HOSTS months ago, which then costs its full timeout
+#: on every page load a minute apart — reported as "reload takes 10-15
+#: seconds". Doubling per failure reaches the cap after five tries, and
+#: any success clears it, so a host that comes back is still noticed on
+#: the next attempt.
+MAX_UNREACHABLE_COOLDOWN = 900.0
+
+_failures = {}
+
+
+def mark_unreachable(name, reason, *, cooldown=None):
     """Remember that `name` just failed, with the CLI's own words."""
     if not name:
         return
     with _unreachable_lock:
+        if cooldown is None:
+            n = _failures.get(name, 0) + 1
+            _failures[name] = n
+            cooldown = min(UNREACHABLE_COOLDOWN * (2 ** (n - 1)),
+                           MAX_UNREACHABLE_COOLDOWN)
         _unreachable[name] = (time.monotonic() + cooldown, reason or "")
 
 
@@ -280,6 +297,7 @@ def mark_reachable(name):
         return
     with _unreachable_lock:
         _unreachable.pop(name, None)
+        _failures.pop(name, None)
 
 
 def unreachable_for(name):
@@ -310,3 +328,4 @@ def forget_unreachable():
     may have changed the endpoints out from under it."""
     with _unreachable_lock:
         _unreachable.clear()
+        _failures.clear()

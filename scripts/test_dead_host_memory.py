@@ -35,6 +35,26 @@ hosts.mark_reachable("nas")
 checks["a host that answers is forgotten immediately"] = (
     hosts.unreachable_for("nas") == (0.0, ""))
 
+# A host that keeps failing is asked less and less often: one minute is
+# right for a reboot, wrong for an endpoint that was typo'd months ago and
+# costs its full timeout on every load a minute apart.
+hosts.forget_unreachable()
+_waits = []
+for _ in range(6):
+    hosts.mark_unreachable("gone", "no route")
+    _waits.append(hosts.unreachable_for("gone")[0])
+    hosts._unreachable.pop("gone", None)
+checks["repeated failures are asked about less often"] = (
+    _waits[1] > _waits[0] and _waits[2] > _waits[1])
+checks["…but the wait stops growing"] = (
+    abs(_waits[-1] - _waits[-2]) < 1
+    and abs(_waits[-1] - hosts.MAX_UNREACHABLE_COOLDOWN) < 1)
+hosts.mark_reachable("gone")
+hosts.mark_unreachable("gone", "no route")
+checks["one success puts it back to the short wait"] = (
+    hosts.unreachable_for("gone")[0] <= hosts.UNREACHABLE_COOLDOWN)
+
+hosts.forget_unreachable()
 hosts.mark_unreachable("nas", "boom", cooldown=0)
 checks["once the wait is over it is asked again"] = (
     hosts.unreachable_for("nas")[0] == 0.0)
@@ -56,7 +76,7 @@ _src = open(os.path.join(os.path.dirname(__file__), "..",
 _view = _src[_src.index("def _host_views"):]
 _view = _view[:_view.index("\n        def ", 10)]
 checks["the page asks the memory before it probes"] = (
-    _view.index("unreachable_for") < _view.index("_host.backend.ps"))
+    _view.index("unreachable_for") < _view.index("backend.ps"))
 checks["…and clears it when the host answers"] = ("mark_reachable" in _view)
 checks["…and records the failure it just had"] = ("mark_unreachable" in _view)
 
