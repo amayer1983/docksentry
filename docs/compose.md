@@ -14,9 +14,15 @@ This is the exact path Compose itself would take, so the service comes back defi
 
 ## Requirements
 
-The Compose file has to be readable from inside the Docksentry container **at the same absolute path it has on the host**. Docksentry takes that path out of the container's own `com.docker.compose.project.config_files` label and opens exactly it — there is nothing to guess from about where you mounted it.
+Docksentry takes the path out of the container's own `com.docker.compose.project.config_files` label and opens **exactly that path** inside its own container. So the rule is always the same, and it has nothing to do with where the files sit on your host:
 
-So mount the directory onto itself:
+```
+docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' <container>
+```
+
+Whatever that prints has to resolve inside Docksentry. Mount the host directory that holds your Compose files onto it.
+
+**If you ran `docker compose` yourself**, the label holds a host path, so the mount is the directory onto itself:
 
 ```yaml
 volumes:
@@ -25,13 +31,13 @@ volumes:
   - /home/you/stacks:/home/you/stacks:ro
 ```
 
-`- /home/you/stacks:/stacks:ro` does not work. The label still reads `/home/you/stacks/docker-compose.yml`, and that path does not exist inside the container — so the file counts as unreachable and the rebuild path is taken instead.
+**If a stack manager created it** — Portainer, Dockge, Dockhand — the label holds a path inside *that* container, which does not exist on your host at all. The left side is then your host directory and the right side is the manager's path:
 
-To see which path a container reports:
+```yaml
+  - /share/Container/Dockhand/stacks:/opt/stacks:ro
+```
 
-```
-docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' <container>
-```
+What does not work in either case is choosing the container-side path yourself. `- /home/you/stacks:/stacks:ro` leaves the label reading `/home/you/stacks/docker-compose.yml`, which still does not exist inside Docksentry — so the file counts as unreachable and the rebuild path is taken instead.
 
 ## When the Compose file can't be read
 

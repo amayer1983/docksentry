@@ -858,7 +858,7 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ 这是一个 Compose 容器，但 Docksentry 内部无法访问 `{file}` — 它是用 `docker run` 从 inspect 数据重建的，而不是 `docker compose up`。请把该目录挂载到 Docksentry 容器中，以便走 Compose 路径。",
+  "compose_fallback": "ℹ️ 这是一个 Compose 容器，但 Docksentry 内部无法访问 `{file}` — 它是用 `docker run` 从 inspect 数据重建的，而不是 `docker compose up`。请把该目录挂载到 Docksentry 容器中，以便走 Compose 路径。`docker compose up`. Docksentry 会在自己的容器内打开这个确切路径 — 请挂载你的 Compose 目录，使 `{file}` 能在那里被找到，无论它在宿主机上叫什么。",
   "compose_fallback_managed": "ℹ️ `{file}` 是 {manager} 容器内部的路径，不在宿主机上——所以 Docksentry 找不到它。把 {manager} 的数据目录挂载到 Docksentry 容器的 `{mount}`（路径必须一致），Compose 方式就会重新生效。",
   "compose_fallback_lost": "⚠️ 重建时并非一切都保留下来 — 你的 Compose 文件里的这些设置在新容器上没有了：{fields}。",
   "compose_fallback_remote": "ℹ️ 这是 `{host}` 上的 Compose 容器，而 Compose 文件只能在 Docksentry 自己运行的机器上读取 — 所以它是用 `docker run` 从 inspect 数据重建的。",

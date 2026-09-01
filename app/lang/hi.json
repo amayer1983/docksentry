@@ -858,7 +858,7 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ यह एक Compose कंटेनर है, लेकिन Docksentry के अंदर से `{file}` तक पहुँच नहीं है — इसे `docker compose up` के बजाय inspect डेटा से `docker run` द्वारा फिर से बनाया गया। Compose पथ उपयोग करने के लिए उस डायरेक्टरी को Docksentry कंटेनर में माउंट करें।",
+  "compose_fallback": "ℹ️ यह एक Compose कंटेनर है, लेकिन Docksentry के अंदर से `{file}` तक पहुँच नहीं है — इसे `docker compose up` के बजाय inspect डेटा से `docker run` द्वारा फिर से बनाया गया। Compose पथ उपयोग करने के लिए उस डायरेक्टरी को Docksentry कंटेनर में माउंट करें।`docker compose up`. Docksentry उसी पथ को अपने कंटेनर के भीतर खोलता है — अपनी Compose डायरेक्टरी इस तरह माउंट करें कि `{file}` वहाँ मिल जाए, होस्ट पर उसका नाम चाहे जो हो.",
   "compose_fallback_managed": "ℹ️ `{file}` होस्ट पर नहीं, {manager} के भीतर का पथ है — इसीलिए Docksentry उसे नहीं पाता। {manager} की डेटा डायरेक्टरी को Docksentry कंटेनर में ठीक `{mount}` पर माउंट करें, तब Compose पथ फिर से उपयोग होगा।",
   "compose_fallback_lost": "⚠️ दोबारा बनाने में सब कुछ नहीं बचा — आपकी Compose फ़ाइल की ये सेटिंग्स नए कंटेनर पर नहीं हैं: {fields}।",
   "compose_fallback_remote": "ℹ️ यह `{host}` पर एक Compose कंटेनर है, और Compose फ़ाइल केवल उसी मशीन पर पढ़ी जा सकती है जिस पर Docksentry खुद चल रहा है — इसलिए इसे inspect डेटा से `docker run` के साथ दोबारा बनाया गया।",

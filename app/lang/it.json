@@ -858,7 +858,7 @@
   "web_label_card_title": "Instance label",
   "web_label_card_intro": "Prefixed to every message on every channel — Telegram, Discord, e-mail, ntfy, Gotify, Matrix, Apprise and webhooks alike. Set it when more than one Docksentry reports into the same place, so you can tell which machine is talking.",
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
-  "compose_fallback": "ℹ️ È un container Compose, ma `{file}` non è raggiungibile da Docksentry — è stato ricostruito dai dati di inspect con `docker run` invece che con `docker compose up`. Monta quella cartella nel container Docksentry per usare il percorso Compose.",
+  "compose_fallback": "ℹ️ È un container Compose, ma `{file}` non è raggiungibile da Docksentry — è stato ricostruito dai dati di inspect con `docker run` invece che con `docker compose up`. Docksentry apre esattamente quel percorso dentro il proprio container — monta la tua directory Compose in modo che `{file}` sia raggiungibile lì, comunque si chiami sull'host.",
   "compose_fallback_managed": "ℹ️ `{file}` è un percorso all'interno di {manager}, non sull'host: per questo Docksentry non lo trova. Monta la directory dei dati di {manager} nel container Docksentry esattamente su `{mount}` e il percorso Compose tornerà a essere usato.",
   "compose_fallback_lost": "⚠️ Non tutto è sopravvissuto alla ricostruzione — queste impostazioni del tuo file Compose mancano sul nuovo container: {fields}.",
   "compose_fallback_remote": "ℹ️ Questo è un container Compose su `{host}`, e un file Compose è leggibile solo sulla macchina su cui gira Docksentry — perciò è stato ricostruito dai suoi dati di inspect con `docker run`.",
