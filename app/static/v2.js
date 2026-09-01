@@ -147,7 +147,10 @@
             if (!hostSel.options.length) {
                 hostSel.innerHTML = '<option value="">' + esc(L.host) + ': *</option>' +
                     S.hosts.map(function (h) {
-                        return '<option value="' + esc(h.name) + '">' + esc(h.name) + '</option>';
+                        // A host we could not reach still belongs in the
+                        // list, but must not read as an empty one.
+                        return '<option value="' + esc(h.name) + '">' +
+                            esc(h.name) + (h.unreachable ? ' \u26a0' : '') + '</option>';
                     }).join('');
                 hostSel.hidden = false;
             }

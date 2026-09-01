@@ -70,6 +70,14 @@ def container_rows(views, host_key, updating_label=None):
     """
     rows = []
     for view in views:
+        # A host that could not be reached has no rows and no `host` key —
+        # the status page already renders it as a line rather than a
+        # failure (web_ui `_host_views`). This read `view["host"]`
+        # unconditionally, so one dead host took the whole V2 status
+        # document down with a KeyError, on exactly the multi-host
+        # installs where a host being down is normal.
+        if view.get("unreachable"):
+            continue
         host = view["host"]
         pending = set(view["pending_names"])
         pinned = set(view["pinned"])
@@ -139,6 +147,14 @@ def payload(views, host_key, stats=None, can=None, updating_label=None):
     rows = container_rows(views, host_key, updating_label)
     hosts = []
     for v in views:
+        if v.get("unreachable"):
+            # Named, not dropped: a host that vanishes from the list looks
+            # like one nobody configured, and the reader goes hunting in
+            # the wrong place.
+            hosts.append({"name": v["unreachable"], "containers": 0,
+                          "unreachable": True,
+                          "reason": v.get("reason", "")})
+            continue
         hosts.append({"name": v["host"],
                       "containers": len(v["containers"])})
     return {
