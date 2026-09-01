@@ -19,6 +19,9 @@ Its state keys stay unprefixed, so existing installs need no migration.
 Pure standard library, like the rest of the project.
 """
 
+import threading
+import time
+
 from container_backend import RemoteBackend, get_backend, resolve_cli
 from container_store import LOCAL_HOST, HostScopedStore
 from update_checker import UpdateChecker
@@ -241,3 +244,69 @@ def split_host_target(text):
         target = ALL_HOSTS if name == "all" else name
         return " ".join(parts[:i] + parts[i + 1:]).strip(), target
     return (text or "").strip(), None
+
+
+# one from paying it again, and nothing anywhere remembered that the
+# host had just failed: the status page walked its hosts on EVERY
+# request, so a single dead host cost the page ten seconds per reload,
+# per `/api/status` poll, and per Prometheus scrape — for a machine we
+# had already found unreachable a second earlier.
+#
+# So we remember, briefly. Not a verdict on the host — a note that says
+# "asked just now, got nothing, do not ask again for a moment". Short
+# enough that a host coming back is noticed within a minute, long
+# enough that reloading a page does not re-run the whole wait.
+
+#: How long a host that failed to answer is skipped before we try it
+#: again. Short on purpose: this trades at most this much staleness for
+#: not making every reader wait on the same dead machine.
+UNREACHABLE_COOLDOWN = 60.0
+
+_unreachable = {}
+_unreachable_lock = threading.Lock()
+
+
+def mark_unreachable(name, reason, *, cooldown=UNREACHABLE_COOLDOWN):
+    """Remember that `name` just failed, with the CLI's own words."""
+    if not name:
+        return
+    with _unreachable_lock:
+        _unreachable[name] = (time.monotonic() + cooldown, reason or "")
+
+
+def mark_reachable(name):
+    """Forget any failure for `name` — it answered."""
+    if not name:
+        return
+    with _unreachable_lock:
+        _unreachable.pop(name, None)
+
+
+def unreachable_for(name):
+    """`(seconds_left, reason)` while `name` is still being skipped,
+    `(0.0, "")` once it is due for another try.
+
+    Callers show the remembered reason rather than inventing one, and
+    say how long until the retry — a cached failure that does not admit
+    it is cached is exactly the kind of message that sends someone
+    looking in the wrong place.
+    """
+    if not name:
+        return 0.0, ""
+    with _unreachable_lock:
+        entry = _unreachable.get(name)
+        if entry is None:
+            return 0.0, ""
+        until, reason = entry
+        left = until - time.monotonic()
+        if left <= 0:
+            del _unreachable[name]
+            return 0.0, ""
+        return left, reason
+
+
+def forget_unreachable():
+    """Drop the whole memory — for tests, and for a config reload that
+    may have changed the endpoints out from under it."""
+    with _unreachable_lock:
+        _unreachable.clear()

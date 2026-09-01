@@ -509,6 +509,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             disagreed with its own table.
             """
             from container_store import LOCAL_HOST
+            import hosts as _hosts_mod
             if store_for is None:
                 store_for = lambda h: store  # noqa: E731 — local store only
             if multi is None:
@@ -518,6 +519,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                        host_backend=backend)]
             for _host in (multi or ()):
                 if _host.is_local:
+                    continue
+                # A host we asked a moment ago and got nothing from is not
+                # asked again straight away. One dead endpoint cost ten
+                # seconds of every single page load — measured at 13.6s for
+                # a status page with one host down, against 0.08s for a page
+                # that does not build this list. Reloading to see whether it
+                # came back is exactly what a reader does, and each reload
+                # paid the wait again.
+                _left, _cached = _hosts_mod.unreachable_for(_host.name)
+                if _left > 0:
+                    views.append({"unreachable": _host.name,
+                                  "endpoint": _host.endpoint,
+                                  "reason": _cached,
+                                  "retry_in": int(_left),
+                                  "contexts": []})
                     continue
                 try:
                     # Probe before listing: a `ps` that exits non-zero comes
@@ -529,6 +545,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     if _probe.returncode != 0:
                         raise OSError((_probe.stderr or "").strip() or "ps failed")
                     _remote = self._containers_on(_host.backend, timeout=10)
+                    _hosts_mod.mark_reachable(_host.name)
                 except Exception as _err:
                     # One dead host is a line in the table, not a broken page.
                     #
@@ -558,9 +575,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # is the one a reader would never guess: they check
                     # cables and firewalls instead. See `_why` for why the
                     # last line is the one worth showing.
+                    _reason = self._why(_err)
+                    _hosts_mod.mark_unreachable(_host.name, _reason)
                     views.append({"unreachable": _host.name,
                                   "endpoint": _host.endpoint,
-                                  "reason": self._why(_err),
+                                  "reason": _reason,
                                   "contexts": self._docker_contexts()})
                     continue
                 views.append(self._status_view(_host.name, _host.store,
