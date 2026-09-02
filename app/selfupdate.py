@@ -97,9 +97,11 @@ class Context:
         keyboard is Telegram's alone and nothing in here sends one."""
         self._reply(text)
 
-    def tell(self, text):
-        """An event everyone watching should see, whoever started it."""
-        self._say(text)
+    def tell(self, text, skip=()):
+        """An event everyone watching should see, whoever started it —
+        minus any channel in `skip`, for the one case where the event
+        itself is the thing being kept private (#63)."""
+        self._say(text, skip=skip)
 
     def with_reply(self, reply):
         """A copy of this context whose replies go back to `reply`.
@@ -256,7 +258,17 @@ def run(ctx, target=None, reply_to=None):
         capture_output=True, text=True, timeout=300
     )
     if pull.returncode != 0:
-        ctx.send_message(ctx.t("selfupdate_failed_pull", error=pull.stderr[:200]))
+        msg = ctx.t("selfupdate_failed_pull", error=pull.stderr[:200])
+        # "pull access denied" is the daemon's one answer for two very
+        # different situations, and Docker's own words fit neither well:
+        # an image built here has nothing to pull from, and a private
+        # registry simply wants credentials. Naming one of them would be
+        # a confident guess; naming both is the honest help — whoever
+        # reads it knows which of the two they are.
+        _low = (pull.stderr or "").lower()
+        if "access denied" in _low or "repository does not exist" in _low:
+            msg += "\n" + ctx.t("selfupdate_pull_denied_hint", image=own_image)
+        ctx.send_message(msg)
         return
 
     # Check if image actually changed
@@ -318,7 +330,11 @@ def run(ctx, target=None, reply_to=None):
     # everyone watching wants to know regardless of who asked. This is one
     # of exactly two messages the pre-extraction code fanned out by hand
     # (#19); the other is the scheduled path's equivalent below.
-    ctx.tell(msg)
+    # …except in the Discord channel when the request was private: the
+    # restart notice would publish exactly what the ephemeral answer was
+    # hiding, and that would make the boot-side fix pointless (#63).
+    from notifier import DISCORD_CHANNELS
+    ctx.tell(msg, skip=DISCORD_CHANNELS if reply_to else ())
 
     # Record in history BEFORE _do_selfupdate kills us — otherwise the
     # entry never gets written (#13).

@@ -39,6 +39,8 @@ import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
+import selfupdate  # noqa: E402
+
 import discord_bot                                              # noqa: E402
 from container_store import atomic_write_json                   # noqa: E402
 from i18n import get_translator                                 # noqa: E402
@@ -139,15 +141,15 @@ tmp = tempfile.mkdtemp()
 pub_path = os.path.join(tmp, "public.json")
 stub = types.SimpleNamespace(
     config=types.SimpleNamespace(selfupdate_marker_file=pub_path))
-TelegramBot._write_selfupdate_marker(stub, "repo:latest")
+selfupdate.write_marker(stub, "repo:latest")
 public_mark = json.load(open(pub_path))
 checks["a self-update nobody asked for privately writes the marker "
        "it always wrote"] = set(public_mark) == {"image", "ts"}
 
 priv_path = os.path.join(tmp, "private.json")
 stub.config.selfupdate_marker_file = priv_path
-TelegramBot._write_selfupdate_marker(stub, "repo:latest",
-                                     reply_to={"discord_user": "4711"})
+selfupdate.write_marker(stub, "repo:latest",
+                        reply_to={"discord_user": "4711"})
 private_mark = json.load(open(priv_path))
 checks["a private one records who to answer once we are back"] = (
     private_mark.get("reply_to") == {"discord_user": "4711"}
@@ -226,50 +228,54 @@ checks["the notifier can withhold one message from named channels"] = (
     got(n3, "discordbot") == [] and got(n3, "discord") == []
     and got(n3, "ntfy") == ["secret"])
 
-locked = TELEGRAM_SRC.split("def _selfupdate_locked(")[1].split("\n    def ")[0]
+import selfupdate as _su_mod
+SELFUPDATE_SRC = open(_su_mod.__file__).read()
+locked = SELFUPDATE_SRC.split("def run(")[1].split("\ndef ")[0]
 checks["the pre-restart 'restarting' notice skips them as well"] = (
     "skip=DISCORD_CHANNELS if reply_to else ()" in locked)
 
 
 # ── 5. the route survives the queue ───────────────────────────────────
 # A /selfupdate that waits behind a container batch is still the one that
-# was asked for privately when it finally runs.
-class QueueBot(TelegramBot):
-    def __init__(self):
-        self.engine = types.SimpleNamespace(_queued_selfupdate=None)
-        self.calls = []
+# was asked for privately when it finally runs. The queue is drained by
+# the neutral module now, so that is the seam.
+_real_start = selfupdate.start
+started = []
+selfupdate.start = lambda ctx, target=None, reply_to=None: started.append(
+    (target, reply_to))
+try:
+    qctx = types.SimpleNamespace(
+        _queued_selfupdate=("1.2.3", {"discord_user": "4711"}),
+        send_message=lambda *a, **k: None,
+        t=lambda key, **kw: key)
+    selfupdate.run_queued(qctx)
+    checks["a queued self-update is still private when it finally runs"] = (
+        started == [("1.2.3", {"discord_user": "4711"})])
 
-    def send_message(self, text, **kw):
-        pass
-
-    def t(self, key, **kw):
-        return key
-
-    def _handle_selfupdate(self, target=None, reply_to=None):
-        self.calls.append((target, reply_to))
-
-
-qb = QueueBot()
-qb._queued_selfupdate = ("1.2.3", {"discord_user": "4711"})
-qb._run_queued_selfupdate()
-checks["a queued self-update is still private when it finally runs"] = (
-    qb.calls == [("1.2.3", {"discord_user": "4711"})])
-
-qb2 = QueueBot()
-qb2._queued_selfupdate = (None,)
-qb2._run_queued_selfupdate()
-checks["…and an old one-item queue entry still runs, publicly"] = (
-    qb2.calls == [(None, None)])
+    started.clear()
+    qctx2 = types.SimpleNamespace(
+        _queued_selfupdate=(None,),
+        send_message=lambda *a, **k: None,
+        t=lambda key, **kw: key)
+    selfupdate.run_queued(qctx2)
+    checks["…and an old one-item queue entry still runs, publicly"] = (
+        started == [(None, None)])
+finally:
+    selfupdate.start = _real_start
 
 
 # ── 6. Discord's /selfupdate calls something that exists ──────────────
-# It called `bot.check_selfupdate(...)`, which TelegramBot has never had:
+# It called `bot.check_selfupdate(...)`, a name TelegramBot has never had:
 # every `/selfupdate` from Discord raised AttributeError and answered
-# "Something went wrong" after telling the user it had started.
+# "Something went wrong" after telling the user it had started. The work
+# lives in the neutral module now, so what this guards is that the
+# command reaches it — and still records a route only when it should.
 cmd = DISCORD_SRC.split("def _cmd_selfupdate(")[1].split("\n    def ")[0]
 called = sorted(set(part.split("(")[0] for part in cmd.split("bot.")[1:]))
-checks["/selfupdate on Discord calls methods TelegramBot actually "
-       "has"] = bool(called) and all(hasattr(TelegramBot, m) for m in called)
+checks["/selfupdate on Discord calls nothing TelegramBot lacks"] = all(
+    hasattr(TelegramBot, m) for m in called)
+checks["…and hands the work to the module that does it"] = (
+    "selfupdate.start" in cmd)
 checks["…and only records a reply route when replies are private"] = (
     "self._replies_private()" in cmd)
 

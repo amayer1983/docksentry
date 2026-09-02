@@ -56,8 +56,15 @@ class Broadcast:
         except Exception as e:
             self.log(f"Could not fan out an announcement: {e}")
 
-    def tell(self, text):
+    def tell(self, text, skip=()):
         """Every channel, and not silenced by quiet hours.
+
+        `skip` names channels this one message must not reach. It exists
+        for a single case: a self-update somebody asked for privately
+        announces its own restart, and posting that in the Discord
+        channel publishes exactly what the private reply was hiding
+        (#63, @NotRetarded). Every other channel is the operator's own
+        and keeps it.
 
         `announce` marks its Telegram message as unattended, which is
         what quiet hours suppress — right for a notification nobody
@@ -77,6 +84,6 @@ class Broadcast:
         notifier = self.notifier
         try:
             if notifier is not None and notifier.has_channels():
-                notifier.send_message(text)
+                notifier.send_message(text, skip=skip)
         except Exception as e:
             self.log(f"Could not fan out a report: {e}")

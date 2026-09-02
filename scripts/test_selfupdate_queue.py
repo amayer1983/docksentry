@@ -34,7 +34,7 @@ def stub_body(fn):
     so the seam to stand in for is that function. `fn` is called with the
     target only — the ctx is the bot, which every section already holds.
     """
-    selfupdate.run = lambda ctx, target=None: fn(target)
+    selfupdate.run = lambda ctx, target=None, reply_to=None: fn(target)
 
 
 def make_bot():

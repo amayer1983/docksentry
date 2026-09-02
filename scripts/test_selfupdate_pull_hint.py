@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """A denied pull says which of the two things it probably is.
 
+The pull lives in the neutral `selfupdate` module since the core was
+pulled out of the bots, so that is the file this reads.
+
 `pull access denied ... repository does not exist` is the daemon's single
 answer to two unrelated situations: an image built on this machine, which
 has nothing to pull from at all, and a private registry that simply wants
@@ -21,8 +24,8 @@ import i18n  # noqa: E402
 checks = {}
 
 src = open(os.path.join(os.path.dirname(__file__), "..",
-                        "app", "telegram_bot.py")).read()
-i = src.index('self.t("selfupdate_failed_pull"')
+                        "app", "selfupdate.py")).read()
+i = src.index('ctx.t("selfupdate_failed_pull"')
 block = src[i - 400:i + 700]
 
 checks["the hint is only added when the pull was denied"] = (

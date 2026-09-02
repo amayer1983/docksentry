@@ -31,7 +31,7 @@ checks = {}
 seam, tg, dc = [], [], []
 base = selfupdate.Context(engine=types.SimpleNamespace(),
                           config=types.SimpleNamespace(language="en"),
-                          say=seam.append)
+                          say=lambda t, skip=(): seam.append(t))
 
 # ── a run started from Telegram ──────────────────────────────────────
 c = base.with_reply(tg.append)
@@ -69,7 +69,7 @@ checks["Discord passes its own channel as the reply"] = (
 # The restart event must NOT be a reply — it concerns everyone.
 ssrc = open(os.path.join(APP, "selfupdate.py"), encoding="utf-8").read()
 checks["the 'restarting' event goes through tell(), not the reply"] = (
-    "ctx.tell(msg)" in ssrc)
+    "ctx.tell(msg" in ssrc and "ctx.reply(msg" not in ssrc)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

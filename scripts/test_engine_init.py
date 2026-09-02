@@ -115,7 +115,7 @@ class Bot(telegram_bot.TelegramBot):
 # test still passed, but because the REAL body ran against a bot with no
 # config, which is not what it means to assert.
 import selfupdate  # noqa: E402
-selfupdate.run = lambda ctx, target=None: (_ for _ in ()).throw(
+selfupdate.run = lambda ctx, target=None, reply_to=None: (_ for _ in ()).throw(
     RuntimeError("pull failed"))
 
 

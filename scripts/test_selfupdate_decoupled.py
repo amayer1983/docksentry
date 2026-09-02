@@ -155,7 +155,10 @@ class Channels:
         self.sent = []
     def has_channels(self):
         return True
-    def send_message(self, text):
+    def send_message(self, text, skip=()):
+        # `skip` is the seam that lets a private self-update keep its
+        # restart notice out of the Discord channel (#63); this stand-in
+        # has no channels to skip, so it only has to accept it.
         self.sent.append(text)
 
 tg, others = Telegram(), Channels()
@@ -164,7 +167,7 @@ ctx = selfupdate.Context(Engine(), types.SimpleNamespace(language="en"),
                          seam.tell)
 
 _real_run = selfupdate.run
-selfupdate.run = lambda c, target=None: c.send_message(
+selfupdate.run = lambda c, target=None, reply_to=None: c.send_message(
     c.t("selfupdate_up_to_date"))
 try:
     selfupdate.start(ctx, None)

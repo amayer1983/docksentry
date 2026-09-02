@@ -46,6 +46,7 @@ def make_engine(hosts):
     e._update_queue = []
     e._update_queue_lock = threading.Lock()
     e._queued_selfupdate = None
+    e._updating = {}
     e._swap_in_flight = False
     e.notifier = None
     e.hosts = hosts

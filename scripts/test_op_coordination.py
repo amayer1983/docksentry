@@ -96,7 +96,7 @@ def main():
     # The body moved into the neutral `selfupdate` module (#63), so the
     # seam to stand in for is `selfupdate.run(ctx, target)`, not a method
     # on the bot.
-    selfupdate.run = lambda ctx, target=None: ran.append(target)
+    selfupdate.run = lambda ctx, target=None, reply_to=None: ran.append(target)
     bot3._queued_selfupdate = ("1.9.9",)
     bot3.cleanup_guarded(FakeChecker())
     checks["queued selfupdate runs after cleanup"] = ran == ["1.9.9"]
