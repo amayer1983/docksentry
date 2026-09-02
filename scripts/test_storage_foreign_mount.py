@@ -64,6 +64,30 @@ checks["a mount inside the data dir is ours by definition"] = (
 checks["nothing to look at yields nothing, not a guess"] = (
     storage_check.analyse(None) == [])
 
+# 2.17.6 shipped with the new default path on the suspect list, and the
+# image declares a VOLUME there — so Docker created an anonymous volume at
+# `/docksentry` on every install whose data sat at `/data`, and the check
+# told all of them their data directory was wrong. Worse, the mount it
+# offered was that anonymous volume's own path: the one place the data
+# really would have been thrown away (#2, @famewolf, three hosts, hours
+# after release).
+ANON_NAME = "7" * 64
+OURS_ANON = {"Type": "volume", "Name": ANON_NAME,
+             "Source": "/var/lib/docker/volumes/7777/_data",
+             "Destination": "/docksentry"}
+THEIR_BIND = {"Type": "bind", "Source": "/mnt/dockerdata/config",
+              "Destination": "/data"}
+
+checks["the volume our own image creates is not an accusation"] = (
+    kinds([THEIR_BIND, OURS_ANON], "/data") == [])
+checks["an anonymous volume is never offered as the mount to use"] = (
+    kinds([dict(OURS_ANON, Destination="/config"), HEALTHY]) == [])
+checks["…while a real bind at the same place still is"] = (
+    "wrong_mount" in kinds([{"Type": "bind", "Source": "/mnt/x",
+                             "Destination": "/config"}, HEALTHY]))
+checks["the current default path is exempt like the old one"] = (
+    kinds([THEIR_BIND, dict(OURS_ANON, Name="named_vol")], "/data") == [])
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

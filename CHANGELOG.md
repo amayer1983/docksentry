@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.7] - 2026-09-01
+
+One bad warning, out within hours of 2.17.6. @famewolf saw it on all three of his hosts.
+
+### Fixed
+- **Docksentry told working installs their data directory was wrong, and the fix it offered would have destroyed it.** 2.17.6 moved the default data directory to `/docksentry` and declared a `VOLUME` there — so Docker creates an anonymous volume at that path on every install whose data sits somewhere else, which is every install that existed before. `/docksentry` was also on the list of paths that look like a misplaced data directory, so the storage check flagged our own volume and announced "your data directory is not where you think it is" to people whose data was exactly where they think it is.
+
+  The mount it suggested was that anonymous volume's own path — the one place the data really would be thrown away on the next recreate, which is what the same message warns about two lines further up. Nobody should follow that advice; nobody has to any more.
+
+  Two rules now: the current data directory is never a suspect, the same way the old one already wasn't. And an anonymous volume is never treated as a data directory somebody meant — Docker created it, not the user, so its path can never be the answer. The genuine case this check exists for (#2, @famewolf, a bind at `/app/data` that nothing read) is still caught, with the same message.
+
 ## [2.17.6] - 2026-08-31
 
 The release where several things stopped being quiet about themselves.
