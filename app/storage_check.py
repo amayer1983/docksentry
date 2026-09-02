@@ -73,6 +73,11 @@ def read_mounts(backend, own_name):
     return mounts if isinstance(mounts, list) else None
 
 
+#: Where our data used to live before it moved off a name half the
+#: ecosystem uses for its own.
+LEGACY_DATA_DIR = "/data"
+
+
 def analyse(mounts, data_dir="/data"):
     """Findings about where the data directory really lives.
 
@@ -105,6 +110,15 @@ def analyse(mounts, data_dir="/data"):
         # /data/compose is a documented mount and must not be flagged.
         if dest.startswith(data_dir + "/"):
             continue
+        # `/data` is where our data used to live and where half the
+        # ecosystem keeps its own — Portainer's stacks among them. Once
+        # our directory moved off it, the "looks like a data dir"
+        # heuristic started accusing whatever somebody had deliberately
+        # mounted there, and told them to make it Docksentry's database.
+        # A mount at the old path is either ours from before or plainly
+        # somebody else's; neither is a finding.
+        if dest == LEGACY_DATA_DIR:
+            continue
         if (posixpath.basename(dest).lower() in _MEANT_AS_DATA
                 or dest == "/app/data"):
             findings.append({
@@ -114,6 +128,14 @@ def analyse(mounts, data_dir="/data"):
                 "data_dir": data_dir,
             })
 
+    # A mount that merely *looks* like a data directory is only evidence
+    # of anything when ours is actually in trouble. This used to fire on
+    # its own, and once the data directory moved off `/data` it started
+    # accusing whatever the user had mounted there — telling somebody who
+    # had deliberately mounted Portainer's volume at `/data` to make it
+    # Docksentry's database, which would have buried our state inside
+    # another tool's volume. If our own directory is on a named mount, it
+    # is persisted, and where anything else sits is not our business.
     if own is None:
         findings.append({"kind": "unmounted", "data_dir": data_dir})
     elif (own.get("Type") == "volume"

@@ -121,15 +121,17 @@ services:
       - TZ=Europe/Berlin
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - docksentry_data:/data
+      - docksentry_data:/docksentry   # already on /data? leave it — see docs/configuration.md
       # Optional: mount your compose project directories so Docksentry
       # can call `docker compose up` for compose-managed containers.
       # When not mounted (or path doesn't match), Docksentry falls back
       # to a standalone `docker run` recreate from the container's
       # inspect data — works for almost everything but loses some
       # compose-only metadata. See "Compose-managed containers" below.
-      # - /opt/stacks:/opt/stacks:ro
-      # - /mnt/dockerdata:/mnt/dockerdata:ro
+      # The path has to match the compose file's label EXACTLY — see
+      # "Compose-managed containers" below, and check the label first.
+      # - /opt/stacks:/opt/stacks:ro              # started on the host
+      # - /share/stacks:/app/data/stacks:ro       # created by a stack manager
     security_opt:
       - no-new-privileges:true
 
@@ -156,12 +158,29 @@ something looks wrong there, say so in the issues.
 
 ### Compose-managed containers
 
-When a container was started by `docker compose`, its inspect data records the **host-side path** of the compose file (e.g. `/opt/stacks/myapp/docker-compose.yml`). Docksentry runs inside its own container and can't see that path unless you mount it.
+When a container was started by `docker compose`, Docker records the path of the compose file on the container — as **whatever created the stack saw it**. That is not always a host path, and this is where most of the confusion comes from:
+
+- You ran `docker compose` **on the host** → the label holds a host path, e.g. `/opt/stacks/myapp/docker-compose.yml`. Mount that directory at the same path and you are done.
+- A **stack manager created it** → the label holds *its* internal path. Portainer records `/data/compose/<id>/docker-compose.yml`, Dockhand and Dockge-style managers `/app/data/stacks/...`. Neither of those exists on your host.
+
+Docksentry only ever gets that one string, and looks for the file at exactly that path inside its own container. So check the label before you mount anything:
+
+```bash
+docker inspect <container> --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+```
+
+Then mount your stacks directory so that this exact path resolves inside Docksentry. If the label says `/app/data/stacks/QNAP/dozzle/compose.yaml` and your stacks live at `/share/stacks`, that is:
+
+```yaml
+- /share/stacks:/app/data/stacks:ro
+```
+
+Note that everything after `stacks/` in the label — `QNAP/dozzle/…` — stays *inside* the mount. One mount covers every stack the manager holds.
 
 | Mount setup | Update path |
 |---|---|
 | Compose dirs mounted at the same paths inside Docksentry | `docker compose pull` + `docker compose up -d --no-deps <service>` (preserves all compose semantics) |
-| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, network aliases, fixed IPs, MAC, resource limits, healthcheck overrides, etc. |
+| Compose dirs not mounted | Falls back to standalone `docker run` recreate from inspect data — preserves capabilities, devices, sysctls, mounts, env, ports, labels, network mode, network aliases, fixed IPs, MAC, resource limits, etc. A short list of things it genuinely cannot reproduce is in [the Compose guide](docs/compose.md#when-the-compose-file-cant-be-read) — the healthcheck is on it. |
 
 The standalone fallback is comprehensive. As of v1.19.0 it covers everything `_build_run_args()` knows to read from `docker inspect`:
 
@@ -169,7 +188,7 @@ The standalone fallback is comprehensive. As of v1.19.0 it covers everything `_b
 - **Capabilities / devices / sysctls / tmpfs / extra-hosts / DNS / security-opts** (Gluetun-style stacks).
 - **Resource limits**: memory, CPU, pids, oom, blkio, ulimits, group-add.
 - **Lifecycle**: stop-signal, stop-timeout, auto-remove (when no restart policy).
-- **Process config**: working-dir, domainname, tty, stdin, healthcheck override.
+- **Process config**: working-dir, domainname, tty, stdin, and the healthcheck — except in the few shapes `docker run` has no flag for, which Docksentry names in the update message. [Which ones, and why.](docs/compose.md#when-the-compose-file-cant-be-read)
 - **Image-default-aware Cmd / Entrypoint** — only restores container-level Cmd/Entrypoint when they actually differ from the new image's defaults, so image updates that change CMD aren't locked to the old value.
 
 If you have **compose-specific orchestration** (depends_on chains, profiles, multiple compose files merged via `-f`, project-level network options beyond defaults), mounting your compose dirs is still the cleanest path to keep those intact.
@@ -206,7 +225,7 @@ services:
     image: amayer1983/docksentry:latest
     volumes:
       - /run/podman/podman.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
     environment:
       - WEB_UI=true
       # ... rest of your config
@@ -225,7 +244,7 @@ services:
     image: amayer1983/docksentry:latest
     volumes:
       - /run/user/1000/podman/podman.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
     environment:
       - WEB_UI=true
 ```
@@ -337,7 +356,7 @@ These are the ones worth knowing on the first day. **[Every variable, with its d
 | `WEB_UI` | `false` | Turn the web interface on. Set this and you can do everything from a browser. |
 | `WEB_PORT` | `8080` | Port it listens on. |
 | `WEB_PASSWORD` | | Password for the web interface. Empty means no login — fine on a trusted LAN, not otherwise. |
-| `TZ` | `UTC` | Your timezone. Worth setting: every time Docksentry prints is this clock. |
+| `TZ` | `Europe/Berlin` | Your timezone. Worth setting: every time Docksentry prints is this clock. |
 | `CRON_SCHEDULE` | `0 18 * * *` | When it checks for updates. |
 | `LANGUAGE` | `en` | One of 16. |
 | `EXCLUDE_CONTAINERS` | | Containers to leave alone entirely, comma-separated. |
@@ -352,7 +371,7 @@ These are the ones worth knowing on the first day. **[Every variable, with its d
 
 > **Synology / NAS users:** If Docksentry shows 0 containers, add `DOCKER_API_VERSION=1.43` to your environment variables.
 
-> **Settings saved in the Web UI win over the environment.** Roughly half of these are stored in `/data/settings.json` once saved, and the saved file is applied on top of the environment on every start — so changing the compose file afterwards does nothing. Docksentry says so at startup when it happens. [The full list and both ways out are in the reference.](docs/configuration.md)
+> **Settings saved in the Web UI win over the environment.** Roughly half of these are stored in `settings.json` in the [data directory](docs/configuration.md#where-the-data-lives) once saved, and the saved file is applied on top of the environment on every start — so changing the compose file afterwards does nothing. Docksentry says so at startup when it happens. [The full list and both ways out are in the reference.](docs/configuration.md)
 
 ### Group / Topic setup
 

@@ -89,7 +89,7 @@ def main():
 
     # ── 3b. helper launched → lock deliberately kept ──
     bot3 = make_bot()
-    def fake_swap(target=None):
+    def fake_swap(target=None, reply_to=None):
         bot3._swap_in_flight = True
     stub_body(fake_swap)
     bot3._handle_selfupdate()
@@ -151,7 +151,7 @@ def main():
 
     # ── 5. queue survives an exception in the queued run ──
     bot7 = make_bot()
-    def boom(target=None):
+    def boom(target=None, reply_to=None):
         raise RuntimeError("swap exploded")
     stub_body(boom)
     bot7._queued_selfupdate = (None,)

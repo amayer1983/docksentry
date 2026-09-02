@@ -781,6 +781,24 @@ class ContainerMonitor:
                           for _, pct, name, _ in rows[:top]
                           if pct >= self.CPU_LIST_FLOOR)
 
+    def _cpu_quiet(self):
+        """`"50"` when the box was measurably idle, `""` when it was not
+        measured at all.
+
+        `_cpu_snapshot` returns "" for both, and the alert simply dropped
+        the CPU line — so two alerts about the same container, one with
+        the line and one without, look like the second one lost data
+        (#66, @NotRetarded, who read the gap as the history being
+        truncated). This is the missing third state: stats answered, and
+        nobody was above the floor. Returns the floor as a number so the
+        message can name it instead of sixteen translations hardcoding
+        it.
+        """
+        rows = self._stats_rows()
+        if not rows or max(pct for _, pct, _, _ in rows) >= self.CPU_FLOOR:
+            return ""
+        return f"{self.CPU_FLOOR:.0f}"
+
     def _label(self, name):
         """How this container is named in a message.
 
@@ -807,7 +825,8 @@ class ContainerMonitor:
         it is the monitor that knows how to render it. That keeps the
         watcher free of message formatting, which is the poller's job.
         """
-        return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot()}
+        return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot(),
+                "cpu_quiet": self._cpu_quiet()}
 
     def _resources_for(self, kind, name):
         """Who was holding memory and CPU at the moment this container died.
@@ -869,11 +888,23 @@ class ContainerMonitor:
         # to a fresh snapshot keeps the old behaviour wherever the watcher
         # is off, unavailable, or too late.
         rec = watcher.evidence(name) if watcher else ""
+        # Which moment the lists describe, recorded rather than assumed.
+        # With evidence they are the instant of death; without it they are
+        # this pass — the same pass `victim` above was read in, after the
+        # container came back. Both used to be labelled "at event time",
+        # so a restarting container's boot cost was presented as its state
+        # before the crash (#66, @NotRetarded: "Unifi-OS-Server itself at
+        # event time: 63.89MiB · 59%", which was the reboot, not the
+        # death). Stored as a plain word so the event log stays language-
+        # neutral and the web history can word the row the same way.
+        out["at"] = "death" if rec else "after"
         if not rec:
             rec = self._event_snapshot()
-        for k in ("mem", "cpu"):
+        for k in ("mem", "cpu", "cpu_quiet"):
             if rec.get(k):
                 out[k] = rec[k]
+        if not any(out.get(k) for k in ("mem", "cpu", "cpu_quiet")):
+            del out["at"]
         return out
 
     def _own_usage(self, name):
@@ -1008,14 +1039,26 @@ class ContainerMonitor:
                              state=resources["victim"])
         if resources.get("oom_flag"):
             msg += "\n" + t("monitor_oom_flag_" + resources["oom_flag"])
+        # The top lists and the victim line are two different moments, and
+        # saying so is the whole point of this suffix: with evidence the
+        # lists are the instant of death, without it they are the same
+        # pass the victim line came from. Events written before this
+        # carried no `at`, and were labelled for the moment of death —
+        # which is what the evidence path, the common one, actually took.
+        when = "" if resources.get("at", "death") == "death" else "_after"
         if resources.get("mem"):
-            msg += "\n" + t("monitor_top_memory", list=resources["mem"])
+            msg += "\n" + t("monitor_top_memory" + when, list=resources["mem"])
         # CPU only when something is actually contending for it. A
         # container starved of CPU misses its SIGTERM window and is
         # SIGKILLed with exit 137 — indistinguishable from an OOM kill
         # unless the alert says who was holding the processor.
         if resources.get("cpu"):
-            msg += "\n" + t("monitor_top_cpu", list=resources["cpu"])
+            msg += "\n" + t("monitor_top_cpu" + when, list=resources["cpu"])
+        # Idle is a reading too. Dropping the line entirely made a quiet
+        # host indistinguishable from a failed measurement (#66).
+        elif resources.get("cpu_quiet"):
+            msg += "\n" + t("monitor_top_cpu_quiet" + when,
+                            pct=resources["cpu_quiet"])
 
         # The first question after any death or health flip is "why?" —
         # attach the same log tail the update failures carry. Recovery
@@ -1040,10 +1083,19 @@ class ContainerMonitor:
                 tail = ""
             if tail:
                 msg += f"\nLast logs:\n```\n{tail}\n```"
+        # The return value used to be thrown away, so a refused send left
+        # no trace at all and nobody could tell afterwards whether the
+        # alert had gone out (#66, @NotRetarded). `False` means it did not:
+        # `None` is the deliberate silences — channel off, quiet hours,
+        # maintenance — and must stay quiet here too.
         try:
-            self.bot.send_message(msg, auto=True)
+            sent = self.bot.send_message(msg, auto=True)
         except Exception as e:
             print(f"Monitor notify error: {e}")
+            sent = False
+        if sent is False:
+            print(f"Monitor notify failed: the {kind} alert for {shown} did "
+                  f"not reach Telegram")
         notifier = getattr(self.bot, "notifier", None)
         if notifier and notifier.has_channels():
             try:

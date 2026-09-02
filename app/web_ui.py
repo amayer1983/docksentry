@@ -194,6 +194,20 @@ def _legend_word(label):
     return s[:1].upper() + s[1:]
 
 
+def _updating_label(t, version):
+    """Badge text while a container's update is actually running.
+
+    The yellow "update" badge means *available*, and it kept saying that
+    while the log already said the update was under way (#2, @LeeNX). One
+    helper so the table, the container page and the V2 list cannot word it
+    three ways. The target version is best-effort — it comes from the
+    remote image's OCI version label — so there is a wording for "we know
+    where this is going" and one for "we don't".
+    """
+    return (t("web_badge_updating", version=version) if version
+            else t("web_badge_updating_now"))
+
+
 def _icon_label(icon_key, label):
     """Return an inline SVG icon followed by a label, both inside a span."""
     return (f'<span class="icon-label">'
@@ -495,6 +509,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             disagreed with its own table.
             """
             from container_store import LOCAL_HOST
+            import hosts as _hosts_mod
             if store_for is None:
                 store_for = lambda h: store  # noqa: E731 — local store only
             if multi is None:
@@ -502,55 +517,66 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             views = [self._status_view(LOCAL_HOST, store_for(LOCAL_HOST),
                                        self._get_containers(), own_name,
                                        host_backend=backend)]
+            # One `ps -q` per host, and the hosts side by side. Measured
+            # against four managed hosts: an ssh endpoint cost 2.1 s of
+            # which 476 ms was a probe asking what the listing asks again,
+            # and the whole set ran one after another, so the page paid the
+            # sum. Now it pays the slowest one.
+            _todo = [h for h in (multi or ()) if not h.is_local]
+            _skip = {}
+            for _host in list(_todo):
+                _left, _cached = _hosts_mod.unreachable_for(_host.name)
+                if _left > 0:
+                    _skip[_host.name] = (_cached, int(_left))
+                    _todo.remove(_host)
+
+            def _fetch(_h):
+                """`(host, containers, error)` — never raises, so one dead
+                endpoint cannot take the others down with it."""
+                try:
+                    _p = _h.backend.ps(quiet=True, timeout=10)
+                    if getattr(_p, "returncode", 1) != 0:
+                        raise OSError((_p.stderr or "").strip() or "ps failed")
+                    _ids = [i for i in (_p.stdout or "").strip().split("\n") if i]
+                    return _h, self._containers_on(_h.backend, timeout=10,
+                                                   ids=_ids), None
+                except Exception as _e:
+                    return _h, None, _e
+
+            _results = {}
+            if _todo:
+                import concurrent.futures as _cf
+                with _cf.ThreadPoolExecutor(max_workers=min(8, len(_todo))) as _ex:
+                    for _h, _rem, _err in _ex.map(_fetch, _todo):
+                        _results[_h.name] = (_rem, _err)
+
             for _host in (multi or ()):
                 if _host.is_local:
                     continue
-                try:
-                    # Probe before listing: a `ps` that exits non-zero comes
-                    # back as an empty list, and reporting a dead host as
-                    # "no containers running" is worse than saying nothing.
-                    # The timeout is the other half — an endpoint that never
-                    # answers must not hang the page.
-                    _probe = _host.backend.ps(fmt="{{.Names}}", timeout=10)
-                    if _probe.returncode != 0:
-                        raise OSError((_probe.stderr or "").strip() or "ps failed")
-                    _remote = self._containers_on(_host.backend, timeout=10)
-                except Exception as _err:
-                    # One dead host is a line in the table, not a broken page.
-                    #
-                    # The endpoints come from DOCKER_HOSTS, typed by hand,
-                    # and a typo there is indistinguishable from a machine
-                    # that is down. Docker already knows the endpoints it
-                    # has been told about, so at the one moment somebody is
-                    # standing in front of "cannot reach nas", listing them
-                    # costs one command and may answer the question
-                    # outright. Only on failure — never as a second source
-                    # of hosts, which would be two places to keep in step.
-                    #
-                    # …and the CLI's own words go with it. Telegram and
-                    # Discord have always quoted them (`host_check_failed`);
-                    # this page threw them away and said "unreachable" for
-                    # every cause there is, which is the one word that fits
-                    # none of them. Measured against podman 4.9.3 over ssh,
-                    # the causes it flattened together were:
-                    #
-                    #   ssh: unable to authenticate, attempted methods
-                    #        [none publickey]              → wrong SSH key
-                    #   dial tcp …: connection refused     → nothing listening
-                    #   dial tcp: lookup …: no such host   → DNS / typo
-                    #   ssh: rejected: connect failed      → wrong socket path
-                    #
-                    # Only the first of those is "your key is wrong", and it
-                    # is the one a reader would never guess: they check
-                    # cables and firewalls instead. See `_why` for why the
-                    # last line is the one worth showing.
+                if _host.name in _skip:
+                    _cached, _left = _skip[_host.name]
                     views.append({"unreachable": _host.name,
                                   "endpoint": _host.endpoint,
-                                  "reason": self._why(_err),
+                                  "reason": _cached,
+                                  "retry_in": _left,
+                                  "contexts": []})
+                    continue
+                _remote, _err = _results.get(_host.name, (None, None))
+                if _err is not None:
+                    # One dead host is a line in the table, not a broken
+                    # page. The CLI's own words go with it: this page used
+                    # to say "unreachable" for every cause there is, which
+                    # is the one word that fits none of them.
+                    _reason = self._why(_err)
+                    _hosts_mod.mark_unreachable(_host.name, _reason)
+                    views.append({"unreachable": _host.name,
+                                  "endpoint": _host.endpoint,
+                                  "reason": _reason,
                                   "contexts": self._docker_contexts()})
                     continue
+                _hosts_mod.mark_reachable(_host.name)
                 views.append(self._status_view(_host.name, _host.store,
-                                               _remote, "",
+                                               _remote or [], own_name,
                                                host_backend=_host.backend))
             return views
 
@@ -639,6 +665,28 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if out:
                     return out
             return []
+
+        def _updating_now(self, host_name):
+            """`{container name: target version}` being updated right now
+            on `host_name`.
+
+            Read straight off the update engine — the same object whose
+            lock every update flow takes — rather than kept a second time
+            here, so the badge cannot disagree with what the log says. An
+            install without a bot (the render tests, a bare probe) has no
+            engine and honestly reports nothing in flight.
+            """
+            from container_store import split_host_key
+            try:
+                live = bot.engine.updating
+            except Exception:
+                return {}
+            out = {}
+            for key, version in (live or {}).items():
+                khost, kname = split_host_key(key)
+                if khost == host_name:
+                    out[kname] = version or ""
+            return out
 
         def _own_container_name_safe(self):
             """Docksentry's own container name, or "" if it cannot be found."""
@@ -1001,7 +1049,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             """
             return self._containers_on(backend)
 
-        def _containers_on(self, be, timeout=None):
+        def _containers_on(self, be, timeout=None, ids=None):
             # Use docker inspect (not docker ps Status-string parsing) so health
             # detection works on both Docker and Podman. Podman's REST API does
             # not append `(healthy)` to the Status field — that's a Docker CLI
@@ -1013,8 +1061,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # the local path issues byte-identical argv with identical
             # semantics. Remote callers pass a short one: an endpoint that
             # answers slowly must not hold the status page.
-            ids_p = be.ps(quiet=True, timeout=timeout)
-            ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+            # `ids` lets a caller that already ran `ps` hand its result
+            # over. The host list used to probe with one `ps` and then land
+            # here, which ran a second one — the same question twice, and
+            # over ssh that was 476 ms of the 2.1 s a remote host cost.
+            if ids is None:
+                ids_p = be.ps(quiet=True, timeout=timeout)
+                ids = [i for i in ids_p.stdout.strip().split("\n") if i]
             if not ids:
                 return []
             ins_p = be.inspect(ids, timeout=timeout)
@@ -1332,6 +1385,48 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             from maintenance import get_state as _maint_state, format_remaining as _maint_remaining
             t = _web_translator(config.language)
 
+            # Self-update, in the icon bar (#2, @LeeNX: "I keep having to
+            # go looking for it in the settings and always battle to find
+            # it, as it's under Cleanup, which seems so odd"). Same POST to
+            # /api/selfupdate and the same confirm dialog as the button in
+            # Settings › Cleanup — one trigger, two places to reach it, so
+            # there is nothing to keep in step.
+            #
+            # Shown only when a self-update is possible at all, decided the
+            # way the rest of the UI decides it: whether we can identify
+            # our own container. On QNAP and some Podman setups that comes
+            # back empty, `is_self` never fires on any row, and the swap
+            # this button asks for cannot be performed either — so the
+            # button would be a promise we cannot keep.
+            #
+            # Deliberately NOT gated on "is there a newer image?": the one
+            # in Settings is not either, @LeeNX asked for "the same force
+            # update now button like the others", and answering that
+            # question means a synchronous registry round-trip on every
+            # render of every page.
+            #
+            # An inline SVG for the same reason the logout and theme icons
+            # are (#60): the emoji ⬆️ from _ICONS is a font gamble, and the
+            # three controls sit next to each other.
+            selfupdate_html = ""
+            if self._own_container_name_safe():
+                selfupdate_html = (
+                    f'<form method="POST" action="/api/selfupdate" class="header-form" '
+                    f'data-confirm="{_e(t("web_confirm_selfupdate"))}" '
+                    f'data-confirm-title="{_e(t("web_maintenance_selfupdate"))}" '
+                    f'data-confirm-label="{_e(t("web_confirm_selfupdate_btn"))}" '
+                    f'data-confirm-danger="1">'
+                    f'<button type="submit" class="btn-icon" '
+                    f'title="{_e(t("web_selfupdate_toolbar_tt"))}" '
+                    f'aria-label="{_e(t("web_maintenance_selfupdate"))}">'
+                    f'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" '
+                    f'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                    f'stroke-linejoin="round">'
+                    f'<circle cx="12" cy="12" r="9"/>'
+                    f'<polyline points="8 12 12 8 16 12"/>'
+                    f'<line x1="12" y1="8" x2="12" y2="16"/>'
+                    f'</svg></button></form>')
+
             nav_items = [
                 ("status", f'📊 {t("web_nav_status")}', "/"),
                 ("groups", f'📦 {t("web_nav_groups")}', "/groups"),
@@ -1453,7 +1548,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
      flex-child sibling (the theme button). And margin-top:0, which kills
      the remaining 4px offset coming from the global 8px form margin-top
      — both halves of the misalignment @LeeNX screenshotted in #46. -->
-<form method="POST" action="/api/ui_mode" class="header-form">
+{selfupdate_html}<form method="POST" action="/api/ui_mode" class="header-form">
 <input type="hidden" name="mode" value="{ui_mode_other}">
 <button type="submit" class="btn-icon" title="{ui_mode_toggle_title}">{ui_mode_icon}</button>
 </form>
@@ -1919,7 +2014,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 body = json.dumps(web_v2.payload(
                     views, host_key, extra,
                     can=web_v2.capabilities(
-                        read_only=bool(self._api_token_name())))
+                        read_only=bool(self._api_token_name())),
+                    # The V2 client has its own hardcoded label table, so
+                    # the one new string is worded here — where `t` reads
+                    # app/lang/ like every other translation.
+                    updating_label=lambda v: _updating_label(t, v))
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -3459,6 +3558,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 "own_name": own_name,
                 "pending": pending,
                 "pending_names": [u["name"] for u in pending],
+                # What is being updated on this host at this very second,
+                # `{name: target version}`. Read once per view like every
+                # other lookup here, so the table, the cards and the V2
+                # list all render from the same answer.
+                "updating": self._updating_now(host_name),
                 "pinned": hstore.get_pinned(),
                 "auto_list": hstore.get_autoupdate(),
                 "ask_major": hstore.get_ask_before_major(),
@@ -3493,6 +3597,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             hstore = view["store"]
             own_name = view["own_name"]
             pending_names = view["pending_names"]
+            updating = view.get("updating") or {}
             pinned = view["pinned"]
             auto_list = view["auto_list"]
             ask_major = view["ask_major"]
@@ -3573,7 +3678,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             # Badges (compact, only show what's "different" from default)
             badges = ""
-            if c["name"] in pending_names:
+            # Same badge slot, two different facts. "update" is an offer;
+            # once the engine has actually claimed this container the badge
+            # says so, and where it is going (#2, @LeeNX — "I did get
+            # confused when the logs said updates were in progress, but the
+            # label was still indicating there was an update"). The running
+            # state wins, because it is the newer of the two.
+            if c["name"] in updating:
+                badges += (f' <span class="badge badge-yellow is-updating" '
+                           f'title="{_e(t("web_badge_updating_tt"))}">'
+                           f'{_e(_updating_label(t, updating[c["name"]]))}</span>')
+            elif c["name"] in pending_names:
                 badges += f' <span class="badge badge-yellow" title="{_e(t("web_badge_update_tt"))}">{t("web_badge_update")}</span>'
             if is_pinned_c:
                 badges += f' <span class="badge badge-red" title="{_e(t("web_badge_pinned_tt"))}">{t("web_pinned_badge")}</span>'
@@ -3688,13 +3803,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 f'data-msg-error="{_e(t("web_check_one_error"))}" '
                 f'title="{_e(t("web_check_one_tt"))}">{_ICONS["search"]}</button>'
             )
+            # Dead while its own update runs — pressing it would only earn
+            # an "already running", and a live button beside a badge that
+            # says "updating" invites exactly the second click.
+            _running = c["name"] in updating
+            _run_off = ' disabled' if _running else ''
+            _run_title = (_updating_label(t, updating[c["name"]]) if _running
+                          else t("web_update_tt"))
             update_btn = (
                 f'<form method="POST" action="/api/update" class="inline-form">'
                 f'<input type="hidden" name="name" value="{key_attr}">'
-                f'<button type="submit"{_mo_off} class="btn-icon is-active" '
-                f'title="{_e(_mo_title or t("web_update_tt"))}">{_ICONS["refresh"]}</button>'
+                f'<button type="submit"{_mo_off or _run_off} class="btn-icon is-active" '
+                f'title="{_e(_mo_title or _run_title)}">{_ICONS["refresh"]}</button>'
                 f'</form>'
-            ) if c["name"] in pending_names else ''
+            ) if (c["name"] in pending_names or _running) else ''
             pin_form_action = "/api/unpin" if is_pinned_c else "/api/pin"
             _pin_disabled = ' disabled' if (_lab_pin is not None or _monitor_only) else ''
             # Monitor-only wins the tooltip, as it does on the auto toggle:
@@ -4022,8 +4144,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Per host, and only where the live container is present:
                 # that is the proof the swap finished. A `foo_old` on one
                 # machine and a `foo` on another are unrelated.
+                # …and not while its update is still running. During the
+                # swap BOTH exist — the new container is already up and
+                # the old one is still the rollback copy — so this fired
+                # mid-update and called a live safety net "left behind
+                # from an interrupted update", with a `docker rm` next to
+                # it. Following that advice removes the one thing a
+                # failed update would have fallen back to.
+                _busy = self._updating_now(_v.get("host") or "")
                 leftovers += [n for n in _all
-                              if n.endswith("_old") and n[:-4] in _live]
+                              if n.endswith("_old") and n[:-4] in _live
+                              and n[:-4] not in _busy]
             leftovers = sorted(set(leftovers))
             leftover_banner = ""
             if leftovers:
@@ -4538,7 +4669,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 badges.append('<span class="badge badge-blue">⚠ major-confirm</span>')
             if is_trust_c:
                 badges.append(f'<span class="badge badge-blue">{t("web_trust_running_badge")}</span>')
-            if pending_for_self:
+            # The detail page reads the LOCAL daemon, so the only claims
+            # that can be about this container are the local ones.
+            from container_store import LOCAL_HOST as _LH
+            _updating_here = self._updating_now(_LH)
+            if name in _updating_here:
+                badges.append(
+                    f'<span class="badge badge-yellow is-updating" '
+                    f'title="{_e(t("web_badge_updating_tt"))}">'
+                    f'{_e(_updating_label(t, _updating_here[name]))}</span>')
+            elif pending_for_self:
                 badges.append(f'<span class="badge badge-yellow">{t("web_badge_update")}</span>')
             badges_html = " ".join(badges)
 
@@ -4548,6 +4688,22 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<tr><td>{t("web_detail_compose")}</td>'
                     f'<td><code>{_e(compose_info.get("compose_project",""))} / {_e(compose_info.get("compose_service",""))}</code></td></tr>'
                 )
+                # The path Docksentry actually opens, and whether it is
+                # there. Without this the only way to find out was a
+                # `docker inspect` on the label (#2).
+                _paths, _ok = self._compose_reach(compose_info)
+                if _paths:
+                    _mark = ("badge-green", t("web_compose_file_found")) if _ok else \
+                            ("badge-yellow", t("web_compose_file_missing"))
+                    compose_row += (
+                        f'<tr><td>{t("web_compose_file")}</td><td>'
+                        + "<br>".join(f"<code>{_e(p)}</code>" for p in _paths)
+                        + f' <span class="badge {_mark[0]}">{_e(_mark[1])}</span>'
+                        + ("" if _ok else
+                           f'<div class="form-help" style="margin:4px 0 0">{_e(t("web_compose_file_hint"))}</div>'
+                           + self._compose_mount_block(t, _paths, compose_info))
+                        + '</td></tr>'
+                    )
 
             window_row = ""
             if window:
@@ -4820,6 +4976,40 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
             self._send_html(self._render_page(content, "status"))
 
+        def _compose_mount_block(self, t, paths, info):
+            """The volume line to add, and the sentence that frames it.
+
+            Two answers, and which one we can give says something: the
+            daemon knows the exact mount whenever the files live inside
+            another container, and that beats any advice we could word.
+            Only when nothing holds them — a plain `docker compose` run,
+            where the label already is a host path — is the mount the
+            directory onto itself.
+            """
+            exact = self._compose_mount_exact(paths)
+            # A mount that lands where we already have something would
+            # shadow it. `/data` is the collision that matters: it is our
+            # own state directory and Portainer's as well.
+            clash = sorted({d for _l, d in (exact or [])} & self._own_mount_dests())
+            if clash:
+                return (f'<div class="form-help" style="margin:4px 0 0">'
+                        f'{_e(t("web_compose_mount_clash", path=clash[0]))}</div>')
+            if exact:
+                lines = "".join(
+                    f'<pre class="mount-hint">volumes:\n'
+                    f'  - {_e(lhs)}:{_e(dest)}:ro</pre>' for lhs, dest in exact)
+                note = t("web_compose_mount_exact_note")
+            else:
+                lines = "".join(
+                    f'<pre class="mount-hint">volumes:\n'
+                    f'  - {_e(m)}:{_e(m)}:ro</pre>'
+                    for m in self._compose_mount_targets(
+                        paths, info.get("compose_project", "")))
+                note = t("web_compose_mount_note")
+            return (lines
+                    + f'<div class="form-help" style="margin:4px 0 0">'
+                      f'{_e(note)}</div>')
+
         def _compose_info_for(self, meta):
             """Extract compose project/service/file from a docker-inspect result."""
             labels = meta.get("Config", {}).get("Labels", {}) or {}
@@ -4831,7 +5021,161 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 "compose_project": project,
                 "compose_service": service,
                 "compose_file": labels.get("com.docker.compose.project.config_files", ""),
+                "compose_working_dir": labels.get("com.docker.compose.project.working_dir", ""),
             }
+
+        @staticmethod
+        def _compose_reach(info):
+            """`(paths, reachable)` for a container's compose files.
+
+            Answers the question the update path asks, with the update
+            path's own resolver — a page that says "reachable" while
+            `docker compose up` disagrees would be worse than saying
+            nothing (#2, @NotRetarded, who mounted his stacks where we
+            told him to and still could not be told what was wrong).
+            """
+            import os as _os
+            from update_checker import UpdateChecker as _UC
+            raw = info.get("compose_file", "")
+            if not raw:
+                return [], False
+            try:
+                paths = _UC._compose_files(raw, info.get("compose_working_dir") or None)
+            except Exception:
+                paths = [raw]
+            return paths, bool(paths) and all(_os.path.isfile(f) for f in paths)
+
+        #: Container mounts, refreshed at most twice a minute. Reading every
+        #: container to answer one page would be a daemon round trip per
+        #: render, and mounts change about as often as containers do.
+        _mounts_cache = {"t": 0.0, "rows": []}
+
+        @staticmethod
+        def _all_mounts():
+            """`[{image, type, vol, src, dest}]` for every container.
+
+            The daemon knows where a container's paths really come from —
+            including the true source of a *named volume*, which is the
+            case a directory mount cannot express at all. Portainer keeps
+            its stacks in `portainer_data`, so "mount that directory" was
+            never an instruction anyone could follow (#2).
+            """
+            now = time.time()
+            c = WebHandler._mounts_cache
+            if c["rows"] and now - c["t"] < 30:
+                return c["rows"]
+            rows = []
+            try:
+                ids = backend.run(["ps", "-aq"])
+                names = ids.stdout.split() if ids.returncode == 0 else []
+                if names:
+                    r = backend.run(["inspect", *names])
+                    for ins in (json.loads(r.stdout) if r.returncode == 0 else []):
+                        img = (ins.get("Config", {}).get("Image") or "").lower()
+                        for m in ins.get("Mounts") or []:
+                            dest = (m.get("Destination") or "").rstrip("/")
+                            if dest:
+                                rows.append({"name": (ins.get("Name") or "").lstrip("/"),
+                                             "image": img, "type": m.get("Type"),
+                                             "vol": m.get("Name") or "",
+                                             "src": m.get("Source") or "",
+                                             "dest": dest})
+            except Exception:
+                rows = []
+            c["t"], c["rows"] = now, rows
+            return rows
+
+        def _own_mount_dests(self):
+            """Where WE already have something mounted.
+
+            A suggested mount that lands on one of these would shadow it.
+            Docksentry keeps its own state in `/data` and so does
+            Portainer — offering `portainer_data:/data:ro` to somebody
+            running both would have read-only-mounted a stranger's volume
+            over our own database (#2, caught before release).
+            """
+            own = self._own_container_name_safe()
+            if not own:
+                return set()
+            return {r["dest"] for r in self._all_mounts() if r.get("name") == own}
+
+        #: Images whose name gives away a stack manager. Only used to break
+        #: a tie — never to decide on its own.
+        _MANAGER_HINTS = ("portainer", "dockge", "dockhand", "komodo", "yacht")
+
+        @staticmethod
+        def _compose_mount_exact(paths):
+            """The volume line that would make `paths` visible, or None.
+
+            Finds the container that already holds these files and reads
+            its mount straight off the daemon — so it works for a manager
+            we have never heard of, as long as it runs on this machine.
+            None when nothing holds them (the label is a host path, and
+            the self-mount is the answer) or when several containers mount
+            the same depth and none looks like a manager: a confidently
+            wrong mount is what this whole thread was about.
+            """
+            rows = WebHandler._all_mounts()
+            if not rows:
+                return None
+            try:
+                from compose_paths import owner as _owner
+            except Exception:
+                _owner = lambda _p: None
+            out = []
+            for p in paths:
+                hits = [r for r in rows
+                        if p == r["dest"] or p.startswith(r["dest"] + "/")]
+                if not hits:
+                    return None                      # a host path; not our case
+                deepest = max(len(h["dest"]) for h in hits)
+                hits = [h for h in hits if len(h["dest"]) == deepest]
+                if len(hits) > 1:
+                    own = (_owner(p) or "").lower()
+                    looks = [h for h in hits
+                             if any(k in h["image"] for k in WebHandler._MANAGER_HINTS)
+                             and (not own or any(w in h["image"]
+                                                 for w in own.split(" or ")))]
+                    if len(looks) != 1:
+                        return None                  # ambiguous: say nothing
+                    hits = looks
+                h = hits[0]
+                line = (h["vol"] if h["type"] == "volume" else h["src"], h["dest"])
+                if line not in out:
+                    out.append(line)
+            return out or None
+
+        @staticmethod
+        def _compose_mount_targets(paths, project=""):
+            """The container-side paths a mount would have to land on.
+
+            The left half of a volume line is the user's business — only
+            they know where their files live. The right half is ours, and
+            it is the whole answer: it has to match the label, not their
+            host layout (#2, @NotRetarded, who mounted where we told him
+            and still landed nowhere).
+
+            A stack manager we recognise gets its root, because one mount
+            covers every stack it holds. Everything else gets the file's
+            own directory — always right for this container, even if it
+            means a mount per stack.
+
+            Deliberately no cleverness beyond that. Walking up to a
+            likely "stacks root" would have suggested mounting someone's
+            entire home directory for a plain `docker compose` project,
+            and a confidently wrong mount is what started this thread.
+            """
+            import os as _os
+            try:
+                from compose_paths import mount_root as _mr
+            except Exception:
+                _mr = lambda _p: None
+            out = []
+            for f in paths:
+                root = _mr(f) or _os.path.dirname(f)
+                if root and root not in out:
+                    out.append(root)
+            return out
 
         def _container_window_form(self, t, name, window):
             """Render the per-container update-window editor (subset of the
@@ -5201,12 +5545,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # differently. Absent on older events and on kinds
                     # where it means nothing — then this is simply empty.
                     res = ev.get("resources") or {}
+                    # Same two moments the alert distinguishes (#66): the
+                    # top lists were taken as the container died, the
+                    # victim line in the check that followed. Events from
+                    # before this carry no `at` and keep the death
+                    # wording — the evidence path is what they took.
+                    when = "" if res.get("at", "death") == "death" else "_after"
                     extra = ""
                     for key, tkey in (("host", "monitor_host_memory"),
                                       ("load", "monitor_host_cpu"),
                                       ("victim", "monitor_victim_usage"),
-                                      ("mem", "monitor_top_memory"),
-                                      ("cpu", "monitor_top_cpu")):
+                                      ("mem", "monitor_top_memory" + when),
+                                      ("cpu", "monitor_top_cpu" + when)):
                         if res.get(key):
                             if key == "victim":
                                 arg = {"state": res[key],
@@ -5216,6 +5566,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             else:
                                 arg = {"list": res[key]}
                             extra += f'<div>{_e(t(tkey, **arg))}</div>'
+                    # An idle host said out loud, so a row without the CPU
+                    # line cannot be mistaken for a lost measurement.
+                    if not res.get("cpu") and res.get("cpu_quiet"):
+                        extra += f'<div>{_e(t("monitor_top_cpu_quiet" + when, pct=res["cpu_quiet"]))}</div>'
                     if res.get("oom_flag"):
                         extra += f'<div>{_e(t("monitor_oom_flag_" + res["oom_flag"]))}</div>'
                     if extra:

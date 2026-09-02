@@ -19,6 +19,13 @@ ports:
 
 Access at `http://your-server:9090` with the configured password (Basic Auth).
 
+Every page carries the same small toolbar in the header: theme, sign out, and
+an arrow button that updates **Docksentry itself** — it pulls the latest image
+and recreates this container, behind a confirmation dialog. It is only there
+when Docksentry can identify its own container. The Self-Update button on the
+Settings page works exactly as before; this is the same action, one click from
+wherever you happen to be.
+
 ## Pages
 
 ### Status
@@ -26,6 +33,7 @@ Access at `http://your-server:9090` with the configured password (Basic Auth).
 Live overview of all running containers with:
 - Health badges (healthy / starting / running)
 - Pending update badges
+- `updating` badge while a run is in progress — `updating to 2.17.6` when the target version is known, plain `updating` when it isn't. It clears itself when the run finishes.
 - Pinned container badges
 - Auto-update toggle switches per container
 - Pin/Unpin buttons per container
@@ -36,6 +44,17 @@ Live overview of all running containers with:
 - **Major-update banner** — when a major bump is held back by `⚠ on`, a yellow banner at the top lists pending containers with **Confirm** / **Skip** buttons
 
 With `DOCKER_HOSTS` set, the table also gets a **Host** column, a host dropdown next to the search box that narrows the list to one host, and every button acts on the host of the row it sits on — updating `nginx` on the NAS never touches the local `nginx`. Deferred major bumps are listed per host too. A host that can't be reached shows up as a single line instead of taking the page down. The per-container detail page (click a container's name) is local-only, so remote rows aren't linked to it. Without `DOCKER_HOSTS` none of this renders and the page is exactly what it always was.
+
+A Compose-managed container's detail page carries a **Compose** block: project
+and service, and under it the exact file path Docksentry opens inside its own
+container, marked `reachable` or `not reachable`. When it isn't reachable, the
+page prints the volume line that would fix it. Where the daemon knows which
+container holds those files, that line is read straight off it and marked
+experimental — measured against 27 Compose files on one host, all 27 right,
+but that is one host; tell me if it is wrong on yours. Otherwise the line is
+the directory mounted onto itself. One case gets no line at all: a mount that would land on
+Docksentry's own data directory would hide its files, so the page says to move
+`DATA_DIR` first instead of offering it.
 
 ### Logs
 
@@ -63,14 +82,14 @@ The Settings page is grouped into **five tabs**:
 | **Notifications** | Disk warning threshold + auto-cleanup-on-warning, quiet hours start/end |
 | **Channels** | Telegram topic ID, Discord webhook, generic webhook |
 
-Plus two cards always visible below the tabs:
+Plus three cards always visible below the tabs:
 - **Update Windows** (per-container HH:MM ranges + weekdays)
 - **Maintenance** (one-shot Image Cleanup / Self-Update buttons, both with confirmation dialogs)
 - **Info** (version, Telegram status, masked credentials)
 
 Hover a `?` icon next to any setting label for an inline explanation. Save feedback appears as a brief toast at the top-right.
 
-All settings **persist across restarts** (saved to `/data/settings.json`).
+All settings **persist across restarts** (saved to `settings.json` in the [data directory](configuration.md#where-the-data-lives)).
 
 | Setting | Editable in Web UI |
 |---------|--------------------|
@@ -92,7 +111,7 @@ All settings **persist across restarts** (saved to `/data/settings.json`).
 
 The **Update Windows** section lets you pick a container, set a `HH:MM`–`HH:MM` range, and tick which weekdays the window applies to. Containers without an entry update without restriction.
 
-The **Maintenance** section provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly.
+The **Maintenance** section provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly. Self-Update is also in the header toolbar on every page; both do the same thing.
 
 ## Machine-readable endpoints
 
@@ -118,6 +137,6 @@ the same values, so they cannot disagree about a container's state.
 ## Security
 
 - Password protection via Basic Auth (`WEB_PASSWORD`)
-- Password hashed with SHA-256, never stored in plain text
+- A password set here is hashed with **scrypt** before it is stored; one supplied as `WEB_PASSWORD` stays plain text, because an environment variable is
 - Sensitive values (Bot Token, Chat ID) are masked in the UI
 - For HTTPS, use a reverse proxy — see [Security](security.md)

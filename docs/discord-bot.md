@@ -182,6 +182,14 @@ messages that stay put.
 That switch is also why the bot channel exists at all — a "Docksentry started"
 notice that only appears on one device is no notice at all.
 
+`/selfupdate` is the one command that used to undo all of this. It restarts
+Docksentry, and the process that comes back is a new one with the interaction
+long dead, so it announced itself in the channel — version and all. It doesn't
+any more: when replies are private, the restart notice goes to whoever ran the
+command as a direct message and the channel is left out of it. If you have
+direct messages from server members turned off, Discord won't let me open one
+and it lands in the channel instead, with a line saying why.
+
 ## Commands take options, not words
 
 Discord's commands don't work like Telegram's. `/status docksentry` isn't a

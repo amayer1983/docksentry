@@ -28,6 +28,62 @@ def _strip_quotes(value):
     return value
 
 
+
+#: Where our state used to live, unconditionally. `/data` is a popular
+#: name — Portainer keeps its stacks there, and so do a dozen images — so
+#: a fresh install should not claim it. But an existing one already has a
+#: volume mounted there, and moving the default out from under it would
+#: strand it on an empty directory. So: if something is mounted at
+#: `/data`, that is deliberate and it wins. Otherwise the new default.
+LEGACY_DATA_DIR = "/data"
+DEFAULT_DATA_DIR = "/docksentry"
+
+
+#: Files only we write. Presence of one of these is what makes a directory
+#: *ours* — "something is mounted there" is not the same question, and
+#: getting the two confused sends a running install to the setup screen.
+_OURS = ("update_history.json", "autoupdate_containers.json",
+         "pending_updates.json", "container_links.json")
+
+
+def _looks_like_ours(path):
+    try:
+        return bool(set(os.listdir(path)) & set(_OURS))
+    except OSError:
+        return False
+
+
+def _default_data_dir():
+    """Where our state lives when `DATA_DIR` says nothing.
+
+    Order matters. Our own files decide it whenever they exist, because
+    `/data` is a name other people mount things at — mounting Portainer's
+    stacks there (which our own compose file used to suggest!) must not
+    turn their volume into our database.
+
+    Only when neither directory holds anything of ours does the mount
+    itself decide, and then it means "an install that has always used
+    /data, booting for the first time".
+    """
+    if _looks_like_ours(LEGACY_DATA_DIR):
+        return LEGACY_DATA_DIR
+    if _looks_like_ours(DEFAULT_DATA_DIR):
+        return DEFAULT_DATA_DIR
+    # Nothing of ours anywhere yet, so this is a first boot: whoever
+    # mounted something at `/data` meant it, and that is the install we
+    # must not strand. NOT also asking whether `/docksentry` is a mount —
+    # the image declares a VOLUME there, so it always is, and the extra
+    # condition made this branch unreachable. Measured: an old compose
+    # file with an empty volume at /data then wrote to the image's own
+    # anonymous volume and lost it on the next recreate.
+    try:
+        if os.path.ismount(LEGACY_DATA_DIR):
+            return LEGACY_DATA_DIR
+    except OSError:
+        pass
+    return DEFAULT_DATA_DIR
+
+
 def _env(key, default=""):
     """Read an env var and strip matching outer quotes. See _strip_quotes."""
     return _strip_quotes(os.environ.get(key, default))
@@ -1260,7 +1316,7 @@ class Config:
                 c.strip() for c in _env("EXCLUDE_CONTAINERS").split(",")
                 if c.strip()
             ],
-            data_dir=_env("DATA_DIR", "/data"),
+            data_dir=_env("DATA_DIR", _default_data_dir()),
             debug=_env("DEBUG", "false").lower() in ("true", "1", "yes"),
             auto_selfupdate=_env("AUTO_SELFUPDATE", "false").lower() in ("true", "1", "yes"),
             auto_update_all=_env("AUTO_UPDATE_ALL", "false").lower() in ("true", "1", "yes"),

@@ -704,6 +704,16 @@ tr.is-hidden { display: none; }
 .badge-blue   { background: var(--info-bg); color: var(--info); }
 .badge-red    { background: var(--danger-bg); color: var(--danger); }
 .badge-purple { background: var(--special-bg); color: var(--special); }
+/* "updating to X" keeps the yellow of the "update" badge it replaces —
+   it is the same container in the same state, one step further on — and
+   breathes so a glance can tell "running" from "waiting" without reading
+   the words. Motion is opt-out, not opt-in: someone who asked their
+   system for less of it gets the colour and the text alone. */
+.badge.is-updating { animation: ds-badge-pulse 1.6s ease-in-out infinite; }
+@keyframes ds-badge-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+    .badge.is-updating { animation: none; }
+}
 .healthy { color: var(--success); }
 
 /* ── Toggle (slider) ────────────────────────────────────────── */
@@ -736,6 +746,16 @@ tr.is-hidden { display: none; }
 .toggle input:checked + .slider:before { transform: translateX(16px); background: #fff; }
 
 /* ── Pre / code ─────────────────────────────────────────────── */
+/* The volume line the container is missing, shown under an unreachable
+   Compose path. Tighter than a normal <pre>: it sits inside a table cell,
+   where 16px of padding reads as a second panel. */
+.mount-hint {
+    padding: 8px 10px;
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 pre {
     background: var(--bg);
     border: 1px solid var(--border);

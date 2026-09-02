@@ -58,7 +58,7 @@ class DiscordBotNotifier(DiscordNotifier):
         return (self.setting("discord_bot_channel", "DISCORD_BOT_CHANNEL") or "").strip()
 
     # ── transport ────────────────────────────────────────────────────
-    def post(self, payload):
+    def post(self, payload, on_network_failure=None):
         """Send one payload the bot's way instead of the webhook's.
 
         The ONLY thing this channel changes about a Discord message is
@@ -84,5 +84,11 @@ class DiscordBotNotifier(DiscordNotifier):
                 embeds=payload.get("embeds"))
         except DiscordRESTError as e:
             print(f"Discord bot channel error: {e}")
+            # `DiscordREST` uses status 0 for "the request never got an
+            # answer at all" — its own word for a network failure, and the
+            # same line the webhook path draws: a 403 is a no, an
+            # unreachable host is a not-yet (#66).
+            if e.status == 0 and on_network_failure is not None:
+                on_network_failure()
         except Exception as e:                                # pragma: no cover
             print(f"Discord bot channel error: {e}")

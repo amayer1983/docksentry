@@ -134,7 +134,7 @@ def main():
             self.store = _LinkStore(stored)
             self._oci, self._guess = oci, guess
 
-        def container_source_url(self, name): return self._oci
+        def container_source_url(self, name, checker=None): return self._oci
         def guess_registry_overview_url(self, image): return self._guess
 
     LBL = "https://git.example.com/owner/repo/-/releases"

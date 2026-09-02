@@ -112,6 +112,13 @@
 .ui-v2 .v2-pending {
     font-size: 13px; font-weight: 550; color: var(--accent);
 }
+/* Same treatment as the classic table's badge — see app.css. */
+.ui-v2 .v2-pending.is-updating {
+    animation: ds-badge-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .ui-v2 .v2-pending.is-updating { animation: none; }
+}
 .ui-v2 .v2-more {
     border: 0; background: transparent; color: var(--text-muted);
     font-size: 18px; line-height: 1; padding: 4px 8px; cursor: pointer;

@@ -138,6 +138,11 @@ def _int_bot(update_policy):
     bot._enrich_with_source_url = lambda u: None
     bot._display_name = lambda u: u["name"]
     bot._maybe_cooldown = lambda *a, **k: None
+    # Same reason as the stubs above: the batch marks and unmarks the
+    # container it is updating, and a fake bot that cannot be marked
+    # fails the update rather than the assertion.
+    bot.mark_updating = lambda *a, **k: None
+    bot.clear_updating = lambda *a, **k: None
     # bind the real methods under test (they now live on UpdateEngine)
     bot._resolve_update_policy = lambda n, c: UpdateEngine._resolve_update_policy(bot, n, c)
     bot._policy_allows_level = UpdateEngine._policy_allows_level

@@ -137,7 +137,7 @@ class Context:
         self.engine._swap_in_flight = value
 
 
-def start(ctx, target=None, reply=None):
+def start(ctx, target=None, reply=None, reply_to=None):
     """Pull a target image and recreate own container.
 
     Coordinates with every other update flow via `_update_lock`:
@@ -163,11 +163,15 @@ def start(ctx, target=None, reply=None):
     if reply is not None and _wr is not None:
         ctx = _wr(reply)
     if not ctx._update_lock.acquire(blocking=False):
-        ctx._queued_selfupdate = (target,)
+        # The route rides along: a self-update that waits half an hour
+        # behind a container batch is still the one that was asked for
+        # privately. Second slot only when there IS one, so an ordinary
+        # queued self-update stays the tuple every caller already knows.
+        ctx._queued_selfupdate = (target, reply_to) if reply_to else (target,)
         ctx.send_message(ctx.t("selfupdate_queued"))
         return
     try:
-        run(ctx, target)
+        run(ctx, target, reply_to=reply_to)
     finally:
         # Nothing in here may stop the release. This block raised
         # once — `_swap_in_flight` had been orphaned out of
@@ -213,12 +217,12 @@ def run_queued(ctx):
         return
     try:
         ctx.send_message(ctx.t("selfupdate_dequeued"))
-        start(ctx, q[0])
+        start(ctx, q[0], reply_to=(q[1] if len(q) > 1 else None))
     except Exception as e:
         print(f"Queued selfupdate error: {e}")
 
 
-def run(ctx, target=None):
+def run(ctx, target=None, reply_to=None):
     """Body of _handle_selfupdate; only ever called with the update
     lock held (see wrapper above)."""
     # Resolve our own container robustly — handles hosts where $HOSTNAME
@@ -277,7 +281,7 @@ def run(ctx, target=None):
                                      old=current_image, new=own_image))
             save_history(ctx, own_name, own_image,
                                           old_created, new_created)
-            swap(ctx, config, own_name, own_image)
+            swap(ctx, config, own_name, own_image, reply_to=reply_to)
             return
         # Up to date for the CURRENT image tag. But if the user ran a
         # plain /selfupdate while the container is on a fixed version
@@ -319,7 +323,7 @@ def run(ctx, target=None):
     # Record in history BEFORE _do_selfupdate kills us — otherwise the
     # entry never gets written (#13).
     save_history(ctx, own_name, own_image, old_created, new_created)
-    swap(ctx, config, own_name, own_image)
+    swap(ctx, config, own_name, own_image, reply_to=reply_to)
 
 
 def resolve_target(ctx, current_image, target):
@@ -469,7 +473,7 @@ def save_history(ctx, container_name, image, old_created, new_created):
         print(f"Failed to record selfupdate history: {e}")
 
 
-def swap(ctx, config, own_name, own_image):
+def swap(ctx, config, own_name, own_image, reply_to=None):
     """Execute selfupdate via a temporary helper container on the host.
 
     The old approach (Popen + sys.exit) failed because Docker kills all
@@ -481,7 +485,7 @@ def swap(ctx, config, own_name, own_image):
     # SIGTERM to our old container, which the signal handler records as a
     # generic external stop — without this marker the next boot would
     # mislabel the self-update as "external restart" (#2, @famewolf).
-    write_marker(ctx, own_image)
+    write_marker(ctx, own_image, reply_to=reply_to)
     # Rebuild run command from inspect. Single source of truth via
     # UpdateChecker._build_run_args so the self-update path stays
     # in sync with the regular container-update path (#27): same
@@ -664,7 +668,7 @@ def build_script(name, run_parts, image, stop_timeout=60):
     )
 
 
-def write_marker(ctx, image):
+def write_marker(ctx, image, reply_to=None):
     """Record that the imminent restart is a self-update so the next boot
     doesn't mislabel it as an external stop (#2, @famewolf).
 
@@ -682,7 +686,8 @@ def write_marker(ctx, image):
         import time as _time
         from container_store import atomic_write_json
         atomic_write_json(ctx.config.selfupdate_marker_file,
-                          {"image": image, "ts": _time.time()})
+                          {"image": image, "ts": _time.time(),
+                           **({"reply_to": reply_to} if reply_to else {})})
     except Exception as e:
         print(f"Could not write selfupdate marker (non-fatal): {e}")
 

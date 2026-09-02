@@ -263,7 +263,18 @@ def main():
     # line — the version bump in the banner already tells the story (#2,
     # @famewolf). Stale markers (>1h) are ignored so a long-ago abandoned
     # self-update can't mask a later genuine external restart.
+    #
+    # The marker carries one more thing: who asked, when they asked in
+    # private (#63, @NotRetarded). A Discord reply is ephemeral because
+    # the server has no business reading which containers this instance
+    # runs — and then the restart announced the version to the whole
+    # channel anyway, which is the one thing the setting exists to
+    # prevent. There is no answering the original interaction from here:
+    # this is a different process and that token died with the old one.
+    # So the answer goes to the person as a direct message, and the
+    # channel is left out of it.
     selfupdate_restart = False
+    selfupdate_reply_to = None
     try:
         if os.path.exists(config.selfupdate_marker_file):
             import json as _json, time as _time
@@ -271,6 +282,9 @@ def main():
                 _mark = _json.load(f)
             if _time.time() - float(_mark.get("ts", 0) or 0) < 3600:
                 selfupdate_restart = True
+                _reply = _mark.get("reply_to")
+                if isinstance(_reply, dict) and _reply:
+                    selfupdate_reply_to = _reply
             os.unlink(config.selfupdate_marker_file)
     except Exception as e:
         print(f"Could not read selfupdate marker (non-fatal): {e}")
@@ -653,6 +667,67 @@ def main():
     elif restart_signal:
         print(f"Restart cause: external stop signal ({restart_signal}) — not a self-restart")
 
+    # ── where this boot's notices go ──────────────────────────────
+    # Every startup notice used to repeat the same four lines: Telegram
+    # if it is on, every other channel if there are any. They are one
+    # function now, because there is finally a rule that applies to all
+    # of them at once.
+    #
+    # The rule: a self-update someone triggered privately does not
+    # announce itself in a Discord channel. It is not one message that
+    # gives the game away — the banner names the version, what's-new
+    # names it again, and a failed recreate quotes the helper log — so
+    # the boundary is drawn once, here, rather than at each notice in
+    # turn where the next one added would miss it.
+    #
+    # Telegram and e-mail and ntfy are unaffected: those are the
+    # operator's own channels, not the server everybody else reads.
+    def deliver_private(text):
+        """Hand `text` to whoever asked for this self-update, privately.
+
+        Falls back to the Discord channel — and says why — when the DM
+        bounces. That is the leak this whole path avoids, so it happens
+        only when the alternative is losing the result: somebody ran
+        `/selfupdate` and would otherwise never learn whether it worked.
+        A bot cannot DM a user who has turned off direct messages from
+        server members, and that is a setting only they can change,
+        which is what the note tells them.
+        """
+        from discord_bot import send_private
+        from notifier import DISCORD_CHANNELS
+        if send_private(config, selfupdate_reply_to.get("discord_user"), text):
+            return
+        print("Self-update result could not be sent as a direct message — "
+              "falling back to the Discord channel rather than losing it.")
+        if not notifier.has_channels():
+            return
+        # Only the Discord channels: every other channel already has this
+        # message from the ordinary fan-out.
+        others = tuple(name for name, *_ in notifier.channel_states()
+                       if name not in DISCORD_CHANNELS)
+        notifier.send_message(
+            t("selfupdate_private_undeliverable") + "\n" + text, skip=others)
+
+    def boot_announce(text):
+        """One start-up notice, to every channel that should see it.
+
+        Both recipients, always. The "started" line went to Telegram
+        alone for a long time while the hard-kill note and the what's-new
+        note went to both, so a Discord, e-mail or ntfy user never saw
+        "restarted on vX" at all — found by @NotRetarded (#57) while
+        testing the bot's own channel, where the start announcement
+        arrived and nothing else did. Having one function say who hears a
+        boot notice is how that stops being possible again.
+        """
+        from notifier import DISCORD_CHANNELS
+        if bot.enabled:
+            bot.send_message(text)
+        if notifier.has_channels():
+            notifier.send_message(
+                text, skip=DISCORD_CHANNELS if selfupdate_reply_to else ())
+        if selfupdate_reply_to:
+            deliver_private(text)
+
     # Surface a failed self-update recreate (#43). The helper writes its
     # stdout/stderr to /data/selfupdate_helper.log; if the recreate rolled
     # back (podman rejected `docker run`, etc.) we finally have the reason
@@ -667,10 +742,7 @@ def main():
             if "rolling back" in _hcontent:
                 _tail = _hcontent.strip()[-900:]
                 _fail = t("selfupdate_recreate_failed", detail=_tail)
-                if bot.enabled:
-                    bot.send_message(_fail)
-                if notifier.has_channels():
-                    notifier.send_message(_fail)
+                boot_announce(_fail)
                 print("Self-update recreate failed — helper output:\n" + _hcontent)
     except Exception as e:
         print(f"Could not read selfupdate helper log (non-fatal): {e}")
@@ -720,18 +792,7 @@ def main():
             startup_msg += t("startup_reason_requested")
         elif restart_signal:
             startup_msg += t("startup_reason_signal", signal=restart_signal)
-        if bot.enabled:
-            bot.send_message(startup_msg)
-        # …and every other channel. This line went to Telegram alone,
-        # while the hard-kill note and the what's-new note two blocks down
-        # have always gone to both — so a Discord, e-mail or ntfy user
-        # never saw "restarted on vX" at all. Found by @NotRetarded (#57)
-        # while testing the bot's own channel: the start announcement
-        # arrived and nothing else did, and he reasonably concluded the
-        # rest of the notifications were broken too. They are not; this
-        # one message simply never had a second recipient.
-        if notifier.has_channels():
-            notifier.send_message(startup_msg)
+        boot_announce(startup_msg)
         # Three different things used to share one alarming message.
         # Now: name the cause when we can see it, stay quiet when there is
         # nothing to mourn, and keep the old warning for the case it was
@@ -762,10 +823,7 @@ def main():
                   "environment. Normal until you save something in the Web "
                   "UI or via the bot.")
         if storage_msg:
-            if bot.enabled:
-                bot.send_message(storage_msg)
-            if notifier.has_channels():
-                notifier.send_message(storage_msg)
+            boot_announce(storage_msg)
 
     # Sent regardless of how we restarted — a self-update and a manual
     # pull both land the user on a new version, and both deserve the note.
@@ -780,27 +838,16 @@ def main():
         if recovery_msg:
             parts.append(recovery_msg)
         killed_msg = "\n".join(parts)
-        if bot.enabled:
-            bot.send_message(killed_msg)
-        if notifier.has_channels():
-            notifier.send_message(killed_msg)
+        boot_announce(killed_msg)
 
     if whatsnew_msg:
-        if bot.enabled:
-            bot.send_message(whatsnew_msg)
-        if notifier.has_channels():
-            notifier.send_message(whatsnew_msg)
+        boot_announce(whatsnew_msg)
         print(whatsnew_msg)
 
     # One-shot migration notice if we just stripped self from auto-update.
     if self_in_autoupdate:
         notice = t("migration_self_autoupdate_removed")
-        if bot.enabled:
-            bot.send_message(notice)
-        if notifier.has_channels():
-            notifier.send_message(notice)
-        if notifier.has_channels():
-            notifier.send_message(startup_msg)
+        boot_announce(notice)
 
     # Start bot listener (blocking).
     # When Telegram is off this just blocks until shutdown — scheduler/Web UI

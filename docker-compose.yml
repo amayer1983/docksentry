@@ -13,10 +13,16 @@ services:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - docksentry_data:/data
+      - docksentry_data:/docksentry
       # Docker credentials (for authenticated pulls, avoids rate limits)
       - ${DOCKER_CONFIG:-/root/.docker/config.json}:/.docker/config.json:ro
-      # Compose project directories (needed to restart containers)
+      # Compose project directories (needed to restart containers).
+      # The container side is not freely chosen — Docksentry opens exactly
+      # the path in the container's compose label, and /data/compose is what
+      # Portainer writes there. Since our own data moved to /docksentry it no
+      # longer collides with anything of ours. If you ran `docker compose`
+      # yourself the label holds a host path, so edit both sides to that
+      # directory. See docs/compose.md.
       - ${COMPOSE_DIR:-/data/compose}:/data/compose
     security_opt:
       - no-new-privileges:true

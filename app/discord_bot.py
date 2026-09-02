@@ -384,6 +384,45 @@ MAX_REFUSAL_WORKERS = 8
 SHUTDOWN_GRACE = 15.0
 
 
+def send_private(config, user_id, text, log=print):
+    """Send `text` to one Discord user as a direct message.
+
+    Returns True when Discord accepted it, False otherwise — the caller
+    decides what to do with a "no", because losing the message is not
+    always acceptable (see `main.py`'s boot notice).
+
+    A module-level function rather than a method, because the one caller
+    that needs it runs *before* any interaction exists and possibly
+    without a gateway at all: it is the freshly booted process telling
+    whoever asked for a self-update how it went. All it needs is the
+    token, so all it takes is the config — the same reasoning that lets
+    `notifiers/discordbot.py` post without a running bot.
+
+    Two calls: open (or reuse) the DM channel with this user, then post
+    into it. Discord dedupes the first one, so there is nothing to cache.
+    A bot may DM a user it shares a server with — which is guaranteed
+    here, the interaction came from the configured guild — unless that
+    user has turned off direct messages from server members. That comes
+    back as 403/50007 and is exactly the "no" this returns.
+    """
+    token = (getattr(config, "discord_bot_token", "") or "").strip()
+    if not token or not user_id:
+        return False
+    try:
+        rest = DiscordREST(token, log=log)
+        channel = rest.request("POST", "/users/@me/channels",
+                               {"recipient_id": str(user_id)})
+        channel_id = (channel or {}).get("id")
+        if not channel_id:
+            log("Discord: no DM channel came back for the private reply")
+            return False
+        rest.create_message(channel_id, DiscordBot._clip(text))
+        return True
+    except Exception as e:
+        log(f"Discord: could not deliver the private message: {e}")
+        return False
+
+
 class Reply(str):
     """A command answer that may carry Discord message components.
 
@@ -1307,7 +1346,7 @@ class DiscordBot:
         if name == "changelog":
             return self._cmd_changelog()
         if name == "selfupdate":
-            return self._cmd_selfupdate(opts)
+            return self._cmd_selfupdate(opts, data)
         if name == "debug":
             return self._cmd_debug()
         if name == "lang":
@@ -1909,23 +1948,32 @@ class DiscordBot:
                     "CHANGELOG.md>)")
         return msg
 
-    def _cmd_selfupdate(self, opts):
+    def _cmd_selfupdate(self, opts, data=None):
         """Start a self-update. Reports through the shared seam, so what
-        it finds lands here too — not only on Telegram (#63)."""
+        it finds lands here too — not only on Telegram (#63).
+
+        `data` is here for one reason: when replies are private, the
+        restart this may trigger must not undo that. The process that
+        comes back up is a new one and this interaction is long dead, so
+        the only way to answer privately afterwards is a DM — and the
+        only way the new process can know who to DM is if we write it
+        down now. `reply_to` travels with the self-update marker across
+        the restart (#63, @NotRetarded). Nothing is recorded when replies
+        are public: that setup wants the announcement in the channel and
+        keeps getting it, unchanged.
+        """
         ctx = getattr(self, "selfupdate_ctx", None)
         if ctx is None:
             return self.t("chan_not_available")
         target = (opts.get("version") or "").strip() or None
+        reply_to = None
+        if self._replies_private() and data is not None:
+            invoker = self._invoker(data)
+            if invoker:
+                reply_to = {"discord_user": str(invoker)}
         # In the background so this reply goes out now: the self-update
         # blocks through the pull and recreate, and then the swap helper
         # stops this process.
-        #
-        # It used to hand the work to the Telegram bot's method — which
-        # first called `bot.check_selfupdate`, a name that does not exist
-        # (an AttributeError that left the command broken the whole
-        # time), and then, once fixed, reported to Telegram: twelve of
-        # its thirteen messages had no second recipient, so this answered
-        # "started" and went quiet. Both are gone with the extraction.
         #
         # Replies come back HERE — to the Discord channel — because that
         # is where the person asked. Routing every report through the
@@ -1934,8 +1982,11 @@ class DiscordBot:
         # events (found an update, restarting) still reach every channel.
         import threading
         threading.Thread(target=selfupdate.start, args=(ctx, target),
-                         kwargs={"reply": self.announce},
+                         kwargs={"reply": self.announce,
+                                 "reply_to": reply_to},
                          daemon=True).start()
+        if reply_to:
+            return self.t("chan_selfupdate_started_private")
         return self.t("chan_selfupdate_started")
 
     def _cmd_debug(self):

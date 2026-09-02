@@ -25,5 +25,7 @@ scripts/issue_inbox.py
 # swallow as a broken submodule or copy wholesale.
 .claude/
 
-# Project working conventions — internal, never pushed.
-CLAUDE.md
+# Backups of the dev compose file — it holds real credentials, and a
+# name the ignore list did not cover once got one committed.
+docker-compose.dev.yml.*
+*.bak-*

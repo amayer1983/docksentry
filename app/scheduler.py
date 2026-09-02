@@ -482,6 +482,19 @@ class Scheduler:
             except Exception as e:
                 print(f"Monitor error: {e}")
 
+            # Anything a dead network swallowed is still waiting. This loop
+            # is the only thing that runs on its own no matter what else is
+            # configured, so it is where a held notification gets its next
+            # go — within 30s of the network coming back (#66,
+            # @NotRetarded, whose crash alert went out over Discord and
+            # never over Telegram). Never blocks: the queue skips a channel
+            # the moment one of its resends fails.
+            try:
+                import notify_retry
+                notify_retry.flush()
+            except Exception as e:
+                print(f"Notify retry error: {e}")
+
             time.sleep(30)
 
     def _check_disk_space(self):

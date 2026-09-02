@@ -31,7 +31,7 @@ The handful that decide whether Docksentry runs at all.
 |----------|---------|-------------|
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
-| `DATA_DIR` | `/data` | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Change it only if you mount the volume somewhere else; everything in it is what a backup would restore |
+| `DATA_DIR` | `/docksentry` (see below) | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Everything in it is what a backup would restore |
 | `LANGUAGE` ⚙ | `en` | Bot language ([16 available](docs/languages.md)) |
 | `TZ` | `Europe/Berlin` | Timezone |
 | `WEB_PASSWORD` ⚙ | | Web UI password (Basic Auth) |
@@ -41,6 +41,36 @@ The handful that decide whether Docksentry runs at all.
 | `WEB_UI` | `false` | Enable web dashboard |
 | `STATUS_VIEW` ⚙ | `table` | How the status page draws your containers. `table` is the original: every action on every row, wide layout. `list` is the compact one: one row per container leading with whether an update is waiting, everything else in a detail panel, and a layout that works on a phone. Also switchable in Settings › General — this variable only seeds the initial value. |
 | `WEB_USERNAME` ⚙ | | Username for the Web UI login. **Optional**: left empty, any username is accepted, which is what Docksentry did before it had a username at all (the Basic Auth header was split and the name half then ignored). Set it and only that name gets in. Also editable in Settings › General. |
+
+#### Where the data lives
+
+**If Docksentry is already running, there is nothing to do here.** A volume
+mounted at `/data` keeps being used, exactly as before.
+
+New installs get `/docksentry` instead. `/data` is a busy name — Portainer
+keeps its stacks there, and so do a dozen other images — and Docksentry
+claiming it meant the two collided on the same install. The image no longer
+reserves `/data` either.
+
+Docksentry works out which one it is on, in this order: the directory that
+already holds its files wins; failing that, a volume mounted at `/data` is
+taken as an install that has always used it; otherwise `/docksentry`.
+`DATA_DIR` overrides all of it.
+
+The one reason to move an existing install is if you need `/data` for
+something else — mounting a stack manager's volume there so Compose files
+can be read, say. Point the same volume at the new path and set nothing
+else:
+
+```yaml
+volumes:
+  - docksentry_data:/docksentry      # was docksentry_data:/data
+  - portainer_data:/data:ro          # …and now /data is free for this
+```
+
+The data comes with the volume; nothing is copied and nothing is lost. If
+you get it wrong, Docksentry says so at startup rather than quietly writing
+to a directory that disappears on the next recreate.
 
 ### Docker & Podman hosts
 
@@ -107,7 +137,7 @@ Reclaiming space, and warning before it runs out.
 |----------|---------|-------------|
 | `AUTO_CLEANUP` ⚙ | `false` | Run image cleanup after every successful auto-update |
 | `CLEANUP_BACKUP_DAYS` ⚙ | `7` | How long backup tarballs are kept (1–365 days) |
-| `CLEANUP_BACKUP_LOCAL_ONLY` ⚙ | `false` | Before deletion, save unused locally-built images (no registry digest) to `/data/cleanup-backups/` |
+| `CLEANUP_BACKUP_LOCAL_ONLY` ⚙ | `false` | Before deletion, save unused locally-built images (no registry digest) to `cleanup-backups/` in the [data directory](#where-the-data-lives) |
 | `CLEANUP_GRACE_HOURS` ⚙ | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
 | `DISK_WARN_AUTO_CLEANUP` ⚙ | `false` | Automatically run cleanup when disk warning fires |
 | `DISK_WARN_PERCENT` ⚙ | `85` | Notify when disk usage exceeds this percentage (50–100) |
@@ -162,7 +192,7 @@ Two separate paths: a webhook that only posts, and a bot that also answers.
 | `NTFY_TOPIC` ⚙ | | ntfy topic name, e.g. `my-topic` — used together with `NTFY_SERVER` |
 | `NTFY_URL` ⚙ | | [ntfy](https://ntfy.sh) topic URL (full), e.g. `https://ntfy.sh/my-topic`. Setting it enables ntfy push notifications — a plain HTTP POST with the message as body, the subject in the `Title` header and `Priority` set higher for failures. Use a private/self-hosted server or an unguessable topic; anyone who knows the topic URL can read your notifications. Alternatively set `NTFY_SERVER` + `NTFY_TOPIC`. |
 | `NTFY_USER` / `NTFY_PASSWORD` ⚙ | | ntfy credentials, if you use basic auth rather than a token |
-| `WEBHOOK_URL` ⚙ | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. |
+| `WEBHOOK_URL` ⚙ | | Generic webhook URL (JSON POST). Transient network failures (timeout / connection error) are retried up to 3× with a short backoff so a blip right after a self-update restart doesn't drop a notification — same as Telegram and Discord. Note: if the endpoint triggers an automation (Home Assistant, ntfy, custom script), a rare edge case can produce a duplicate delivery — prefer idempotent handlers. A message the network swallowed entirely is held in memory and retried for up to 15 minutes, arriving with a `⏳ Delayed …` line in front of it; held messages are dropped on restart. |
 
 ### Switching a channel off
 
@@ -187,7 +217,7 @@ Each channel has a switch, so it can be silenced without clearing its settings. 
 | `API_TOKENS` ⚙ | | `name:token` pairs, comma-separated (`prom:xxx,grafana:yyy`). Grants **read-only** access to `/metrics` and `GET /api/status` without the Web UI password — a scraper cannot log in, and the browser password would let a monitoring job stop containers. Named so one can be revoked without disturbing the other. Send as `Authorization: Bearer <token>`, or `?token=<token>` for scrapers that cannot set headers (note that a query string lands in access logs) |
 | `DEBUG` ⚙ | `false` | Seed debug mode on at startup (verbose logging, the full registry diagnostics on every update check, and the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
 
-> **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `/data/settings.json`, and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Note that saving *anything* in the Web UI writes all of these settings at once, so a value you never touched can end up saved too. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /data/settings.json.`, and the affected field carries a small `env` marker in the Web UI. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
+> **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `settings.json` in the [data directory](#where-the-data-lives), and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Note that saving *anything* in the Web UI writes all of these settings at once, so a value you never touched can end up saved too. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /docksentry/settings.json.`, and the affected field carries a small `env` marker in the Web UI. The path in that line is your data directory's, so an install from before the move reads `/data/settings.json` there. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
 
 Which settings the Web UI can change is marked ⚙ in the tables above — per variable, rather than described in a paragraph somewhere else. @NotRetarded had to guess from two pages that did not obviously agree (#2), which is a fair thing to be confused by. Telegram is fully optional: with `BOT_TOKEN` / `CHAT_ID` unset, Docksentry runs headless (Web UI + Discord/webhook/e-mail).
 

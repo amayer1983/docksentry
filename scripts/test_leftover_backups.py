@@ -81,7 +81,11 @@ def main():
     # ── 3. the debris already out there is named, not deleted ────
     web = src("web_ui.py")
     i = web.index("leftovers = []")
-    seg = web[i:i + 1400]
+    # Bounded by the end of the block, not by a character count: a fixed
+    # window silently stops covering the code as soon as someone adds a
+    # comment, and the assertion then fails for a reason that has nothing
+    # to do with what it is about.
+    seg = web[i:web.index("leftovers = sorted(set(leftovers))", i)]
     checks["the page lists leftovers by name"] = '_old"' in seg
     # Only where the live container is present too — otherwise a
     # container someone deliberately named `foo_old` gets accused of
