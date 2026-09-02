@@ -77,6 +77,10 @@ def read_mounts(backend, own_name):
 #: ecosystem uses for its own.
 LEGACY_DATA_DIR = "/data"
 
+#: …and where it lives now. Kept here rather than imported from
+#: `config` so this module stays readable on its own.
+DEFAULT_DATA_DIR = "/docksentry"
+
 
 def analyse(mounts, data_dir="/data"):
     """Findings about where the data directory really lives.
@@ -117,7 +121,23 @@ def analyse(mounts, data_dir="/data"):
         # mounted there, and told them to make it Docksentry's database.
         # A mount at the old path is either ours from before or plainly
         # somebody else's; neither is a finding.
-        if dest == LEGACY_DATA_DIR:
+        # Neither the path our data used to live at nor the one it lives
+        # at now. `/data` is everybody's name, and `/docksentry` is ours —
+        # the image declares a VOLUME there, so Docker creates an
+        # anonymous one on every install that mounts its data somewhere
+        # else. Flagging it told every existing user their data directory
+        # was wrong and handed them the anonymous volume's path to mount
+        # instead, which is the one place it would have been thrown away
+        # (#2, @famewolf, on all three of his hosts within hours of the
+        # release).
+        if dest in (LEGACY_DATA_DIR, DEFAULT_DATA_DIR):
+            continue
+        # An anonymous volume is Docker's doing, never a choice somebody
+        # made — so it cannot be a data directory they "meant". Offering
+        # its path as the mount to use is worse than saying nothing: that
+        # path is exactly the one thrown away on the next recreate, which
+        # is what the message warns about two lines further up.
+        if m.get("Type") == "volume" and _ANON.match(str(m.get("Name") or "")):
             continue
         if (posixpath.basename(dest).lower() in _MEANT_AS_DATA
                 or dest == "/app/data"):

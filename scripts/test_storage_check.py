@@ -102,8 +102,12 @@ checks["an anonymous volume at /data is flagged"] = kinds(
     [SOCK, anon()]) == ["anonymous"]
 checks["nothing mounted at /data is flagged"] = kinds([SOCK]) == ["unmounted"]
 
-# Other spellings of the same mistake.
-for wrong in ("/app/data", "/config", "/docksentry", "/opt/ds/data"):
+# Other spellings of the same mistake. NOT `/docksentry`: the image
+# declares a VOLUME there, so Docker creates an anonymous one on every
+# install whose data sits elsewhere — flagging it told every existing
+# user their data directory was wrong (#2, @famewolf, on all three of his
+# hosts within hours of 2.17.6).
+for wrong in ("/app/data", "/config", "/opt/ds/data"):
     checks[f"a data directory mounted at {wrong} is flagged"] = (
         "wrong_mount" in kinds([bind("/host/dir", wrong), named()]))
 
