@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 import notify_retry
-from errfmt import clip
+from errfmt import clip, human
 
 
 # ── Single source of truth for all bot commands ────────────────────────
@@ -812,7 +812,7 @@ class TelegramBot:
                 return False, self.t("lifecycle_start_failed", name=name,
                                       error=(r.stderr or "").strip()[:200])
             except subprocess.SubprocessError as e:
-                return False, self.t("lifecycle_start_failed", name=name, error=str(e)[:200])
+                return False, self.t("lifecycle_start_failed", name=name, error=human(e, self.t))
 
         if action == "restart":
             # docker restart is graceful stop + start; use generous
@@ -825,7 +825,7 @@ class TelegramBot:
                 return False, self.t("lifecycle_restart_failed", name=name,
                                       error=(r.stderr or "").strip()[:200])
             except subprocess.SubprocessError as e:
-                return False, self.t("lifecycle_restart_failed", name=name, error=str(e)[:200])
+                return False, self.t("lifecycle_restart_failed", name=name, error=human(e, self.t))
 
         return False, f"unknown action: {action}"
 
@@ -1055,7 +1055,7 @@ class TelegramBot:
                     raise
                 # One unreachable host must not stop the others from being
                 # reported — same rule the scheduler follows (#7).
-                _detail = clip(e)
+                _detail = human(e, self.t)
                 try:
                     import hostdiag
                     _extra = hostdiag.hint(getattr(host, "endpoint", ""), e)
@@ -4058,7 +4058,7 @@ class TelegramBot:
                     # reported — same rule the scheduler follows (#7).
                     self.send_message(self.t("host_check_failed",
                                              host=host.name,
-                                             error=str(e)[:200]))
+                                             error=human(e, self.t)))
                     continue
                 if updates:
                     found = True
@@ -4124,7 +4124,7 @@ class TelegramBot:
                     # One unreachable host must not swallow the others'
                     # results — same rule the scheduler follows.
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=str(e)[:200]))
+                                             host=host.name, error=human(e, self.t)))
                     continue
                 if updates:
                     found = True
@@ -4193,7 +4193,7 @@ class TelegramBot:
                     if not self._multi():
                         raise
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=str(e)[:200]))
+                                             host=host.name, error=human(e, self.t)))
                     continue
                 if updates:
                     batches.append((host_checker, updates))

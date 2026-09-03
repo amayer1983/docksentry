@@ -6,7 +6,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from errfmt import clip
+from errfmt import clip, human
 
 
 # Markers older than this are considered stale (a previous self-update
@@ -173,7 +173,7 @@ class Scheduler:
         # this message is the one somebody reads at 18:00 when nothing
         # updated, and "Permission denied (publickey)" is right and
         # useless on its own (#2).
-        detail = clip(err)
+        detail = human(err, self.bot.t)
         try:
             import hostdiag
             endpoint = ""

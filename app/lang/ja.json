@@ -874,5 +874,6 @@
   "web_compose_mount_note": "ホスト上の別の場所にファイルがある場合（スタック管理ツールは通常、自身のコンテナ内に保持します）、左側にはそのディレクトリを指定してください。",
   "web_compose_mount_exact_note": "実験的機能: この行は、対象のファイルを保持している実行中のコンテナから読み取ったものです。うまくいかない場合は教えてください。",
   "web_compose_mount_clash": "ここではマウントでは解決できません。Docksentry は自身のデータを `{path}` に置いており、そこに別のものをマウントすると隠れてしまいます。Docksentry のデータを別の場所（DATA_DIR）に移せば、上のパスをマウントできます。",
-  "selfupdate_pull_denied_hint": "レジストリに `{image}` がありません。ここでビルドされた（ローカルビルドのイメージには取得元がなく、自己更新にはレジストリ上のイメージが必要です）か、レジストリが非公開で認証情報を求めています（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。"
+  "selfupdate_pull_denied_hint": "レジストリに `{image}` がありません。ここでビルドされた（ローカルビルドのイメージには取得元がなく、自己更新にはレジストリ上のイメージが必要です）か、レジストリが非公開で認証情報を求めています（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
+  "error_timed_out": "{seconds} 秒以内に応答なし"
 }
