@@ -5,7 +5,41 @@ STARTTLS/SSL/none transport selection, multi-recipient parsing, BOT_LABEL
 subject prefix — all exactly as before the plugin split.
 """
 
+import notify_retry
+
 from .base import BaseNotifier
+
+
+def _is_network(err):
+    """Is `err` the network failing, rather than the server saying no?
+
+    The distinction decides whether a failed mail is worth holding for a
+    retry, and getting it wrong is expensive in both directions: a
+    rejected message retried every flush is a loop against a server that
+    will keep refusing it, and a lost one is a crash alert nobody sees.
+
+    `smtplib.SMTPException` is a subclass of `OSError` — measured, not
+    assumed — so the obvious `except OSError` would call a wrong password
+    and a refused recipient "network trouble" and retry both forever. The
+    SMTP classes are therefore asked FIRST, and only what is left over
+    falls through to the socket errors.
+
+    `SMTPServerDisconnected` is the one smtplib raises with no response
+    code behind it: the far end went away mid-conversation. Everything
+    else in that family carries something the server actually said.
+    """
+    # Imported here, like `send_raw` does: this module keeps `smtplib`
+    # and `ssl` out of import time on purpose.
+    import smtplib
+    import ssl
+
+    if isinstance(err, ssl.SSLError):
+        return False                 # a TLS refusal is an answer, not silence
+    if isinstance(err, smtplib.SMTPServerDisconnected):
+        return True
+    if isinstance(err, smtplib.SMTPException):
+        return False
+    return isinstance(err, OSError)  # gaierror, ConnectionError, TimeoutError
 
 
 class SmtpNotifier(BaseNotifier):
@@ -39,7 +73,8 @@ class SmtpNotifier(BaseNotifier):
         return self.send_raw(subject, body or subject,
                              attachment=(filename, data))
 
-    def send_raw(self, subject, body, attachment=None):
+    def send_raw(self, subject, body, attachment=None,
+                 on_network_failure=None):
         """Send a plain-text e-mail via SMTP. `smtp_tls` selects the
         transport: "starttls" (default, 587), "ssl" (implicit, 465) or
         "none". SMTP_TO may be a comma/semicolon-separated list. Best-effort:
@@ -86,6 +121,13 @@ class SmtpNotifier(BaseNotifier):
             print("SMTP: certificate verification is OFF "
                   "(SMTP_TLS_VERIFY=false) — the password is sent to "
                   "whatever answers on that address.")
+        # Everything up to `send_message` can be retried safely: nothing
+        # has been handed to the server yet. From that call onwards it
+        # cannot — if the connection dies after DATA, the server may well
+        # have accepted the mail, and e-mail has no transaction id to
+        # dedupe a second copy with. So a lost mail there stays lost,
+        # which is the lesser of the two (#66, @NotRetarded).
+        handed_over = False
         try:
             if c.smtp_tls == "ssl":
                 server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port,
@@ -97,9 +139,18 @@ class SmtpNotifier(BaseNotifier):
                     server.starttls(context=ctx)
                 if c.smtp_user:
                     server.login(c.smtp_user, c.smtp_password)
+                handed_over = True
                 server.send_message(msg, to_addrs=recipients)
             finally:
-                server.quit()
+                # `quit` talks to the server, so on a broken connection it
+                # raises too — and an exception from a `finally` REPLACES
+                # the one that got us here. We would then classify the
+                # wrong failure. Read from the stdlib, not guessed.
+                try:
+                    server.quit()
+                except Exception:
+                    pass
+            return True
         except ssl.SSLCertVerificationError as e:
             # Name the escape hatch. Before this change the mail went out
             # regardless, so anyone with a self-signed internal server sees
@@ -110,6 +161,9 @@ class SmtpNotifier(BaseNotifier):
                   f"but be aware that sends the password unverified.")
         except Exception as e:
             print(f"SMTP error: {e}")
+            if not handed_over and _is_network(e) and on_network_failure:
+                on_network_failure()
+        return False
 
     # ── payloads ─────────────────────────────────────────────────────
     def send_updates_available(self, updates):
@@ -126,6 +180,22 @@ class SmtpNotifier(BaseNotifier):
             lang=notify_text.lang_of(self))
         self.send_raw(subject, body)
 
+    def _send_text(self, text):
+        """One plain mail, `True` when it landed. No retry registration:
+        `notify_retry` decides what happens to an entry it is retrying,
+        and a resend that re-queued itself would reset the age and never
+        expire."""
+        return bool(self.send_raw("Docksentry", text.replace("*", "")))
+
     def send_message(self, text):
         # Strip Telegram *bold* markers for a clean plain-text mail.
-        self.send_raw("Docksentry", text.replace("*", ""))
+        #
+        # Only a failure BEFORE the message reached the server is held —
+        # `send_raw` calls this back for those alone. After `DATA` we
+        # cannot know whether the mail was accepted, and e-mail has no
+        # transaction id to dedupe a second copy with, so a lost mail
+        # there stays lost. It is the lesser of the two (#66).
+        self.send_raw(
+            "Docksentry", text.replace("*", ""),
+            on_network_failure=lambda: notify_retry.remember(
+                self.name, text, self._send_text))
