@@ -212,6 +212,32 @@ First release through the beta channel — features settle on `:beta` before the
 ### Added
 - **Network and disk I/O in the `/status` detail.** `docker stats` hands them over in the same call that already fetches CPU and memory, so the two extra fields cost nothing. A runtime that reports fewer fields still yields the two that matter.
 - **The `beta` channel, documented.** New features land on `amayer1983/docksentry:beta` first and move to `:latest` once they have settled — `:latest` is never moved by a pre-release, so `AUTO_SELFUPDATE` only ever pulls settled versions.
+## [2.18.0-beta.24] - 2026-09-05
+
+Everything from 2.17.6 and 2.17.7, carried onto the multi-host line.
+
+The beta had fallen behind `:latest` — it was built on 27 August and none of
+the stable work since had reached it, so anyone testing the beta was running
+*older* software than anyone who wasn't. That is fixed: the precise Compose
+warning, the Compose block on the container page, the self-update button and
+the `updating` badge, notifications that survive a network outage, the crash
+alert that says *when* it measured, `/changelog` reading on the right host,
+the parallel host queries and the shortened waits for a dead one, the data
+directory that stops claiming `/data`, and the storage check that no longer
+accuses a volume somebody else mounted. The full text for each is in the
+2.17.6 and 2.17.7 entries below.
+
+Three of them did not port mechanically and were re-plumbed for this line,
+where the self-update lives in its own module rather than inside the bots:
+the hint on a denied pull, the private reply route (which now travels
+`start → run → swap → write_marker` and through the queue), and keeping the
+"restarting" notice out of the Discord channel when the request was private.
+
+### Fixed
+- **A held notification could be dropped by the flush that was meant to send it.** The retry queue had no lock: an entry appended between the end of `flush`'s loop and its closing assignment was discarded — not retried, not reported. A narrow window, and exactly the one an outage produces, since that is when both sides run at once.
+- **A private self-update silenced unrelated start-up notices.** Every boot notice took the private route while a reply address was set, so a storage-misconfiguration warning went to one person's DMs instead of the channel the operator watches. Only the answer to the request does that now.
+- **A Compose label naming both a manager's file and a host-side override produced an unusable mount line.** The exact lookup gave up on the whole set if any one path had no holder, and the fallback then offered to mount a container-internal path onto itself. Each path is answered on its own.
+
 ## [2.17.7] - 2026-09-01
 
 One bad warning, out within hours of 2.17.6. @famewolf saw it on all three of his hosts.
