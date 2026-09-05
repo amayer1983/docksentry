@@ -875,5 +875,6 @@
   "web_compose_mount_exact_note": "Experimentell: diese Zeile stammt aus dem laufenden Container, der die Dateien hält. Sag mir bitte Bescheid, wenn sie bei dir nicht funktioniert.",
   "web_compose_mount_clash": "Hier hilft kein Mount: Docksentry legt seine eigenen Daten auf `{path}` ab, und alles andere dorthin zu hängen würde sie verdecken. Lege Docksentrys Daten woanders hin (DATA_DIR), dann lässt sich der Pfad oben einhängen.",
   "selfupdate_pull_denied_hint": "Die Registry kennt kein `{image}`. Entweder wurde es hier gebaut — ein lokal gebautes Image hat nichts zum Ziehen, und ein Selbstupdate braucht eines aus einer Registry — oder die Registry ist privat und will Zugangsdaten (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "error_timed_out": "keine Antwort innerhalb von {seconds} Sekunden"
+  "error_timed_out": "keine Antwort innerhalb von {seconds} Sekunden",
+  "monitor_crash_restart_nocode": "🔁 {name} wurde um {when} von seiner Restart-Policy neu gestartet (Neustart #{count}). Der Exit-Code ist nicht bekannt — der Ereignisstrom hat diesen Fall nicht gesehen."
 }

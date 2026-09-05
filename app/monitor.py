@@ -335,14 +335,19 @@ class ContainerMonitor:
         kind, name, detail = event
         if kind != "crash_restart":
             return event
-        watcher = getattr(self, "watcher", None)
-        if not watcher:
-            return event
-        code = watcher.exit_code(name)
-        if code is None:
-            return event
         detail = dict(detail)
-        detail["code"] = code
+        watcher = getattr(self, "watcher", None)
+        code = watcher.exit_code(name) if watcher else None
+        if code is not None:
+            detail["code"] = code
+        elif detail.get("code"):
+            pass                 # a non-zero snapshot code is a real one
+        else:
+            # Only the ZERO is meaningless: a container that is running
+            # again reports `ExitCode: 0`, so that is "we have no idea",
+            # not "it exited cleanly" — and the two are opposites in a
+            # crash alert. Say we do not know instead of inventing it.
+            detail["code"] = None
         return kind, name, detail
 
     def _ensure_watcher(self):
@@ -414,6 +419,13 @@ class ContainerMonitor:
             if self._monitored(name, cur.get(name) or {})
         ]
         events = [self._with_real_exit_code(e) for e in events]
+        # A container on `restart: always` that finishes cleanly and is
+        # started again is doing what it was told — a batch job looping
+        # over its work, not a crash (#2, @famewolf). Only silent when the
+        # event stream actually SAW the zero: an unknown code stays an
+        # alert, because "we did not see it" is not "it ended well".
+        events = [e for e in events
+                  if not (e[0] == "crash_restart" and e[2].get("code") == 0)]
         # `_prev` becomes `cur` here, so by the time _notify runs it is no
         # longer "previous" at all. Naming it separately rather than
         # relying on that: a reader who sees `self._prev` in _notify and
@@ -866,9 +878,17 @@ class ContainerMonitor:
             # `code`/`when` are extra format kwargs: a translation that
             # hasn't picked them up yet simply ignores them, so no language
             # can break on this.
-            msg = t("monitor_crash_restart", name=shown,
+            # Two wordings, because there are two facts. With a code from
+            # the event stream we say it; without one we say the restart
+            # and stop there. The old single line printed the snapshot's
+            # `0` when it had nothing, which reads as "finished cleanly"
+            # — the opposite of what the alert is claiming (#2, @famewolf).
+            _code = detail.get("code")
+            msg = t("monitor_crash_restart" if _code is not None
+                    else "monitor_crash_restart_nocode",
+                    name=shown,
                     count=detail.get("count", "?"),
-                    code=detail.get("code", "?"),
+                    code=_code,
                     when=detail.get("when", "") or "?")
         else:
             msg = t("monitor_exited", name=shown, code=detail.get("code", "?"))

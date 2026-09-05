@@ -875,5 +875,6 @@
   "web_compose_mount_exact_note": "実験的機能: この行は、対象のファイルを保持している実行中のコンテナから読み取ったものです。うまくいかない場合は教えてください。",
   "web_compose_mount_clash": "ここではマウントでは解決できません。Docksentry は自身のデータを `{path}` に置いており、そこに別のものをマウントすると隠れてしまいます。Docksentry のデータを別の場所（DATA_DIR）に移せば、上のパスをマウントできます。",
   "selfupdate_pull_denied_hint": "レジストリに `{image}` がありません。ここでビルドされた（ローカルビルドのイメージには取得元がなく、自己更新にはレジストリ上のイメージが必要です）か、レジストリが非公開で認証情報を求めています（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
-  "error_timed_out": "{seconds} 秒以内に応答なし"
+  "error_timed_out": "{seconds} 秒以内に応答なし",
+  "monitor_crash_restart_nocode": "🔁 {name} は {when} に restart policy によって再起動されました（再起動 #{count}）。終了コードは不明です — イベントストリームがこの回を捉えませんでした。"
 }

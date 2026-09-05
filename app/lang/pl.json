@@ -875,5 +875,6 @@
   "web_compose_mount_exact_note": "Eksperymentalnie: ta linia pochodzi z działającego kontenera, który przechowuje te pliki. Daj znać, jeśli u ciebie nie działa.",
   "web_compose_mount_clash": "Tutaj żaden mount nie pomoże: Docksentry trzyma własne dane w `{path}`, a zamontowanie tam czegoś innego by je przesłoniło. Przenieś dane Docksentry (DATA_DIR), a powyższą ścieżkę da się zamontować.",
   "selfupdate_pull_denied_hint": "Rejestr nie ma `{image}`. Albo zbudowano ją tutaj — lokalnie zbudowany obraz nie ma skąd być pobrany, a samoaktualizacja potrzebuje obrazu z rejestru — albo rejestr jest prywatny i wymaga poświadczeń (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "error_timed_out": "brak odpowiedzi w ciągu {seconds} sekund"
+  "error_timed_out": "brak odpowiedzi w ciągu {seconds} sekund",
+  "monitor_crash_restart_nocode": "🔁 {name} został zrestartowany przez swoją politykę restartu o {when} (restart #{count}). Kod wyjścia nie jest znany — strumień zdarzeń go nie widział."
 }

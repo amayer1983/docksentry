@@ -875,5 +875,6 @@
   "web_compose_mount_exact_note": "Expérimental : cette ligne provient du conteneur en cours d'exécution qui détient ces fichiers. Dites-moi si elle ne fonctionne pas chez vous.",
   "web_compose_mount_clash": "Aucun montage ne peut résoudre cela ici : Docksentry conserve ses propres données dans `{path}`, et y monter autre chose les masquerait. Déplacez les données de Docksentry (DATA_DIR) et le chemin ci-dessus devient montable.",
   "selfupdate_pull_denied_hint": "Le registre n'a pas de `{image}`. Soit elle a été construite ici — une image construite localement n'a rien à télécharger, et une mise à jour automatique en exige une venant d'un registre — soit le registre est privé et demande des identifiants (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "error_timed_out": "aucune réponse en {seconds} secondes"
+  "error_timed_out": "aucune réponse en {seconds} secondes",
+  "monitor_crash_restart_nocode": "🔁 {name} a été redémarré par sa politique de redémarrage à {when} (redémarrage #{count}). Le code de sortie est inconnu — le flux d'événements n'a pas vu celui-ci."
 }

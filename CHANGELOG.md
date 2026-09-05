@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.8] - 2026-09-06
+
+Two things @famewolf reported on stable, and a message that quoted our own command line at him.
+
+### Fixed
+- **A container that finishes cleanly and comes back was announced as a crash.** His batch upscaler exits 0 after each video and `restart: always` starts it on the next one; every loop arrived as `crashed (exit 0) and was restarted by its restart policy` — a sentence that contradicts itself, about a container doing exactly what it was told. A restart after a clean exit is now silent.
+
+  The `exit 0` in it never came from his script. The detector fires on `RestartCount`, which is right — it is what catches a crash loop on Docker and Podman alike — but the code beside it came from `docker inspect`, and a container that is running again reports `ExitCode: 0`. So the number was never "it exited cleanly", it was "we have no idea", and in a crash alert those are opposites. The event stream now records the code for a clean exit too (without the snapshot, so it stays cheap), which is what makes the silence safe: only a zero we actually saw counts as one.
+
+- **An exit code we never saw is no longer printed as a zero.** Where the event stream missed the death — the watcher started after it, or the evidence aged out — the alert said `exit 0` and read as a clean ending. It now says the code is not known and why. An install running without the event stream keeps its alerts, worded that way; a non-zero code from `docker inspect` is real and still shown.
+
+- **A host that timed out quoted our own argv back at the reader.** `⚠️ Host srv20 could not be checked: Command ''docker', '-H', 'tcp://…', 'ps', '--format', '{{.Names}}'' timed out after 30 seconds` — technically true and useless. The command is ours, the doubled quotes are Python printing a list inside a string, and what is left worth saying is the wait. It now reads `no answer within 30 seconds`. Everything else a CLI says still goes through untouched; only Python's own wording is refused. The same applies to a container that could not be started or restarted.
+
 ## [2.17.7] - 2026-09-01
 
 One bad warning, out within hours of 2.17.6. @famewolf saw it on all three of his hosts.

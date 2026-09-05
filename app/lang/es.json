@@ -875,5 +875,6 @@
   "web_compose_mount_exact_note": "Experimental: esta línea se ha leído del contenedor en ejecución que contiene esos archivos. Dime si no te funciona.",
   "web_compose_mount_clash": "Aquí ningún montaje sirve: Docksentry guarda sus propios datos en `{path}`, y montar otra cosa ahí los ocultaría. Mueve los datos de Docksentry (DATA_DIR) y la ruta de arriba se podrá montar.",
   "selfupdate_pull_denied_hint": "El registro no tiene `{image}`. O se construyó aquí — una imagen construida localmente no tiene de dónde descargarse, y una autoactualización necesita una de un registro — o el registro es privado y pide credenciales (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "error_timed_out": "sin respuesta en {seconds} segundos"
+  "error_timed_out": "sin respuesta en {seconds} segundos",
+  "monitor_crash_restart_nocode": "🔁 {name} fue reiniciado por su política de reinicio a las {when} (reinicio #{count}). El código de salida no se conoce: el flujo de eventos no vio este caso."
 }

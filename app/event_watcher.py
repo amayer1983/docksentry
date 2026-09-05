@@ -247,14 +247,17 @@ class EventWatcher:
         if not parsed:
             return
         action, name, code, oom = parsed
-        # A clean exit is a normal ending — the poller stays quiet for those,
-        # so capturing a snapshot for every `--rm` helper that finishes would
-        # be pure cost. An OOM always counts, since Podman reports no exit
-        # code alongside it.
-        if action == "die" and not oom and (code is None or code == 0):
-            return
-
-        snap = self._snapshot()
+        # A clean exit is a normal ending, so it does not get a snapshot:
+        # running `docker stats` for every `--rm` helper that finishes would
+        # be pure cost. But the CODE is recorded, and that is new — without
+        # it the poller could not tell "exited 0" from "we never saw the
+        # event", and it printed the fallback `0` for both. A container on
+        # `restart: always` that finishes its work and comes back was then
+        # announced as having crashed, with a number we had invented
+        # (#2, @famewolf, a batch upscaler looping over videos).
+        # An OOM always counts, since Podman reports no exit code with it.
+        _clean = action == "die" and not oom and (code is None or code == 0)
+        snap = "" if _clean else self._snapshot()
         with self._lock:
             prev = self._evidence.get(name)
             # The `oom` event arrives ~100ms BEFORE the `die` on Docker.
