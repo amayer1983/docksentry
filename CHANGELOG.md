@@ -212,6 +212,17 @@ First release through the beta channel — features settle on `:beta` before the
 ### Added
 - **Network and disk I/O in the `/status` detail.** `docker stats` hands them over in the same call that already fetches CPU and memory, so the two extra fields cost nothing. A runtime that reports fewer fields still yields the two that matter.
 - **The `beta` channel, documented.** New features land on `amayer1983/docksentry:beta` first and move to `:latest` once they have settled — `:latest` is never moved by a pre-release, so `AUTO_SELFUPDATE` only ever pulls settled versions.
+## [2.18.0-beta.25] - 2026-09-05
+
+One report from @famewolf, and two bugs behind it.
+
+### Fixed
+- **A container that finishes cleanly and comes back was announced as a crash.** His batch upscaler exits 0 after each video and `restart: always` starts it on the next one; every loop arrived as `vhs-batch-upscaler crashed (exit 0) and was restarted by its restart policy` — a sentence that contradicts itself, about a container doing exactly what it was told. A restart after a clean exit is now silent.
+
+  The `exit 0` in it never came from his script. The detector fires on `RestartCount`, which is right — it is what catches a crash loop on Docker and Podman alike — but the code beside it came from `docker inspect`, and a container that is running again reports `ExitCode: 0`. So the number was never "it exited cleanly", it was "we have no idea", and in a crash alert those are opposites. The event stream now records the code for a clean exit too (without the snapshot, so it stays cheap), which is what makes the silence safe: only a zero we actually saw counts as one.
+
+- **An exit code we never saw is no longer printed as a zero.** Where the event stream missed the death — the watcher started after it, or the evidence aged out — the alert said `exit 0` and read as a clean ending. It now says the code is not known and why. An install running without the event stream at all keeps its alerts, worded that way; a non-zero code from `docker inspect` is real and still shown.
+
 ## [2.18.0-beta.24] - 2026-09-05
 
 Everything from 2.17.6 and 2.17.7, carried onto the multi-host line.
