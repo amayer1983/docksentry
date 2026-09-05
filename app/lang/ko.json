@@ -970,5 +970,6 @@
   "web_compose_mount_clash": "여기서는 어떤 마운트로도 해결할 수 없습니다. Docksentry는 자체 데이터를 `{path}` 에 두며, 그곳에 다른 것을 마운트하면 가려집니다. Docksentry의 데이터를 다른 곳(DATA_DIR)으로 옮기면 위 경로를 마운트할 수 있습니다.",
   "selfupdate_pull_denied_hint": "레지스트리에 `{image}` 가 없습니다. 여기에서 빌드되었거나(로컬 빌드 이미지는 받아올 곳이 없고, 자체 업데이트에는 레지스트리의 이미지가 필요합니다), 레지스트리가 비공개라 자격 증명을 요구합니다(`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ 자체 업데이트를 시작했습니다 — 완료되면 다이렉트 메시지로 알리고, 적용할 것이 있으면 재시작합니다.",
-  "error_timed_out": "{seconds}초 내에 응답 없음"
+  "error_timed_out": "{seconds}초 내에 응답 없음",
+  "monitor_crash_restart_nocode": "🔁 {name} 이(가) {when} 에 restart policy 로 재시작되었습니다 (재시작 #{count}). 종료 코드는 알 수 없습니다 — 이벤트 스트림이 이번 건을 보지 못했습니다."
 }

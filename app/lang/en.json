@@ -970,5 +970,6 @@
   "web_compose_mount_clash": "There is no mount that can fix this here: Docksentry keeps its own data at `{path}`, and mounting anything else there would hide it. Move Docksentry's data elsewhere (DATA_DIR) and the path above becomes mountable.",
   "selfupdate_pull_denied_hint": "The registry has no `{image}`. Either it was built here — a locally built image has nothing to pull from, and a self-update needs one from a registry — or the registry is private and wants credentials (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Self-update started — I will send you a direct message when it finishes, and restart if there is something to apply.",
-  "error_timed_out": "no answer within {seconds} seconds"
+  "error_timed_out": "no answer within {seconds} seconds",
+  "monitor_crash_restart_nocode": "🔁 {name} was restarted by its restart policy at {when} (restart #{count}). The exit code is not known — the event stream did not see this one."
 }
