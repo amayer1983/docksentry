@@ -334,6 +334,50 @@ finally:
     time.sleep = orig_sleep
     notify_retry.queue.clear()
 
+# A message handed to us WHILE a flush is running must not vanish.
+#
+# The scheduler flushes on its own thread; remember() is called from
+# whichever thread was sending, and both only happen during an outage —
+# so they overlap exactly when it matters. The old code iterated
+# `self._items` in place and ended with `self._items = keep`: an append
+# during the LOOP was picked up (Python iteration sees it), but one
+# landing between the loop and that assignment was thrown away. A narrow
+# window, and a silent loss of the one message the queue exists for.
+#
+# The behavioural half below cannot hit a microsecond window reliably, so
+# it guards the ordering guarantee instead; the property that closes the
+# race is asserted on the source underneath it.
+import threading as _th  # noqa: E402
+
+_q = notify_retry.RetryQueue()
+_gate = _th.Event()
+_flushed = _th.Event()
+
+_q.remember("telegram", "first", lambda _t: (_gate.wait(2), False)[1])
+_t = _th.Thread(target=lambda: (_q.flush(), _flushed.set()), daemon=True)
+_t.start()
+_th.Event().wait(0.05)                       # let flush get into the send
+_q.remember("telegram", "arrived mid-flush", lambda _t: True)
+_gate.set()
+_flushed.wait(3)
+
+_held = [i["text"] for i in _q._items]
+checks["a message queued during a flush is not lost"] = (
+    "arrived mid-flush" in _held)
+checks["…and the older one still comes first"] = (
+    _held == ["first", "arrived mid-flush"])
+
+_src = open(notify_retry.__file__, encoding="utf-8").read()
+checks["the queue is guarded by a lock"] = ("self._lock" in _src)
+checks["flush takes the batch out under it, not in place"] = (
+    "batch, self._items = self._items, []" in _src)
+checks["…and merges survivors back under it too"] = (
+    "self._items = keep + self._items" in _src)
+checks["the send itself happens OUTSIDE the lock"] = (
+    _src.index("batch, self._items")
+    < _src.index('held["send"]')
+    < _src.index("keep + self._items"))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

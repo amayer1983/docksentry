@@ -96,19 +96,36 @@ def _with_mounts(rows, paths):
         _HANDLER._all_mounts = staticmethod(_orig_all)
 
 
+def _lines(rows, paths):
+    """Just the mount pairs, dropping the path each is answering for."""
+    out = _with_mounts(rows, paths)
+    return None if out is None else [line for _p, line in out]
+
+
 checks["a named volume is named, not turned into a directory"] = (
-    _with_mounts(_M, ["/data/compose/13/docker-compose.yml"])
+    _lines(_M, ["/data/compose/13/docker-compose.yml"])
     == [("portainer_data", "/data")])
 checks["a manager we have never heard of still resolves"] = (
-    _with_mounts(_M, ["/opt/stacks/plex/compose.yaml"])
+    _lines(_M, ["/opt/stacks/plex/compose.yaml"])
     == [("/share/Container/Dockhand/stacks", "/opt/stacks")])
 checks["a host path resolves to nothing, so the self-mount stands"] = (
     _with_mounts(_M, ["/home/you/stacks/docker-compose.yml"]) is None)
+# A label naming both kinds: the manager file keeps its exact line, and
+# the host-side override is left for the self-mount form. Answering
+# `None` for the pair made the caller offer to mount the container path
+# onto itself, which cannot work.
+_mixed = _with_mounts(_M, ["/opt/stacks/plex/compose.yaml",
+                           "/home/you/override.yml"])
+checks["a mixed label keeps the line it does know"] = (
+    _mixed is not None
+    and _mixed[0][1] == ("/share/Container/Dockhand/stacks", "/opt/stacks"))
+checks["…and admits it does not know the other"] = (
+    _mixed[1][1] is None)
 checks["two equally deep mounts and no manager: say nothing"] = (
     _with_mounts([dict(_M[1]), dict(_M[1], src="/srv/other")],
                  ["/data/compose/13/docker-compose.yml"]) is None)
 checks["the manager breaks the tie against a plain container"] = (
-    _with_mounts(_M, ["/data/compose/2/docker-compose.yml"])
+    _lines(_M, ["/data/compose/2/docker-compose.yml"])
     == [("portainer_data", "/data")])
 checks["no mount information at all is not a guess"] = (
     _with_mounts([], ["/data/compose/2/docker-compose.yml"]) is None)

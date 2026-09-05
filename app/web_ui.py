@@ -4990,14 +4990,26 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # A mount that lands where we already have something would
             # shadow it. `/data` is the collision that matters: it is our
             # own state directory and Portainer's as well.
-            clash = sorted({d for _l, d in (exact or [])} & self._own_mount_dests())
+            clash = sorted({d for _p, line in (exact or []) if line
+                            for _l, d in (line,)} & self._own_mount_dests())
             if clash:
                 return (f'<div class="form-help" style="margin:4px 0 0">'
                         f'{_e(t("web_compose_mount_clash", path=clash[0]))}</div>')
             if exact:
-                lines = "".join(
-                    f'<pre class="mount-hint">volumes:\n'
-                    f'  - {_e(lhs)}:{_e(dest)}:ro</pre>' for lhs, dest in exact)
+                # One line per path: the exact one where the daemon knows
+                # who holds the file, the directory onto itself where it
+                # does not. Deduplicated, because two files in one place
+                # need one mount.
+                seen, parts = [], []
+                for _p, line in exact:
+                    lhs, dest = line if line else (self._compose_mount_targets(
+                        [_p], info.get("compose_project", ""))[0],) * 2
+                    if (lhs, dest) in seen:
+                        continue
+                    seen.append((lhs, dest))
+                    parts.append(f'<pre class="mount-hint">volumes:\n'
+                                 f'  - {_e(lhs)}:{_e(dest)}:ro</pre>')
+                lines = "".join(parts)
                 note = t("web_compose_mount_exact_note")
             else:
                 lines = "".join(
@@ -5105,15 +5117,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
         @staticmethod
         def _compose_mount_exact(paths):
-            """The volume line that would make `paths` visible, or None.
+            """`[(path, (lhs, dest) or None)]`, or None when we know nothing.
 
-            Finds the container that already holds these files and reads
-            its mount straight off the daemon — so it works for a manager
-            we have never heard of, as long as it runs on this machine.
-            None when nothing holds them (the label is a host path, and
-            the self-mount is the answer) or when several containers mount
+            Finds the container that already holds each file and reads its
+            mount straight off the daemon — so it works for a manager we
+            have never heard of, as long as it runs on this machine.
+
+            Per path, not all-or-nothing: a label can name a manager's file
+            and a host-side override at once, and bailing on the whole
+            thing made the caller offer to mount the container-internal
+            path onto itself, which cannot work. A path nothing holds gets
+            `None` and the caller fills it in with the self-mount form.
+
+            Still `None` for the whole set when several containers mount
             the same depth and none looks like a manager: a confidently
-            wrong mount is what this whole thread was about.
+            wrong mount is what this thread was about.
             """
             rows = WebHandler._all_mounts()
             if not rows:
@@ -5127,7 +5145,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 hits = [r for r in rows
                         if p == r["dest"] or p.startswith(r["dest"] + "/")]
                 if not hits:
-                    return None                      # a host path; not our case
+                    out.append((p, None))            # a host path; not ours
+                    continue
                 deepest = max(len(h["dest"]) for h in hits)
                 hits = [h for h in hits if len(h["dest"]) == deepest]
                 if len(hits) > 1:
@@ -5140,10 +5159,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         return None                  # ambiguous: say nothing
                     hits = looks
                 h = hits[0]
-                line = (h["vol"] if h["type"] == "volume" else h["src"], h["dest"])
-                if line not in out:
-                    out.append(line)
-            return out or None
+                out.append((p, (h["vol"] if h["type"] == "volume" else h["src"],
+                                h["dest"])))
+            return out if any(line for _p, line in out) else None
 
         @staticmethod
         def _compose_mount_targets(paths, project=""):

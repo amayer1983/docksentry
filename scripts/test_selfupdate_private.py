@@ -125,7 +125,8 @@ def run_boot(ns, reply_to, dm_result=True):
     original = discord_bot.send_private
     discord_bot.send_private = fake_send_private
     try:
-        ns["boot_announce"]("🚀 Docksentry started (v9.9.9)")
+        ns["boot_announce"]("🚀 Docksentry updated: v9.9.8 → v9.9.9",
+                            reply=True)
     finally:
         discord_bot.send_private = original
     return notifier, telegram_sent, dms
@@ -233,6 +234,37 @@ SELFUPDATE_SRC = open(_su_mod.__file__).read()
 locked = SELFUPDATE_SRC.split("def run(")[1].split("\ndef ")[0]
 checks["the pre-restart 'restarting' notice skips them as well"] = (
     "skip=DISCORD_CHANNELS if reply_to else ()" in locked)
+
+
+# ── 4b. only the ANSWER takes the private route ───────────────────────
+# The privacy belongs to the person who asked, not to everything the boot
+# happens to say. Routing all of it privately kept a storage-
+# misconfiguration warning out of the channel the operator watches and put
+# it in the DMs of whoever last ran /selfupdate — who may not be them.
+MAIN_SRC = open(os.path.join(os.path.dirname(__file__), "..",
+                             "app", "main.py"), encoding="utf-8").read()
+_ba = MAIN_SRC[MAIN_SRC.index("def boot_announce("):]
+_ba = _ba[:_ba.index("\n    # ")]
+
+checks["a boot notice is public unless it is marked as the answer"] = (
+    "def boot_announce(text, reply=False)" in _ba
+    and "private = bool(reply and selfupdate_reply_to)" in _ba)
+checks["…and only that one is skipped for the channel"] = (
+    "skip=DISCORD_CHANNELS if private else ()" in _ba)
+checks["…and only that one is sent as a direct message"] = (
+    "if private:" in _ba and "deliver_private(text)" in _ba)
+
+_calls = [ln.strip() for ln in MAIN_SRC.split("\n")
+          if "boot_announce(" in ln and "def " not in ln]
+_marked = [c for c in _calls if "reply=True" in c]
+checks["the self-update result is the answer"] = any(
+    "whatsnew_msg" in c for c in _marked)
+checks["…and so is a self-update that failed"] = any(
+    "_fail" in c for c in _marked)
+checks["the storage warning is not"] = all(
+    "storage_msg" not in c for c in _marked)
+checks["nor the ordinary start-up line"] = all(
+    "startup_msg" not in c for c in _marked)
 
 
 # ── 5. the route survives the queue ───────────────────────────────────

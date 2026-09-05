@@ -41,6 +41,7 @@ rest of the pass rather than hammered, and its remaining messages stay
 behind the one that failed.
 """
 
+import threading
 import time
 
 #: How long a held notification is still worth delivering. See the module
@@ -75,15 +76,25 @@ class RetryQueue:
         self._clock = clock
         self._wall = wall
         self._items = []
+        #: `remember` runs on whichever thread was sending — the Telegram
+        #: poller, the Discord bot, a web-triggered update — while `flush`
+        #: runs on the scheduler's. Without this, an entry appended while
+        #: flush was rebuilding the list was thrown away by its final
+        #: assignment: not retried, not reported, gone. And the two
+        #: overlap exactly during an outage, which is the only time
+        #: either of them does anything.
+        self._lock = threading.Lock()
 
     # ── state ────────────────────────────────────────────────────────
     def pending(self):
         """How many messages are waiting."""
-        return len(self._items)
+        with self._lock:
+            return len(self._items)
 
     def clear(self):
         """Forget everything. For tests, and for a channel being torn down."""
-        self._items = []
+        with self._lock:
+            self._items = []
 
     # ── the two things it does ───────────────────────────────────────
     def remember(self, channel, text, send):
@@ -96,17 +107,18 @@ class RetryQueue:
         """
         if not text:
             return False
-        self._items.append({
-            "channel": channel,
-            "text": text,
-            "send": send,
-            "at": self._clock(),
-            "wall": self._wall(),
-        })
-        while len(self._items) > self.max_items:
-            gone = self._items.pop(0)
-            print(f"Notify retry: queue full at {self.max_items}, dropped the "
-                  f"oldest held {gone['channel']} message")
+        with self._lock:
+            self._items.append({
+                "channel": channel,
+                "text": text,
+                "send": send,
+                "at": self._clock(),
+                "wall": self._wall(),
+            })
+            while len(self._items) > self.max_items:
+                gone = self._items.pop(0)
+                print(f"Notify retry: queue full at {self.max_items}, dropped "
+                      f"the oldest held {gone['channel']} message")
         return True
 
     def flush(self):
@@ -116,13 +128,19 @@ class RetryQueue:
         already asked at the moment the message was created, and asking a
         second time would only mean holding it until it expires unsent.
         """
-        if not self._items:
-            return (0, 0)
+        # Taken out under the lock and worked on outside it: a resend can
+        # sit on a socket for a minute, and holding the lock that long
+        # would block every thread trying to hand us a failed message —
+        # during an outage, which is when both happen at once.
+        with self._lock:
+            if not self._items:
+                return (0, 0)
+            batch, self._items = self._items, []
         now = self._clock()
         sent = dropped = 0
         blocked = set()          # channels whose network is still down
         keep = []
-        for held in self._items:
+        for held in batch:
             age = now - held["at"]
             if age > self.max_age:
                 dropped += 1
@@ -144,7 +162,11 @@ class RetryQueue:
             else:
                 keep.append(held)
                 blocked.add(held["channel"])
-        self._items = keep
+        # Survivors go back in FRONT of anything that arrived while we
+        # were sending: they are older, and the queue is delivered oldest
+        # first.
+        with self._lock:
+            self._items = keep + self._items
         return (sent, dropped)
 
     # ── how a late message says it is late ───────────────────────────

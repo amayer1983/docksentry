@@ -708,7 +708,7 @@ def main():
         notifier.send_message(
             t("selfupdate_private_undeliverable") + "\n" + text, skip=others)
 
-    def boot_announce(text):
+    def boot_announce(text, reply=False):
         """One start-up notice, to every channel that should see it.
 
         Both recipients, always. The "started" line went to Telegram
@@ -720,12 +720,19 @@ def main():
         boot notice is how that stops being possible again.
         """
         from notifier import DISCORD_CHANNELS
+        # `reply` marks the ONE notice that answers a request. Only that
+        # one takes the private route: the privacy belongs to the person
+        # who asked, not to everything the boot happens to say. Routing
+        # all of it privately kept a storage-misconfiguration warning out
+        # of the channel the operator watches and put it in the DMs of
+        # whoever last ran /selfupdate — which may not even be them.
+        private = bool(reply and selfupdate_reply_to)
         if bot.enabled:
             bot.send_message(text)
         if notifier.has_channels():
             notifier.send_message(
-                text, skip=DISCORD_CHANNELS if selfupdate_reply_to else ())
-        if selfupdate_reply_to:
+                text, skip=DISCORD_CHANNELS if private else ())
+        if private:
             deliver_private(text)
 
     # Surface a failed self-update recreate (#43). The helper writes its
@@ -742,7 +749,7 @@ def main():
             if "rolling back" in _hcontent:
                 _tail = _hcontent.strip()[-900:]
                 _fail = t("selfupdate_recreate_failed", detail=_tail)
-                boot_announce(_fail)
+                boot_announce(_fail, reply=True)
                 print("Self-update recreate failed — helper output:\n" + _hcontent)
     except Exception as e:
         print(f"Could not read selfupdate helper log (non-fatal): {e}")
@@ -841,7 +848,7 @@ def main():
         boot_announce(killed_msg)
 
     if whatsnew_msg:
-        boot_announce(whatsnew_msg)
+        boot_announce(whatsnew_msg, reply=True)
         print(whatsnew_msg)
 
     # One-shot migration notice if we just stripped self from auto-update.
