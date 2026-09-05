@@ -308,6 +308,17 @@ checks["/selfupdate on Discord calls nothing TelegramBot lacks"] = all(
     hasattr(TelegramBot, m) for m in called)
 checks["…and hands the work to the module that does it"] = (
     "selfupdate.start" in cmd)
+# The running commentary follows the same rule as the restart notice.
+# Measured on a real run: "🔄 Checking update for localhost:5000/…" landed
+# in the channel for a request answered ephemerally — giving away the same
+# thing the ephemeral answer was hiding, one message before the notice we
+# already suppress.
+checks["a private request keeps its progress out of the channel"] = (
+    "send_private(self.config" in cmd and '"reply": _reply' in cmd)
+checks["…and a public one still reports there"] = (
+    "_reply = self.announce" in cmd)
+checks["…and a DM that will not open falls back rather than vanishing"] = (
+    "self.announce(text)" in cmd)
 checks["…and only records a reply route when replies are private"] = (
     "self._replies_private()" in cmd)
 

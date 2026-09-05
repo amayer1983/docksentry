@@ -1980,9 +1980,23 @@ class DiscordBot:
         # all-channel seam instead was the overcorrection: one /selfupdate
         # then answered in Telegram AND Discord, fourteen times over. The
         # events (found an update, restarting) still reach every channel.
+        # Where the running commentary goes. Public request: the channel,
+        # as always. Private one: a direct message, because "checking
+        # localhost:5000/docksentry:test" in the channel gives away the
+        # same thing the ephemeral answer was hiding — we already keep
+        # the restart notice out of there for exactly that reason, and
+        # doing one without the other is half a promise (#63).
+        _reply = self.announce
+        if reply_to:
+            _uid = reply_to["discord_user"]
+
+            def _reply(text, _uid=_uid):
+                if not send_private(self.config, _uid, text, log=self.log):
+                    self.announce(text)      # never lose it outright
+
         import threading
         threading.Thread(target=selfupdate.start, args=(ctx, target),
-                         kwargs={"reply": self.announce,
+                         kwargs={"reply": _reply,
                                  "reply_to": reply_to},
                          daemon=True).start()
         if reply_to:

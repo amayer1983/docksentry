@@ -65,7 +65,7 @@ dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
 checks["Telegram passes its own sender as the reply"] = (
     "reply=self.send_message" in tsrc)
 checks["Discord passes its own channel as the reply"] = (
-    '"reply": self.announce' in dsrc)
+    "_reply = self.announce" in dsrc and '"reply": _reply' in dsrc)
 # The restart event must NOT be a reply — it concerns everyone.
 ssrc = open(os.path.join(APP, "selfupdate.py"), encoding="utf-8").read()
 checks["the 'restarting' event goes through tell(), not the reply"] = (

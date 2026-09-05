@@ -236,6 +236,7 @@ the hint on a denied pull, the private reply route (which now travels
 ### Fixed
 - **A held notification could be dropped by the flush that was meant to send it.** The retry queue had no lock: an entry appended between the end of `flush`'s loop and its closing assignment was discarded — not retried, not reported. A narrow window, and exactly the one an outage produces, since that is when both sides run at once.
 - **A private self-update silenced unrelated start-up notices.** Every boot notice took the private route while a reply address was set, so a storage-misconfiguration warning went to one person's DMs instead of the channel the operator watches. Only the answer to the request does that now.
+- **A private self-update still narrated itself in the channel.** The ephemeral answer said "I'll send you a direct message", and the very next line — `🔄 Checking update for ghcr.io/…`, with the image id — went to the channel for everyone. Found by running one: we already keep the restart notice out of there for exactly this reason, and doing one without the other is half a promise. The running commentary now follows the request; a DM that cannot be opened falls back to the channel rather than losing the report.
 - **A Compose label naming both a manager's file and a host-side override produced an unusable mount line.** The exact lookup gave up on the whole set if any one path had no holder, and the fallback then offered to mount a container-internal path onto itself. Each path is answered on its own.
 
 ## [2.17.7] - 2026-09-01
