@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 import notify_retry
-from errfmt import clip
+from errfmt import clip, human
 import changelog
 import container_info
 import selfrestart
@@ -848,7 +848,7 @@ class TelegramBot:
                     raise
                 # One unreachable host must not stop the others from being
                 # reported — same rule the scheduler follows (#7).
-                _detail = clip(e)
+                _detail = human(e, self.t)
                 try:
                     import hostdiag
                     _extra = hostdiag.hint(getattr(host, "endpoint", ""), e)
@@ -3457,7 +3457,7 @@ class TelegramBot:
                     # reported — same rule the scheduler follows (#7).
                     self.send_message(self.t("host_check_failed",
                                              host=host.name,
-                                             error=str(e)[:200]))
+                                             error=human(e, self.t)))
                     continue
                 if updates:
                     found = True
@@ -3523,7 +3523,7 @@ class TelegramBot:
                     # One unreachable host must not swallow the others'
                     # results — same rule the scheduler follows.
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=str(e)[:200]))
+                                             host=host.name, error=human(e, self.t)))
                     continue
                 if updates:
                     found = True
@@ -3592,7 +3592,7 @@ class TelegramBot:
                     if not self._multi():
                         raise
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=str(e)[:200]))
+                                             host=host.name, error=human(e, self.t)))
                     continue
                 if updates:
                     batches.append((host_checker, updates))

@@ -969,5 +969,6 @@
   "web_compose_mount_exact_note": "Experimenteel: deze regel komt uit de draaiende container die die bestanden bevat. Laat het me weten als het bij jou niet werkt.",
   "web_compose_mount_clash": "Geen enkele mount lost dit hier op: Docksentry bewaart zijn eigen gegevens in `{path}`, en daar iets anders koppelen zou ze verbergen. Verplaats de gegevens van Docksentry (DATA_DIR) en het pad hierboven wordt koppelbaar.",
   "selfupdate_pull_denied_hint": "Het register heeft geen `{image}`. Of hij is hier gebouwd — een lokaal gebouwde image heeft niets om op te halen, en een self-update heeft er een uit een register nodig — of het register is privé en wil inloggegevens (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "chan_selfupdate_started_private": "⬆️ Zelfupdate gestart — ik stuur je een direct bericht als het klaar is en herstart als er iets toe te passen valt."
+  "chan_selfupdate_started_private": "⬆️ Zelfupdate gestart — ik stuur je een direct bericht als het klaar is en herstart als er iets toe te passen valt.",
+  "error_timed_out": "geen antwoord binnen {seconds} seconden"
 }

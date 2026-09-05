@@ -969,5 +969,6 @@
   "web_compose_mount_exact_note": "Deneysel: bu satır, o dosyaları barındıran çalışan konteynerden okundu. Sizde çalışmazsa lütfen haber verin.",
   "web_compose_mount_clash": "Burada hiçbir bağlama işe yaramaz: Docksentry kendi verilerini `{path}` altında tutar ve oraya başka bir şey bağlamak onları gizler. Docksentry'nin verilerini başka yere alın (DATA_DIR), o zaman yukarıdaki yol bağlanabilir.",
   "selfupdate_pull_denied_hint": "Kayıt defterinde `{image}` yok. Ya burada derlendi — yerel olarak derlenmiş bir imajın çekilecek bir yeri yoktur ve kendini güncelleme bir kayıt defterinden gelen imaj ister — ya da kayıt defteri özeldir ve kimlik bilgisi ister (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "chan_selfupdate_started_private": "⬆️ Kendini güncelleme başladı — bitince sana özel mesaj göndereceğim ve uygulanacak bir şey varsa yeniden başlayacağım."
+  "chan_selfupdate_started_private": "⬆️ Kendini güncelleme başladı — bitince sana özel mesaj göndereceğim ve uygulanacak bir şey varsa yeniden başlayacağım.",
+  "error_timed_out": "{seconds} saniye içinde yanıt yok"
 }

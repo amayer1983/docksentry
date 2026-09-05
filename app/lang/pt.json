@@ -969,5 +969,6 @@
   "web_compose_mount_exact_note": "Experimental: esta linha foi lida do contentor em execução que contém esses ficheiros. Diga-me se não funcionar consigo.",
   "web_compose_mount_clash": "Aqui nenhuma montagem resolve: o Docksentry guarda os seus próprios dados em `{path}`, e montar outra coisa aí iria escondê-los. Mova os dados do Docksentry (DATA_DIR) e o caminho acima passa a ser montável.",
   "selfupdate_pull_denied_hint": "O registry não tem `{image}`. Ou foi construída aqui — uma imagem construída localmente não tem de onde ser puxada, e um self-update precisa de uma vinda de um registry — ou o registry é privado e quer credenciais (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "chan_selfupdate_started_private": "⬆️ Autoatualização iniciada — enviarei uma mensagem direta ao terminar e reiniciarei se houver algo a aplicar."
+  "chan_selfupdate_started_private": "⬆️ Autoatualização iniciada — enviarei uma mensagem direta ao terminar e reiniciarei se houver algo a aplicar.",
+  "error_timed_out": "sem resposta em {seconds} segundos"
 }

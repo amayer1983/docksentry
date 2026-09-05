@@ -969,5 +969,6 @@
   "web_compose_mount_exact_note": "Experimental: this line was read off the running container that holds those files. Please tell me if it does not work for you.",
   "web_compose_mount_clash": "There is no mount that can fix this here: Docksentry keeps its own data at `{path}`, and mounting anything else there would hide it. Move Docksentry's data elsewhere (DATA_DIR) and the path above becomes mountable.",
   "selfupdate_pull_denied_hint": "The registry has no `{image}`. Either it was built here — a locally built image has nothing to pull from, and a self-update needs one from a registry — or the registry is private and wants credentials (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
-  "chan_selfupdate_started_private": "⬆️ Self-update started — I will send you a direct message when it finishes, and restart if there is something to apply."
+  "chan_selfupdate_started_private": "⬆️ Self-update started — I will send you a direct message when it finishes, and restart if there is something to apply.",
+  "error_timed_out": "no answer within {seconds} seconds"
 }

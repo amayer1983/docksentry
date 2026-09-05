@@ -36,3 +36,35 @@ def clip(err, limit=400, head=140):
     head = max(0, min(head, limit - 40))
     tail = limit - head - 5
     return f"{text[:head]} […] {text[-tail:]}"
+
+
+#: `subprocess.TimeoutExpired` stringifies as the whole command line:
+#:
+#:     Command ''docker', '-H', 'tcp://10.10.10.20:2375', 'ps',
+#:     '--format', '{{.Names}}|{{.Image}}'' timed out after 30 seconds
+#:
+#: Technically true and useless to read. The argv is ours, not the
+#: reader's — they know what Docksentry runs — and the doubled quotes
+#: come from Python printing a list inside a string. What is left worth
+#: saying is the part at the end.
+_TIMEOUT = __import__("re").compile(r"timed out after ([\d.]+) seconds?\s*$")
+
+
+def human(err, t=None):
+    """`err` as a line meant for a person.
+
+    A timeout says how long we waited and nothing else. Everything else
+    is passed through `clip`, because whatever the CLI chose to say is
+    still the most useful thing available — we only refuse to quote
+    Python at somebody.
+    """
+    text = " ".join(str(err).split())
+    m = _TIMEOUT.search(text)
+    if m:
+        secs = m.group(1)
+        if secs.endswith(".0"):
+            secs = secs[:-2]
+        if t is not None:
+            return t("error_timed_out", seconds=secs)
+        return f"no answer within {secs} seconds"
+    return clip(err)

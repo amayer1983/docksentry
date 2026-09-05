@@ -969,5 +969,6 @@
   "web_compose_mount_exact_note": "实验性功能：这一行读取自持有这些文件的运行中容器。如果在你那里不起作用，请告诉我。",
   "web_compose_mount_clash": "这里没有任何挂载能解决：Docksentry 把自己的数据放在 `{path}`，在那里挂载别的东西会把它遮住。把 Docksentry 的数据移到别处（DATA_DIR），上面的路径就可以挂载了。",
   "selfupdate_pull_denied_hint": "registry 中没有 `{image}`。要么它是在本机构建的（本地构建的镜像无处可拉，自我更新需要来自 registry 的镜像），要么 registry 是私有的并需要凭据（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
-  "chan_selfupdate_started_private": "⬆️ 自我更新已开始 — 完成后我会私信告诉你，若有内容需应用则会重启。"
+  "chan_selfupdate_started_private": "⬆️ 自我更新已开始 — 完成后我会私信告诉你，若有内容需应用则会重启。",
+  "error_timed_out": "{seconds} 秒内无响应"
 }
