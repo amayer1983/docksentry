@@ -41,6 +41,8 @@ import os
 import urllib.error
 import urllib.request
 
+import notify_retry
+
 from .base import BaseNotifier, channel_setting
 
 #: Apprise's own severities. Mapping onto them (rather than sending
@@ -75,10 +77,16 @@ class AppriseNotifier(BaseNotifier):
         return bool(_endpoint(self.config))
 
     # ── transport ────────────────────────────────────────────────────
-    def _post(self, title, body, kind=TYPE_INFO):
+    def _post(self, title, body, kind=TYPE_INFO, on_network_failure=None):
         """POST one notification. Best-effort: logs and returns on any
         failure rather than raising into the facade, same as every other
         channel — a broken notification must never take an update with it.
+
+        `on_network_failure` is called, with no arguments, only when the
+        send died on the network — never for an HTTP status. Apprise
+        answering 400 to a malformed URL answers 400 again fifteen
+        minutes later; an Apprise container that is still booting does
+        not (#66).
         """
         url = _endpoint(self.config)
         if not url:
@@ -112,7 +120,14 @@ class AppriseNotifier(BaseNotifier):
                      if e.code < 500 else "")
                   + " (response body withheld: it can echo APPRISE_URLS)")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # Below the HTTPError clause on purpose, and it has to stay
+            # there: HTTPError is a subclass of URLError, so swapping the
+            # two would read every 4xx as a dead network — and would also
+            # route it past the branch above, which is the one that keeps
+            # APPRISE_URLS out of the log.
             print(f"Apprise notification failed: {e}")
+            if on_network_failure is not None:
+                on_network_failure()
         return None
 
     def _title(self, text):
@@ -139,5 +154,20 @@ class AppriseNotifier(BaseNotifier):
         self._post(self._title(title), body,
                    TYPE_SUCCESS if success else TYPE_FAILURE)
 
+    def _post_text(self, text):
+        """Push `text`, False ONLY when the network was the reason it did
+        not arrive.
+
+        The queue's resend entry point — see `DiscordNotifier._post_text`
+        for why it is this and not `send_message`.
+        """
+        reached = [True]
+        self._post(self._title("Docksentry"), text, TYPE_INFO,
+                   on_network_failure=lambda: reached.__setitem__(0, False))
+        return reached[0]
+
     def send_message(self, text):
-        self._post(self._title("Docksentry"), text, TYPE_INFO)
+        if not self._post_text(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, self._post_text)

@@ -34,6 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import notify_retry
 from container_store import is_safe_link
 
 from .base import BaseNotifier, channel_setting
@@ -62,6 +63,21 @@ def _token(cfg):
 
 def _room(cfg):
     return (channel_setting(cfg, "matrix_room", "MATRIX_ROOM") or "").strip()
+
+
+def _new_txn():
+    """A fresh Matrix transaction ID — one per MESSAGE, not per attempt.
+
+    Matrix deduplicates a send on (access token, transaction ID), and
+    that is the only thing that makes repeating a send safe. Minting the
+    ID inside the send, which is what this file used to do, made its own
+    idempotency comment untrue: a PUT that timed out *after* the
+    homeserver had accepted it was sent again under a new ID and posted
+    the message a second time. The retry queue turns that from a rare
+    race into a routine one, so the ID now belongs to the message and
+    travels with it — see `MatrixNotifier._text_sender`.
+    """
+    return f"docksentry-{time.time_ns()}"
 
 
 class MatrixNotifier(BaseNotifier):
@@ -107,9 +123,18 @@ class MatrixNotifier(BaseNotifier):
             self._room_id_cache[room] = room_id
         return room_id
 
-    def _send(self, plain, html=None):
+    def _send(self, plain, html=None, txn=None, on_network_failure=None):
         """Send one room message. Best-effort: logs and returns on any
-        failure rather than raising into the facade."""
+        failure rather than raising into the facade.
+
+        `txn` is the message's transaction ID. Pass it to send the SAME
+        message again — the homeserver drops the duplicate. Left out, a
+        fresh one is minted, which is what every one-shot payload wants.
+
+        `on_network_failure` is called, with no arguments, only when the
+        send died on the network — never for an HTTP status, and never
+        for a malformed answer (#66).
+        """
         if not self.configured():
             return None
         try:
@@ -126,8 +151,10 @@ class MatrixNotifier(BaseNotifier):
                 body["formatted_body"] = html
             # The transaction ID makes a retried send idempotent — Matrix
             # deduplicates on it, so a timeout that actually delivered
-            # can't post the message twice.
-            txn = f"docksentry-{time.time_ns()}"
+            # can't post the message twice. That only holds while the ID
+            # is the *message's*, which is why it comes in from the
+            # caller; see `_new_txn`.
+            txn = txn or _new_txn()
             quoted = urllib.parse.quote(room_id, safe="")
             return self._request(
                 "PUT",
@@ -144,8 +171,20 @@ class MatrixNotifier(BaseNotifier):
                       "the account has joined MATRIX_ROOM")
             else:
                 print(f"Matrix notification failed: HTTP {e.code} {detail}")
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        except ValueError as e:
+            # The homeserver answered, with something that is not JSON.
+            # It used to sit in the clause below and will not go back
+            # there: a broken answer is the server's word, not a dead
+            # network, and asking again produces the same rubbish.
             print(f"Matrix notification failed: {e}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # Last of the three, and it has to stay last: HTTPError is a
+            # subclass of URLError, so moving this up would read every
+            # 403 as a dead network and have the queue repeat it for
+            # fifteen minutes.
+            print(f"Matrix notification failed: {e}")
+            if on_network_failure is not None:
+                on_network_failure()
         return None
 
     def _prefix(self, text):
@@ -201,5 +240,43 @@ class MatrixNotifier(BaseNotifier):
                 rich += f"<br/>{_esc(source_url)}"
         self._send(plain, rich)
 
+    def _text_sender(self):
+        """One message's sender, with its transaction ID already fixed.
+
+        The other channels hand the queue a bound `_post_text`; Matrix
+        cannot, because the thing that must survive between the first
+        attempt and the resend is not on the notifier — it belongs to
+        this one message. The queue carries only `channel`/`text`/`send`,
+        so the ID rides along in the closure, which is the smallest place
+        it fits without teaching the queue about Matrix.
+
+        What that buys: the resend goes out under the ID the first
+        attempt used. If the first attempt did in fact land — a timeout
+        after the homeserver accepted it looks identical to one before —
+        the homeserver recognises the ID and drops the second copy, so
+        the room does not get the same alert twice with a "Delayed"
+        notice on it. If it never landed, the ID was never seen and the
+        message arrives normally.
+
+        Returns False ONLY when the network was the reason it did not
+        arrive, so it is usable as a queue `send` as-is.
+        """
+        txn = _new_txn()
+
+        def send(text):
+            reached = [True]
+
+            def dead():
+                reached[0] = False
+
+            self._send(self._prefix(text), txn=txn, on_network_failure=dead)
+            return reached[0]
+
+        return send
+
     def send_message(self, text):
-        self._send(self._prefix(text))
+        send = self._text_sender()
+        if not send(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, send)

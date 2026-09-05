@@ -30,6 +30,8 @@ import os
 import urllib.error
 import urllib.request
 
+import notify_retry
+
 from .base import BaseNotifier, channel_setting
 
 #: Gotify priorities. Its Android client treats ≥8 as loud (bypasses
@@ -68,9 +70,15 @@ class GotifyNotifier(BaseNotifier):
         return bool(_message_url(self.config) and _token(self.config))
 
     # ── transport ────────────────────────────────────────────────────
-    def _post(self, title, message, priority=PRIO_NORMAL):
+    def _post(self, title, message, priority=PRIO_NORMAL,
+              on_network_failure=None):
         """POST one message. Best-effort: logs and returns on failure,
-        never raises into the facade."""
+        never raises into the facade.
+
+        `on_network_failure` is called, with no arguments, only when the
+        send died on the network — never for an HTTP status. A rejected
+        token is rejected again in fifteen minutes; an unreachable server
+        may well be back (#66)."""
         url = _message_url(self.config)
         token = _token(self.config)
         if not (url and token):
@@ -97,7 +105,13 @@ class GotifyNotifier(BaseNotifier):
                     pass
                 print(f"Gotify notification failed: HTTP {e.code} {body}")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # Below the HTTPError clause on purpose, and it has to stay
+            # there: HTTPError is a subclass of URLError, so swapping the
+            # two would read every 401 as a dead network and have the
+            # queue repeat it for fifteen minutes.
             print(f"Gotify notification failed: {e}")
+            if on_network_failure is not None:
+                on_network_failure()
         return None
 
     def _title(self, text):
@@ -123,5 +137,20 @@ class GotifyNotifier(BaseNotifier):
         self._post(self._title(title), body,
                    PRIO_NORMAL if success else PRIO_HIGH)
 
+    def _post_text(self, text):
+        """Push `text`, False ONLY when the network was the reason it did
+        not arrive.
+
+        The queue's resend entry point — see `DiscordNotifier._post_text`
+        for why it is this and not `send_message`.
+        """
+        reached = [True]
+        self._post(self._title("Docksentry"), text, PRIO_NORMAL,
+                   on_network_failure=lambda: reached.__setitem__(0, False))
+        return reached[0]
+
     def send_message(self, text):
-        self._post(self._title("Docksentry"), text, PRIO_NORMAL)
+        if not self._post_text(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, self._post_text)

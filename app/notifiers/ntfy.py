@@ -26,6 +26,8 @@ import os
 import urllib.error
 import urllib.request
 
+import notify_retry
+
 from .base import BaseNotifier, channel_setting
 
 
@@ -124,10 +126,16 @@ class NtfyNotifier(BaseNotifier):
         return bool(_topic_url(self.config))
 
     # ── transport ────────────────────────────────────────────────────
-    def _post(self, title, body, priority="default"):
+    def _post(self, title, body, priority="default", on_network_failure=None):
         """POST one message to the ntfy topic. Best-effort: logs and returns
         on any failure, never raising into the caller — same contract as the
-        other channels."""
+        other channels.
+
+        `on_network_failure` is called, with no arguments, only when the
+        send died on the network — and never for an HTTP status. That is
+        the one distinction the retry queue needs: a 400 or a 401 comes
+        back identical fifteen minutes later, an unreachable server may
+        not (#66)."""
         url = _topic_url(self.config)
         if not url:
             return None
@@ -149,9 +157,24 @@ class NtfyNotifier(BaseNotifier):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return resp.status
         except urllib.error.HTTPError as e:
+            # First, and it has to stay first: HTTPError is a subclass of
+            # URLError, so the network clause below would otherwise
+            # swallow every 4xx and have the queue repeat it for fifteen
+            # minutes.
             print(f"ntfy error: HTTP {e.code}")
             return None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # The same four errors the other self-hosted channels catch,
+            # spelled the same way: `socket.timeout` has been an alias of
+            # `TimeoutError` since 3.10, and `URLError` is itself an
+            # `OSError`, so this tuple is the whole of "the network".
+            print(f"ntfy error: {e}")
+            if on_network_failure is not None:
+                on_network_failure()
+            return None
         except Exception as e:
+            # Everything else is ours, not the network's — a title that
+            # will not encode, say. Repeating it changes nothing.
             print(f"ntfy error: {e}")
             return None
 
@@ -171,6 +194,21 @@ class NtfyNotifier(BaseNotifier):
         self._post(title, body,
                    priority="default" if success else "high")
 
-    def send_message(self, text):
+    def _post_text(self, text):
+        """Push `text`, False ONLY when the network was the reason it did
+        not arrive.
+
+        The queue's resend entry point — see `DiscordNotifier._post_text`
+        for why it is this and not `send_message`.
+        """
         # Strip Telegram *bold* markers for a clean plain-text push.
-        self._post("Docksentry", text.replace("*", ""))
+        reached = [True]
+        self._post("Docksentry", text.replace("*", ""),
+                   on_network_failure=lambda: reached.__setitem__(0, False))
+        return reached[0]
+
+    def send_message(self, text):
+        if not self._post_text(text):
+            print(f"{self.name} send failed: no answer — holding the message "
+                  f"for redelivery")
+            notify_retry.remember(self.name, text, self._post_text)
