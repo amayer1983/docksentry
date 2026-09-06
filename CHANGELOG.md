@@ -2,6 +2,13 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.9] - 2026-09-06
+
+### Changed
+- **A container that keeps failing is reported less and less often.** Thirty minutes between repeats is right for the first few; it is wrong for a crash loop nobody is going to fix tonight. @famewolf's `firefox-syncserver` reached restart #190 and earned a message every half hour until he gave up and stopped the container — the alert was correct every single time, and the fortieth copy carried nothing the first did not. The wait now doubles per repeat up to six hours, so one broken container costs a handful of messages a day instead of forty-eight.
+
+  It never goes silent: a channel that stops mentioning a broken container is how it gets forgotten. And a gap longer than the cap starts the count over, because that is a new incident rather than the old one continuing. Each container and each kind of alert counts on its own.
+
 ## [2.17.8] - 2026-09-06
 
 Two things @famewolf reported on stable, and a message that quoted our own command line at him.
