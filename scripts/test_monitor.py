@@ -51,6 +51,7 @@ def make_monitor(update_running=False, exclude=None):
     m.sent = []
     m._prev = None
     m._last_sent = {}
+    m._alert_streak = {}
     m._health_pending = {}
     m._alerted_unhealthy = set()
     return m
@@ -490,6 +491,7 @@ def main():
     mv.tick()
     checks["vanish/reappear: flag pruned on vanish"] = "a" not in mv._alerted_unhealthy
     mv._last_sent = {}                            # isolate the flag from cooldown
+    mv._alert_streak = {}
     mv.snapshot = lambda: {"a": c(health="healthy")}
     mv.tick()                                    # recreated, re-baselined healthy
     mv.snapshot = lambda: {"a": c(health="unhealthy")}
@@ -550,6 +552,7 @@ def main():
     checks["oom msg carries memory snapshot"] = "monitor_top_memory" in full
     checks["oom msg carries log tail"] = "boom line 1" in full
     m7._last_sent = {}
+    m7._alert_streak = {}
     m7.snapshot = lambda: {"a": c(health="unhealthy")}
     # confirmed unhealthy (pending flip observed last pass, still unhealthy,
     # running) -> fires
@@ -606,6 +609,7 @@ def main():
     atomic_write_json(evfile, [{"timestamp": "t", "kind": "exited",
                                 "container": "x", "detail": {}}] * 250)
     m5._last_sent = {}
+    m5._alert_streak = {}
     m5.snapshot = lambda: {"a": c()}
     m5.tick()
     m5.snapshot = lambda: {"a": c(status="exited", code=1)}

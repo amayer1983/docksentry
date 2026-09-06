@@ -71,6 +71,7 @@ def make_monitor(*, mass=True, host_name="dock8520", logs="log tail here"):
     m.sent = []
     m._prev = None
     m._last_sent = {}
+    m._alert_streak = {}
     m._health_pending = {}
     m._alerted_unhealthy = set()
     m._snap_cache = None

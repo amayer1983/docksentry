@@ -212,15 +212,17 @@ First release through the beta channel — features settle on `:beta` before the
 ### Added
 - **Network and disk I/O in the `/status` detail.** `docker stats` hands them over in the same call that already fetches CPU and memory, so the two extra fields cost nothing. A runtime that reports fewer fields still yields the two that matter.
 - **The `beta` channel, documented.** New features land on `amayer1983/docksentry:beta` first and move to `:latest` once they have settled — `:latest` is never moved by a pre-release, so `AUTO_SELFUPDATE` only ever pulls settled versions.
-## [2.18.0-beta.26] - 2026-09-05
+## [2.18.0-beta.26] - 2026-09-06
 
-The five channels that were still dropping a message the network ate.
+The five channels that were still dropping a message the network ate, and an alert that would not stop repeating itself.
 
 ### Added
 - **ntfy, Gotify, Apprise and Matrix hold a failed notification and send it again when the connection comes back.** They were the ones left out when the retry queue was built; each already had to be taught the difference between the network failing and the server saying no, because a rejected message retried every flush is a loop against something that will keep refusing it. `urllib.error.HTTPError` is a subclass of `URLError`, so every one of the four had to be checked for the order of its handlers — a rejection caught by the network branch would be retried for fifteen minutes.
 - **SMTP holds one too, but only where that is safe.** A failure while connecting, negotiating TLS or logging in means nothing reached the server, and those are retried. From the moment the message is handed over it is not: if the connection dies after `DATA` the server may well have accepted it, and e-mail has no transaction id to dedupe a second copy with. So a mail lost at that exact point stays lost — the lesser of the two. **This does not fully close the gap** (#66, @NotRetarded, who watches for outages through SMTP): an outage in the middle of a send still loses the alert.
 
   Classifying it is the whole job, and it is a trap: `smtplib.SMTPException` is a subclass of `OSError` — measured — so the obvious `except OSError` would file a wrong password and a refused recipient under "network trouble". The SMTP classes are asked first, and only what is left falls through to the socket errors.
+
+- **A container that keeps failing is reported less and less often.** Thirty minutes between repeats is right for the first few; it is wrong for a crash loop nobody is going to fix tonight. @famewolf's `firefox-syncserver` reached restart #190 and earned a message every half hour until he gave up and stopped the container — the alert was correct every single time, and the fortieth copy carried nothing the first did not. The wait now doubles per repeat up to six hours, so one broken container costs a handful of messages a day instead of forty-eight. It never goes silent: a channel that stops mentioning a broken container is how it gets forgotten, and a gap longer than the cap starts the count over, because that is a new incident rather than the old one continuing.
 
 ### Fixed
 - **Matrix posted a duplicate when a send timed out after the homeserver had accepted it.** The transaction id — the thing that makes a repeat harmless — was generated per *attempt*, while the comment beside it promised the opposite. It belongs to the message now, so a retry goes out under the id the homeserver already knows. This was wrong before the retry queue existed; the queue would have made it routine.

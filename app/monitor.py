@@ -89,6 +89,13 @@ class ContainerMonitor:
     #: readable stack of alerts becomes a wall.
     MASS_STOP_INLINE_MAX = 3
 
+    #: How far the wait between repeats of the same alert may grow. Six
+    #: hours turns a container nobody is going to fix tonight from
+    #: forty-eight messages a day into four, without ever going silent —
+    #: the thing is still broken, and a channel that stops mentioning it
+    #: is how it gets forgotten.
+    MAX_COOLDOWN_SECONDS = 6 * 3600
+
     def __init__(self, config, checker, bot, backend=None, host_name=""):
         self.config = config
         self.checker = checker
@@ -114,6 +121,10 @@ class ContainerMonitor:
         self._watcher_tried = False
         self._prev = None          # name -> state dict; None = no baseline yet
         self._last_sent = {}       # (name, kind) -> monotonic ts
+        #: How many times in a row we have reported this (name, kind).
+        #: Drives the growing wait between repeats; reset once the thing
+        #: has been quiet longer than we would ever have waited.
+        self._alert_streak = {}
         # Health debounce (#2, @famewolf): a healthy->unhealthy flip is held
         # for one pass before we alert, so flappy healthchecks (gluetun's
         # ICMP-mismatch blip) that self-resolve within a minute stay silent.
@@ -517,8 +528,23 @@ class ContainerMonitor:
 
         for kind, name, detail in others:
             key = (name, kind)
-            if now_ts - self._last_sent.get(key, 0) < self.COOLDOWN_SECONDS:
+            last = self._last_sent.get(key, 0)
+            if now_ts - last < self._cooldown_for(key):
                 continue
+            # A container that keeps failing is reported less and less
+            # often. Thirty minutes is right for the first few; it is
+            # wrong for a crash loop somebody is not going to fix
+            # tonight — @famewolf's syncserver reached restart #190 and
+            # earned an alert every half hour until he gave up and
+            # stopped the container. The first one is worth having, the
+            # fortieth is what makes people mute the channel.
+            gap = now_ts - last
+            if gap > self.MAX_COOLDOWN_SECONDS:
+                # It went quiet for longer than we would ever have
+                # waited, so whatever this is, it is a new incident.
+                self._alert_streak[key] = 1
+            else:
+                self._alert_streak[key] = self._alert_streak.get(key, 0) + 1
             self._last_sent[key] = now_ts
             # Gathered once, before the write, and handed to both. It used
             # to be collected inside _notify — after the event had already
@@ -839,6 +865,25 @@ class ContainerMonitor:
         """
         return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot(),
                 "cpu_quiet": self._cpu_quiet()}
+
+    def _cooldown_for(self, key):
+        """How long to stay quiet before repeating this alert.
+
+        Thirty minutes for the first, then double each time up to six
+        hours. A container in a crash loop earned a message every half
+        hour for as long as it looped — forty-eight a day for one broken
+        thing (#2, @famewolf, restart #190). The information in the
+        fortieth is the same as in the first; only the annoyance grows.
+
+        Never silent: the wait stops growing at six hours because a
+        channel that stops mentioning a broken container is how it gets
+        forgotten.
+        """
+        n = self._alert_streak.get(key, 0)
+        if n < 1:
+            return self.COOLDOWN_SECONDS
+        return min(self.COOLDOWN_SECONDS * (2 ** (n - 1)),
+                   self.MAX_COOLDOWN_SECONDS)
 
     def _resources_for(self, kind, name):
         """Who was holding memory and CPU at the moment this container died.
