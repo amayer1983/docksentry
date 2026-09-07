@@ -22,8 +22,11 @@ services:
       # Portainer writes there. Since our own data moved to /docksentry it no
       # longer collides with anything of ours. If you ran `docker compose`
       # yourself the label holds a host path, so edit both sides to that
-      # directory. See docs/compose.md.
-      - ${COMPOSE_DIR:-/data/compose}:/data/compose
+      # directory. Read-only: we open the compose file to hand it to
+      # `docker compose -f`, and never write anything into that tree.
+      # Every other example in the docs already said `:ro`; this one has
+      # been missing it since v1.7.0. See docs/compose.md.
+      - ${COMPOSE_DIR:-/data/compose}:/data/compose:ro
     security_opt:
       - no-new-privileges:true
 
