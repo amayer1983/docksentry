@@ -556,6 +556,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if _host.name in _skip:
                     _cached, _left = _skip[_host.name]
                     views.append({"unreachable": _host.name,
+                                  "host": _host.name,
                                   "endpoint": _host.endpoint,
                                   "reason": _cached,
                                   "retry_in": _left,
@@ -569,7 +570,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # is the one word that fits none of them.
                     _reason = self._why(_err)
                     _hosts_mod.mark_unreachable(_host.name, _reason)
+                    # `host` as well as `unreachable`, and they say the
+                    # same thing on purpose. Without it `_machine_state`
+                    # fell back to LOCAL_HOST, so /metrics and /api/status
+                    # reported the LOCAL machine as down and dropped the
+                    # host that actually was — an alert about the wrong
+                    # box, on exactly the multi-host installs where one
+                    # being off is normal.
                     views.append({"unreachable": _host.name,
+                                  "host": _host.name,
                                   "endpoint": _host.endpoint,
                                   "reason": _reason,
                                   "contexts": self._docker_contexts()})
@@ -709,7 +718,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception:
                 views = []
             for v in views or []:
-                host = v.get("host") or LOCAL_HOST
+                # A view that names no host is not the local one — it is a
+                # view this code does not understand, and guessing "local"
+                # is how a dead remote became a dead local machine in
+                # everybody's monitoring.
+                host = v.get("host") or v.get("unreachable") or LOCAL_HOST
                 if v.get("unreachable"):
                     state["hosts"][host] = 0
                     continue

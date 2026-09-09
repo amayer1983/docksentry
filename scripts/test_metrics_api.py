@@ -70,6 +70,21 @@ def main():
     state_src = src.split("def _machine_state")[1].split("def ")[0]
     checks["gathering does not start a check"] = "check_all" not in state_src
 
+    # ── a host that is down is reported as ITSELF ────────────────
+    # The view for an unreachable host carried `unreachable` but no
+    # `host`, and this fell back to LOCAL_HOST — so with one remote off,
+    # /metrics and /api/status said the LOCAL machine was down and
+    # dropped the one that actually was. An alert about the wrong box,
+    # on exactly the multi-host installs where one being off is normal.
+    # Shipped from 2026-08-01 until it turned up in a four-host test.
+    views_src = src.split("def _host_views")[1].split("@staticmethod")[0]
+    checks["every failed-host view names itself"] = (
+        views_src.count('"unreachable": _host.name,')
+        == views_src.count('"host": _host.name,')
+        and views_src.count('"host": _host.name,') >= 1)
+    checks["…and the reader never guesses local for it"] = (
+        'v.get("host") or v.get("unreachable") or LOCAL_HOST' in state_src)
+
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
         print(f"  {'PASS' if v else 'FAIL'} {k}")
