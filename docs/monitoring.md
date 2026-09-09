@@ -19,7 +19,10 @@ Monitoring is on by default (`MONITOR=false` turns it off) and watches
 A healthy → unhealthy flip does not alert on its own. It becomes *pending*
 and only fires if the container is still unhealthy on the next sweep, which
 is what keeps a container that wobbles for ten seconds during startup from
-paging you. Each `(container, event)` pair is then quiet for 30 minutes.
+paging you. Each `(container, event)` pair is then quiet for 30 minutes — and longer if it
+keeps happening: the wait doubles per repeat, up to six hours. A container in a
+restart loop tells you once, then less and less often, instead of every half
+hour all night.
 
 A clean exit — code 0 — says nothing. That is a container finishing its
 job, not dying.
@@ -115,7 +118,7 @@ snapshot hangs off every death rather than off the OOM flag.
 Everything is written to a persistent log, so "what happened last night?"
 is answerable without scrollback:
 
-- Web UI → **Events** section on the status page
+- Web UI → the **History** page, which carries the events alongside the update history
 - Telegram / Discord → `/events`
 
 Alerts respect quiet hours and maintenance mode, and stay silent while an

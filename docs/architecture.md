@@ -54,7 +54,7 @@ Each one answers a question that was never Telegram's:
 | `app/lifecycle.py` | May this container be stopped, started or restarted, and what happened when we tried? Glob matching and the "are you sure?" question live here too. |
 
 Shared underneath them: `app/i18n.py` with 16 language files under
-`app/lang/` (923 keys in `en.json`), the `UpdateEngine`, the per-host
+`app/lang/` (973 keys in `en.json`), the `UpdateEngine`, the per-host
 `container_store` state views, and the host registry.
 
 `app/notifier.py` is a thin facade over the channel plugins in
@@ -155,7 +155,7 @@ front ends hold.
 
 The send side is shared. **The receive side is roughly half shared.**
 
-Both front ends implement the same 35 commands. Sixteen of them now do
+Both front ends implement the same 35 commands. Eighteen of them now do
 nothing but parse their own syntax, call a core function and render the
 `Outcome` that comes back:
 
@@ -168,6 +168,11 @@ The rest still carry their own logic, twice: `/update`, `/updateall`,
 `/updates`, `/check`, `/cleanup`, `/groups`, `/maintenance`, `/events`,
 `/settings`, `/backup`, `/restore`, `/selfupdate`, `/hosts`, `/lang`,
 `/help`, `/debug`, `/testchannel`, `/restart` (the self-restart one).
+
+`/restart` is in both lists because it is two commands wearing one name:
+with a container it goes through the shared path, without one it restarts
+Docksentry itself. Eighteen plus eighteen minus that overlap is the 35.
+
 Some of those are thin and instance-global and will stay that way;
 `/update`, `/updateall`, `/check` and `/cleanup` are the ones that
 matter, because they are the ones that act.
@@ -244,7 +249,7 @@ of twelve characters or more containing a space, by three routes: a plain
 `lines.append("…")` where a reply is assembled piece by piece. The third
 route alone was hiding twenty-one English sentences *after* the check
 first reported none. It also asserts the file actually reads the shared
-translations (at least 40 `self.t(` calls; there are 82 distinct keys
+translations (at least 40 `self.t(` calls; there are 83 distinct keys
 today), that the translator is resolved per call, that the markup
 conversion stays in the connection, and that every key asked for exists in
 `en.json` — a typo'd key renders as the key itself, which is worse than

@@ -43,7 +43,6 @@ COPY app/ .
 # message and the file people read on GitHub cannot drift apart.
 COPY CHANGELOG.md .
 
-RUN mkdir -p /data
 
 ENV BOT_TOKEN=""
 ENV CHAT_ID=""

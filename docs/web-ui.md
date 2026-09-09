@@ -17,7 +17,8 @@ ports:
   - "9090:8080"
 ```
 
-Access at `http://your-server:9090` with the configured password (Basic Auth).
+Access at `http://your-server:9090`. The browser gets a login form and a
+session cookie; Basic Auth still works for scripts and for `curl`.
 
 Every page carries the same small toolbar in the header: theme, sign out, and
 an arrow button that updates **Docksentry itself** — it pulls the latest image
@@ -27,6 +28,9 @@ Settings page works exactly as before; this is the same action, one click from
 wherever you happen to be.
 
 ## Pages
+
+Six of them, from the header navigation: **Status**, **Groups**, **History**,
+**Logs**, **Connections**, **Settings**.
 
 ### Status
 
@@ -72,46 +76,38 @@ Full update log showing:
 
 ### Settings
 
-The Settings page is grouped into **five tabs**:
+The Settings page is grouped into **four tabs**:
 
 | Tab | Contents |
 |-----|----------|
-| **General** | Language, cron schedule, excluded containers, debug mode |
-| **Updates** | Auto self-update toggle, hint about per-container settings on the Status page |
-| **Cleanup** | Auto cleanup, grace hours, backup retention, local-only-images backup |
-| **Notifications** | Disk warning threshold + auto-cleanup-on-warning, quiet hours start/end |
-| **Channels** | Telegram topic ID, Discord webhook, generic webhook |
+| **General** | Language, cron schedule, excluded containers, debug mode, session limits, Info (version, masked credentials), Backup / Restore |
+| **Updates** | Auto self-update, update policy, minimum image age, healthcheck grace, stop timeout, and the per-container **Update Windows** (HH:MM ranges + weekdays) |
+| **Cleanup** | Auto cleanup, grace hours, backup retention, local-only-images backup, **Maintenance** (one-shot Image Cleanup / Self-Update, both with a confirmation dialog) and maintenance mode |
+| **Notifications** | Disk warning threshold + auto-cleanup-on-warning, quiet hours, weekly report, monitoring switches and interval |
 
-Plus three cards always visible below the tabs:
-- **Update Windows** (per-container HH:MM ranges + weekdays)
-- **Maintenance** (one-shot Image Cleanup / Self-Update buttons, both with confirmation dialogs)
-- **Info** (version, Telegram status, masked credentials)
+The notification **channels** are not here — they have their own
+**Connections** page (Telegram, both Discord routes, e-mail, ntfy, Gotify,
+Matrix, Apprise, generic webhook), each with its own test button.
 
 Hover a `?` icon next to any setting label for an inline explanation. Save feedback appears as a brief toast at the top-right.
 
 All settings **persist across restarts** (saved to `settings.json` in the [data directory](configuration.md#where-the-data-lives)).
 
-| Setting | Editable in Web UI |
-|---------|--------------------|
-| Language | Yes |
-| Cron Schedule | Yes |
-| Debug Mode | Yes |
-| Auto Self-Update | Yes |
-| Auto Cleanup + grace hours + backup-local-only + backup retention | Yes |
-| Disk warning threshold + auto-cleanup-on-warning | Yes |
-| Quiet hours (HH:MM start/end) | Yes |
-| Update Windows per container (HH:MM range + weekdays) | Yes (own section) |
-| Exclude Containers | Yes |
-| Telegram Topic ID | Yes |
-| Discord Webhook | Yes |
-| Webhook URL | Yes |
-| Bot Token | No (ENV only, masked) |
-| Chat ID | No (ENV only, masked) |
-| `WEB_PORT`, `WEB_PASSWORD` | No (ENV only — would lock you out) |
+Almost everything is editable here — 76 settings persist, which is why this
+page does not try to list them. The rule is easier than the list:
 
-The **Update Windows** section lets you pick a container, set a `HH:MM`–`HH:MM` range, and tick which weekdays the window applies to. Containers without an entry update without restriction.
+| | |
+|---|---|
+| **Editable in the Web UI** | Everything marked ⚙ in [configuration.md](configuration.md) — language, schedule, exclusions, the whole update and cleanup behaviour, quiet hours, monitoring, the weekly report, session limits, and every notification channel on the Connections page. `WEB_PASSWORD` included: set it here and it is stored hashed. |
+| **Environment only** | `BOT_TOKEN` and `CHAT_ID` (shown masked), `WEB_PORT`, `DATA_DIR`, `DOCKER_HOSTS`, `API_TOKENS`, `TZ` — the things that decide how the process starts or who may reach it at all. |
 
-The **Maintenance** section provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly. Self-Update is also in the header toolbar on every page; both do the same thing.
+A setting given in the environment wins over the stored one and the field is
+shown disabled, so the page never claims to have saved something the
+environment then overrides.
+
+The **Update Windows** section (Updates tab) lets you pick a container, set a `HH:MM`–`HH:MM` range, and tick which weekdays the window applies to. Containers without an entry update without restriction.
+
+The **Maintenance** section (Cleanup tab) provides one-click buttons for **Image Cleanup** and **Self-Update** — same actions as Telegram `/cleanup` and `/selfupdate`, available headlessly. Self-Update is also in the header toolbar on every page; both do the same thing.
 
 ## Machine-readable endpoints
 

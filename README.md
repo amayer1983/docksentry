@@ -53,7 +53,7 @@ Telegram is optional — Web UI alone is plenty for a single-host setup. Discord
 - **Container groups** — ordered updates for a stack: database before app, or Gluetun before the containers sharing its network namespace ([how to set that up](docs/updates.md#containers-behind-a-vpn-sidecar-gluetun-and-friends)). Those are recreated against the head's *name* rather than its dead container ID, so they come back instead of being left stopped, and a failure in the group aborts the rest of it
 - **Update policies per container** — `all` / `minor` / `patch`, major-version confirmation, per-container update windows, and `MIN_IMAGE_AGE_DAYS` so you need not be the first to pull a new image
 - **Web UI** — dashboard with status, logs, history, settings, pin/unpin, auto-update toggles, manual update triggers, image cleanup, self-update. Container cards instead of a table below 700px
-- **Telegram bot** *(optional)* — full interactive control with inline buttons and 20+ commands
+- **Telegram bot** *(optional)* — full interactive control with inline buttons and 35 commands
 - **Discord bot** — 35 slash commands and the same control surface, driven by the same update engine ([setup guide](docs/discord-bot.md))
 - **Discord notifications** — rich embeds for updates, successes, and failures
 - **Generic webhooks** — JSON POST to Home Assistant or any HTTP endpoint
@@ -84,6 +84,7 @@ docker run -d \
   -e WEB_UI=true \
   -e WEB_PORT=8080 \
   -p 8080:8080 \
+  -v docksentry_data:/docksentry \
   -v /var/run/docker.sock:/var/run/docker.sock \
   amayer1983/docksentry:latest
 ```
@@ -102,9 +103,15 @@ docker run -d \
   -e CHAT_ID=your-chat-id \
   -e WEB_UI=true \
   -p 8080:8080 \
+  -v docksentry_data:/docksentry \
   -v /var/run/docker.sock:/var/run/docker.sock \
   amayer1983/docksentry:latest
 ```
+
+> **Don't leave out `-v docksentry_data:/docksentry`.** The image declares
+> `/docksentry` as a volume, so without a name Docker gives it an anonymous
+> one — and the next `docker rm` takes your settings, groups, pins, history
+> and update state with it. Named, they survive.
 
 ### Docker Compose
 
@@ -282,6 +289,7 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 | `/status <name>` | Per-container detail with inline Stop/Restart/Start buttons |
 | `/check` | Manually trigger an update check (add a name/glob to scope) |
 | `/update <name\|*>` | Update a container or everything matching a glob |
+| `/updateall` | Update every container with a pending update |
 | `/updates` | Show pending updates |
 | `/start <name>` | Start a stopped container |
 | `/stop <name>` | Stop a running container |
@@ -290,9 +298,12 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 | `/pin <name>` | Pin container — excluded from updates |
 | `/unpin <name>` | Unpin container |
 | `/autoupdate <name>` | Toggle auto-update per container |
+| `/askmajor <name>` | Ask before applying a major update to this container |
+| `/trustrunning <name>` | Accept running-but-unhealthy for this container |
 | `/cooldown <name> <seconds>` | Per-container post-update cooldown before the next in a batch |
 | `/protect <name>` | Protect a container from `/stop` |
 | `/setlink <name> <url>` | Set a repo/changelog link for a container |
+| `/note <name> <text>` | Attach a note to a container |
 | `/groups` | Show container groups (or `/groups <name>`) |
 | `/maintenance <2h\|off>` | Pause auto-updates for a window |
 | `/history` | Show update history |
@@ -300,6 +311,8 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 | `/audit <name>` | Audit container inspect coverage |
 | `/cleanup` | Remove old unused images |
 | `/checkimages` | How much space `/cleanup` would free (dry-run) |
+| `/backup` | Send settings, groups and pins as a file |
+| `/restore` | Restore from a backup — send the file, or attach it here |
 | `/selfupdate` | Update the bot itself (latest) |
 | `/selfupdate <version>` | Pin to a specific version (e.g. `/selfupdate 1.17.4`) |
 | `/selfupdate previous` | Roll back to the previous release |
@@ -307,6 +320,7 @@ Concrete failure modes let us add targeted Podman-specific fixes; vague "doesn't
 | `/debug` | Toggle debug mode |
 | `/lang <code>` | Switch language |
 | `/settings` | Show current configuration |
+| `/testchannel` | Send a test notification to every channel |
 | `/help` | Show all commands |
 
 > Partial name matching: `/pin ngi` matches `nginx`.
@@ -341,6 +355,8 @@ services:
 | `docksentry.policy=all` / `minor` / `patch` | Cap **auto-updates** by semver bump level: `all` applies every bump (default), `minor` applies minor+patch but holds back majors, `patch` applies patch only. Manual `/update` and the Bulk "Update all" button always apply regardless. An update whose version can't be classified is allowed. Overrides the global `UPDATE_POLICY`. |
 | `docksentry.trust-running=true` | Accept "running" as healthy after updates, even if the healthcheck stays unhealthy (#9 behaviour) |
 | `docksentry.monitor=false` | Exclude the container from state monitoring (health/exit/OOM notifications) |
+| `docksentry.monitor-only=true` | Watch and report it, never update it. For containers something else owns — quadlets, Portainer stacks, anything from Ansible or GitOps, where a recreate fights the tool that put them there. Unlike `docksentry.enable=false` it stays visible and still reports updates |
+| `docksentry.min-age=7` | Don't auto-update to an image younger than this many days. **Auto path only** — pressing the button yourself always works, and the update stays pending so it applies by itself once the image has aged. Overrides the global `MIN_IMAGE_AGE_DAYS` |
 | `docksentry.link=<url>` | Repo / changelog URL for the container — wrapped around its name in update notifications, shown as `🔗` in the Web UI status table and on the detail page, and used by `/changelog <name>`. Beats both `/setlink` and the Web UI field (which is disabled while the label is set). Must be a complete `http://` or `https://` URL; anything else is ignored and the next source in the chain applies. Resolution order: this label → `/setlink` value → `org.opencontainers.image.source` → `org.opencontainers.image.url` → registry overview page guessed from the image name |
 
 Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere: **label wins over the stored bot/Web-UI toggle; no label → toggle applies.** The Web UI status table shows the *effective* state (label included) for Pin and Auto — note that clicking a UI toggle cannot override a label; remove the label from your compose file instead.
@@ -349,7 +365,7 @@ Booleans accept `true`/`1`/`yes`/`on` (case-insensitive). Precedence everywhere:
 
 At least one of `BOT_TOKEN`+`CHAT_ID`, `WEB_UI=true`, `DISCORD_WEBHOOK`, `WEBHOOK_URL`, or e-mail (`SMTP_HOST`+`SMTP_FROM`+`SMTP_TO`) must be configured — otherwise Docksentry has no way to notify or be controlled.
 
-These are the ones worth knowing on the first day. **[Every variable, with its default and the full explanation, is in `docs/configuration.md`](docs/configuration.md)** — 58 of them, and you will not need most.
+These are the ones worth knowing on the first day. **[Every variable, with its default and the full explanation, is in `docs/configuration.md`](docs/configuration.md)** — 86 of them, and you will not need most.
 
 | Variable | Default | What it is for |
 |----------|---------|----------------|
@@ -395,7 +411,7 @@ environment:
 
 ### Multi-bot setup (one group, multiple hosts)
 
-If you have several Docker hosts (different boxes, VMs, Proxmox LXCs, …), v2.0's real multi-host support is on the roadmap — but until then you can already control multiple instances from a **single Telegram group** by running one Docksentry per host, **each with its own bot token from [@BotFather](https://t.me/BotFather)**, labelling each instance with `BOT_LABEL`:
+If you have several Docker hosts (different boxes, VMs, Proxmox LXCs, …), the way to do it is `DOCKER_HOSTS` — see [Real multi-host](#real-multi-host) below. What follows is the older approach, still useful when you want each host to stay a separate install: several instances in a **single Telegram group** by running one Docksentry per host, **each with its own bot token from [@BotFather](https://t.me/BotFather)**, labelling each instance with `BOT_LABEL`:
 
 > **Why a separate token per host?** Telegram allows exactly **one polling consumer per bot token** — two instances sharing the same token fight over `getUpdates` and one of them gets evicted with a 409 Conflict every poll. `BOT_LABEL` is only a visual prefix in messages; it doesn't change the underlying bot identity (the token is the identity). Create one bot per host with `/newbot` in @BotFather and use a distinct token per instance.
 
@@ -453,7 +469,7 @@ Common pattern: broadcast `/selfupdate` so all hosts update together; target `/s
 - **Be aware: privacy-mode off means each bot sees every human message in the group.** Don't use the same group for casual chat — keep it ops-only.
 - Telegram's own Bot API filters out bot-to-bot communication, so bots can't accidentally trigger each other's commands.
 
-This is a stepping stone, not a replacement for v2.0 multi-host: you still maintain N bot tokens, N Docksentry containers, N updates. But it makes "single chat, all hosts" usable today.
+Note what this costs: N bot tokens, N Docksentry containers, N updates. One instance with `DOCKER_HOSTS` does the same job with one of each — the section below. This one earns its keep only when the hosts have to stay separate installs.
 
 ### Real multi-host
 
@@ -550,9 +566,18 @@ docker ps        # should show "(healthy)" after ~3 minutes of uptime
 
 | Channel | Updates | Results | Interactive |
 |---------|:-:|:-:|:-:|
-| **Telegram** | buttons | detailed | full control |
-| **Discord** | rich embeds | rich embeds | 35 slash commands |
-| **Webhook** | JSON | JSON | via Web UI |
+| **Telegram** | buttons | detailed | 35 commands |
+| **Discord bot** | rich embeds | rich embeds | 35 slash commands |
+| **Discord webhook** | rich embeds | rich embeds | — |
+| **E-mail (SMTP)** | text | text | — |
+| **ntfy** | text | text | — |
+| **Gotify** | text | text | — |
+| **Matrix** | text | text | — |
+| **Apprise** | text | text | — |
+| **Webhook** | JSON | JSON | — |
+
+Everything but the two bots is notify-only. Details and setup for each:
+[docs/notifications.md](docs/notifications.md).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/discord.png" alt="Discord Notifications" width="400">

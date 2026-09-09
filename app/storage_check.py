@@ -222,5 +222,9 @@ def first(findings, kind):
 
 def check(backend, own_name, data_dir=None):
     """Convenience wrapper: inspect, analyse, return the findings."""
+    # `/data` was ours until v2.17.7 and is somebody else's now — a
+    # fallback pointing there would have this judge the wrong directory.
+    # The only caller passes `config.data_dir`; this is the belt.
+    from config import DEFAULT_DATA_DIR
     return analyse(read_mounts(backend, own_name),
-                   data_dir or os.environ.get("DATA_DIR", "/data"))
+                   data_dir or os.environ.get("DATA_DIR", DEFAULT_DATA_DIR))

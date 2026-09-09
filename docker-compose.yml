@@ -11,6 +11,13 @@ services:
       - AUTO_SELFUPDATE=${AUTO_SELFUPDATE:-false}
       - LANGUAGE=${LANGUAGE:-en}
       - TZ=${TZ:-Europe/Berlin}
+      # The Web UI is off unless you say so. Set WEB_UI=true in your .env
+      # and uncomment the `ports:` block below — both are needed, one on
+      # its own does nothing. First visit walks you through a password.
+      - WEB_UI=${WEB_UI:-false}
+      - WEB_PORT=${WEB_PORT:-8080}
+    # ports:
+    #   - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - docksentry_data:/docksentry

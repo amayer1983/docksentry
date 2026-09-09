@@ -1,6 +1,10 @@
 # Notification Channels
 
-Docksentry sends notifications via **Telegram** (primary, with interactive commands) and optionally via **Discord** and/or **generic webhooks**. All channels receive notifications in parallel.
+Docksentry sends notifications over eight channels: **Telegram** and the
+**Discord bot** (both interactive), plus **Discord webhooks**, **e-mail**,
+**ntfy**, **Gotify**, **Matrix**, **Apprise** and **generic webhooks**
+(notify-only). Every enabled channel gets every notification, in parallel —
+there is no per-channel filter yet.
 
 ![Discord Notifications](https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/discord.png)
 
@@ -9,8 +13,14 @@ Docksentry sends notifications via **Telegram** (primary, with interactive comma
 | Channel | Updates Available | Update Results | Interactive Commands |
 |---------|:-:|:-:|:-:|
 | **Telegram** | with buttons | detailed | full control |
-| **Discord** | rich embeds | rich embeds | via Web UI |
-| **Webhook** | JSON | JSON | via Web UI |
+| **Discord bot** | rich embeds | rich embeds | 35 slash commands |
+| **Discord webhook** | rich embeds | rich embeds | — |
+| **E-mail (SMTP)** | text | text | — |
+| **ntfy** | text | text | — |
+| **Gotify** | text | text | — |
+| **Matrix** | text | text | — |
+| **Apprise** | text | text | — |
+| **Webhook** | JSON | JSON | — |
 
 ## Startup Notification
 
@@ -139,6 +149,7 @@ environment:
 {
   "event": "updates_available",
   "source": "docksentry",
+  "bot_label": "nas",
   "count": 2,
   "containers": [
     {
@@ -146,11 +157,18 @@ environment:
       "image": "nginx:latest",
       "size": "141 MB",
       "created": "2026-03-15",
-      "compose": false
+      "compose": false,
+      "old_version": "1.27.3",
+      "new_version": "1.27.4",
+      "source_url": "https://github.com/nginx/nginx/releases"
     }
   ]
 }
 ```
+
+`bot_label` appears only when `BOT_LABEL` is set, and `old_version` /
+`new_version` / `source_url` are empty strings when the image carries no
+such label.
 
 ### Event Types
 
@@ -158,4 +176,5 @@ environment:
 |-------|-------------|
 | `updates_available` | New updates found during check |
 | `update_result` | Single container update completed (success or failure) |
+| `weekly_report` | The weekly summary, with its stats and the rendered text |
 | `message` | General text message (startup, etc.) |

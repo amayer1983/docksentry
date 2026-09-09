@@ -34,7 +34,7 @@ Containers set to auto-update (`/autoupdate nginx` or via Web UI toggle) are upd
 
 ## Container Groups (ordered updates)
 
-For stacks where update order matters (e.g. **database before app**, **plex before sonarr/radarr**), define a **container group** under Settings → Container Groups:
+For stacks where update order matters (e.g. **database before app**, **plex before sonarr/radarr**), define a **container group** on the **Groups** page:
 
 - Pick a name and the containers in update order (drag-style reorder via ↑/↓ after creation)
 - Optional **wait time** between containers (default 30s) — gives the first one time to come up

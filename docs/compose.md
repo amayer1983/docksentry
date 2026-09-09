@@ -7,7 +7,11 @@ Docksentry automatically detects containers managed by Docker Compose via contai
 When updating a Compose-managed container:
 
 1. `docker compose pull <service>` — pulls the new image
-2. `docker compose up -d --no-deps <service>` — recreates only the updated service
+2. `docker compose up -d --no-deps --force-recreate --timeout <DOCKER_STOP_TIMEOUT> <service>`
+   — recreates only the updated service. `--force-recreate` is not decoration:
+   without it Compose left the old container running when only the image behind
+   the tag had moved (#35). `--timeout` is what stops a slow-stopping container
+   from being killed at ten seconds (#62).
 3. Health check and automatic rollback on failure
 
 This is the exact path Compose itself would take, so the service comes back defined by its file rather than by a reconstruction of it.

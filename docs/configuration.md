@@ -3,13 +3,13 @@
 Every environment variable Docksentry reads, in one place.
 
 This lives here rather than in the README because it is a *reference*, not
-a *guide*. There are 81 of these, three of the descriptions run to a
+a *guide*. There are 86 of these, three of the descriptions run to a
 paragraph, and a newcomer scrolling past all of them on the way to "how do
 I start it" was the wrong first impression. The README keeps the handful
 you need on day one; this is the rest.
 
 Grouped by what the variable is *for*, and alphabetical within each group.
-It was one flat table of 81 rows in no discernible order until @NotRetarded
+It was one flat table in no discernible order until @NotRetarded
 pointed out that he had gone looking for the Discord variables at the top
 and found them at row 39, with the webhook ones near the beginning (#57).
 
@@ -32,9 +32,9 @@ The handful that decide whether Docksentry runs at all.
 | `BOT_TOKEN` | | Telegram Bot API token (optional — set together with `CHAT_ID` to enable Telegram) |
 | `CHAT_ID` | | Telegram chat ID (optional — set together with `BOT_TOKEN`) |
 | `DATA_DIR` | `/docksentry` (see below) | Where Docksentry keeps its state — settings, pending updates, history, groups, the event log. Everything in it is what a backup would restore |
-| `LANGUAGE` ⚙ | `en` | Bot language ([16 available](docs/languages.md)) |
+| `LANGUAGE` ⚙ | `en` | Bot language ([16 available](languages.md)) |
 | `TZ` | `Europe/Berlin` | Timezone |
-| `WEB_PASSWORD` ⚙ | | Web UI password (Basic Auth) |
+| `WEB_PASSWORD` ⚙ | | Web UI password. The browser gets a login form and a session cookie; Basic Auth still works for scripts. Set here it is stored hashed |
 | `WEB_PORT` | `8080` | Web UI port |
 | `WEB_SESSION_HOURS` ⚙ | `8` | How long a browser session survives without being used. Signing in again is all it takes. Sessions live in memory, so a restart signs everyone out — writing them to disk would mean a file of live credentials, which is most of what the login rework was getting away from. |
 | `WEB_SESSION_MAX_DAYS` ⚙ | `7` | A session ends after this long whatever happens. The idle timeout above catches a machine somebody walked away from; this catches a session a background tab has been keeping alive, which no idle timeout ever would. |
@@ -80,8 +80,8 @@ Where the containers are, and which CLI talks to them.
 |----------|---------|-------------|
 | `CONTAINER_CLI` | `auto` | Which container CLI to drive: `auto`, `docker` or `podman`. `auto` uses `docker` whenever that command exists — including the usual `docker`→`podman` alias — and only falls back to `podman` when `docker` genuinely isn't there, so existing setups are unaffected. Set `podman` to call `podman` directly, no alias needed. One caveat: Docksentry's **self-update** still shells out to `docker` and launches a `docker:cli` helper container (it can't run inside the container it's replacing), so on Podman that one path still needs `docker` to resolve. Everything else — checks, updates, recreates, rollback, lifecycle, cleanup — goes through the selected CLI. Env-only. See [docs/podman.md](podman.md) for the Podman side of this. |
 | `DOCKER_API_VERSION` | | Force Docker API version (e.g. `1.43` for Synology/older Docker) |
-| `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](docs/security.md)) |
-| `DOCKER_HOSTS` | | **Multi-host (experimental).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](docs/security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. An endpoint may instead be `context://<name>`, naming a context / system connection this machine has already stored (`docker --context <name>`, `podman --connection <name>`) — on Podman that is the only way to give each host its own SSH key, because `podman --url ssh://…` ignores `~/.ssh/config` and takes the identity of whichever stored connection is the *default* one, whatever host it points at (measured on 4.9.3; [docs/podman.md](podman.md) has the detail). An unknown name fails rather than falling back to the local socket. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
+| `DOCKER_HOST` | | Docker API endpoint (for [socket proxy](security.md)) |
+| `DOCKER_HOSTS` | | **Multi-host (experimental).** Extra hosts this instance also manages, as `name:endpoint` pairs: `pve1:tcp://pve1:2375, nas:ssh://root@nas`. The endpoint is whatever the container CLI accepts for `-H`. **A TCP socket / [socket proxy](security.md) is the simplest option** — same pattern as the local `DOCKER_HOST` setup, no keys and nothing in `~/.ssh` to maintain. SSH endpoints also work and rely on the CLI's own handling, so key-based login must already succeed non-interactively for the user Docksentry runs as. An endpoint may instead be `context://<name>`, naming a context / system connection this machine has already stored (`docker --context <name>`, `podman --connection <name>`) — on Podman that is the only way to give each host its own SSH key, because `podman --url ssh://…` ignores `~/.ssh/config` and takes the identity of whichever stored connection is the *default* one, whatever host it points at (measured on 4.9.3; [docs/podman.md](podman.md) has the detail). An unknown name fails rather than falling back to the local socket. The machine Docksentry runs on is always managed and is *not* listed here — leave this unset and everything behaves exactly as a single-host install. A host that can't be reached is reported and skipped rather than taking the run down — every call to a host is time-bounded, so an unresponsive box costs a short wait on that host, not the others. Self-update stays local-only: Docksentry updates the instance it runs in, not the ones on your other boxes. Env-only. |
 | `DOCKER_STOP_TIMEOUT` ⚙ | `60` | Minimum seconds to allow `docker stop` to take before falling back to `docker kill`. The effective wait is `max(this, container.Config.StopTimeout)`. Raise for slow-shutdown apps (some DBs, log aggregators).  It also bounds the commands that follow a stop — `kill`, `rm -f` and `rename` — which were fixed at 15 seconds until v2.8.3 and timed out on containers that are slow to die (a model loaded in VRAM, a busy daemon). Those get `max(30, this)`, so raising this one value covers the whole shutdown path rather than only the first step of it.|
 | `DOCKSENTRY_IPV6` | `false` | Enable IPv6 outbound connections (default: IPv4-only to avoid `Network unreachable` in containers without IPv6 routing) |
 | `HEALTHCHECK_MAX_STARTING` ⚙ | `600` | Max seconds to wait for a freshly-updated container to leave `starting` health-state. Slow apps (GitLab, Nextcloud, Mastodon, large Postgres) may need more. We also respect the image's own `Healthcheck.StartPeriod` — the effective wait is `max(this, start_period × 1.5)`. If a container is still `starting` after the wait, Docksentry leaves it running (no rollback) and Docker's own healthcheck takes over. |
@@ -123,7 +123,7 @@ Crash alerts, health flips, and the weekly report.
 |----------|---------|-------------|
 | `MONITOR` ⚙ | `true` | Container state monitoring: notify on health turning unhealthy (and recovering), non-zero exits, OOM kills, and crash-restarts. Transitions only — no repeated alarms, quiet during updates. |
 | `MONITOR_EVENTS` ⚙ | `true` | Watch the runtime's live event stream, so a death alert's resource snapshot is taken at the moment it happens rather than at the next poll |
-| `MONITOR_INTERVAL` ⚙ | `60` | Seconds between monitoring passes (min 15) |
+| `MONITOR_INTERVAL` ⚙ | `60` | Seconds between monitoring passes (15–86400) |
 | `MONITOR_MASS_STOP` ⚙ | `true` | When a whole host's containers stop in one pass (a reboot, `docker restart`, or daemon restart), send one digest message plus a log file instead of one crash alert per container. A single container crashing still alerts on its own. |
 | `WEEKLY_REPORT_ENABLED` ⚙ | `false` | Send a once-a-week summary report to all configured channels |
 | `WEEKLY_REPORT_HOUR` ⚙ | `9` | Hour of day for the report (0-23, local time) |
@@ -138,7 +138,7 @@ Reclaiming space, and warning before it runs out.
 | `AUTO_CLEANUP` ⚙ | `false` | Run image cleanup after every successful auto-update |
 | `CLEANUP_BACKUP_DAYS` ⚙ | `7` | How long backup tarballs are kept (1–365 days) |
 | `CLEANUP_BACKUP_LOCAL_ONLY` ⚙ | `false` | Before deletion, save unused locally-built images (no registry digest) to `cleanup-backups/` in the [data directory](#where-the-data-lives) |
-| `CLEANUP_GRACE_HOURS` ⚙ | `24` | Cleanup only removes images unused for at least this long (1–8760h) |
+| `CLEANUP_GRACE_HOURS` ⚙ | `24` | Cleanup only removes images unused for at least this long (0–8760h; 0 means no grace at all) |
 | `DISK_WARN_AUTO_CLEANUP` ⚙ | `false` | Automatically run cleanup when disk warning fires |
 | `DISK_WARN_PERCENT` ⚙ | `85` | Notify when disk usage exceeds this percentage (50–100) |
 
@@ -148,8 +148,8 @@ The Telegram bot: notifications and commands.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BOT_LABEL` ⚙ | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](#multi-bot-setup-one-group-multiple-hosts) below. Max 32 chars. |
-| `TELEGRAM_ALLOWED_USERS` ⚙ | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](#group--topic-setup) below. |
+| `BOT_LABEL` ⚙ | | Optional prefix prepended to every outgoing notification (Telegram, Discord, webhook). Useful when multiple Docksentry instances share a chat / channel so you can tell which host a message is from. See [Multi-bot setup](../README.md#multi-bot-setup-one-group-multiple-hosts). Trimmed to 32 characters when set in the Web UI. |
+| `TELEGRAM_ALLOWED_USERS` ⚙ | | Optional whitelist — comma-separated Telegram user IDs allowed to control the bot. Empty = anyone in the configured chat. See [Group / Topic setup](../README.md#group--topic-setup). |
 | `TELEGRAM_POLLING` | `true` | Set `false` for **send-only mode**: Docksentry sends notifications but doesn't poll for commands. Use this to share one bot token with another app (e.g. Home Assistant) — Telegram allows only one command-polling consumer per token, so let the other app own commands while Docksentry just posts. Control Docksentry via the Web UI in this mode. |
 | `TELEGRAM_TOPIC_ID` ⚙ | | Telegram topic/thread ID (for groups with topics) |
 
@@ -217,7 +217,7 @@ Each channel has a switch, so it can be silenced without clearing its settings. 
 | `API_TOKENS` ⚙ | | `name:token` pairs, comma-separated (`prom:xxx,grafana:yyy`). Grants **read-only** access to `/metrics` and `GET /api/status` without the Web UI password — a scraper cannot log in, and the browser password would let a monitoring job stop containers. Named so one can be revoked without disturbing the other. Send as `Authorization: Bearer <token>`, or `?token=<token>` for scrapers that cannot set headers (note that a query string lands in access logs) |
 | `DEBUG` ⚙ | `false` | Seed debug mode on at startup (verbose logging, the full registry diagnostics on every update check, and the check's debug output fanned out to Telegram). Also toggleable at runtime via `/debug` or the Web UI, which persists and overrides this on later restarts. |
 
-> **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `settings.json` in the [data directory](#where-the-data-lives), and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Note that saving *anything* in the Web UI writes all of these settings at once, so a value you never touched can end up saved too. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /docksentry/settings.json.`, and the affected field carries a small `env` marker in the Web UI. The path in that line is your data directory's, so an install from before the move reads `/data/settings.json` there. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
+> **For the persistent settings, the env var is only the *starting* value.** The settings listed in the next paragraph are stored in `settings.json` in the [data directory](#where-the-data-lives), and on every start the saved file is applied on top of the environment — so once a value has been saved, changing the env var in your compose file does nothing. Only what you actually changed is written, plus what you deliberately saved — a value you never touched stays out of the file. Docksentry says so at startup when it happens, e.g. `Env override: DEBUG=true is set in the environment, but the saved setting debug=false wins — change it under Settings › General, or remove "debug" from /docksentry/settings.json.`, and the affected field carries a small `env` marker in the Web UI. The path in that line is your data directory's, so an install from before the move reads `/data/settings.json` there. (This only triggers for a variable set to something other than its default — the image declares most of these itself, so a default value can't be told apart from you not setting it at all.) Two ways out: change the value in the Web UI (that's now the authoritative place), or delete the key from `settings.json` and restart so the env var takes over again.
 
 Which settings the Web UI can change is marked ⚙ in the tables above — per variable, rather than described in a paragraph somewhere else. @NotRetarded had to guess from two pages that did not obviously agree (#2), which is a fair thing to be confused by. Telegram is fully optional: with `BOT_TOKEN` / `CHAT_ID` unset, Docksentry runs headless (Web UI + Discord/webhook/e-mail).
 
