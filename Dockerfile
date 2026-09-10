@@ -15,7 +15,19 @@ LABEL org.opencontainers.image.description="Docksentry — Docker container upda
 # assert the argv for them, but the binary was never in the image — so
 # every ssh:// host failed with `exec: "ssh": executable file not found`
 # while the README said it worked. Measured, not inferred.
-RUN apk add --no-cache docker-cli docker-cli-compose openssh-client
+# tini: we run as PID 1, and PID 1 inherits every orphaned process in
+# the container. The ssh masters that ControlPersist backgrounds are
+# exactly that — the `docker` client exits, its ssh master is reparented
+# to us, and Python never waits for a child it did not start. Measured on
+# a live four-host install: 12074 defunct `ssh` processes, 9839 of them
+# in a single hour, until the container could not fork at all and every
+# host — including the tcp ones — reported "could not list containers".
+#
+# tini rather than a SIGCHLD handler of our own: a reaper calling
+# waitpid(-1) races `subprocess.run()` for its children and can take an
+# exit status out from under it. An update would then report success it
+# never had, which is a far worse failure than the one being fixed.
+RUN apk add --no-cache docker-cli docker-cli-compose openssh-client tini
 
 # Reuse one ssh connection per host instead of building a new one for
 # every command. Measured against an ssh:// host: a bare `ssh … true`
@@ -75,4 +87,4 @@ VOLUME ["/docksentry"]
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD python3 /app/healthcheck.py || exit 1
 
-ENTRYPOINT ["python3", "/app/main.py"]
+ENTRYPOINT ["/sbin/tini", "--", "python3", "/app/main.py"]
