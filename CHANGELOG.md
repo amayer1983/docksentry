@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.27] - 2026-09-10
+
+Carries the two fixes from [2.17.10](https://github.com/amayer1983/docksentry/releases/tag/v2.17.10). If you are on `:beta` with an `ssh://` host, this is the one to take.
+
+### Fixed
+- **An install with an `ssh://` host runs itself out of processes.** Every host reports `could not list containers (rc=2): runtime/cgo: pthread_create failed: Resource temporarily unavailable` — including the `tcp://` ones and the local socket, which have nothing to do with ssh. The container held 12074 defunct `ssh` processes on a live four-host box and could not fork at all.
+
+  The connection reuse from 2.17.6 leaves an ssh master in the background; when the docker client exits it is handed to PID 1, and Python never waits for a child it did not start. Docksentry runs under `tini` now, which reaps them. The reuse stays — it was the trigger, not the cause. Full reasoning in the 2.17.10 notes.
+
+- **A host that is down was reported as the local machine** in `/api/status` and `/metrics`, while the one that actually failed was left out.
+
 ## [2.18.0-beta.23] - 2026-08-27
 
 One regression from beta.21, reported by @famewolf in #2.
