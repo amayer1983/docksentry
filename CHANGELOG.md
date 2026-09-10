@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.10] - 2026-09-10
+
+An install with an `ssh://` host runs itself out of processes. Straight to
+stable, no beta: it takes about a day and then nothing works at all.
+
+### Fixed
+- **Every host suddenly "could not be checked", including the ones that do not use ssh.** The message was `could not list containers (rc=2): runtime/cgo: pthread_create failed: Resource temporarily unavailable`, on all four hosts of a live install at once — the two `tcp://` ones and the local socket among them. Nothing was wrong with any of those hosts. The container held **12074 defunct `ssh` processes**, 9839 of them from a single hour, and could no longer start a process at all.
+
+  They come from the connection reuse added in 2.17.6. `ControlPersist` leaves an ssh master in the background so the next call does not pay the 355 ms handshake again; when the docker client exits, that master is handed to PID 1 — to Docksentry — and Python never waits for a child it did not start. One left-behind process per connection, each holding a slot forever. One ssh host filled the table in a little over a day.
+
+  The reuse is not the bug and stays. It only made visible that Docksentry has been running as PID 1 without ever doing PID 1's job, which any other orphaned process would have exposed more slowly. It now runs under `tini`, which reaps them. Measured against the built image with 200 orphans: 200 left behind before, none after.
+
+  Deliberately not a signal handler of our own: one that calls `waitpid(-1)` races the update path for its own children and can take an exit status out from under it — an update would then report a success it never had, which is worse than the failure being fixed.
+
+  **If you run an `ssh://` host, this affects you and has since 2.17.6.** Restarting the container clears what has piled up; updating stops it coming back.
+
+- **A host that is down was reported as the local machine.** With one endpoint switched off, `/api/status` and `/metrics` said the *local* machine was unreachable — while listing its running containers — and left out the host that actually was. Anyone scraping those got an alert about the wrong box and none about the right one, on exactly the multi-host installs where a host being off is normal. In every release since 2026-08-01.
+
 ## [2.17.9] - 2026-09-06
 
 ### Changed
