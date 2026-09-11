@@ -2,6 +2,18 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.28] - 2026-09-11
+
+**If you are on beta.27, update.** If beta.27 already left your install restarting in a loop, updating cannot reach you — recreate the container (`docker compose up -d --force-recreate`) and you will land here. Same fix as [2.17.11](https://github.com/amayer1983/docksentry/releases/tag/v2.17.11).
+
+### Fixed
+- **beta.27 could leave Docksentry restarting forever.** The init it put in front of the entrypoint was the first time a Docksentry image had ever changed its `ENTRYPOINT`, and the self-update could not survive it — @NotRetarded's instance came back with over a thousand restarts.
+
+  `Config.Entrypoint` echoes the image's own `ENTRYPOINT` when nobody overrode anything, so "did the user choose this" is only answerable against the image the container was *built from*; it was compared against the *new* image, which turns every image-side change into a phantom override. And the swap discarded everything after the image in its command line, so the `--entrypoint` flag survived while the script it pointed at did not. A bare `python3` reads stdin, gets EOF, exits 0, and the restart policy starts it again.
+
+### Changed
+- **The init is not back yet, and the ssh process leak is still here.** The update *into* this release still runs the old code, so the entrypoint has to stay unchanged for that update to survive. It returns once people are on a version that can take the change. `tcp://`, `context://` and single-host installs were never affected.
+
 ## [2.18.0-beta.27] - 2026-09-10
 
 Carries the two fixes from [2.17.10](https://github.com/amayer1983/docksentry/releases/tag/v2.17.10). If you are on `:beta` with an `ssh://` host, this is the one to take.
