@@ -2,6 +2,20 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.11] - 2026-09-11
+
+**If you are on 2.17.10, update.** If 2.17.10 already left your install restarting in a loop, updating cannot reach you — recreate the container (`docker compose up -d --force-recreate`, or `docker rm -f` and start it again) and you will land here.
+
+### Fixed
+- **2.17.10 could leave Docksentry restarting forever.** It put an init in front of the entrypoint to stop the ssh process leak, and that was the first time a Docksentry image had ever changed its `ENTRYPOINT` — which the self-update could not survive. @NotRetarded's instance came back with over a thousand restarts. Measured here: 7 restarts in 8 seconds.
+
+  Two things were wrong, either of them enough on its own. `Config.Entrypoint` echoes the image's own `ENTRYPOINT` when nobody overrode anything, so "did the user choose this" can only be answered against the image the container was *built from* — it was compared against the *new* image instead, which turns every image-side change into a phantom user override and pins the old entrypoint onto the new image. And the swap discarded everything after the image in its command line, so the `--entrypoint` flag survived while the script it pointed at did not. What came back was a bare `python3`: it reads stdin, gets EOF, exits 0, and the restart policy starts it again.
+
+  Both are fixed, and a genuine override still survives with its arguments. Verified against real containers, including an update out of the published 2.17.9 image.
+
+### Changed
+- **The init is not back yet, and the ssh process leak is still here.** The update *into* this release still runs the old code, so the entrypoint has to stay unchanged for that update to survive; bringing the init back in the same release that teaches the updater to cope would break exactly the people it is meant to rescue. It returns in a later release. Until then, an install with an `ssh://` host still accumulates defunct processes — restarting the container clears them, and `tcp://`, `context://` and single-host installs are not affected at all.
+
 ## [2.17.10] - 2026-09-10
 
 An install with an `ssh://` host runs itself out of processes. Straight to

@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
-"""Docksentry is PID 1, so it inherits every orphan — and must reap them.
+"""We are PID 1 and do not reap — knowingly, for now.
 
-Measured on a live four-host install running 2.17.9: **12074 defunct
-`ssh` processes**, 12073 of them parented to our own `python3` as PID 1,
-9839 of them accumulated in a single hour. The container could no longer
-`fork()`, so every host failed at once with
+Running as PID 1 means inheriting every orphaned process in the
+container, and the ssh masters that `ControlPersist` backgrounds are
+exactly that. Measured on a live four-host install: **12074 defunct
+`ssh` processes**, 9839 of them in a single hour, until it could not
+fork and every host failed at once with `pthread_create failed:
+Resource temporarily unavailable` — the `tcp://` ones included.
 
-    could not list containers (rc=2): runtime/cgo: pthread_create
-    failed: Resource temporarily unavailable
+An init as ENTRYPOINT fixes it, and 2.17.10 shipped that. It had to be
+taken back out: changing ENTRYPOINT was the first time a Docksentry
+image ever did, and the update path could not survive it (see
+test_entrypoint_survives_update.py). The container came back running a
+bare `python3` and restarted forever.
 
-including the two `tcp://` hosts and the local socket, which have
-nothing to do with ssh. Nothing was wrong with those hosts; the side
-asking them had run out of process slots.
+So the leak is still here, on purpose, and this file is what keeps that
+from being forgotten. It comes back once people are ON a version whose
+update survives an ENTRYPOINT change — never in the same release that
+teaches it to, because the update INTO that release runs the old code.
 
-Where the orphans come from: `ControlPersist` puts an ssh master into
-the background so the next `docker -H ssh://…` reuses the connection.
-When the docker client exits, that master is reparented to PID 1 — to
-us — and Python never waits for a child it did not start. One zombie per
-connection, held forever, each holding a PID.
-
-Why an init and not a handler of our own: a reaper calling
-`waitpid(-1)` races `subprocess.run()` for its children and can take an
-exit status out from under it. An update would then report a success it
-never had, which is a worse failure than the one being fixed.
-
-Measured against this image, 200 backgrounded orphans: without the init
-200 zombies remained, with it 0.
+Affects `ssh://` endpoints only. `tcp://`, `context://` and single-host
+installs never create the orphans.
 """
 import os
 import re
@@ -35,32 +30,20 @@ checks = {}
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 DOCKERFILE = open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8").read()
 
+# The state we are deliberately in, asserted so that changing it is a
+# decision someone makes rather than something that drifts.
 entry = re.search(r'^ENTRYPOINT\s+(\[.*\])\s*$', DOCKERFILE, re.M)
 checks["the image has an ENTRYPOINT"] = entry is not None
 line = entry.group(1) if entry else ""
+checks["it starts the app directly, with no init in front"] = (
+    '"python3"' in line and "tini" not in line)
+checks["…and the reason that is so is written down"] = (
+    "tini" in DOCKERFILE and "12074" in DOCKERFILE)
 
-# PID 1 has to be something whose job is reaping. Ours is not: it is a
-# Python process busy talking to Docker.
-checks["PID 1 is an init, not the app"] = "tini" in line
-checks["…and it comes first in the entrypoint"] = (
-    line.index("tini") < line.index("python3") if
-    ("tini" in line and "python3" in line) else False)
-# `--` so tini treats the rest as the command, not as its own flags.
-checks["…and hands the rest over as the command"] = '"--"' in line
-checks["the app is still what runs"] = "/app/main.py" in line
-
-# An entrypoint naming a binary the image does not install fails at
-# start, which is the one failure mode worse than the leak.
-checks["the init is actually installed"] = re.search(
-    r'^RUN apk add[^\n]*\btini\b', DOCKERFILE, re.M) is not None
-
-# The reason has to survive in the file, or the next person removes the
-# init as an unexplained extra hop.
-checks["why it is there is written down"] = (
-    "orphan" in DOCKERFILE.lower() and "12074" in DOCKERFILE)
-
-# And the counterpart: nobody adds a signal handler that fights
-# subprocess for the same children.
+# The one thing that must never be the answer instead. A reaper calling
+# waitpid(-1) races `subprocess.run()` for its children and can take an
+# exit status out from under it — an update would then report a success
+# it never had, which is worse than the leak it set out to fix.
 app = os.path.join(ROOT, "app")
 loose = []
 for name in sorted(os.listdir(app)):

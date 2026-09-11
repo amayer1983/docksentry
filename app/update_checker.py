@@ -4122,17 +4122,34 @@ class UpdateChecker:
                 args.extend(["--health-retries", str(retries)])
 
         # ── Entrypoint override ────────────────────────────────
-        # Same logic as Cmd below: only restore when the container's
-        # entrypoint differs from the image's default (otherwise we'd
-        # lock in the OLD image's entrypoint and break image updates
-        # that change ENTRYPOINT). When image_defaults is None we
-        # preserve historical behaviour: assume user didn't override
-        # entrypoint and skip emitting --entrypoint.
+        # Only restore what the USER chose. `Config.Entrypoint` says
+        # nothing about that on its own: it echoes the image's ENTRYPOINT
+        # when nobody overrode anything, so the question is always "does
+        # it differ from the image this container was BUILT FROM" — and
+        # only `inherited`, the old image's config, can answer it.
+        #
+        # It used to be compared against the NEW image's defaults, which
+        # gets the answer exactly backwards the moment an image changes
+        # its ENTRYPOINT: the container matched its own image, the new
+        # image differed, so this concluded "user override" and pinned
+        # the OLD entrypoint onto the new image — the very thing the
+        # comment here promised not to do.
+        #
+        # It shipped in 2.17.10, where the image gained an init. The
+        # rebuilt container ran the old entrypoint's binary with none of
+        # its arguments — a bare `python3`, which reads stdin, gets EOF,
+        # exits 0, and is restarted by the restart policy. Measured: 7
+        # restarts in 8 seconds; @NotRetarded reported over a thousand.
+        #
+        # When the old image is gone we emit nothing and let the new
+        # image's own entrypoint apply. That can lose a genuine override,
+        # which is visible and recoverable — pinning an entrypoint that
+        # cannot run is neither.
         container_entrypoint = cfg.get("Entrypoint") or []
-        image_entrypoint = (image_defaults or {}).get("Entrypoint") or []
+        built_from = (inherited or {}).get("Entrypoint") or []
         if (container_entrypoint
-                and image_defaults is not None
-                and container_entrypoint != image_entrypoint):
+                and (inherited or {}).get("Entrypoint") is not None
+                and container_entrypoint != built_from):
             # --entrypoint takes a single binary; remaining tokens
             # become positional args after the image.
             args.extend(["--entrypoint", container_entrypoint[0]])
@@ -4143,8 +4160,8 @@ class UpdateChecker:
         # ── Entrypoint remaining tokens (if user overrode entrypoint
         #    AND it has multiple tokens, the tail goes here as args).
         if (container_entrypoint
-                and image_defaults is not None
-                and container_entrypoint != image_entrypoint
+                and (inherited or {}).get("Entrypoint") is not None
+                and container_entrypoint != built_from
                 and len(container_entrypoint) > 1):
             args.extend(container_entrypoint[1:])
 
@@ -4154,13 +4171,20 @@ class UpdateChecker:
         # we'd lock in the OLD image's CMD on every update. With
         # image_defaults present, only emit when the container's Cmd
         # actually differs from the image's default.
+        # Same question, same answer: the image the container was built
+        # from is the only thing that can tell an override from an echo.
+        # `image_defaults` stays in the signature for callers that have
+        # nothing else, and still means "restore blindly" when None.
         container_cmd = cfg.get("Cmd")
-        image_cmd = (image_defaults or {}).get("Cmd")
+        built_from_cmd = (inherited or {}).get("Cmd")
         if container_cmd:
-            if image_defaults is None:
+            if inherited is not None:
+                if container_cmd != built_from_cmd:
+                    args.extend(container_cmd)
+            elif image_defaults is None:
                 # Pre-v1.19.0 behaviour: blindly restore Cmd.
                 args.extend(container_cmd)
-            elif container_cmd != image_cmd:
+            elif container_cmd != (image_defaults or {}).get("Cmd"):
                 args.extend(container_cmd)
 
         # argv is strings, by definition — and a non-string in it does not

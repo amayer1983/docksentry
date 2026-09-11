@@ -15,19 +15,21 @@ LABEL org.opencontainers.image.description="Docksentry — Docker container upda
 # assert the argv for them, but the binary was never in the image — so
 # every ssh:// host failed with `exec: "ssh": executable file not found`
 # while the README said it worked. Measured, not inferred.
-# tini: we run as PID 1, and PID 1 inherits every orphaned process in
-# the container. The ssh masters that ControlPersist backgrounds are
-# exactly that — the `docker` client exits, its ssh master is reparented
-# to us, and Python never waits for a child it did not start. Measured on
-# a live four-host install: 12074 defunct `ssh` processes, 9839 of them
-# in a single hour, until the container could not fork at all and every
-# host — including the tcp ones — reported "could not list containers".
+# NOT tini, and that is a decision rather than an omission. Running as
+# PID 1 means we inherit every orphan, and the ssh masters that
+# ControlPersist backgrounds are exactly that — 12074 of them piled up on
+# a live install until it could not fork. An init as ENTRYPOINT fixes it
+# and 2.17.10 shipped that, which is where it went wrong: changing
+# ENTRYPOINT was the first time a Docksentry image ever changed it, and
+# the self-update path could not survive it. It rebuilt the container
+# with the OLD entrypoint binary and none of its arguments, so the new
+# container ran a bare `python3`, exited, and restarted forever.
 #
-# tini rather than a SIGCHLD handler of our own: a reaper calling
-# waitpid(-1) races `subprocess.run()` for its children and can take an
-# exit status out from under it. An update would then report success it
-# never had, which is a far worse failure than the one being fixed.
-RUN apk add --no-cache docker-cli docker-cli-compose openssh-client tini
+# The self-update bug is fixed in this release. The init comes back once
+# people are ON a version that can survive an ENTRYPOINT change — not in
+# the same release that fixes the ability to survive it, because the
+# update INTO this release still runs the old code.
+RUN apk add --no-cache docker-cli docker-cli-compose openssh-client
 
 # Reuse one ssh connection per host instead of building a new one for
 # every command. Measured against an ssh:// host: a bare `ssh … true`
@@ -88,4 +90,4 @@ VOLUME ["/docksentry"]
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD python3 /app/healthcheck.py || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--", "python3", "/app/main.py"]
+ENTRYPOINT ["python3", "/app/main.py"]
