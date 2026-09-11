@@ -546,15 +546,23 @@ def swap(ctx, config, own_name, own_image, reply_to=None):
     # We need just the flags between "-d" and own_image:
     try:
         img_idx = full.index(own_image)
-        run_args = full[3:img_idx]  # drop ["docker","run","-d"] and image+cmd
+        run_args = full[3:img_idx]   # the flags, between `-d` and the image
+        cmd_args = full[img_idx + 1:]  # whatever belongs AFTER the image
     except ValueError:
         # Defensive — should never happen since we passed own_image
         run_args = full[3:-1]
+        cmd_args = []
 
-    # Build the full recreation command
+    # Everything after the image has to travel too. Dropping it was
+    # survivable only while nothing ever landed there: an overridden
+    # entrypoint puts its remaining tokens here, and a Cmd does as well.
+    # Keeping the flag while discarding its arguments is worse than doing
+    # neither — `--entrypoint python3` without the script it should run
+    # gives a container that exits instantly and restarts forever.
     run_parts = " ".join(shlex.quote(a) for a in run_args)
+    cmd_parts = " ".join(shlex.quote(a) for a in cmd_args)
     update_script = build_script(
-        own_name, run_parts, own_image,
+        own_name, run_parts, own_image, cmd_parts=cmd_parts,
         stop_timeout=max(30, int(getattr(ctx.config,
                                          "docker_stop_timeout", 60) or 60)))
 
@@ -619,7 +627,7 @@ def swap(ctx, config, own_name, own_image, reply_to=None):
     time.sleep(30)
 
 
-def build_script(name, run_parts, image, stop_timeout=60):
+def build_script(name, run_parts, image, stop_timeout=60, cmd_parts=""):
     """Shell run by the helper container to swap Docksentry's image.
 
     `stop_timeout` is `DOCKER_STOP_TIMEOUT`, and it is here because
@@ -653,6 +661,9 @@ def build_script(name, run_parts, image, stop_timeout=60):
     # which the shell joins into a single token.
     qname = shlex.quote(name)
     qimage = shlex.quote(image)
+    # Already quoted by the caller, like run_parts. Empty for the normal
+    # case where the image's own entrypoint is what runs.
+    _tail = f" {cmd_parts}" if cmd_parts else ""
     rollback = (
         f"docker rm -f {qname} 2>/dev/null; "
         f"docker rename {qname}_old {qname} 2>/dev/null; "
@@ -678,7 +689,7 @@ def build_script(name, run_parts, image, stop_timeout=60):
         f"{{ docker rename {qname} {qname}_old || "
         f"{{ echo 'Selfupdate backup failed — restarting unchanged'; "
         f"docker start {qname}; exit 1; }}; }} && "
-        f"{{ docker run -d {run_parts} {qimage} || "
+        f"{{ docker run -d {run_parts} {qimage}{_tail} || "
         f"{{ echo 'Selfupdate recreate failed — rolling back'; {rollback}; exit 1; }}; }} && "
         f"docker rm {qname}_old"
     )
