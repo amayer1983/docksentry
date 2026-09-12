@@ -139,6 +139,7 @@
   "status_autoupdate": "تحديث تلقائي",
   "selfupdate_private_undeliverable": "⚠️ لم أتمكن من إرسال هذا إليك بشكل خاص — لا يسمح لي Discord بفتح رسالة مباشرة معك (عادةً ما تكون الرسائل المباشرة من أعضاء الخادم معطّلة في إعدادات الخصوصية). حتى لا تضيع النتيجة، ها هي:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 يحدث هذا عندما يطلب الحاوية نقطة دخول لم تعد موجودة في الصورة الجديدة. أعد إنشاء الحاوية مرة واحدة — `docker compose up -d --force-recreate` — وسيعمل التحديث الذاتي بعدها كالمعتاد. بياناتك في وحدة التخزين المسماة ولا تتأثر.",
   "startup_message": "🚀 *تم تشغيل Docksentry* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
   "update_scoped_none": "✅ No pending updates among containers matching `{pattern}`.",

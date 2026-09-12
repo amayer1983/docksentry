@@ -139,6 +139,7 @@
   "status_autoupdate": "ऑटो-अपडेट",
   "selfupdate_private_undeliverable": "⚠️ मैं इसे आपको निजी तौर पर नहीं भेज सका — Discord मुझे आपके साथ डायरेक्ट मैसेज खोलने नहीं दे रहा (सर्वर सदस्यों के डायरेक्ट मैसेज आमतौर पर आपकी प्राइवेसी सेटिंग्स में बंद रहते हैं)। नतीजा खो न जाए, इसलिए यह रहा:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 ऐसा तब होता है जब कंटेनर ऐसा entrypoint माँगता है जो नई इमेज में नहीं है। इसे एक बार दोबारा बनाएँ — `docker compose up -d --force-recreate` — उसके बाद सेल्फ-अपडेट सामान्य रूप से चलेगा। आपका डेटा नामित वॉल्यूम में सुरक्षित रहता है।",
   "startup_message": "🚀 *Docksentry शुरू हुआ* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
   "update_scoped_none": "✅ No pending updates among containers matching `{pattern}`.",

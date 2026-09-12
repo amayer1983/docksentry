@@ -139,6 +139,7 @@
   "status_autoupdate": "自动更新",
   "selfupdate_private_undeliverable": "⚠️ 无法私下发送给你 — Discord 不允许我与你开启私信（服务器成员的私信通常在隐私设置中被关闭）。为了不丢失结果，内容如下：",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 当容器请求新镜像中已不存在的入口点时会这样。重新创建一次 — `docker compose up -d --force-recreate` — 之后自我更新即可正常工作。你的数据保存在命名卷中，不受影响。",
   "startup_message": "🚀 *Docksentry 已启动* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
   "update_scoped_none": "✅ No pending updates among containers matching `{pattern}`.",

@@ -139,6 +139,7 @@
   "status_autoupdate": "Otomatik güncelleme",
   "selfupdate_private_undeliverable": "⚠️ Bunu sana özel olarak gönderemedim — Discord seninle özel mesaj açmama izin vermiyor (sunucu üyelerinden gelen özel mesajlar genelde gizlilik ayarlarında kapalıdır). Sonuç kaybolmasın diye burada:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Bu, kapsayıcının yeni imajda artık bulunmayan bir entrypoint istemesiyle olur. Bir kez yeniden oluşturun — `docker compose up -d --force-recreate` — sonrasında kendini güncelleme normal çalışır. Verileriniz adlandırılmış birimde durur.",
   "startup_message": "🚀 *Docksentry başlatıldı* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
   "update_scoped_none": "✅ No pending updates among containers matching `{pattern}`.",

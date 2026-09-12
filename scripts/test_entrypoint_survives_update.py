@@ -71,9 +71,8 @@ checks["an unknown old image emits no entrypoint at all"] = (
     "--entrypoint" not in argv)
 
 # ── and the self-update carries what comes after the image ───────────
-# On this line the swap still lives on the bot; the core refactor moves
-# it to its own module. What it has to do is the same either way.
 from telegram_bot import TelegramBot                        # noqa: E402
+import telegram_bot as selfupdate                           # noqa: E402
 
 script = TelegramBot._build_selfupdate_script(
     "ds", "--name ds", "img:new", cmd_parts="--flag x")
@@ -83,6 +82,34 @@ script_plain = TelegramBot._build_selfupdate_script(
     "ds", "--name ds", "img:new")
 checks["…and adds nothing when there are none"] = (
     "img:new || " in script_plain and "img:new  " not in script_plain)
+
+# ── and a container left on the shim path finds its way back ─────────
+# 2.17.10 and beta.27 pinned `/sbin/tini` onto every later image. Left
+# alone those containers keep it forever, keep needing the compatibility
+# shim, and never pick up a real init. One ordinary update puts them
+# right, with nobody doing anything.
+IMG_NORMAL = {"Entrypoint": ["python3", "/app/main.py"], "Cmd": None}
+stuck = {"Config": {"Entrypoint": ["/sbin/tini"], "Cmd": None},
+         "HostConfig": {}, "Image": "img:old"}
+fixed = selfupdate._forget_legacy_entrypoint(stuck, IMG_NORMAL)
+checks["a container stuck on the shim path is let go of it"] = (
+    fixed["Config"]["Entrypoint"] == ["python3", "/app/main.py"])
+checks["…without touching the caller's own dict"] = (
+    stuck["Config"]["Entrypoint"] == ["/sbin/tini"])
+
+# An image that really does declare it is not a leftover.
+wants_it = {"Entrypoint": ["/sbin/tini", "--", "python3", "/app/main.py"],
+            "Cmd": None}
+kept = selfupdate._forget_legacy_entrypoint(stuck, wants_it)
+checks["…but an image that asks for it keeps it"] = (
+    kept["Config"]["Entrypoint"] == ["/sbin/tini"])
+
+# And somebody else's entrypoint is none of our business.
+mine = {"Config": {"Entrypoint": ["/usr/bin/myrunner"], "Cmd": None},
+        "HostConfig": {}, "Image": "img:old"}
+checks["a real override is left alone"] = (
+    selfupdate._forget_legacy_entrypoint(mine, IMG_NORMAL)
+    ["Config"]["Entrypoint"] == ["/usr/bin/myrunner"])
 
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()

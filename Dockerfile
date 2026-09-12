@@ -90,4 +90,10 @@ VOLUME ["/docksentry"]
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD python3 /app/healthcheck.py || exit 1
 
+# A container created by 2.17.10 or beta.27 asks the next image for
+# `/sbin/tini` with no arguments — see the file itself for why. Without
+# it those installs cannot self-update at all.
+COPY docker-entrypoint-compat.sh /sbin/tini
+RUN chmod +x /sbin/tini
+
 ENTRYPOINT ["python3", "/app/main.py"]

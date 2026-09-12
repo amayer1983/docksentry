@@ -139,6 +139,7 @@
   "status_autoupdate": "Auto-aggiornamento",
   "selfupdate_private_undeliverable": "⚠️ Non sono riuscito a inviartelo in privato: Discord non mi lascia aprire un messaggio diretto con te (di solito i messaggi diretti dai membri del server sono disattivati nelle impostazioni sulla privacy). Per non perdere il risultato, eccolo qui:",
   "selfupdate_recreate_failed": "⚠️ Self-update failed: the new container couldn't be created and Docksentry rolled back to the previous version (still running). Helper output:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Succede quando il container chiede un entrypoint che la nuova immagine non ha più. Ricrealo una volta — `docker compose up -d --force-recreate` — e l'auto-aggiornamento torna a funzionare. I tuoi dati restano nel volume con nome.",
   "startup_message": "🚀 *Docksentry avviato* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) matching `{pattern}` are up to date.",
   "update_scoped_none": "✅ No pending updates among containers matching `{pattern}`.",

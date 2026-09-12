@@ -180,6 +180,31 @@ def read_pending(path):
     return data if isinstance(data, list) else []
 
 
+
+#: The entrypoint 2.17.10 and 2.18.0-beta.27 shipped. Nothing else in
+#: any Docksentry image has ever set one, so a container asking for this
+#: path is a container those two versions created.
+LEGACY_INIT = "/sbin/tini"
+
+
+def _forget_legacy_entrypoint(config, image_defaults):
+    """Drop a pinned `/sbin/tini` entrypoint the target image does not want.
+
+    Returns `config` unchanged in every other case, including when the
+    image really does declare that entrypoint — then it is not a leftover
+    and the container should keep matching it.
+    """
+    cfg = (config or {}).get("Config") or {}
+    have = cfg.get("Entrypoint") or []
+    wants = (image_defaults or {}).get("Entrypoint") or []
+    if not have or have[0] != LEGACY_INIT or (wants and wants[0] == LEGACY_INIT):
+        return config
+    import copy
+    out = copy.deepcopy(config)
+    out["Config"]["Entrypoint"] = list(wants) if wants else None
+    return out
+
+
 class TelegramBot:
     def __init__(self, config, container_store, engine=None, hosts=None):
         self.config = config
@@ -3005,6 +3030,21 @@ class TelegramBot:
         # `config` is our own container inspect, so .Image is the image we
         # are currently running — the one we're updating away from.
         inherited = _UC._image_config(config.get("Image") or "")
+        # Retire our own past mistake without anybody having to do
+        # anything. 2.17.10 shipped `/sbin/tini` as ENTRYPOINT and its
+        # self-update pinned that path onto whatever image came next, so
+        # a container it created carries it forever, keeps needing the
+        # compatibility shim, and would never pick up a real init later.
+        #
+        # A swap is a recreate anyway, so this is the cheapest place to
+        # put it right: when the container asks for that path and the
+        # target image does not, forget the container's and let the
+        # image's own apply. One ordinary update and it is back to normal.
+        #
+        # Scoped to the self-update on purpose. `_build_run_args` also
+        # rebuilds other people's containers, and one of those may use
+        # tini because its author chose to — that is theirs to keep.
+        config = _forget_legacy_entrypoint(config, image_defaults)
         full = _UC._build_run_args(config, own_image, own_name, image_defaults,
                                    inherited=inherited,
                                    cgroup_version=_UC._cgroup_version())

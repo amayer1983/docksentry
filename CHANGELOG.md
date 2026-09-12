@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.12] - 2026-09-12
+
+**If 2.17.10 left you unable to self-update, this one collects you.** Nothing to do: your next update lands here, and the one after that puts your container back on the normal entrypoint.
+
+### Fixed
+- **A container created by 2.17.10 could not self-update at all.** It asks the next image for `/sbin/tini`, which 2.17.11 took back out, so the recreate failed on `exec: "/sbin/tini": no such file or directory` and rolled back — every time, forever. The rollback did its job and those installs kept running, but they could not move.
+
+  The image carries a small compatibility shim at that path now: with no arguments it starts Docksentry, which is exactly what the broken recreate is asking for. Verified against the published 2.17.10 image with a real named volume — eleven state files bit-identical, all ten settings read back, restart policy, label, environment and mounts unchanged.
+
+- **And those containers then find their way back on their own.** The fixed comparison still treated the pinned `/sbin/tini` as a deliberate override, so they would have carried it forever. The self-update now forgets that path when the target image does not ask for it — one ordinary update and the container is back to `python3 /app/main.py`, with nobody doing anything.
+
+- **The failure message said what Docker said, which was no help.** `runc create failed: … no such file or directory` is true and unusable. That one case now adds the line that matters: recreate the container once, your data is in the named volume.
+
 ## [2.17.11] - 2026-09-11
 
 **If you are on 2.17.10, update.** If 2.17.10 already left your install restarting in a loop, updating cannot reach you — recreate the container (`docker compose up -d --force-recreate`, or `docker rm -f` and start it again) and you will land here.

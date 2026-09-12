@@ -725,6 +725,17 @@ def main():
             if "rolling back" in _hcontent:
                 _tail = _hcontent.strip()[-900:]
                 _fail = t("selfupdate_recreate_failed", detail=_tail)
+                # One failure has a known cause and a one-line answer, and
+                # the raw text carries neither. A container created by
+                # 2.17.10 asks the next image for an entrypoint that is no
+                # longer in it; the recreate fails on `exec: "…": no such
+                # file or directory` and the rollback keeps the old one
+                # running. Docker's words for that are true and useless —
+                # @famewolf and @NotRetarded both got them and neither
+                # could act on them.
+                if ("no such file or directory" in _hcontent
+                        and "exec:" in _hcontent):
+                    _fail += "\n\n" + t("selfupdate_recreate_hint")
                 boot_announce(_fail)
                 print("Self-update recreate failed — helper output:\n" + _hcontent)
     except Exception as e:
