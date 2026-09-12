@@ -139,6 +139,7 @@
   "status_pinned": "Vastgezet",
   "status_autoupdate": "Auto-update",
   "selfupdate_recreate_failed": "⚠️ Zelfupdate mislukt: de nieuwe container kon niet worden aangemaakt en Docksentry is teruggedraaid naar de vorige versie (die nog draait). Uitvoer van de helper:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Dit gebeurt als de container om een entrypoint vraagt dat de nieuwe image niet meer heeft. Maak hem één keer opnieuw aan — `docker compose up -d --force-recreate` — daarna werkt de zelfupdate weer gewoon. Je data staat in het benoemde volume en blijft ongemoeid.",
   "startup_message": "🚀 *Docksentry gestart* (v{version})",
   "check_scoped_uptodate": "✅ {count} container(s) die overeenkomen met `{pattern}` zijn up-to-date.",
   "update_scoped_none": "✅ Geen openstaande updates onder de containers die overeenkomen met `{pattern}`.",

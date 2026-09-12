@@ -139,6 +139,7 @@
   "status_pinned": "مثبتة",
   "status_autoupdate": "تحديث تلقائي",
   "selfupdate_recreate_failed": "⚠️ فشل التحديث الذاتي: تعذّر إنشاء الحاوية الجديدة وتراجع Docksentry إلى الإصدار السابق (ولا يزال يعمل). مخرجات المساعد:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 يحدث هذا عندما يطلب الحاوية نقطة دخول لم تعد موجودة في الصورة الجديدة. أعد إنشاء الحاوية مرة واحدة — `docker compose up -d --force-recreate` — وسيعمل التحديث الذاتي بعدها كالمعتاد. بياناتك في وحدة التخزين المسماة ولا تتأثر.",
   "startup_message": "🚀 *تم تشغيل Docksentry* (v{version})",
   "check_scoped_uptodate": "✅ {count} حاوية مطابقة لـ `{pattern}` محدّثة.",
   "update_scoped_none": "✅ لا توجد تحديثات معلّقة بين الحاويات المطابقة لـ `{pattern}`.",

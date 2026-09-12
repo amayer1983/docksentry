@@ -139,6 +139,7 @@
   "status_pinned": "पिन किए गए",
   "status_autoupdate": "ऑटो-अपडेट",
   "selfupdate_recreate_failed": "⚠️ सेल्फ-अपडेट विफल: नया कंटेनर नहीं बन सका और Docksentry पिछले वर्ज़न पर लौट आया (अब भी चल रहा है)। हेल्पर आउटपुट:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 ऐसा तब होता है जब कंटेनर ऐसा entrypoint माँगता है जो नई इमेज में नहीं है। इसे एक बार दोबारा बनाएँ — `docker compose up -d --force-recreate` — उसके बाद सेल्फ-अपडेट सामान्य रूप से चलेगा। आपका डेटा नामित वॉल्यूम में सुरक्षित रहता है।",
   "startup_message": "🚀 *Docksentry शुरू हुआ* (v{version})",
   "check_scoped_uptodate": "✅ `{pattern}` से मेल खाते {count} कंटेनर अद्यतित हैं।",
   "update_scoped_none": "✅ `{pattern}` से मेल खाते कंटेनरों में कोई लंबित अपडेट नहीं।",

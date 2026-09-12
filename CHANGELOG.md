@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.29] - 2026-09-12
+
+**If beta.27 left you unable to self-update, this one collects you.** Nothing to do — your next update lands here, and the one after that puts your container back on the normal entrypoint.
+
+### Fixed
+- **A container created by beta.27 could not self-update at all.** It asks the next image for `/sbin/tini`, which beta.28 took back out, so the recreate failed on `exec: "/sbin/tini": no such file or directory` and rolled back — every time, forever. Both testers hit it on every host they run.
+
+  The image carries a small compatibility shim at that path now: with no arguments it starts Docksentry, which is exactly what that broken recreate is asking for. Verified against the published 2.17.10 image with a real named volume — eleven state files bit-identical, all ten settings read back, restart policy, label, environment and mounts unchanged.
+
+- **And those containers then find their way back on their own.** The fixed comparison still treated the pinned `/sbin/tini` as a deliberate override, so they would have carried it forever and never picked up a future init. The self-update now forgets that path when the target image does not ask for it — one ordinary update and the container is back to `python3 /app/main.py`, with nobody doing anything. Measured end to end: 2.17.10 → shim → normal, zero restarts, data untouched at every step.
+
+- **The failure message said what Docker said, which was no help.** `runc create failed: … no such file or directory` is true and unusable. That one case now adds the one line that matters: recreate the container once, your data is in the named volume.
+
 ## [2.18.0-beta.28] - 2026-09-11
 
 **If you are on beta.27, update.** If beta.27 already left your install restarting in a loop, updating cannot reach you — recreate the container (`docker compose up -d --force-recreate`) and you will land here. Same fix as [2.17.11](https://github.com/amayer1983/docksentry/releases/tag/v2.17.11).

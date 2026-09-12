@@ -139,6 +139,7 @@
   "status_pinned": "ピン留め",
   "status_autoupdate": "自動更新",
   "selfupdate_recreate_failed": "⚠️ 自己更新に失敗しました: 新しいコンテナを作成できず、Docksentry は以前のバージョンにロールバックしました（引き続き実行中）。ヘルパーの出力:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 これはコンテナが新しいイメージにないエントリポイントを要求したときに起きます。一度作り直してください — `docker compose up -d --force-recreate` — その後は自己更新が通常どおり動きます。データは名前付きボリュームにあり、そのまま残ります。",
   "startup_message": "🚀 *Docksentry が起動しました* (v{version})",
   "check_scoped_uptodate": "✅ `{pattern}` に一致する {count} 個のコンテナは最新です。",
   "update_scoped_none": "✅ `{pattern}` に一致するコンテナに保留中の更新はありません。",

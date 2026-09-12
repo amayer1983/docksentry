@@ -139,6 +139,7 @@
   "status_pinned": "Przypięte",
   "status_autoupdate": "Auto-aktualizacja",
   "selfupdate_recreate_failed": "⚠️ Samoaktualizacja nie powiodła się: nie udało się utworzyć nowego kontenera i Docksentry wrócił do poprzedniej wersji (nadal działa). Wyjście kontenera pomocniczego:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Dzieje się tak, gdy kontener prosi o entrypoint, którego nowy obraz już nie ma. Utwórz go raz na nowo — `docker compose up -d --force-recreate` — potem samoaktualizacja znów działa. Dane są w nazwanym wolumenie i pozostają nietknięte.",
   "startup_message": "🚀 *Docksentry uruchomiony* (v{version})",
   "check_scoped_uptodate": "✅ {count} kontener(ów) pasujących do `{pattern}` jest aktualnych.",
   "update_scoped_none": "✅ Brak oczekujących aktualizacji wśród kontenerów pasujących do `{pattern}`.",

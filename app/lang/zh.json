@@ -139,6 +139,7 @@
   "status_pinned": "已固定",
   "status_autoupdate": "自动更新",
   "selfupdate_recreate_failed": "⚠️ 自我更新失败：新容器无法创建，Docksentry 已回滚到先前版本（仍在运行）。辅助容器输出：\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 当容器请求新镜像中已不存在的入口点时会这样。重新创建一次 — `docker compose up -d --force-recreate` — 之后自我更新即可正常工作。你的数据保存在命名卷中，不受影响。",
   "startup_message": "🚀 *Docksentry 已启动* (v{version})",
   "check_scoped_uptodate": "✅ 匹配 `{pattern}` 的 {count} 个容器均为最新。",
   "update_scoped_none": "✅ 匹配 `{pattern}` 的容器中没有待处理的更新。",

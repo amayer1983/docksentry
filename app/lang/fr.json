@@ -139,6 +139,7 @@
   "status_pinned": "Épinglés",
   "status_autoupdate": "Mise à jour auto",
   "selfupdate_recreate_failed": "⚠️ Échec de l'auto-mise à jour : le nouveau conteneur n'a pas pu être créé et Docksentry est revenu à la version précédente (toujours en marche). Sortie de l'assistant :\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Cela arrive quand le conteneur réclame un entrypoint que la nouvelle image n'a plus. Recréez-le une fois — `docker compose up -d --force-recreate` — et l'auto-mise à jour refonctionnera. Vos données sont dans le volume nommé et restent intactes.",
   "startup_message": "🚀 *Docksentry démarré* (v{version})",
   "check_scoped_uptodate": "✅ {count} conteneur(s) correspondant à `{pattern}` sont à jour.",
   "update_scoped_none": "✅ Aucune mise à jour en attente parmi les conteneurs correspondant à `{pattern}`.",

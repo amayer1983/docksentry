@@ -139,6 +139,7 @@
   "status_pinned": "고정됨",
   "status_autoupdate": "자동 업데이트",
   "selfupdate_recreate_failed": "⚠️ 자체 업데이트 실패: 새 컨테이너를 만들지 못해 Docksentry가 이전 버전으로 되돌렸습니다(계속 실행 중). 헬퍼 출력:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 컨테이너가 새 이미지에 없는 엔트리포인트를 요구할 때 생깁니다. 한 번만 다시 만드세요 — `docker compose up -d --force-recreate` — 이후에는 자체 업데이트가 정상 작동합니다. 데이터는 명명된 볼륨에 그대로 있습니다.",
   "startup_message": "🚀 *Docksentry 시작됨* (v{version})",
   "check_scoped_uptodate": "✅ `{pattern}`과(와) 일치하는 컨테이너 {count}개가 최신 상태입니다.",
   "update_scoped_none": "✅ `{pattern}`과(와) 일치하는 컨테이너 중에 대기 중인 업데이트가 없습니다.",

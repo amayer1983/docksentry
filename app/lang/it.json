@@ -139,6 +139,7 @@
   "status_pinned": "Bloccati",
   "status_autoupdate": "Auto-aggiornamento",
   "selfupdate_recreate_failed": "⚠️ Auto-aggiornamento fallito: non è stato possibile creare il nuovo container e Docksentry è tornato alla versione precedente (ancora in esecuzione). Output dell'helper:\n```\n{detail}\n```",
+  "selfupdate_recreate_hint": "💡 Succede quando il container chiede un entrypoint che la nuova immagine non ha più. Ricrealo una volta — `docker compose up -d --force-recreate` — e l'auto-aggiornamento torna a funzionare. I tuoi dati restano nel volume con nome.",
   "startup_message": "🚀 *Docksentry avviato* (v{version})",
   "check_scoped_uptodate": "✅ {count} container corrispondenti a `{pattern}` sono aggiornati.",
   "update_scoped_none": "✅ Nessun aggiornamento in sospeso tra i container corrispondenti a `{pattern}`.",
