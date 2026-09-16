@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.30] - 2026-09-16
+
+**The ssh process leak, fixed from inside.** No init, no entrypoint change — the thing that broke the self-update twice stays exactly as it is.
+
+### Fixed
+- **An install with an `ssh://` host no longer runs itself out of processes.** Docksentry is PID 1 in its container and inherits every orphan; the ssh masters `ControlPersist` backgrounds are exactly that, and nobody ever waited for them. Measured twice on a live install: 12074 defunct `ssh` processes on 10.09., 12069 again on 16.09. — five days after the last restart — until every host failed at once.
+
+  A small thread now collects them from inside, once a minute. It touches only **zombies** (already exited, only waiting to be collected), only children of PID 1, and only ones whose command is `ssh` — a thing Docksentry never starts itself. Each is collected by its own PID with `waitpid(pid)`, which takes nothing from `subprocess.run()` waiting for its own children. That last part is the one that matters: a reaper calling `waitpid(-1)` would race the update path and could make an update report a success it never had.
+
+  Verified as PID 1 in the built image: 120 orphans piled up, one pass collected all of them, 20 zombies of another name were left alone and counted, and 40 concurrent `subprocess.run` children kept every one of their exit codes. Cost at the scale seen live: 3000 zombies in 96 ms.
+
+  `tcp://`, `context://` and single-host installs never had the leak; for them nothing changes.
+
 ## [2.18.0-beta.29] - 2026-09-12
 
 **If beta.27 left you unable to self-update, this one collects you.** Nothing to do — your next update lands here, and the one after that puts your container back on the normal entrypoint.

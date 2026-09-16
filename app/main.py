@@ -435,6 +435,16 @@ def main():
     # Start scheduler in background
     scheduler.start()
 
+    # We are PID 1, so every orphan in the container lands on us — the
+    # ssh masters ControlPersist leaves behind, in particular. Collected
+    # from inside rather than by an init in front of us, because
+    # changing ENTRYPOINT broke the self-update twice. See reaper.py.
+    try:
+        import reaper
+        reaper.start()
+    except Exception as e:
+        print(f"Reaper could not start (non-fatal): {e}")
+
     # Interactive Discord bot (v2.0) — a second front-end onto the same
     # update engine. Only starts when DISCORD_BOT_TOKEN and
     # DISCORD_APP_ID are set; a failure here is never fatal, because a
