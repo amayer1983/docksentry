@@ -2,6 +2,15 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.32] - 2026-09-20
+
+### Added
+- **`/audit` with no container name reports what Docksentry itself can see.** Who it is, how many mounts of its own it has, and for every Compose container whether its file is readable — and when it is not, whether one of those mounts already covers the path. That last distinction is the point: "mount it" and "your mount points at the wrong directory" are different instructions, and until now the difference was only visible from inside the container.
+
+  Every Compose mount question so far has ended with somebody pasting `docker exec … ls` back at me — twice on 20.09. with @NotRetarded, and the first attempt failed because I had typed my own container's name into his terminal. None of it was ever unknown to the program; it simply had no way to say it.
+
+  Works in both chats, findings from the core so they cannot disagree. Containers whose file is readable are not listed — there is nothing to do about those.
+
 ## [2.18.0-beta.31] - 2026-09-20
 
 Three things that all come down to the same habit: saying something without looking first.

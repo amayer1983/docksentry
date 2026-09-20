@@ -100,7 +100,7 @@
   "help_detail_lang": "*/lang* — Switch the bot language\n\n`/lang en` or `/lang de` — change to English or German. Other 14 languages fall back to English strings (translation contributions welcome).\n`/lang` (no arg) — show current language.",
   "help_detail_settings": "*/settings* — Current configuration\n\nShows the active schedule, language, auto-selfupdate flag, healthcheck max-starting wait, debug state and other env-driven settings. Read-only via Telegram; the Web UI lets you edit most of these without restart.",
   "help_detail_help": "*/help* — Command reference\n\n`/help` — list of all commands with a one-line summary\n`/help <command>` — detailed help for a specific command (synopsis, parameters, examples)\n\n📌 The autocomplete picker (type `/` in this chat) is faster for discovery — try it.",
-  "help_audit": "/audit — Audit container inspect coverage",
+  "help_audit": "/audit — Audit a container, or Docksentry itself when you name none",
   "audit_usage": "Usage: `/audit container_name` — checks the container's inspect for fields we don't restore on recreate.",
   "audit_inspect_failed": "❌ Couldn't inspect `{name}`: {error}",
   "audit_clean": "✅ `{name}`: clean — every non-default HostConfig and Config field is restored on recreate.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "The registry has no `{image}`. Either it was built here — a locally built image has nothing to pull from, and a self-update needs one from a registry — or the registry is private and wants credentials (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Self-update started — I will send you a direct message when it finishes, and restart if there is something to apply.",
   "error_timed_out": "no answer within {seconds} seconds",
-  "monitor_crash_restart_nocode": "🔁 {name} was restarted by its restart policy at {when} (restart #{count}). The exit code is not known — the event stream did not see this one."
+  "monitor_crash_restart_nocode": "🔁 {name} was restarted by its restart policy at {when} (restart #{count}). The exit code is not known — the event stream did not see this one.",
+  "selfaudit_head": "🔍 *Docksentry, looking at itself*\n{total} Compose container(s): {ok} readable, {wrong} behind a wrong mount, {missing} with nothing mounted.",
+  "selfaudit_self_name": "• I am container `{name}`",
+  "selfaudit_self_mounts": "• {count} mount(s) of my own",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` is not here, although `{src}` is mounted at `{dest}`. The mount is there; the source is the wrong directory.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` is not here and nothing is mounted over it. Mount `{mount}` to reach it.",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose labels but no file path recorded, so there is nothing to reach. It is rebuilt from its inspect data."
 }

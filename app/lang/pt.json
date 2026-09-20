@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Mudar o idioma do bot\n\n`/lang en` ou `/lang de` — mudar para inglês ou alemão. Os outros 14 idiomas recorrem aos textos em inglês (contribuições de tradução são bem-vindas).\n`/lang` (sem argumento) — mostra o idioma atual.",
   "help_detail_settings": "*/settings* — Configuração atual\n\nMostra o agendamento ativo, o idioma, o sinalizador de autoatualização, o tempo máximo de espera do healthcheck, o estado da depuração e outras definições vindas do ambiente. Só de leitura pelo Telegram; a interface web permite editar a maioria destas sem reiniciar.",
   "help_detail_help": "*/help* — Referência de comandos\n\n`/help` — lista de todos os comandos com um resumo de uma linha\n`/help <comando>` — ajuda detalhada de um comando específico (sinopse, parâmetros, exemplos)\n\n📌 O seletor de sugestões (escreva `/` neste chat) é mais rápido para descobrir comandos — experimente.",
-  "help_audit": "/audit — Auditar a cobertura do inspect de um contentor",
+  "help_audit": "/audit — Auditar um contentor, ou o próprio Docksentry se não indicares nenhum",
   "audit_usage": "Uso: `/audit nome_do_contentor` — procura no inspect do contentor os campos que não repomos ao recriar.",
   "audit_inspect_failed": "❌ Não foi possível inspecionar `{name}`: {error}",
   "audit_clean": "✅ `{name}`: limpo — todos os campos HostConfig e Config fora da predefinição são repostos ao recriar.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "O registry não tem `{image}`. Ou foi construída aqui — uma imagem construída localmente não tem de onde ser puxada, e um self-update precisa de uma vinda de um registry — ou o registry é privado e quer credenciais (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Autoatualização iniciada — enviarei uma mensagem direta ao terminar e reiniciarei se houver algo a aplicar.",
   "error_timed_out": "sem resposta em {seconds} segundos",
-  "monitor_crash_restart_nocode": "🔁 {name} foi reiniciado pela sua restart policy às {when} (reinício #{count}). O código de saída não é conhecido — o fluxo de eventos não viu este caso."
+  "monitor_crash_restart_nocode": "🔁 {name} foi reiniciado pela sua restart policy às {when} (reinício #{count}). O código de saída não é conhecido — o fluxo de eventos não viu este caso.",
+  "selfaudit_head": "🔍 *Docksentry, a olhar para si próprio*\n{total} contentor(es) Compose: {ok} legíveis, {wrong} atrás de uma montagem errada, {missing} sem montagem.",
+  "selfaudit_self_name": "• Sou o contentor `{name}`",
+  "selfaudit_self_mounts": "• {count} montagem(ns) minhas",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` não está aqui, embora `{src}` esteja montado em `{dest}`. A montagem existe; a origem é a errada.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` não está aqui e nada está montado por cima. Monta `{mount}` para lá chegar.",
+  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose mas sem caminho de ficheiro registado, por isso não há nada a alcançar. É reconstruído a partir dos dados de inspect."
 }

@@ -140,10 +140,12 @@ COMMANDS = [
           "type": 3, "required": False},
 ]},
     {"name": "audit", "description":
-     "Audit container inspect coverage", "type": 1,
+     "Audit a container, or Docksentry itself when you name none",
+     "type": 1,
      "options": [
-         {"name": "container", "description": "Container to audit",
-          "type": 3, "required": True},
+         {"name": "container",
+          "description": "Container to audit — leave empty to audit Docksentry",
+          "type": 3, "required": False},
      ]},
     # Option type 11 is ATTACHMENT — Discord uploads the file for us and
     # hands back an id we resolve out of `data.resolved.attachments`.
@@ -2038,6 +2040,29 @@ class DiscordBot:
             backend_for=self._backend_for, partial=arg,
             url=(opts.get("url") or "").strip())))
 
+    def _self_audit_text(self):
+        """`/audit` with no name: what Docksentry sees of itself.
+
+        The findings are the core's, so both chats say the same thing;
+        only the wording is this connection's.
+        """
+        import selfcheck
+        try:
+            names = [c.get("name") for c in
+                     (self.checker.get_running_containers() or [])
+                     if c.get("name")]
+        except Exception:                               # noqa: BLE001
+            names = []
+        state = selfcheck.collect(self.checker, names)
+        total, ok, wrong, missing = selfcheck.summary(state)
+        lines = [self.t("selfaudit_head", total=total, ok=ok,
+                        wrong=wrong, missing=missing)]
+        for kind, p in selfcheck.findings(state):
+            if kind == "compose_ok":
+                continue
+            lines.append(self.t(f"selfaudit_{kind}", **p))
+        return self._clip("\n".join(lines))
+
     def _cmd_audit(self, opts):
         """Which non-default inspect fields a recreate would not restore.
 
@@ -2049,7 +2074,11 @@ class DiscordBot:
         import container_flags
         arg = (opts.get("container") or "").strip()
         if not arg:
-            return self.t("audit_usage")
+            # No name: audit OURSELVES. Same rule as Telegram's bare
+            # `/audit`, and the same reason — every Compose mount
+            # question so far ended with somebody pasting shell output
+            # back at me for facts the program already had.
+            return self._self_audit_text()
         targets = self._hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))

@@ -69,7 +69,7 @@ _BOT_COMMANDS = [
     ("cooldown",    "Per-container update cooldown — /cooldown <name> <seconds>",      "help_cooldown",    "help_detail_cooldown"),
     ("protect",     "Protect a container from Stop — /protect <name>",                 "help_protect",     "help_detail_protect"),
     ("setlink",     "Set repo/changelog link — /setlink <name> <url>",                 "help_setlink",     "help_detail_setlink"),
-    ("audit",       "Audit container inspect coverage — /audit <name>",                "help_audit",       "help_detail_audit"),
+    ("audit",       "Audit a container, or Docksentry itself when you name none",      "help_audit",       "help_detail_audit"),
     ("backup",      "Send a backup of settings, groups and pins as a file",           "help_backup",      "help_detail_backup"),
     # These three existed on Discord only. Two front ends answering
     # different questions is a support burden nobody signed up for.
@@ -1329,6 +1329,29 @@ class TelegramBot:
                        parts=", ".join(restored) or "—",
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
+
+    def _self_audit_text(self):
+        """`/audit` with no name: what Docksentry sees of itself.
+
+        The findings come from the core so both chats say the same
+        thing; only the wording is Telegram's.
+        """
+        import selfcheck
+        try:
+            names = [c.get("name") for c in
+                     (self.checker.get_running_containers() or [])
+                     if c.get("name")]
+        except Exception:                               # noqa: BLE001
+            names = []
+        state = selfcheck.collect(self.checker, names)
+        total, ok, wrong, missing = selfcheck.summary(state)
+        lines = [self.t("selfaudit_head", total=total, ok=ok,
+                        wrong=wrong, missing=missing)]
+        for kind, p in selfcheck.findings(state):
+            if kind == "compose_ok":
+                continue                                # nothing to act on
+            lines.append(self.t(f"selfaudit_{kind}", **p))
+        return "\n".join(lines)
 
     def announce(self, text, reply_markup=None, detail=""):
         """One unattended message, to every channel that is switched on.
@@ -4187,7 +4210,12 @@ class TelegramBot:
             import container_flags
             parts = text.split(maxsplit=1)
             if len(parts) < 2:
-                self.send_message(self.t("audit_usage"))
+                # No name: audit OURSELVES. Every Compose mount question
+                # so far has ended with somebody pasting `docker exec …
+                # ls` back at me, and twice on 20.09. I asked for it with
+                # the wrong container name because I typed my own. None
+                # of it was ever unknown to the program.
+                self.send_message(self._self_audit_text())
                 return
             arg, audit_targets, host_err = self._resolve_targets(
                 parts[1], write=False)

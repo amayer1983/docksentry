@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Cambia la lingua del bot\n\n`/lang en` o `/lang de` — passa a inglese o tedesco. Le altre 14 lingue ricadono sui testi inglesi (i contributi di traduzione sono benvenuti).\n`/lang` (senza argomento) — mostra la lingua attuale.",
   "help_detail_settings": "*/settings* — Configurazione attuale\n\nMostra la pianificazione attiva, la lingua, il flag di auto-aggiornamento, l'attesa massima dell'healthcheck in avvio, lo stato del debug e le altre impostazioni guidate dall'ambiente. Da Telegram è in sola lettura; l'interfaccia web permette di modificarne la maggior parte senza riavvio.",
   "help_detail_help": "*/help* — Riferimento dei comandi\n\n`/help` — elenco di tutti i comandi con una riga di riepilogo\n`/help <comando>` — aiuto dettagliato su un singolo comando (sintassi, parametri, esempi)\n\n📌 L'elenco automatico (digita `/` in questa chat) è più veloce per scoprirli — provalo.",
-  "help_audit": "/audit — Controlla la copertura dell'inspect",
+  "help_audit": "/audit — Controlla un container, o Docksentry stesso se non ne nomini uno",
   "audit_usage": "Uso: `/audit nome_container` — controlla nell'inspect del container i campi che non ripristiniamo alla ricreazione.",
   "audit_inspect_failed": "❌ Impossibile ispezionare `{name}`: {error}",
   "audit_clean": "✅ `{name}`: pulito — ogni campo HostConfig e Config non predefinito viene ripristinato alla ricreazione.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Il registry non ha `{image}`. O è stata costruita qui — un'immagine costruita in locale non ha nulla da scaricare, e un self-update ne richiede una da un registry — oppure il registry è privato e vuole le credenziali (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Auto-aggiornamento avviato — ti manderò un messaggio diretto al termine e riavvierò se c'è qualcosa da applicare.",
   "error_timed_out": "nessuna risposta entro {seconds} secondi",
-  "monitor_crash_restart_nocode": "🔁 {name} è stato riavviato dalla sua restart policy alle {when} (riavvio #{count}). Il codice di uscita non è noto — il flusso di eventi non ha visto questo caso."
+  "monitor_crash_restart_nocode": "🔁 {name} è stato riavviato dalla sua restart policy alle {when} (riavvio #{count}). Il codice di uscita non è noto — il flusso di eventi non ha visto questo caso.",
+  "selfaudit_head": "🔍 *Docksentry, guardando sé stesso*\n{total} container Compose: {ok} leggibili, {wrong} dietro un mount sbagliato, {missing} senza mount.",
+  "selfaudit_self_name": "• Sono il container `{name}`",
+  "selfaudit_self_mounts": "• {count} mount miei",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` non c'è, benché `{src}` sia montato su `{dest}`. Il mount c'è, la sorgente è sbagliata.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` non c'è e sopra non è montato nulla. Monta `{mount}` per raggiungerlo.",
+  "selfaudit_compose_nolabel": "• `{container}`: etichette Compose ma nessun percorso file registrato, quindi non c'è nulla da raggiungere. Viene ricostruito dai dati di inspect."
 }

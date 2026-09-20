@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — 봇 언어 변경\n\n`/lang en` 또는 `/lang de` — 영어나 독일어로 변경. 나머지 14개 언어는 영어 문자열로 대체됩니다(번역 기여를 환영합니다).\n`/lang` (인자 없음) — 현재 언어 표시.",
   "help_detail_settings": "*/settings* — 현재 설정\n\n적용 중인 스케줄, 언어, 자동 자체 업데이트 플래그, 헬스체크 최대 대기 시간, 디버그 상태와 그 밖의 환경 변수 기반 설정을 보여 줍니다. 텔레그램에서는 읽기 전용이며, 웹 UI에서는 대부분을 재시작 없이 편집할 수 있습니다.",
   "help_detail_help": "*/help* — 명령 참조\n\n`/help` — 모든 명령과 한 줄 설명 목록\n`/help <command>` — 특정 명령의 자세한 도움말(형식, 인자, 예시)\n\n📌 이 대화에서 `/`를 입력하면 나오는 자동 완성 목록이 찾기에는 더 빠릅니다 — 한번 써 보세요.",
-  "help_audit": "/audit — 컨테이너 inspect 복원 범위 감사",
+  "help_audit": "/audit — 컨테이너 점검, 이름을 생략하면 Docksentry 자신",
   "audit_usage": "사용법: `/audit container_name` — 재생성 시 복원되지 않는 필드가 있는지 컨테이너의 inspect를 확인합니다.",
   "audit_inspect_failed": "❌ `{name}`을(를) inspect하지 못했습니다: {error}",
   "audit_clean": "✅ `{name}`: 이상 없음 — 기본값이 아닌 모든 HostConfig 및 Config 필드가 재생성 시 복원됩니다.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "레지스트리에 `{image}` 가 없습니다. 여기에서 빌드되었거나(로컬 빌드 이미지는 받아올 곳이 없고, 자체 업데이트에는 레지스트리의 이미지가 필요합니다), 레지스트리가 비공개라 자격 증명을 요구합니다(`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ 자체 업데이트를 시작했습니다 — 완료되면 다이렉트 메시지로 알리고, 적용할 것이 있으면 재시작합니다.",
   "error_timed_out": "{seconds}초 내에 응답 없음",
-  "monitor_crash_restart_nocode": "🔁 {name} 이(가) {when} 에 restart policy 로 재시작되었습니다 (재시작 #{count}). 종료 코드는 알 수 없습니다 — 이벤트 스트림이 이번 건을 보지 못했습니다."
+  "monitor_crash_restart_nocode": "🔁 {name} 이(가) {when} 에 restart policy 로 재시작되었습니다 (재시작 #{count}). 종료 코드는 알 수 없습니다 — 이벤트 스트림이 이번 건을 보지 못했습니다.",
+  "selfaudit_head": "🔍 *Docksentry 자체 점검*\nCompose 컨테이너 {total}개: 읽기 가능 {ok}, 잘못된 마운트 {wrong}, 마운트 없음 {missing}.",
+  "selfaudit_self_name": "• 나는 컨테이너 `{name}` 입니다",
+  "selfaudit_self_mounts": "• 내 마운트 {count}개",
+  "selfaudit_compose_wrong": "• `{container}`: `{src}` 가 `{dest}` 에 마운트되어 있는데도 `{path}` 가 없습니다. 마운트는 있고 원본이 틀렸습니다.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` 가 없고 위에 마운트된 것도 없습니다. `{mount}` 를 마운트하세요.",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose 라벨은 있으나 파일 경로가 기록되어 있지 않습니다. inspect 데이터로 재생성됩니다."
 }

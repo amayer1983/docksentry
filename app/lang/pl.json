@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Zmień język bota\n\n`/lang en` albo `/lang de` — przełącza na angielski lub niemiecki. Pozostałe 14 języków wraca do tekstów angielskich (tłumaczenia mile widziane).\n`/lang` (bez argumentu) — pokazuje bieżący język.",
   "help_detail_settings": "*/settings* — Bieżąca konfiguracja\n\nPokazuje aktywny harmonogram, język, flagę automatycznej samoaktualizacji, maksymalny czas oczekiwania na healthcheck, stan debugowania i inne ustawienia sterowane środowiskiem. Przez Telegram tylko do odczytu; w Web UI większość z nich zmienisz bez restartu.",
   "help_detail_help": "*/help* — Spis poleceń\n\n`/help` — lista wszystkich poleceń z jednolinijkowym opisem\n`/help <command>` — szczegółowa pomoc do konkretnego polecenia (składnia, parametry, przykłady)\n\n📌 Lista podpowiedzi (wpisz `/` na tym czacie) jest szybsza do przeglądania — wypróbuj ją.",
-  "help_audit": "/audit — Audyt pokrycia inspect kontenera",
+  "help_audit": "/audit — Sprawdź kontener albo samego Docksentry, gdy nie podasz nazwy",
   "audit_usage": "Użycie: `/audit container_name` — sprawdza inspect kontenera pod kątem pól, których nie przywracamy przy odtworzeniu.",
   "audit_inspect_failed": "❌ Nie udało się wykonać inspect na `{name}`: {error}",
   "audit_clean": "✅ `{name}`: czysto — każde niedomyślne pole HostConfig i Config jest przywracane przy odtworzeniu.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Rejestr nie ma `{image}`. Albo zbudowano ją tutaj — lokalnie zbudowany obraz nie ma skąd być pobrany, a samoaktualizacja potrzebuje obrazu z rejestru — albo rejestr jest prywatny i wymaga poświadczeń (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Samoaktualizacja rozpoczęta — wyślę ci wiadomość prywatną po zakończeniu i zrestartuję, jeśli będzie co zastosować.",
   "error_timed_out": "brak odpowiedzi w ciągu {seconds} sekund",
-  "monitor_crash_restart_nocode": "🔁 {name} został zrestartowany przez swoją politykę restartu o {when} (restart #{count}). Kod wyjścia nie jest znany — strumień zdarzeń go nie widział."
+  "monitor_crash_restart_nocode": "🔁 {name} został zrestartowany przez swoją politykę restartu o {when} (restart #{count}). Kod wyjścia nie jest znany — strumień zdarzeń go nie widział.",
+  "selfaudit_head": "🔍 *Docksentry patrzy na siebie*\n{total} kontener(ów) Compose: {ok} czytelnych, {wrong} za złym montowaniem, {missing} bez montowania.",
+  "selfaudit_self_name": "• Jestem kontenerem `{name}`",
+  "selfaudit_self_mounts": "• {count} własnych montowań",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` nie ma tutaj, choć `{src}` jest podmontowany w `{dest}`. Montowanie jest; źródło jest złe.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` nie ma tutaj i nic nie jest nad tym zamontowane. Podmontuj `{mount}`, aby go sięgnąć.",
+  "selfaudit_compose_nolabel": "• `{container}`: etykiety Compose, ale bez zapisanej ścieżki pliku, więc nie ma czego sięgać. Odtwarzany z danych inspect."
 }

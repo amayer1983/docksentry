@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — 切换机器人语言\n\n`/lang en` 或 `/lang de` — 切换到英语或德语。其余 14 种语言会回退到英文字符串（欢迎贡献翻译）。\n`/lang`（不带参数） — 显示当前语言。",
   "help_detail_settings": "*/settings* — 当前配置\n\n显示当前的定时计划、语言、自动自我更新开关、健康检查的最长启动等待时间、调试状态以及其他由环境变量驱动的设置。通过 Telegram 只读；Web UI 中大部分可以直接修改，无需重启。",
   "help_detail_help": "*/help* — 命令参考\n\n`/help` — 列出所有命令及一行说明\n`/help <command>` — 某个命令的详细帮助（用法、参数、示例）\n\n📌 自动补全列表（在此聊天中输入 `/`）查找起来更快 — 试试看。",
-  "help_audit": "/audit — 审计容器 inspect 覆盖情况",
+  "help_audit": "/audit — 检查容器；不写名字则检查 Docksentry 自身",
   "audit_usage": "用法：`/audit container_name` — 检查该容器的 inspect 中我们在重建时不会恢复的字段。",
   "audit_inspect_failed": "❌ 无法 inspect `{name}`：{error}",
   "audit_clean": "✅ `{name}`：无问题 — 所有非默认的 HostConfig 与 Config 字段在重建时都会恢复。",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "registry 中没有 `{image}`。要么它是在本机构建的（本地构建的镜像无处可拉，自我更新需要来自 registry 的镜像），要么 registry 是私有的并需要凭据（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
   "chan_selfupdate_started_private": "⬆️ 自我更新已开始 — 完成后我会私信告诉你，若有内容需应用则会重启。",
   "error_timed_out": "{seconds} 秒内无响应",
-  "monitor_crash_restart_nocode": "🔁 {name} 于 {when} 被其重启策略重新启动（第 {count} 次重启）。退出码未知 —— 事件流没有捕捉到这一次。"
+  "monitor_crash_restart_nocode": "🔁 {name} 于 {when} 被其重启策略重新启动（第 {count} 次重启）。退出码未知 —— 事件流没有捕捉到这一次。",
+  "selfaudit_head": "🔍 *Docksentry 自检*\nCompose 容器 {total} 个：可读 {ok}，挂载来源不对 {wrong}，未挂载 {missing}。",
+  "selfaudit_self_name": "• 我是容器 `{name}`",
+  "selfaudit_self_mounts": "• 我自己的挂载 {count} 个",
+  "selfaudit_compose_wrong": "• `{container}`：虽然 `{src}` 已挂载到 `{dest}`，但这里没有 `{path}`。挂载有，源目录不对。",
+  "selfaudit_compose_no_mount": "• `{container}`：这里没有 `{path}`，上面也没有挂载。请挂载 `{mount}`。",
+  "selfaudit_compose_nolabel": "• `{container}`：有 Compose 标签但未记录文件路径，没有可访问的东西。将从 inspect 数据重建。"
 }

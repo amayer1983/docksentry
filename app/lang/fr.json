@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Changer la langue du bot\n\n`/lang en` ou `/lang de` — passer en anglais ou en allemand. Les 14 autres langues retombent sur les chaînes anglaises (contributions de traduction bienvenues).\n`/lang` (sans argument) — affiche la langue actuelle.",
   "help_detail_settings": "*/settings* — Configuration actuelle\n\nAffiche la planification active, la langue, l'indicateur d'auto-mise à jour, l'attente maximale du healthcheck au démarrage, l'état du débogage et les autres réglages pilotés par variables d'environnement. En lecture seule via Telegram ; l'interface web permet d'en modifier la plupart sans redémarrage.",
   "help_detail_help": "*/help* — Référence des commandes\n\n`/help` — liste de toutes les commandes avec un résumé d'une ligne\n`/help <commande>` — aide détaillée pour une commande précise (syntaxe, paramètres, exemples)\n\n📌 Le sélecteur d'autocomplétion (tapez `/` dans ce chat) est plus rapide pour explorer — essayez-le.",
-  "help_audit": "/audit — Auditer la couverture de l'inspect d'un conteneur",
+  "help_audit": "/audit — Auditer un conteneur, ou Docksentry lui-même si vous n'en nommez aucun",
   "audit_usage": "Utilisation : `/audit nom_conteneur` — vérifie l'inspect du conteneur à la recherche de champs que nous ne restaurons pas à la recréation.",
   "audit_inspect_failed": "❌ Impossible d'inspecter `{name}` : {error}",
   "audit_clean": "✅ `{name}` : propre — tous les champs HostConfig et Config non par défaut sont restaurés à la recréation.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Le registre n'a pas de `{image}`. Soit elle a été construite ici — une image construite localement n'a rien à télécharger, et une mise à jour automatique en exige une venant d'un registre — soit le registre est privé et demande des identifiants (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Mise à jour automatique lancée — je t'enverrai un message privé à la fin et redémarrerai s'il y a quelque chose à appliquer.",
   "error_timed_out": "aucune réponse en {seconds} secondes",
-  "monitor_crash_restart_nocode": "🔁 {name} a été redémarré par sa politique de redémarrage à {when} (redémarrage #{count}). Le code de sortie est inconnu — le flux d'événements n'a pas vu celui-ci."
+  "monitor_crash_restart_nocode": "🔁 {name} a été redémarré par sa politique de redémarrage à {when} (redémarrage #{count}). Le code de sortie est inconnu — le flux d'événements n'a pas vu celui-ci.",
+  "selfaudit_head": "🔍 *Docksentry, vu par lui-même*\n{total} conteneur(s) Compose : {ok} lisibles, {wrong} derrière un montage erroné, {missing} sans montage.",
+  "selfaudit_self_name": "• Je suis le conteneur `{name}`",
+  "selfaudit_self_mounts": "• {count} montage(s) à moi",
+  "selfaudit_compose_wrong": "• `{container}` : `{path}` n'est pas là, bien que `{src}` soit monté sur `{dest}`. Le montage existe ; la source est fausse.",
+  "selfaudit_compose_no_mount": "• `{container}` : `{path}` n'est pas là et rien n'est monté dessus. Montez `{mount}` pour y accéder.",
+  "selfaudit_compose_nolabel": "• `{container}` : étiquettes Compose mais aucun chemin de fichier enregistré, il n'y a donc rien à atteindre. Reconstruit depuis ses données d'inspect."
 }

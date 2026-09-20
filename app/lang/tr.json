@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Bot dilini değiştir\n\n`/lang en` ya da `/lang de` — İngilizceye ya da Almancaya geçer. Diğer 14 dil eksik dizelerde İngilizceye düşer (çeviri katkıları memnuniyetle karşılanır).\n`/lang` (argümansız) — geçerli dili gösterir.",
   "help_detail_settings": "*/settings* — Geçerli yapılandırma\n\nEtkin zamanlamayı, dili, otomatik kendini güncelleme işaretini, healthcheck için en fazla başlama süresini, hata ayıklama durumunu ve ortamdan gelen diğer ayarları gösterir. Telegram üzerinden salt okunur; web arayüzü bunların çoğunu yeniden başlatmadan düzenlemenize izin verir.",
   "help_detail_help": "*/help* — Komut başvurusu\n\n`/help` — tüm komutların tek satırlık özetiyle listesi\n`/help <command>` — belirli bir komut için ayrıntılı yardım (kullanım, parametreler, örnekler)\n\n📌 Keşif için otomatik tamamlama listesi daha hızlıdır (bu sohbete `/` yazın) — deneyin.",
-  "help_audit": "/audit — Konteyner inspect kapsamını denetle",
+  "help_audit": "/audit — Bir kapsayıcıyı, ad vermezsen Docksentry'nin kendisini denetle",
   "audit_usage": "Kullanım: `/audit container_name` — konteynerin inspect çıktısını, yeniden oluşturmada geri getirmediğimiz alanlar için denetler.",
   "audit_inspect_failed": "❌ `{name}` incelenemedi: {error}",
   "audit_clean": "✅ `{name}`: temiz — varsayılan dışı her HostConfig ve Config alanı yeniden oluşturmada geri getiriliyor.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Kayıt defterinde `{image}` yok. Ya burada derlendi — yerel olarak derlenmiş bir imajın çekilecek bir yeri yoktur ve kendini güncelleme bir kayıt defterinden gelen imaj ister — ya da kayıt defteri özeldir ve kimlik bilgisi ister (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Kendini güncelleme başladı — bitince sana özel mesaj göndereceğim ve uygulanacak bir şey varsa yeniden başlayacağım.",
   "error_timed_out": "{seconds} saniye içinde yanıt yok",
-  "monitor_crash_restart_nocode": "🔁 {name}, yeniden başlatma politikası tarafından {when} saatinde yeniden başlatıldı (yeniden başlatma #{count}). Çıkış kodu bilinmiyor — olay akışı bunu görmedi."
+  "monitor_crash_restart_nocode": "🔁 {name}, yeniden başlatma politikası tarafından {when} saatinde yeniden başlatıldı (yeniden başlatma #{count}). Çıkış kodu bilinmiyor — olay akışı bunu görmedi.",
+  "selfaudit_head": "🔍 *Docksentry kendine bakıyor*\n{total} Compose kapsayıcısı: {ok} okunabilir, {wrong} yanlış bağlama arkasında, {missing} bağlama yok.",
+  "selfaudit_self_name": "• Ben `{name}` kapsayıcısıyım",
+  "selfaudit_self_mounts": "• {count} kendi bağlamam",
+  "selfaudit_compose_wrong": "• `{container}`: `{src}` `{dest}` konumuna bağlı olsa da `{path}` burada yok. Bağlama var, kaynak yanlış.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` burada yok ve üzerine bir şey bağlanmamış. Erişmek için `{mount}` bağlayın.",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose etiketleri var ama kayıtlı dosya yolu yok, erişilecek bir şey yok. Inspect verisinden yeniden kuruluyor."
 }

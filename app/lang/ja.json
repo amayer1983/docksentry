@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — ボットの言語を切り替え\n\n`/lang en` または `/lang de` — 英語またはドイツ語に変更します。他の 14 言語は英語の文字列にフォールバックします（翻訳の貢献を歓迎します）。\n`/lang`（引数なし） — 現在の言語を表示。",
   "help_detail_settings": "*/settings* — 現在の設定\n\n有効なスケジュール、言語、自動自己更新フラグ、ヘルスチェックの起動待ち上限、デバッグ状態、その他の環境変数由来の設定を表示します。Telegram からは読み取り専用で、ウェブ画面ならほとんどを再起動なしに編集できます。",
   "help_detail_help": "*/help* — コマンド一覧\n\n`/help` — 全コマンドを 1 行の説明付きで一覧\n`/help <コマンド>` — 特定のコマンドの詳細（書式、パラメータ、例）\n\n📌 探すだけなら、このチャットで `/` と入力する候補一覧のほうが速いので試してください。",
-  "help_audit": "/audit — コンテナの inspect 対応状況を監査",
+  "help_audit": "/audit — コンテナを点検、名前を省くと Docksentry 自身を点検",
   "audit_usage": "使い方: `/audit container_name` — 作り直しで復元しないフィールドがないか、コンテナの inspect を調べます。",
   "audit_inspect_failed": "❌ `{name}` を inspect できませんでした: {error}",
   "audit_clean": "✅ `{name}`: 問題なし — 既定値でない HostConfig と Config のフィールドは、作り直しですべて復元されます。",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "レジストリに `{image}` がありません。ここでビルドされた（ローカルビルドのイメージには取得元がなく、自己更新にはレジストリ上のイメージが必要です）か、レジストリが非公開で認証情報を求めています（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
   "chan_selfupdate_started_private": "⬆️ 自己更新を開始しました — 完了したらダイレクトメッセージでお知らせし、適用するものがあれば再起動します。",
   "error_timed_out": "{seconds} 秒以内に応答なし",
-  "monitor_crash_restart_nocode": "🔁 {name} は {when} に restart policy によって再起動されました（再起動 #{count}）。終了コードは不明です — イベントストリームがこの回を捉えませんでした。"
+  "monitor_crash_restart_nocode": "🔁 {name} は {when} に restart policy によって再起動されました（再起動 #{count}）。終了コードは不明です — イベントストリームがこの回を捉えませんでした。",
+  "selfaudit_head": "🔍 *Docksentry の自己点検*\nCompose コンテナ {total} 件: 読める {ok}、マウント違い {wrong}、マウントなし {missing}。",
+  "selfaudit_self_name": "• 自分はコンテナ `{name}` です",
+  "selfaudit_self_mounts": "• 自分のマウント {count} 件",
+  "selfaudit_compose_wrong": "• `{container}`: `{src}` は `{dest}` にマウント済みですが `{path}` がここにありません。マウントはあり、参照元が違います。",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` はここになく、上に何もマウントされていません。`{mount}` をマウントしてください。",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose ラベルはありますがファイルパスが記録されていません。inspect のデータから再作成されます。"
 }

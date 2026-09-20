@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — De taal van de bot wijzigen\n\n`/lang en` of `/lang de` — omschakelen naar Engels of Duits. De overige 14 talen vallen terug op de Engelse teksten (vertaalbijdragen zijn welkom).\n`/lang` (zonder argument) — de huidige taal tonen.",
   "help_detail_settings": "*/settings* — Huidige configuratie\n\nToont het actieve schema, de taal, de vlag voor automatische zelfupdate, de maximale wachttijd van de healthcheck, de debugstand en andere instellingen uit de omgeving. Via Telegram alleen lezen; in de webinterface pas je het meeste hiervan zonder herstart aan.",
   "help_detail_help": "*/help* — Opdrachtenoverzicht\n\n`/help` — lijst van alle opdrachten met een samenvatting van één regel\n`/help <opdracht>` — uitgebreide hulp voor één opdracht (syntaxis, parameters, voorbeelden)\n\n📌 De keuzelijst (typ `/` in deze chat) is sneller om iets te vinden — probeer hem.",
-  "help_audit": "/audit — De inspect-dekking van een container controleren",
+  "help_audit": "/audit — Een container controleren, of Docksentry zelf als je er geen noemt",
   "audit_usage": "Gebruik: `/audit container_naam` — controleert de inspect van de container op velden die we bij het opnieuw aanmaken niet herstellen.",
   "audit_inspect_failed": "❌ Kon `{name}` niet inspecteren: {error}",
   "audit_clean": "✅ `{name}`: schoon — elk HostConfig- en Config-veld dat van de standaard afwijkt wordt bij het opnieuw aanmaken hersteld.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Het register heeft geen `{image}`. Of hij is hier gebouwd — een lokaal gebouwde image heeft niets om op te halen, en een self-update heeft er een uit een register nodig — of het register is privé en wil inloggegevens (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Zelfupdate gestart — ik stuur je een direct bericht als het klaar is en herstart als er iets toe te passen valt.",
   "error_timed_out": "geen antwoord binnen {seconds} seconden",
-  "monitor_crash_restart_nocode": "🔁 {name} is om {when} opnieuw gestart door zijn restart policy (herstart #{count}). De exitcode is niet bekend — de eventstroom heeft deze niet gezien."
+  "monitor_crash_restart_nocode": "🔁 {name} is om {when} opnieuw gestart door zijn restart policy (herstart #{count}). De exitcode is niet bekend — de eventstroom heeft deze niet gezien.",
+  "selfaudit_head": "🔍 *Docksentry, naar zichzelf kijkend*\n{total} Compose-container(s): {ok} leesbaar, {wrong} achter een verkeerde koppeling, {missing} zonder koppeling.",
+  "selfaudit_self_name": "• Ik ben container `{name}`",
+  "selfaudit_self_mounts": "• {count} eigen koppeling(en)",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` staat hier niet, terwijl `{src}` op `{dest}` is gekoppeld. De koppeling is er; de bron klopt niet.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` staat hier niet en er is niets overheen gekoppeld. Koppel `{mount}` om erbij te komen.",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose-labels maar geen bestandspad vastgelegd, dus er valt niets te bereiken. Wordt herbouwd uit de inspect-gegevens."
 }

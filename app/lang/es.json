@@ -499,7 +499,7 @@
   "help_detail_lang": "*/lang* — Cambiar el idioma del bot\n\n`/lang en` o `/lang de` — cambia a inglés o alemán. Los otros 14 idiomas recurren a los textos en inglés (se agradecen contribuciones de traducción).\n`/lang` (sin argumento) — muestra el idioma actual.",
   "help_detail_settings": "*/settings* — Configuración actual\n\nMuestra la programación activa, el idioma, la marca de autoactualización, la espera máxima del healthcheck en estado starting, el estado de depuración y otros ajustes que vienen de variables de entorno. Solo lectura desde Telegram; la interfaz web permite editar casi todos sin reiniciar.",
   "help_detail_help": "*/help* — Referencia de comandos\n\n`/help` — lista de todos los comandos con un resumen de una línea\n`/help <comando>` — ayuda detallada de un comando concreto (sinopsis, parámetros, ejemplos)\n\n📌 El selector de autocompletado (escribe `/` en este chat) es más rápido para descubrirlos — pruébalo.",
-  "help_audit": "/audit — Auditar la cobertura del inspect de un contenedor",
+  "help_audit": "/audit — Audita un contenedor, o el propio Docksentry si no nombras ninguno",
   "audit_usage": "Uso: `/audit nombre_contenedor` — revisa el inspect del contenedor en busca de campos que no restauramos al recrear.",
   "audit_inspect_failed": "❌ No se pudo inspeccionar `{name}`: {error}",
   "audit_clean": "✅ `{name}`: limpio — todos los campos no predeterminados de HostConfig y Config se restauran al recrear.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "El registro no tiene `{image}`. O se construyó aquí — una imagen construida localmente no tiene de dónde descargarse, y una autoactualización necesita una de un registro — o el registro es privado y pide credenciales (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Autoactualización iniciada: te enviaré un mensaje directo cuando termine y reiniciaré si hay algo que aplicar.",
   "error_timed_out": "sin respuesta en {seconds} segundos",
-  "monitor_crash_restart_nocode": "🔁 {name} fue reiniciado por su política de reinicio a las {when} (reinicio #{count}). El código de salida no se conoce: el flujo de eventos no vio este caso."
+  "monitor_crash_restart_nocode": "🔁 {name} fue reiniciado por su política de reinicio a las {when} (reinicio #{count}). El código de salida no se conoce: el flujo de eventos no vio este caso.",
+  "selfaudit_head": "🔍 *Docksentry, mirándose a sí mismo*\n{total} contenedor(es) Compose: {ok} legibles, {wrong} tras un montaje equivocado, {missing} sin montaje.",
+  "selfaudit_self_name": "• Soy el contenedor `{name}`",
+  "selfaudit_self_mounts": "• {count} montaje(s) propios",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` no está aquí, aunque `{src}` está montado en `{dest}`. El montaje existe; el origen es el equivocado.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` no está aquí y no hay nada montado encima. Monta `{mount}` para alcanzarlo.",
+  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose pero sin ruta de archivo registrada, así que no hay nada que alcanzar. Se reconstruye desde sus datos de inspect."
 }

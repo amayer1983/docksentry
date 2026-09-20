@@ -100,7 +100,7 @@
   "help_detail_lang": "*/lang* — Bot-Sprache umschalten\n\n`/lang en` oder `/lang de` — auf Englisch oder Deutsch wechseln. Andere 14 Sprachen fallen auf Englisch zurück (Übersetzungen willkommen).\n`/lang` (ohne Arg) — aktuelle Sprache anzeigen.",
   "help_detail_settings": "*/settings* — Aktuelle Konfiguration\n\nZeigt aktiven Schedule, Sprache, Auto-Selfupdate-Flag, Healthcheck-Max-Starting-Wait, Debug-Status und andere env-getriebene Einstellungen. Read-only via Telegram; das Web UI lässt dich die meisten ohne Neustart editieren.",
   "help_detail_help": "*/help* — Befehls-Referenz\n\n`/help` — Liste aller Befehle mit Ein-Zeilen-Summary\n`/help <befehl>` — Detail-Hilfe für einen bestimmten Befehl (Synopsis, Parameter, Beispiele)\n\n📌 Die Autocomplete-Auswahl (tippe `/` in diesem Chat) ist schneller fürs Discovern — probier's.",
-  "help_audit": "/audit — Container Inspect-Coverage prüfen",
+  "help_audit": "/audit — Container prüfen, oder Docksentry selbst wenn du keinen nennst",
   "audit_usage": "Verwendung: `/audit container_name` — prüft das Inspect des Containers auf Felder die wir beim Recreate nicht wiederherstellen.",
   "audit_inspect_failed": "❌ Kann `{name}` nicht inspecten: {error}",
   "audit_clean": "✅ `{name}`: sauber — jedes non-default HostConfig- und Config-Feld wird beim Recreate wiederhergestellt.",
@@ -973,5 +973,11 @@
   "selfupdate_pull_denied_hint": "Die Registry kennt kein `{image}`. Entweder wurde es hier gebaut — ein lokal gebautes Image hat nichts zum Ziehen, und ein Selbstupdate braucht eines aus einer Registry — oder die Registry ist privat und will Zugangsdaten (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Selbst-Update gestartet — ich schicke dir eine Direktnachricht, wenn es fertig ist, und starte neu, falls es etwas anzuwenden gibt.",
   "error_timed_out": "keine Antwort innerhalb von {seconds} Sekunden",
-  "monitor_crash_restart_nocode": "🔁 {name} wurde um {when} von seiner Restart-Policy neu gestartet (Neustart #{count}). Der Exit-Code ist nicht bekannt — der Ereignisstrom hat diesen Fall nicht gesehen."
+  "monitor_crash_restart_nocode": "🔁 {name} wurde um {when} von seiner Restart-Policy neu gestartet (Neustart #{count}). Der Exit-Code ist nicht bekannt — der Ereignisstrom hat diesen Fall nicht gesehen.",
+  "selfaudit_head": "🔍 *Docksentry, auf sich selbst geschaut*\n{total} Compose-Container: {ok} lesbar, {wrong} hinter einem falschen Mount, {missing} ohne Mount.",
+  "selfaudit_self_name": "• Ich bin Container `{name}`",
+  "selfaudit_self_mounts": "• {count} eigene Mount(s)",
+  "selfaudit_compose_wrong": "• `{container}`: `{path}` liegt nicht hier, obwohl `{src}` auf `{dest}` eingehängt ist. Der Mount ist da, die Quelle stimmt nicht.",
+  "selfaudit_compose_no_mount": "• `{container}`: `{path}` liegt nicht hier und darüber ist nichts eingehängt. Häng `{mount}` ein, um heranzukommen.",
+  "selfaudit_compose_nolabel": "• `{container}`: Compose-Label, aber kein Dateipfad hinterlegt — da ist nichts zu erreichen. Wird aus den Inspect-Daten neu gebaut."
 }
