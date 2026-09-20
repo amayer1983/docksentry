@@ -3711,6 +3711,29 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 badges += f' <span class="badge badge-blue" title="{_e(t("web_protect_stop"))}">🛡</span>'
                 if _lab_protect is not None:
                     badges += _lab_mark
+            # A Compose container whose file we cannot open is rebuilt
+            # with `docker run` and silently loses whatever the label
+            # could not express. The answer already exists on the
+            # container page — and @NotRetarded went round that loop for
+            # three weeks without knowing the page had it. A mark here
+            # points at it from where the container is.
+            #
+            # Costs one `stat` per Compose container, no daemon call: the
+            # labels are already in this row's record, and the status
+            # page is not paying another round trip for a hint.
+            _lbl = c.get("labels") or {}
+            if _lbl.get("com.docker.compose.project"):
+                _paths, _reach = self._compose_reach({
+                    "compose_file": _lbl.get(
+                        "com.docker.compose.project.config_files", ""),
+                    "compose_working_dir": _lbl.get(
+                        "com.docker.compose.project.working_dir", ""),
+                })
+                if _paths and not _reach:
+                    badges += (f' <span class="badge badge-yellow" '
+                               f'title="{_e(t("web_badge_compose_unreachable_tt"))}">'
+                               f'{t("web_badge_compose_unreachable")}</span>')
+
             # Auto-update now has its own table column (#2, @NotRetarded) —
             # no longer a name-cell badge that wrapped under long names.
             # A pinned version tag never reports an update, because its
@@ -4288,7 +4311,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_on')" title="{_e(t('web_bulk_auto_on_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_on")}</span></button>
 <button type="button" class="btn-sm btn-outline btn-icon-text" onclick="bulkSubmit('autoupdate_off')" title="{_e(t('web_bulk_auto_off_tt'))}">{_ICONS["settings"]}<span>{t("web_bulk_auto_off")}</span></button>
 </form>
-<div class="table-scroll"><table id="ctbl">
+<div class="table-scroll has-tiles"><table id="ctbl">
 <thead><tr><th><input type="checkbox" id="bulkSelectAll" style="width:auto" title="{t("web_bulk_select_all")}"></th><th class="sortable" onclick="sortByName()" title="{t('web_sort_name')}" style="cursor:pointer;user-select:none">{t("web_name")} <span id="nameSortArrow"></span></th>{host_th}<th>{t("web_image")}</th><th>{t("web_status")}</th><th>{t("web_autoupdate_badge")}</th><th>{t("web_actions")}</th></tr></thead>
 <tbody id="ctblBody">
 {rows}

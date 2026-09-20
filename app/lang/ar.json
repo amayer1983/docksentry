@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} تركيب خاص بي",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` غير موجود هنا رغم أن `{src}` مُركّب على `{dest}`. التركيب موجود والمصدر خاطئ.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` غير موجود هنا ولا شيء مُركّب فوقه. ركّب `{mount}` للوصول إليه.",
-  "selfaudit_compose_nolabel": "• `{container}`: توجد وسوم Compose لكن دون مسار ملف مُسجّل، فلا شيء للوصول إليه. يُعاد بناؤه من بيانات inspect."
+  "selfaudit_compose_nolabel": "• `{container}`: توجد وسوم Compose لكن دون مسار ملف مُسجّل، فلا شيء للوصول إليه. يُعاد بناؤه من بيانات inspect.",
+  "web_badge_compose_unreachable": "ملف Compose",
+  "web_badge_compose_unreachable_tt": "لا يصل Docksentry إلى ملف Compose لهذه الحاوية، لذا يعيد التحديث بناءها عبر `docker run`. صفحة الحاوية تُظهر المسار الدقيق والتركيب الناقص."
 }

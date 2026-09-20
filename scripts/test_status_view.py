@@ -119,7 +119,11 @@ checks["the old WEB_UI_V2 switch is gone"] = "WEB_UI_V2" not in docs and (
 # offsetParent null, because its parent was hidden. The fix is structural:
 # `.table-scroll` wraps the table ALONE. This pins that the scroll wrapper
 # closes before the tile-list opens, so the two are siblings.
-i = web_src.index('<div class="table-scroll"><table id="ctbl">')
+# Matched on the table's id, not on the exact class list: the wrapper
+# gained `has-tiles` when the hide rule was narrowed to it, and pinning
+# the whole attribute made this fail for a change that was the point.
+i = web_src.index('<table id="ctbl">')
+i = web_src.rindex('<div class="table-scroll', 0, i)
 j = web_src.index('<div class="tile-list" id="ctblTiles">', i)
 between = web_src[i:j]
 # `.table-scroll` (which is display:none on a phone) must wrap the table

@@ -1049,7 +1049,14 @@ a.btn-icon { text-decoration: none; }
    the buttons. A card puts everything on one screen. */
 .tile-list { display: none; }
 @media (max-width: 700px) {
-    .table-scroll { display: none; }
+    /* Only the table that HAS a card version steps aside. This used to
+       hide every `.table-scroll` on the page, and exactly one of the six
+       tables has tiles behind it — so on a phone the container detail
+       page, its history tab, the history page and the events page were
+       blank. @NotRetarded told me twice that the Overview tab showed
+       nothing; the first time I decided his screenshot was cropped.
+       It was not. The rule was. */
+    .table-scroll.has-tiles { display: none; }
     .tile-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
 }
 .tile {

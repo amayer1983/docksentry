@@ -2,6 +2,16 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.33] - 2026-09-20
+
+### Fixed
+- **Nine of the ten tables were blank on a phone.** The status page shows cards below 700px instead of a table you would swipe sideways through — and the rule that does it hid *every* table on the site, while exactly one has cards behind it. So on a phone the container page, its history tab, the history page, events, audit, API tokens, the info card, update windows and the pending-major list all rendered as nothing.
+
+  @NotRetarded reported it twice — "I don't see anything under the overview tab" — and the first time I decided his screenshot was cropped and told him to scroll. It was not cropped. The rule was too wide, and it now names the one table that steps aside. The other nine scroll sideways, which they were always able to do.
+
+### Added
+- **A container whose Compose file cannot be reached says so in the status row.** The container page has carried the exact path and the missing mount line since 01.09., and @NotRetarded spent three weeks on that problem without knowing the page had it. An answer nobody can find is not an answer. The mark is worked out from labels the row already holds — one `stat` per Compose container, no extra daemon call, and the status page measured unchanged at 1.27 s.
+
 ## [2.18.0-beta.32] - 2026-09-20
 
 ### Added

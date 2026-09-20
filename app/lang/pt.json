@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} montagem(ns) minhas",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` não está aqui, embora `{src}` esteja montado em `{dest}`. A montagem existe; a origem é a errada.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` não está aqui e nada está montado por cima. Monta `{mount}` para lá chegar.",
-  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose mas sem caminho de ficheiro registado, por isso não há nada a alcançar. É reconstruído a partir dos dados de inspect."
+  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose mas sem caminho de ficheiro registado, por isso não há nada a alcançar. É reconstruído a partir dos dados de inspect.",
+  "web_badge_compose_unreachable": "ficheiro Compose",
+  "web_badge_compose_unreachable_tt": "O Docksentry não alcança o ficheiro Compose deste contentor, por isso uma atualização reconstrói-o com `docker run`. A página do contentor mostra o caminho exato e a montagem em falta."
 }

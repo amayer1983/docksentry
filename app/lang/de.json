@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} eigene Mount(s)",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` liegt nicht hier, obwohl `{src}` auf `{dest}` eingehängt ist. Der Mount ist da, die Quelle stimmt nicht.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` liegt nicht hier und darüber ist nichts eingehängt. Häng `{mount}` ein, um heranzukommen.",
-  "selfaudit_compose_nolabel": "• `{container}`: Compose-Label, aber kein Dateipfad hinterlegt — da ist nichts zu erreichen. Wird aus den Inspect-Daten neu gebaut."
+  "selfaudit_compose_nolabel": "• `{container}`: Compose-Label, aber kein Dateipfad hinterlegt — da ist nichts zu erreichen. Wird aus den Inspect-Daten neu gebaut.",
+  "web_badge_compose_unreachable": "Compose-Datei",
+  "web_badge_compose_unreachable_tt": "Docksentry kommt an die Compose-Datei dieses Containers nicht heran, ein Update baut ihn deshalb mit `docker run` neu. Die Container-Seite zeigt den genauen Pfad und den Mount, der fehlt."
 }

@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} mount miei",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` non c'è, benché `{src}` sia montato su `{dest}`. Il mount c'è, la sorgente è sbagliata.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` non c'è e sopra non è montato nulla. Monta `{mount}` per raggiungerlo.",
-  "selfaudit_compose_nolabel": "• `{container}`: etichette Compose ma nessun percorso file registrato, quindi non c'è nulla da raggiungere. Viene ricostruito dai dati di inspect."
+  "selfaudit_compose_nolabel": "• `{container}`: etichette Compose ma nessun percorso file registrato, quindi non c'è nulla da raggiungere. Viene ricostruito dai dati di inspect.",
+  "web_badge_compose_unreachable": "file Compose",
+  "web_badge_compose_unreachable_tt": "Docksentry non raggiunge il file Compose di questo container, quindi un aggiornamento lo ricostruisce con `docker run`. La pagina del container mostra il percorso esatto e il mount mancante."
 }

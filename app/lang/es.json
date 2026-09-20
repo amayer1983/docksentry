@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} montaje(s) propios",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` no está aquí, aunque `{src}` está montado en `{dest}`. El montaje existe; el origen es el equivocado.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` no está aquí y no hay nada montado encima. Monta `{mount}` para alcanzarlo.",
-  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose pero sin ruta de archivo registrada, así que no hay nada que alcanzar. Se reconstruye desde sus datos de inspect."
+  "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose pero sin ruta de archivo registrada, así que no hay nada que alcanzar. Se reconstruye desde sus datos de inspect.",
+  "web_badge_compose_unreachable": "archivo Compose",
+  "web_badge_compose_unreachable_tt": "Docksentry no puede alcanzar el archivo Compose de este contenedor, así que una actualización lo reconstruye con `docker run`. La página del contenedor muestra la ruta exacta y el montaje que falta."
 }

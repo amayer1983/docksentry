@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} mount(s) of my own",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` is not here, although `{src}` is mounted at `{dest}`. The mount is there; the source is the wrong directory.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` is not here and nothing is mounted over it. Mount `{mount}` to reach it.",
-  "selfaudit_compose_nolabel": "• `{container}`: Compose labels but no file path recorded, so there is nothing to reach. It is rebuilt from its inspect data."
+  "selfaudit_compose_nolabel": "• `{container}`: Compose labels but no file path recorded, so there is nothing to reach. It is rebuilt from its inspect data.",
+  "web_badge_compose_unreachable": "compose file",
+  "web_badge_compose_unreachable_tt": "Docksentry cannot reach this container's Compose file, so an update rebuilds it with `docker run` instead. Open the container page to see the exact path and the mount that would fix it."
 }

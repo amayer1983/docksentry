@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} własnych montowań",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` nie ma tutaj, choć `{src}` jest podmontowany w `{dest}`. Montowanie jest; źródło jest złe.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` nie ma tutaj i nic nie jest nad tym zamontowane. Podmontuj `{mount}`, aby go sięgnąć.",
-  "selfaudit_compose_nolabel": "• `{container}`: etykiety Compose, ale bez zapisanej ścieżki pliku, więc nie ma czego sięgać. Odtwarzany z danych inspect."
+  "selfaudit_compose_nolabel": "• `{container}`: etykiety Compose, ale bez zapisanej ścieżki pliku, więc nie ma czego sięgać. Odtwarzany z danych inspect.",
+  "web_badge_compose_unreachable": "plik Compose",
+  "web_badge_compose_unreachable_tt": "Docksentry nie sięga pliku Compose tego kontenera, więc aktualizacja odtwarza go przez `docker run`. Strona kontenera pokazuje dokładną ścieżkę i brakujące montowanie."
 }

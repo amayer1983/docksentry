@@ -979,5 +979,7 @@
   "selfaudit_self_mounts": "• {count} eigen koppeling(en)",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` staat hier niet, terwijl `{src}` op `{dest}` is gekoppeld. De koppeling is er; de bron klopt niet.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` staat hier niet en er is niets overheen gekoppeld. Koppel `{mount}` om erbij te komen.",
-  "selfaudit_compose_nolabel": "• `{container}`: Compose-labels maar geen bestandspad vastgelegd, dus er valt niets te bereiken. Wordt herbouwd uit de inspect-gegevens."
+  "selfaudit_compose_nolabel": "• `{container}`: Compose-labels maar geen bestandspad vastgelegd, dus er valt niets te bereiken. Wordt herbouwd uit de inspect-gegevens.",
+  "web_badge_compose_unreachable": "Compose-bestand",
+  "web_badge_compose_unreachable_tt": "Docksentry kan het Compose-bestand van deze container niet bereiken; een update bouwt hem daarom opnieuw met `docker run`. De containerpagina toont het exacte pad en de ontbrekende koppeling."
 }
