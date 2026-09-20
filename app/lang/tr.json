@@ -955,6 +955,7 @@
   "monitor_top_cpu_quiet_after": "Sonraki kontrolde en yüksek CPU: bir çekirdeğin %{pct} değerini aşan yoktu.",
   "selfupdate_private_undeliverable": "⚠️ Bunu sana özel olarak gönderemedim — Discord seninle özel mesaj açmama izin vermiyor (sunucu üyelerinden gelen özel mesajlar genelde gizlilik ayarlarında kapalıdır). Sonuç kaybolmasın diye burada:",
   "compose_fallback_managed": "ℹ️ `{file}` ana makinede değil, {manager} içindeki bir yol — Docksentry bu yüzden bulamıyor. {manager} veri dizinini Docksentry konteynerine tam olarak `{mount}` altına bağlayın, Compose yolu yeniden kullanılır.",
+  "compose_fallback_mounted": "ℹ️ `{src}` zaten `{dest}` konumuna bağlı olmasına rağmen `{file}` Docksentry içinde yok — bağlama var, kaynak yanlış. `{src}` gerçekten Compose dosyalarının bulunduğu klasör mü kontrol edin, sonra Docksentry'yi yeniden başlatın.",
   "compose_fallback_lost": "⚠️ Yeniden oluşturmadan her şey sağ çıkmadı — Compose dosyandaki şu ayarlar yeni kapsayıcıda yok: {fields}.",
   "compose_fallback_remote": "ℹ️ Bu, `{host}` üzerindeki bir Compose kapsayıcısı ve bir Compose dosyası yalnızca Docksentry'nin kendisinin çalıştığı makinede okunabilir — bu yüzden inspect verilerinden `docker run` ile yeniden oluşturuldu.",
   "compose_fallback_nolabel": "ℹ️ Bu kapsayıcı Compose etiketleri taşıyor ama `com.docker.compose.project.config_files` içinde okunabilir bir yol yok, bu yüzden `docker compose up` yerine inspect verilerinden `docker run` ile yeniden oluşturuldu.",

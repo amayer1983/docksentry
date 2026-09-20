@@ -955,6 +955,7 @@
   "monitor_top_cpu_quiet_after": "أعلى استخدام للمعالج في الفحص التالي: لا شيء تجاوز {pct}٪ من نواة واحدة.",
   "selfupdate_private_undeliverable": "⚠️ لم أتمكن من إرسال هذا إليك بشكل خاص — لا يسمح لي Discord بفتح رسالة مباشرة معك (عادةً ما تكون الرسائل المباشرة من أعضاء الخادم معطّلة في إعدادات الخصوصية). حتى لا تضيع النتيجة، ها هي:",
   "compose_fallback_managed": "ℹ️ المسار `{file}` موجود داخل {manager} وليس على المضيف — لذلك لا يجده Docksentry. قم بتركيب دليل بيانات {manager} داخل حاوية Docksentry في المسار `{mount}` بالضبط، ليعود استخدام مسار Compose.",
+  "compose_fallback_mounted": "ℹ️ `{file}` غير موجود داخل Docksentry، مع أن `{src}` مُركّب بالفعل على `{dest}` — إذن التركيب موجود والمصدر هو الخطأ. تحقق من أن `{src}` هو المجلد الذي يحتوي فعلاً على ملفات Compose، ثم أعد تشغيل Docksentry.",
   "compose_fallback_lost": "⚠️ لم ينجُ كل شيء من إعادة البناء — هذه الإعدادات من ملف Compose غير موجودة على الحاوية الجديدة: {fields}.",
   "compose_fallback_remote": "ℹ️ هذه حاوية Compose على `{host}`، وملف Compose لا يمكن قراءته إلا على الجهاز الذي يعمل عليه Docksentry نفسه — لذلك أُعيد بناؤها من بيانات inspect باستخدام `docker run`.",
   "compose_fallback_nolabel": "ℹ️ تحمل هذه الحاوية وسوم Compose لكن دون مسار مقروء في `com.docker.compose.project.config_files`، لذلك أُعيد بناؤها من بيانات inspect باستخدام `docker run` بدلاً من `docker compose up`.",

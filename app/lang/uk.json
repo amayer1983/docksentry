@@ -955,6 +955,7 @@
   "monitor_top_cpu_quiet_after": "Найбільше навантаження на CPU під час наступної перевірки: нічого вище {pct}% одного ядра.",
   "selfupdate_private_undeliverable": "⚠️ Не вдалося надіслати це вам особисто — Discord не дає відкрити приватні повідомлення з вами (зазвичай приватні повідомлення від учасників сервера вимкнені в налаштуваннях приватності). Щоб результат не загубився, він тут:",
   "compose_fallback_managed": "ℹ️ `{file}` — це шлях усередині {manager}, а не на хості, тому Docksentry його не бачить. Змонтуйте каталог даних {manager} у контейнер Docksentry саме за шляхом `{mount}`, і шлях Compose знову працюватиме.",
+  "compose_fallback_mounted": "ℹ️ `{file}` немає всередині Docksentry, хоча `{src}` уже змонтовано в `{dest}` — монтування є, а джерело хибне. Перевірте, чи `{src}` справді тека з файлами Compose, і перезапустіть Docksentry.",
   "compose_fallback_lost": "⚠️ Перезбирання пережило не все — цих налаштувань із вашого файлу Compose на новому контейнері немає: {fields}.",
   "compose_fallback_remote": "ℹ️ Це контейнер Compose на `{host}`, а файл Compose можна прочитати лише на машині, де працює сам Docksentry, — тому його перезібрано з даних inspect через `docker run`.",
   "compose_fallback_nolabel": "ℹ️ Цей контейнер має мітки Compose, але не має читабельного шляху в `com.docker.compose.project.config_files`, тому його перезібрано з даних inspect через `docker run`, а не через `docker compose up`.",

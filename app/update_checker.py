@@ -2312,6 +2312,34 @@ class UpdateChecker:
         self._own_id_cache = own_id
         return own_id
 
+    def _own_mounts(self):
+        """`[(source, destination)]` of our own container, cached.
+
+        Asked once per process: a container's own mounts cannot change
+        while it runs, and the answer decides only how a note is worded.
+        Empty when we cannot tell — then the note stays the general one,
+        which is what it always was.
+        """
+        if hasattr(self, "_own_mounts_cache"):
+            return self._own_mounts_cache
+        rows = []
+        try:
+            own = self._own_container_name()
+            if own:
+                import json as _json
+                r = self.backend.inspect([own], timeout=10)
+                if getattr(r, "returncode", 1) == 0:
+                    for ins in (_json.loads(r.stdout) or []):
+                        for m in ins.get("Mounts") or []:
+                            src = m.get("Source") or m.get("Name") or ""
+                            dst = m.get("Destination") or ""
+                            if dst:
+                                rows.append((src, dst))
+        except Exception:                               # noqa: BLE001
+            rows = []
+        self._own_mounts_cache = rows
+        return rows
+
     def _own_container_name(self):
         """Return the running Docksentry container's docker name (without
         the leading slash), or empty if we can't figure it out.
@@ -3686,7 +3714,17 @@ class UpdateChecker:
                 return ok, msg
             import compose_paths
             _owner = compose_paths.owner(config_file)
-            if _owner:
+            # Does a mount that SHOULD make this file visible already
+            # exist? "Mount it" is the wrong sentence for somebody who
+            # did — they read it as "you got it wrong" and mount it
+            # again. Saying which mount we found, and that the file is
+            # not in it, points at the one thing left: its source.
+            _have = compose_paths.covering_mount(config_file or "",
+                                                 self._own_mounts())
+            if _have:
+                note = self._t("compose_fallback_mounted",
+                               file=config_file, src=_have[0], dest=_have[1])
+            elif _owner:
                 note = self._t("compose_fallback_managed",
                                file=config_file, manager=_owner,
                                mount=compose_paths.mount_root(config_file))

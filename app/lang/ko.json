@@ -955,6 +955,7 @@
   "monitor_top_cpu_quiet_after": "이후 점검 시점 CPU 상위: 코어 1개의 {pct}%를 넘은 것이 없습니다.",
   "selfupdate_private_undeliverable": "⚠️ 비공개로 보낼 수 없었습니다 — Discord가 당신과의 다이렉트 메시지를 열지 못하게 합니다(서버 멤버의 DM은 보통 개인정보 설정에서 꺼져 있습니다). 결과를 잃지 않도록 여기에 적습니다:",
   "compose_fallback_managed": "ℹ️ `{file}` 은(는) 호스트가 아니라 {manager} 내부 경로입니다. 그래서 Docksentry가 찾지 못합니다. {manager}의 데이터 디렉터리를 Docksentry 컨테이너의 `{mount}` 에 그대로 마운트하면 Compose 경로를 다시 사용합니다.",
+  "compose_fallback_mounted": "ℹ️ `{src}` 가 이미 `{dest}` 에 마운트되어 있는데도 `{file}` 이 Docksentry 안에 없습니다 — 마운트는 있고 원본 경로가 틀렸습니다. `{src}` 가 정말 Compose 파일이 있는 폴더인지 확인한 뒤 Docksentry를 다시 시작하세요.",
   "compose_fallback_lost": "⚠️ 다시 만드는 과정에서 전부 살아남지는 못했습니다 — Compose 파일의 다음 설정이 새 컨테이너에 없습니다: {fields}.",
   "compose_fallback_remote": "ℹ️ 이것은 `{host}` 의 Compose 컨테이너이며, Compose 파일은 Docksentry 자신이 실행되는 머신에서만 읽을 수 있습니다 — 그래서 inspect 데이터에서 `docker run` 으로 다시 만들었습니다.",
   "compose_fallback_nolabel": "ℹ️ 이 컨테이너에는 Compose 라벨은 있지만 `com.docker.compose.project.config_files` 에 읽을 수 있는 경로가 없어서, `docker compose up` 대신 inspect 데이터에서 `docker run` 으로 다시 만들었습니다.",

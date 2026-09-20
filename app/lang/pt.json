@@ -955,6 +955,7 @@
   "monitor_top_cpu_quiet_after": "Maior uso de CPU na verificação seguinte: nada acima de {pct}% de um núcleo.",
   "selfupdate_private_undeliverable": "⚠️ Não consegui enviar isto em privado — o Discord não me deixa abrir uma mensagem direta contigo (as mensagens diretas de membros do servidor costumam estar desativadas nas tuas definições de privacidade). Para não perder o resultado, aqui está:",
   "compose_fallback_managed": "ℹ️ `{file}` é um caminho dentro do {manager}, não no host — por isso o Docksentry não o encontra. Monte o diretório de dados do {manager} no contêiner do Docksentry exatamente em `{mount}` e o caminho Compose volta a ser usado.",
+  "compose_fallback_mounted": "ℹ️ `{file}` não está dentro do Docksentry, embora `{src}` já esteja montado em `{dest}` — a montagem existe e a origem é a errada. Confirma que `{src}` é mesmo a pasta com os ficheiros Compose e reinicia o Docksentry.",
   "compose_fallback_lost": "⚠️ Nem tudo sobreviveu à reconstrução — estas definições do seu ficheiro Compose faltam no novo contentor: {fields}.",
   "compose_fallback_remote": "ℹ️ Este é um contentor Compose em `{host}`, e um ficheiro Compose só pode ser lido na máquina onde o Docksentry corre — por isso foi reconstruído a partir dos seus dados de inspect com `docker run`.",
   "compose_fallback_nolabel": "ℹ️ Este contentor tem etiquetas Compose mas nenhum caminho legível em `com.docker.compose.project.config_files`, por isso foi reconstruído a partir dos seus dados de inspect com `docker run` em vez de `docker compose up`.",

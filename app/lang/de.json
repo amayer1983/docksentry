@@ -959,6 +959,7 @@
   "web_badge_updating_tt": "Dieses Update läuft gerade — es verschwindet von selbst, wenn es fertig ist.",
   "web_selfupdate_toolbar_tt": "Docksentry selbst aktualisieren — zieht das neueste Image und erstellt diesen Container neu.",
   "compose_fallback_managed": "ℹ️ `{file}` ist ein Pfad **innerhalb von {manager}**, nicht auf dem Host — deshalb findet Docksentry ihn nicht. Hänge das Datenverzeichnis von {manager} unter genau `{mount}` in den Docksentry-Container ein, dann wird der Compose-Weg wieder benutzt.",
+  "compose_fallback_mounted": "ℹ️ `{file}` liegt nicht in Docksentry, obwohl `{src}` bereits auf `{dest}` eingehängt ist — der Mount ist also da, die Quelle stimmt nicht. Prüf, ob `{src}` wirklich das Verzeichnis mit den Compose-Dateien ist, und starte Docksentry danach neu.",
   "compose_fallback_lost": "⚠️ Nicht alles hat den Nachbau überlebt — diese Einstellungen aus deiner Compose-Datei fehlen dem neuen Container: {fields}.",
   "compose_fallback_remote": "ℹ️ Das ist ein Compose-Container auf `{host}`, und eine Compose-Datei ist nur auf der Maschine lesbar, auf der Docksentry selbst läuft — deshalb wurde er aus den inspect-Daten mit `docker run` nachgebaut.",
   "compose_fallback_nolabel": "ℹ️ Dieser Container trägt Compose-Etiketten, aber keinen lesbaren Pfad in `com.docker.compose.project.config_files` — deshalb wurde er aus den inspect-Daten mit `docker run` nachgebaut statt mit `docker compose up`.",
