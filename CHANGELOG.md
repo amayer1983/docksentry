@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.17.14] - 2026-09-20
+
+Two things that were said without looking first.
+
+### Fixed
+- **A finished update is said once per channel, not twice** (#63, @NotRetarded). Discord showed an `Update OK` card for each container and then a summary repeating both; Telegram showed it once, which is why this sat since v2.6.0. Every non-Telegram channel is a notifier plugin and gets each result as its own card. Telegram gets none of those, so the summary grew the full list in August for @LeeNX (#56) — and that list then went to everyone. The list now goes only where the cards do not, so each channel keeps its richest form and says it once.
+
+- **The Compose note looks at what you already mount before telling you to mount it** (#63, @NotRetarded). It was built from the path prefix alone, so a stack under a known manager's directory got the same "mount that directory" sentence whether nothing was mounted or the mount was already there with the wrong source. Three people hit that in one week, each concluding their own mount was wrong — it was not, the advice was. When a mount covering the path exists, the note now names it and says the file is not in it, which leaves the source as the one thing left to check.
+
+  The crash-loop backoff fixed in 2.18.0-beta.31 does **not** apply here: that fault came in with the mass-stop digest, which only exists on the 2.18 line. On this line a repeated crash alert has backed off correctly since 2.17.9 — measured, 5 alerts in twelve hours at 30, 60, 120, 240 minutes.
+
 ## [2.17.13] - 2026-09-16
 
 **The ssh process leak, fixed from inside.** No init, no entrypoint change — the thing that broke the self-update twice stays exactly as it is. Same fix as 2.18.0-beta.30, where it ran an hour on a live install first.

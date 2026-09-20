@@ -861,6 +861,7 @@
   "audit_section_dropped": "*Skipped on purpose* — set on this container, known to us, and not carried on recreate:",
   "compose_fallback": "ℹ️ Это контейнер Compose, но `{file}` недоступен изнутри Docksentry — он был пересоздан из данных inspect через `docker run`, а не `docker compose up`. Docksentry открывает именно этот путь внутри собственного контейнера — примонтируйте каталог Compose так, чтобы `{file}` находился там, как бы он ни назывался на хосте.",
   "compose_fallback_managed": "ℹ️ `{file}` — это путь внутри {manager}, а не на хосте, поэтому Docksentry его не видит. Смонтируйте каталог данных {manager} в контейнер Docksentry точно по пути `{mount}`, и путь Compose снова заработает.",
+  "compose_fallback_mounted": "ℹ️ `{file}` нет внутри Docksentry, хотя `{src}` уже примонтирован в `{dest}` — монтирование есть, а источник неверный. Проверьте, что `{src}` действительно та папка, где лежат файлы Compose, и перезапустите Docksentry.",
   "compose_fallback_lost": "⚠️ Пересборку пережило не всё — этих настроек из вашего файла Compose на новом контейнере нет: {fields}.",
   "compose_fallback_remote": "ℹ️ Это контейнер Compose на `{host}`, а файл Compose читается только на той машине, где работает сам Docksentry, — поэтому контейнер пересобран из данных inspect через `docker run`.",
   "compose_fallback_nolabel": "ℹ️ У этого контейнера есть метки Compose, но нет читаемого пути в `com.docker.compose.project.config_files`, поэтому он пересобран из данных inspect через `docker run`, а не через `docker compose up`.",

@@ -1554,7 +1554,7 @@ class TelegramBot:
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
 
-    def announce(self, text, reply_markup=None):
+    def announce(self, text, reply_markup=None, detail=""):
         """One unattended message, to every channel that is switched on.
 
         Three times now a notification has been written against
@@ -1572,9 +1572,22 @@ class TelegramBot:
         `reply_markup` is Telegram's alone; the other channels get the
         text. A button is not something an e-mail can carry, and leaving
         it out is better than inventing a second-class version of it.
+
+        `detail` is Telegram's alone too, for a sharper reason. The other
+        channels are notifier plugins, so a batch has already told them
+        the outcome of every container one by one, with the image name
+        and the release link in whatever rich form that channel has.
+        Telegram is not a plugin and gets none of those, which is why the
+        summary grew a full result list (#56, @LeeNX: "how did it go" was
+        spread over several messages). Sending that list everywhere made
+        every non-Telegram channel say the same thing twice — an
+        `Update OK` card per container and then a summary repeating them
+        all (#63, @NotRetarded). Each channel keeps its richest form and
+        says it once.
         """
         if self.enabled:
-            self.send_message(text, reply_markup=reply_markup, auto=True)
+            self.send_message(text + detail, reply_markup=reply_markup,
+                              auto=True)
         notifier = self.notifier
         try:
             if notifier is not None and notifier.has_channels():
@@ -2119,7 +2132,11 @@ class TelegramBot:
                 _head = self.t("autoupdate_done")
                 if _parts:
                     _head += " " + " · ".join(_parts)
-                self.announce(_head + "\n\n" + "\n".join(results))
+                # The list goes to Telegram only: every other channel is
+                # a notifier plugin and already got each container's
+                # result on its own, so repeating them here is the same
+                # outcome twice (#63, @NotRetarded).
+                self.announce(_head, detail="\n\n" + "\n".join(results))
 
                 # Remove fully-processed auto-updates from pending. Major-pending
                 # entries stay in pending so the user can also act on them via

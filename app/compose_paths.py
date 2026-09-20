@@ -53,6 +53,36 @@ def owner(path):
     return None
 
 
+def covering_mount(path, mounts):
+    """The mount that should already make `path` visible, or None.
+
+    `mounts` is `[(source, destination)]` from our own container. A
+    destination covers the path when the path is inside it — so
+    `/app/data/stacks` covers `/app/data/stacks/QNAP/dockmon/compose.yaml`
+    and `/app/data` does too. The longest match wins, because that is the
+    one the person actually set up for this.
+
+    It exists to tell two situations apart that read identically from
+    the outside. Nothing mounted means "mount it". Something mounted and
+    the file still missing means the mount is there and points at the
+    wrong directory — and being told to mount it again is what sends
+    people round the loop. Three people hit that in one week, each
+    concluding their own mount was wrong; it was not, the advice was
+    (#2, #65). The advice can only stop being generic if it looks.
+    """
+    if not path or not mounts:
+        return None
+    best = None
+    for src, dest in mounts:
+        d = (dest or "").rstrip("/")
+        if not d:
+            continue
+        if path == d or path.startswith(d + "/"):
+            if best is None or len(d) > len(best[1].rstrip("/")):
+                best = (src, dest)
+    return best
+
+
 def mount_root(path):
     """The part of `path` that has to be mounted, or None.
 
