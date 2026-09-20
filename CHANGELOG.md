@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.31] - 2026-09-20
+
+Three things that all come down to the same habit: saying something without looking first.
+
+### Fixed
+- **A crash loop is reported less and less often — which is what 2.17.9 promised and did not deliver.** The backoff went into the branch that handles every kind of event except deaths, and a crash loop is a death. The one case it was written for (@famewolf's syncserver at restart #190) is the one case it never covered. Measured on a live install this week: paperless-ngx at restart #2091, a full alert every thirty minutes for days — 24 in twelve hours where the backoff gives 5, at 30, 60, 120 minutes and so on to six hours.
+
+  The test is the part that should have caught it: it asked whether the backoff appeared *anywhere* in the file. It did, in the wrong branch. It now names both gates and runs an actual crash loop for twelve simulated hours.
+
+- **A finished update is said once per channel, not twice** (#63, @NotRetarded). Discord showed an `Update OK` card for each container and then a summary repeating both; Telegram showed it once, which is why this sat since v2.6.0. Every non-Telegram channel is a notifier plugin and gets each result as its own card. Telegram gets none of those, so the summary grew the full list in August for @LeeNX (#56) — and that list then went to everyone. The list now goes only where the cards do not.
+
+- **The Compose note looks at what you already mount before telling you to mount it** (#63, @NotRetarded). It was built from the path prefix alone, so a stack under a known manager's directory got the same "mount that directory" sentence whether nothing was mounted or the mount was there with the wrong source. Three people hit that in one week, each concluding their own mount was wrong — it was not, the advice was. When a mount covering the path exists, the note now names it and says the file is not in it, which leaves the source as the one thing to check.
+
 ## [2.18.0-beta.30] - 2026-09-16
 
 **The ssh process leak, fixed from inside.** No init, no entrypoint change — the thing that broke the self-update twice stays exactly as it is.
