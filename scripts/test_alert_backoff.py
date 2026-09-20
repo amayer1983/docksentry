@@ -67,8 +67,49 @@ src = open(os.path.join(os.path.dirname(__file__), "..",
 checks["a long quiet spell starts the count over"] = (
     "if gap > self.MAX_COOLDOWN_SECONDS:" in src
     and "self._alert_streak[key] = 1" in src)
-checks["…and the loop asks for the grown wait, not the flat one"] = (
-    "now_ts - last < self._cooldown_for(key)" in src)
+
+# ── the gate every kind of alert passes through ──────────────────────
+# This used to ask only whether `_cooldown_for` appeared ANYWHERE in the
+# file. It did — in the branch that handles everything except deaths.
+# Crashes have their own gate a few lines above, it used the flat
+# COOLDOWN_SECONDS, and nothing here looked. @famewolf's syncserver is a
+# crash loop; the backoff written for it never applied to it, and a live
+# install ran paperless-ngx to restart #2091 at a full alert every half
+# hour. So both gates are asserted, by name.
+_deaths = src.split("deaths = [")[1].split("mass = (")[0]
+_others = src.split("for kind, name, detail in others:")[1].split("return sent")[0]
+checks["the crash gate asks for the grown wait"] = (
+    "self._cooldown_for((n, k))" in _deaths)
+checks["…and so does every other kind"] = (
+    "self._cooldown_for(key)" in _others)
+checks["neither gate uses the flat wait any more"] = (
+    "< self.COOLDOWN_SECONDS" not in _deaths
+    and "< self.COOLDOWN_SECONDS" not in _others)
+
+# ── and the count is kept in ONE place ───────────────────────────────
+# Two copies of the bookkeeping is how one of them came to be missing.
+checks["both branches count through the same helper"] = (
+    src.count("self._bump_streak(") == 2 and "def _bump_streak(" in src)
+
+# ── behaviour: a crash loop really does back off ─────────────────────
+import types                                                # noqa: E402
+sim = ContainerMonitor.__new__(ContainerMonitor)
+sim._alert_streak = {}
+sim._last_sent = {}
+sim.config = types.SimpleNamespace(monitor_mass_stop_enabled=True)
+K = ("paperless", "crash_restart")
+sent_at, t = [], 0.0
+for _ in range(12 * 60):                     # twelve hours, one tick a minute
+    t += 60
+    if t - sim._last_sent.get(K, 0) < sim._cooldown_for(K):
+        continue
+    sim._bump_streak(K, t)
+    sim._last_sent[K] = t
+    sent_at.append(t)
+gaps = [round((b - a) / 60) for a, b in zip(sent_at, sent_at[1:])]
+checks["a crash loop costs a handful of alerts in twelve hours"] = (
+    2 <= len(sent_at) <= 6)
+checks["…with the gap doubling, not flat"] = gaps[:3] == [30, 60, 120]
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

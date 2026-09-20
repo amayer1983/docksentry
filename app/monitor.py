@@ -489,10 +489,18 @@ class ContainerMonitor:
         others = [(k, n, d) for k, n, d in events if k not in _DEATH_KINDS]
 
         # Per-(name,kind) cooldown still gates every death, so a container
-        # crash-looping tick after tick is not re-reported every 60 s.
+        # crash-looping tick after tick is not re-reported every 60 s —
+        # and the wait GROWS, which it did not until now. The backoff
+        # went in for @famewolf's syncserver at restart #190 (2.17.9) and
+        # was wired into the `others` branch below, which is every kind
+        # EXCEPT the deaths. A crash loop is the one thing it was built
+        # for and the one thing it never reached: measured on a live
+        # install, paperless-ngx at restart #2091 earned a full alert
+        # every thirty minutes for days — 24 in twelve hours where the
+        # backoff gives 5.
         fresh = []
         for k, n, d in deaths:
-            if now_ts - self._last_sent.get((n, k), 0) < self.COOLDOWN_SECONDS:
+            if now_ts - self._last_sent.get((n, k), 0) < self._cooldown_for((n, k)):
                 continue
             fresh.append((k, n, d))
 
@@ -520,6 +528,7 @@ class ContainerMonitor:
             # Single crash or a small burst: unchanged behaviour — each one
             # its own full-detail alert with its log tail inline.
             for kind, name, detail in fresh:
+                self._bump_streak((name, kind), now_ts)
                 self._last_sent[(name, kind)] = now_ts
                 resources = self._resources_for(kind, name)
                 self._record(kind, self._label(name), detail, resources)
@@ -538,13 +547,7 @@ class ContainerMonitor:
             # earned an alert every half hour until he gave up and
             # stopped the container. The first one is worth having, the
             # fortieth is what makes people mute the channel.
-            gap = now_ts - last
-            if gap > self.MAX_COOLDOWN_SECONDS:
-                # It went quiet for longer than we would ever have
-                # waited, so whatever this is, it is a new incident.
-                self._alert_streak[key] = 1
-            else:
-                self._alert_streak[key] = self._alert_streak.get(key, 0) + 1
+            self._bump_streak(key, now_ts)
             self._last_sent[key] = now_ts
             # Gathered once, before the write, and handed to both. It used
             # to be collected inside _notify — after the event had already
@@ -865,6 +868,23 @@ class ContainerMonitor:
         """
         return {"mem": self._memory_snapshot(), "cpu": self._cpu_snapshot(),
                 "cpu_quiet": self._cpu_quiet()}
+
+    def _bump_streak(self, key, now_ts):
+        """Count this alert towards the next wait.
+
+        Both branches call it, which is the point. It lived inline in the
+        `others` loop and the deaths never ran that loop, so the wait
+        grew for everything except the crash loops it was written for —
+        a container restarting every few minutes kept its thirty-minute
+        cadence for as long as it looped.
+        """
+        gap = now_ts - self._last_sent.get(key, 0)
+        if gap > self.MAX_COOLDOWN_SECONDS:
+            # It went quiet for longer than we would ever have waited,
+            # so whatever this is, it is a new incident.
+            self._alert_streak[key] = 1
+        else:
+            self._alert_streak[key] = self._alert_streak.get(key, 0) + 1
 
     def _cooldown_for(self, key):
         """How long to stay quiet before repeating this alert.
