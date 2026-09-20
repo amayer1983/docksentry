@@ -1330,7 +1330,7 @@ class TelegramBot:
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
 
-    def announce(self, text, reply_markup=None):
+    def announce(self, text, reply_markup=None, detail=""):
         """One unattended message, to every channel that is switched on.
 
         The seam itself lives in `broadcast.py` now (#63) — it was never
@@ -1343,7 +1343,7 @@ class TelegramBot:
             # No main.py to wire one up (tests, and anything that builds a
             # bot on its own). Same two senders, same behaviour.
             seam = Broadcast(telegram=self, notifier=self.notifier)
-        seam.announce(text, reply_markup=reply_markup)
+        seam.announce(text, reply_markup=reply_markup, detail=detail)
 
     def send_document(self, filename, data, caption=""):
         """Upload a file to the configured chat. True when it landed.
@@ -1905,7 +1905,11 @@ class TelegramBot:
                 _head = self.t("autoupdate_done")
                 if _parts:
                     _head += " " + " · ".join(_parts)
-                self.announce(_head + "\n\n" + "\n".join(results))
+                # The list goes to Telegram only: every other channel is
+                # a notifier plugin and already got each container's
+                # result on its own, so repeating them here is the same
+                # outcome twice (#63, @NotRetarded).
+                self.announce(_head, detail="\n\n" + "\n".join(results))
 
                 # Remove fully-processed auto-updates from pending. Major-pending
                 # entries stay in pending so the user can also act on them via

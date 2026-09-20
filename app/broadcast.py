@@ -33,12 +33,24 @@ class Broadcast:
         self.notifier = notifier
         self.log = log
 
-    def announce(self, text, reply_markup=None):
+    def announce(self, text, reply_markup=None, detail=""):
         """Send `text` to every channel that is switched on.
 
         `reply_markup` is Telegram's alone; the other channels get the
         text. A button is not something an e-mail can carry, and leaving
         it out is better than inventing a second-class version of it.
+
+        `detail` is Telegram's alone too, and for a sharper reason. The
+        other channels are notifier plugins, so a batch has already told
+        them the outcome of every container one by one — with the image
+        name and the release link, in whatever rich form that channel
+        has. Telegram is not a plugin and never gets those, which is why
+        the summary grew a full result list (#56, @LeeNX: "how did it go"
+        was spread over several messages). Sending that list everywhere
+        made every non-Telegram channel say the same thing twice — two
+        `Update OK` cards and then a summary repeating both (#63,
+        @NotRetarded). Each channel keeps its own richest form, and
+        nothing is said twice.
 
         The fan-out is guarded, the Telegram send is not — exactly as it
         was on the bot. Worth revisiting (a throwing Telegram currently
@@ -48,7 +60,8 @@ class Broadcast:
         """
         tg = self.telegram
         if tg is not None and getattr(tg, "enabled", False):
-            tg.send_message(text, reply_markup=reply_markup, auto=True)
+            tg.send_message(text + detail, reply_markup=reply_markup,
+                            auto=True)
         notifier = self.notifier
         try:
             if notifier is not None and notifier.has_channels():
