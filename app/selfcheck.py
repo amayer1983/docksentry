@@ -189,7 +189,14 @@ def findings(state):
                 elsewhere = True
         else:
             p["manager"] = row.get("manager") or ""
-            p["mount"] = compose_paths.mount_root(row["path"] or "") or ""
+            # A manager we know gets its root, because one mount covers
+            # every stack it holds. Everything else gets the file's own
+            # directory — which is what the container page has always
+            # offered, while this line printed "Mount  to reach it" with
+            # a hole where the path belongs (#63, seen on 12 stacks at
+            # once).
+            p["mount"] = (compose_paths.mount_root(row["path"] or "")
+                          or os.path.dirname(row["path"] or "") or "")
             out.append(("compose_no_mount", p))
     # Said once, not per container: the three that are missing are
     # usually the same manager, and three identical lines read as three

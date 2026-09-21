@@ -120,6 +120,20 @@ checks["with nothing mounted it says to mount it"] = "compose_no_mount" in k2
 checks["…and names what to mount"] = (
     k2["compose_no_mount"]["mount"] == "/app/data/stacks")
 
+# A path no manager claims still gets a directory. It printed
+# "Mount  to reach it" with a hole in it — twelve times in one /audit,
+# because Dockge's own `/opt/stacks` is deliberately not in KNOWN
+# (it is a valid host path, so there is nothing to map).
+c2b = _Checker([], {"Plex": "/opt/stacks/plex/compose.yaml"}, set())
+k2b = dict(selfcheck.findings(selfcheck.collect(c2b, ["Plex"])))
+checks["an unrecognised path names its own directory"] = (
+    k2b["compose_no_mount"]["mount"] == "/opt/stacks/plex")
+checks["…so the sentence never has a hole in it"] = all(
+    p.get("mount") for kind, p in selfcheck.findings(selfcheck.collect(
+        _Checker([], {"a": "/opt/stacks/plex/compose.yaml",
+                      "b": DOCKMON}, set()), ["a", "b"]))
+    if kind == "compose_no_mount")
+
 # A readable file is not a finding to act on.
 here = os.path.abspath(__file__)
 c3 = _Checker([("/x", os.path.dirname(here))], {"self": here}, set())
