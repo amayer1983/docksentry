@@ -64,3 +64,24 @@ beginnt beim ersten Mal, wo die Behauptung fällt, nicht erst beim
 Absenden. Fällt der Beweis nicht zu führen: als offene Frage
 kennzeichnen (»vermutlich der einzige, noch nicht alle 40 geprüft«),
 nicht als Verdikt.
+
+## Test-Hosts der lokalen Instanz
+
+Die lokale Instanz hängt an mehreren Endpunkten; die Adressen stehen in
+`docker-compose.dev.yml` und bleiben dort (gitignored).
+
+* **podman** — Podman über den lokalen Socket. LeeNX' Fall.
+* **srv30** — Docker über TCP.
+* **srv40** — Docker über SSH.
+* **srv20** — **die Tot-Prüfung.** Der Host ist absichtlich nicht
+  erreichbar. Er hat den Timeout-Pfad belegt, den kein Mock beweist:
+  `/status` lieferte gar nichts statt einer Zeile pro Host, bis ein
+  echter toter Host es zeigte (#2). Festgehalten in
+  `test_multihost_routing.py` und im Kommentar in `telegram_bot.py`.
+
+**srv20 gehört nicht in den Dauerbetrieb.** Jeder geplante Lauf kostet
+sonst 30 Sekunden Timeout und schreibt eine Fehlerzeile ins Log, die
+aussieht wie ein echter Ausfall — am 21.09. stand sie mitten in einem
+Update-Durchgang und war das Erste, was ins Auge fiel. Zum Testen die
+auskommentierte Zeile über `DOCKER_HOSTS` in `docker-compose.dev.yml`
+wieder einsetzen, danach wieder herausnehmen.
