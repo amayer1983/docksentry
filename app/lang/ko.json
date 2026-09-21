@@ -981,5 +981,7 @@
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` 가 없고 위에 마운트된 것도 없습니다. `{mount}` 를 마운트하세요.",
   "selfaudit_compose_nolabel": "• `{container}`: Compose 라벨은 있으나 파일 경로가 기록되어 있지 않습니다. inspect 데이터로 재생성됩니다.",
   "web_badge_compose_unreachable": "Compose 파일",
-  "web_badge_compose_unreachable_tt": "이 컨테이너의 Compose 파일에 접근할 수 없어 업데이트가 `docker run` 으로 다시 만듭니다. 컨테이너 페이지에 정확한 경로와 빠진 마운트가 나옵니다."
+  "web_badge_compose_unreachable_tt": "이 컨테이너의 Compose 파일에 접근할 수 없어 업데이트가 `docker run` 으로 다시 만듭니다. 컨테이너 페이지에 정확한 경로와 빠진 마운트가 나옵니다.",
+  "web_compose_mount_wrong_source": "이미 `{src}` 를 `{dest}` 에 마운트했는데도 위 파일이 그 안에 없습니다 — 마운트는 있고 원본이 틀렸습니다. `{src}` 가 정말 Compose 파일이 있는 폴더인지 확인하세요.",
+  "web_compose_mount_use_instead": "데몬에 따르면 그 파일은 `{src}` 에 있습니다 — 그것을 `{dest}` 에 마운트하세요."
 }

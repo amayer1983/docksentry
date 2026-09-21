@@ -981,5 +981,7 @@
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` はここになく、上に何もマウントされていません。`{mount}` をマウントしてください。",
   "selfaudit_compose_nolabel": "• `{container}`: Compose ラベルはありますがファイルパスが記録されていません。inspect のデータから再作成されます。",
   "web_badge_compose_unreachable": "Compose ファイル",
-  "web_badge_compose_unreachable_tt": "このコンテナの Compose ファイルに届かないため、更新は `docker run` で作り直します。コンテナページに正確なパスと不足しているマウントが出ます。"
+  "web_badge_compose_unreachable_tt": "このコンテナの Compose ファイルに届かないため、更新は `docker run` で作り直します。コンテナページに正確なパスと不足しているマウントが出ます。",
+  "web_compose_mount_wrong_source": "すでに `{src}` を `{dest}` にマウントしていますが、上のファイルはその中にありません。マウントはあり、参照元が違います。`{src}` が本当に Compose ファイルのあるフォルダーか確認してください。",
+  "web_compose_mount_use_instead": "デーモンによれば、そのファイルは `{src}` にあります。代わりにそれを `{dest}` にマウントしてください。"
 }

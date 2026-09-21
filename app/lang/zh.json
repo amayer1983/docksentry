@@ -981,5 +981,7 @@
   "selfaudit_compose_no_mount": "• `{container}`：这里没有 `{path}`，上面也没有挂载。请挂载 `{mount}`。",
   "selfaudit_compose_nolabel": "• `{container}`：有 Compose 标签但未记录文件路径，没有可访问的东西。将从 inspect 数据重建。",
   "web_badge_compose_unreachable": "Compose 文件",
-  "web_badge_compose_unreachable_tt": "Docksentry 读不到该容器的 Compose 文件，更新会改用 `docker run` 重建。容器页面会显示确切路径和缺少的挂载。"
+  "web_badge_compose_unreachable_tt": "Docksentry 读不到该容器的 Compose 文件，更新会改用 `docker run` 重建。容器页面会显示确切路径和缺少的挂载。",
+  "web_compose_mount_wrong_source": "你已经把 `{src}` 挂载到 `{dest}`，但上面那个文件仍然不在其中 — 挂载有，源目录不对。请确认 `{src}` 确实是存放 Compose 文件的目录。",
+  "web_compose_mount_use_instead": "守护进程显示该文件位于 `{src}` — 请改为把它挂载到 `{dest}`。"
 }

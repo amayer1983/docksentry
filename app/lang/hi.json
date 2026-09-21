@@ -981,5 +981,7 @@
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` यहाँ नहीं है और ऊपर कुछ माउंट नहीं है। पहुँचने के लिए `{mount}` माउंट करें।",
   "selfaudit_compose_nolabel": "• `{container}`: Compose लेबल हैं पर फ़ाइल पथ दर्ज नहीं — पहुँचने को कुछ नहीं। inspect डेटा से दोबारा बनाया जाता है।",
   "web_badge_compose_unreachable": "Compose फ़ाइल",
-  "web_badge_compose_unreachable_tt": "Docksentry इस कंटेनर की Compose फ़ाइल तक नहीं पहुँच पाता, इसलिए अपडेट इसे `docker run` से दोबारा बनाता है। कंटेनर पृष्ठ सटीक पथ और छूटा माउंट दिखाता है।"
+  "web_badge_compose_unreachable_tt": "Docksentry इस कंटेनर की Compose फ़ाइल तक नहीं पहुँच पाता, इसलिए अपडेट इसे `docker run` से दोबारा बनाता है। कंटेनर पृष्ठ सटीक पथ और छूटा माउंट दिखाता है।",
+  "web_compose_mount_wrong_source": "आप पहले से `{src}` को `{dest}` पर माउंट करते हैं, फिर भी ऊपर वाली फ़ाइल उसमें नहीं है — माउंट है, स्रोत ग़लत है। जाँचें कि `{src}` सचमुच Compose फ़ाइलों वाला फ़ोल्डर है।",
+  "web_compose_mount_use_instead": "डेमॉन के अनुसार वह फ़ाइल `{src}` में है — उसे `{dest}` पर माउंट करें।"
 }

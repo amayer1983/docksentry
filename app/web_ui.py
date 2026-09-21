@@ -5023,14 +5023,41 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             directory onto itself.
             """
             exact = self._compose_mount_exact(paths)
-            # A mount that lands where we already have something would
-            # shadow it. `/data` is the collision that matters: it is our
-            # own state directory and Portainer's as well.
-            clash = sorted({d for _p, line in (exact or []) if line
-                            for _l, d in (line,)} & self._own_mount_dests())
+            _want = {d for _p, line in (exact or []) if line
+                     for _l, d in (line,)}
+            # A suggestion that would land on our own DATA DIRECTORY is
+            # the one we must refuse: mounting over it hides our state.
+            # `/data` is the case that matters — ours and Portainer's.
+            _data = (getattr(config, "data_dir", "") or "").rstrip("/")
+            clash = sorted(d for d in _want
+                           if _data and (d.rstrip("/") == _data
+                                         or _data.startswith(d.rstrip("/") + "/")))
             if clash:
                 return (f'<div class="form-help" style="margin:4px 0 0">'
                         f'{_e(t("web_compose_mount_clash", path=clash[0]))}</div>')
+            # Already mounted there and the file still is not in it. This
+            # used to fall into the clash branch above, because that
+            # compared against EVERY mount we hold — including the one the
+            # person had just added on our own advice. @NotRetarded
+            # mounted his stack directory where I told him to on 01.09.,
+            # and the page then told him no mount could fix it and he
+            # should move DATA_DIR. Three weeks of that. The mount is
+            # there; what is wrong is the source it points at.
+            _mine = self._own_mount_dests()
+            _already = sorted(_want & _mine)
+            if _already:
+                _dest = _already[0]
+                _have = next((x for x in self._own_mount_sources(_dest)), "")
+                # The daemon told us which container really holds the
+                # file, so we know the source that would work. Saying
+                # only "yours is wrong" would waste that.
+                _right = next((l for _p, line in (exact or []) if line
+                               for l, d in (line,) if d == _dest), "")
+                return (f'<div class="form-help" style="margin:4px 0 0">'
+                        f'{_e(t("web_compose_mount_wrong_source", dest=_dest, src=_have))}</div>'
+                        + (f'<div class="form-help" style="margin:4px 0 0">'
+                           f'{_e(t("web_compose_mount_use_instead", src=_right, dest=_dest))}</div>'
+                           if _right and _right != _have else ""))
             if exact:
                 # One line per path: the exact one where the daemon knows
                 # who holds the file, the directory onto itself where it
@@ -5146,6 +5173,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if not own:
                 return set()
             return {r["dest"] for r in self._all_mounts() if r.get("name") == own}
+
+        def _own_mount_sources(self, dest):
+            """What WE mount at `dest` — the source to go and check."""
+            own = self._own_container_name_safe()
+            if not own:
+                return []
+            return [r.get("src") or r.get("vol") or ""
+                    for r in self._all_mounts()
+                    if r.get("name") == own and r.get("dest") == dest]
 
         #: Images whose name gives away a stack manager. Only used to break
         #: a tie — never to decide on its own.

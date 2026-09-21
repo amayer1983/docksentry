@@ -981,5 +981,7 @@
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` тут немає і нічого зверху не змонтовано. Змонтуйте `{mount}`.",
   "selfaudit_compose_nolabel": "• `{container}`: мітки Compose є, а шлях до файлу не записано — діставати нічого. Перестворюється з даних inspect.",
   "web_badge_compose_unreachable": "файл Compose",
-  "web_badge_compose_unreachable_tt": "Docksentry не дістається до файлу Compose цього контейнера, тож оновлення перестворює його через `docker run`. На сторінці контейнера видно точний шлях і потрібне монтування."
+  "web_badge_compose_unreachable_tt": "Docksentry не дістається до файлу Compose цього контейнера, тож оновлення перестворює його через `docker run`. На сторінці контейнера видно точний шлях і потрібне монтування.",
+  "web_compose_mount_wrong_source": "Ви вже монтуєте `{src}` у `{dest}`, а файла вище там усе одно немає — монтування є, джерело хибне. Перевірте, чи `{src}` справді тека з файлами Compose.",
+  "web_compose_mount_use_instead": "За даними демона файл лежить у `{src}` — монтуйте в `{dest}` саме це."
 }

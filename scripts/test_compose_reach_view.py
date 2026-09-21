@@ -18,7 +18,12 @@ from update_checker import UpdateChecker  # noqa: E402
 
 checks = {}
 
-_CFG = type("C", (), {"language": "en", "ui_mode": "advanced", "debug": False})()
+# `data_dir` matters now: the refusal is about a suggestion landing on
+# OUR STATE, not on any mount we happen to hold. The fixture below says
+# our data lives at `/data`, so the config has to say the same or the
+# two halves of this test describe different installs.
+_CFG = type("C", (), {"language": "en", "ui_mode": "advanced",
+                      "debug": False, "data_dir": "/data"})()
 _HANDLER = web_ui.create_handler(_CFG, None, bot=None, store=None)
 
 
@@ -158,9 +163,33 @@ checks["a mount that would shadow our own data is not offered"] = (
 checks["…and it says why, instead of going quiet"] = (
     "web_compose_mount_clash" in _out)
 
-_out = _block(_ROWS, "somethingelse", ["/data/compose/13/docker-compose.yml"])
-checks["without that collision the line is still offered"] = (
-    "volumes:" in _out and "portainer_data" in _out)
+# Our data somewhere else and no mount of ours in the way: nothing to
+# refuse, so the line is offered. `data_dir` has to say so — the refusal
+# is about where our state lives, not about who else mounts what.
+_CFG.data_dir = "/docksentry"
+try:
+    _out = _block(_ROWS, "somethingelse", ["/data/compose/13/docker-compose.yml"])
+    checks["without that collision the line is still offered"] = (
+        "volumes:" in _out and "portainer_data" in _out)
+finally:
+    _CFG.data_dir = "/data"
+
+# ── already mounted there, and the file still is not in it ───────────
+# @NotRetarded mounted his stack directory exactly where he was told to,
+# and the page then refused to help because the check compared against
+# every mount we hold — his own fix looked like our data directory. It
+# is a different sentence: the mount is right, its source is not.
+_CFG.data_dir = "/docksentry"
+try:
+    _out = _block(_ROWS, "docksentry", ["/data/compose/13/docker-compose.yml"])
+    checks["a mount we already have is not mistaken for our data"] = (
+        "web_compose_mount_clash" not in _out)
+    checks["…it says the source is the wrong one"] = (
+        "web_compose_mount_wrong_source" in _out)
+    checks["…and names the one that would work"] = (
+        "web_compose_mount_use_instead" in _out)
+finally:
+    _CFG.data_dir = "/data"
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

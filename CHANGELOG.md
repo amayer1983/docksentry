@@ -2,6 +2,19 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.34] - 2026-09-21
+
+### Fixed
+- **The container page told people to move their data directory when their mount was simply pointing at the wrong folder** (#63, @NotRetarded). The refusal — *"there is no mount that can fix this, move DATA_DIR"* — fired whenever the suggested mount point matched **any** destination Docksentry already has mounted. So the mount he added on 1 September, on my own advice, looked exactly like our data directory, and the page spent three weeks sending him after `DATA_DIR` instead of telling him his source was wrong. It knew the right source too, from the daemon, and said nothing about it.
+
+  The refusal now measures against our actual data directory, which is the case it was written for: a suggestion landing there would hide our state. Three different situations, three different sentences — refuse, correct, advise:
+
+  | | |
+  |---|---|
+  | would cover our data directory | unchanged: move `DATA_DIR` first |
+  | already mounted there, file still missing | names what you mount, and which source the daemon says holds the file |
+  | nothing mounted | the volume line, as before |
+
 ## [2.18.0-beta.33] - 2026-09-20
 
 ### Fixed
