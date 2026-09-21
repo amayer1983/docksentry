@@ -29,11 +29,39 @@ checks = {}
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
+class _Reply:
+    def __init__(self, stdout, returncode=0):
+        self.stdout, self.returncode = stdout, returncode
+
+
+class _Backend:
+    """A daemon that answers `ps -a` and `inspect` with what we choose."""
+
+    def __init__(self, containers):
+        #: [(name, image, [(src, dest)])]
+        self._c = containers
+        self.asked_all = False
+
+    def ps(self, *, all=False, quiet=False, fmt=None, timeout=None):
+        self.asked_all = all
+        return _Reply(" ".join(n for n, _i, _m in self._c))
+
+    def inspect(self, refs, *, fmt=None, timeout=None):
+        import json as _j
+        return _Reply(_j.dumps([
+            {"Name": "/" + n, "Config": {"Image": i},
+             "Mounts": [{"Type": "bind", "Source": s, "Destination": d}
+                        for s, d in ms]}
+            for n, i, ms in self._c]))
+
+
 class _Checker:
     """A checker whose answers we choose, so the findings are the test."""
 
-    def __init__(self, mounts, files, exists):
+    def __init__(self, mounts, files, exists, containers=None):
         self._m, self._f, self._e = mounts, files, exists
+        if containers is not None:
+            self.backend = _Backend(containers)
 
     def _own_container_name(self):
         return "DockSentry"
@@ -110,6 +138,83 @@ c5 = _Checker([("/share/stacks", "/app/data/stacks")],
               {"a": DOCKMON, "b": "/opt/other/compose.yml", "c": here}, set())
 checks["the headline counts match the findings"] = (
     selfcheck.summary(selfcheck.collect(c5, ["a", "b", "c"])) == (3, 1, 1, 1))
+
+
+# ── who DOES have it ─────────────────────────────────────────────────
+# "Your source is wrong" ends the sentence one word before the answer.
+# @NotRetarded read that line three times on 21.09. and wrote back
+# "nothing in that section tells me where it really is" — and he was
+# right: the daemon knows which container holds the file, and we were
+# not asking (#63).
+OURS = ("DockSentry", "amayer1983/docksentry:latest",
+        [("/share/Container/stacks", "/app/data/stacks")])
+DOCKGE = ("dockge", "louislam/dockge:1",
+          [("/share/CACHEDEV1_DATA/stacks", "/app/data/stacks")])
+
+c6 = _Checker([("/share/Container/stacks", "/app/data/stacks")],
+              {"dockmon": DOCKMON}, set(), containers=[OURS, DOCKGE])
+f6 = selfcheck.findings(selfcheck.collect(c6, ["dockmon"]))
+k6 = dict(f6)
+checks["the daemon is asked who really holds the file"] = "compose_holder" in k6
+checks["…and it names the directory that would work"] = (
+    k6.get("compose_holder", {}).get("src") == "/share/CACHEDEV1_DATA/stacks"
+    and k6["compose_holder"]["dest"] == "/app/data/stacks")
+checks["…and the container it read that off"] = (
+    k6.get("compose_holder", {}).get("who") == "dockge")
+checks["…and then does not claim it is on another machine"] = (
+    "compose_elsewhere" not in k6)
+checks["every container is inspected, not only the running ones"] = (
+    c6.backend.asked_all is True)
+
+# Our own mount is not an answer. It covers the path and demonstrably
+# does not hold the file — that is what made the finding in the first
+# place — so naming it back would hand them the directory they are
+# trying to replace.
+c7 = _Checker([("/share/Container/stacks", "/app/data/stacks")],
+              {"dockmon": DOCKMON}, set(), containers=[OURS])
+f7 = selfcheck.findings(selfcheck.collect(c7, ["dockmon"]))
+k7 = dict(f7)
+checks["our own mount is never named as the holder"] = "compose_holder" not in k7
+checks["…instead it says the stack was made somewhere else"] = (
+    "compose_elsewhere" in k7)
+
+# Three stacks behind the same absent manager are one problem, not
+# three lines of it.
+c8 = _Checker([("/share/Container/stacks", "/app/data/stacks")],
+              {"dockmon": DOCKMON,
+               "tailscale": "/app/data/stacks/QNAP/tailscale/compose.yaml",
+               "dockge": "/app/data/stacks/QNAP/dockge/compose.yaml"},
+              set(), containers=[OURS])
+f8 = selfcheck.findings(
+    selfcheck.collect(c8, ["dockmon", "tailscale", "dockge"]))
+checks["three missing stacks say it once"] = (
+    sum(1 for kind, _p in f8 if kind == "compose_elsewhere") == 1)
+checks["…while each still gets its own wrong-source line"] = (
+    sum(1 for kind, _p in f8 if kind == "compose_wrong") == 3)
+
+# A daemon that will not answer must not turn into "it is elsewhere".
+checks["a file we can read raises neither of the two"] = (
+    not any(kind in ("compose_holder", "compose_elsewhere")
+            for kind, _p in selfcheck.findings(selfcheck.collect(
+                _Checker([("/x", os.path.dirname(here))], {"self": here},
+                         set(), containers=[OURS]), ["self"]))))
+
+# Every kind the core can emit has words in every language.
+import json as _json                                         # noqa: E402
+_langs = sorted(f for f in os.listdir(os.path.join(ROOT, "app", "lang"))
+                if f.endswith(".json"))
+_kinds = {kind for kind, _p in f6 + f7 + f8}
+_missing = []
+for f in _langs:
+    d = _json.load(open(os.path.join(ROOT, "app", "lang", f), encoding="utf-8"))
+    for kind in _kinds:
+        if f"selfaudit_{kind}" not in d:
+            _missing.append(f"{f}:{kind}")
+checks["every finding has wording in all 16 languages"] = (
+    len(_langs) == 16 and not _missing
+    # …and the set under test really contains the new ones, or this
+    # check would pass by looking at nothing.
+    and {"compose_holder", "compose_elsewhere"} <= _kinds)
 
 # ── both chats, one answer ───────────────────────────────────────────
 tg = open(os.path.join(ROOT, "app", "telegram_bot.py"), encoding="utf-8").read()

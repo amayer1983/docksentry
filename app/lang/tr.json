@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Ben `{name}` kapsayıcısıyım",
   "selfaudit_self_mounts": "• {count} kendi bağlamam",
   "selfaudit_compose_wrong": "• `{container}`: `{src}` `{dest}` konumuna bağlı olsa da `{path}` burada yok. Bağlama var, kaynak yanlış.",
+  "selfaudit_compose_holder": "• `{container}`: Daemon'a göre o dosya `{who}` içindeki `{src}` konumunda — bunun yerine onu `{dest}` konumuna bağlayın.",
+  "selfaudit_compose_elsewhere": "• Bu makinede o yolları tutan hiçbir şey yok. O stack'leri oluşturan şey başka yerde — başka bir host ya da artık var olmayan bir yönetici — ve buradaki hiçbir bağlama onlara ulaşamaz.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` burada yok ve üzerine bir şey bağlanmamış. Erişmek için `{mount}` bağlayın.",
   "selfaudit_compose_nolabel": "• `{container}`: Compose etiketleri var ama kayıtlı dosya yolu yok, erişilecek bir şey yok. Inspect verisinden yeniden kuruluyor.",
   "web_badge_compose_unreachable": "Compose dosyası",
   "web_badge_compose_unreachable_tt": "Docksentry bu kapsayıcının Compose dosyasına erişemiyor, bu yüzden güncelleme onu `docker run` ile yeniden kuruyor. Kapsayıcı sayfası tam yolu ve eksik bağlamayı gösterir.",
   "web_compose_mount_wrong_source": "`{src}` zaten `{dest}` konumuna bağlı ama yukarıdaki dosya hâlâ içinde değil — bağlama var, kaynağı yanlış. `{src}` gerçekten Compose dosyalarının bulunduğu klasör mü kontrol edin.",
-  "web_compose_mount_use_instead": "Daemon'a göre o dosya `{src}` içinde — `{dest}` konumuna onu bağlayın."
+  "web_compose_mount_use_instead": "Daemon'a göre o dosya `{src}` içinde — `{dest}` konumuna onu bağlayın.",
+  "web_compose_mount_no_holder": "Bu makinede `{path}` yolunu tutan başka bir şey yok. Bu stack'i oluşturan şey başka yerde — başka bir host ya da artık var olmayan bir yönetici — bu yüzden buradaki hiçbir bağlama o dosyaya ulaşamaz."
 }

@@ -5053,11 +5053,26 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # only "yours is wrong" would waste that.
                 _right = next((l for _p, line in (exact or []) if line
                                for l, d in (line,) if d == _dest), "")
+                # And when the daemon names nobody, say that instead of
+                # leaving them to guess which of their directories is
+                # meant. Nothing on this machine holds the file, so the
+                # thing that wrote the label is somewhere else — another
+                # box, or a manager that is gone. No mount here reaches
+                # it, and a reader who is not told that keeps trying
+                # (#63, @NotRetarded, three mounts and none of them wrong).
+                _tail = ""
+                if _right and _right != _have:
+                    _tail = (f'<div class="form-help" style="margin:4px 0 0">'
+                             f'{_e(t("web_compose_mount_use_instead", src=_right, dest=_dest))}</div>')
+                else:
+                    # `_right == _have` counts as nobody: the daemon
+                    # named our own mount back at us, and that mount has
+                    # already proved it does not hold the file.
+                    _tail = (f'<div class="form-help" style="margin:4px 0 0">'
+                             f'{_e(t("web_compose_mount_no_holder", path=_dest))}</div>')
                 return (f'<div class="form-help" style="margin:4px 0 0">'
                         f'{_e(t("web_compose_mount_wrong_source", dest=_dest, src=_have))}</div>'
-                        + (f'<div class="form-help" style="margin:4px 0 0">'
-                           f'{_e(t("web_compose_mount_use_instead", src=_right, dest=_dest))}</div>'
-                           if _right and _right != _have else ""))
+                        + _tail)
             if exact:
                 # One line per path: the exact one where the daemon knows
                 # who holds the file, the directory onto itself where it
@@ -5183,10 +5198,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     for r in self._all_mounts()
                     if r.get("name") == own and r.get("dest") == dest]
 
-        #: Images whose name gives away a stack manager. Only used to break
-        #: a tie — never to decide on its own.
-        _MANAGER_HINTS = ("portainer", "dockge", "dockhand", "komodo", "yacht")
-
         @staticmethod
         def _compose_mount_exact(paths):
             """`[(path, (lhs, dest) or None)]`, or None when we know nothing.
@@ -5209,30 +5220,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if not rows:
                 return None
             try:
-                from compose_paths import owner as _owner
-            except Exception:
-                _owner = lambda _p: None
+                from compose_paths import holder as _holder, AMBIGUOUS as _AMB
+            except Exception:                            # pragma: no cover
+                return None
             out = []
             for p in paths:
-                hits = [r for r in rows
-                        if p == r["dest"] or p.startswith(r["dest"] + "/")]
-                if not hits:
-                    out.append((p, None))            # a host path; not ours
-                    continue
-                deepest = max(len(h["dest"]) for h in hits)
-                hits = [h for h in hits if len(h["dest"]) == deepest]
-                if len(hits) > 1:
-                    own = (_owner(p) or "").lower()
-                    looks = [h for h in hits
-                             if any(k in h["image"] for k in WebHandler._MANAGER_HINTS)
-                             and (not own or any(w in h["image"]
-                                                 for w in own.split(" or ")))]
-                    if len(looks) != 1:
-                        return None                  # ambiguous: say nothing
-                    hits = looks
-                h = hits[0]
-                out.append((p, (h["vol"] if h["type"] == "volume" else h["src"],
-                                h["dest"])))
+                h = _holder(p, rows)
+                if h is _AMB:
+                    return None                  # ambiguous: say nothing
+                out.append((p, (h[0], h[1]) if h else None))
             return out if any(line for _p, line in out) else None
 
         @staticmethod

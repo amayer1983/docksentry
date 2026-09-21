@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• 나는 컨테이너 `{name}` 입니다",
   "selfaudit_self_mounts": "• 내 마운트 {count}개",
   "selfaudit_compose_wrong": "• `{container}`: `{src}` 가 `{dest}` 에 마운트되어 있는데도 `{path}` 가 없습니다. 마운트는 있고 원본이 틀렸습니다.",
+  "selfaudit_compose_holder": "• `{container}`: 데몬에 따르면 그 파일은 `{who}` 안의 `{src}` 에 있습니다 — 대신 그것을 `{dest}` 에 마운트하세요.",
+  "selfaudit_compose_elsewhere": "• 이 머신에는 그 경로를 가진 것이 없습니다. 그 스택을 만든 것은 다른 곳 — 다른 호스트, 또는 이제는 없는 매니저 — 에 있으며, 여기서 무엇을 마운트해도 닿지 않습니다.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` 가 없고 위에 마운트된 것도 없습니다. `{mount}` 를 마운트하세요.",
   "selfaudit_compose_nolabel": "• `{container}`: Compose 라벨은 있으나 파일 경로가 기록되어 있지 않습니다. inspect 데이터로 재생성됩니다.",
   "web_badge_compose_unreachable": "Compose 파일",
   "web_badge_compose_unreachable_tt": "이 컨테이너의 Compose 파일에 접근할 수 없어 업데이트가 `docker run` 으로 다시 만듭니다. 컨테이너 페이지에 정확한 경로와 빠진 마운트가 나옵니다.",
   "web_compose_mount_wrong_source": "이미 `{src}` 를 `{dest}` 에 마운트했는데도 위 파일이 그 안에 없습니다 — 마운트는 있고 원본이 틀렸습니다. `{src}` 가 정말 Compose 파일이 있는 폴더인지 확인하세요.",
-  "web_compose_mount_use_instead": "데몬에 따르면 그 파일은 `{src}` 에 있습니다 — 그것을 `{dest}` 에 마운트하세요."
+  "web_compose_mount_use_instead": "데몬에 따르면 그 파일은 `{src}` 에 있습니다 — 그것을 `{dest}` 에 마운트하세요.",
+  "web_compose_mount_no_holder": "이 머신에는 `{path}` 를 가진 다른 것이 없습니다. 이 스택을 만든 것은 다른 곳 — 다른 호스트, 또는 이제는 없는 매니저 — 에 있으므로, 여기서 무엇을 마운트해도 그 파일에는 닿지 않습니다."
 }

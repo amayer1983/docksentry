@@ -52,6 +52,17 @@ checks["…and the one that would work, when the daemon knows it"] = (
     "web_compose_mount_use_instead" in blk)
 checks["…only when it differs from what they have"] = (
     "_right != _have" in blk)
+# And when the daemon names nobody — or names our own mount back at us
+# — the page says so instead of stopping at "wrong". @NotRetarded read
+# the short version three times on 21.09.: "nothing in that section
+# tells me where it really is."
+checks["…and says so when the daemon names nobody"] = (
+    "web_compose_mount_no_holder" in blk)
+checks["…including when it names our own mount back at us"] = (
+    re.search(r"_right != _have.*?\n(.|\n)*?else:(.|\n)*?"
+              r"web_compose_mount_no_holder", blk) is not None)
+checks["…and the page never offers to mount a path onto itself instead"] = (
+    blk.index("web_compose_mount_no_holder") < blk.index("_compose_mount_targets("))
 checks["the refusal still comes first"] = (
     blk.index("web_compose_mount_clash") < blk.index("web_compose_mount_wrong_source"))
 
@@ -63,9 +74,16 @@ checks["the refusal explains what it would hide"] = "DATA_DIR" in clash
 checks["the correction does not send anyone to DATA_DIR"] = "DATA_DIR" not in wrong
 checks["…it points at the source instead"] = (
     "{src}" in wrong and "{dest}" in wrong and "wrong directory" in wrong)
+no_holder = en["web_compose_mount_no_holder"]
+checks["the dead end says the file was made somewhere else"] = (
+    "{path}" in no_holder and "DATA_DIR" not in no_holder
+    and "another host" in no_holder)
+checks["…and does not ask for another mount"] = (
+    "volumes:" not in no_holder)
 checks["every language carries it"] = all(
-    "web_compose_mount_wrong_source" in json.load(
-        open(os.path.join(ROOT, "app", "lang", f), encoding="utf-8"))
+    {"web_compose_mount_wrong_source", "web_compose_mount_no_holder"}
+    <= set(json.load(
+        open(os.path.join(ROOT, "app", "lang", f), encoding="utf-8")))
     for f in os.listdir(os.path.join(ROOT, "app", "lang")) if f.endswith(".json"))
 
 # ── the same question, answered the same way off the page ────────────
@@ -78,6 +96,16 @@ checks["the chats answer it through the shared helper"] = (
 uc = open(os.path.join(ROOT, "app", "update_checker.py"), encoding="utf-8").read()
 checks["…and so does the update note"] = (
     "compose_paths.covering_mount(" in uc)
+# Two implementations of "who holds this file" is two answers, and the
+# page and `/audit` disagreeing about one container is the thing that
+# sent somebody round the loop in the first place.
+exact = web.split("def _compose_mount_exact")[1].split("\n        @")[0]
+checks["the page reads the holder from the shared helper"] = (
+    "from compose_paths import holder" in exact)
+checks["…and so does /audit"] = "compose_paths.holder(" in sc
+checks["…and neither keeps its own copy of the manager list"] = (
+    "_MANAGER_HINTS" not in web and "MANAGER_HINTS" in open(
+        os.path.join(ROOT, "app", "compose_paths.py"), encoding="utf-8").read())
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

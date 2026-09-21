@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Ik ben container `{name}`",
   "selfaudit_self_mounts": "• {count} eigen koppeling(en)",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` staat hier niet, terwijl `{src}` op `{dest}` is gekoppeld. De koppeling is er; de bron klopt niet.",
+  "selfaudit_compose_holder": "• `{container}`: volgens de daemon staat dat bestand in `{src}`, in `{who}` — koppel dat in plaats daarvan op `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Niets op deze machine heeft die paden. Wat die stacks heeft aangemaakt staat ergens anders — een andere host, of een manager die er niet meer is — en geen enkele koppeling hier komt erbij.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` staat hier niet en er is niets overheen gekoppeld. Koppel `{mount}` om erbij te komen.",
   "selfaudit_compose_nolabel": "• `{container}`: Compose-labels maar geen bestandspad vastgelegd, dus er valt niets te bereiken. Wordt herbouwd uit de inspect-gegevens.",
   "web_badge_compose_unreachable": "Compose-bestand",
   "web_badge_compose_unreachable_tt": "Docksentry kan het Compose-bestand van deze container niet bereiken; een update bouwt hem daarom opnieuw met `docker run`. De containerpagina toont het exacte pad en de ontbrekende koppeling.",
   "web_compose_mount_wrong_source": "Je koppelt `{src}` al op `{dest}` en het bestand hierboven zit er nog steeds niet in — de koppeling is er, de bron klopt niet. Controleer of `{src}` echt de map met de Compose-bestanden is.",
-  "web_compose_mount_use_instead": "Volgens de daemon staat dat bestand in `{src}` — koppel dat in plaats daarvan op `{dest}`."
+  "web_compose_mount_use_instead": "Volgens de daemon staat dat bestand in `{src}` — koppel dat in plaats daarvan op `{dest}`.",
+  "web_compose_mount_no_holder": "Niets anders op deze machine heeft `{path}`. Wat deze stack heeft aangemaakt staat ergens anders — een andere host, of een manager die er niet meer is — dus geen koppeling hier komt bij dat bestand."
 }

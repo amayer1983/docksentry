@@ -96,3 +96,54 @@ def mount_root(path):
         if path.startswith(prefix):
             return prefix.rstrip("/")
     return None
+
+
+#: Image-name fragments of the managers that keep stacks inside their own
+#: container. Only used to break a tie: when two containers mount at the
+#: same depth over a compose path, the manager is the one that holds the
+#: file and the other is a bystander — usually us, because the reader has
+#: already mounted their stack directory on our advice.
+MANAGER_HINTS = ("portainer", "dockge", "dockhand", "komodo", "yacht")
+
+#: Returned by `holder` when several containers could be meant and
+#: nothing separates them. It is not "nobody holds this": it is "I will
+#: not guess", and the caller must say something different for each. A
+#: confidently wrong mount is what #2 and #65 were about.
+AMBIGUOUS = object()
+
+
+def holder(path, rows):
+    """Which container really holds `path`, read off the daemon's mounts.
+
+    `rows` is `[{name, image, type, vol, src, dest}]` for every container
+    the daemon will talk about. Returns `(source, dest, name)` for the one
+    that holds the file, `None` when no mount covers the path at all — a
+    plain host path, or a manager that is not on this machine — and
+    `AMBIGUOUS` when the answer cannot be pinned down.
+
+    The deepest destination wins, because that is the mount somebody set
+    up for exactly this. A named volume answers with its volume name:
+    Portainer keeps its stacks in `portainer_data`, which no directory
+    path can express.
+    """
+    if not path or not rows:
+        return None
+    hits = [r for r in rows
+            if path == (r.get("dest") or "")
+            or path.startswith((r.get("dest") or "") + "/")]
+    if not hits:
+        return None
+    deepest = max(len(h.get("dest") or "") for h in hits)
+    hits = [h for h in hits if len(h.get("dest") or "") == deepest]
+    if len(hits) > 1:
+        own = (owner(path) or "").lower()
+        looks = [h for h in hits
+                 if any(k in (h.get("image") or "") for k in MANAGER_HINTS)
+                 and (not own or any(w in (h.get("image") or "")
+                                     for w in own.split(" or ")))]
+        if len(looks) != 1:
+            return AMBIGUOUS
+        hits = looks
+    h = hits[0]
+    src = h.get("vol") or "" if h.get("type") == "volume" else h.get("src") or ""
+    return (src, h.get("dest") or "", h.get("name") or "")

@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Ich bin Container `{name}`",
   "selfaudit_self_mounts": "• {count} eigene Mount(s)",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` liegt nicht hier, obwohl `{src}` auf `{dest}` eingehängt ist. Der Mount ist da, die Quelle stimmt nicht.",
+  "selfaudit_compose_holder": "• `{container}`: Laut Daemon liegt die Datei in `{src}`, in `{who}` — häng stattdessen das auf `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Auf dieser Maschine hält nichts diese Pfade. Was die Stacks angelegt hat, ist woanders — ein anderer Host oder ein Manager, den es nicht mehr gibt — und kein Mount hier kommt heran.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` liegt nicht hier und darüber ist nichts eingehängt. Häng `{mount}` ein, um heranzukommen.",
   "selfaudit_compose_nolabel": "• `{container}`: Compose-Label, aber kein Dateipfad hinterlegt — da ist nichts zu erreichen. Wird aus den Inspect-Daten neu gebaut.",
   "web_badge_compose_unreachable": "Compose-Datei",
   "web_badge_compose_unreachable_tt": "Docksentry kommt an die Compose-Datei dieses Containers nicht heran, ein Update baut ihn deshalb mit `docker run` neu. Die Container-Seite zeigt den genauen Pfad und den Mount, der fehlt.",
   "web_compose_mount_wrong_source": "Du hängst bereits `{src}` auf `{dest}` ein, und die Datei oben liegt trotzdem nicht darin — der Mount ist also da, die Quelle stimmt nicht. Prüf, ob `{src}` wirklich der Ordner mit den Compose-Dateien ist.",
-  "web_compose_mount_use_instead": "Laut Daemon liegt die Datei in `{src}` — häng stattdessen das auf `{dest}`."
+  "web_compose_mount_use_instead": "Laut Daemon liegt die Datei in `{src}` — häng stattdessen das auf `{dest}`.",
+  "web_compose_mount_no_holder": "Sonst hält auf dieser Maschine nichts `{path}`. Was diesen Stack angelegt hat, ist woanders — ein anderer Host oder ein Manager, den es nicht mehr gibt — also kommt kein Mount hier an die Datei."
 }

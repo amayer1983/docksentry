@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Sono il container `{name}`",
   "selfaudit_self_mounts": "• {count} mount miei",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` non c'è, benché `{src}` sia montato su `{dest}`. Il mount c'è, la sorgente è sbagliata.",
+  "selfaudit_compose_holder": "• `{container}`: secondo il daemon quel file sta in `{src}`, dentro `{who}` — monta quello su `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Niente su questa macchina possiede quei percorsi. Ciò che ha creato quegli stack sta altrove — un altro host, o un gestore che non c'è più — e nessun mount qui può raggiungerli.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` non c'è e sopra non è montato nulla. Monta `{mount}` per raggiungerlo.",
   "selfaudit_compose_nolabel": "• `{container}`: etichette Compose ma nessun percorso file registrato, quindi non c'è nulla da raggiungere. Viene ricostruito dai dati di inspect.",
   "web_badge_compose_unreachable": "file Compose",
   "web_badge_compose_unreachable_tt": "Docksentry non raggiunge il file Compose di questo container, quindi un aggiornamento lo ricostruisce con `docker run`. La pagina del container mostra il percorso esatto e il mount mancante.",
   "web_compose_mount_wrong_source": "Monti già `{src}` su `{dest}` e il file qui sopra continua a non esserci — il mount c'è, è la sorgente a essere sbagliata. Verifica che `{src}` sia davvero la cartella con i file Compose.",
-  "web_compose_mount_use_instead": "Secondo il daemon quel file sta in `{src}` — monta quello su `{dest}`."
+  "web_compose_mount_use_instead": "Secondo il daemon quel file sta in `{src}` — monta quello su `{dest}`.",
+  "web_compose_mount_no_holder": "Nient'altro su questa macchina possiede `{path}`. Ciò che ha creato questo stack sta altrove — un altro host, o un gestore che non c'è più — quindi nessun mount qui raggiungerà quel file."
 }

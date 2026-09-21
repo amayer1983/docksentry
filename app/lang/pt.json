@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Sou o contentor `{name}`",
   "selfaudit_self_mounts": "• {count} montagem(ns) minhas",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` não está aqui, embora `{src}` esteja montado em `{dest}`. A montagem existe; a origem é a errada.",
+  "selfaudit_compose_holder": "• `{container}`: segundo o daemon, esse ficheiro está em `{src}`, dentro de `{who}` — monta isso em `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Nada nesta máquina contém esses caminhos. O que criou essas stacks está noutro sítio — outro host, ou um gestor que já não existe — e nenhuma montagem aqui os alcança.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` não está aqui e nada está montado por cima. Monta `{mount}` para lá chegar.",
   "selfaudit_compose_nolabel": "• `{container}`: etiquetas Compose mas sem caminho de ficheiro registado, por isso não há nada a alcançar. É reconstruído a partir dos dados de inspect.",
   "web_badge_compose_unreachable": "ficheiro Compose",
   "web_badge_compose_unreachable_tt": "O Docksentry não alcança o ficheiro Compose deste contentor, por isso uma atualização reconstrói-o com `docker run`. A página do contentor mostra o caminho exato e a montagem em falta.",
   "web_compose_mount_wrong_source": "Já montas `{src}` em `{dest}` e o ficheiro acima continua a não estar lá — a montagem existe e a origem é a errada. Confirma que `{src}` é mesmo a pasta com os ficheiros Compose.",
-  "web_compose_mount_use_instead": "Segundo o daemon, esse ficheiro está em `{src}` — monta isso em `{dest}`."
+  "web_compose_mount_use_instead": "Segundo o daemon, esse ficheiro está em `{src}` — monta isso em `{dest}`.",
+  "web_compose_mount_no_holder": "Mais nada nesta máquina contém `{path}`. O que criou esta stack está noutro sítio — outro host, ou um gestor que já não existe — por isso nenhuma montagem aqui alcança esse ficheiro."
 }

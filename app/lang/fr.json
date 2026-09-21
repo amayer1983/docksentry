@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Je suis le conteneur `{name}`",
   "selfaudit_self_mounts": "• {count} montage(s) à moi",
   "selfaudit_compose_wrong": "• `{container}` : `{path}` n'est pas là, bien que `{src}` soit monté sur `{dest}`. Le montage existe ; la source est fausse.",
+  "selfaudit_compose_holder": "• `{container}` : d'après le daemon, ce fichier se trouve dans `{src}`, à l'intérieur de `{who}` — montez plutôt cela sur `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Rien sur cette machine ne détient ces chemins. Ce qui a créé ces stacks est ailleurs — un autre hôte, ou un gestionnaire qui n'existe plus — et aucun montage ici ne peut les atteindre.",
   "selfaudit_compose_no_mount": "• `{container}` : `{path}` n'est pas là et rien n'est monté dessus. Montez `{mount}` pour y accéder.",
   "selfaudit_compose_nolabel": "• `{container}` : étiquettes Compose mais aucun chemin de fichier enregistré, il n'y a donc rien à atteindre. Reconstruit depuis ses données d'inspect.",
   "web_badge_compose_unreachable": "fichier Compose",
   "web_badge_compose_unreachable_tt": "Docksentry n'atteint pas le fichier Compose de ce conteneur ; une mise à jour le reconstruit donc avec `docker run`. La page du conteneur indique le chemin exact et le montage manquant.",
   "web_compose_mount_wrong_source": "Vous montez déjà `{src}` sur `{dest}` et le fichier ci-dessus n'y est toujours pas — le montage existe, c'est sa source qui est fausse. Vérifiez que `{src}` est bien le dossier contenant les fichiers Compose.",
-  "web_compose_mount_use_instead": "D'après le daemon, ce fichier se trouve dans `{src}` — montez plutôt cela sur `{dest}`."
+  "web_compose_mount_use_instead": "D'après le daemon, ce fichier se trouve dans `{src}` — montez plutôt cela sur `{dest}`.",
+  "web_compose_mount_no_holder": "Rien d'autre sur cette machine ne détient `{path}`. Ce qui a créé ce stack est ailleurs — un autre hôte, ou un gestionnaire qui n'existe plus — donc aucun montage ici n'atteindra ce fichier."
 }

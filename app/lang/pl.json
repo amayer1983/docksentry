@@ -978,10 +978,13 @@
   "selfaudit_self_name": "• Jestem kontenerem `{name}`",
   "selfaudit_self_mounts": "• {count} własnych montowań",
   "selfaudit_compose_wrong": "• `{container}`: `{path}` nie ma tutaj, choć `{src}` jest podmontowany w `{dest}`. Montowanie jest; źródło jest złe.",
+  "selfaudit_compose_holder": "• `{container}`: według demona ten plik jest w `{src}`, wewnątrz `{who}` — podmontuj to w `{dest}`.",
+  "selfaudit_compose_elsewhere": "• Nic na tej maszynie nie trzyma tych ścieżek. To, co utworzyło te stacki, jest gdzie indziej — na innym hoście albo w menedżerze, którego już nie ma — i żadne montowanie tutaj do nich nie sięgnie.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` nie ma tutaj i nic nie jest nad tym zamontowane. Podmontuj `{mount}`, aby go sięgnąć.",
   "selfaudit_compose_nolabel": "• `{container}`: etykiety Compose, ale bez zapisanej ścieżki pliku, więc nie ma czego sięgać. Odtwarzany z danych inspect.",
   "web_badge_compose_unreachable": "plik Compose",
   "web_badge_compose_unreachable_tt": "Docksentry nie sięga pliku Compose tego kontenera, więc aktualizacja odtwarza go przez `docker run`. Strona kontenera pokazuje dokładną ścieżkę i brakujące montowanie.",
   "web_compose_mount_wrong_source": "Montujesz już `{src}` w `{dest}`, a pliku powyżej nadal tam nie ma — montowanie jest, źródło jest złe. Sprawdź, czy `{src}` to naprawdę katalog z plikami Compose.",
-  "web_compose_mount_use_instead": "Według demona ten plik jest w `{src}` — podmontuj to w `{dest}`."
+  "web_compose_mount_use_instead": "Według demona ten plik jest w `{src}` — podmontuj to w `{dest}`.",
+  "web_compose_mount_no_holder": "Nic innego na tej maszynie nie trzyma `{path}`. To, co utworzyło ten stack, jest gdzie indziej — na innym hoście albo w menedżerze, którego już nie ma — więc żadne montowanie tutaj nie sięgnie tego pliku."
 }

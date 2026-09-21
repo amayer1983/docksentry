@@ -51,6 +51,44 @@ checks["one mount covers every stack"] = (
     cp.mount_root("/data/compose/1/docker-compose.yml")
     == cp.mount_root("/data/compose/999/docker-compose.yml"))
 
+# ── who holds the file, read off the daemon ──────────────────────────
+# The label says where the file was when it was written; only the
+# daemon knows which container that path is inside now. Answering
+# "your source is wrong" without this is a sentence that stops one
+# word before the answer (#63).
+OURS = {"name": "DockSentry", "image": "amayer1983/docksentry:latest",
+        "type": "bind", "vol": "", "src": "/share/Container/stacks",
+        "dest": "/app/data/stacks"}
+DOCKGE = {"name": "dockge", "image": "louislam/dockge:1", "type": "bind",
+          "vol": "", "src": "/share/CACHEDEV1_DATA/stacks",
+          "dest": "/app/data/stacks"}
+P = "/app/data/stacks/QNAP/dockmon/compose.yaml"
+
+checks["the manager wins over the bystander mounted just as deep"] = (
+    cp.holder(P, [OURS, DOCKGE]) == ("/share/CACHEDEV1_DATA/stacks",
+                                     "/app/data/stacks", "dockge"))
+checks["…whichever order the daemon lists them in"] = (
+    cp.holder(P, [DOCKGE, OURS]) == cp.holder(P, [OURS, DOCKGE]))
+checks["the deeper mount wins over the shallower one"] = (
+    cp.holder(P, [DOCKGE, {**DOCKGE, "name": "deep",
+                           "src": "/srv/qnap",
+                           "dest": "/app/data/stacks/QNAP"}])[0] == "/srv/qnap")
+checks["a named volume answers with the volume, not a path"] = (
+    cp.holder("/data/compose/83/docker-compose.yml",
+              [{"name": "portainer", "image": "portainer/portainer-ce",
+                "type": "volume", "vol": "portainer_data", "src": "/var/lib/x",
+                "dest": "/data"}])[0] == "portainer_data")
+checks["nothing covering the path is not a holder"] = (
+    cp.holder(P, [{**OURS, "dest": "/somewhere/else"}]) is None)
+checks["…and neither is an empty daemon"] = cp.holder(P, []) is None
+# Two managers at the same depth: there is no honest answer, and a
+# confidently wrong mount is what #2 and #65 were about.
+checks["two managers at the same depth is refused, not guessed"] = (
+    cp.holder(P, [DOCKGE, {**DOCKGE, "name": "dockge2",
+                           "src": "/srv/other"}]) is cp.AMBIGUOUS)
+checks["…and that refusal is not mistaken for absence"] = (
+    cp.AMBIGUOUS is not None)
+
 # ── the message, in every language ───────────────────────────────────
 for lang in ("en", "de", "ja", "ar"):
     t = get_translator(lang)
