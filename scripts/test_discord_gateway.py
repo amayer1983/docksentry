@@ -572,8 +572,26 @@ checks["…and so is any other scheme"] = _r.resume_url == _r.url
 _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 3,
             "d": {"session_id": "s",
                   "resume_gateway_url": "wss://eu.gateway.discord.gg/"}})
+# …and it arrives bare. Discord sends the host and nothing else, while
+# the gateway wants the API version and encoding on every connection —
+# so the RESUME went out over a connection Discord would not recognise
+# and answered op 9 every single time. Two logs, three reconnects each,
+# not one `session resumed` line between them (#63).
 checks["a wss:// resume URL is honoured"] = (
-    _r.resume_url == "wss://eu.gateway.discord.gg/")
+    _r.resume_url.startswith("wss://eu.gateway.discord.gg/"))
+checks["…and carries the version and encoding we connect with"] = (
+    _r.resume_url == "wss://eu.gateway.discord.gg/?v=10")
+_r._handle({"op": OP_DISPATCH, "t": "READY", "s": 5,
+            "d": {"session_id": "s",
+                  "resume_gateway_url": "wss://eu.gateway.discord.gg/?v=9"}})
+checks["…but a URL that brought its own query keeps it"] = (
+    _r.resume_url == "wss://eu.gateway.discord.gg/?v=9")
+_plain = DiscordGateway("tok", url="wss://localhost:9/", log=lambda *_: None)
+_plain._handle({"op": OP_DISPATCH, "t": "READY", "s": 1,
+                "d": {"session_id": "s",
+                      "resume_gateway_url": "wss://eu.gateway.discord.gg/"}})
+checks["…and a gateway URL without a query adds nothing"] = (
+    _plain.resume_url == "wss://eu.gateway.discord.gg/")
 _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 4,
             "d": {"session_id": "s"}})
 checks["no resume URL at all falls back to the configured gateway"] = (

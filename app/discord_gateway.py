@@ -416,7 +416,34 @@ class DiscordGateway:
                      f"({url!r}); ignoring it and reconnecting to the "
                      "configured gateway instead")
             return self.url
-        return url
+        return self._carry_query(url)
+
+    def _carry_query(self, url):
+        """The resume URL with our `?v=&encoding=` on it.
+
+        `resume_gateway_url` arrives bare — `wss://gateway-us-east1-b
+        .discord.gg`, no query — while the gateway needs the API version
+        and encoding on every connection. Connecting without them got the
+        session invalidated on every single reconnect: RESUME went out,
+        Discord answered op 9, and the client fell back to a fresh
+        IDENTIFY that worked because THAT url carries the query.
+
+        Measured in two logs before it was believed: @NotRetarded's
+        (#63) and my own instance's. Both show resume → invalidated →
+        identify, three times over, and `session resumed` in neither.
+
+        A resume URL that brought its own query is left alone.
+        """
+        if not url or urlparse(url).query:
+            return url
+        mine = ""
+        try:
+            mine = urlparse(self.url).query
+        except ValueError:                               # pragma: no cover
+            mine = ""
+        if not mine:
+            return url
+        return url.rstrip("/") + "/?" + mine
 
     def _close_socket(self):
         """Hang up — and say whether we mean to come back.
