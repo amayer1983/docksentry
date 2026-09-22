@@ -69,6 +69,12 @@ class _Checker:
     def _own_mounts(self):
         return self._m
 
+    def get_running_containers(self):
+        # What the Telegram handler asks for before anything else. A
+        # stand-in without it makes the report come back empty and the
+        # check pass on two header lines.
+        return [{"name": n} for n in self._f]
+
     def _get_compose_info(self, name):
         # The real keys, asserted below — a stand-in that invents its own
         # is a stand-in that proves nothing. This one did: it answered
@@ -230,6 +236,60 @@ checks["every finding has wording in all 16 languages"] = (
     # check would pass by looking at nothing.
     and {"compose_holder", "compose_elsewhere"} <= _kinds)
 
+# ── the Telegram command actually runs ───────────────────────────────
+# `/audit <name>` worked and a bare `/audit` answered with nothing at
+# all. The handler reached for `self.checker`, which TelegramBot does
+# not have: the AttributeError went up into the poll loop and the
+# silence looked like a command that was never built (#63,
+# @NotRetarded, 22.09.). The comment on `restart_self` in that same
+# file had already said the attribute does not exist — a grep of the
+# source would not have caught this, so the bot gets built here the way
+# `main.py` builds it and the command gets called for real.
+import ast                                                  # noqa: E402
+import tempfile                                             # noqa: E402
+import types                                                # noqa: E402
+
+from container_store import ContainerStore                   # noqa: E402
+from telegram_bot import TelegramBot                          # noqa: E402
+
+_d = tempfile.mkdtemp()
+_cfg = types.SimpleNamespace(
+    bot_token="x", chat_id="1", language="en", debug=False,
+    container_cli="docker", auto_update_all=False, update_policy="all",
+    data_dir=_d, pending_file=os.path.join(_d, "p.json"),
+    history_file=os.path.join(_d, "h.json"))
+for _n in ("pinned", "autoupdate", "update_windows", "ask_before_major",
+           "trust_running", "cooldown", "protect_stop", "major_pending",
+           "groups", "notes", "links"):
+    setattr(_cfg, f"{_n}_file", os.path.join(_d, f"{_n}.json"))
+_bot = TelegramBot(_cfg, ContainerStore(_cfg))
+
+checks["the bot really has no `checker` attribute"] = not hasattr(_bot, "checker")
+try:
+    _text = _bot._self_audit_text(_Checker([], {"Plex": "/opt/stacks/plex/compose.yaml"},
+                                           set()))
+    _err = ""
+except Exception as _e:                                      # noqa: BLE001
+    _text, _err = "", f"{type(_e).__name__}: {_e}"
+checks["a bare /audit produces a report rather than an exception"] = (
+    not _err and bool(_text.strip()))
+checks["…and the report has the container in it"] = "Plex" in _text
+
+# The rule behind it: nothing in this file may read `self.checker`.
+_tg_src = open(os.path.join(ROOT, "app", "telegram_bot.py"),
+               encoding="utf-8").read()
+_tree = ast.parse(_tg_src)
+_reads = [n.lineno for n in ast.walk(_tree)
+          if isinstance(n, ast.Attribute) and n.attr == "checker"
+          and isinstance(n.value, ast.Name) and n.value.id == "self"]
+checks["no handler reaches for an attribute the class does not have"] = not _reads
+
+# The handler passes on what it was given, rather than finding its own.
+_branch = _tg_src.split(
+    'text.startswith("/audit")')[1].split("\n        elif ")[0]
+checks["the bare branch hands the checker down"] = (
+    "_self_audit_text(checker)" in _branch)
+
 # ── both chats, one answer ───────────────────────────────────────────
 tg = open(os.path.join(ROOT, "app", "telegram_bot.py"), encoding="utf-8").read()
 dc = open(os.path.join(ROOT, "app", "discord_bot.py"), encoding="utf-8").read()
@@ -246,7 +306,7 @@ for label, src in (("Telegram", tg), ("Discord", dc)):
 # docstring long enough to push the call out of view would have made
 # this pass or fail for a reason that has nothing to do with the code.
 checks["a bare /audit audits us, in Telegram"] = (
-    "self._self_audit_text()"
+    "self._self_audit_text(checker)"
     in tg.split('startswith("/audit")')[1].split("\n        elif ")[0])
 checks["…and in Discord"] = (
     "self._self_audit_text()"

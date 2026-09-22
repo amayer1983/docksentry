@@ -1330,20 +1330,28 @@ class TelegramBot:
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
 
-    def _self_audit_text(self):
+    def _self_audit_text(self, checker):
         """`/audit` with no name: what Docksentry sees of itself.
 
         The findings come from the core so both chats say the same
         thing; only the wording is Telegram's.
+
+        `checker` is passed in, like every other handler here. Reaching
+        for `self.checker` — an attribute this class does not have — is
+        what made this command answer with nothing at all for
+        @NotRetarded, while `/audit <name>` worked: the AttributeError
+        went up into the poll loop and the silence looked like a command
+        that simply was not there (#63). Twice now in this file, and the
+        comment on `restart_self` above already says why.
         """
         import selfcheck
         try:
             names = [c.get("name") for c in
-                     (self.checker.get_running_containers() or [])
+                     (checker.get_running_containers() or [])
                      if c.get("name")]
         except Exception:                               # noqa: BLE001
             names = []
-        state = selfcheck.collect(self.checker, names)
+        state = selfcheck.collect(checker, names)
         total, ok, wrong, missing = selfcheck.summary(state)
         lines = [self.t("selfaudit_head", total=total, ok=ok,
                         wrong=wrong, missing=missing)]
@@ -4215,7 +4223,7 @@ class TelegramBot:
                 # ls` back at me, and twice on 20.09. I asked for it with
                 # the wrong container name because I typed my own. None
                 # of it was ever unknown to the program.
-                self.send_message(self._self_audit_text())
+                self.send_message(self._self_audit_text(checker))
                 return
             arg, audit_targets, host_err = self._resolve_targets(
                 parts[1], write=False)
