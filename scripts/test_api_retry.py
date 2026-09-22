@@ -20,6 +20,9 @@ def _bot():
         enabled=True,
         config=types.SimpleNamespace(bot_token="t", chat_id="-1"),
         _is_timeout=lambda e: True,
+        # The real classifier, not a lambda: what the poll does with a
+        # reset connection IS the thing under test below.
+        _is_poll_drop=TelegramBot._is_poll_drop,
         # A 4xx body is also where a supergroup migration would be
         # announced; "no migration here" keeps this test on retries.
         # That path has its own: test_silent_rejection.py.
@@ -65,6 +68,43 @@ def main():
         telegram_bot.urllib.request.urlopen = f2
         r = TelegramBot.api_call(_bot(), "getUpdates", {"x": "y"}, quiet_timeout=True)
         checks["long-poll not retried (1 attempt)"] = r is None and calls["n"] == 1
+
+        # 3b. An idle long poll that Telegram resets is not an error.
+        # It used to print `Telegram API error: <urlopen error [Errno 104]
+        # Connection reset by peer>` every time, because `quiet_timeout`
+        # only ever knew about timeouts (#63, @NotRetarded: "they start
+        # building up in the logs").
+        import contextlib
+        def _raises(exc):
+            def f(req, timeout=None):
+                raise exc
+            return f
+        _reset = urllib.error.URLError(
+            ConnectionResetError(104, "Connection reset by peer"))
+        telegram_bot.urllib.request.urlopen = _raises(_reset)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            r = TelegramBot.api_call(_bot(), "getUpdates", {"x": "y"},
+                                     quiet_timeout=True)
+        checks["a reset long poll says nothing"] = (r is None and buf.getvalue() == "")
+
+        # …but only the long poll, and only for that. A name that will
+        # not resolve is a real problem and still speaks up.
+        _dns = urllib.error.URLError(OSError("Name or service not known"))
+        telegram_bot.urllib.request.urlopen = _raises(_dns)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            TelegramBot.api_call(_bot(), "getUpdates", {"x": "y"},
+                                 quiet_timeout=True)
+        checks["…while a name that will not resolve still does"] = (
+            "Telegram API error" in buf.getvalue())
+
+        telegram_bot.urllib.request.urlopen = _raises(_reset)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
+        checks["…and a reset on a real send is still reported"] = (
+            "Telegram API error" in buf.getvalue())
 
         # 4. HTTP 4xx → body returned, NOT retried
         calls = {"n": 0}

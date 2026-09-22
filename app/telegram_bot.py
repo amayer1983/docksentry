@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Telegram Bot - handles messages, callbacks, and notifications."""
 
+import errno
 import json
 import shlex
 import socket
@@ -930,6 +931,29 @@ class TelegramBot:
                 return True
         return False
 
+    @staticmethod
+    def _is_poll_drop(exc):
+        """True when a long poll ended the way idle long polls end.
+
+        `quiet_timeout` was written for the timeout — the one every poll
+        cycle produces — and `_is_timeout` answers exactly that. But a
+        connection Telegram resets after sitting idle is just as ordinary
+        and is NOT a timeout, so it came out as `Telegram API error:
+        <urlopen error [Errno 104] Connection reset by peer>` and piled
+        up in the log (#63, @NotRetarded). There is also no retry on the
+        poll path — `attempts` is 1 while `quiet_timeout` is set — so the
+        line appeared the moment it happened.
+
+        Only the poll asks this. Everywhere else a reset is still worth
+        saying out loud.
+        """
+        if TelegramBot._is_timeout(exc):
+            return True
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (ConnectionResetError, ConnectionAbortedError)):
+            return True
+        return getattr(reason, "errno", None) == errno.ECONNRESET
+
     def api_call(self, method, data=None, timeout=60, quiet_timeout=False):
         """Call Telegram Bot API.
 
@@ -1015,7 +1039,7 @@ class TelegramBot:
                 if attempt < attempts - 1:
                     _t.sleep(2 * (attempt + 1))  # 2s, then 4s
                     continue
-                if not (quiet_timeout and self._is_timeout(e)):
+                if not (quiet_timeout and self._is_poll_drop(e)):
                     print(f"Telegram API error: {e}")
                 return None
             except Exception as e:
