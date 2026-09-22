@@ -95,6 +95,13 @@ DEFAULT_INTENTS = 0
 #: Discord deploy into minutes of silence.
 HEALTHY_AFTER = 60.0
 
+#: How many resumes may be refused in a row before the session is thrown
+#: away and the client identifies fresh. Three, because a gateway that is
+#: shedding load answers the first one or two with something transient —
+#: and because the fallback identify has always worked, so there is no
+#: value in a fourth round trip that only learns the same thing again.
+MAX_RESUME_ATTEMPTS = 3
+
 
 class DiscordGateway:
     """One gateway connection, with resume and backoff.
@@ -135,6 +142,9 @@ class DiscordGateway:
         self._awaiting_ack = False
         self._heartbeat_interval = None
         self._next_heartbeat = 0.0
+        #: Consecutive resume attempts that never reached RESUMED. Reset
+        #: by anything that does come up.
+        self._resume_failures = 0
 
     # ── frames ────────────────────────────────────────────────────
     def _send(self, op, data=None):
@@ -189,6 +199,8 @@ class DiscordGateway:
                 # from a fresh penalty. Only back-to-back failures compound.
                 if self._was_healthy():
                     self.backoff = 1.0
+                elif resuming:
+                    self._give_up_on_session()
                 self.log(f"Discord gateway disconnected ({e}); "
                          f"reconnecting in {self.backoff:.0f}s")
                 self._sleep(self.backoff * (0.8 + 0.4 * random.random()))
@@ -203,6 +215,32 @@ class DiscordGateway:
         return (started is not None
                 and (time.monotonic() - started) >= self._healthy_after)
 
+    def _give_up_on_session(self, _limit=None):
+        """Drop the session once resuming has failed often enough.
+
+        A resume that never reaches RESUMED leaves the session exactly
+        as unusable as it was, so trying it again is a round trip spent
+        to learn nothing. After `MAX_RESUME_ATTEMPTS` of them the session
+        goes and the next attempt identifies — which is the path that
+        has been working all along, just twenty seconds later than it
+        needed to.
+
+        Only failures that never came up count: a connection that was
+        READY and then dropped is an ordinary event and resumes from a
+        clean slate.
+        """
+        limit = MAX_RESUME_ATTEMPTS if _limit is None else _limit
+        self._resume_failures += 1
+        if self._resume_failures < limit:
+            return False
+        self.session_id = None
+        self.seq = None
+        self.resume_url = None
+        self._resume_failures = 0
+        self.log(f"Discord gateway: {limit} resumes refused in a row — "
+                 "dropping the session and identifying fresh")
+        return True
+
     def _connect_once(self, resuming):
         url = self.resume_url if (resuming and self.resume_url) else self.url
         # Timestamped, because @NotRetarded's bot was silent for seven
@@ -211,11 +249,17 @@ class DiscordGateway:
         # (#63). Every state transition now says when it happened, so
         # the next occurrence names its slow step itself.
         self._connect_started = time.monotonic()
+        # Cleared BEFORE the handshake, not after it. The old order left
+        # it behind whenever `connect()` itself raised — and then
+        # `_was_healthy()` answered for a connection that had ended hours
+        # earlier, reset the penalty to one second, and the client went
+        # at a gateway answering 503 once a second. Fourteen times in
+        # twenty seconds, measured here on 22.09.
+        self._ready_at = None
         self.log(f"Discord gateway: connecting "
                  f"({'resume' if resuming else 'fresh identify'})…")
         self.ws = WebSocketClient(url).connect()
         self._awaiting_ack = False
-        self._ready_at = None
 
         hello = self._recv_json()
         if hello is None:
@@ -311,6 +355,7 @@ class DiscordGateway:
                 self.resume_url = self._safe_resume_url(
                     data.get("resume_gateway_url"))
                 self._ready_at = time.monotonic()
+                self._resume_failures = 0
                 user = (data.get("user") or {}).get("username", "?")
                 self.log(f"Discord bot connected as {user}"
                          + self._since_connect())
@@ -320,6 +365,7 @@ class DiscordGateway:
                 # at all. A reconnect whose success is silent is half of
                 # how seven quiet minutes stay unexplained.
                 self._ready_at = time.monotonic()
+                self._resume_failures = 0
                 self.log("Discord gateway: session resumed"
                          + self._since_connect())
             if self.on_event:

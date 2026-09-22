@@ -445,6 +445,77 @@ checks["a connection that never reached READY is not 'healthy'"] = (
 _b._ready_at = time.monotonic() - 1.0
 checks["…one that stayed up past the threshold is"] = _b._was_healthy() is True
 
+# ── 8b. a handshake that never comes up must not forgive the penalty ─
+# On 22.09. a reconnect here produced fourteen 503s in twenty seconds,
+# every one of them logged as "reconnecting in 1s". `_ready_at` was
+# cleared AFTER `WebSocketClient.connect()`, so a failure inside the
+# handshake left the mark from a connection that had ended hours
+# earlier, `_was_healthy()` said yes, and the penalty went back to one
+# second on every attempt. A client that answers 503 with one try a
+# second is the thing you must not be to somebody else's service.
+import discord_gateway as _dgw                                # noqa: E402
+
+
+class _Refuses:
+    """A gateway whose HTTP upgrade fails — the 503 case, exactly."""
+
+    def __init__(self, url):
+        self.url = url
+
+    def connect(self):
+        raise WebSocketError("expected HTTP 101, got 'HTTP/1.1 503 ...'")
+
+
+_hot = DiscordGateway("tok", log=lambda *_: None, sleep=lambda *_: None)
+_hot._ready_at = time.monotonic() - 3600.0      # healthy, but an hour ago
+_hot.session_id, _hot.seq = "sess", 5           # so the first try resumes
+_lines = []
+
+
+def _watch(msg):
+    _lines.append(msg)
+    if msg.startswith("Discord gateway: connecting") and len(
+            [m for m in _lines if m.startswith("Discord gateway: connecting")]) >= 5:
+        _hot.running = False
+
+
+_hot.log = _watch
+_orig_ws = _dgw.WebSocketClient
+try:
+    _dgw.WebSocketClient = _Refuses
+    _hot.run_forever()
+finally:
+    _dgw.WebSocketClient = _orig_ws
+
+_tries = [m for m in _lines if m.startswith("Discord gateway: connecting")]
+checks["a failed handshake clears the health mark"] = _hot._ready_at is None
+# The number in the LOG, not the attribute: `backoff` reads 2.0 after a
+# single iteration either way, so asserting on it passes with the bug
+# still in. What the gateway actually experiences is the wait between
+# attempts, and that is what the line says.
+_waits = [float(m.split("reconnecting in ")[1].rstrip("s"))
+          for m in _lines if "reconnecting in " in m]
+checks["…so the penalty grows instead of staying at one second"] = (
+    len(_waits) >= 3 and _waits[-1] > _waits[0])
+checks["…and the log stops repeating the same number"] = (
+    len({m for m in _lines if "reconnecting in" in m}) > 1)
+
+# …and the session that keeps being refused is dropped, rather than
+# retried until the gateway changes its mind.
+checks["three refused resumes drop the session"] = any(
+    "dropping the session" in m for m in _lines)
+checks["…and the next attempt identifies fresh"] = (
+    len(_tries) >= 4 and "fresh identify" in _tries[3])
+checks["…after exactly three resumes, not two"] = (
+    sum(1 for m in _tries[:3] if "resume" in m) == 3)
+
+# A connection that came up and then dropped is a different thing: it
+# still earns the clean slate, which is what HEALTHY_AFTER is for.
+_ok = DiscordGateway("tok", log=lambda *_: None, sleep=lambda *_: None)
+_ok._ready_at = time.monotonic() - 3600.0
+checks["a connection that was up still forgives the penalty"] = (
+    _ok._was_healthy() is True)
+
 # ── 9. the resume URL comes from the server, so it is pinned to TLS ──
 # `resume_gateway_url` decides where the next connection goes and the
 # WebSocket layer picks TLS purely from the scheme, so a `ws://` value
