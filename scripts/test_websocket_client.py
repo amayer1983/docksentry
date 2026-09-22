@@ -347,6 +347,48 @@ checks["…and it gives up near the frame cap, not gigabytes later"] = (
     cap.sock.sent <= (MAX_FRAME_BYTES // CHUNK) + 2)
 
 
+# ── the close code is an argument, because it means something ────────
+# Discord ends a gateway session for good on a 1000/1001 close: "normal
+# closure" is the client saying it is finished, and every RESUME after
+# one is refused. We sent 1000 on every disconnect and then tried to
+# resume — which is why `session resumed` never appeared in any log
+# (#63).
+class _Recorder:
+    def __init__(self):
+        self.sent = []
+
+    def sendall(self, data):
+        self.sent.append(data)
+
+    def close(self):
+        pass
+
+
+def _close_code_of(frame):
+    """The status code out of a masked client CLOSE frame."""
+    assert frame[0] == 0x80 | OP_CLOSE, frame[0]
+    assert frame[1] == 0x80 | 2, frame[1]
+    key, body = frame[2:6], frame[6:8]
+    return struct.unpack("!H", bytes(b ^ key[i % 4]
+                                     for i, b in enumerate(body)))[0]
+
+
+# `close()` drops the socket on the way out, so hold on to the recorder.
+_rec = _Recorder()
+_c = WebSocketClient("wss://x/")
+_c.sock = _rec
+_c.close(code=4000)
+checks["a close can carry the code the caller means"] = (
+    _close_code_of(_rec.sent[0]) == 4000)
+
+_rec2 = _Recorder()
+_c2 = WebSocketClient("wss://x/")
+_c2.sock = _rec2
+_c2.close()
+checks["…and normal closure is still what it does by default"] = (
+    _close_code_of(_rec2.sent[0]) == 1000)
+
+
 def main():
     ok = True
     for desc, passed in checks.items():

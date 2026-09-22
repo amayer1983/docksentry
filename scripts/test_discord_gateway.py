@@ -516,6 +516,46 @@ _ok._ready_at = time.monotonic() - 3600.0
 checks["a connection that was up still forgives the penalty"] = (
     _ok._was_healthy() is True)
 
+# ── 8c. hanging up says whether we mean to come back ─────────────────
+# `run_forever` closes in a `finally`, so this ran after every
+# disconnect — including the ones it then tried to resume — and it sent
+# 1000. Discord reads that as "I am finished": the session ends and the
+# RESUME a second later can only be refused. It is the one explanation
+# that fits the shape of the evidence, which is that `session resumed`
+# appears in no log from either machine, ever (#63).
+class _ClosesLoudly:
+    def __init__(self):
+        self.codes = []
+
+    def close(self, code=1000):
+        self.codes.append(code)
+
+
+_live = DiscordGateway("tok", log=lambda *_: None)
+_live.running = True
+_live.ws = _ClosesLoudly()
+_seen = _live.ws
+_live._close_socket()
+checks["a disconnect we mean to resume from does not close normally"] = (
+    _seen.codes == [4000])
+
+_done = DiscordGateway("tok", log=lambda *_: None)
+_done.running = True
+_done.ws = _ClosesLoudly()
+_seen2 = _done.ws
+_done.stop()
+checks["…while stop() really is finished, and says so"] = _seen2.codes == [1000]
+
+# A refusal Discord will never accept clears `running` before the
+# `finally` closes, so that one is an ending too.
+_fatal = DiscordGateway("tok", log=lambda *_: None)
+_fatal.running = False
+_fatal.ws = _ClosesLoudly()
+_seen3 = _fatal.ws
+_fatal._close_socket()
+checks["…and so is a connection the gateway refused outright"] = (
+    _seen3.codes == [1000])
+
 # ── 9. the resume URL comes from the server, so it is pinned to TLS ──
 # `resume_gateway_url` decides where the next connection goes and the
 # WebSocket layer picks TLS purely from the scheme, so a `ws://` value

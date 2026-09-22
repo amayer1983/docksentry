@@ -302,12 +302,22 @@ class WebSocketClient:
             raise WebSocketError("not connected")
         self.sock.sendall(encode_frame(payload, opcode=opcode))
 
-    def close(self):
+    def close(self, code=1000):
+        """Close the socket, telling the peer why.
+
+        The code is not bookkeeping. Discord ends a gateway session for
+        good when the client closes with 1000 or 1001 — "normal closure"
+        means "I am done", and a RESUME of that session can only be
+        refused afterwards. A client that means to come back has to say
+        so with a different code, 4000 by convention.
+
+        Default stays 1000: for every other caller, and for a close that
+        really is the end, normal closure is the truth.
+        """
         if self.sock is None:
             return
         try:
-            # 1000 = normal closure.
-            self.send(struct.pack("!H", 1000), opcode=OP_CLOSE)
+            self.send(struct.pack("!H", code), opcode=OP_CLOSE)
         except Exception:
             pass
         try:

@@ -419,9 +419,21 @@ class DiscordGateway:
         return url
 
     def _close_socket(self):
+        """Hang up — and say whether we mean to come back.
+
+        `run_forever` closes in a `finally`, so this ran after every
+        disconnect including the ones we resume from, and it sent 1000.
+        That is Discord's "I am finished": the session ends, and the
+        RESUME a second later is refused. It explains what the query
+        theory could not — why not one of the logs from two machines
+        ever carried a `session resumed` line.
+
+        `self.running` is the intent. `stop()` clears it before closing,
+        and a fatal refusal clears it too, so those still close normally.
+        """
         if self.ws is not None:
             try:
-                self.ws.close()
+                self.ws.close(code=4000 if self.running else 1000)
             except Exception:
                 pass
             self.ws = None
