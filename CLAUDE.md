@@ -103,8 +103,9 @@ sudo nsenter -t $PID -n ss -K dst 162.159.0.0/16 dport = 443
 Der Client verbindet eine Sekunde später neu und versucht dabei genau
 den Weg, um den es geht. Aus Stunden werden zehn Sekunden, beliebig oft
 wiederholbar — so ließ sich die Resume-Frage mit einer **Kontrolle**
-beantworten statt mit einer Vermutung: nackte URL → `invalidated`, mit
-Query → dreimal `session resumed`.
+beantworten statt mit einer Vermutung: nackte URL → `invalidated`
+(19:08), mit Query → `session resumed` um 19:09:18, 19:09:31 und, auf
+dem eingecheckten Stand, 19:16:14.
 
 Zwei Dinge dazu. Die Gateway-IP wechselt, deshalb das ganze Netz statt
 einer Adresse — ein Kill auf die alte IP geht wortlos ins Leere und

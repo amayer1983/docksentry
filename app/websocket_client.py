@@ -305,11 +305,15 @@ class WebSocketClient:
     def close(self, code=1000):
         """Close the socket, telling the peer why.
 
-        The code is not bookkeeping. Discord ends a gateway session for
-        good when the client closes with 1000 or 1001 — "normal closure"
-        means "I am done", and a RESUME of that session can only be
-        refused afterwards. A client that means to come back has to say
-        so with a different code, 4000 by convention.
+        The code is not bookkeeping. Discord's gateway documents 1000
+        and 1001 — "normal closure" — as the client saying it is done,
+        and a client that means to come back is told to use a different
+        code, 4000 by convention. Docksentry sent 1000 after every
+        disconnect, including the ones it then tried to resume.
+
+        Unmeasured here: what was actually refusing those resumes turned
+        out to be something else, and every control that proved it killed
+        the socket outright, so no close frame was sent either way.
 
         Default stays 1000: for every other caller, and for a close that
         really is the end, normal closure is the truth.

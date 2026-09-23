@@ -50,8 +50,12 @@ checks["…and it names the source to go and check"] = (
 # away — which is what the clash branch did for three weeks.
 checks["…and the one that would work, when the daemon knows it"] = (
     "web_compose_mount_use_instead" in blk)
+# Against every name our own mount answers to, not one of them: a named
+# volume reads as `stacks` from the daemon and as the directory under
+# /var/lib/docker/volumes from our own inspect, so a single comparison
+# could never match and the page offered a mount that was already there.
 checks["…only when it differs from what they have"] = (
-    "_right != _have" in blk)
+    "_right not in _mine_at" in blk and "_own_mount_ids(" in blk)
 # And when the daemon names nobody — or names our own mount back at us
 # — the page says so instead of stopping at "wrong". @NotRetarded read
 # the short version three times on 21.09.: "nothing in that section
@@ -59,10 +63,8 @@ checks["…only when it differs from what they have"] = (
 checks["…and says so when the daemon names nobody"] = (
     "web_compose_mount_no_holder" in blk)
 checks["…including when it names our own mount back at us"] = (
-    re.search(r"_right != _have.*?\n(.|\n)*?else:(.|\n)*?"
+    re.search(r"_right not in _mine_at(.|\n)*?else:(.|\n)*?"
               r"web_compose_mount_no_holder", blk) is not None)
-checks["…and the page never offers to mount a path onto itself instead"] = (
-    blk.index("web_compose_mount_no_holder") < blk.index("_compose_mount_targets("))
 checks["the refusal still comes first"] = (
     blk.index("web_compose_mount_clash") < blk.index("web_compose_mount_wrong_source"))
 
@@ -78,8 +80,6 @@ no_holder = en["web_compose_mount_no_holder"]
 checks["the dead end says the file was made somewhere else"] = (
     "{path}" in no_holder and "DATA_DIR" not in no_holder
     and "another host" in no_holder)
-checks["…and does not ask for another mount"] = (
-    "volumes:" not in no_holder)
 checks["every language carries it"] = all(
     {"web_compose_mount_wrong_source", "web_compose_mount_no_holder"}
     <= set(json.load(

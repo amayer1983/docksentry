@@ -5060,14 +5060,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # box, or a manager that is gone. No mount here reaches
                 # it, and a reader who is not told that keeps trying
                 # (#63, @NotRetarded, three mounts and none of them wrong).
+                # Compared against BOTH names our own mount goes by. A
+                # named volume answers as `stacks` from the daemon and as
+                # /var/lib/docker/volumes/stacks/_data from our own
+                # inspect, so a plain `!=` could never match and the page
+                # offered the mount that was already there.
+                _mine_at = self._own_mount_ids(_dest)
                 _tail = ""
-                if _right and _right != _have:
+                if _right and _right not in _mine_at:
                     _tail = (f'<div class="form-help" style="margin:4px 0 0">'
                              f'{_e(t("web_compose_mount_use_instead", src=_right, dest=_dest))}</div>')
                 else:
-                    # `_right == _have` counts as nobody: the daemon
-                    # named our own mount back at us, and that mount has
-                    # already proved it does not hold the file.
+                    # Naming our own mount back at us counts as nobody:
+                    # that mount has already proved it does not hold the
+                    # file, which is what made the finding.
                     _tail = (f'<div class="form-help" style="margin:4px 0 0">'
                              f'{_e(t("web_compose_mount_no_holder", path=_dest))}</div>')
                 return (f'<div class="form-help" style="margin:4px 0 0">'
@@ -5197,6 +5203,27 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return [r.get("src") or r.get("vol") or ""
                     for r in self._all_mounts()
                     if r.get("name") == own and r.get("dest") == dest]
+
+        def _own_mount_ids(self, dest):
+            """Every name our own mount at `dest` answers to.
+
+            A named volume has two: the volume name, which is what the
+            daemon reports for the container that owns it, and the
+            directory under /var/lib/docker/volumes that our own inspect
+            reports. Comparing one against the other can only ever say
+            "different", which is how the page came to suggest the mount
+            already in place.
+            """
+            own = self._own_container_name_safe()
+            if not own:
+                return set()
+            ids = set()
+            for r in self._all_mounts():
+                if r.get("name") == own and r.get("dest") == dest:
+                    ids.add(r.get("src") or "")
+                    ids.add(r.get("vol") or "")
+            ids.discard("")
+            return ids
 
         @staticmethod
         def _compose_mount_exact(paths):

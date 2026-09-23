@@ -954,6 +954,29 @@ class TelegramBot:
             return True
         return getattr(reason, "errno", None) == errno.ECONNRESET
 
+    #: How long the long poll may keep failing quietly before it says so,
+    #: and how often it repeats itself after that. Quiet is right for the
+    #: ordinary reset; silent forever is not — a proxy that RSTs every
+    #: `getUpdates` leaves the bot deaf, the container healthy and the log
+    #: empty, and the noisy version of this was how #63 got noticed.
+    POLL_QUIET_SECONDS = 180.0
+    POLL_REPEAT_SECONDS = 600.0
+
+    def _note_poll_drop(self, exc):
+        """Count a swallowed poll failure, and speak up if they persist."""
+        now = time.time()
+        since = getattr(self, "_poll_drop_since", None) or now
+        last = getattr(self, "_poll_drop_said", 0.0)
+        setattr(self, "_poll_drop_since", since)
+        if (now - since >= self.POLL_QUIET_SECONDS
+                and now - last >= self.POLL_REPEAT_SECONDS):
+            setattr(self, "_poll_drop_said", now)
+            print(f"Telegram: no answer to the poll for "
+                  f"{int((now - since) / 60)} minute(s) — {exc}")
+
+    def _clear_poll_drops(self):
+        setattr(self, "_poll_drop_since", None)
+
     def api_call(self, method, data=None, timeout=60, quiet_timeout=False):
         """Call Telegram Bot API.
 
@@ -1001,7 +1024,10 @@ class TelegramBot:
         for attempt in range(attempts):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    return json.loads(resp.read())
+                    body = json.loads(resp.read())
+                    if quiet_timeout:
+                        self._clear_poll_drops()
+                    return body
             except urllib.error.HTTPError as e:
                 # Telegram returns 4xx with a JSON body for parse errors,
                 # rate-limit hints etc. Pass the parsed body to the caller so
@@ -1039,7 +1065,9 @@ class TelegramBot:
                 if attempt < attempts - 1:
                     _t.sleep(2 * (attempt + 1))  # 2s, then 4s
                     continue
-                if not (quiet_timeout and self._is_poll_drop(e)):
+                if quiet_timeout and self._is_poll_drop(e):
+                    self._note_poll_drop(e)
+                else:
                     print(f"Telegram API error: {e}")
                 return None
             except Exception as e:

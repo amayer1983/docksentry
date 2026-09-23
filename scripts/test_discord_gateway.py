@@ -30,7 +30,7 @@ from discord_gateway import (DiscordGateway, classify_close,   # noqa: E402
                              OP_DISPATCH, OP_HEARTBEAT, OP_IDENTIFY,
                              OP_RESUME, OP_RECONNECT, OP_INVALID_SESSION,
                              OP_HELLO, OP_HEARTBEAT_ACK)
-from discord_gateway import _FatalGatewayError                 # noqa: E402
+from discord_gateway import _FatalGatewayError, GATEWAY_URL   # noqa: E402
 
 checks = {}
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -500,21 +500,70 @@ checks["…so the penalty grows instead of staying at one second"] = (
 checks["…and the log stops repeating the same number"] = (
     len({m for m in _lines if "reconnecting in" in m}) > 1)
 
-# …and the session that keeps being refused is dropped, rather than
-# retried until the gateway changes its mind.
-checks["three refused resumes drop the session"] = any(
+# A handshake that never got as far as sending a RESUME is not the
+# session's fault. DNS that will not resolve, a refused connect, a 503
+# on the upgrade — dropping the session for those spends an IDENTIFY on
+# a session Discord would still have honoured.
+checks["a failure before the RESUME keeps the session"] = (
+    _hot.session_id == "sess" and _hot.seq == 5)
+checks["…and does not claim resumes were refused"] = not any(
     "dropping the session" in m for m in _lines)
-checks["…and the next attempt identifies fresh"] = (
-    len(_tries) >= 4 and "fresh identify" in _tries[3])
-checks["…after exactly three resumes, not two"] = (
-    sum(1 for m in _tries[:3] if "resume" in m) == 3)
 
-# A connection that came up and then dropped is a different thing: it
-# still earns the clean slate, which is what HEALTHY_AFTER is for.
-_ok = DiscordGateway("tok", log=lambda *_: None, sleep=lambda *_: None)
-_ok._ready_at = time.monotonic() - 3600.0
-checks["a connection that was up still forgives the penalty"] = (
-    _ok._was_healthy() is True)
+
+class _RefusesTheResume:
+    """Handshake fine, HELLO fine, then the gateway hangs up — so the
+    RESUME really goes out and really gets nowhere."""
+
+    def __init__(self, url):
+        self.url = url
+        self.close_code = None
+        self.sent = []
+        self._queue = None
+
+    def connect(self):
+        self._queue = [json.dumps({"op": 10,
+                                   "d": {"heartbeat_interval": 45000}})]
+        self.sock = type("s", (), {"settimeout": lambda *_a: None})()
+        return self
+
+    def recv(self):
+        return self._queue.pop(0) if self._queue else None
+
+    def send(self, raw):
+        self.sent.append(json.loads(raw))
+
+    def close(self, code=1000):
+        pass
+
+
+_refused = DiscordGateway("tok", log=lambda *_: None, sleep=lambda *_: None)
+_refused.session_id, _refused.seq = "sess", 5
+_rlines = []
+
+
+def _watch2(msg):
+    _rlines.append(msg)
+    if len([m for m in _rlines
+            if m.startswith("Discord gateway: connecting")]) >= 5:
+        _refused.running = False
+
+
+_refused.log = _watch2
+try:
+    _dgw.WebSocketClient = _RefusesTheResume
+    _refused.run_forever()
+finally:
+    _dgw.WebSocketClient = _orig_ws
+
+_rtries = [m for m in _rlines if m.startswith("Discord gateway: connecting")]
+checks["a RESUME that goes out and gets nowhere does count"] = any(
+    "dropping the session" in m for m in _rlines)
+checks["…after exactly three of them, not two"] = (
+    sum(1 for m in _rtries[:3] if "resume" in m) == 3)
+checks["…and the next attempt identifies fresh"] = (
+    len(_rtries) >= 4 and "fresh identify" in _rtries[3])
+checks["…and the session really is gone"] = (
+    _refused.session_id is None and _refused.seq is None)
 
 # ── 8c. hanging up says whether we mean to come back ─────────────────
 # `run_forever` closes in a `finally`, so this ran after every
@@ -546,22 +595,54 @@ _seen2 = _done.ws
 _done.stop()
 checks["…while stop() really is finished, and says so"] = _seen2.codes == [1000]
 
-# A refusal Discord will never accept clears `running` before the
-# `finally` closes, so that one is an ending too.
-_fatal = DiscordGateway("tok", log=lambda *_: None)
-_fatal.running = False
-_fatal.ws = _ClosesLoudly()
-_seen3 = _fatal.ws
-_fatal._close_socket()
+# A refusal Discord will never accept is an ending too — and that one
+# is reached through `run_forever`, not by setting the flag by hand:
+# the claim is that the fatal branch clears `running` BEFORE the
+# `finally` closes, and only the real path can show it.
+_kept = []
+
+
+class _Refused4004:
+    """Connects, says HELLO, then closes with a code we must never
+    re-identify on."""
+
+    def __init__(self, url):
+        self.url = url
+        self.close_code = 4004
+        self._queue = None
+
+    def connect(self):
+        self._queue = [json.dumps({"op": 10,
+                                   "d": {"heartbeat_interval": 45000}})]
+        self.sock = type("s", (), {"settimeout": lambda *_a: None})()
+        return self
+
+    def recv(self):
+        return self._queue.pop(0) if self._queue else None
+
+    def send(self, raw):
+        pass
+
+    def close(self, code=1000):
+        _kept.append(code)
+
+
+_fatal = DiscordGateway("tok", log=lambda *_: None, sleep=lambda *_: None)
+try:
+    _dgw.WebSocketClient = _Refused4004
+    _fatal.run_forever()
+finally:
+    _dgw.WebSocketClient = _orig_ws
 checks["…and so is a connection the gateway refused outright"] = (
-    _seen3.codes == [1000])
+    _kept == [1000])
+checks["…which also stops the loop rather than re-identifying"] = (
+    _fatal.running is False)
 
 # ── 9. the resume URL comes from the server, so it is pinned to TLS ──
 # `resume_gateway_url` decides where the next connection goes and the
 # WebSocket layer picks TLS purely from the scheme, so a `ws://` value
 # would put the bot token on the wire in cleartext.
-_r = DiscordGateway("tok", url="wss://gateway.discord.gg/?v=10",
-                    log=lambda *_: None)
+_r = DiscordGateway("tok", url=GATEWAY_URL, log=lambda *_: None)
 _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 1,
             "d": {"session_id": "s", "resume_gateway_url": "ws://evil.example/"}})
 checks["a ws:// resume URL is refused"] = _r.resume_url == _r.url
@@ -573,14 +654,19 @@ _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 3,
             "d": {"session_id": "s",
                   "resume_gateway_url": "wss://eu.gateway.discord.gg/"}})
 # …and it arrives bare. Discord sends the host and nothing else, while
-# the gateway wants the API version and encoding on every connection —
-# so the RESUME went out over a connection Discord would not recognise
-# and answered op 9 every single time. Two logs, three reconnects each,
-# not one `session resumed` line between them (#63).
+# the gateway wants the API version and encoding on every connection, so
+# the RESUME went out over a connection Discord would not recognise.
+# Settled by a forced disconnect used as a control (`ss -K`, CLAUDE.md),
+# not by the logs that started the question: bare URL → invalidated,
+# query carried over → `session resumed` (#63).
 checks["a wss:// resume URL is honoured"] = (
-    _r.resume_url.startswith("wss://eu.gateway.discord.gg/"))
+    _r.resume_url.startswith("wss://eu.gateway.discord.gg/")
+    and "discord.gg" not in _r.resume_url.split("//")[1].split("/")[0][:3])
 checks["…and carries the version and encoding we connect with"] = (
-    _r.resume_url == "wss://eu.gateway.discord.gg/?v=10")
+    _r.resume_url == "wss://eu.gateway.discord.gg/?v=10&encoding=json"
+    # against the real constant, not a fixture that quietly drops half
+    # of it — `encoding` was never exercised while the name said it was
+    and "encoding=json" in GATEWAY_URL)
 _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 5,
             "d": {"session_id": "s",
                   "resume_gateway_url": "wss://eu.gateway.discord.gg/?v=9"}})

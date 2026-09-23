@@ -20,6 +20,7 @@ finding implemented twice is two findings (#63).
 """
 import os
 import sys
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
@@ -35,36 +36,49 @@ class _Reply:
 
 
 class _Backend:
-    """A daemon that answers `ps -a` and `inspect` with what we choose."""
+    """A daemon that answers `ps -a` and `inspect` with what we choose.
+
+    Entries are `(name, image, [(src, dest)])`, or a fourth item with a
+    volume name for the case a directory path cannot express — Portainer
+    keeps its stacks in `portainer_data` and that is half of #2.
+    """
 
     def __init__(self, containers):
-        #: [(name, image, [(src, dest)])]
-        self._c = containers
+        self._c = [tuple(c) + (None,) * (4 - len(c)) for c in containers]
         self.asked_all = False
+        #: A daemon that will not talk to us at all.
+        self.refuse = False
 
     def ps(self, *, all=False, quiet=False, fmt=None, timeout=None):
         self.asked_all = all
-        return _Reply(" ".join(n for n, _i, _m in self._c))
+        if self.refuse:
+            return _Reply("", 1)
+        return _Reply(" ".join(n for n, _i, _m, _v in self._c))
 
     def inspect(self, refs, *, fmt=None, timeout=None):
         import json as _j
+        if self.refuse:
+            return _Reply("", 1)
         return _Reply(_j.dumps([
             {"Name": "/" + n, "Config": {"Image": i},
-             "Mounts": [{"Type": "bind", "Source": s, "Destination": d}
+             "Mounts": [{"Type": "volume" if v else "bind", "Source": s,
+                         "Name": v or "", "Destination": d}
                         for s, d in ms]}
-            for n, i, ms in self._c]))
+            for n, i, ms, v in self._c]))
 
 
 class _Checker:
     """A checker whose answers we choose, so the findings are the test."""
 
-    def __init__(self, mounts, files, exists, containers=None):
+    def __init__(self, mounts, files, exists, containers=None,
+                 own="DockSentry", data_dir="/docksentry"):
         self._m, self._f, self._e = mounts, files, exists
+        self._own, self.config = own, types.SimpleNamespace(data_dir=data_dir)
         if containers is not None:
             self.backend = _Backend(containers)
 
     def _own_container_name(self):
-        return "DockSentry"
+        return self._own
 
     def _own_mounts(self):
         return self._m
@@ -213,7 +227,78 @@ checks["…while each still gets its own wrong-source line"] = (
     sum(1 for kind, _p in f8 if kind == "compose_wrong") == 3)
 
 # A daemon that will not answer must not turn into "it is elsewhere".
-checks["a file we can read raises neither of the two"] = (
+# The check under this comment used to feed a READABLE file, which
+# short-circuits before the lookup ever runs — it passed with the whole
+# thing deleted. This is the case the comment names:
+c9 = _Checker([("/share/Container/stacks", "/app/data/stacks")],
+              {"dockmon": DOCKMON}, set(), containers=[OURS])
+c9.backend.refuse = True
+k9 = dict(selfcheck.findings(selfcheck.collect(c9, ["dockmon"])))
+checks["a daemon that will not answer is reported as unknown"] = (
+    "compose_holder_unknown" in k9)
+checks["…and never as 'it is somewhere else'"] = "compose_elsewhere" not in k9
+
+# Two containers mounted equally deep and nothing to choose between
+# them is the same answer: I will not guess.
+c10 = _Checker([("/mnt", "/app/data/stacks")], {"dockmon": DOCKMON}, set(),
+               containers=[("boxA", "plainimage", [("/a", "/app/data/stacks")]),
+                           ("boxB", "otherimage", [("/b", "/app/data/stacks")])])
+k10 = dict(selfcheck.findings(selfcheck.collect(c10, ["dockmon"])))
+checks["an ambiguous lookup is unknown too, not an absence"] = (
+    "compose_holder_unknown" in k10 and "compose_elsewhere" not in k10)
+
+# Mounting over our own data directory is what the web page has refused
+# since #2, and the audit was handing it out: Portainer keeps its stacks
+# in a volume at /data, and the legacy default put ours there too.
+c11 = _Checker([("/x", "/data")], {"stack1": "/data/compose/1/docker-compose.yml"},
+               set(), containers=[("portainer", "portainer/portainer-ce",
+                                   [("", "/data")], "portainer_data")],
+               data_dir="/data")
+k11 = dict(selfcheck.findings(selfcheck.collect(c11, ["stack1"])))
+checks["a holder that sits on our data directory is refused"] = (
+    "compose_clash" in k11 and "compose_holder" not in k11)
+checks["…and the refusal names the volume that has it"] = (
+    k11["compose_clash"]["src"] == "portainer_data")
+# …but only when it really is ours.
+c12 = _Checker([("/x", "/data")], {"stack1": "/data/compose/1/docker-compose.yml"},
+               set(), containers=[("portainer", "portainer/portainer-ce",
+                                   [("", "/data")], "portainer_data")],
+               data_dir="/docksentry")
+checks["…and an unrelated data directory is not refused"] = (
+    "compose_holder" in dict(selfcheck.findings(selfcheck.collect(c12, ["stack1"]))))
+
+# Our own container is struck out by its MOUNTS as well as its name:
+# `_own_container_name()` comes back empty often enough, and the name
+# test alone then excluded nothing.
+c13 = _Checker([("/wrong", "/app/data/stacks")], {"dockmon": DOCKMON}, set(),
+               containers=[("me", "amayer1983/docksentry",
+                            [("/wrong", "/app/data/stacks")])], own="")
+k13 = dict(selfcheck.findings(selfcheck.collect(c13, ["dockmon"])))
+checks["our own mount is not handed back when we do not know our name"] = (
+    "compose_holder" not in k13)
+
+# Nothing mounted at all, and the file is inside Portainer's volume: the
+# generic line would name a host directory that does not exist.
+c14 = _Checker([], {"stack1": "/data/compose/1/docker-compose.yml"}, set(),
+               containers=[("portainer", "portainer/portainer-ce",
+                            [("", "/data")], "portainer_data")],
+               data_dir="/docksentry")
+k14 = dict(selfcheck.findings(selfcheck.collect(c14, ["stack1"])))
+checks["with nothing mounted it still names the volume that holds it"] = (
+    k14.get("compose_holder", {}).get("src") == "portainer_data")
+
+# One found and one positively not found: neither summary is true of the
+# whole set, so neither is said.
+c15 = _Checker([("/mnt", "/app/data/stacks"), ("/o", "/opt/x")],
+               {"a": DOCKMON, "b": "/opt/x/compose.yml"}, set(),
+               containers=[OURS, DOCKGE])
+f15 = selfcheck.findings(selfcheck.collect(c15, ["a", "b"]))
+checks["a mixed answer claims neither 'elsewhere' nor 'unknown'"] = not any(
+    k in ("compose_elsewhere", "compose_holder_unknown") for k, _p in f15)
+checks["…while still naming the one it did find"] = any(
+    k == "compose_holder" for k, _p in f15)
+
+checks["a readable compose file raises none of them"] = (
     not any(kind in ("compose_holder", "compose_elsewhere")
             for kind, _p in selfcheck.findings(selfcheck.collect(
                 _Checker([("/x", os.path.dirname(here))], {"self": here},
@@ -223,7 +308,18 @@ checks["a file we can read raises neither of the two"] = (
 import json as _json                                         # noqa: E402
 _langs = sorted(f for f in os.listdir(os.path.join(ROOT, "app", "lang"))
                 if f.endswith(".json"))
-_kinds = {kind for kind, _p in f6 + f7 + f8}
+# Every kind the core can emit, gathered from all the cases above —
+# the earlier version of this looked at three of them and so never saw
+# the two kinds added last.
+_kinds = {kind for kind, _p in
+          f6 + f7 + f8 + f15 + list(k2.items()) + list(k2b.items())
+          + list(k9.items()) + list(k10.items()) + list(k11.items())
+          + list(k14.items())}
+# `compose_ok` is the one kind with no wording anywhere, on purpose:
+# both chats drop it before translating, because a file we can read is
+# not something to act on. Asserted just below, so the exclusion cannot
+# quietly start hiding a real gap.
+_kinds.discard("compose_ok")
 _missing = []
 for f in _langs:
     d = _json.load(open(os.path.join(ROOT, "app", "lang", f), encoding="utf-8"))
@@ -234,7 +330,12 @@ checks["every finding has wording in all 16 languages"] = (
     len(_langs) == 16 and not _missing
     # …and the set under test really contains the new ones, or this
     # check would pass by looking at nothing.
-    and {"compose_holder", "compose_elsewhere"} <= _kinds)
+    # and the one kind that has no wording is the one both chats skip
+    and "selfaudit_compose_ok" not in _json.load(
+        open(os.path.join(ROOT, "app", "lang", "en.json"), encoding="utf-8"))
+    and {"compose_holder", "compose_elsewhere", "compose_clash",
+         "compose_holder_unknown", "compose_wrong", "compose_no_mount"}
+    <= _kinds)
 
 # ── the Telegram command actually runs ───────────────────────────────
 # `/audit <name>` worked and a bare `/audit` answered with nothing at

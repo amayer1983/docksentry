@@ -23,6 +23,8 @@ def _bot():
         # The real classifier, not a lambda: what the poll does with a
         # reset connection IS the thing under test below.
         _is_poll_drop=TelegramBot._is_poll_drop,
+        _note_poll_drop=lambda e: None,
+        _clear_poll_drops=lambda: None,
         # A 4xx body is also where a supergroup migration would be
         # announced; "no migration here" keeps this test on retries.
         # That path has its own: test_silent_rejection.py.
@@ -105,6 +107,39 @@ def main():
             TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
         checks["…and a reset on a real send is still reported"] = (
             "Telegram API error" in buf.getvalue())
+
+        # 3c. Quiet is not the same as silent. A proxy that resets every
+        # poll leaves the bot deaf with a healthy container and an empty
+        # log; the noisy version of this line is how #63 was noticed.
+        # A real instance, not a namespace: `enabled` is a property that
+        # reads the config, and the point here is the real methods.
+        real = TelegramBot.__new__(TelegramBot)
+        real.config = types.SimpleNamespace(bot_token="t", chat_id="-1")
+        real._note_migration = lambda body: None
+        telegram_bot.urllib.request.urlopen = _raises(_reset)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for _ in range(5):                       # five cycles, moments apart
+                TelegramBot.api_call(real, "getUpdates", {}, quiet_timeout=True)
+        checks["a short run of reset polls stays quiet"] = buf.getvalue() == ""
+
+        # …and once it has gone on long enough, it says so — once, not
+        # every cycle.
+        real._poll_drop_since = time.time() - 4 * 60
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for _ in range(5):
+                TelegramBot.api_call(real, "getUpdates", {}, quiet_timeout=True)
+        checks["…but a poll that has been dead for minutes speaks up"] = (
+            buf.getvalue().count("no answer to the poll") == 1)
+
+        # A poll that answers again clears the count, so the next outage
+        # starts its own clock instead of shouting immediately.
+        telegram_bot.urllib.request.urlopen = lambda req, timeout=None: _Resp(
+            b'{"ok": true}')
+        TelegramBot.api_call(real, "getUpdates", {}, quiet_timeout=True)
+        checks["…and an answer resets the clock"] = (
+            getattr(real, "_poll_drop_since", "unset") is None)
 
         # 4. HTTP 4xx → body returned, NOT retried
         calls = {"n": 0}

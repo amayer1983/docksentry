@@ -107,8 +107,10 @@ MANAGER_HINTS = ("portainer", "dockge", "dockhand", "komodo", "yacht")
 
 #: Returned by `holder` when several containers could be meant and
 #: nothing separates them. It is not "nobody holds this": it is "I will
-#: not guess", and the caller must say something different for each. A
-#: confidently wrong mount is what #2 and #65 were about.
+#: not guess", and no caller may report it as an absence. `/audit` says
+#: so out loud; the container page says nothing at all, which is also
+#: true and is all that page has room for. A confidently wrong mount is
+#: what #2 and #65 were about.
 AMBIGUOUS = object()
 
 

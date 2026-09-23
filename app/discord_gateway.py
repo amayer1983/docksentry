@@ -143,8 +143,11 @@ class DiscordGateway:
         self._heartbeat_interval = None
         self._next_heartbeat = 0.0
         #: Consecutive resume attempts that never reached RESUMED. Reset
-        #: by anything that does come up.
+        #: by anything that does come up, and by a session Discord has
+        #: already told us to drop.
         self._resume_failures = 0
+        #: Whether this attempt got as far as sending a RESUME frame.
+        self._sent_resume = False
 
     # ── frames ────────────────────────────────────────────────────
     def _send(self, op, data=None):
@@ -159,6 +162,7 @@ class DiscordGateway:
         })
 
     def _resume(self):
+        self._sent_resume = True
         self._send(OP_RESUME, {
             "token": self.token,
             "session_id": self.session_id,
@@ -199,7 +203,12 @@ class DiscordGateway:
                 # from a fresh penalty. Only back-to-back failures compound.
                 if self._was_healthy():
                     self.backoff = 1.0
-                elif resuming:
+                elif resuming and self._sent_resume:
+                    # Only a RESUME we actually sent counts. DNS that
+                    # will not resolve, a refused TCP connect, a 503 on
+                    # the upgrade — none of those are the session's
+                    # fault, and throwing it away for them spends an
+                    # IDENTIFY on a session Discord would still honour.
                     self._give_up_on_session()
                 self.log(f"Discord gateway disconnected ({e}); "
                          f"reconnecting in {self.backoff:.0f}s")
@@ -222,8 +231,8 @@ class DiscordGateway:
         as unusable as it was, so trying it again is a round trip spent
         to learn nothing. After `MAX_RESUME_ATTEMPTS` of them the session
         goes and the next attempt identifies — which is the path that
-        has been working all along, just twenty seconds later than it
-        needed to.
+        has been working all along, a few seconds later than it needed
+        to (three backed-off attempts, so six to eight).
 
         Only failures that never came up count: a connection that was
         READY and then dropped is an ordinary event and resumes from a
@@ -249,6 +258,7 @@ class DiscordGateway:
         # (#63). Every state transition now says when it happened, so
         # the next occurrence names its slow step itself.
         self._connect_started = time.monotonic()
+        self._sent_resume = False
         # Cleared BEFORE the handshake, not after it. The old order left
         # it behind whenever `connect()` itself raised — and then
         # `_was_healthy()` answered for a connection that had ended hours
@@ -318,6 +328,10 @@ class DiscordGateway:
             self.session_id = None
             self.seq = None
             self.resume_url = None
+            # Discord ended this one itself, so it is not a resume of
+            # ours that failed. Leaving the count standing made a later
+            # pair of genuine refusals log "3 resumes refused in a row".
+            self._resume_failures = 0
             raise WebSocketError(
                 f"gateway rejected the session (close code {code}) — "
                 "the next attempt will identify fresh")
@@ -390,6 +404,7 @@ class DiscordGateway:
                 self.session_id = None
                 self.seq = None
                 self.resume_url = None
+                self._resume_failures = 0
             self._sleep(1 + 4 * random.random())
             raise WebSocketError("gateway invalidated the session")
 
@@ -428,9 +443,11 @@ class DiscordGateway:
         Discord answered op 9, and the client fell back to a fresh
         IDENTIFY that worked because THAT url carries the query.
 
-        Measured in two logs before it was believed: @NotRetarded's
-        (#63) and my own instance's. Both show resume → invalidated →
-        identify, three times over, and `session resumed` in neither.
+        Believed twice on a reading and dropped once on a bad
+        observation before it was measured properly. What settled it was
+        a forced disconnect — `ss -K` on the gateway socket, see
+        CLAUDE.md — run as a control: bare URL → invalidated, query
+        carried over → `session resumed`, three times.
 
         A resume URL that brought its own query is left alone.
         """
@@ -450,10 +467,15 @@ class DiscordGateway:
 
         `run_forever` closes in a `finally`, so this ran after every
         disconnect including the ones we resume from, and it sent 1000.
-        That is Discord's "I am finished": the session ends, and the
-        RESUME a second later is refused. It explains what the query
-        theory could not — why not one of the logs from two machines
-        ever carried a `session resumed` line.
+        That is Discord's "I am finished", and asking to resume a session
+        we have just declared finished is wrong on its own terms.
+
+        It is NOT what was breaking the resume — that was the missing
+        query on the resume URL, measured with a forced disconnect. This
+        one has never been measured against the live gateway: both
+        controls killed the socket outright, so no close frame went out
+        either way. It is here because the contract says so, not because
+        a log said so.
 
         `self.running` is the intent. `stop()` clears it before closing,
         and a fatal refusal clears it too, so those still close normally.

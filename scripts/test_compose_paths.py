@@ -86,8 +86,19 @@ checks["…and neither is an empty daemon"] = cp.holder(P, []) is None
 checks["two managers at the same depth is refused, not guessed"] = (
     cp.holder(P, [DOCKGE, {**DOCKGE, "name": "dockge2",
                            "src": "/srv/other"}]) is cp.AMBIGUOUS)
-checks["…and that refusal is not mistaken for absence"] = (
-    cp.AMBIGUOUS is not None)
+# `AMBIGUOUS is not None` was the check here, which is a tautology about
+# `object()` and says nothing about anyone's behaviour. What matters is
+# that the caller keeps the two apart, so ask the caller.
+import selfcheck as _sc                                      # noqa: E402
+_two = [{"name": "a", "image": "one", "type": "bind", "vol": "", "src": "/a",
+         "dest": "/app/data/stacks"},
+        {"name": "b", "image": "two", "type": "bind", "vol": "", "src": "/b",
+         "dest": "/app/data/stacks"}]
+checks["…and the caller keeps that apart from an absence"] = (
+    _sc._held_by(P, _two, "me") is _sc.UNKNOWN
+    and _sc._held_by(P, [{"name": "c", "image": "x", "type": "bind",
+                          "vol": "", "src": "/c", "dest": "/elsewhere"}],
+                     "me") is None)
 
 # ── the message, in every language ───────────────────────────────────
 for lang in ("en", "de", "ja", "ar"):
