@@ -70,7 +70,7 @@ def main():
         return r.ok, t(r.key, **r.params)
 
     subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", NAME, "alpine", "sleep", "300"],
+    subprocess.run(["docker", "run", "-d", "--name", NAME, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"],
                    capture_output=True)
     try:
         c1 = store.toggle_protect_stop(NAME) is True and store.is_protect_stop(NAME)

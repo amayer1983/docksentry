@@ -71,6 +71,21 @@ def host_store(owner, host):
     return scoped if scoped is not None else HostScopedStore(store, name)
 
 
+def _wait(seconds, engine=None):
+    """Sit out `seconds`, unless the engine was handed another way to wait.
+
+    A module function rather than a method, because several of these
+    methods are driven with a stand-in `self` — `test_cooldown.py` calls
+    `UpdateEngine._maybe_cooldown(bot, …)` — and a stand-in has none of
+    our methods. Those harnesses patch `time.sleep` and keep working,
+    while an engine built with `sleep=` uses what it was given. Two of
+    the suite's slowest procedures were sitting out real cooldowns to
+    prove arithmetic.
+    """
+    import time as _t
+    (getattr(engine, "_sleep", None) or _t.sleep)(seconds)
+
+
 class UpdateEngine:
     def _t(self, key, **kw):
         """A user-facing line, in the configured language.
@@ -84,9 +99,17 @@ class UpdateEngine:
         lang = getattr(getattr(self, "config", None), "language", "en") or "en"
         return get_translator(lang)(key, **kw)
 
-    def __init__(self, config, store, link_resolver=None, hosts=None):
+    def __init__(self, config, store, link_resolver=None, hosts=None,
+                 sleep=None):
         self.config = config
         self.store = store
+        #: How the engine waits. Injectable for the same reason the
+        #: Discord gateway and the REST client take one: the cooldown
+        #: between recreates and the pause between containers in a group
+        #: are real seconds, and the tests that exercise them were
+        #: sitting out 170 of the suite's 362 seconds to prove
+        #: arithmetic. Production passes nothing and gets time.sleep.
+        self._sleep = sleep
         # Every managed host (#7). None — or a registry holding only the
         # local host — means single-host, and then `_store_for` hands back
         # the raw store for every lookup, so not one byte of what this
@@ -496,9 +519,8 @@ class UpdateEngine:
             return
         cd = host_store(self, host).get_cooldown(name)
         if cd > 0:
-            import time as _time
             print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
-            _time.sleep(cd)
+            _wait(cd, self)
 
     def _process_update_batch(self, updates, checker, *, auto):
         """Shared per-container update engine for BOTH the scheduled-auto
@@ -644,7 +666,7 @@ class UpdateEngine:
             if cur_group and abort_key == prev_group:
                 wait_s = int((groups.get(cur_group) or {}).get("wait_seconds", 0) or 0)
                 if wait_s > 0:
-                    _time.sleep(wait_s)
+                    _wait(wait_s, self)
 
             # Major-version confirmation gate — auto only (per-container
             # opt-in). A `docksentry.ask-major` label wins over the stored

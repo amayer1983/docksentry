@@ -40,10 +40,10 @@ def main():
 
     _rm(*NAMES, "ds_ctf-a-even_old")
     for n in NAMES:
-        subprocess.run(["docker", "run", "-d", "--name", n, "alpine", "sleep", "200"],
+        subprocess.run(["docker", "run", "-d", "--name", n, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 200 & wait"],
                        capture_output=True)
     # an _old rollback leftover that must NOT match
-    subprocess.run(["docker", "run", "-d", "--name", "ds_ctf-a-even_old", "alpine", "sleep", "200"],
+    subprocess.run(["docker", "run", "-d", "--name", "ds_ctf-a-even_old", "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 200 & wait"],
                    capture_output=True)
     try:
         even = stub._match_glob("ds_ctf-*-even")

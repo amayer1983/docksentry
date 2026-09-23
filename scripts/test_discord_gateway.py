@@ -125,6 +125,22 @@ class FakeGateway:
         self.done.set()
 
 
+def _await(cond, timeout=15.0, step=0.02):
+    """Wait for a condition instead of sitting out a fixed guess.
+
+    The four biggest waits in this file were `time.sleep(2.2 / 4 / 9 / 8)`
+    — 23 of the suite's 362 seconds, chosen to be comfortably longer than
+    a handshake plus a backoff. Polling gets the same certainty in the
+    time the thing actually takes, and says so when it never happens.
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(step)
+    return False
+
+
 # ── 1. happy path: hello → identify → ready → dispatch ───────────────
 def _happy(gw, conn):
     conn.sendall(_frame(json.dumps({"op": OP_HELLO, "d": {"heartbeat_interval": 300}})))
@@ -147,10 +163,12 @@ def _happy(gw, conn):
 events = []
 gw = FakeGateway([_happy])
 g = DiscordGateway("tok", on_event=lambda n, d: events.append((n, d)),
-                   url=gw.url, log=lambda *_: None)
+                   url=gw.url, log=lambda *_: None,
+                   sleep=lambda *_: None)
 th = threading.Thread(target=g.run_forever, daemon=True)
 th.start()
-time.sleep(2.2)
+_await(lambda: {"identify", "heartbeat"} <= set(dict(gw.seen))
+       and len(events) >= 2)
 g.stop()
 th.join(timeout=5)
 
@@ -186,10 +204,11 @@ def _expect_resume(gw, conn):
 
 
 gw2 = FakeGateway([_drop_then_expect_resume, _expect_resume])
-g2 = DiscordGateway("tok", url=gw2.url, log=lambda *_: None)
+g2 = DiscordGateway("tok", url=gw2.url, log=lambda *_: None,
+                       sleep=lambda *_: None)
 th2 = threading.Thread(target=g2.run_forever, daemon=True)
 th2.start()
-time.sleep(4.0)
+_await(lambda: {"first", "second"} <= set(dict(gw2.seen)))
 g2.stop()
 th2.join(timeout=5)
 seen2 = dict(gw2.seen)
@@ -219,10 +238,11 @@ def _after_invalidate(gw, conn):
 
 
 gw3 = FakeGateway([_invalidate, _after_invalidate])
-g3 = DiscordGateway("tok", url=gw3.url, log=lambda *_: None)
+g3 = DiscordGateway("tok", url=gw3.url, log=lambda *_: None,
+                       sleep=lambda *_: None)
 th3 = threading.Thread(target=g3.run_forever, daemon=True)
 th3.start()
-time.sleep(9.0)
+_await(lambda: "b" in dict(gw3.seen))
 g3.stop()
 th3.join(timeout=5)
 seen3 = dict(gw3.seen)
@@ -255,10 +275,11 @@ def _zombie_second(gw, conn):
 
 
 gw4 = FakeGateway([_zombie, _zombie_second])
-g4 = DiscordGateway("tok", url=gw4.url, log=lambda *_: None)
+g4 = DiscordGateway("tok", url=gw4.url, log=lambda *_: None,
+                       sleep=lambda *_: None)
 th4 = threading.Thread(target=g4.run_forever, daemon=True)
 th4.start()
-time.sleep(8.0)
+_await(lambda: dict(gw4.seen).get("reconnected") is not None)
 reconnected = dict(gw4.seen).get("reconnected") is not None
 g4.stop()
 th4.join(timeout=5)

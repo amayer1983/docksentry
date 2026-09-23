@@ -49,9 +49,9 @@ def main():
     _rm(HEAD, SIDE)
     try:
         # head v1 + sidecar sharing its netns
-        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "300"])
+        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
         _run(["docker", "run", "-d", "--name", SIDE,
-              "--network", f"container:{HEAD}", "alpine", "sleep", "300"])
+              "--network", f"container:{HEAD}", "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
 
         # 1. resolve the netns owner name
         resolved = chk.netns_target_name(SIDE)
@@ -68,12 +68,12 @@ def main():
 
         # recreate the HEAD → new ID; the old ID in old_netmode is now dead
         _rm(HEAD)
-        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "300"])
+        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
 
         # 3a. stale-ID recreate (the bug) must FAIL
         _rm(SIDE)
         args_stale = ["docker", "run", "-d", "--name", SIDE,
-                      "--network", old_netmode, "alpine", "sleep", "300"]
+                      "--network", old_netmode, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"]
         stale = _run(args_stale)
         c3a = stale.returncode != 0 and "No such container" in (stale.stderr or "")
 

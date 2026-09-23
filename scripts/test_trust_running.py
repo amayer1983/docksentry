@@ -25,9 +25,12 @@ if __import__("subprocess").run(["docker", "info"],
     __import__("sys").exit(0)
 
 
-def _make_checker(trust_file, stable=2):
+def _make_checker(trust_file, stable=2, max_starting=6):
+    # The verdict is what this test is about, not how long we sit out
+    # waiting for it. `healthcheck_max_starting` was 60 and the file spent
+    # 41 of the suite's 362 seconds proving two strings.
     cfg = types.SimpleNamespace(
-        debug=False, healthcheck_max_starting=60,
+        debug=False, healthcheck_max_starting=max_starting,
         crashloop_stable_seconds=stable, trust_running_file=trust_file,
     )
     return UpdateChecker(cfg)
@@ -74,7 +77,7 @@ def test_crashloop_not_masked():
     trust_file = os.path.join(tmp, "trust.json")
     name = "ds_trust_crash"
     json.dump([name], open(trust_file, "w"))  # flag ON
-    chk = _make_checker(trust_file, stable=5)
+    chk = _make_checker(trust_file, stable=5, max_starting=60)
     _rm(name)
     subprocess.run(
         ["docker", "run", "-d", "--name", name, "--restart", "always",

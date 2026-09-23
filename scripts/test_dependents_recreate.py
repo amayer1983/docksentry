@@ -52,14 +52,14 @@ def main():
     chk = UpdateChecker(types.SimpleNamespace(debug=False))
     _rm(HEAD, SIDE, PLAIN)
     try:
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "400"], capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
         subprocess.run(["docker", "run", "-d", "--name", SIDE, "--network", f"container:{HEAD}",
-                        "alpine", "sleep", "400"], capture_output=True)
-        subprocess.run(["docker", "run", "-d", "--name", PLAIN, "alpine", "sleep", "400"], capture_output=True)
+                        "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", PLAIN, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
 
         # recreate the head → new ID; SIDE's stored netns id is now dead
         _rm(HEAD)
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "400"], capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
 
         # sanity: a plain restart of SIDE would fail now
         stale = subprocess.run(["docker", "restart", SIDE], capture_output=True, text=True)
@@ -72,7 +72,7 @@ def main():
 
         # break SIDE again (recreate head once more) to test the cascade path
         _rm(HEAD)
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sleep", "400"], capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
 
         # 2. cascade: SIDE (netns) recreated, PLAIN restarted.
         # The cascade waits on the head via checker._wait_healthy (3-tuple) —
