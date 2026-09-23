@@ -2,6 +2,38 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.35] - 2026-09-23
+
+Everything here came out of one thread with @NotRetarded over two days (#63). Three of them are things he reported; the other three are things I found while looking for the first three.
+
+### Fixed
+- **A bare `/audit` in Telegram answered with nothing at all.** `/audit <name>` worked, so the command looked half-built rather than broken. It reached for an attribute `TelegramBot` does not have, the error went up into the poll loop, and the chat stayed silent. The comment on `restart_self` two hundred lines above says that attribute does not exist — it is how the Discord self-restart bug hid in August. Second time now, so the test builds the bot the way `main.py` builds it and runs the command for real instead of reading the source and believing it.
+
+- **`/audit` printed "Mount  to reach it" with a hole where the path belongs.** Twelve times in one report, for every stack under `/opt/stacks`. That prefix is deliberately not on the list of managers whose paths need mapping — Dockge mounts it at the identical path, so the label is a valid host path and there is nothing to say about it — and the report printed the nothing. It names the file's own directory now, which is what the container page has always done.
+
+- **The Discord gateway never once resumed a session.** Every reconnect went: resume, *gateway invalidated the session*, fresh identify, connected. Five log lines for what should be two, and a new IDENTIFY every time. Discord hands out a separate URL to resume on and it arrives without the API version on it; we connected to it verbatim, so the session was thrown away and the fallback identify did the work — the fallback being the only path that carried the version.
+
+  Measured, after guessing wrong about it twice: dropping the gateway socket from inside the container's network namespace forces the reconnect on demand, which turned a question that took hours into one that takes ten seconds. Control with the bare URL: invalidated. With the version carried over, three times running: `session resumed`, in 2.9s, 0.4s and 0.4s. That line had never appeared in any log on either machine.
+
+- **A gateway answering 503 was met with one connection attempt per second.** Fourteen of them in twenty seconds here on 22 September, every one logged as "reconnecting in 1s". The mark that says whether the last connection had been healthy was cleared *after* the handshake, so a failure inside the handshake left the mark from a connection that had ended hours earlier — and the backoff was forgiven every time. It is cleared before the attempt now. A session the gateway refuses three times running is dropped so the next attempt identifies cleanly, instead of asking a fourth time.
+
+- **We told Discord we were finished and then asked to carry on.** Every disconnect closed the socket with 1000, "normal closure", which ends a gateway session for good. The close code is an argument now: 4000 while we mean to come back, 1000 for `stop()` and for a connection the gateway refused outright.
+
+- **An idle Telegram long poll that gets reset was logged as an error.** `Telegram API error: <urlopen error [Errno 104] Connection reset by peer>`, as often as it happened, with no retry on that path. The poll already knew to keep quiet about timeouts; a reset connection is just as ordinary. Everywhere else a reset is still worth saying out loud, and a name that will not resolve still speaks up even on the poll.
+
+### Added
+- **Docksentry names the container that actually holds a Compose file it cannot reach.** "The mount is there; the source is the wrong directory" stops one word short of the answer, and @NotRetarded read it three times before writing back: *"nothing in that section tells me where it really is."* The daemon knows which container a path is inside — that lookup now lives in one place and both `/audit` and the container page read it. When nothing on this machine holds the path, it says that instead, once rather than once per stack: the stack was created somewhere else and no mount here will reach it.
+
+  Our own mounts are struck out before the lookup. The only paths this is asked about are ones we could not read, so a mount of ours over that path has already proved it does not hold the file.
+
+- **`/audit` offered to mount a volume over Docksentry's own data directory.** The container page has refused that since #2 — Portainer keeps its stacks in a volume at `/data` and the legacy default put ours there too, so "mount `portainer_data` at `/data`" would have read-only-mounted a stranger's volume over our database. The finding added two days ago handed it straight back out. It refuses now, and says why.
+
+- **"Nothing on this machine holds those paths" was said when the answer was "I could not tell".** An ambiguous lookup and a daemon that would not answer both came out as that one confident line — against the rule this module's own header states. They are separate answers now. And where some paths were found and others positively were not, neither summary is true of the whole set, so neither is printed; the per-container lines already carry it.
+
+- **One vanished container blinded the whole report.** `docker inspect` exits 1 when any single id is unknown and still prints valid JSON for all the others, and `docker ps -aq` and `docker inspect` are two separate calls — so anything removed in between (a recreate, a `--rm` job, our own update) made `/audit` answer "I could not tell" on a host whose daemon knew perfectly well. Measured on Docker 29.5.3: 25 good ids plus one dead one exits 1 and prints 25 containers.
+
+- **Smaller ones from the same pass.** Our own mounts are struck out by value as well as by name, because `_own_container_name()` comes back empty often enough that the name test alone excluded nothing — and then our own wrong mount could be handed back as the answer. A resume only counts as refused when a RESUME actually went out, so a DNS failure no longer spends a session Discord would still have honoured. A session Discord itself invalidated no longer pre-loads that counter. The container page compares against both names a named volume answers to, so it stops suggesting the mount already in place. A label with no directory part cannot print an empty mount path. And a Telegram poll that stays dead now says so after three minutes, instead of being quiet forever — quiet was right for the ordinary reset, silent was not.
+
 ## [2.18.0-beta.34] - 2026-09-21
 
 ### Fixed
