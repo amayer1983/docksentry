@@ -65,6 +65,31 @@ Absenden. Fällt der Beweis nicht zu führen: als offene Frage
 kennzeichnen (»vermutlich der einzige, noch nicht alle 40 geprüft«),
 nicht als Verdikt.
 
+## Vor jedem Tag: die Audit, vier Blickrichtungen
+
+**Kein Tag ohne Audit.** Vor `git tag` läuft `AUDIT.md` — vier Agenten
+parallel auf `git diff v<letzter-tag>..HEAD`: Korrektheit,
+Was-wäre-wenn, Gleichstand/Übersetzung, und Behauptungen gegen Code
+samt Jagd auf vakuöse Prüfungen. Die Prompts stehen dort zum Kopieren,
+auch in einer Fassung für andere Projekte und Werkzeuge.
+
+Warum als Regel und nicht als gute Absicht: vor beta.35 fand der
+Durchlauf elf Punkte, an denen alle 4160 Prüfungen grün waren. Zwei
+davon waren einen Tag alt und hätten jemandem die Datenbank verdeckt.
+Sechs Prüfungen waren vakuös — eine behauptete, `object()` sei nicht
+`None`. Eine grüne Suite sagt, dass nichts bricht, was ich geprüft
+habe; sie sagt nichts über das, was ich zu prüfen geglaubt habe.
+
+Drei Dinge, die die Regel ausmachen und ohne die sie nichts wert ist:
+
+* **Jeden Befund selbst nachstellen**, bevor er zur Änderung wird. Ein
+  Agentenbericht ist ein Hinweis, kein Beweis — dieselbe Regel wie für
+  `grep`.
+* **Der Baum steht still**, solange die Audit läuft. Sonst messen die
+  Agenten gegen etwas, das es nicht mehr gibt.
+* Danach **`VERIFICATION.md` neu schreiben** und die Suite laufen
+  lassen, erst dann taggen.
+
 ## Test-Hosts der lokalen Instanz
 
 Die lokale Instanz hängt an mehreren Endpunkten; die Adressen stehen in
