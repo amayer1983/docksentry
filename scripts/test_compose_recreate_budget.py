@@ -49,10 +49,9 @@ checks["…it contains the grace it granted"] = (
 m = re.search(r"timeout=stop_grace \+ (\d+)", block)
 checks["the working budget survives"] = bool(m) and int(m.group(1)) >= 110
 
-for grace in (10, 60, 300, 3600):
-    wait = grace + int(m.group(1))
-    checks[f"grace {grace}s leaves {wait - grace}s to work with"] = (
-        wait - grace >= 110)
+# A loop stood here asserting `(grace + N) - grace >= 110` for four
+# values of grace — the same arithmetic as the check above, done on
+# the test's own variable. The budget is a property of N alone.
 
 # The standalone path is where the shape came from; if it ever goes back
 # to a fixed number this test should say so too.

@@ -113,9 +113,8 @@ checks["…and so does one past its absolute age"] = (
 # Two clocks, because they catch different things: idle catches a machine
 # somebody walked away from, absolute catches a background tab keeping a
 # session alive forever, which no idle timeout ever would.
-checks["the two clocks are separate"] = (
-    webauth.SessionStore(idle_seconds=1, max_seconds=2).idle !=
-    webauth.SessionStore(idle_seconds=1, max_seconds=2).max)
+# (A check comparing `.idle != .max` stood here: 1 != 2, the numbers
+# this test passed in. The two behaviours are covered above.)
 # Using the interface keeps you signed in.
 live = webauth.SessionStore(idle_seconds=100, max_seconds=1000)
 t2 = live.create("a")

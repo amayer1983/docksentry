@@ -188,7 +188,10 @@ for key, needed in PLACEHOLDERS.items():
     holes = [os.path.basename(f) for f in LANGS
              for d in [json.load(open(f, encoding="utf-8"))]
              if key in d and any(p not in d[key] for p in needed)]
-    checks[f"…and keeps its placeholders"] = holes == []
+    # Was `f"…and keeps its placeholders"` — an f-string with nothing
+    # to interpolate, inside a loop over four keys, so every iteration
+    # wrote the same entry and three of the four never ran.
+    checks[f"{key} keeps its placeholders"] = holes == []
 
 # And update_checker builds none of those sentences itself any more.
 # Parsed, not grepped: the first version of this check flagged the

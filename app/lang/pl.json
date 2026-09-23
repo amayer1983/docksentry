@@ -982,6 +982,7 @@
   "selfaudit_compose_clash": "• `{container}`: ten plik jest w `{src}`, ale podmontowanie go w `{dest}` zasłoniłoby własne dane Docksentry. Przenieś najpierw `DATA_DIR`, a ścieżkę będzie można podmontować.",
   "selfaudit_compose_elsewhere": "• Nic na tej maszynie nie trzyma tych ścieżek. To, co utworzyło te stacki, jest gdzie indziej — na innym hoście albo w menedżerze, którego już nie ma — i żadne montowanie tutaj do nich nie sięgnie.",
   "selfaudit_compose_holder_unknown": "• Nie ustaliłem, który kontener trzyma te ścieżki — albo pasowałby więcej niż jeden, albo demon nic nie powiedział. Nie zgaduję.",
+  "selfaudit_compose_all_ok": "• Nic do zrobienia: wszystkie {total} plików Compose są stąd osiągalne.",
   "selfaudit_compose_no_mount": "• `{container}`: `{path}` nie ma tutaj i nic nie jest nad tym zamontowane. Podmontuj `{mount}`, aby go sięgnąć.",
   "selfaudit_compose_nolabel": "• `{container}`: etykiety Compose, ale bez zapisanej ścieżki pliku, więc nie ma czego sięgać. Odtwarzany z danych inspect.",
   "web_badge_compose_unreachable": "plik Compose",

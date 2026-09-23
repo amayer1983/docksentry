@@ -1201,6 +1201,31 @@ class DiscordBot:
         return host_store(self, host)
 
     def _label(self, host):
+        """` @nas` for a remote host, empty for the local one.
+
+        Empty for local on purpose, the same rule Telegram's `_host_tag`
+        states and for the same reason: this sits next to a container
+        name inside a listing, and marking every local line in a
+        twenty-four-container overview is noise. Discord marked them
+        `@local` and Telegram did not, so the same list read differently
+        in the two chats — the test that should have caught it had the
+        claim right and an `or` that could not fail.
+        """
+        if host is None or not self.hosts or not self.hosts.is_multi:
+            return ""
+        if getattr(host, "is_local", False):
+            return ""
+        return f" @{host.name}"
+
+    def _section_label(self, host):
+        """` @nas` — and ` @local` too, because here it is the heading.
+
+        The other one is for a row inside a list, where "no marker" is
+        readable shorthand for "this machine". When a whole section or a
+        whole message belongs to one host, leaving the local one bare
+        reads as a section about nothing. Telegram splits the same two
+        cases into `_host_tag` and `_host_message_tag`.
+        """
         if host is None or not self.hosts or not self.hosts.is_multi:
             return ""
         return f" @{host.name}"
@@ -1751,7 +1776,7 @@ class DiscordBot:
         lines = []
         for host in self._hosts_for(None):
             store = self._store_for(host)
-            tag = self._label(host)
+            tag = self._section_label(host)
             groups = store.get_groups() or {}
             if not groups:
                 lines.append(self.t("groups_empty") + tag)

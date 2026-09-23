@@ -310,7 +310,12 @@ out = bot._dispatch({"data": {"name": "status", "options": []}})
 checks["status lists every host's containers"] = (
     "`web`" in out and "`plex`" in out)
 checks["remote entries are labelled with their host"] = "@nas" in out
-checks["local entries carry no label"] = "web` — nginx:1\n" in out or "@nas" in out
+# The `or "@nas" in out` that used to sit here was guaranteed by the line
+# above, so the check could not fail — and it was covering a real
+# regression: Discord labelled local rows `@local` while Telegram left
+# them bare, by documented intent, so one list read two ways.
+checks["local entries carry no label"] = "`web` — `nginx:1`" in out
+checks["…while remote ones still do"] = "`web` @nas — `nginx:1`" in out
 
 out = bot._dispatch({"data": {"name": "status",
                               "options": [{"name": "host", "value": "nas"}]}})
@@ -625,7 +630,7 @@ out = call("logs", container="web", host="zzz")
 checks["/logs on an unknown host errors"] = "Unknown host" in out
 out = call("logs", container="nosuchthing")
 checks["/logs of an unknown container is reported"] = (
-    "resolve_not_found" and _EN["resolve_not_found"].split("`")[0] in out)
+    _EN["resolve_not_found"].split("`")[0] in out)
 
 # a log longer than Discord allows must come back clipped AND fenced
 noisy = _state_host("noisy", ["chatty"], local=True)

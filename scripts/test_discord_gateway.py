@@ -660,8 +660,7 @@ _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 3,
 # not by the logs that started the question: bare URL → invalidated,
 # query carried over → `session resumed` (#63).
 checks["a wss:// resume URL is honoured"] = (
-    _r.resume_url.startswith("wss://eu.gateway.discord.gg/")
-    and "discord.gg" not in _r.resume_url.split("//")[1].split("/")[0][:3])
+    _r.resume_url.startswith("wss://eu.gateway.discord.gg/"))
 checks["…and carries the version and encoding we connect with"] = (
     _r.resume_url == "wss://eu.gateway.discord.gg/?v=10&encoding=json"
     # against the real constant, not a fixture that quietly drops half

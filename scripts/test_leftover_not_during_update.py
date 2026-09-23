@@ -30,9 +30,13 @@ checks["…and not while that container is being updated"] = (
 checks["the busy set comes from the engine, not a second bookkeeping"] = (
     '_updating_now(' in block)
 
-# The engine is the one source: same call the badge uses.
-badge = src[src.index('_updating_here = self._updating_now'):][:200]
-checks["the badge reads the same place"] = ('_updating_now' in badge)
+# The engine is the one source: same call the badge uses. Slicing the
+# haystack to START at the needle made this true by construction, so
+# count instead — the badge and the leftover guard, and nothing that
+# keeps its own second list.
+checks["the badge reads the same place"] = (
+    src.count("self._updating_now") >= 2
+    and "_updating_here = self._updating_now" in src)
 
 # A stale suffix check would match `foo_older`; make sure it is exact.
 checks["only the exact _old suffix counts"] = ('endswith("_old")' in block)

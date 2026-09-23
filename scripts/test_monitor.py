@@ -183,9 +183,13 @@ def _exit_code_checks(checks):
     ev3 = mon._with_real_exit_code(("exited", "app", {"code": 3}))
     checks["exited is left alone"] = ev3[2]["code"] == 3
     mon2 = ContainerMonitor.__new__(ContainerMonitor)
-    ev4 = mon2._with_real_exit_code(("crash_restart", "app", {"code": 9}))
+    detail4 = {"code": 9}
+    ev4 = mon2._with_real_exit_code(("crash_restart", "app", detail4))
     checks["no watcher, no change"] = ev4[2]["code"] == 9
-    checks["the detail dict is not mutated in place"] = True
+    # The caller keeps its own dict. Asserting `True` here said that
+    # and tested nothing; this fails if the code writes through it.
+    checks["the detail dict is not mutated in place"] = (
+        detail4 == {"code": 9})
 
 
 def _multi_host_checks(checks):
@@ -215,7 +219,11 @@ def _multi_host_checks(checks):
     a = ContainerMonitor.__new__(ContainerMonitor)
     b = ContainerMonitor.__new__(ContainerMonitor)
     a._prev, b._prev = {"x": {}}, None
-    checks["baselines are per monitor"] = b._prev is None
+    # Reading `b._prev` back was reading the line above. The risk is a
+    # baseline living on the CLASS, which every monitor would then
+    # share — that is what this asserts.
+    checks["baselines are per monitor"] = (
+        b._prev is None and getattr(ContainerMonitor, "_prev", None) is None)
 
 
 def main():
@@ -455,8 +463,12 @@ def main():
     # exits stay IMMEDIATE; the health flip is only pending on this pass
     m.snapshot = lambda: {"a": c(health="unhealthy"), "docksentry": c(status="exited", code=1)}
     sent = m.tick()
-    checks["health flip pending: no notify yet"] = sent == []
-    checks["own container ignored"] = all(n != "docksentry" for _, n in kinds(sent))
+    # Both claims in one, because they are one fact: our own container
+    # exited on this pass, and an exit is immediate — so anything but
+    # an empty list means we alerted on ourselves. The separate
+    # "own container ignored" check ran `all()` over this empty list.
+    checks["health flip pending and our own exit ignored: nothing sent"] = (
+        sent == [])
     # still unhealthy next pass -> confirmed alert fires now
     m.snapshot = lambda: {"a": c(health="unhealthy")}
     sent = m.tick()

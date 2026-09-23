@@ -60,10 +60,11 @@ def main():
     # ssl._create_stdlib_context(), which on this Python IS
     # _create_unverified_context — check_hostname False, verify_mode 0.
     # So the credentials went to whatever answered, with any certificate.
-    stdlib_is_unverified = (
-        ssl._create_stdlib_context is ssl._create_unverified_context)
-    checks["the unsafe default this guards against still exists"] = (
-        stdlib_is_unverified)
+    # A check stood here asserting `ssl._create_stdlib_context is
+    # ssl._create_unverified_context` — a CPython internal. It stayed
+    # green with every line of our SMTP code deleted, and would turn
+    # red if Python ever changed that default. What we guard is our
+    # own call, which the checks around this one do.
     default_ctx = ssl.create_default_context()
     checks["the context we pass does verify"] = (
         default_ctx.check_hostname and default_ctx.verify_mode == ssl.CERT_REQUIRED)

@@ -81,7 +81,8 @@ def main():
     # ever stops being true the advice becomes actively harmful, so it is
     # asserted rather than believed.
     paths = ssl.get_default_verify_paths()
-    checks["a hashed CA directory exists to fall back on"] = bool(paths.capath)
+    checks["a hashed CA directory exists to fall back on"] = bool(
+        paths.capath) and os.path.isdir(paths.capath)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

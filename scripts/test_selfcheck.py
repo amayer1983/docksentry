@@ -298,6 +298,29 @@ checks["a mixed answer claims neither 'elsewhere' nor 'unknown'"] = not any(
 checks["…while still naming the one it did find"] = any(
     k == "compose_holder" for k, _p in f15)
 
+# Nothing wrong anywhere still says something. @NotRetarded read a
+# report of "15 readable, 0 behind a wrong mount" followed by no
+# container lines at all as the command being broken — the headline was
+# right and the silence after it was not.
+c16 = _Checker([("/x", os.path.dirname(here))], {"self": here}, set())
+f16 = selfcheck.findings(selfcheck.collect(c16, ["self"]))
+checks["a clean report says so instead of stopping"] = any(
+    k == "compose_all_ok" for k, _p in f16)
+checks["…and counts the files it looked at"] = (
+    dict(f16)["compose_all_ok"]["total"] == 1)
+# …but only when there really is nothing: one bad file and the line is
+# wrong, because there IS something to do.
+c17 = _Checker([("/x", os.path.dirname(here))],
+               {"self": here, "bad": "/opt/stacks/x/compose.yml"}, set())
+checks["…and stays away when one of them is unreachable"] = not any(
+    k == "compose_all_ok" for k, _p in
+    selfcheck.findings(selfcheck.collect(c17, ["self", "bad"])))
+# A host with no Compose containers at all has nothing to be pleased
+# about either.
+checks["…and says nothing when there is nothing to look at"] = not any(
+    k == "compose_all_ok" for k, _p in
+    selfcheck.findings(selfcheck.collect(_Checker([], {}, set()), ["plain"])))
+
 checks["a readable compose file raises none of them"] = (
     not any(kind in ("compose_holder", "compose_elsewhere")
             for kind, _p in selfcheck.findings(selfcheck.collect(
@@ -312,7 +335,7 @@ _langs = sorted(f for f in os.listdir(os.path.join(ROOT, "app", "lang"))
 # the earlier version of this looked at three of them and so never saw
 # the two kinds added last.
 _kinds = {kind for kind, _p in
-          f6 + f7 + f8 + f15 + list(k2.items()) + list(k2b.items())
+          f6 + f7 + f8 + f15 + f16 + list(k2.items()) + list(k2b.items())
           + list(k9.items()) + list(k10.items()) + list(k11.items())
           + list(k14.items())}
 # `compose_ok` is the one kind with no wording anywhere, on purpose:
@@ -334,7 +357,8 @@ checks["every finding has wording in all 16 languages"] = (
     and "selfaudit_compose_ok" not in _json.load(
         open(os.path.join(ROOT, "app", "lang", "en.json"), encoding="utf-8"))
     and {"compose_holder", "compose_elsewhere", "compose_clash",
-         "compose_holder_unknown", "compose_wrong", "compose_no_mount"}
+         "compose_holder_unknown", "compose_wrong", "compose_no_mount",
+         "compose_all_ok"}
     <= _kinds)
 
 # ── the Telegram command actually runs ───────────────────────────────

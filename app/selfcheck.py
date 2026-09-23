@@ -230,6 +230,7 @@ def findings(state):
       `compose_clash`    it is here, but mounting it would hide our data
       `compose_elsewhere` nothing here holds it — it is on another machine
       `compose_holder_unknown` we could not tell, and will not guess
+      `compose_all_ok`   every Compose file is reachable — nothing to do
     """
     out = [("self_name", {"name": state.get("name") or ""})]
     out.append(("self_mounts", {"count": len(state.get("mounts") or [])}))
@@ -293,6 +294,16 @@ def findings(state):
     # problems. "Elsewhere" is a claim, so it is only made when nothing
     # was found anywhere — beside a line naming a container right here,
     # it contradicted itself.
+    # Nothing wrong anywhere is a finding too. @NotRetarded got exactly
+    # this report on 23.09. — fifteen readable, nothing behind a wrong
+    # mount — and read the absence of any container line as the command
+    # not working. The headline was right and the silence after it was
+    # not: a report that stops without a word in the good case leaves
+    # the reader to deduce that no news is good news.
+    rows = state.get("compose") or []
+    if rows and all(r["readable"] for r in rows):
+        out.append(("compose_all_ok", {"total": len(rows)}))
+
     named = any(k in ("compose_holder", "compose_clash") for k, _p in out)
     if unknown:
         out.append(("compose_holder_unknown", {}))

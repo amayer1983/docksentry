@@ -304,8 +304,12 @@ finally:
 # command reaches it — and still records a route only when it should.
 cmd = DISCORD_SRC.split("def _cmd_selfupdate(")[1].split("\n    def ")[0]
 called = sorted(set(part.split("(")[0] for part in cmd.split("bot.")[1:]))
-checks["/selfupdate on Discord calls nothing TelegramBot lacks"] = all(
-    hasattr(TelegramBot, m) for m in called)
+# `called` is empty today, so `all()` was vacuously true and the
+# check would survive the command growing a call that does not exist.
+checks["/selfupdate on Discord calls nothing TelegramBot lacks"] = (
+    not called or all(hasattr(TelegramBot, m) for m in called))
+checks["…and borrows nothing from the Telegram bot at all today"] = (
+    called == [])
 checks["…and hands the work to the module that does it"] = (
     "selfupdate.start" in cmd)
 # The running commentary follows the same rule as the restart notice.

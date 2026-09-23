@@ -78,9 +78,9 @@ class FakeChecker:
         return 42.0, 100 * 1024 ** 3, 200 * 1024 ** 3
 
 
-def _config(auto_selfupdate):
+def _config(auto_selfupdate, language="en"):
     return types.SimpleNamespace(
-        language="en",
+        language=language,
         auto_selfupdate=auto_selfupdate,
         ui_mode="advanced",
         debug=False,
@@ -92,9 +92,9 @@ def _config(auto_selfupdate):
 
 
 def render(own_name="docksentry", auto_selfupdate=False, containers=None,
-           auto_list=()):
+           auto_list=(), language="en"):
     """Render /status and return the HTML."""
-    cfg = _config(auto_selfupdate)
+    cfg = _config(auto_selfupdate, language)
     checker = FakeChecker(own_name)
     store = FakeStore(auto=auto_list)
     handler_cls = web_ui.create_handler(cfg, checker, bot=None, store=store)
@@ -214,12 +214,22 @@ def main():
     checks["_is_own_container: empty own name -> False for everything"] = (
         not hi0._is_own_container("docksentry") and not hi0._is_own_container(""))
 
+    # The same page in German, so "no hardcoded English" is a claim
+    # that can fail. Rendering English only, it never could.
+    _de_html = render(auto_selfupdate=True, containers=both, language="de")
+
     # ── Legend: capitalised, translated, emoji-free (#46) ─────────────
     checks["legend capitalises 'auto'"] = ">Auto<" in html or "> Auto<" in html
     checks["legend keeps the lowercase 'auto' in the table header"] = (
         "<th>auto</th>" in html)
-    checks["legend has no hardcoded English 'major-confirm'"] = (
+    # This used to assert `"Major-confirm" in html` under the claim
+    # that there is no hardcoded English — the exact opposite of what
+    # it says. Rendering English can never tell a translated word from
+    # a literal one, so render a language that is not English.
+    checks["legend shows the capitalised word in English"] = (
         "Major-confirm" in html)
+    checks["legend has no hardcoded English 'major-confirm'"] = (
+        "Major-confirm" not in _de_html)
     checks["_legend_word does not mangle 'Auto-Update'"] = (
         web_ui._legend_word("Auto-Update") == "Auto-Update")
     checks["_legend_word strips the emoji and capitalises"] = (

@@ -54,8 +54,8 @@ def main():
     checks["send-only: makes no api calls at all"] = calls == []
 
     # ── sendMessage still works in send-only mode ──
-    # (enabled is True, so the normal send path is not short-circuited)
-    checks["send-only: bot still 'enabled' for sending"] = bot.enabled is True
+    # `make_bot` patches `enabled` to True, so asserting it here was
+    # asserting the harness. What matters is the send below.
 
     # ── config default is polling ON (no behavior change for existing users) ──
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))

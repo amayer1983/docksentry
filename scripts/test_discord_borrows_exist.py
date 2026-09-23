@@ -80,11 +80,11 @@ if borrowed:
     print("  → geborgt: " + ", ".join(
         f"{n} (line {ln})" for n, ln in sorted(borrowed.items())))
 
-# Should one come back, it must at least be real — the check that caught
-# the three broken commands, kept for the borrow that has not happened.
+# A second check stood here: "were one to come back, it would have to
+# exist". It derived from `borrowed`, which the line above asserts is
+# empty — so it could only ever fail when that one had failed first.
 missing = sorted(f"{n} (line {ln})" for n, ln in borrowed.items()
                  if not callable(getattr(TelegramBot, n, None)))
-checks["…and were one to come back, it would have to exist"] = not missing
 if missing:
     print("  → not on TelegramBot: " + ", ".join(missing))
 

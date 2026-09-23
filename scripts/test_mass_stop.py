@@ -224,9 +224,13 @@ def main():
     m8.snapshot = snap8
     m8.tick()
     joined = " ".join(m8.sent)
-    checks["mass stop and a genuine unhealthy flip both get through"] = (
-        any("appears to have gone down" in s for s in m8.sent)
-        and "🔴" in joined or "unhealthy" in joined.lower())
+    # `A and B or C` binds as `(A and B) or C`, and B was False here — so
+# this passed on C alone and the mass-stop half was never asserted.
+# Two facts, two checks.
+    checks["a mass stop still gets through"] = any(
+        "appears to have gone down" in s for s in m8.sent)
+    checks["…and a genuine unhealthy flip alongside it does too"] = (
+        "unhealthy" in joined.lower())
 
     # ── the digest file tells "silent" from "unreachable" (#63) ─────────
     # A container that ran but logged nothing must NOT read as a dead or
