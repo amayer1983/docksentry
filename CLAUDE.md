@@ -85,3 +85,28 @@ aussieht wie ein echter Ausfall — am 21.09. stand sie mitten in einem
 Update-Durchgang und war das Erste, was ins Auge fiel. Zum Testen die
 auskommentierte Zeile über `DOCKER_HOSTS` in `docker-compose.dev.yml`
 wieder einsetzen, danach wieder herausnehmen.
+
+## Verbindungsabbrüche erzwingen, statt auf sie zu warten
+
+Fragen an den Discord-Gateway — hält ein Resume, greift ein Backoff,
+was steht im Log — hingen bisher an einem echten Abbruch, und der kommt,
+wann er will. Am 22.09. hieß das zweimal »wir können nur warten«, und
+genau in dieser Wartezeit sind zwei falsche Theorien entstanden.
+
+Der Socket lässt sich von außen fallen lassen:
+
+```bash
+PID=$(docker inspect docksentry --format '{{.State.Pid}}')
+sudo nsenter -t $PID -n ss -K dst 162.159.0.0/16 dport = 443
+```
+
+Der Client verbindet eine Sekunde später neu und versucht dabei genau
+den Weg, um den es geht. Aus Stunden werden zehn Sekunden, beliebig oft
+wiederholbar — so ließ sich die Resume-Frage mit einer **Kontrolle**
+beantworten statt mit einer Vermutung: nackte URL → `invalidated`, mit
+Query → dreimal `session resumed`.
+
+Zwei Dinge dazu. Die Gateway-IP wechselt, deshalb das ganze Netz statt
+einer Adresse — ein Kill auf die alte IP geht wortlos ins Leere und
+sieht aus wie »nichts passiert«. Und ein gekillter Socket schickt **kein
+Close-Frame**: was am Close-Code hängt, lässt sich so nicht prüfen.
