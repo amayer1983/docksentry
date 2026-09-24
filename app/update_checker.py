@@ -284,6 +284,35 @@ def name_matches(name, patterns):
     return False
 
 
+def merge_pending(prev, updates, failed_checks, host_name, host_of):
+    """What the pending file should hold after a full scan of one host.
+
+    `(merged, carried_count)`. Three rules, and they are the whole of it:
+
+      * another host's entries are never touched — each host scans on its
+        own schedule, and wiping the file here deleted the other hosts'
+        badges and buttons;
+      * an entry this host could NOT re-verify is carried over, because
+        one 429 from Docker Hub was otherwise enough to make a real
+        pending update vanish from the UI until the next clean sweep;
+      * an entry the scan did re-verify as gone stays gone, or a
+        container that was updated would keep its badge forever.
+
+    A function rather than eleven lines inside `check_all` because the
+    test could not reach them there: it re-typed the same expression and
+    asserted against its own copy, so the whole file stayed green with
+    the carry-over deleted.
+    """
+    prev = [u for u in (prev or []) if isinstance(u, dict)]
+    others = [u for u in prev if host_of(u) != host_name]
+    found = {u.get("name") for u in (updates or [])}
+    carried = [u for u in prev
+               if host_of(u) == host_name
+               and u.get("name") in (failed_checks or set())
+               and u.get("name") not in found]
+    return others + list(updates or []) + carried, len(carried)
+
+
 class UpdateChecker:
     @property
     def backend(self):
@@ -3441,21 +3470,12 @@ class UpdateChecker:
             # the whole file here would delete the other hosts' pending
             # updates — and with them their Web UI badges and buttons.
             prev = _read_pending()
-            others = [u for u in prev
-                      if isinstance(u, dict) and _host_of(u) != host_name]
-            # Carry over what we could not re-verify. Without this, one 429
-            # from Docker Hub is enough to make a real pending update
-            # disappear from the UI until the next successful sweep.
-            found = {u.get("name") for u in updates}
-            carried = [u for u in prev
-                       if isinstance(u, dict) and _host_of(u) == host_name
-                       and u.get("name") in failed_checks
-                       and u.get("name") not in found]
+            merged, carried = merge_pending(prev, updates, failed_checks,
+                                            host_name, _host_of)
             if carried:
-                self._debug(f"  Kept {len(carried)} pending update(s) whose "
+                self._debug(f"  Kept {carried} pending update(s) whose "
                             f"check could not be completed this run")
-            atomic_write_json(self.config.pending_file,
-                              others + updates + carried)
+            atomic_write_json(self.config.pending_file, merged)
         else:
             # A scoped run only knows about the containers it actually
             # checked. Writing `updates` wholesale here would wipe every

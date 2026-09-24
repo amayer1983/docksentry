@@ -59,45 +59,52 @@ def main():
     # so its already-known pending update silently disappeared — badge and
     # button gone from the Web UI, and the next report said everything was
     # current. One 429 from Docker Hub was enough.
-    import inspect as _i
-    src = _i.getsource(UpdateChecker.check_all)
-    # Assert on the code, not on prose: an earlier version of this test
-    # matched the word "carried" and hit the explanatory comment above the
-    # variable rather than the variable, and passed for the wrong reason.
-    checks["failed checks are remembered"] = "failed_checks.add" in src
-    checks["the write includes the carried-over entries"] = (
-        "others + updates + carried" in src)
-    checks["the carry-over is keyed on the failures"] = (
-        'u.get("name") in failed_checks' in src)
-    # It must not resurrect an entry the scan DID re-verify as gone —
-    # otherwise a container that was updated keeps its badge forever.
-    checks["an entry found this run is not double-added"] = (
-        'u.get("name") not in found' in src)
+    # The rule this file is about now lives in `merge_pending`, a
+    # function, so it can be run instead of described. It used to be
+    # eleven lines inside `check_all` that no test could reach: the old
+    # version of this file greped the source for `others + updates +
+    # carried` and then, below, re-typed that same expression and
+    # asserted against its own copy. Both halves stayed green with the
+    # carry-over deleted.
+    from update_checker import merge_pending
+    host_of = lambda e: e.get("host") or "local"                # noqa: E731
+    prev = [
+        {"name": "nas-app", "host": "nas", "image": "a:1"},
+        {"name": "kept", "host": "local", "image": "b:1"},
+        {"name": "gone", "host": "local", "image": "c:1"},
+    ]
+    merged, carried = merge_pending(prev, [], {"kept"}, "local", host_of)
+    after = {u["name"] for u in merged}
+    checks["another host's entries survive a scan of this one"] = "nas-app" in after
+    checks["an entry we could not re-verify is carried over"] = "kept" in after
+    checks["…and counted, so the log can say how many"] = carried == 1
+    checks["an entry the scan verified as gone is dropped"] = "gone" not in after
 
-    # ── the merge itself, on real files ──────────────────────────
-    d = tempfile.mkdtemp()
-    path = os.path.join(d, "pending.json")
-    with open(path, "w") as f:
-        json.dump([
-            {"name": "nas-app", "host": "nas", "image": "a:1"},
-            {"name": "kept", "host": "local", "image": "b:1"},
-            {"name": "gone", "host": "local", "image": "c:1"},
-        ], f)
-    # Simulate: local scan found nothing new, `kept`'s check failed,
-    # `gone`'s succeeded and it is no longer pending.
-    from container_store import atomic_write_json
-    prev = json.load(open(path))
-    host_of = lambda e: e.get("host") or "local"
-    others = [u for u in prev if host_of(u) != "local"]
-    updates = []
-    found = {u.get("name") for u in updates}
-    carried = [u for u in prev if host_of(u) == "local"
-               and u.get("name") in {"kept"} and u.get("name") not in found]
-    atomic_write_json(path, others + updates + carried)
-    after = {u["name"] for u in json.load(open(path))}
-    checks["another host's entries survive"] = "nas-app" in after
-    checks["an unverifiable entry survives"] = "kept" in after
-    checks["a verified-gone entry is dropped"] = "gone" not in after
+    # A container that WAS re-verified this run must not be resurrected by
+    # also appearing in the failed set — otherwise its badge never clears.
+    m2, _ = merge_pending(prev, [{"name": "kept", "host": "local", "image": "b:2"}],
+                          {"kept"}, "local", host_of)
+    checks["an entry found this run is not double-added"] = (
+        [u["name"] for u in m2].count("kept") == 1)
+    checks["…and it is the fresh one that survives"] = (
+        [u for u in m2 if u["name"] == "kept"][0]["image"] == "b:2")
+
+    # Nothing failed: the file is exactly this host's findings plus the
+    # other hosts, with no leftovers.
+    m3, c3 = merge_pending(prev, [], set(), "local", host_of)
+    checks["with nothing failing, nothing is carried"] = (
+        c3 == 0 and {u["name"] for u in m3} == {"nas-app"})
+
+    # Junk in the file is skipped rather than crashing the write.
+    m4, _ = merge_pending([None, "x", {"name": "kept", "host": "local"}],
+                          [], {"kept"}, "local", host_of)
+    checks["a corrupt entry does not take the merge down"] = (
+        [u["name"] for u in m4] == ["kept"])
+
+    # And the caller still goes through it.
+    import inspect as _i
+    checks["check_all writes what the merge returns"] = (
+        "merge_pending(" in _i.getsource(UpdateChecker.check_all))
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
