@@ -142,12 +142,16 @@ def main():
             raise ValueError("batch flow crashed")
         finally:
             bot8._run_queued_selfupdate()
-    except ValueError:
-        pass
+    except ValueError as _e:
+        _caught = _e
     checks["crash: queued selfupdate NOT run"] = ran8 == []
     checks["crash: cancellation announced"] = "selfupdate_queue_cancelled" in bot8.sent
     checks["crash: queue cleared"] = bot8._queued_selfupdate is None
-    checks["crash: original exception preserved"] = True  # reaching here proves it
+    # Was `= True  # reaching here proves it`. Reaching here proves a
+    # ValueError got out, but not that it is the ORIGINAL one — the
+    # `finally` could have raised its own and this would read the same.
+    checks["crash: original exception preserved"] = (
+        str(_caught) == "batch flow crashed")
 
     # ── 5. queue survives an exception in the queued run ──
     bot7 = make_bot()

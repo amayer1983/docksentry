@@ -149,10 +149,14 @@ def main():
         raise RuntimeError("stats refused")
 
     w7 = EventWatcher(FakeBackend([]), boom, log=lambda m: None)
-    w7._handle(DOCKER_DIE)
+    try:
+        w7._handle(DOCKER_DIE)
+        checks["a refused stats call does not raise"] = True
+    except Exception as _e:
+        checks["a refused stats call does not raise"] = False
+        print(f"      → {type(_e).__name__}: {_e}")
     checks["a refused stats call still records the death"] = (
         w7.evidence("dsev") == "")
-    checks["a refused stats call does not raise"] = True
 
     # ── the real thing: a stream that ends, then reconnects ───────
     b = FakeBackend([DOCKER_DIE])

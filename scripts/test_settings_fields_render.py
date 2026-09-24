@@ -160,9 +160,12 @@ def main():
     general = pane(html, "general")
     checks["web_password field is in the General tab"] = (
         'name="web_password"' in general)
+    # The fallback here accepted a `type="password"` anywhere in the pane,
+    # on any field at all, as long as this one existed. Adjacent, either
+    # order, and nothing else counts.
     checks["web_password field is type=password"] = (
         'type="password" name="web_password"' in general
-        or 'name="web_password"' in general and 'type="password"' in general)
+        or 'name="web_password" type="password"' in general)
     checks["web_password field renders empty (value=\"\")"] = (
         'name="web_password" value=""' in general)
     checks["web_password field has a placeholder"] = (

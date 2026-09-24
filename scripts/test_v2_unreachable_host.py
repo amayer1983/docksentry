@@ -34,8 +34,13 @@ def _payload(views):
     return web_v2.payload(views, lambda h, n: f"{h}/{n}")
 
 
-out = _payload([_live("local", ONE), DEAD])
-checks["a dead host does not raise"] = True
+try:
+    out = _payload([_live("local", ONE), DEAD])
+    checks["a dead host does not raise"] = True
+except Exception as _e:
+    out = {"containers": []}
+    checks["a dead host does not raise"] = False
+    print(f"      → {type(_e).__name__}: {_e}")
 checks["the live host's rows still come through"] = (
     len(out["containers"]) == 1 and out["containers"][0]["name"] == "nginx")
 checks["the dead host is still named"] = (

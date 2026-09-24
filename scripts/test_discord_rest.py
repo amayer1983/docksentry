@@ -73,8 +73,12 @@ checks["uses the right path"] = seen[-1]["path"] == "/users/@me"
 slept.clear()
 script.append((429, {"retry_after": 1.5, "global": False}, {}))
 script.append((200, {"ok": True}, {}))
-api.me()
-checks["429 is retried, not raised"] = True
+try:
+    api.me()
+    checks["429 is retried, not raised"] = True
+except Exception as _e:
+    checks["429 is retried, not raised"] = False
+    print(f"      → {type(_e).__name__}: {_e}")
 checks["waits exactly the retry_after"] = slept == [1.5]
 
 # ── retry_after only in the header still works ───────────────────────
@@ -130,8 +134,6 @@ body = seen[-1]["body"]
 checks["immediate response is type 4"] = body["type"] == 4
 checks["response carries the content"] = body["data"]["content"] == "hello"
 checks["responses are ephemeral by default"] = body["data"]["flags"] == 64
-checks["204 decodes to None"] = True
-
 script.append((204, None, {}))
 api.interaction_response("i-2", "itok", deferred=True)
 checks["deferred response is type 5"] = seen[-1]["body"]["type"] == 5

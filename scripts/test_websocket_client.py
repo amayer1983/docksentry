@@ -134,7 +134,7 @@ t = threading.Thread(target=_serve, daemon=True)
 t.start()
 
 ws = WebSocketClient(f"ws://127.0.0.1:{port}/gw?v=10", timeout=10).connect()
-checks["handshake completes against a real server"] = True
+checks["handshake completes against a real server"] = ws.sock is not None
 checks["client sends a Sec-WebSocket-Key"] = server_saw.get("key_present") is True
 checks["client announces version 13"] = server_saw.get("version_13") is True
 checks["client sends the Upgrade header"] = server_saw.get("upgrade_hdr") is True
