@@ -45,6 +45,7 @@
   "monitor_mass_host_down": "⚠️ {host} scheint heruntergefahren oder neugestartet worden zu sein — {count} von {total} Containern gleichzeitig gestoppt.",
   "monitor_mass_cluster": "⚠️ {count} Container auf {host} wurden gleichzeitig gestoppt.",
   "monitor_mass_footer": "Die einzelnen Absturzmeldungen sind hier zusammengefasst. Die Logs jedes Containers hängen als Datei an; die vollständige Historie steht im Ereignis-Log.",
+  "monitor_mass_footer_nofile": "Die einzelnen Absturzmeldungen sind hier zusammengefasst. Die vollständige Historie steht im Ereignis-Log.",
   "monitor_mass_file_caption": "Logs der Container von {host}, festgehalten beim Stoppen.",
   "web_events": "Container-Ereignisse",
   "web_events_empty": "Keine Ereignisse aufgezeichnet",

@@ -97,8 +97,16 @@ class RetryQueue:
             self._items = []
 
     # ── the two things it does ───────────────────────────────────────
-    def remember(self, channel, text, send):
+    def remember(self, channel, text, send, still_wanted=None):
         """Hold `text` for `channel`; `send(text)` will be tried again later.
+
+        `still_wanted()` is asked again at delivery time. The stored `send`
+        is the raw transport — it has to be, or a resend would re-enter the
+        code that queued it — and that means it walks straight past the
+        channel switch. Measured: queue a message, turn the channel off,
+        flush, and it arrives anyway, up to fifteen minutes later. A switch
+        that only applies to messages which happened to succeed the first
+        time is not a switch.
 
         `send` must return True only when the message actually landed, and
         must NOT call back into `remember` — `flush` decides what happens to
@@ -112,6 +120,7 @@ class RetryQueue:
                 "channel": channel,
                 "text": text,
                 "send": send,
+                "wanted": still_wanted,
                 "at": self._clock(),
                 "wall": self._wall(),
             })
@@ -150,6 +159,17 @@ class RetryQueue:
             if held["channel"] in blocked:
                 keep.append(held)
                 continue
+            wanted = held.get("wanted")
+            if wanted is not None:
+                try:
+                    if not wanted():
+                        dropped += 1
+                        print(f"Notify retry: dropped a held "
+                              f"{held['channel']} message — the channel was "
+                              f"switched off while it waited")
+                        continue
+                except Exception:                         # pragma: no cover
+                    pass
             try:
                 ok = bool(held["send"](self._prefix(held, now) + held["text"]))
             except Exception as e:                        # pragma: no cover
@@ -187,9 +207,9 @@ class RetryQueue:
 queue = RetryQueue()
 
 
-def remember(channel, text, send):
+def remember(channel, text, send, still_wanted=None):
     """Hold a message on the shared queue."""
-    return queue.remember(channel, text, send)
+    return queue.remember(channel, text, send, still_wanted)
 
 
 def flush():

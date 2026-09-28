@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} parece haberse apagado o reiniciado — {count} de {total} contenedores se detuvieron a la vez.",
   "monitor_mass_cluster": "⚠️ {count} contenedores en {host} se detuvieron a la vez.",
   "monitor_mass_footer": "Las alertas de fallo por contenedor se agruparon en esta. El registro de cada contenedor está adjunto; el historial completo está en el registro de eventos.",
+  "monitor_mass_footer_nofile": "Las alertas de fallo por contenedor se agruparon en esta. El historial completo está en el registro de eventos.",
   "monitor_mass_file_caption": "Registros de los contenedores de {host}, capturados al detenerse.",
   "web_events": "Eventos de contenedores",
   "web_events_empty": "No hay eventos registrados",

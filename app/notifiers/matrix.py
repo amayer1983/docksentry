@@ -279,4 +279,5 @@ class MatrixNotifier(BaseNotifier):
         if not send(text):
             print(f"{self.name} send failed: no answer — holding the message "
                   f"for redelivery")
-            notify_retry.remember(self.name, text, send)
+            notify_retry.remember(self.name, text, send,
+                                  still_wanted=self.active)

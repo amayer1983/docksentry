@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} sembra essersi spento o riavviato — {count} di {total} container si sono fermati contemporaneamente.",
   "monitor_mass_cluster": "⚠️ {count} container su {host} si sono fermati contemporaneamente.",
   "monitor_mass_footer": "Gli avvisi di crash per container sono stati raggruppati qui. Il log di ogni container è allegato; la cronologia completa è nel registro eventi.",
+  "monitor_mass_footer_nofile": "Gli avvisi di crash per container sono stati raggruppati qui. La cronologia completa è nel registro eventi.",
   "monitor_mass_file_caption": "Log dei container di {host}, catturati al momento dell'arresto.",
   "web_events": "Eventi dei container",
   "web_events_empty": "Nessun evento registrato",

@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} 似乎已关闭或重启 — {total} 个容器中有 {count} 个同时停止。",
   "monitor_mass_cluster": "⚠️ {host} 上的 {count} 个容器同时停止。",
   "monitor_mass_footer": "各容器的崩溃提醒已合并为这一条。每个容器的日志已作为附件；完整历史见事件日志。",
+  "monitor_mass_footer_nofile": "各容器的崩溃提醒已合并为这一条。完整历史见事件日志。",
   "monitor_mass_file_caption": "{host} 各容器在停止时捕获的日志。",
   "web_events": "容器事件",
   "web_events_empty": "未记录任何事件",

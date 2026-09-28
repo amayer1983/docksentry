@@ -153,9 +153,15 @@ class Telegram:
 class Channels:
     def __init__(self):
         self.sent = []
+        self.urgent = []
     def has_channels(self):
         return True
-    def send_message(self, text, skip=()):
+    def send_message(self, text, skip=(), urgent=False):
+        # `urgent` is how `tell` says "quiet hours do not apply to this
+        # one". The stand-in records it, because the seam swallows a
+        # TypeError from this call — so a signature that drifts loses the
+        # whole fan-out silently, which is how this check first failed.
+        self.urgent.append(urgent)
         # `skip` is the seam that lets a private self-update keep its
         # restart notice out of the Discord channel (#63); this stand-in
         # has no channels to skip, so it only has to accept it.
@@ -173,6 +179,8 @@ try:
     selfupdate.start(ctx, None)
     checks["the 'already up to date' report reaches Telegram"] = len(tg.sent) == 1
     checks["…and every other channel too"] = others.sent == tg.sent
+    checks["…marked urgent, so quiet hours cannot swallow it"] = (
+        others.urgent == [True])
     checks["…and the lock is free afterwards"] = not ctx._update_lock.locked()
 
     tg.sent.clear(); others.sent.clear()

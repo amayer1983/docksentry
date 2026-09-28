@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} semble s'être arrêté ou redémarré — {count} conteneurs sur {total} se sont arrêtés en même temps.",
   "monitor_mass_cluster": "⚠️ {count} conteneurs sur {host} se sont arrêtés en même temps.",
   "monitor_mass_footer": "Les alertes de plantage par conteneur ont été regroupées ici. Le journal de chaque conteneur est joint ; l'historique complet est dans le journal des événements.",
+  "monitor_mass_footer_nofile": "Les alertes de plantage par conteneur ont été regroupées ici. L'historique complet est dans le journal des événements.",
   "monitor_mass_file_caption": "Journaux des conteneurs de {host}, capturés au moment de leur arrêt.",
   "web_events": "Événements des conteneurs",
   "web_events_empty": "Aucun événement enregistré",

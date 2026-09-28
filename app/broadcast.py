@@ -69,6 +69,30 @@ class Broadcast:
         except Exception as e:
             self.log(f"Could not fan out an announcement: {e}")
 
+    def update_result(self, name, image, success, detail="", source_url=""):
+        """One container finished updating.
+
+        Deliberately NOT sent to Telegram, and that is the point of it
+        being here: the plugins render a feed, one card per container as
+        it lands, while Telegram gets the whole batch in a single message
+        with every line in its `detail` (`telegram_bot.py`, the summary
+        after a run). Nine containers are nine cards there and one
+        message here.
+
+        Until now the engine held `notifier` and nothing else, so that
+        difference was not a decision anybody made — it was whichever
+        object happened to be reachable. Changing the cadence is now an
+        edit in one place rather than an argument about which door to
+        knock on.
+        """
+        notifier = self.notifier
+        try:
+            if notifier is not None and notifier.has_channels():
+                notifier.send_update_result(name, image, success, detail,
+                                            source_url=source_url)
+        except Exception as e:
+            self.log(f"Could not report an update result: {e}")
+
     def tell(self, text, skip=()):
         """Every channel, and not silenced by quiet hours.
 
@@ -97,6 +121,6 @@ class Broadcast:
         notifier = self.notifier
         try:
             if notifier is not None and notifier.has_channels():
-                notifier.send_message(text, skip=skip)
+                notifier.send_message(text, skip=skip, urgent=True)
         except Exception as e:
             self.log(f"Could not fan out a report: {e}")

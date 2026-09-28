@@ -1023,8 +1023,15 @@ class ContainerMonitor:
                      total=prev_running)
         else:
             head = t("monitor_mass_cluster", host=host, count=n)
-        msg = head + "\n" + ", ".join(names[:30]) + "\n" \
-            + t("monitor_mass_footer")
+        _body = head + "\n" + ", ".join(names[:30]) + "\n"
+        # Two footers, because only one channel gets the file. The single
+        # footer said "each container's log tail is attached" and went to
+        # all nine; `send_document` is asked of the Telegram front end
+        # alone, so eight of them read about an attachment that was never
+        # coming. A message that sends somebody looking for something
+        # that is not there is a defect even when the logic is right.
+        msg = _body + t("monitor_mass_footer")
+        msg_nofile = _body + t("monitor_mass_footer_nofile")
         try:
             self.bot.send_message(msg, auto=True)
         except Exception as e:
@@ -1032,7 +1039,7 @@ class ContainerMonitor:
         notifier = getattr(self.bot, "notifier", None)
         if notifier and getattr(notifier, "has_channels", lambda: False)():
             try:
-                notifier.send_message(msg)
+                notifier.send_message(msg_nofile)
             except Exception as e:
                 print(f"Monitor mass notifier error: {e}")
         # The log file — best-effort, only where the front end takes one.

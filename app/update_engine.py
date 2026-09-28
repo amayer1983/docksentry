@@ -86,6 +86,32 @@ def _wait(seconds, engine=None):
     (getattr(engine, "_sleep", None) or _t.sleep)(seconds)
 
 
+def _report_result(engine, name, image, success, detail, source_url=""):
+    """One finished container, out through the seam.
+
+    The engine used to hold `notifier` and call it directly — it has
+    never had a reference to `broadcast` at all — so which channels heard
+    a finished container was settled by whatever happened to be reachable
+    rather than by anyone deciding. The seam keeps today's cadence
+    exactly (a card per container on the plugins, the whole batch in one
+    Telegram message) and puts that choice in one readable place.
+
+    A module function, not a method: `test_update_policy.py` and
+    `test_manual_update_gates.py` drive `_process_update_batch` with a
+    stand-in `self` that has none of our methods, and a report is not
+    worth an AttributeError.
+    """
+    seam = getattr(engine, "broadcast", None)
+    if seam is not None:
+        seam.update_result(name, image, success, detail,
+                           source_url=source_url)
+        return
+    notifier = getattr(engine, "notifier", None)
+    if notifier:
+        notifier.send_update_result(name, image, success, detail,
+                                    source_url=source_url)
+
+
 class UpdateEngine:
     def _t(self, key, **kw):
         """A user-facing line, in the configured language.
@@ -177,6 +203,10 @@ class UpdateEngine:
         # main.py after init (bot.notifier = Notifier(config), which writes
         # through to here). Defensive default so the attribute always exists.
         self.notifier = None
+        #: The all-channel seam. Set by main.py right after it is built;
+        #: `_report_result` prefers it and falls back to `notifier` for
+        #: the engines the tests construct on their own.
+        self.broadcast = None
 
     #: Most anyone can queue by tapping. Ten manual updates back to back
     #: is already a long time to be holding someone's attention.
@@ -777,9 +807,8 @@ class UpdateEngine:
                 except Exception as _ce:
                     results.append(self._t("cleanup_attempt_failed",
                                            error=str(_ce)[:120]))
-                if self.notifier:
-                    self.notifier.send_update_result(u["name"], u["image"], success, msg,
-                                                     source_url=u.get("source_url", ""))
+                _report_result(self, u["name"], u["image"], success, msg,
+                               u.get("source_url", ""))
 
                 grp = (groups.get(cur_group) or {}) if cur_group else {}
                 members = grp.get("containers") or []
@@ -815,9 +844,8 @@ class UpdateEngine:
                 results.append(f"❌ {self._display_name(u)}: {clip(e)}")
                 if cur_group:
                     group_aborted.add(abort_key)
-                if self.notifier:
-                    self.notifier.send_update_result(u["name"], u.get("image", "?"), False, clip(e),
-                                                     source_url=u.get("source_url", ""))
+                _report_result(self, u["name"], u.get("image", "?"), False,
+                               clip(e), u.get("source_url", ""))
             prev_group = abort_key
             self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1,
                                  host=u_host)

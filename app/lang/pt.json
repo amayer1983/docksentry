@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} parece ter sido desligado ou reiniciado — {count} de {total} contêineres pararam ao mesmo tempo.",
   "monitor_mass_cluster": "⚠️ {count} contêineres em {host} pararam ao mesmo tempo.",
   "monitor_mass_footer": "Os alertas de falha por contêiner foram agrupados neste. O log de cada contêiner está anexado; o histórico completo está no registro de eventos.",
+  "monitor_mass_footer_nofile": "Os alertas de falha por contêiner foram agrupados neste. O histórico completo está no registro de eventos.",
   "monitor_mass_file_caption": "Logs dos contêineres de {host}, capturados quando pararam.",
   "web_events": "Eventos de contentores",
   "web_events_empty": "Nenhum evento registado",

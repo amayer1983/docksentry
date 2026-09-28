@@ -139,6 +139,9 @@ def main():
     # Telegram alone" happened three times (#57, #61).
     broadcast = Broadcast(telegram=bot, notifier=notifier)
     bot.broadcast = broadcast
+    # The engine reports through the seam too now, rather than holding
+    # the notifier half and nothing else (#63 follow-up).
+    engine.broadcast = broadcast
     # One self-update machine, shared by both front ends (#63). It reports
     # through the seam above rather than through Telegram, which is what
     # gives a /selfupdate started from Discord anything to say past

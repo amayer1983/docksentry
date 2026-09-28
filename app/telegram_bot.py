@@ -2026,30 +2026,30 @@ class TelegramBot:
         # Window-skipped: tell the user once so they're not surprised
         if skipped_window:
             names = ", ".join(f"`{u['name']}`" for u in skipped_window)
-            self.send_message(
-                self.t("window_skipped", names=names), auto=True,
-            )
+            # Through the seam, not the Telegram door. These containers
+            # are held back and never enter `notify_list` below, so until
+            # now no other channel learned the update existed at all.
+            self.announce(self.t("window_skipped", names=names))
 
         # Policy-held: tell the user once per container that a newer version
         # exists but was capped by the update policy. It stays in pending
         # (surfaced in the "Updates Available" list below), so /update or a
         # policy change can still apply it.
         for u, level, old, new in policy_blocked:
-            self.send_message(
-                self.t("policy_held", name=u["name"], level=level, old=old, new=new),
-                auto=True,
-            )
+            # The container rides `notify_list` below, so other channels
+            # already learn an update exists — but not that a policy held
+            # it, nor which bump. That reason was Telegram's alone.
+            self.announce(self.t("policy_held", name=u["name"], level=level,
+                                 old=old, new=new))
 
         # Age-held: the image exists but is younger than the operator is
         # willing to install unattended. Same treatment as a policy hold —
         # one message, and the update stays pending so it applies on a
         # later tick once the image has aged, with nobody doing anything.
         for u, days, required in age_blocked:
-            self.send_message(
-                self.t("age_held", name=u["name"], days=days,
-                       required=required, remaining=max(1, required - days)),
-                auto=True,
-            )
+            self.announce(self.t("age_held", name=u["name"], days=days,
+                                 required=required,
+                                 remaining=max(1, required - days)))
 
         # Major-confirm queue: send confirmation prompt(s). The callback
         # payload carries the host (#7) so confirming the NAS's `plex` can't
@@ -2061,13 +2061,15 @@ class TelegramBot:
                 {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
                 {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
             ]]}
-            self.send_message(
+            # The keyboard is Telegram's and stays Telegram's; the seam
+            # hands the markup to that leg only. Everyone else at least
+            # learns that a confirmation is waiting, which they could not
+            # before — the Web UI can apply it.
+            self.announce(
                 self.t("major_confirm_prompt", name=name,
                        tag=self._entry_host_tag({"host": host_name}),
                        old=old_ver, new=new_ver),
-                reply_markup=keyboard,
-                auto=True,
-            )
+                reply_markup=keyboard)
 
         # Notify about remaining updates (this is auto-triggered from the
         # scheduler — respect quiet hours). Policy-held updates ride along in

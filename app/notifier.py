@@ -172,7 +172,7 @@ class Notifier:
             return
         self._dispatch("send_update_result", name, image, success, detail, source_url)
 
-    def send_message(self, text, skip=()):
+    def send_message(self, text, skip=(), urgent=False):
         """Send a plain text notification (subject to quiet hours).
 
         `skip` withholds this one message from the named channels. It
@@ -182,7 +182,14 @@ class Notifier:
         same thing to the whole channel anyway. Empty by default, so
         every other message goes exactly where it always did.
         """
-        if self._suppressed():
+        # `urgent` is the seam's `tell`: a storage alert, a rollback, a
+        # host that stopped answering. Quiet hours are for the routine
+        # traffic, and until now they silenced these too — on the plugins
+        # only, because the Telegram leg of `tell` passes no `auto` flag
+        # and so never reached the gate. Between 23:00 and 07:00 a
+        # rollback was therefore Telegram-only, which is the opposite of
+        # what `tell`'s own docstring promises.
+        if not urgent and self._suppressed():
             return
         self._dispatch("send_message", text, skip=skip)
 

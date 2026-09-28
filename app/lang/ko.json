@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host}이(가) 종료되었거나 재시작된 것으로 보입니다 — {total}개 중 {count}개 컨테이너가 동시에 중지되었습니다.",
   "monitor_mass_cluster": "⚠️ {host}의 컨테이너 {count}개가 동시에 중지되었습니다.",
   "monitor_mass_footer": "컨테이너별 오류 알림이 하나로 묶였습니다. 각 컨테이너의 로그가 첨부되어 있으며, 전체 기록은 이벤트 로그에 있습니다.",
+  "monitor_mass_footer_nofile": "컨테이너별 오류 알림이 하나로 묶였습니다. 전체 기록은 이벤트 로그에 있습니다.",
   "monitor_mass_file_caption": "{host} 컨테이너가 중지될 때 캡처된 로그입니다.",
   "web_events": "컨테이너 이벤트",
   "web_events_empty": "기록된 이벤트 없음",

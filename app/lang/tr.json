@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} kapanmış veya yeniden başlatılmış görünüyor — {total} kapsayıcıdan {count} tanesi aynı anda durdu.",
   "monitor_mass_cluster": "⚠️ {host} üzerindeki {count} kapsayıcı aynı anda durdu.",
   "monitor_mass_footer": "Kapsayıcı başına çökme uyarıları bunda toplandı. Her kapsayıcının günlüğü ekte; tam geçmiş Olaylar günlüğünde.",
+  "monitor_mass_footer_nofile": "Kapsayıcı başına çökme uyarıları bunda toplandı. Tam geçmiş Olaylar günlüğünde.",
   "monitor_mass_file_caption": "{host} kapsayıcılarının durduğu anda alınan günlükleri.",
   "web_events": "Konteyner Olayları",
   "web_events_empty": "Kayıtlı olay yok",

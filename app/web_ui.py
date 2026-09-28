@@ -7129,8 +7129,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     print(f"Web UI selfupdate (headless): "
                           f"{'update started' if applied else 'no update applied — see lines above for the reason'}")
             except Exception as e:
+                # Was `notifier.send_message` alone, so the plugins heard
+                # that the self-update had failed and Telegram did not —
+                # the one message you least want to lose. The seam sends
+                # it once, to everybody.
                 print(f"Web UI selfupdate error: {e}")
-                if bot.notifier and bot.notifier.has_channels():
+                seam = getattr(bot, "broadcast", None)
+                if seam is not None:
+                    seam.tell(f"❌ Selfupdate failed: {e}")
+                elif bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(f"❌ Selfupdate failed: {e}")
 
         def _api_bulk(self, action, keys):

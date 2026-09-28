@@ -153,4 +153,5 @@ class GotifyNotifier(BaseNotifier):
         if not self._post_text(text):
             print(f"{self.name} send failed: no answer — holding the message "
                   f"for redelivery")
-            notify_retry.remember(self.name, text, self._post_text)
+            notify_retry.remember(self.name, text, self._post_text,
+                                  still_wanted=self.active)

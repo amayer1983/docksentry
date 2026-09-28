@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} wygląda na wyłączony lub zrestartowany — {count} z {total} kontenerów zatrzymało się jednocześnie.",
   "monitor_mass_cluster": "⚠️ {count} kontenerów na {host} zatrzymało się jednocześnie.",
   "monitor_mass_footer": "Alerty o awariach poszczególnych kontenerów połączono w jeden. Dziennik każdego kontenera jest w załączniku; pełna historia znajduje się w dzienniku zdarzeń.",
+  "monitor_mass_footer_nofile": "Alerty o awariach poszczególnych kontenerów połączono w jeden. Pełna historia znajduje się w dzienniku zdarzeń.",
   "monitor_mass_file_caption": "Dzienniki kontenerów z {host}, zarejestrowane w momencie zatrzymania.",
   "web_events": "Zdarzenia kontenerów",
   "web_events_empty": "Brak zapisanych zdarzeń",

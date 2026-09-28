@@ -590,6 +590,12 @@ class DiscordBot:
         Best-effort and silent on failure — an announcement that fails
         must never take down the thing it was announcing.
         """
+        # The switch, before anything else — it exists on the Connections
+        # page and this method never read it, so a channel somebody had
+        # turned off went on receiving. Telegram has had the rule from the
+        # start: off means off, notifications and answers alike.
+        if not getattr(self.config, "channel_discordbot_enabled", True):
+            return
         channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
         if not channel or not self.rest:
             return

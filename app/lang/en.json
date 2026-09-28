@@ -45,6 +45,7 @@
   "monitor_mass_host_down": "⚠️ {host} appears to have gone down or restarted — {count} of {total} containers stopped at once.",
   "monitor_mass_cluster": "⚠️ {count} containers on {host} stopped at once.",
   "monitor_mass_footer": "Per-container crash alerts were bundled into this one. Each container's log tail is attached; the full history is in the Events log.",
+  "monitor_mass_footer_nofile": "Per-container crash alerts were bundled into this one. The full history is in the Events log.",
   "monitor_mass_file_caption": "Logs from {host}'s containers, captured as they stopped.",
   "web_events": "Container Events",
   "web_events_empty": "No events recorded",

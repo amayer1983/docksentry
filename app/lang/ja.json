@@ -43,6 +43,7 @@
   "monitor_mass_host_down": "⚠️ {host} は停止または再起動されたようです — {total} 個中 {count} 個のコンテナが同時に停止しました。",
   "monitor_mass_cluster": "⚠️ {host} 上の {count} 個のコンテナが同時に停止しました。",
   "monitor_mass_footer": "コンテナごとのクラッシュ通知はこの1件にまとめられました。各コンテナのログを添付しています。完全な履歴はイベントログにあります。",
+  "monitor_mass_footer_nofile": "コンテナごとのクラッシュ通知はこの1件にまとめられました。完全な履歴はイベントログにあります。",
   "monitor_mass_file_caption": "{host} のコンテナが停止した時点で取得したログです。",
   "web_events": "コンテナイベント",
   "web_events_empty": "記録されたイベントはありません",
