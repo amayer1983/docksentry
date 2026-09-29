@@ -1030,8 +1030,22 @@ class ContainerMonitor:
         # alone, so eight of them read about an attachment that was never
         # coming. A message that sends somebody looking for something
         # that is not there is a defect even when the logic is right.
-        msg = _body + t("monitor_mass_footer")
         msg_nofile = _body + t("monitor_mass_footer_nofile")
+        # Build the file BEFORE choosing Telegram's footer. The claim
+        # "each container's log tail is attached" is only true if there
+        # is a tail and a front end that takes one — no `send_document`,
+        # an empty body, or a front end that refuses all leave the
+        # promise unkept, and then the plugins' honest footer is the
+        # right one for Telegram too.
+        try:
+            body = self._mass_log_file(deaths)
+        except Exception as e:
+            print(f"Monitor mass log-file error: {e}")
+            body = ""
+        send_doc = getattr(self.bot, "send_document", None)
+        will_attach = bool(body and send_doc)
+        msg = _body + t("monitor_mass_footer" if will_attach
+                        else "monitor_mass_footer_nofile")
         try:
             self.bot.send_message(msg, auto=True)
         except Exception as e:
@@ -1042,11 +1056,8 @@ class ContainerMonitor:
                 notifier.send_message(msg_nofile)
             except Exception as e:
                 print(f"Monitor mass notifier error: {e}")
-        # The log file — best-effort, only where the front end takes one.
         try:
-            body = self._mass_log_file(deaths)
-            send_doc = getattr(self.bot, "send_document", None)
-            if body and send_doc:
+            if will_attach:
                 from datetime import datetime
                 stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 fname = f"{host}-logs-{stamp}.txt".replace("/", "_")

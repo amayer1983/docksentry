@@ -89,10 +89,11 @@ def _wait(seconds, engine=None):
 def _report_result(engine, name, image, success, detail, source_url=""):
     """One finished container, out through the seam.
 
-    The engine used to hold `notifier` and call it directly — it has
-    never had a reference to `broadcast` at all — so which channels heard
-    a finished container was settled by whatever happened to be reachable
-    rather than by anyone deciding. The seam keeps today's cadence
+    The engine used to hold `notifier` and call it directly, with no
+    reference to `broadcast` anywhere in the file, so which channels
+    heard a finished container was settled by whatever happened to be
+    reachable rather than by anyone deciding. It has one now, set by
+    `main.py` right after the seam is built. The seam keeps today's cadence
     exactly (a card per container on the plugins, the whole batch in one
     Telegram message) and puts that choice in one readable place.
 
@@ -578,7 +579,6 @@ class UpdateEngine:
         why a single-host install resolves everything to the raw store and
         behaves exactly as before.
         """
-        import time as _time
         self._enrich_with_source_url(updates)
 
         _host_of = entry_host

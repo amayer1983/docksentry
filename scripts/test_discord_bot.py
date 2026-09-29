@@ -655,7 +655,14 @@ checks["/groups shows the members"] = "`web`" in out and "`db`" in out
 checks["/groups marks the leader"] = "👑" in out
 checks["a group is per host — the other host has none"] = (
     _EN["groups_empty"] in out and "@nas" in out)
-checks["…and the group carries its host marker"] = "@local" in out
+# The two markers do different jobs. "No groups on this host" is a
+# heading and names even the local host; a group line is a row in a
+# list, where an `@local` on every entry is the noise the row form
+# exists to avoid. One variable used to serve both, so every row got it.
+checks["…and that empty line names the host it is about"] = (
+    "@nas" in out)
+checks["…while a local group row carries no marker"] = (
+    "`Media Stack` (" in out and "`Media Stack` @local" not in out)
 LOCAL_STORE.delete_group("media")
 
 # ── /settings ────────────────────────────────────────────────────────

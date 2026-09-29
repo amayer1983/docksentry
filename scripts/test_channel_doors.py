@@ -71,15 +71,16 @@ checks["…while one for a channel still on is delivered"] = (
 # Every plugin that queues its own transport passes the question along —
 # counted, because one that forgets is invisible until somebody turns a
 # channel off and keeps receiving.
-_plugins = ("discord", "webhook", "gotify", "apprise", "ntfy", "matrix", "smtp")
+_ndir = os.path.join(os.path.dirname(__file__), "..", "app", "notifiers")
+_plugins = sorted(f[:-3] for f in os.listdir(_ndir)
+                  if f.endswith(".py") and f != "__init__.py" and f != "base.py")
 _missing = []
 for _p in _plugins:
-    _src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                             "notifiers", f"{_p}.py"), encoding="utf-8").read()
-    if "notify_retry.remember" in _src and "still_wanted=self.active" not in _src:
+    _src = open(os.path.join(_ndir, f"{_p}.py"), encoding="utf-8").read()
+    if "notify_retry.remember" in _src and "still_wanted=" not in _src:
         _missing.append(_p)
 checks["every plugin that queues a message asks again before resending"] = (
-    not _missing)
+    not _missing and len(_plugins) >= 8)
 if _missing:
     print("      → ohne Nachfrage: " + ", ".join(_missing))
 
@@ -126,6 +127,44 @@ for _quiet in (False, True):
 # built. It has to be the instance that went through the quiet round.
 checks["routine traffic is still silenced on the plugins at night"] = (
     _pl.sent == ["the host stopped answering"])
+
+
+# The REAL gate, not a stand-in that reimplements it. Both existing
+# checks used a fake whose own `if not urgent and quiet: return` was the
+# thing under test — so deleting `not urgent and` from app/notifier.py
+# changed nothing anywhere in the suite.
+import notifier as _nmod                                     # noqa: E402
+
+class _Live(_nmod.Notifier):
+    """A real Notifier with one plugin that records, and a quiet clock."""
+
+    def __init__(self, quiet):
+        self.seen = []
+        self._quiet = quiet
+        self.config = types.SimpleNamespace(language="en")
+
+    def _suppressed(self):
+        return self._quiet
+
+    def has_channels(self):
+        return True
+
+    def _dispatch(self, method, *a, **kw):
+        self.seen.append(a[0] if a else "")
+
+
+_night = _Live(quiet=True)
+_nmod.Notifier.send_message(_night, "routine: an update is available")
+checks["the real gate silences routine traffic at night"] = _night.seen == []
+_nmod.Notifier.send_message(_night, "urgent: the host stopped answering",
+                            urgent=True)
+checks["…and lets the urgent class through"] = (
+    _night.seen == ["urgent: the host stopped answering"])
+
+_day = _Live(quiet=False)
+_nmod.Notifier.send_message(_day, "routine, in daylight")
+checks["…while by day the routine class goes out as before"] = (
+    _day.seen == ["routine, in daylight"])
 
 
 # ── the engine reports through the seam, not around it ───────────────
@@ -187,13 +226,20 @@ checks["…and the monitor sends the right one to each"] = (
 # ── the four notices that used to be Telegram's alone ────────────────
 _tgsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                            "telegram_bot.py"), encoding="utf-8").read()
-for _key in ("window_skipped", "policy_held", "age_held",
-             "major_confirm_prompt"):
+# Three of the four go through `_say_once`, which is `announce` with a
+# "have I already said this" in front of it — they are recomputed on
+# every check run, so without it a closed maintenance window repeated
+# the same sentence to every channel on every tick.
+for _key, _door in (("window_skipped", "_say_once("),
+                    ("policy_held", "_say_once("),
+                    ("age_held", "_say_once("),
+                    ("major_confirm_prompt", "self.announce(")):
     _i = _tgsrc.index(f'self.t("{_key}"')
-    _before = _tgsrc[max(0, _i - 200):_i]
-    checks[f"'{_key}' goes out through the seam"] = (
-        "self.announce(" in _before and "send_message(" not in
-        _before.split("self.announce(")[-1])
+    _before = _tgsrc[max(0, _i - 260):_i]
+    checks[f"'{_key}' goes out through the seam"] = _door in _before
+checks["…and _say_once is the seam with a memory in front"] = (
+    "_held_seen[kind] = signature" in _tgsrc
+    and "self.announce(text, **kw)" in _tgsrc)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

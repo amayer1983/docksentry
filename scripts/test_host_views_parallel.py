@@ -146,13 +146,22 @@ checks["…and its row says how long until the retry"] = (
 hosts_mod.mark_reachable("beta")
 
 # ── a host that answers forgets its failure ──────────────────────────
-hosts_mod.mark_unreachable("gamma", "boom", cooldown=0.01)
-time.sleep(0.05)
+# Asserting `unreachable_for(...) == 0.0` after a 0.01s cooldown was
+# vacuous: `hosts.unreachable_for` drops an expired entry lazily on read
+# and answers `(0.0, "")` whether anyone called `mark_reachable` or not.
+# What only `mark_reachable` clears is the consecutive-failure counter
+# that drives the exponential cooldown — so ask that.
+hosts_mod.mark_unreachable("gamma", "boom")        # implicit → counter set
+checks["a failure is remembered, and counted"] = (
+    hosts_mod._failures.get("gamma") == 1)
+# Let it come due without forgetting the count, the way the clock would.
+with hosts_mod._unreachable_lock:
+    hosts_mod._unreachable.pop("gamma", None)
 h5, _ = _handler()
 h5._host_views(multi=[_Host("gamma", _Backend("gamma", delay=0))],
                store_for=lambda _h: types.SimpleNamespace())
 checks["a host that answers clears its failure memory"] = (
-    hosts_mod.unreachable_for("gamma")[0] == 0.0)
+    "gamma" not in hosts_mod._failures)
 
 # ── and the lister still works for callers with no ids to hand over ──
 _lister = open(os.path.join(os.path.dirname(__file__), "..", "app",

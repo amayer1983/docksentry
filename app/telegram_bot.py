@@ -1443,6 +1443,12 @@ class TelegramBot:
         typing the command again, and a duplicated 30 kB upload into a
         chat is worse than a second attempt they chose to make.
         """
+        # The channel switch first, the same rule `send_message` has
+        # had from the start and `DiscordBot.announce` just gained: off
+        # means off. Without it a mass-stop log file and every /backup
+        # still landed in a chat somebody had switched off.
+        if not getattr(self.config, "channel_telegram_enabled", True):
+            return False
         if not self.enabled:
             return False
         chat_id = str(self._effective_chat_id())
@@ -2023,13 +2029,32 @@ class TelegramBot:
                 self._update_lock.release()
                 self._run_queued_selfupdate()
 
+        # Said once per state, not once per run. `policy_blocked`,
+        # `age_blocked` and `skipped_window` are recomputed from the
+        # pending list on every scheduled check, so a closed window or a
+        # capped policy repeated the same sentence every tick — harmless
+        # while it was Telegram's alone, and ten containers × three
+        # plugins × an hourly cron once these went through the seam.
+        # The signature is in memory on purpose: after a restart you get
+        # one reminder of what is still held, which is worth having.
+        _held_seen = getattr(self, "_held_notices", None)
+        if _held_seen is None:
+            _held_seen = self._held_notices = {}
+
+        def _say_once(kind, signature, text, **kw):
+            if _held_seen.get(kind) == signature:
+                return
+            _held_seen[kind] = signature
+            self.announce(text, **kw)
+
         # Window-skipped: tell the user once so they're not surprised
         if skipped_window:
             names = ", ".join(f"`{u['name']}`" for u in skipped_window)
             # Through the seam, not the Telegram door. These containers
             # are held back and never enter `notify_list` below, so until
             # now no other channel learned the update existed at all.
-            self.announce(self.t("window_skipped", names=names))
+            _say_once("window", names,
+                      self.t("window_skipped", names=names))
 
         # Policy-held: tell the user once per container that a newer version
         # exists but was capped by the update policy. It stays in pending
@@ -2039,17 +2064,19 @@ class TelegramBot:
             # The container rides `notify_list` below, so other channels
             # already learn an update exists — but not that a policy held
             # it, nor which bump. That reason was Telegram's alone.
-            self.announce(self.t("policy_held", name=u["name"], level=level,
-                                 old=old, new=new))
+            _say_once(f"policy:{u['name']}", (level, old, new),
+                      self.t("policy_held", name=u["name"], level=level,
+                             old=old, new=new))
 
         # Age-held: the image exists but is younger than the operator is
         # willing to install unattended. Same treatment as a policy hold —
         # one message, and the update stays pending so it applies on a
         # later tick once the image has aged, with nobody doing anything.
         for u, days, required in age_blocked:
-            self.announce(self.t("age_held", name=u["name"], days=days,
-                                 required=required,
-                                 remaining=max(1, required - days)))
+            _say_once(f"age:{u['name']}", (days, required),
+                      self.t("age_held", name=u["name"], days=days,
+                             required=required,
+                             remaining=max(1, required - days)))
 
         # Major-confirm queue: send confirmation prompt(s). The callback
         # payload carries the host (#7) so confirming the NAS's `plex` can't

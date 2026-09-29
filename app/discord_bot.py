@@ -582,8 +582,15 @@ class DiscordBot:
         """
         return not bool(getattr(self.config, "discord_public_replies", False))
 
-    def announce(self, text):
-        """Say something into the configured channel, unprompted.
+    def announce(self, text, reply=False):
+        """Say something into the configured channel.
+
+        `reply=True` marks an answer to a command somebody just typed.
+        Those keep going out with the channel switched off — the switch
+        is about unprompted notices, and swallowing the running
+        commentary of a `/selfupdate` somebody started themselves turns
+        "off" into "half off": the slash reply still arrives, then
+        silence. That regressed when the switch was first honoured here.
 
         The bot could only ever answer before this: every slash reply is
         ephemeral, so "bot started" and crash alerts had nowhere to go.
@@ -594,7 +601,8 @@ class DiscordBot:
         # page and this method never read it, so a channel somebody had
         # turned off went on receiving. Telegram has had the rule from the
         # start: off means off, notifications and answers alike.
-        if not getattr(self.config, "channel_discordbot_enabled", True):
+        if not reply and not getattr(self.config,
+                                     "channel_discordbot_enabled", True):
             return
         channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
         if not channel or not self.rest:
@@ -1782,10 +1790,17 @@ class DiscordBot:
         lines = []
         for host in self._hosts_for(None):
             store = self._store_for(host)
-            tag = self._section_label(host)
+            # Two markers, because there are two jobs here. "No groups
+            # on this host" is a heading and needs the host named even
+            # when it is the local one; a group line is a row in a list,
+            # where marking every local entry is the noise `_label`
+            # exists to avoid. Hoisting one variable for both put
+            # `@local` on every row.
+            head_tag = self._section_label(host)
+            row_tag = self._label(host)
             groups = store.get_groups() or {}
             if not groups:
-                lines.append(self.t("groups_empty") + tag)
+                lines.append(self.t("groups_empty") + head_tag)
                 continue
             for gid, g in groups.items():
                 members = g.get("containers") or []
@@ -1797,7 +1812,7 @@ class DiscordBot:
                     body = "`" + members[0] + "`"
                 else:
                     body = "—"
-                lines.append(f"• `{g.get('name', gid)}`{tag} "
+                lines.append(f"• `{g.get('name', gid)}`{row_tag} "
                              f"({len(members)}){rd}\n  {body}")
         return self._clip("**Container groups**\n" + "\n".join(lines))
 
@@ -2019,13 +2034,16 @@ class DiscordBot:
         # same thing the ephemeral answer was hiding — we already keep
         # the restart notice out of there for exactly that reason, and
         # doing one without the other is half a promise (#63).
-        _reply = self.announce
+        _reply = lambda text: self.announce(text, reply=True)  # noqa: E731
         if reply_to:
             _uid = reply_to["discord_user"]
 
             def _reply(text, _uid=_uid):
                 if not send_private(self.config, _uid, text, log=self.log):
-                    self.announce(text)      # never lose it outright
+                    # never lose it outright — and `reply=True`, or the
+                    # channel switch would lose it outright right here,
+                    # which is what this line exists to prevent
+                    self.announce(text, reply=True)
 
         import threading
         threading.Thread(target=selfupdate.start, args=(ctx, target),
@@ -2631,7 +2649,11 @@ class DiscordBot:
             return self.t("chan_no_backend")
         lines = []
         for r in replies:
-            tag = (self._label(r.host) or " (local)") if r.ok else ""
+            # A whole line about one host: the heading form, which
+            # names the local one too. With the row form this printed
+            # " (local)" on single-host installs, where Telegram prints
+            # nothing at all.
+            tag = self._section_label(r.host) if r.ok else ""
             if r.key == "chan_reclaim_some":
                 lines.append(self.t(r.key, tag=tag,
                                     size=self._human_size(

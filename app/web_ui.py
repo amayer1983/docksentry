@@ -7134,11 +7134,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # the one message you least want to lose. The seam sends
                 # it once, to everybody.
                 print(f"Web UI selfupdate error: {e}")
+                # `selfupdate_failed` exists in all 16 languages and
+                # `selfupdate.py` already uses it. Sending the English
+                # literal put the one untranslated line into a chat where
+                # every other self-update message is translated.
+                _msg = bot.t("selfupdate_failed", error=str(e))
                 seam = getattr(bot, "broadcast", None)
                 if seam is not None:
-                    seam.tell(f"❌ Selfupdate failed: {e}")
+                    seam.tell(_msg)
                 elif bot.notifier and bot.notifier.has_channels():
-                    bot.notifier.send_message(f"❌ Selfupdate failed: {e}")
+                    bot.notifier.send_message(_msg, urgent=True)
 
         def _api_bulk(self, action, keys):
             """Apply a bulk action to a list of containers.

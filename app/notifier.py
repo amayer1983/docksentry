@@ -182,13 +182,18 @@ class Notifier:
         same thing to the whole channel anyway. Empty by default, so
         every other message goes exactly where it always did.
         """
-        # `urgent` is the seam's `tell`: a storage alert, a rollback, a
-        # host that stopped answering. Quiet hours are for the routine
-        # traffic, and until now they silenced these too — on the plugins
-        # only, because the Telegram leg of `tell` passes no `auto` flag
-        # and so never reached the gate. Between 23:00 and 07:00 a
-        # rollback was therefore Telegram-only, which is the opposite of
-        # what `tell`'s own docstring promises.
+        # `urgent` is the class, not one door. `Broadcast.tell` sets
+        # it, and so do the hand-rolled fan-outs carrying the same
+        # weight: the boot notices in `main.py`, the host-down and
+        # host-back lines in `scheduler.py`. Quiet hours are for routine
+        # traffic; they used to silence this class too, on the plugins
+        # only, because every one of those Telegram legs passes no
+        # `auto` flag and so never reaches the gate. Between 23:00 and
+        # 07:00 a rollback or an unreachable host was Telegram-only.
+        #
+        # It bypasses maintenance mode as well, which `_suppressed` also
+        # covers. Deliberate, and worth knowing: a window you opened to
+        # work in is not a reason to lose a storage alert.
         if not urgent and self._suppressed():
             return
         self._dispatch("send_message", text, skip=skip)

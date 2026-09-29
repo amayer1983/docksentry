@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """The tests are code too, and they rot in four specific ways.
 
-An outside review of the suite on 23.09.2026 found seventeen checks that
-were wrong rather than weak: a claim asserting its own opposite, `(A and
-B) or C` that passed on C alone so half of it was never tested, a bare
-`True`, an `all()` over a list the line above asserts is empty, and — the
-one that cost real coverage — a check key written as an f-string with
-nothing to interpolate, inside a loop, so three of four language checks
-silently overwrote each other and never ran.
+An outside review of the whole suite on 23.09.2026 found seventeen
+checks that were wrong rather than merely weak — a different count from
+the six vacuous ones the pre-release audit of that day's diff turned up,
+and a different set: this one looked at all 178 files, that one at what
+was about to be tagged. Among the seventeen: a claim asserting its own
+opposite, `(A and B) or C` that passed on C alone so half of it was
+never tested, a bare `True`, an `all()` over a list the line above
+asserts is empty, and — the one that cost real coverage — a check key
+written as an f-string with nothing to interpolate, inside a loop, so
+three of four language checks silently overwrote each other.
 
 None of that is carelessness. A grep is quick to write and a behavioural
 harness is not, so the suite drifts that way unless something pushes
@@ -20,8 +23,9 @@ number. That way the debt is visible, and it cannot quietly grow.
 
 Deliberately NOT flagged: source-text assertions in general. Some things
 can only be checked that way — an import ban, "this module never appears
-in that one", a constant-time comparison — and a rule that cried about
-all 552 of them would be turned off within a week.
+in that one", a constant-time comparison. An AST sweep of the suite on
+23.09.2026 counted 552 of them; a rule that cried about every one would
+be switched off within a week.
 """
 import ast
 import glob
@@ -75,9 +79,10 @@ def _guarded_lines(tree):
 def scan():
     """`{pattern: [file:line]}` over every test in this directory."""
     found = {k: [] for k in BUDGET}
+    # Including itself. It used to skip its own file, and its own
+    # pass-line was a bare `True` — a rule that exempts the rule is the
+    # first thing an outside reader stops trusting.
     for path in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
-        if os.path.basename(path) == os.path.basename(__file__):
-            continue
         src = open(path, encoding="utf-8").read()
         try:
             tree = ast.parse(src)
@@ -104,10 +109,19 @@ def scan():
                 found["dead-fstring-key"].append(where)
 
             if isinstance(val, ast.BoolOp) and isinstance(val.op, ast.Or):
-                seg = (ast.get_source_segment(src, val) or "").lstrip()
-                if (any(isinstance(v, ast.BoolOp) and isinstance(v.op, ast.And)
-                        for v in val.values[:-1]) and not seg.startswith("(")):
+                # Ask whether the AND arm itself is parenthesised, not
+                # whether the whole expression is: wrapping a long line
+                # in brackets is normal here and used to hide the trap.
+                for _v in val.values[:-1]:
+                    if not (isinstance(_v, ast.BoolOp)
+                            and isinstance(_v.op, ast.And)):
+                        continue
+                    _seg = ast.get_source_segment(src, _v) or ""
+                    _at = src.find(_seg) if _seg else -1
+                    if _at > 0 and src[_at - 1] == "(":
+                        continue          # explicitly grouped: fine
                     found["and-or-precedence"].append(where)
+                    break
 
             for c in ast.walk(val):
                 if (isinstance(c, ast.Compare) and c.ops
@@ -134,7 +148,7 @@ def main():
             checks[f"'{pattern}' budget is {budget} but only {n} left "
                    f"— lower it in BUDGET"] = False
         else:
-            checks[f"'{pattern}' stays at {n}"] = True
+            checks[f"'{pattern}' stays at {n}"] = n == budget
 
     # The scanner has to be able to see something, or a refactor that
     # renamed `checks` would turn this whole file into a green no-op.

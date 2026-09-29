@@ -743,8 +743,15 @@ def main():
         if bot.enabled:
             bot.send_message(text)
         if notifier.has_channels():
+            # Urgent: these are "recreate failed", "storage is
+            # misconfigured", "started on vX". The Telegram leg above
+            # passes no `auto`, so it was never silenced at night —
+            # without this flag the plugins were, and the asymmetry this
+            # release set out to remove would have survived in the
+            # notice that matters most.
             notifier.send_message(
-                text, skip=DISCORD_CHANNELS if private else ())
+                text, skip=DISCORD_CHANNELS if private else (),
+                urgent=True)
         if private:
             deliver_private(text)
 

@@ -199,4 +199,4 @@ class SmtpNotifier(BaseNotifier):
             "Docksentry", text.replace("*", ""),
             on_network_failure=lambda: notify_retry.remember(
                 self.name, text, self._send_text,
-                still_wanted=self.active))
+                still_wanted=lambda: self.enabled))

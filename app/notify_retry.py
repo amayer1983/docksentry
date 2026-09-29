@@ -167,6 +167,11 @@ class RetryQueue:
                         print(f"Notify retry: dropped a held "
                               f"{held['channel']} message — the channel was "
                               f"switched off while it waited")
+                        # Asked as `enabled`, not `active`: a channel
+                        # whose credential is empty for a moment because
+                        # somebody is editing it has not been switched
+                        # off, and dropping its held crash alert for that
+                        # would be the wrong half of the rule.
                         continue
                 except Exception:                         # pragma: no cover
                     pass

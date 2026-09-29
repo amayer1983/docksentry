@@ -186,10 +186,18 @@ def _exit_code_checks(checks):
     detail4 = {"code": 9}
     ev4 = mon2._with_real_exit_code(("crash_restart", "app", detail4))
     checks["no watcher, no change"] = ev4[2]["code"] == 9
-    # The caller keeps its own dict. Asserting `True` here said that
-    # and tested nothing; this fails if the code writes through it.
+    # With NO watcher nothing writes to the dict at all, so asserting it
+    # is unchanged proved nothing — the copy at the top of the function
+    # could be deleted and this still passed. The write only happens on
+    # the watcher path, so that is where the question belongs.
+    mon3 = ContainerMonitor.__new__(ContainerMonitor)
+    mon3.watcher = types.SimpleNamespace(exit_code=lambda _n: 137)
+    detail5 = {"code": 0}
+    ev5 = mon3._with_real_exit_code(("crash_restart", "app", detail5))
+    checks["the watcher's real exit code reaches the event"] = (
+        ev5[2]["code"] == 137)
     checks["the detail dict is not mutated in place"] = (
-        detail4 == {"code": 9})
+        detail5 == {"code": 0} and ev5[2] is not detail5)
 
 
 def _multi_host_checks(checks):

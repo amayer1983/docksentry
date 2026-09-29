@@ -76,8 +76,8 @@ class Broadcast:
         being here: the plugins render a feed, one card per container as
         it lands, while Telegram gets the whole batch in a single message
         with every line in its `detail` (`telegram_bot.py`, the summary
-        after a run). Nine containers are nine cards there and one
-        message here.
+        after a run). Nine containers are nine cards through here and
+        one message on the Telegram side.
 
         Until now the engine held `notifier` and nothing else, so that
         difference was not a decision anybody made — it was whichever

@@ -205,7 +205,12 @@ class Scheduler:
                 self.bot.send_message(text)
             notifier = getattr(self.bot, "notifier", None)
             if notifier is not None and notifier.has_channels():
-                notifier.send_message(text)
+                # `urgent`: these are the host-down and host-back lines,
+                # the example the notifier's own gate comment gives. The
+                # Telegram leg above passes no `auto` and so already
+                # goes past quiet hours; without this the plugins did
+                # not, and at 02:00 the alert was Telegram-only.
+                notifier.send_message(text, urgent=True)
         except Exception as e:
             print(f"Could not report the host state change: {e}")
 
