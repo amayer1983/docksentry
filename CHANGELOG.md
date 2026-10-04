@@ -2,6 +2,86 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.36] - 2026-10-04
+
+Everything here is about which channel hears what. It started with one
+observation on my own server — an update run reported every finished
+container to Discord at once and told Telegram nothing until the end —
+and a fair question: we pulled the core together so each connection
+only renders, so how does that still happen?
+
+Because the update engine never had the seam. It held the notifier half
+and nothing else, so the difference was not a decision anybody made. A
+survey of all 25 places that say something unprompted found three going
+through `Broadcast`, twelve hand-written fan-outs, and ten reaching
+only part of the channels.
+
+### Fixed
+- **A switch that did not switch.** Turning the Discord bot channel off
+  on the Connections page did not stop it receiving: `announce` never
+  read the setting. And the retry queue delivered messages up to fifteen
+  minutes *after* the switch was thrown, because what it holds is the
+  raw transport — it has to be, or a resend would re-enter the code that
+  queued it. Both reproduced before either was touched. The queue asks
+  again at delivery time now, and every plugin that queues passes the
+  question along.
+
+  Telegram had the same hole in one place: `send_document` never read
+  `channel_telegram_enabled`, so a mass-stop log file and every
+  `/backup` still landed in a chat somebody had switched off.
+
+  Answers to commands keep flowing either way. Silencing the running
+  commentary of a `/selfupdate` somebody just typed turns "off" into
+  "half off" — the slash reply arrives, then nothing.
+
+- **Quiet hours silenced the wrong half.** `Broadcast.tell` is the door
+  for what has to arrive — a rollback, a storage alert, a host that
+  stopped answering — and its own docstring says so. The Telegram leg
+  passed the gate; the plugins returned early. Between 23:00 and 07:00
+  a rollback was therefore Telegram-only. The urgent class now passes on
+  every channel, maintenance windows included. Routine traffic is still
+  silenced, exactly as before.
+
+- **A message that promised what it could not deliver.** The mass-stop
+  digest told all nine channels "each container's log tail is attached"
+  while the attachment is only ever offered to Telegram. Two footers
+  now, and Telegram's is chosen by whether the file actually exists
+  rather than promising one and finding out afterwards.
+
+- **Four notices nobody but Telegram heard.** A container held back by a
+  closed maintenance window, by the update policy, or because the image
+  is younger than you allow; and a major update waiting for
+  confirmation. The first of those never entered the "updates available"
+  list either, so off Telegram nobody learned the update existed at all.
+  They go to every channel now — and once per state rather than once per
+  check run, which through the seam would otherwise be ten containers
+  times three plugins times an hourly cron.
+
+- **A self-update that failed from the Web UI button** reached the
+  plugins and not Telegram. It also said so in hardcoded English, in the
+  one place where every other self-update message is translated.
+
+- **`/audit` ended in silence when everything was fine**, leaving you to
+  work out that no news was good news (@NotRetarded). It says
+  "nothing to do: all N Compose files are reachable from in here".
+
+- **`/audit` printed "Mount  to reach it"** with a hole where the path
+  belongs, for every stack under a prefix it does not recognise.
+
+- **Discord labelled local rows `@local`** where Telegram leaves them
+  bare on documented purpose, so the same list read two ways. Headings
+  that belong to one host still name it, including the local one.
+
+- **An idle Telegram long poll that gets reset** was logged as an error
+  every time it happened. Quiet is right for that; silent is not, so a
+  poll that stays dead for three minutes now says so once.
+
+### Changed
+- The update engine reports through the seam. Same cadence as before —
+  a card per container on the plugins, the whole batch in one Telegram
+  message — but that is now written down in one place instead of being
+  whatever object happened to be reachable.
+
 ## [2.18.0-beta.35] - 2026-09-23
 
 Everything here came out of one thread with @NotRetarded over two days (#63). Three of them are things he reported; the other three are things I found while looking for the first three.
