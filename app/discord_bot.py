@@ -585,16 +585,22 @@ class DiscordBot:
     def announce(self, text):
         """Say something into the configured channel, unprompted.
 
-        The switch covers everything, which is what Telegram has always
-        done — "off means off: no notifications and no answers to
-        commands either". For two days this had an exception for command
-        replies, justified with the same words Telegram uses for the
-        opposite rule, and both cannot be right. @NotRetarded settled it
-        on his own install: "I expected silence everywhere."
+        The switch covers everything that goes INTO THIS CHANNEL,
+        unprompted notices and command commentary alike. For a week it had an
+        exception for replies, justified with the same words
+        Telegram uses for the opposite rule, and both cannot be right.
+        @NotRetarded settled it on his own install: "I expected silence
+        everywhere."
 
-        An answer to a command is not lost by that. It goes back to the
-        interaction it came from, ephemerally, where the person typed
-        it — see `_cmd_selfupdate`.
+        It does not reach the slash answer itself, which Discord delivers
+        on the interaction and which is public when the operator asked
+        for public replies (`DISCORD_PUBLIC_REPLIES`). That is a separate
+        setting with its own meaning, and quietly overriding it here
+        would be the same mistake in the other direction.
+
+        An answer to a command is not lost by the switch either: the
+        commentary goes back to the interaction it came from, where the
+        person typed it — see `_cmd_selfupdate`.
 
         The bot could only ever answer before this: every slash reply is
         ephemeral, so "bot started" and crash alerts had nowhere to go.
@@ -2026,29 +2032,37 @@ class DiscordBot:
         # blocks through the pull and recreate, and then the swap helper
         # stops this process.
         #
-        # Replies come back HERE — to the Discord channel — because that
-        # is where the person asked. Routing every report through the
-        # all-channel seam instead was the overcorrection: one /selfupdate
-        # then answered in Telegram AND Discord, fourteen times over. The
-        # events (found an update, restarting) still reach every channel.
         # Where the running commentary goes. Back to the interaction it
-        # came from, ephemerally — the answer belongs where the person
-        # typed the command, not in a channel they may have silenced and
-        # not in a DM thread they never opened (@NotRetarded, #63).
+        # came from — the answer belongs where the person typed the
+        # command, not in a channel they may have silenced and not in a
+        # DM thread they never opened (@NotRetarded, #63). Routing it
+        # through the all-channel seam instead was the earlier
+        # overcorrection: one /selfupdate then answered in Telegram AND
+        # Discord, fourteen times over. The events themselves (found an
+        # update, restarting) still reach every channel.
         #
-        # Two things fall back to a direct message, for the same reason:
-        # the interaction is only good for fifteen minutes and the
-        # update restarts this process out from under the token. A
-        # private request takes the DM from the start — "checking
-        # localhost:5000/docksentry:test" would otherwise give away what
-        # the ephemeral answer was hiding — and the report that lands
-        # after the restart has nowhere else to go at all.
+        # A private request takes a direct message first, because
+        # "checking localhost:5000/docksentry:test" would otherwise give
+        # away what the ephemeral answer was hiding. And the report that
+        # lands after the restart cannot come back here at all: an
+        # interaction is good for fifteen minutes and the update
+        # replaces this process. That one is a DM by necessity, from
+        # `main.py`, not from here.
         _tok = (data or {}).get("token")
+        # Ephemeral follows the operator's own `DISCORD_PUBLIC_REPLIES`,
+        # because that setting exists so a team can keep the commentary
+        # in the channel as a record. But a switched-off channel beats a
+        # preference for posting in it: then it is ephemeral regardless,
+        # which still reaches the person who typed the command.
+        _eph = (self._replies_private()
+                or not getattr(self.config,
+                               "channel_discordbot_enabled", True))
 
         def _reply(text, _tok=_tok):
             if _tok and self.rest and self.application_id:
                 try:
-                    self.rest.followup(self.application_id, _tok, text)
+                    self.rest.followup(self.application_id, _tok, text,
+                                       ephemeral=_eph)
                     return
                 except Exception as e:                    # noqa: BLE001
                     self.log(f"Discord: could not answer on the "
@@ -2063,10 +2077,21 @@ class DiscordBot:
                     return
                 if _tok and self.rest and self.application_id:
                     try:
-                        self.rest.followup(self.application_id, _tok, text)
+                        self.rest.followup(self.application_id, _tok, text,
+                                           ephemeral=_eph)
                         return
-                    except Exception:                     # noqa: BLE001
-                        pass
+                    except Exception as e:                # noqa: BLE001
+                        self.log(f"Discord: the interaction would not take "
+                                 f"the reply either ({e})")
+                # Last resort, and it can legitimately be a dead end: with
+                # the channel switched off this returns silently, so say
+                # so rather than letting a report disappear with nothing
+                # anywhere admitting it.
+                if not getattr(self.config, "channel_discordbot_enabled", True):
+                    self.log("Discord: DM refused, interaction gone and the "
+                             "channel is switched off — this report has "
+                             "nowhere left to go: " + text[:120])
+                    return
                 self.announce(text)      # never lose it outright
 
         import threading

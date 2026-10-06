@@ -740,18 +740,13 @@ def main():
         # of the channel the operator watches and put it in the DMs of
         # whoever last ran /selfupdate — which may not even be them.
         private = bool(reply and selfupdate_reply_to)
-        if bot.enabled:
-            bot.send_message(text)
-        if notifier.has_channels():
-            # Urgent: these are "recreate failed", "storage is
-            # misconfigured", "started on vX". The Telegram leg above
-            # passes no `auto`, so it was never silenced at night —
-            # without this flag the plugins were, and the asymmetry this
-            # release set out to remove would have survived in the
-            # notice that matters most.
-            notifier.send_message(
-                text, skip=DISCORD_CHANNELS if private else (),
-                urgent=True)
+        # One call: both legs carry the same text, and `skip` is what
+        # keeps a private self-update's report out of the Discord
+        # channels. Written out by hand this was the last of the urgent
+        # pairs — "recreate failed", "storage is misconfigured",
+        # "started on vX", the notices where losing one is worst.
+        bot.announce_urgent(text,
+                            skip=DISCORD_CHANNELS if private else ())
         if private:
             deliver_private(text)
 

@@ -204,14 +204,22 @@ class Scheduler:
         # used to stand here were: Telegram without `auto` (so past the
         # quiet gate) and the plugins marked urgent (so past theirs).
         # Written out by hand it was a place where the next line added
-        # could forget its second half — which is how #57 and #61
-        # happened, twice.
+        # could forget its second half. That is the shape behind #57 and
+        # #61, and `main.py` counts three occasions where an unattended
+        # message went to Telegram alone.
         try:
             seam = getattr(self.bot, "broadcast", None)
             if seam is not None:
                 seam.tell(text)
-            elif getattr(self.bot, "enabled", False):
-                self.bot.send_message(text)
+            else:
+                # No seam wired in — only outside `main.py`, but then the
+                # fallback has to do BOTH legs, or it quietly becomes the
+                # Telegram-only reporting this whole release removed.
+                if getattr(self.bot, "enabled", False):
+                    self.bot.send_message(text)
+                notifier = getattr(self.bot, "notifier", None)
+                if notifier is not None and notifier.has_channels():
+                    notifier.send_message(text, urgent=True)
         except Exception as e:
             print(f"Could not report the host state change: {e}")
 
@@ -297,16 +305,19 @@ class Scheduler:
                 resumed_msg = self.bot.t("selfupdate_resumed_check", version=VERSION)
                 # Routine, so the seam's `announce`: quiet hours apply,
                 # on every channel alike.
+                # The seam fans out by itself — Telegram and every
+                # plugin, once each. A second `notifier.send_message`
+                # stood here after the conversion and every plugin
+                # channel got this twice, which is exactly #61.
                 seam = getattr(self.bot, "broadcast", None)
                 if seam is not None:
-                    self.bot.broadcast.announce(resumed_msg)
-                elif self.bot.enabled:
-                    self.bot.send_message(resumed_msg, auto=True)
-                # Also fan out to Discord / webhook so non-Telegram users
-                # see the post-restart confirmation too (#19).
-                notifier = getattr(self.bot, "notifier", None)
-                if notifier and notifier.has_channels():
-                    notifier.send_message(resumed_msg)
+                    seam.announce(resumed_msg)
+                else:
+                    if self.bot.enabled:
+                        self.bot.send_message(resumed_msg, auto=True)
+                    notifier = getattr(self.bot, "notifier", None)
+                    if notifier and notifier.has_channels():
+                        notifier.send_message(resumed_msg)
                 for host_checker, host_name in self._checkers():
                     try:
                         updates = host_checker.check_all()
@@ -535,11 +546,18 @@ class Scheduler:
             msg += f"\n🧹 {unit} reclaimable via `/cleanup` (unused images / build cache)."
         if not self.config.disk_warn_auto_cleanup:
             msg += "\n💡 Auto-cleanup is OFF — set `DISK_WARN_AUTO_CLEANUP=true` (or enable it in Web UI → Settings) to reclaim automatically next time."
-        notifier = getattr(self.bot, "notifier", None)
-        if notifier and notifier.has_channels():
-            notifier.send_message(msg)
-        if self.bot.enabled:
-            self.bot.send_message(msg, auto=True)
+        # One text, both legs, routine on each — `announce`. It was a
+        # hand-written pair, and those are where a second half goes
+        # missing when somebody adds a line.
+        seam = getattr(self.bot, "broadcast", None)
+        if seam is not None:
+            seam.announce(msg)
+        else:
+            notifier = getattr(self.bot, "notifier", None)
+            if notifier and notifier.has_channels():
+                notifier.send_message(msg)
+            if self.bot.enabled:
+                self.bot.send_message(msg, auto=True)
         print(msg)
 
         if self.config.disk_warn_auto_cleanup:
@@ -552,7 +570,15 @@ class Scheduler:
                 print(f"Disk auto cleanup skipped: {cmsg}")
                 return
             full = self.bot.t("cleanup_disk_prefix", message=cmsg)
-            if notifier and notifier.has_channels():
-                notifier.send_message(full)
-            if self.bot.enabled:
-                self.bot.send_message(full, auto=True)
+            # Same text on both legs again, so the seam. It also removes
+            # a `notifier` local that the block above no longer defines
+            # on every path — the kind of coupling a hand-written pair
+            # grows without anyone deciding to.
+            if seam is not None:
+                seam.announce(full)
+            else:
+                notifier = getattr(self.bot, "notifier", None)
+                if notifier and notifier.has_channels():
+                    notifier.send_message(full)
+                if self.bot.enabled:
+                    self.bot.send_message(full, auto=True)

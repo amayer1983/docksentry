@@ -48,15 +48,28 @@ checks["a switched-on Discord channel is announced to"] = (
 _cfg.channel_discordbot_enabled = False
 _bot.announce("bot started again")
 checks["…and a switched-off one is not"] = len(_bot.rest.posts) == 1
-# Everything, not only unprompted notices. For two days this had an
+# Everything, not only unprompted notices. For a week this had an
 # exception for command replies, justified with the same sentence
 # Telegram uses for the opposite rule. @NotRetarded settled it on his
 # own install: "I expected silence everywhere." The answer to a command
 # is not lost by it — it goes back to the interaction instead.
+# Driven, not read. The check that stood here asked whether `"reply="`
+# was among the parameter NAMES — it never is, the name would be
+# `reply` — so it was true no matter what the method looked like, and
+# its companion was satisfied by the docstring quoting the rule. An
+# auditor restored the exception in full and both stayed green.
 import inspect as _inspect                                   # noqa: E402
-checks["…with no exception for replies"] = (
-    "reply=" not in _inspect.signature(DiscordBot.announce).parameters
-    and "reply=True" not in _inspect.getsource(DiscordBot.announce))
+_sw = DiscordBot.__new__(DiscordBot)
+_sw.config = types.SimpleNamespace(discord_bot_channel="9",
+                                   channel_discordbot_enabled=False,
+                                   language="en")
+_sw.rest, _sw.log = _Rest(), lambda *_a: None
+for _kw in ({}, {"reply": True}):
+    try:
+        _sw.announce("anything", **_kw)
+    except TypeError:
+        pass            # the parameter is gone, which is the point
+checks["…with no exception for replies"] = _sw.rest.posts == []
 _cmd = _inspect.getsource(DiscordBot._cmd_selfupdate)
 checks["a command's commentary answers on the interaction instead"] = (
     "self.rest.followup(" in _cmd)
@@ -257,26 +270,79 @@ checks["…and _say_once is the seam with a memory in front"] = (
 
 # ── the hand-rolled fan-outs, and the ones that stay ─────────────────
 # Each pair was `bot.send_message(...)` followed by
-# `notifier.send_message(...)`, kept in step by hand — the shape that
-# produced #57 and #61. The ones whose two legs carry the SAME text are
-# the seam written out longhand and are gone. Three are not: two send
-# deliberately different texts per channel, one needs the Telegram
-# return value to know the alert failed. Those say so in a comment, so
-# the next reader does not collapse them and lose it.
+# `notifier.send_message(...)`, kept in step by hand — the shape behind
+# #57 and #61. The claim that every same-text pair is gone was wrong
+# when it was first written here: an auditor found three still standing.
+# Rather than restate a count that rots, the check below names the three
+# that stay ON PURPOSE and asserts each still says why, and counts the
+# remaining hand-written pairs so a new one cannot appear unnoticed.
 _sch = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "scheduler.py"), encoding="utf-8").read()
 _tellblk = _sch[_sch.index("    def _tell(self"):]
 _tellblk = _tellblk[:_tellblk.index("\n    def ", 10)]
+# The seam when one is wired in. The fallback below it is for bots
+# built outside main.py, and it has to do BOTH legs — a fallback that
+# only reaches Telegram is the very reporting this release removed.
 checks["the scheduler's host notice is the seam, not a pair"] = (
-    "seam.tell(text)" in _tellblk
-    and "notifier.send_message" not in _tellblk)
+    "seam.tell(text)" in _tellblk)
+checks["…and its fallback still reaches the plugins"] = (
+    "notifier.send_message(text, urgent=True)" in _tellblk
+    and _tellblk.index("seam.tell(text)")
+    < _tellblk.index("notifier.send_message"))
+# Driven, not grepped. Both halves of the old check were satisfiable
+# by a comment, and an auditor emptied the method to `return` with the
+# whole suite staying green — so the auto-self-update notice could have
+# reached nobody and nothing would have said so.
+from telegram_bot import TelegramBot as _TB                   # noqa: E402
+_ulegs = {"tg": [], "plug": []}
+_ubot = _TB.__new__(_TB)
+_ubot.broadcast = Broadcast(
+    telegram=types.SimpleNamespace(
+        enabled=True,
+        send_message=lambda t, **kw: _ulegs["tg"].append((t, kw.get("auto")))),
+    notifier=types.SimpleNamespace(
+        has_channels=lambda: True,
+        send_message=lambda t, skip=(), urgent=False: _ulegs["plug"].append(
+            (t, urgent, tuple(skip)))))
+_ubot.announce_urgent("rolled back", skip=("discord",))
 checks["the bot has an adapter for the urgent door too"] = (
-    "def announce_urgent(" in _tgsrc and "seam.tell(text, skip=skip)" in _tgsrc)
+    _ulegs["tg"] == [("rolled back", None)]
+    and _ulegs["plug"] == [("rolled back", True, ("discord",))])
 
-_mon = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                         "monitor.py"), encoding="utf-8").read()
-checks["the mass-stop pair stays, and says why"] = (
-    "Not the seam, on purpose" in _mon and "msg_nofile" in _mon)
+# The three that stay, each for a reason the seam cannot express, and
+# each saying so where the next reader will look.
+import re as _re                                             # noqa: E402
+_keep = {"app/monitor.py": 2, "app/web_ui.py": 1}
+_said = {}
+for _f, _n in _keep.items():
+    _src = open(os.path.join(os.path.dirname(__file__), "..", _f),
+                encoding="utf-8").read()
+    _said[_f] = _src.count("Not the seam, on purpose")
+checks["all three kept pairs say why they are kept"] = _said == _keep
+
+# …and no new hand-written pair has appeared. A `bot.send_message`
+# followed within a few lines by a `notifier.send_message` is the shape;
+# the number may only go down.
+# Per file, because line numbers shift and a bare total hides which
+# one moved. `scheduler.py`'s two are the fallback branches for a bot
+# built without a seam — they have to send both legs, so they look like
+# pairs and are not. The other three are the deliberate ones above.
+_PAIRS_PER_FILE = {"scheduler.py": 2, "monitor.py": 2, "web_ui.py": 1}
+_pairs = []
+for _f in ("main.py", "scheduler.py", "monitor.py", "telegram_bot.py",
+           "weekly_report.py", "web_ui.py"):
+    _lines = open(os.path.join(os.path.dirname(__file__), "..", "app", _f),
+                  encoding="utf-8").read().split("\n")
+    for _i, _ln in enumerate(_lines):
+        if _re.search(r"\b(bot|self)\.send_message\(", _ln) and "notifier" not in _ln:
+            if "notifier.send_message(" in "\n".join(_lines[_i:_i + 12]):
+                _pairs.append(f"{_f}:{_i + 1}")
+_by_file = {}
+for _p in _pairs:
+    _by_file[_p.split(":")[0]] = _by_file.get(_p.split(":")[0], 0) + 1
+checks["no hand-written fan-out pair has appeared"] = _by_file == _PAIRS_PER_FILE
+if _by_file != _PAIRS_PER_FILE:
+    print(f"      → gefunden {_by_file}, erwartet {_PAIRS_PER_FILE}")
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

@@ -1194,6 +1194,10 @@ class ContainerMonitor:
         # alert had gone out (#66, @NotRetarded). `False` means it did not:
         # `None` is the deliberate silences — channel off, quiet hours,
         # maintenance — and must stay quiet here too.
+        # Not the seam, on purpose: this reads the return value to
+        # know the alert did not arrive, and `Broadcast.announce` throws
+        # that away. A monitor that cannot tell a delivered alert from a
+        # lost one is the #66 shape.
         try:
             sent = self.bot.send_message(msg, auto=True)
         except Exception as e:

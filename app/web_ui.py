@@ -7104,8 +7104,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # used to put a second one in front of it.
                     bot.send_message(msg)
                 # Not the seam, on purpose: the plugins get the text
-                # with a prefix saying a human pressed the button, and
-                # the seam carries one text to everybody.
+                # under `cleanup_manual_prefix` while Telegram gets it
+                # bare, and the seam carries one text to everybody. The
+                # prefix is what tells a webhook reader this run was not
+                # the automatic one.
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(
                         bot.t("cleanup_manual_prefix", message=msg))

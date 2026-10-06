@@ -208,6 +208,23 @@ _tell = _tell[:_tell.index("\n    def ", 10)]
 # its second half.
 checks["the report goes to every channel"] = (
     "seam.tell(text)" in _tell and "broadcast" in _tell)
+# …and that the seam really carries both legs, which the grep above
+# cannot say. The fake bot in this file has no `broadcast`, so it runs
+# the fallback and never touches `Broadcast.tell` at all.
+import broadcast as _bc                                      # noqa: E402
+_legs = {"tg": [], "plug": []}
+_probe = _bc.Broadcast(
+    telegram=types.SimpleNamespace(
+        enabled=True,
+        send_message=lambda t, **kw: _legs["tg"].append(t)),
+    notifier=types.SimpleNamespace(
+        has_channels=lambda: True,
+        send_message=lambda t, skip=(), urgent=False: _legs["plug"].append(
+            (t, urgent))))
+_probe.tell("nas stopped answering")
+checks["…and the seam itself reaches both, the plugins urgently"] = (
+    _legs["tg"] == ["nas stopped answering"]
+    and _legs["plug"] == [("nas stopped answering", True)])
 checks["…and a failure to report cannot stop the check"] = (
     "except Exception" in _tell)
 

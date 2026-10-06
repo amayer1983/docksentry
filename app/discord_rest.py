@@ -272,10 +272,12 @@ class DiscordREST:
         """Another message on the same interaction, after the first one.
 
         `edit_original_response` replaces what is there; a running
-        commentary needs to add. Ephemeral by default, which is the
-        self-deleting kind: @NotRetarded asked for the answer to land
-        where he typed the command rather than in a channel he had
-        silenced or a DM thread he never opened (#63).
+        commentary needs to add. Ephemeral by default: flag 64 means
+        only the person who ran the command sees it, which is the
+        property that matters here — @NotRetarded asked for the answer
+        to land where he typed the command rather than in a channel he
+        had silenced or a DM thread he never opened (#63). Discord hides
+        it from everyone else; it is not a message that deletes itself.
 
         The interaction is good for fifteen minutes. Anything that
         outlives that — a self-update restarts this process out from

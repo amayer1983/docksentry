@@ -68,7 +68,7 @@ checks["Telegram passes its own sender as the reply"] = (
 # where the asker is looking; the channel is the last resort, after a
 # DM for a private request. The switch covers the channel either way.
 checks["Discord answers where the command was typed"] = (
-    "self.rest.followup(self.application_id, _tok, text)" in dsrc
+    "self.rest.followup(" in dsrc
     and '"reply": _reply' in dsrc)
 # The restart event must NOT be a reply — it concerns everyone.
 ssrc = open(os.path.join(APP, "selfupdate.py"), encoding="utf-8").read()

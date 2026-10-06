@@ -119,8 +119,17 @@ def run_boot(ns, reply_to, dm_result=True):
 
     ns["config"] = types.SimpleNamespace(discord_bot_token="t")
     ns["notifier"] = notifier
+    # `boot_announce` goes through the seam now, so the stand-in needs
+    # the adapter the bot has — built over a REAL Broadcast, so this
+    # still measures both legs rather than a recording stub.
+    import broadcast as _bc
+    _tg = types.SimpleNamespace(
+        enabled=True, send_message=lambda text, **kw: telegram_sent.append(text))
+    _seam = _bc.Broadcast(telegram=_tg, notifier=notifier)
     ns["bot"] = types.SimpleNamespace(
-        enabled=True, send_message=lambda text: telegram_sent.append(text))
+        enabled=True,
+        send_message=_tg.send_message,
+        announce_urgent=lambda text, skip=(): _seam.tell(text, skip=skip))
     ns["selfupdate_reply_to"] = reply_to
     original = discord_bot.send_private
     discord_bot.send_private = fake_send_private
@@ -324,7 +333,15 @@ checks["a private request keeps its progress out of the channel"] = (
 # silenced and not into a DM thread they never opened. The channel
 # switch covers everything again, the way Telegram has always had it.
 checks["…and a public one answers on the interaction"] = (
-    "self.rest.followup(self.application_id, _tok, text)" in cmd)
+    "self.rest.followup(" in cmd)
+# Ephemeral follows the operator's own `DISCORD_PUBLIC_REPLIES` — that
+# setting exists so a team can keep the commentary in the channel as a
+# record, and hardcoding it took that away. But a switched-off channel
+# beats a preference for posting in it, so the flag is forced then.
+checks["…ephemeral or not as the operator chose"] = (
+    "ephemeral=_eph" in cmd and "ephemeral=True" not in cmd)
+checks["…and a switched-off channel forces it either way"] = (
+    "_replies_private()" in cmd and "channel_discordbot_enabled" in cmd)
 checks["…with the channel only as the last resort"] = (
     "self.announce(text)" in cmd and "reply=True" not in cmd)
 checks["…and a DM that will not open falls back rather than vanishing"] = (
