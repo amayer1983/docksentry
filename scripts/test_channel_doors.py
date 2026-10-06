@@ -69,12 +69,14 @@ for _kw in ({}, {"reply": True}):
         _sw.announce("anything", **_kw)
     except TypeError:
         pass            # the parameter is gone, which is the point
-checks["…with no exception for replies"] = _sw.rest.posts == []
-_cmd = _inspect.getsource(DiscordBot._cmd_selfupdate)
-checks["a command's commentary answers on the interaction instead"] = (
-    "self.rest.followup(" in _cmd)
-checks["…and falls back to a DM, then the channel, never nowhere"] = (
-    _cmd.index("send_private(") < _cmd.rindex("self.announce(text)"))
+# …and it may not come back under another name either: the signature is
+# `(self, text)`, nothing more. Swallowing the TypeError alone would let
+# `is_reply=False` reintroduce the whole exception unnoticed.
+checks["…with no exception for replies"] = (
+    _sw.rest.posts == []
+    and list(_inspect.signature(DiscordBot.announce).parameters) == ["self",
+                                                                     "text"])
+# (Six source greps stood here. They are the harness above now.)
 
 
 # ── the retry queue asks again before it delivers ────────────────────
@@ -268,6 +270,91 @@ checks["…and _say_once is the seam with a memory in front"] = (
     "_held_seen[kind] = signature" in _tgsrc
     and "self.announce(text, **kw)" in _tgsrc)
 
+# ── /selfupdate, driven ──────────────────────────────────────────────
+# Six checks used to grep `_cmd_selfupdate` for `self.rest.followup(` and
+# for an index ordering. An auditor made `followup` unreachable dead
+# code and put `self.announce(text)` first in the private closure — the
+# #63 leak, restored — and every one of them stayed green. So the
+# command is run here instead, in the four combinations that matter.
+import selfupdate as _su                                     # noqa: E402
+
+
+class _RecRest:
+    def __init__(self):
+        self.followups, self.posts = [], []
+
+    def followup(self, app_id, token, content, *, ephemeral=True):
+        self.followups.append((content, ephemeral))
+        return {"id": "1"}
+
+    def create_message(self, channel, text, **kw):
+        self.posts.append((channel, text))
+        return {"id": "2"}
+
+
+def _run_selfupdate(private, channel_on, dm_ok=True):
+    """`(followups, channel_posts, dms)` for one /selfupdate."""
+    dms = []
+    bot = DiscordBot.__new__(DiscordBot)
+    bot.config = types.SimpleNamespace(
+        discord_bot_channel="chan", channel_discordbot_enabled=channel_on,
+        discord_public_replies=not private, language="en",
+        discord_bot_token="t")
+    bot.rest, bot.application_id = _RecRest(), "app"
+    bot.log = lambda *_a: None
+    bot.selfupdate_ctx = object()
+    # `t` is a property on the class, so the language has to come from
+    # the config the real translator reads.
+    bot._replies_private = lambda: private
+    bot._invoker = lambda _d: "u1"
+    bot._clip = lambda t: t
+
+    import discord_bot as _db
+    _start, _send = _su.start, _db.send_private
+    _su.start = lambda ctx, target=None, reply=None, reply_to=None: reply(
+        "checking localhost:5000/docksentry:test")
+
+    def _fake_dm(cfg, uid, text, log=print):
+        dms.append(text)
+        return dm_ok
+
+    _db.send_private = _fake_dm
+    try:
+        bot._cmd_selfupdate({}, data={"token": "tok", "channel_id": "typed"})
+    finally:
+        _su.start, _db.send_private = _start, _send
+    return bot.rest.followups, bot.rest.posts, dms
+
+
+# Indexing into these lists would turn a broken guard into a crash
+# instead of a named failure, so every check reads them defensively.
+def _one(seq):
+    """The single entry, or a placeholder that fails every comparison."""
+    return seq[0] if len(seq) == 1 else (None, None)
+
+
+_f, _p, _d = _run_selfupdate(private=False, channel_on=True)
+checks["a public /selfupdate answers on the interaction"] = (
+    len(_f) == 1 and "checking localhost" in (_one(_f)[0] or ""))
+checks["…publicly, because the operator asked for public replies"] = (
+    _one(_f)[1] is False)
+checks["…and not in the configured channel"] = _p == []
+
+_f, _p, _d = _run_selfupdate(private=True, channel_on=True)
+checks["a private one takes the direct message"] = len(_d) == 1
+checks["…and says nothing on the interaction or in the channel"] = (
+    _f == [] and _p == [])
+
+_f, _p, _d = _run_selfupdate(private=True, channel_on=True, dm_ok=False)
+checks["a DM that will not open falls back to the interaction"] = (
+    len(_d) == 1 and len(_f) == 1)
+checks["…ephemerally, because the request was private"] = (
+    _one(_f)[1] is True)
+
+_f, _p, _d = _run_selfupdate(private=False, channel_on=False)
+checks["with the channel off a public request still answers the asker"] = (
+    len(_f) == 1)
+
 # ── the hand-rolled fan-outs, and the ones that stay ─────────────────
 # Each pair was `bot.send_message(...)` followed by
 # `notifier.send_message(...)`, kept in step by hand — the shape behind
@@ -305,6 +392,27 @@ _ubot.broadcast = Broadcast(
         send_message=lambda t, skip=(), urgent=False: _ulegs["plug"].append(
             (t, urgent, tuple(skip)))))
 _ubot.announce_urgent("rolled back", skip=("discord",))
+
+# …and the same again with no seam wired in, where the adapter has to
+# build one rather than fall back to Telegram alone.
+_ulegs2 = {"tg": [], "plug": []}
+_ubare = _TB.__new__(_TB)
+_ubare.broadcast = None
+# `enabled` is a property reading the config, so give it one that is on.
+_ubare.config = types.SimpleNamespace(bot_token="t", chat_id="1",
+                                      language="en",
+                                      channel_telegram_enabled=True)
+_ubare.send_message = lambda t, **kw: _ulegs2["tg"].append(t)
+# `notifier` is a property onto the engine, so the stand-in needs one.
+_ubare.engine = types.SimpleNamespace(notifier=None)
+_ubare.engine.notifier = types.SimpleNamespace(
+    has_channels=lambda: True,
+    send_message=lambda t, skip=(), urgent=False: _ulegs2["plug"].append(
+        (t, urgent)))
+_ubare.announce_urgent("storage misconfigured")
+checks["…and with no seam wired in it still reaches both legs"] = (
+    _ulegs2["tg"] == ["storage misconfigured"]
+    and _ulegs2["plug"] == [("storage misconfigured", True)])
 checks["the bot has an adapter for the urgent door too"] = (
     _ulegs["tg"] == [("rolled back", None)]
     and _ulegs["plug"] == [("rolled back", True, ("discord",))])
@@ -312,37 +420,50 @@ checks["the bot has an adapter for the urgent door too"] = (
 # The three that stay, each for a reason the seam cannot express, and
 # each saying so where the next reader will look.
 import re as _re                                             # noqa: E402
-_keep = {"app/monitor.py": 2, "app/web_ui.py": 1}
+# Four, not three: an auditor found the auto-cleanup prefix pair in
+# scheduler.py, which had no reason written down at all.
+_keep = {"app/monitor.py": 2, "app/web_ui.py": 1, "app/scheduler.py": 1}
 _said = {}
-for _f, _n in _keep.items():
+for _f in _keep:
     _src = open(os.path.join(os.path.dirname(__file__), "..", _f),
                 encoding="utf-8").read()
     _said[_f] = _src.count("Not the seam, on purpose")
-checks["all three kept pairs say why they are kept"] = _said == _keep
+checks["all four kept pairs say why they are kept"] = _said == _keep
 
 # …and no new hand-written pair has appeared. A `bot.send_message`
 # followed within a few lines by a `notifier.send_message` is the shape;
 # the number may only go down.
-# Per file, because line numbers shift and a bare total hides which
-# one moved. `scheduler.py`'s two are the fallback branches for a bot
-# built without a seam — they have to send both legs, so they look like
-# pairs and are not. The other three are the deliberate ones above.
-_PAIRS_PER_FILE = {"scheduler.py": 2, "monitor.py": 2, "web_ui.py": 1}
+# Every module under app/, both orders, no cleverness. The first
+# version of this scanned six files forward-only and skipped any line
+# mentioning the word "notifier" — an auditor walked past it three ways:
+# a pair in a seventh file, a pair written notifier-first, and a pair
+# whose first line carried the word in a comment.
+# scheduler: four fallback branches for a bot built without a seam —
+# those have to send both legs, so they look like pairs and are not —
+# plus the auto-cleanup prefix pair, which is deliberate.
+_PAIRS_PER_FILE = {"scheduler.py": 5, "monitor.py": 2, "web_ui.py": 1}
 _pairs = []
-for _f in ("main.py", "scheduler.py", "monitor.py", "telegram_bot.py",
-           "weekly_report.py", "web_ui.py"):
-    _lines = open(os.path.join(os.path.dirname(__file__), "..", "app", _f),
-                  encoding="utf-8").read().split("\n")
+_appdir = os.path.join(os.path.dirname(__file__), "..", "app")
+for _f in sorted(os.listdir(_appdir)):
+    if not _f.endswith(".py"):
+        continue
+    _lines = open(os.path.join(_appdir, _f), encoding="utf-8").read().split("\n")
     for _i, _ln in enumerate(_lines):
-        if _re.search(r"\b(bot|self)\.send_message\(", _ln) and "notifier" not in _ln:
-            if "notifier.send_message(" in "\n".join(_lines[_i:_i + 12]):
-                _pairs.append(f"{_f}:{_i + 1}")
+        _win = "\n".join(_lines[_i:_i + 12])
+        _bot = _re.search(r"\b(bot|self)\.send_message\(", _ln)
+        _not = _re.search(r"\bnotifier\.send_message\(", _ln)
+        if _bot and "notifier.send_message(" in _win[len(_ln):]:
+            _pairs.append(f"{_f}:{_i + 1}")
+        elif _not and _re.search(r"\b(bot|self)\.send_message\(",
+                                 _win[len(_ln):]):
+            _pairs.append(f"{_f}:{_i + 1}")
 _by_file = {}
 for _p in _pairs:
     _by_file[_p.split(":")[0]] = _by_file.get(_p.split(":")[0], 0) + 1
 checks["no hand-written fan-out pair has appeared"] = _by_file == _PAIRS_PER_FILE
 if _by_file != _PAIRS_PER_FILE:
     print(f"      → gefunden {_by_file}, erwartet {_PAIRS_PER_FILE}")
+    print("      → " + ", ".join(_pairs))
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

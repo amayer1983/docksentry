@@ -457,6 +457,11 @@ class Scheduler:
                             print(f"Auto cleanup skipped: {msg}")
                         else:
                             print(f"Auto cleanup: {msg}")
+                            # Not the seam, on purpose: the plugins get
+                            # `cleanup_auto_prefix` and Telegram the bare
+                            # text, and the seam carries one text to
+                            # everybody. The prefix is what tells a
+                            # webhook reader this was the automatic run.
                             notifier = getattr(self.bot, "notifier", None)
                             if ok and notifier and notifier.has_channels():
                                 notifier.send_message(self.bot.t("cleanup_auto_prefix", message=msg))

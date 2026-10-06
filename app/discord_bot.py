@@ -2024,7 +2024,14 @@ class DiscordBot:
             return self.t("chan_not_available")
         target = (opts.get("version") or "").strip() or None
         reply_to = None
-        if self._replies_private() and data is not None:
+        # A DM route is recorded when replies are private — and also
+        # when the bot channel is switched off, because then there is
+        # nothing left to carry the report that lands AFTER the restart:
+        # the interaction is long dead and the channel is silent. Without
+        # this a Discord-only team with public replies and the channel
+        # off never learned whether the update worked at all.
+        _chan_on = getattr(self.config, "channel_discordbot_enabled", True)
+        if data is not None and (self._replies_private() or not _chan_on):
             invoker = self._invoker(data)
             if invoker:
                 reply_to = {"discord_user": str(invoker)}
@@ -2049,14 +2056,13 @@ class DiscordBot:
         # replaces this process. That one is a DM by necessity, from
         # `main.py`, not from here.
         _tok = (data or {}).get("token")
-        # Ephemeral follows the operator's own `DISCORD_PUBLIC_REPLIES`,
-        # because that setting exists so a team can keep the commentary
-        # in the channel as a record. But a switched-off channel beats a
-        # preference for posting in it: then it is ephemeral regardless,
-        # which still reaches the person who typed the command.
-        _eph = (self._replies_private()
-                or not getattr(self.config,
-                               "channel_discordbot_enabled", True))
+        # Visibility follows `DISCORD_PUBLIC_REPLIES` and nothing else.
+        # A first attempt also forced ephemeral when the bot channel was
+        # switched off, which was a category error: that switch governs
+        # the CONFIGURED announcement channel, while a followup lands in
+        # whichever channel the command was typed in. Silencing one has
+        # nothing to say about the other.
+        _eph = self._replies_private()
 
         def _reply(text, _tok=_tok):
             if _tok and self.rest and self.application_id:
@@ -2069,7 +2075,13 @@ class DiscordBot:
                              f"interaction ({e}); falling back")
             self.announce(text)
 
-        if reply_to:
+        # …and the in-flight closure keys on the REQUEST being private,
+        # not on whether a DM route was recorded. Those came apart when
+        # the channel-off case was added: a public request with the
+        # channel off got a DM route for its final report, and that
+        # silently moved its running commentary into DMs too — the one
+        # place @NotRetarded said he did not want it.
+        if self._replies_private():
             _uid = reply_to["discord_user"]
 
             def _reply(text, _uid=_uid, _tok=_tok):
