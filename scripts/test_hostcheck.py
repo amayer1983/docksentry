@@ -2,10 +2,14 @@
 """The step before adding a host, which did not exist (#7, @LeeNX).
 
 He read the docs, looked at his podman boxes and said it plainly: "I
-feel like there should be a setup step and tests that can be done before
-adding the hub pointing at the agent host." There was not. You put an
-endpoint in `DOCKER_HOSTS`, restarted, and found out it worked when
-something failed.
+feel like there should be a agent setup step and tests that can be done
+before adding the hub dockSentry pointing at the agent host."
+
+Note what he asked for and what this is: he described an AGENT, and
+there is no agent. What exists now is the second half of his sentence —
+the tests you can run before pointing anything at anything. Before it
+there was nothing: you put an endpoint in `DOCKER_HOSTS`, restarted, and
+found out it worked when something failed.
 
 The case that makes this worth having is not the dead host — that one
 announces itself. It is the socket proxy that allows `GET
@@ -37,7 +41,12 @@ class _Backend:
         self.asked.append(key)
         if self._raise and key.startswith(self._raise):
             raise OSError("ssh: connect to host nas port 22: No route to host")
-        rc, out, err = self._a.get(key, (1, "", "no answer"))
+        # NOT "no answer": that is also the module's own fallback for an
+        # empty stderr, so a check asserting it appears in the output was
+        # satisfied either way. Replacing the line with the literal kept
+        # the check green — measured.
+        rc, out, err = self._a.get(
+            key, (1, "", "dial tcp 10.0.0.5:2375: i/o timeout"))
         return types.SimpleNamespace(returncode=rc, stdout=out, stderr=err)
 
 
@@ -69,7 +78,8 @@ checks["…and it is not usable"] = hostcheck.usable(f) is False
 # ── nothing answering is one finding, not a stack trace ──────────────
 f = hostcheck.preflight("ssh://nas", _Backend({}))
 checks["an endpoint nobody answers is unreachable"] = kinds(f) == ["unreachable"]
-checks["…and says what the CLI said"] = "no answer" in dict(f)["unreachable"]["error"]
+checks["…and says what the CLI said"] = (
+    "i/o timeout" in dict(f)["unreachable"]["error"])
 
 # …and a raising transport is the same answer, not a crash.
 f = hostcheck.preflight("ssh://nas", _Backend({}, raise_on="version"))
@@ -81,6 +91,12 @@ seen = []
 hostcheck.preflight("ssh://nas", _Backend({}),
                     hint=lambda ep, err: seen.append((ep, err)) or "mount ~/.ssh")
 checks["a failure gets the ssh hint attached"] = len(seen) == 1
+# …and it is in the finding, not merely computed. Throwing the result
+# away kept the check above green.
+_hinted = hostcheck.preflight(
+    "ssh://nas", _Backend({}), hint=lambda ep, err: "mount ~/.ssh read-only")
+checks["…and the hint travels with the finding"] = (
+    dict(_hinted)["unreachable"].get("hint") == "mount ~/.ssh read-only")
 seen.clear()
 hostcheck.preflight("ssh://nas", _Backend(HEALTHY),
                     hint=lambda ep, err: seen.append(1) or "x")
@@ -140,18 +156,86 @@ checks["a host with no containers says the inspect right is untested"] = (
 checks["…and is not blocked for it"] = hostcheck.usable(f) is True
 checks["…and is not called ready either"] = "ready" not in kinds(f)
 
+# ── a refusal is not silence ─────────────────────────────────────────
+# "Nothing answered at `unix:///var/run/docker.sock` — permission
+# denied" is the sentence a socket without rights used to produce, and
+# it sends the most common case of all — rootless podman, the wrong
+# group, SELinux — looking at the network. Something did answer.
+denied = {"version --format":
+          (1, "", "permission denied while trying to connect to the "
+                  "Docker API at unix:///var/run/docker.sock")}
+f = hostcheck.preflight("unix:///var/run/docker.sock", _Backend(denied))
+checks["a socket that answers and refuses is not called unreachable"] = (
+    kinds(f) == ["denied"])
+checks["…and a refused socket is not usable"] = hostcheck.usable(f) is False
+checks["…while a timeout stays unreachable"] = (
+    kinds(hostcheck.preflight("tcp://nas:2375", _Backend({}))) == ["unreachable"])
+
+# ── a container that vanished says nothing about the host ────────────
+# `ps -aq` lists the NEWEST first, which is exactly the `--rm` backup
+# job most likely to be gone a moment later. Judging on that one id
+# reported a healthy host as a socket proxy that cannot be inspected.
+vanished = dict(HEALTHY)
+vanished["ps -aq"] = (0, "9f1aa0deadbe\nabc123def456\n789abc012def", "")
+vanished["inspect 9f1aa0deadbe"] = (
+    1, "", "Error response from daemon: No such container: 9f1aa0deadbe")
+f = hostcheck.preflight("tcp://nas:2375", _Backend(vanished))
+checks["a container that disappeared does not condemn the host"] = (
+    kinds(f) == ["engine", "can_list", "can_inspect", "ready"])
+checks["…and the next one is the one reported"] = (
+    dict(f)["can_inspect"]["name"] == "web")
+# …but a refusal still stops on the first one: asking twice would only
+# be two refusals.
+refused_all = dict(HEALTHY)
+refused_all["inspect abc123def456"] = (1, "", "403 Forbidden")
+b_ref = _Backend(refused_all)
+hostcheck.preflight("tcp://proxy:2375", b_ref)
+checks["…while a refusal is not asked a second time"] = (
+    len([a for a in b_ref.asked if a.startswith("inspect")]) == 1)
+
+# ── the conclusion the reader came for ───────────────────────────────
+f = hostcheck.preflight("ssh://fresh", _Backend(empty))
+checks["a host with no containers gets a verdict of its own"] = (
+    hostcheck.verdict(f) == "usable")
+checks["…and a host that already said 'ready' needs no second one"] = (
+    hostcheck.verdict(hostcheck.preflight("ssh://nas", _Backend(HEALTHY)))
+    is None)
+checks["…and a refused one gets no verdict at all"] = (
+    hostcheck.verdict(hostcheck.preflight("unix:///x", _Backend(denied)))
+    is None)
+# ── what the "I do not speak that" message offers ────────────────────
+# `fd://` is systemd socket activation and `npipe://` is a Windows named
+# pipe. Both are accepted — somebody may know better — but neither can
+# work from an Alpine container, and advising them is a dead end.
+_bad = dict(hostcheck.preflight("http://nas", _Backend({})))["scheme_bad"]
+checks["the scheme advice offers nothing that cannot work in here"] = (
+    "fd://" not in _bad["schemes"] and "npipe://" not in _bad["schemes"]
+    and "context://" in _bad["schemes"] and "ssh://" in _bad["schemes"])
+checks["…though both are still accepted if somebody has one"] = (
+    "fd://" in hostcheck.SCHEMES and "npipe://" in hostcheck.SCHEMES)
+
 # ── nothing is written anywhere ──────────────────────────────────────
 b = _Backend(HEALTHY)
 hostcheck.preflight("ssh://nas", b)
-checks["a pre-flight only reads"] = all(
-    a.split()[0] in ("version", "ps", "inspect") for a in b.asked)
+# `all()` over an empty list is True, so the old form passed on a
+# backend that was never asked anything at all. The count is part of
+# the claim, and the whole command is looked at rather than its verb:
+# `ps --filter` is a read, `run` with any flag is not.
+_WRITES = ("run", "create", "start", "stop", "restart", "rm", "kill",
+           "pull", "push", "rename", "exec", "commit", "prune", "login")
+checks["a pre-flight only reads"] = (
+    len(b.asked) == 4
+    and all(a.split()[0] in ("version", "ps", "inspect") for a in b.asked)
+    and not any(w in a.split() for a in b.asked for w in _WRITES))
 
 # ── both chats ask the core, and say the same thing ──────────────────
 # The three checks that stood here were `"hostcheck.preflight(" in body`
 # and friends. An auditor gutted Discord's renderer to `return "nothing
 # to see here"`, left the words in a docstring, and all three passed —
-# and they never compared the two texts at all, which differ: Discord
-# clips, Telegram does not. So render both and look.
+# and they never compared the two texts at all. So render both and look.
+# The only difference allowed is the markdown dialect; Discord also
+# clips at 1900 characters, which this fixture stays well under and
+# which is therefore NOT what these checks are about.
 import types as _t                                            # noqa: E402
 
 from discord_bot import DiscordBot                            # noqa: E402
@@ -194,25 +278,80 @@ def _plain(t):
 checks["…and Discord says the same thing about the same endpoint"] = (
     _plain(_dc_text) == _plain(_tg_text))
 
+# The verdict for the no-containers host has to reach the reader, in
+# both chats — a conclusion only `hostcheck` knows about is no use.
+checks["the verdict reaches the reader in both chats"] = (
+    "can be added" in _rendered(TelegramBot, "ssh://fresh", empty)
+    and "can be added" in _rendered(DiscordBot, "ssh://fresh", empty))
+
 _tg_bad = _rendered(TelegramBot, "http://nas", {})
 checks["…including when the endpoint is one we do not speak"] = (
     "http://nas" in _tg_bad
     and _plain(_rendered(DiscordBot, "http://nas", {})) == _plain(_tg_bad))
 
-# …and the command is reachable at all. Make the dispatch unreachable
-# and nothing used to notice.
-_tgsrc = open(os.path.join(ROOT, "app", "telegram_bot.py"),
-              encoding="utf-8").read()
+# …and the command is reachable at all, which is the half a grep cannot
+# see. These three were `'self._hostcheck_text(_parts[2])' in src` and
+# friends; commenting the call out — feature dead on both connections —
+# left all three green, because the text is still in the file. So the
+# real dispatch is driven: a message arrives, a slash command arrives,
+# and the pre-flight's own words have to come back out.
+
+
+def _drive_telegram(text):
+    """One message through `_handle_message`, returning what was said."""
+    bot = TelegramBot.__new__(TelegramBot)
+    said = []
+    bot.config = _t.SimpleNamespace(language="en", container_cli="docker",
+                                    bot_token="", chat_id="1")
+    from i18n import get_translator
+    bot.t = get_translator("en")
+    bot.send_message = lambda m, **kw: said.append(m)
+    bot._check_auth = lambda *a, **kw: True
+    bot.audit = None
+    bot.hosts = None
+    bot.log = lambda *a, **kw: None
+    real = _cb.RemoteBackend
+    _cb.RemoteBackend = lambda *a, **kw: _Backend(HEALTHY)
+    try:
+        bot._handle_message({"text": text, "from": {"id": "1"},
+                             "chat": {"id": "1"}}, None, None)
+    finally:
+        _cb.RemoteBackend = real
+    return "\n".join(said)
+
+
+_tg_said = _drive_telegram("/hosts check ssh://nas")
+checks["/hosts check reaches the pre-flight in Telegram"] = (
+    "27.1.1" in _tg_said and "ssh://nas" in _tg_said)
+checks["…and without an endpoint it says how to use it"] = (
+    "/hosts check" in _drive_telegram("/hosts check"))
+
+
+def _drive_discord(options):
+    bot = DiscordBot.__new__(DiscordBot)
+    bot.config = _t.SimpleNamespace(language="en", container_cli="docker")
+    bot.application_id, bot.rest = "", None
+    bot.audit = None
+    bot.hosts = None
+    bot.log = lambda *a, **kw: None
+    real = _cb.RemoteBackend
+    _cb.RemoteBackend = lambda *a, **kw: _Backend(HEALTHY)
+    try:
+        return bot._dispatch({"data": {"name": "hosts", "options": options}})
+    finally:
+        _cb.RemoteBackend = real
+
+
+_dc_said = _drive_discord([{"name": "check", "value": "ssh://nas",
+                            "type": 3}])
+checks["…and the option reaches it in Discord"] = (
+    "27.1.1" in (_dc_said or "") and "ssh://nas" in (_dc_said or ""))
+# A `/hosts` with no option must still be the host list, not a
+# pre-flight against the empty string.
+checks["…while /hosts without it is still the host list"] = (
+    "27.1.1" not in (_drive_discord([]) or ""))
 _dcsrc = open(os.path.join(ROOT, "app", "discord_bot.py"),
               encoding="utf-8").read()
-_tg_branch = _tgsrc.split('elif text.startswith("/hosts")')[1][:700]
-checks["/hosts check reaches the pre-flight in Telegram"] = (
-    '_parts[1] == "check"' in _tg_branch
-    and "self._hostcheck_text(_parts[2])" in _tg_branch)
-_dc_branch = _dcsrc.split("def _cmd_hosts")[1][:600]
-checks["…and the option reaches it in Discord"] = (
-    'opts or {}).get("check")' in _dc_branch
-    and "self._hostcheck_text(_ep)" in _dc_branch)
 checks["…and Discord registers the option so it can be typed"] = (
     '"name": "check"' in _dcsrc.split('{"name": "hosts"')[1][:400])
 

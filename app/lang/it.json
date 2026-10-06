@@ -829,7 +829,7 @@
   "restore_how": "📥 *Ripristino*\n\nInvia il file di backup in questa chat — trascinalo dentro, oppure inoltralo dalla chat di un altro Docksentry. Ti dirò cosa contiene e chiederò conferma prima di cambiare qualcosa.\n\nUsa `/backup` per ottenerne uno.",
   "help_restore": "/restore — Ripristina da un file di backup inviato in questa chat",
   "help_detail_restore": "*/restore*\n\nInvia un backup di Docksentry in questa chat e ti proporrò di ripristinarlo. Basta trascinare dentro il file — il comando in sé spiega soltanto come si fa.\n\nPrima che cambi qualcosa ti viene detto da quale istanza arriva il pacchetto, quando è stato creato e cosa sovrascriverebbe. La decisione è il pulsante, non l'arrivo del file.\n\nLe impostazioni sconosciute vengono scartate e i link controllati, perché un backup è un file e il fatto che l'abbia scelto tu non dice che l'abbia scritto tu.",
-  "help_detail_hosts": "*/hosts*\n\nElenca ogni host gestito da questa istanza e l'endpoint attraverso cui lo raggiunge. Su un'installazione a host singolo lo dice.\n\nUtile quando un controllo segnala un host come irraggiungibile: l'endpoint indicato qui è quello che ha fallito.",
+  "help_detail_hosts": "*/hosts*\n\nElenca ogni host gestito da questa istanza e l'endpoint attraverso cui lo raggiunge. Su un'installazione a host singolo lo dice.\n\nUtile quando un controllo segnala un host come irraggiungibile: l'endpoint indicato qui è quello che ha fallito.\n\n`/hosts check <endpoint>` prova un endpoint prima di aggiungerlo: risponde, quale motore, si possono elencare i container e ispezionarne uno. Non modifica nulla e funziona prima che l'endpoint sia in `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Aggiorna ogni container con un aggiornamento in sospeso",
   "help_detail_updateall": "*/updateall*\n\nAggiorna tutto ciò che al momento risulta avere un aggiornamento, esattamente come il pulsante *Aggiorna tutto* sotto una notifica di aggiornamento.\n\nI container bloccati vengono saltati, i gruppi vengono aggiornati nell'ordine, e un fallimento ferma quel gruppo ma non gli altri.",
   "help_hosts_block": "🖥 *Più host:* aggiungi `@<host>` per puntare un comando a uno di essi, `@all` a tutti — es. `/check @nas` o `/update sonarr @nas`.\nSenza `@`: `/check`, `/status` e `/updates` guardano ogni host; `/update`, `/start`, `/stop` e `/restart` agiscono solo sull'host locale.\nHost gestiti: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Controllo preliminare per* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` non è un endpoint che conosco. Atteso uno di: {schemes}",
   "hostcheck_unreachable": "• Nessuna risposta da `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` ha risposto — e ci ha rifiutati: {error}. Sono i permessi del socket, non la rete: controlla il mount, il gruppo e, se attivo, SELinux.",
   "hostcheck_engine": "• Ha risposto {engine} {version}",
   "hostcheck_engine_unsure": "• Qualcosa ha risposto con la versione {version}, ma non ha detto se è Docker o Podman",
   "hostcheck_can_list": "• I container si possono elencare: {count} trovati",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Un container si può ispezionare (`{name}`)",
   "hostcheck_cannot_inspect": "• Un container non si può ispezionare — {error}. Un proxy del socket che consente l'elenco ma non l'ispezione sembra sano e non permette di aggiornare.",
   "hostcheck_no_containers": "• Qui non ci sono ancora container, quindi il permesso di ispezione è rimasto non verificato",
-  "hostcheck_ready": "• Pronto: `{endpoint}` può essere gestito",
+  "hostcheck_ready": "• Pronto: `{endpoint}` è leggibile per intero. Per aggiornare servono anche i permessi di scrittura, e un controllo preliminare non può provarli senza modificare qualcosa — un proxy socket in sola lettura arriva esattamente fino a qui.",
+  "hostcheck_usable": "• Utilizzabile: `{endpoint}` può essere aggiunto. I permessi di inspect e di scrittura sono rimasti non verificati.",
   "hostcheck_usage": "Uso: `/hosts check <endpoint>` — per esempio `/hosts check ssh://user@10.0.0.5`"
 }

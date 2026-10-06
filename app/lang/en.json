@@ -829,7 +829,7 @@
   "restore_how": "📥 *Restoring*\n\nSend the backup file into this chat — drag it in, or forward one from another Docksentry's chat. I will say what it contains and ask before changing anything.\n\nUse `/backup` to get one.",
   "help_restore": "/restore — Restore from a backup file sent into this chat",
   "help_detail_restore": "*/restore*\n\nSend a Docksentry backup into this chat and I will offer to restore it. Dragging the file in is enough — the command itself only explains how.\n\nBefore anything changes you get told which instance the bundle came from, when it was made and what it would overwrite. The button is the decision, not the file arriving.\n\nUnknown settings are dropped and links are checked, because a backup is a file and nothing about you picking it says you wrote it.",
-  "help_detail_hosts": "*/hosts*\n\nLists every host this instance manages and the endpoint it reaches each one through. On a single-host install it says so.\n\nUseful when a check reports a host as unreachable: the endpoint here is the one that failed.",
+  "help_detail_hosts": "*/hosts*\n\nLists every host this instance manages and the endpoint it reaches each one through. On a single-host install it says so.\n\nUseful when a check reports a host as unreachable: the endpoint here is the one that failed.\n\n`/hosts check <endpoint>` tries an endpoint before you add it: does it answer, which engine, can containers be listed and one inspected. It changes nothing and works before the endpoint is in `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Update every container with a pending update",
   "help_detail_updateall": "*/updateall*\n\nUpdates everything currently listed as having an update, exactly like the *Update all* button under an update notification.\n\nPinned containers are skipped, groups are updated in order, and a failure stops that group but not the others.",
   "help_hosts_block": "🖥 *Several hosts:* add `@<host>` to aim a command at one of them, `@all` at every one — e.g. `/check @nas` or `/update sonarr @nas`.\nWithout an `@`: `/check`, `/status` and `/updates` look at every host; `/update`, `/start`, `/stop` and `/restart` act on the local host only.\nManaged hosts: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Pre-flight for* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` is not an endpoint I speak. Expected one of: {schemes}",
   "hostcheck_unreachable": "• Nothing answered at `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` answered — and refused us: {error}. Those are the socket's permissions rather than the network: check the mount, the group, and SELinux if it is enforcing.",
   "hostcheck_engine": "• {engine} {version} answered",
   "hostcheck_engine_unsure": "• Something answered with version {version}, but it did not say whether it is Docker or Podman",
   "hostcheck_can_list": "• Containers can be listed: {count} found",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• A container can be inspected (`{name}`)",
   "hostcheck_cannot_inspect": "• A container cannot be inspected — {error}. A socket proxy that allows listing but not inspecting looks healthy and cannot be updated from.",
   "hostcheck_no_containers": "• No containers here yet, so inspect permission stayed untested",
-  "hostcheck_ready": "• Ready: `{endpoint}` can be managed",
+  "hostcheck_ready": "• Ready: `{endpoint}` can be read in full. Updating needs write permission as well, and a pre-flight cannot try that without changing something — a read-only socket proxy gets exactly this far.",
+  "hostcheck_usable": "• Usable: `{endpoint}` can be added. Inspect and write permission stayed untested.",
   "hostcheck_usage": "Usage: `/hosts check <endpoint>` — for example `/hosts check ssh://user@10.0.0.5`"
 }

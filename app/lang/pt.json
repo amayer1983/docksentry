@@ -829,7 +829,7 @@
   "restore_how": "📥 *Restaurar*\n\nEnvie o ficheiro de backup para este chat — arraste-o para aqui, ou reencaminhe um do chat de outro Docksentry. Eu digo o que ele contém e pergunto antes de mudar seja o que for.\n\nUse `/backup` para obter um.",
   "help_restore": "/restore — Restaurar a partir de um ficheiro de backup enviado para este chat",
   "help_detail_restore": "*/restore*\n\nEnvie um backup do Docksentry para este chat e eu ofereço-me para o restaurar. Basta arrastar o ficheiro para aqui — o comando em si só explica como.\n\nAntes de mudar seja o que for, fica dito de que instância veio o pacote, quando foi feito e o que sobrescreveria. O botão é a decisão, não a chegada do ficheiro.\n\nAs definições desconhecidas são descartadas e os links são verificados, porque um backup é um ficheiro e tê-lo escolhido não quer dizer que o tenha escrito.",
-  "help_detail_hosts": "*/hosts*\n\nLista todos os hosts que esta instância gere e o endpoint por onde chega a cada um. Numa instalação de host único, di-lo.\n\nÚtil quando uma verificação reporta um host como inacessível: o endpoint aqui indicado é o que falhou.",
+  "help_detail_hosts": "*/hosts*\n\nLista todos os hosts que esta instância gere e o endpoint por onde chega a cada um. Numa instalação de host único, di-lo.\n\nÚtil quando uma verificação reporta um host como inacessível: o endpoint aqui indicado é o que falhou.\n\n`/hosts check <endpoint>` testa um endpoint antes de o adicionar: responde, qual motor, é possível listar contentores e inspecionar um. Não altera nada e funciona antes de o endpoint estar em `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Atualizar todos os contentores com atualização pendente",
   "help_detail_updateall": "*/updateall*\n\nAtualiza tudo o que estiver listado como tendo atualização, tal como o botão *Atualizar tudo* por baixo de uma notificação de atualização.\n\nOs contentores fixados são ignorados, os grupos são atualizados por ordem, e uma falha para esse grupo mas não os outros.",
   "help_hosts_block": "🖥 *Vários hosts:* acrescente `@<host>` para apontar um comando a um deles, `@all` a todos — por exemplo `/check @nas` ou `/update sonarr @nas`.\nSem `@`: `/check`, `/status` e `/updates` olham para todos os hosts; `/update`, `/start`, `/stop` e `/restart` atuam só no host local.\nHosts geridos: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Verificação prévia de* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` não é um endpoint que eu entenda. Esperado um de: {schemes}",
   "hostcheck_unreachable": "• Nada respondeu em `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` respondeu — e recusou-nos: {error}. São as permissões do socket, não a rede: verifique o mount, o grupo e, se estiver ativo, o SELinux.",
   "hostcheck_engine": "• Respondeu {engine} {version}",
   "hostcheck_engine_unsure": "• Algo respondeu com a versão {version}, mas não disse se é Docker ou Podman",
   "hostcheck_can_list": "• Os contentores podem ser listados: {count} encontrados",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Um contentor pode ser inspecionado (`{name}`)",
   "hostcheck_cannot_inspect": "• Um contentor não pode ser inspecionado — {error}. Um proxy de socket que permite listar mas não inspecionar parece saudável e não serve para atualizar.",
   "hostcheck_no_containers": "• Ainda não há contentores aqui, por isso a permissão de inspeção ficou por verificar",
-  "hostcheck_ready": "• Pronto: `{endpoint}` pode ser gerido",
+  "hostcheck_ready": "• Pronto: `{endpoint}` pode ser lido por completo. Atualizar exige também permissão de escrita, e uma verificação prévia não pode tentá-la sem alterar algo — um proxy de socket só de leitura chega exatamente até aqui.",
+  "hostcheck_usable": "• Utilizável: `{endpoint}` pode ser adicionado. As permissões de inspeção e de escrita ficaram sem teste.",
   "hostcheck_usage": "Utilização: `/hosts check <endpoint>` — por exemplo `/hosts check ssh://user@10.0.0.5`"
 }

@@ -829,7 +829,7 @@
   "restore_how": "📥 *Restauration*\n\nEnvoyez le fichier de sauvegarde dans ce chat — glissez-le ici, ou transférez-en un depuis le chat d'un autre Docksentry. Je vous dirai ce qu'il contient et je demanderai avant de changer quoi que ce soit.\n\nUtilisez `/backup` pour en obtenir un.",
   "help_restore": "/restore — Restaurer depuis un fichier de sauvegarde envoyé dans ce chat",
   "help_detail_restore": "*/restore*\n\nEnvoyez une sauvegarde Docksentry dans ce chat et je vous proposerai de la restaurer. Il suffit d'y glisser le fichier — la commande elle-même ne fait qu'expliquer la marche à suivre.\n\nAvant tout changement, on vous dit de quelle instance vient le paquet, quand il a été créé et ce qu'il écraserait. C'est le bouton qui décide, pas l'arrivée du fichier.\n\nLes paramètres inconnus sont écartés et les liens sont vérifiés, parce qu'une sauvegarde reste un fichier et que rien, dans le fait que vous le choisissiez, ne dit que c'est vous qui l'avez écrit.",
-  "help_detail_hosts": "*/hosts*\n\nListe chaque hôte géré par cette instance et le point de terminaison par lequel elle l'atteint. Sur une installation mono-hôte, elle le dit.\n\nUtile quand une vérification signale un hôte injoignable : le point de terminaison indiqué ici est celui qui a échoué.",
+  "help_detail_hosts": "*/hosts*\n\nListe chaque hôte géré par cette instance et le point de terminaison par lequel elle l'atteint. Sur une installation mono-hôte, elle le dit.\n\nUtile quand une vérification signale un hôte injoignable : le point de terminaison indiqué ici est celui qui a échoué.\n\n`/hosts check <endpoint>` teste un endpoint avant que vous l'ajoutiez : répond-il, quel moteur, peut-on lister les conteneurs et en inspecter un. Il ne modifie rien et fonctionne avant que l'endpoint soit dans `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Mettre à jour chaque conteneur ayant une mise à jour en attente",
   "help_detail_updateall": "*/updateall*\n\nMet à jour tout ce qui est actuellement listé comme ayant une mise à jour, exactement comme le bouton *Tout mettre à jour* sous une notification de mise à jour.\n\nLes conteneurs épinglés sont ignorés, les groupes sont mis à jour dans l'ordre, et un échec arrête ce groupe mais pas les autres.",
   "help_hosts_block": "🖥 *Plusieurs hôtes :* ajoutez `@<host>` pour viser une commande sur l'un d'eux, `@all` pour tous — p. ex. `/check @nas` ou `/update sonarr @nas`.\nSans `@` : `/check`, `/status` et `/updates` regardent tous les hôtes ; `/update`, `/start`, `/stop` et `/restart` n'agissent que sur l'hôte local.\nHôtes gérés : {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Contrôle préalable pour* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` n'est pas un point de terminaison que je comprends. Attendu : {schemes}",
   "hostcheck_unreachable": "• Rien n'a répondu à `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` a répondu — et nous a refusés : {error}. Ce sont les droits du socket, pas le réseau : vérifiez le montage, le groupe et, s'il est actif, SELinux.",
   "hostcheck_engine": "• {engine} {version} a répondu",
   "hostcheck_engine_unsure": "• Quelque chose a répondu avec la version {version}, sans dire s'il s'agit de Docker ou de Podman",
   "hostcheck_can_list": "• Les conteneurs peuvent être listés : {count} trouvés",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Un conteneur peut être inspecté (`{name}`)",
   "hostcheck_cannot_inspect": "• Un conteneur ne peut pas être inspecté — {error}. Un proxy de socket qui autorise la liste mais pas l'inspection paraît sain et ne permet pas de mettre à jour.",
   "hostcheck_no_containers": "• Aucun conteneur ici pour l'instant, le droit d'inspection n'a donc pas pu être vérifié",
-  "hostcheck_ready": "• Prêt : `{endpoint}` peut être géré",
+  "hostcheck_ready": "• Prêt : `{endpoint}` est entièrement lisible. Mettre à jour demande en plus les droits d'écriture, et un contrôle préalable ne peut pas les essayer sans rien modifier — un proxy de socket en lecture seule arrive exactement jusqu'ici.",
+  "hostcheck_usable": "• Utilisable : `{endpoint}` peut être ajouté. Les droits d'inspection et d'écriture n'ont pas été testés.",
   "hostcheck_usage": "Utilisation : `/hosts check <endpoint>` — par exemple `/hosts check ssh://user@10.0.0.5`"
 }

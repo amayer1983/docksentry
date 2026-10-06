@@ -33,6 +33,15 @@ def _is_network(err):
     import smtplib
     import ssl
 
+    # Not every `SSLError` is an answer. `SSLEOFError` and
+    # `SSLZeroReturnError` are what OpenSSL raises when the TCP
+    # connection dies *during* the handshake — the wire failing, with no
+    # refusal behind it — and STARTTLS is the default transport here, so
+    # treating them as "the server said no" dropped the alert on exactly
+    # the path most installs use. Measured: both were held=False before
+    # this, while the same outage over `smtp_tls=none` was held=True.
+    if isinstance(err, (ssl.SSLEOFError, ssl.SSLZeroReturnError)):
+        return True
     if isinstance(err, ssl.SSLError):
         return False                 # a TLS refusal is an answer, not silence
     if isinstance(err, smtplib.SMTPServerDisconnected):
@@ -97,9 +106,11 @@ class SmtpNotifier(BaseNotifier):
         # was setting one, so every attempt arrived as a fresh mail and a
         # resend was indistinguishable from a new alert. Generated once
         # per NOTIFICATION and carried through the retry, so a second
-        # copy is byte-identical where it counts: receivers that honour
-        # `Message-ID` collapse it, and the ones that do not show two
-        # crash alerts instead of none.
+        # copy carries the same id, so a reader — or a receiver that
+        # deduplicates on it — can tell it is the same alert and not a
+        # second incident. The body differs (the retry is prefixed with
+        # how late it is) and `Date` is restamped, so "identical" is
+        # about the identity, not the bytes.
         # `parseaddr`, because SMTP_FROM may carry a display name —
         # "Docksentry <alerts@example.com>" would otherwise give the
         # domain `example.com>` and an id ending `@example.com>>`, which
@@ -137,13 +148,21 @@ class SmtpNotifier(BaseNotifier):
             print("SMTP: certificate verification is OFF "
                   "(SMTP_TLS_VERIFY=false) — the password is sent to "
                   "whatever answers on that address.")
-        # Everything up to `send_message` can be retried freely:
-        # nothing has been handed over yet. From that call onwards a
-        # retry might DUPLICATE rather than replace, because the server
-        # may already have taken the mail — so that side is held for
-        # exactly one attempt, under the same `Message-ID`, and the
-        # caller is told which side it was (#66, @NotRetarded).
-        handed_over = False
+        # Which side of the point of no return a failure happened on.
+        # Before DATA a retry is free: the server has nothing. From the
+        # moment the DATA command goes out it may have the mail and be
+        # unable to say so, and then a retry DUPLICATES rather than
+        # replaces (#66, @NotRetarded).
+        #
+        # `send_message` is not that boundary, which is what this used to
+        # use: it does MAIL FROM and RCPT TO first, and a relay that
+        # drops the connection on MAIL FROM — rate limit, overload —
+        # was reported as "the mail may have arrived" when the server had
+        # seen nothing at all. So the flag is set by `smtplib`'s own
+        # `data()`, wrapped on this one connection object; that is the
+        # call that sends the message body, and anything after it has to
+        # be assumed delivered.
+        handed = {"over": False}
         try:
             if c.smtp_tls == "ssl":
                 server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port,
@@ -155,7 +174,20 @@ class SmtpNotifier(BaseNotifier):
                     server.starttls(context=ctx)
                 if c.smtp_user:
                     server.login(c.smtp_user, c.smtp_password)
-                handed_over = True
+                _data = getattr(server, "data", None)
+                if callable(_data):
+                    def _marked_data(arg, _d=_data):
+                        handed["over"] = True
+                        return _d(arg)
+
+                    server.data = _marked_data
+                else:
+                    # Cannot see the boundary, so assume the worse of the
+                    # two: "it may have arrived" caps the retry, while
+                    # "it cannot have" would keep delivering copies. No
+                    # `smtplib` transport lacks `data()` — this is for
+                    # whatever a future one or a stand-in looks like.
+                    handed["over"] = True
                 server.send_message(msg, to_addrs=recipients)
             finally:
                 # `quit` talks to the server, so on a broken connection it
@@ -178,21 +210,27 @@ class SmtpNotifier(BaseNotifier):
         except Exception as e:
             print(f"SMTP error: {e}")
             if _is_network(e) and on_network_failure:
-                if handed_over:
-                    # The far end went away after DATA, so the mail may
-                    # already be sitting in a queue there. It is held
-                    # anyway: the retry carries the same `Message-ID`,
-                    # which is what makes a duplicate recognisable — and
-                    # a crash alert nobody sees is worse than one some
-                    # mail clients show twice. This used to be dropped.
-                    print(f"SMTP: the connection died after handing the "
-                          f"mail over, so it may have arrived. Holding it "
-                          f"for ONE retry under the same Message-ID "
-                          f"({msgid}). A receiver that honours the id can "
-                          f"collapse the copy; several do not, so this is "
-                          f"capped at one rather than retried for the "
-                          f"queue's full lifetime.")
-                on_network_failure(msgid, handed_over)
+                if handed["over"]:
+                    # The far end went away with the body already sent,
+                    # so the mail may be sitting in a queue there. It is
+                    # held anyway — a crash alert nobody sees is worse
+                    # than one that arrives twice — but the retry is the
+                    # last one: if that one is taken and dropped too,
+                    # the queue gives up instead of delivering a third.
+                    #
+                    # What the same `Message-ID` on both copies buys is
+                    # not measured here and is not promised: some
+                    # receivers deduplicate on it, and the ones asked
+                    # about in #66 do not for separate deliveries. It
+                    # makes the copy *recognisable*; whether anything
+                    # collapses it is the receiver's business.
+                    print(f"SMTP: the connection died with the message "
+                          f"already sent, so it may have arrived. Holding "
+                          f"it for one more attempt under the same "
+                          f"Message-ID ({msgid}) — if that one is taken "
+                          f"and dropped as well, it is given up rather "
+                          f"than retried for the queue's full lifetime.")
+                on_network_failure(msgid, handed["over"])
         return False
 
     # ── payloads ─────────────────────────────────────────────────────
@@ -211,16 +249,42 @@ class SmtpNotifier(BaseNotifier):
         self.send_raw(subject, body)
 
     def _send_text(self, text, msgid=None):
-        """One plain mail, `True` when it landed. No retry registration:
-        `notify_retry` decides what happens to an entry it is retrying,
-        and a resend that re-queued itself would reset the age and never
-        expire.
+        """One plain mail: `True`, `False`, or `notify_retry.STOP`.
+
+        This is what the retry queue calls, and it is the only place that
+        can tell the queue apart the two reasons an attempt failed. It
+        never registers a retry of its own — `flush` decides what happens
+        to an entry it is retrying, and a resend that re-queued itself
+        would reset the age and never expire.
+
+        * `True` — it landed.
+        * `False` — the network failed before the server had the message.
+          Worth another go; nothing was delivered.
+        * `STOP` — either the server took it and then died (a further
+          attempt is a second copy, not a second chance), or the failure
+          was a refusal rather than the network, and a server that says
+          no says no again in thirty seconds. Both used to come back as
+          plain `False`, so the queue kept going for its full fifteen
+          minutes: measured at thirty copies the server accepted, under
+          one `Message-ID`.
 
         `msgid` is the identity of the NOTIFICATION, not of the attempt:
         the queue hands back the one the first try used, so the retry is
         the same mail rather than a second one."""
-        return bool(self.send_raw("Docksentry", text.replace("*", ""),
-                                  msgid=msgid))
+        reason = {"network": False, "handed_over": False}
+
+        def _note(_msgid=None, handed_over=False):
+            # Only called for network failures, and only by `send_raw`;
+            # observing, never queueing.
+            reason["network"] = True
+            reason["handed_over"] = handed_over
+
+        if self.send_raw("Docksentry", text.replace("*", ""), msgid=msgid,
+                         on_network_failure=_note):
+            return True
+        if reason["handed_over"] or not reason["network"]:
+            return notify_retry.STOP
+        return False
 
     def send_message(self, text):
         # Strip Telegram *bold* markers for a clean plain-text mail.
@@ -231,17 +295,23 @@ class SmtpNotifier(BaseNotifier):
         # copy, and the ones that do not show a crash alert twice rather
         # than not at all (#66, @NotRetarded).
         def _hold(msgid=None, duplicate_risk=False):
-            # One attempt where a resend might duplicate rather than
-            # replace. The queue would otherwise try for its full
-            # fifteen minutes — about twenty-nine deliveries of the same
-            # crash alert, and `Message-ID` does not save that: Exchange,
-            # Dovecot and Thunderbird all show separately delivered
-            # copies. Losing one alert is bad; two dozen is worse.
+            # No try budget here, deliberately. The first version capped
+            # this side at one retry, and that was wrong in both
+            # directions: it spent the single attempt on the next flush
+            # thirty seconds later whether or not the network was back
+            # (measured — the alert was gone at t=30 while the network
+            # returned at t=35), and it did nothing at all for the far
+            # more likely case where attempt one died at the *connect*,
+            # so no cap was set and the retry path then kept delivering.
+            #
+            # The cap belongs where the knowledge is: `_send_text` sees
+            # each attempt and answers `STOP` once a copy may be out.
+            # `duplicate_risk` is therefore no longer needed to decide
+            # anything — it is what the log line above reports.
             notify_retry.remember(
                 self.name, text,
                 lambda t, _m=msgid: self._send_text(t, msgid=_m),
-                still_wanted=lambda: self.enabled,
-                tries=1 if duplicate_risk else None)
+                still_wanted=lambda: self.enabled)
 
         self.send_raw("Docksentry", text.replace("*", ""),
                       on_network_failure=_hold)

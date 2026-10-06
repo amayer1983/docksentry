@@ -829,7 +829,7 @@
   "restore_how": "📥 *복원하기*\n\n백업 파일을 이 대화로 보내세요 — 끌어다 놓거나 다른 Docksentry 대화에서 전달하면 됩니다. 무엇이 들어 있는지 알려 주고, 바꾸기 전에 먼저 묻습니다.\n\n백업을 받으려면 `/backup`을 쓰세요.",
   "help_restore": "/restore — 이 대화로 보낸 백업 파일에서 복원",
   "help_detail_restore": "*/restore*\n\nDocksentry 백업을 이 대화로 보내면 복원을 제안합니다. 파일을 끌어다 놓기만 하면 되고, 명령 자체는 방법만 설명합니다.\n\n무언가 바뀌기 전에 이 묶음이 어느 인스턴스에서 왔는지, 언제 만들어졌는지, 무엇을 덮어쓸지 알려 줍니다. 결정은 파일이 도착하는 것이 아니라 버튼입니다.\n\n알 수 없는 설정은 버리고 링크는 검사합니다. 백업도 결국 파일이고, 당신이 골랐다는 것만으로 당신이 만들었다는 뜻은 아니기 때문입니다.",
-  "help_detail_hosts": "*/hosts*\n\n이 인스턴스가 관리하는 모든 호스트와 각 호스트에 연결하는 엔드포인트를 나열합니다. 단일 호스트 설치라면 그렇다고 표시합니다.\n\n확인 과정에서 호스트에 연결할 수 없다고 나올 때 유용합니다: 여기 있는 엔드포인트가 바로 실패한 그 엔드포인트입니다.",
+  "help_detail_hosts": "*/hosts*\n\n이 인스턴스가 관리하는 모든 호스트와 각 호스트에 연결하는 엔드포인트를 나열합니다. 단일 호스트 설치라면 그렇다고 표시합니다.\n\n확인 과정에서 호스트에 연결할 수 없다고 나올 때 유용합니다: 여기 있는 엔드포인트가 바로 실패한 그 엔드포인트입니다.\n\n`/hosts check <endpoint>` 는 추가하기 전에 엔드포인트를 시험합니다: 응답하는지, 어떤 엔진인지, 컨테이너를 나열하고 하나를 검사할 수 있는지. 아무것도 바꾸지 않으며, 엔드포인트가 `DOCKER_HOSTS` 에 들어가기 전에도 동작합니다.",
   "help_updateall": "/updateall — 대기 중인 업데이트가 있는 모든 컨테이너 업데이트",
   "help_detail_updateall": "*/updateall*\n\n업데이트 알림 아래의 *모두 업데이트* 버튼과 똑같이, 지금 업데이트가 있다고 표시된 것을 모두 업데이트합니다.\n\n고정된 컨테이너는 건너뛰고, 그룹은 순서대로 업데이트하며, 실패하면 그 그룹만 멈추고 나머지는 계속합니다.",
   "help_hosts_block": "🖥 *호스트가 여러 개:* 명령을 한 호스트로 보내려면 `@<host>`를, 모든 호스트로 보내려면 `@all`을 덧붙이세요 — 예: `/check @nas` 또는 `/update sonarr @nas`.\n`@` 없이 쓰면 `/check`, `/status`, `/updates`는 모든 호스트를 보고, `/update`, `/start`, `/stop`, `/restart`는 로컬 호스트에만 적용됩니다.\n관리 중인 호스트: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` 사전 점검*",
   "hostcheck_scheme_bad": "• `{endpoint}` 는 제가 아는 엔드포인트가 아닙니다. 예상: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 에서 아무 응답이 없습니다 — {error}",
+  "hostcheck_denied": "• `{endpoint}` 이(가) 응답했고, 그리고 우리를 거부했습니다 — {error}. 네트워크가 아니라 소켓 권한입니다. 마운트, 그룹, 그리고 활성화되어 있다면 SELinux를 확인하세요.",
   "hostcheck_engine": "• {engine} {version} 이(가) 응답했습니다",
   "hostcheck_engine_unsure": "• 무언가가 버전 {version} 으로 응답했지만 Docker 인지 Podman 인지는 밝히지 않았습니다",
   "hostcheck_can_list": "• 컨테이너를 나열할 수 있습니다: {count}개 발견",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• 컨테이너를 검사할 수 있습니다 (`{name}`)",
   "hostcheck_cannot_inspect": "• 컨테이너를 검사할 수 없습니다 — {error}. 나열은 허용하고 검사는 막는 소켓 프록시는 멀쩡해 보이지만 업데이트에는 쓸 수 없습니다.",
   "hostcheck_no_containers": "• 여기에는 아직 컨테이너가 없어 검사 권한은 확인되지 않았습니다",
-  "hostcheck_ready": "• 준비됨: `{endpoint}` 를 관리할 수 있습니다",
+  "hostcheck_ready": "• 준비됨: `{endpoint}` 은(는) 전부 읽을 수 있습니다. 업데이트에는 쓰기 권한도 필요하고, 사전 점검은 무언가를 바꾸지 않고는 그것을 시험할 수 없습니다 — 읽기 전용 소켓 프록시는 정확히 여기까지 통과합니다.",
+  "hostcheck_usable": "• 사용 가능: `{endpoint}` 을(를) 추가할 수 있습니다. inspect 권한과 쓰기 권한은 검증되지 않은 채 남았습니다.",
   "hostcheck_usage": "사용법: `/hosts check <endpoint>` — 예: `/hosts check ssh://user@10.0.0.5`"
 }

@@ -1,11 +1,15 @@
 """What to ask a host BEFORE trusting it with anything (#7, @LeeNX).
 
 He read the docs, looked at his podman boxes and said the honest thing:
-"I feel like there should be a setup step and tests that can be done
-before adding the hub pointing at the agent host." There was not. You
-put an endpoint in `DOCKER_HOSTS`, restarted, and found out it worked
-when something failed — which, for a tool whose whole job is unattended
-work, is the wrong moment to learn it.
+"I feel like there should be a agent setup step and tests that can be
+done before adding the hub dockSentry pointing at the agent host."
+
+This is the tests, not the agent. He described an agent setup step and
+there is no agent — saying this is "what he asked for" would be claiming
+more than was built. What there was before was nothing: you put an
+endpoint in `DOCKER_HOSTS`, restarted, and found out it worked when
+something failed — which, for a tool whose whole job is unattended work,
+is the wrong moment to learn it.
 
 So this asks, in order, the four questions that decide whether a host is
 usable, and says which one failed rather than returning a bare no:
@@ -13,12 +17,19 @@ usable, and says which one failed rather than returning a bare no:
   * does the endpoint even parse, and is the scheme one we speak;
   * does anything answer there at all;
   * what answered — Docker or Podman, which version;
-  * do the permissions cover what we actually do: list containers and
-    inspect one.
+  * can we list containers, and inspect one.
 
-The last is the one that bites. A socket proxy that allows `GET
-/containers/json` and nothing else looks perfectly healthy to a ping and
-cannot be updated from. Measured by doing it, not by reading a config.
+Note the limit, because the wording used to overstate it: every question
+here is a READ. Updating also needs to pull an image and recreate a
+container, and nothing short of doing it can prove those are allowed —
+so a socket proxy that permits GET and refuses POST passes this whole
+check and fails the first update with a 403. The `ready` finding says so
+rather than promising the host "can be managed".
+
+The read side is still the one that bites most often: a socket proxy
+that allows `GET /containers/json` and nothing else looks perfectly
+healthy to a ping and cannot be inspected, let alone updated from. That
+is found by asking it, not by reading a config.
 
 Everything here is measured at the moment of asking. A question we could
 not answer is reported as unanswered, never guessed — the rule this
@@ -35,10 +46,21 @@ something is not a pre-flight.
 #: to give a remote Podman host its own SSH key.
 SCHEMES = ("tcp://", "ssh://", "unix://", "fd://", "npipe://", "context://")
 
+#: What the "that is not an endpoint I speak" message offers. A subset of
+#: what is ACCEPTED, because two of those cannot work from in here and
+#: suggesting them sends the reader down a dead end: `fd://` is systemd
+#: socket activation handing a descriptor to the process it started, and
+#: `npipe://` is a Windows named pipe. Docksentry is an Alpine container
+#: on Linux. They stay accepted — somebody with an unusual setup may
+#: know better than this list — but they are not advice.
+SUGGEST = ("tcp://", "ssh://", "unix://", "context://")
+
 #: Finding kinds, in the order they can occur.
 #:   scheme_bad      the endpoint is not one we speak
 #:   unreachable     nothing answered
+#:   denied          something answered, and refused us
 #:   engine          what answered, and its version
+#:   engine_unsure   …or would not say what it is
 #:   can_list        `ps` works, and how many containers it saw
 #:   cannot_list     …or did not, with what the CLI said
 #:   can_inspect     one container could be inspected
@@ -50,9 +72,28 @@ SCHEMES = ("tcp://", "ssh://", "unix://", "fd://", "npipe://", "context://")
 #: Every kind `preflight` can emit. Named here rather than only in the
 #: comment above, so a test can ask the module instead of keeping its
 #: own copy — a kind added without wording would otherwise go unnoticed.
-KINDS = ("scheme_bad", "unreachable", "engine", "engine_unsure",
+KINDS = ("scheme_bad", "unreachable", "denied",
+         "engine", "engine_unsure",
          "can_list", "cannot_list", "can_inspect", "cannot_inspect",
-         "no_containers", "ready")
+         "no_containers", "ready", "usable")
+
+
+#: An answer that means "I heard you and you may not". Docker and Podman
+#: both phrase it as a permission problem, and the reader needs sending
+#: to the socket's rights rather than to the network: rootless Podman,
+#: the wrong group, SELinux. Before this they were all told "nothing
+#: answered at …", which is the one thing that had not happened.
+_REFUSED = ("permission denied", "access denied", "not permitted",
+            "operation not permitted", "unauthorized", "forbidden",
+            "must be root", "cannot connect to the docker daemon at "
+            "unix", "connect: permission denied")
+
+
+def _refused(text):
+    low = (text or "").lower()
+    if "permission denied" in low or "access denied" in low:
+        return True
+    return any(k in low for k in _REFUSED)
 
 
 def _run(backend, args, timeout=15):
@@ -67,20 +108,35 @@ def _run(backend, args, timeout=15):
     return getattr(r, "returncode", 1) == 0, out, err
 
 
+def _gone(text):
+    """Did `inspect` fail because that container no longer exists?
+
+    Both engines say so in words rather than in an exit code. It matters
+    because "it is not there any more" says nothing about the host, while
+    every other inspect failure says something about its rights.
+    """
+    low = (text or "").lower()
+    return "no such container" in low or "no such object" in low
+
+
 def preflight(endpoint, backend, hint=None):
     """`[(kind, params)]` for one endpoint. Does not write anything.
 
     `backend` is a container backend already pointed at `endpoint`;
-    `hint` is `hostdiag.hint`, asked only when something fails, so a
-    refused ssh connection still explains the `/root/.ssh` trap rather
-    than quoting `Permission denied (publickey)` at somebody who knows
-    their keys work.
+    `hint` is `hostdiag.hint`, asked when the FIRST question fails — the
+    one where the endpoint does not answer or refuses us. That is where
+    the `/root/.ssh` trap shows up: an ssh host whose keys work on the
+    machine and not in the container. The hint is added to the error, not
+    instead of it; the reader gets both the words the cli used and what
+    they tend to mean. A failure further in (`cannot_list`,
+    `cannot_inspect`) gets no hint, because `hostdiag` only has sentences
+    about ssh and by then ssh has demonstrably worked.
     """
     out = []
     ep = (endpoint or "").strip()
     if ep and not any(ep.startswith(s) for s in SCHEMES):
         out.append(("scheme_bad", {"endpoint": ep,
-                                   "schemes": ", ".join(SCHEMES)}))
+                                   "schemes": ", ".join(SUGGEST)}))
         return out
 
     ok, ver, err = _run(backend, ["version", "--format", "{{.Server.Version}}"])
@@ -94,11 +150,21 @@ def preflight(endpoint, backend, hint=None):
                 extra = ""
             if extra:
                 params["hint"] = extra
-        out.append(("unreachable", params))
+        out.append(("denied" if _refused(why) else "unreachable", params))
         return out
 
     # Podman answers `docker version` too, so ask what it calls itself
-    # rather than inferring it from the endpoint or the binary name.
+    # rather than inferring it from the endpoint.
+    #
+    # Not from the binary name either, but that needs saying carefully:
+    # the plain output carries a `Client:` block as well, which names the
+    # LOCAL cli. Measured here with the docker cli against a podman
+    # service — "Client: Docker Engine - Community" and "Podman Engine:"
+    # in one answer. Both names present, so the order of the test below
+    # is the whole decision, and it is deliberate: "podman" first,
+    # because the docker cli says "docker" about itself on every host it
+    # ever talks to, while nothing says "podman" unless podman is in the
+    # conversation.
     #
     # Plain `version`, not a template: the first attempt asked for
     # `{{.Server.Components}}`, which Docker has and Podman does not —
@@ -132,7 +198,23 @@ def preflight(endpoint, backend, hint=None):
         out.append(("no_containers", {}))
         return out
 
-    ok, raw, err = _run(backend, ["inspect", ids[0]])
+    # More than one candidate, because `ps -aq` lists the NEWEST first
+    # and that is exactly the one most likely to be gone a moment later:
+    # a `--rm` backup job or CI runner that finished between the two
+    # calls. Judging the host on `ids[0]` alone turned that into "a
+    # container cannot be inspected — a socket proxy that allows listing
+    # but not inspecting looks healthy and cannot be updated from", for
+    # a host whose rights were fine. Measured: three containers, the
+    # first one gone, verdict `cannot_inspect` and not usable.
+    raw = err = ""
+    ok = False
+    for _id in ids[:3]:
+        ok, raw, err = _run(backend, ["inspect", _id])
+        if ok:
+            ids = [_id] + [i for i in ids if i != _id]
+            break
+        if not _gone(err):
+            break            # a real refusal: no point asking again
     if not ok:
         out.append(("cannot_inspect", {"error": (err or "no answer")[:300]}))
         return out
@@ -151,6 +233,22 @@ def preflight(endpoint, backend, hint=None):
     return out
 
 
+def verdict(findings):
+    """The closing line's kind, or None when the findings carry their own.
+
+    `ready` is already a verdict, so a run that reached it needs nothing
+    more. The case this is for is `no_containers`: nothing blocked, so
+    the host is usable, but the inspect question stayed open and there is
+    no `ready` to say so. That used to end with three findings and no
+    conclusion, leaving the reader to work out for himself whether he
+    could add the host — which is the one thing he came to ask.
+    """
+    kinds = {k for k, _p in findings}
+    if "ready" in kinds or not usable(findings):
+        return None
+    return "usable"
+
+
 def usable(findings):
     """True when nothing in `findings` blocks using the host.
 
@@ -162,5 +260,9 @@ def usable(findings):
     An empty list is not usable — nothing was measured, and "no findings"
     is the shape a caller gets when it never ran the check.
     """
-    bad = {"scheme_bad", "unreachable", "cannot_list", "cannot_inspect"}
+    # `denied` belongs here and was missed when it was added: a socket
+    # that answers and refuses us is the most blocking answer there is,
+    # and leaving it out reported a host with no rights as usable.
+    bad = {"scheme_bad", "unreachable", "denied",
+           "cannot_list", "cannot_inspect"}
     return bool(findings) and not any(kind in bad for kind, _p in findings)

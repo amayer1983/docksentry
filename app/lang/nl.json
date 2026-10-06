@@ -829,7 +829,7 @@
   "restore_how": "📥 *Terugzetten*\n\nStuur het back-upbestand in deze chat — sleep het erin, of stuur er een door uit de chat van een andere Docksentry. Ik vertel wat erin zit en vraag het voordat er iets verandert.\n\nMet `/backup` haal je er een op.",
   "help_restore": "/restore — Terugzetten uit een back-upbestand dat in deze chat is gestuurd",
   "help_detail_restore": "*/restore*\n\nStuur een Docksentry-back-up in deze chat en ik bied aan hem terug te zetten. Het bestand erin slepen is genoeg — de opdracht zelf legt alleen uit hoe het werkt.\n\nVoordat er iets verandert krijg je te horen van welke installatie de bundel komt, wanneer hij gemaakt is en wat hij zou overschrijven. De knop is de beslissing, niet de aankomst van het bestand.\n\nOnbekende instellingen worden weggelaten en links worden gecontroleerd, want een back-up is een bestand, en dat jij het uitkiest zegt niet dat jij het geschreven hebt.",
-  "help_detail_hosts": "*/hosts*\n\nToont elke host die deze installatie beheert en het endpoint waarmee hij die bereikt. Bij een installatie met één host meldt hij dat.\n\nHandig wanneer een controle een host als onbereikbaar meldt: het endpoint dat hier staat is het endpoint dat faalde.",
+  "help_detail_hosts": "*/hosts*\n\nToont elke host die deze installatie beheert en het endpoint waarmee hij die bereikt. Bij een installatie met één host meldt hij dat.\n\nHandig wanneer een controle een host als onbereikbaar meldt: het endpoint dat hier staat is het endpoint dat faalde.\n\n`/hosts check <endpoint>` test een endpoint voordat je het toevoegt: antwoordt het, welke engine, kunnen containers worden opgesomd en kan er één worden geïnspecteerd. Het verandert niets en werkt voordat het endpoint in `DOCKER_HOSTS` staat.",
   "help_updateall": "/updateall — Elke container met een openstaande update bijwerken",
   "help_detail_updateall": "*/updateall*\n\nWerkt alles bij wat op dit moment als bij te werken staat aangemerkt, precies zoals de knop *Alles bijwerken* onder een updatemelding.\n\nVastgezette containers worden overgeslagen, groepen worden op volgorde bijgewerkt, en een fout stopt die ene groep maar niet de andere.",
   "help_hosts_block": "🖥 *Meerdere hosts:* zet `@<host>` erachter om een opdracht op één host te richten, `@all` op allemaal — bijv. `/check @nas` of `/update sonarr @nas`.\nZonder `@`: `/check`, `/status` en `/updates` kijken naar elke host; `/update`, `/start`, `/stop` en `/restart` werken alleen op de lokale host.\nBeheerde hosts: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Voorcontrole voor* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` is geen endpoint dat ik ken. Verwacht wordt een van: {schemes}",
   "hostcheck_unreachable": "• Niets antwoordde op `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` antwoordde — en weigerde ons: {error}. Dat zijn de rechten op de socket, niet het netwerk: controleer de mount, de groep en, als die actief is, SELinux.",
   "hostcheck_engine": "• {engine} {version} antwoordde",
   "hostcheck_engine_unsure": "• Iets antwoordde met versie {version}, maar zei niet of het Docker of Podman is",
   "hostcheck_can_list": "• Containers kunnen worden opgesomd: {count} gevonden",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Een container kan worden geïnspecteerd (`{name}`)",
   "hostcheck_cannot_inspect": "• Een container kan niet worden geïnspecteerd — {error}. Een socketproxy die opsommen toestaat maar inspecteren niet, oogt gezond en is niet bruikbaar om bij te werken.",
   "hostcheck_no_containers": "• Hier staan nog geen containers, dus het inspectierecht bleef ongetest",
-  "hostcheck_ready": "• Klaar: `{endpoint}` kan worden beheerd",
+  "hostcheck_ready": "• Klaar: `{endpoint}` is volledig leesbaar. Bijwerken vraagt ook schrijfrechten, en die kan een voorafgaande controle niet proberen zonder iets te veranderen — een alleen-lezen socketproxy komt precies tot hier.",
+  "hostcheck_usable": "• Bruikbaar: `{endpoint}` kan worden toegevoegd. Inspect- en schrijfrechten bleven ongetest.",
   "hostcheck_usage": "Gebruik: `/hosts check <endpoint>` — bijvoorbeeld `/hosts check ssh://user@10.0.0.5`"
 }

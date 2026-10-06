@@ -829,7 +829,7 @@
   "restore_how": "📥 *Wiederherstellen*\n\nSchick die Backup-Datei in diesen Chat — hineinziehen oder aus dem Chat einer anderen Docksentry-Instanz weiterleiten. Ich sage dir, was drin ist, und frage nach, bevor sich etwas ändert.\n\nEines bekommst du mit `/backup`.",
   "help_restore": "/restore — Backup einspielen, das in diesen Chat geschickt wurde",
   "help_detail_restore": "*/restore*\n\nSchick ein Docksentry-Backup in diesen Chat, dann biete ich das Einspielen an. Die Datei hineinzuziehen genügt — das Kommando selbst erklärt nur, wie.\n\nVor jeder Änderung erfährst du, von welcher Instanz das Paket stammt, wann es erstellt wurde und was es überschreiben würde. Der Knopf ist die Entscheidung, nicht das Ankommen der Datei.\n\nUnbekannte Einstellungen werden verworfen und Links geprüft — ein Backup ist eine Datei, und dass du sie ausgewählt hast, heißt nicht, dass du sie geschrieben hast.",
-  "help_detail_hosts": "*/hosts*\n\nListet jeden verwalteten Host und den Endpunkt, über den er erreicht wird. Bei einer Ein-Host-Installation sagt es das.\n\nNützlich, wenn eine Prüfung einen Host als nicht erreichbar meldet: der Endpunkt hier ist der, der gescheitert ist.",
+  "help_detail_hosts": "*/hosts*\n\nListet jeden verwalteten Host und den Endpunkt, über den er erreicht wird. Bei einer Ein-Host-Installation sagt es das.\n\nNützlich, wenn eine Prüfung einen Host als nicht erreichbar meldet: der Endpunkt hier ist der, der gescheitert ist.\n\n`/hosts check <endpunkt>` prüft einen Endpunkt, bevor du ihn aufnimmst: antwortet er, welche Engine, lassen sich Container auflisten und einer inspizieren. Es verändert nichts und funktioniert, bevor der Endpunkt in `DOCKER_HOSTS` steht.",
   "help_updateall": "/updateall — Alle Container mit anstehendem Update aktualisieren",
   "help_detail_updateall": "*/updateall*\n\nAktualisiert alles, was gerade als aktualisierbar gelistet ist — genau wie der Knopf *Alle updaten* unter einer Update-Benachrichtigung.\n\nAngepinnte Container werden übersprungen, Gruppen der Reihe nach aktualisiert, und ein Fehlschlag stoppt seine Gruppe, aber nicht die anderen.",
   "help_hosts_block": "🖥 *Mehrere Hosts:* `@<host>` richtet einen Befehl an einen bestimmten Host, `@all` an alle — z.B. `/check @nas` oder `/update sonarr @nas`.\nOhne `@`: `/check`, `/status` und `/updates` schauen auf allen Hosts nach; `/update`, `/start`, `/stop` und `/restart` wirken nur auf dem lokalen Host.\nVerwaltete Hosts: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Vorab-Prüfung für* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` ist kein Endpunkt, den ich spreche. Erwartet wird einer von: {schemes}",
   "hostcheck_unreachable": "• Unter `{endpoint}` hat nichts geantwortet — {error}",
+  "hostcheck_denied": "• `{endpoint}` hat geantwortet — und uns abgewiesen: {error}. Das sind die Rechte am Socket, nicht das Netz: Mount, Gruppe und, falls aktiv, SELinux prüfen.",
   "hostcheck_engine": "• {engine} {version} hat geantwortet",
   "hostcheck_engine_unsure": "• Etwas hat mit Version {version} geantwortet, aber nicht gesagt, ob es Docker oder Podman ist",
   "hostcheck_can_list": "• Container lassen sich auflisten: {count} gefunden",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Ein Container lässt sich inspizieren (`{name}`)",
   "hostcheck_cannot_inspect": "• Ein Container lässt sich nicht inspizieren — {error}. Ein Socket-Proxy, der Auflisten erlaubt und Inspizieren nicht, sieht gesund aus und taugt nicht zum Aktualisieren.",
   "hostcheck_no_containers": "• Hier gibt es noch keine Container, die Inspizier-Berechtigung blieb also ungeprüft",
-  "hostcheck_ready": "• Bereit: `{endpoint}` kann verwaltet werden",
+  "hostcheck_ready": "• Bereit: `{endpoint}` ist vollständig lesbar. Für Updates braucht es zusätzlich Schreibrechte, und die kann eine Vorab-Prüfung nicht testen, ohne etwas zu verändern — ein nur lesender Socket-Proxy kommt genau bis hierher.",
+  "hostcheck_usable": "• Brauchbar: `{endpoint}` kann aufgenommen werden. Inspect- und Schreibrechte blieben ungeprüft.",
   "hostcheck_usage": "Verwendung: `/hosts check <endpunkt>` — zum Beispiel `/hosts check ssh://user@10.0.0.5`"
 }

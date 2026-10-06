@@ -829,7 +829,7 @@
   "restore_how": "📥 *Przywracanie*\n\nWyślij plik kopii zapasowej na ten czat — przeciągnij go tutaj albo prześlij dalej z czatu innego Docksentry. Powiem, co zawiera, i zapytam, zanim cokolwiek zmienię.\n\nKopię pobierzesz przez `/backup`.",
   "help_restore": "/restore — Przywróć z pliku kopii zapasowej wysłanego na ten czat",
   "help_detail_restore": "*/restore*\n\nWyślij na ten czat kopię zapasową Docksentry, a zaproponuję jej przywrócenie. Wystarczy przeciągnąć plik — samo polecenie tylko tłumaczy, jak to zrobić.\n\nZanim cokolwiek się zmieni, dowiesz się, z której instancji pochodzi pakiet, kiedy powstał i co by nadpisał. Decyzją jest przycisk, a nie to, że plik dotarł.\n\nNieznane ustawienia są odrzucane, a linki sprawdzane, bo kopia zapasowa to plik, a to, że go wskazujesz, nie znaczy, że sam go napisałeś.",
-  "help_detail_hosts": "*/hosts*\n\nWypisuje każdy host zarządzany przez tę instancję i punkt końcowy, przez który do niego sięga. Przy instalacji jednohostowej po prostu to mówi.\n\nPrzydatne, gdy sprawdzanie zgłasza host jako nieosiągalny: to właśnie ten punkt końcowy zawiódł.",
+  "help_detail_hosts": "*/hosts*\n\nWypisuje każdy host zarządzany przez tę instancję i punkt końcowy, przez który do niego sięga. Przy instalacji jednohostowej po prostu to mówi.\n\nPrzydatne, gdy sprawdzanie zgłasza host jako nieosiągalny: to właśnie ten punkt końcowy zawiódł.\n\n`/hosts check <endpoint>` sprawdza punkt końcowy przed dodaniem: czy odpowiada, jaki silnik, czy da się wylistować kontenery i jeden zbadać. Nic nie zmienia i działa, zanim punkt końcowy znajdzie się w `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Aktualizuj każdy kontener z oczekującą aktualizacją",
   "help_detail_updateall": "*/updateall*\n\nAktualizuje wszystko, co jest teraz wypisane jako mające aktualizację, dokładnie tak jak przycisk *Zaktualizuj wszystko* pod powiadomieniem o aktualizacjach.\n\nPrzypięte kontenery są pomijane, grupy aktualizowane po kolei, a niepowodzenie zatrzymuje daną grupę, ale nie pozostałe.",
   "help_hosts_block": "🖥 *Kilka hostów:* dodaj `@<host>`, aby skierować polecenie do jednego z nich, albo `@all` do wszystkich — np. `/check @nas` lub `/update sonarr @nas`.\nBez `@`: `/check`, `/status` i `/updates` patrzą na każdy host; `/update`, `/start`, `/stop` i `/restart` działają tylko na hoście lokalnym.\nZarządzane hosty: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Kontrola wstępna dla* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` nie jest punktem końcowym, który rozumiem. Oczekiwany jeden z: {schemes}",
   "hostcheck_unreachable": "• Nic nie odpowiedziało pod `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` odpowiedział — i nas odrzucił: {error}. To uprawnienia gniazda, nie sieć: sprawdź montowanie, grupę i, jeśli jest włączony, SELinux.",
   "hostcheck_engine": "• Odpowiedział {engine} {version}",
   "hostcheck_engine_unsure": "• Coś odpowiedziało wersją {version}, ale nie powiedziało, czy to Docker, czy Podman",
   "hostcheck_can_list": "• Kontenery można wylistować: znaleziono {count}",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Kontener można zinspekcjonować (`{name}`)",
   "hostcheck_cannot_inspect": "• Kontenera nie można zinspekcjonować — {error}. Proxy gniazda, które pozwala listować, ale nie inspekcjonować, wygląda zdrowo i nie nadaje się do aktualizacji.",
   "hostcheck_no_containers": "• Nie ma tu jeszcze kontenerów, więc uprawnienie do inspekcji pozostało niesprawdzone",
-  "hostcheck_ready": "• Gotowe: `{endpoint}` można zarządzać",
+  "hostcheck_ready": "• Gotowe: `{endpoint}` da się w pełni odczytać. Aktualizacja wymaga dodatkowo prawa zapisu, a wstępne sprawdzenie nie może go wypróbować bez zmiany czegokolwiek — proxy gniazda tylko do odczytu dochodzi dokładnie dotąd.",
+  "hostcheck_usable": "• Nadaje się: `{endpoint}` można dodać. Uprawnienia do inspect i do zapisu pozostały niesprawdzone.",
   "hostcheck_usage": "Użycie: `/hosts check <endpoint>` — na przykład `/hosts check ssh://user@10.0.0.5`"
 }

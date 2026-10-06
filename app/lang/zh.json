@@ -829,7 +829,7 @@
   "restore_how": "📥 *恢复*\n\n把备份文件发到本聊天 — 拖进来，或者从另一个 Docksentry 的聊天转发过来。我会说明它包含什么，并在改动任何东西之前先询问。\n\n用 `/backup` 可以生成一个。",
   "help_restore": "/restore — 从发送到本聊天的备份文件恢复",
   "help_detail_restore": "*/restore*\n\n把 Docksentry 备份发到本聊天，我就会提议恢复它。直接把文件拖进来就够了 — 这个命令本身只是说明怎么做。\n\n在任何改动发生之前，你会先知道这个备份包来自哪个实例、什么时候生成、会覆盖什么。做决定的是按钮，不是文件的到达。\n\n未知设置会被丢弃，链接会被检查，因为备份只是一个文件，而你选中它并不说明是你写的。",
-  "help_detail_hosts": "*/hosts*\n\n列出本实例管理的所有主机，以及分别通过哪个端点连接它们。单主机安装时会直接说明。\n\n当检查报告某台主机无法连接时很有用：这里显示的端点就是连接失败的那个。",
+  "help_detail_hosts": "*/hosts*\n\n列出本实例管理的所有主机，以及分别通过哪个端点连接它们。单主机安装时会直接说明。\n\n当检查报告某台主机无法连接时很有用：这里显示的端点就是连接失败的那个。\n\n`/hosts check <endpoint>` 会在你添加之前试一个端点：它是否回应、是哪个引擎、能否列出容器并检查其中一个。它不改动任何东西，而且在端点进入 `DOCKER_HOSTS` 之前就能用。",
   "help_updateall": "/updateall — 更新所有有待处理更新的容器",
   "help_detail_updateall": "*/updateall*\n\n更新当前所有列为有更新的容器，与更新通知下的 *全部更新* 按钮完全一样。\n\n已固定的容器会被跳过，分组按顺序更新，某个分组失败只会中止该分组，不影响其他分组。",
   "help_hosts_block": "🖥 *多台主机：* 在命令后加 `@<host>` 可指向其中一台，`@all` 指向全部 — 例如 `/check @nas` 或 `/update sonarr @nas`。\n不带 `@` 时：`/check`、`/status` 和 `/updates` 会查看所有主机；`/update`、`/start`、`/stop` 和 `/restart` 只作用于本地主机。\n受管主机：{hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` 预检*",
   "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
+  "hostcheck_denied": "• `{endpoint}` 回应了，并且拒绝了我们 — {error}。这是套接字的权限，不是网络：请检查挂载、用户组，以及若已启用的 SELinux。",
   "hostcheck_engine": "• {engine} {version} 作出了响应",
   "hostcheck_engine_unsure": "• 有东西以版本 {version} 作出了响应, 但没有说明它是 Docker 还是 Podman",
   "hostcheck_can_list": "• 可以列出容器: 找到 {count} 个",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• 可以检查某个容器 (`{name}`)",
   "hostcheck_cannot_inspect": "• 无法检查容器 — {error}。允许列出却不允许检查的套接字代理看起来是健康的, 却无法用来更新。",
   "hostcheck_no_containers": "• 这里还没有容器, 因此检查权限未能验证",
-  "hostcheck_ready": "• 就绪: `{endpoint}` 可以纳管",
+  "hostcheck_ready": "• 就绪：`{endpoint}` 可以完整读取。更新还需要写入权限，而预检无法在不改动任何东西的情况下试它 — 只读的套接字代理恰好能走到这一步。",
+  "hostcheck_usable": "• 可用：`{endpoint}` 可以添加。inspect 权限和写入权限仍未验证。",
   "hostcheck_usage": "用法: `/hosts check <endpoint>` — 例如 `/hosts check ssh://user@10.0.0.5`"
 }

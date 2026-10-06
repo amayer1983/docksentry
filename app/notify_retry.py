@@ -52,6 +52,35 @@ MAX_AGE_SECONDS = 900
 MAX_QUEUED = 20
 
 
+class _Stop:
+    """What a resend returns to say "it did not land, and do not try again".
+
+    The queue can only see True or False, and for most channels that is
+    the whole truth: a POST either got a response or it did not. SMTP has
+    a third state, and it is the one #66 is about — the server took the
+    mail and the connection died before it said so. Retrying that does
+    not replace the mail, it delivers a second copy, and the queue would
+    otherwise keep going for its full fifteen minutes.
+
+    Measured before this existed, with an injected clock: a network that
+    came back half-way produced thirty copies the server accepted, all
+    under one `Message-ID`. Falsy on purpose, so anything that only asks
+    `if result:` still reads it as "not delivered".
+    """
+
+    __slots__ = ()
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):                                   # pragma: no cover
+        return "notify_retry.STOP"
+
+
+#: Returned by a `send`, never passed in. See `_Stop`.
+STOP = _Stop()
+
+
 def _ago(seconds):
     """`42s` / `12m` / `2h` — the roundness the reader actually needs."""
     seconds = int(seconds)
@@ -97,7 +126,7 @@ class RetryQueue:
             self._items = []
 
     # ── the two things it does ───────────────────────────────────────
-    def remember(self, channel, text, send, still_wanted=None, tries=None):
+    def remember(self, channel, text, send, still_wanted=None):
         """Hold `text` for `channel`; `send(text)` will be tried again later.
 
         `still_wanted()` is asked again at delivery time. The stored `send`
@@ -112,6 +141,13 @@ class RetryQueue:
         must NOT call back into `remember` — `flush` decides what happens to
         an entry it is retrying, and a resend that re-queues itself would
         reset the age and never expire.
+
+        It may also return `STOP`, which is falsy and means "not
+        delivered, and trying again would be worse than giving up" — a
+        mail the server took before the connection died, or a refusal
+        that will be refused again. That is the only way the queue can
+        know the difference, because from out here a failure is a
+        failure.
         """
         if not text:
             return False
@@ -121,14 +157,6 @@ class RetryQueue:
                 "text": text,
                 "send": send,
                 "wanted": still_wanted,
-                #: How many deliveries this entry may be given, or None
-                #: for "as many as fit in its lifetime". One is for the
-                #: case where a resend might DUPLICATE rather than
-                #: replace: an SMTP connection that died after DATA may
-                #: already have handed the mail over, and retrying that
-                #: for a quarter of an hour turns one crash alert into
-                #: a couple of dozen.
-                "tries": tries,
                 "at": self._clock(),
                 "wall": self._wall(),
             })
@@ -184,22 +212,27 @@ class RetryQueue:
                 except Exception:                         # pragma: no cover
                     pass
             try:
-                ok = bool(held["send"](self._prefix(held, now) + held["text"]))
+                # The raw result, not `bool()` of it: `STOP` is falsy,
+                # so collapsing it here would lose the one thing it
+                # says and the entry would be retried anyway.
+                result = held["send"](self._prefix(held, now) + held["text"])
             except Exception as e:                        # pragma: no cover
                 print(f"Notify retry: {held['channel']} resend error: {e}")
-                ok = False
-            left = held.get("tries")
-            if left is not None:
-                held["tries"] = left - 1
-            if ok:
+                result = False
+            if result:
                 sent += 1
                 print(f"Notify retry: delivered a held {held['channel']} "
                       f"message, {_ago(age)} late")
-            elif left is not None and left <= 1:
+            elif result is STOP:
                 dropped += 1
                 print(f"Notify retry: giving up on a held "
-                      f"{held['channel']} message — its one retry is "
-                      f"spent, and trying again could duplicate it")
+                      f"{held['channel']} message — another attempt would "
+                      f"be a second copy rather than a second chance")
+                # Blocked for the rest of the pass like any other
+                # failure: a connection that takes a message and then
+                # dies is a connection, and dialling the other nineteen
+                # held alerts into it costs a timeout each.
+                blocked.add(held["channel"])
             else:
                 keep.append(held)
                 blocked.add(held["channel"])
@@ -228,9 +261,9 @@ class RetryQueue:
 queue = RetryQueue()
 
 
-def remember(channel, text, send, still_wanted=None, tries=None):
+def remember(channel, text, send, still_wanted=None):
     """Hold a message on the shared queue."""
-    return queue.remember(channel, text, send, still_wanted, tries)
+    return queue.remember(channel, text, send, still_wanted)
 
 
 def flush():

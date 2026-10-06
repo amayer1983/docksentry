@@ -1428,10 +1428,11 @@ class DiscordBot:
         return self.t("chan_unknown_command", name=name)
 
     def _cmd_hosts(self, opts=None):
-        # `check` answers the four questions before an endpoint is in
-        # `DOCKER_HOSTS` at all — the step @LeeNX said should exist and
-        # did not (#7). Findings from the core, so this says the same as
-        # Telegram about the same endpoint.
+        # `check` answers the questions before an endpoint is in
+        # `DOCKER_HOSTS` at all — the tests half of what @LeeNX asked for
+        # in #7, not the agent half, which does not exist. Findings from
+        # the core, so this says the same as Telegram about the same
+        # endpoint.
         _ep = ((opts or {}).get("check") or "").strip()
         if _ep:
             return self._hostcheck_text(_ep)
@@ -2179,12 +2180,20 @@ class DiscordBot:
             return "\n".join(lines + [
                 self.t("hostcheck_unreachable", endpoint=endpoint,
                        error=str(e)[:300])])
-        for kind, params in hostcheck.preflight(endpoint, backend,
-                                                hint=hostdiag.hint):
+        findings = hostcheck.preflight(endpoint, backend,
+                                       hint=hostdiag.hint)
+        for kind, params in findings:
             extra = params.pop("hint", "")
             lines.append(self.t(f"hostcheck_{kind}", **params))
             if extra:
                 lines.append("  " + extra)
+        # The conclusion, when the findings do not already carry one.
+        # Without it a host with no containers on it ended on three
+        # observations and no answer to the question that was asked.
+        closing = hostcheck.verdict(findings)
+        if closing:
+            lines.append(self.t(f"hostcheck_{closing}",
+                                endpoint=endpoint or "local"))
         return self._clip("\n".join(lines))
 
     def _self_audit_text(self):

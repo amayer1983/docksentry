@@ -491,6 +491,21 @@ An endpoint may also be `context://<name>`, meaning "the endpoint this machine a
 
 The machine Docksentry runs on is always managed and is **not** listed. Leave `DOCKER_HOSTS` unset and everything behaves exactly as a single-host install — no host column, no `@` anywhere.
 
+**Try an endpoint before you add it** — `/hosts check <endpoint>` in Telegram, `/hosts check:<endpoint>` on Discord:
+
+```
+/hosts check ssh://root@nas
+🔎 Pre-flight for `ssh://root@nas`
+• docker 27.1.1 answered
+• Containers can be listed: 14 found
+• A container can be inspected (`jellyfin`)
+• Ready: `ssh://root@nas` can be read in full. …
+```
+
+It asks, in order, whether the scheme is one Docksentry speaks, whether anything answers, which engine it is, and whether containers can be listed and one inspected — then names the question that failed instead of returning a bare no. It writes nothing and works before the endpoint is in `DOCKER_HOSTS`, which is the point: you find out now rather than when an update fails. An `ssh://` host that refuses gets the explanation too — keys live on *your* machine, and the container has its own filesystem.
+
+Two limits worth knowing. Every question it asks is a **read**: updating also needs to pull an image and recreate a container, and nothing short of doing it proves those are allowed — so a socket proxy that permits `GET` and refuses `POST` passes the whole check and fails the first update with a 403. And the endpoint is whatever you type, so anyone who can command the bot can point it at an address on your network and see what answers; if that matters, set `TELEGRAM_ALLOWED_USERS` / `DISCORD_ALLOWED_USERS`.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/amayer1983/docksentry/main/docs/images/telegram-multihost.png" alt="Update notification for a remote host, containers marked @nas" width="520">
 </p>

@@ -829,7 +829,7 @@
   "restore_how": "📥 *復元*\n\nバックアップファイルをこのチャットに送ってください — ドラッグして入れるか、別の Docksentry のチャットから転送します。内容をお伝えし、何かを変える前に確認します。\n\n取得するには `/backup` を使います。",
   "help_restore": "/restore — このチャットに送られたバックアップファイルから復元",
   "help_detail_restore": "*/restore*\n\nDocksentry のバックアップをこのチャットに送ると、復元するかどうかを尋ねます。ファイルを放り込むだけで十分で、コマンド自体は手順を説明するだけです。\n\n何かが変わる前に、そのバックアップがどのインスタンス由来か、いつ作られたか、何を上書きするかをお知らせします。決めるのはボタンであって、ファイルが届いたことではありません。\n\n未知の設定は捨て、リンクは検証します。バックアップはただのファイルであり、あなたが選んだからといって、あなたが書いたとは限らないからです。",
-  "help_detail_hosts": "*/hosts*\n\nこのインスタンスが管理するホストと、それぞれへの接続に使うエンドポイントを一覧します。単一ホスト構成ならその旨を表示します。\n\n確認でホストに到達できないと報告されたときに役立ちます。ここに出ているエンドポイントが、失敗したものです。",
+  "help_detail_hosts": "*/hosts*\n\nこのインスタンスが管理するホストと、それぞれへの接続に使うエンドポイントを一覧します。単一ホスト構成ならその旨を表示します。\n\n確認でホストに到達できないと報告されたときに役立ちます。ここに出ているエンドポイントが、失敗したものです。\n\n`/hosts check <endpoint>` は、追加する前にエンドポイントを試します: 応答するか、どのエンジンか、コンテナを一覧でき、ひとつを調べられるか。何も変更せず、エンドポイントが `DOCKER_HOSTS` に入る前から使えます。",
   "help_updateall": "/updateall — 保留中の更新があるコンテナをすべて更新",
   "help_detail_updateall": "*/updateall*\n\n現在「更新あり」と表示されているものをすべて更新します。更新通知の下にある *すべて更新* ボタンとまったく同じです。\n\n固定されたコンテナは飛ばし、グループは順番に更新し、失敗するとそのグループは止まりますが、他のグループは続きます。",
   "help_hosts_block": "🖥 *複数ホスト:* コマンドを特定のホストに向けるには `@<host>`、すべてに向けるには `@all` を付けます — 例: `/check @nas`、`/update sonarr @nas`。\n`@` を付けない場合: `/check`、`/status`、`/updates` は全ホストを見ます。`/update`、`/start`、`/stop`、`/restart` はローカルホストのみに作用します。\n管理中のホスト: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` の事前チェック*",
   "hostcheck_scheme_bad": "• `{endpoint}` は私が扱えるエンドポイントではありません。想定: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` から応答がありません — {error}",
+  "hostcheck_denied": "• `{endpoint}` は応答し、そのうえで拒否しました — {error}。ネットワークではなくソケットの権限です。マウント、グループ、有効なら SELinux を確認してください。",
   "hostcheck_engine": "• {engine} {version} が応答しました",
   "hostcheck_engine_unsure": "• 何かがバージョン {version} で応答しましたが、Docker か Podman かは名乗りませんでした",
   "hostcheck_can_list": "• コンテナを一覧できます: {count} 件",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• コンテナを検査できます (`{name}`)",
   "hostcheck_cannot_inspect": "• コンテナを検査できません — {error}。一覧は許すのに検査を許さないソケットプロキシは健全に見えて、更新には使えません。",
   "hostcheck_no_containers": "• ここにはまだコンテナがないため、検査権限は未確認のままです",
-  "hostcheck_ready": "• 準備完了: `{endpoint}` は管理できます",
+  "hostcheck_ready": "• 準備完了: `{endpoint}` はすべて読み取れます。更新には書き込み権限も必要で、事前チェックは何も変更せずにそれを試すことができません — 読み取り専用のソケットプロキシはちょうどここまで通ります。",
+  "hostcheck_usable": "• 利用可能: `{endpoint}` は追加できます。inspect と書き込みの権限は未検証のままです。",
   "hostcheck_usage": "使い方: `/hosts check <endpoint>` — 例 `/hosts check ssh://user@10.0.0.5`"
 }

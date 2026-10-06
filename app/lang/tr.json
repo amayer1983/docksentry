@@ -829,7 +829,7 @@
   "restore_how": "📥 *Geri yükleme*\n\nYedek dosyasını bu sohbete gönderin — sürükleyip bırakın ya da başka bir Docksentry sohbetinden iletin. İçinde ne olduğunu söyler ve bir şey değiştirmeden önce sorarım.\n\nBir yedek almak için `/backup` kullanın.",
   "help_restore": "/restore — Bu sohbete gönderilen yedek dosyasından geri yükle",
   "help_detail_restore": "*/restore*\n\nBu sohbete bir Docksentry yedeği gönderin, geri yüklemeyi önereyim. Dosyayı sürükleyip bırakmanız yeterli — komutun kendisi yalnızca nasıl yapılacağını anlatır.\n\nHiçbir şey değişmeden önce paketin hangi örnekten geldiğini, ne zaman oluşturulduğunu ve neyin üzerine yazılacağını öğrenirsiniz. Karar, dosyanın gelmesi değil düğmedir.\n\nBilinmeyen ayarlar atılır ve bağlantılar denetlenir; çünkü yedek bir dosyadır ve onu sizin seçmiş olmanız, sizin yazdığınız anlamına gelmez.",
-  "help_detail_hosts": "*/hosts*\n\nBu örneğin yönettiği her ana makineyi ve her birine hangi uç nokta üzerinden ulaştığını listeler. Tek makinelik bir kurulumda bunu söyler.\n\nBir kontrol ana makineyi erişilemez bildirdiğinde işe yarar: burada yazan uç nokta, başarısız olandır.",
+  "help_detail_hosts": "*/hosts*\n\nBu örneğin yönettiği her ana makineyi ve her birine hangi uç nokta üzerinden ulaştığını listeler. Tek makinelik bir kurulumda bunu söyler.\n\nBir kontrol ana makineyi erişilemez bildirdiğinde işe yarar: burada yazan uç nokta, başarısız olandır.\n\n`/hosts check <endpoint>` bir uç noktayı eklemeden önce dener: yanıt veriyor mu, hangi motor, konteynerler listelenebiliyor ve biri incelenebiliyor mu. Hiçbir şeyi değiştirmez ve uç nokta `DOCKER_HOSTS` içine girmeden önce çalışır.",
   "help_updateall": "/updateall — Bekleyen güncellemesi olan her konteyneri güncelle",
   "help_detail_updateall": "*/updateall*\n\nŞu anda güncellemesi olduğu listelenen her şeyi günceller; tıpkı bir güncelleme bildiriminin altındaki *Tümünü güncelle* düğmesi gibi.\n\nSabitlenmiş konteynerler atlanır, gruplar sırayla güncellenir ve bir hata o grubu durdurur ama diğerlerini durdurmaz.",
   "help_hosts_block": "🖥 *Birden çok ana makine:* bir komutu birine yöneltmek için `@<host>`, hepsine yöneltmek için `@all` ekleyin — örn. `/check @nas` ya da `/update sonarr @nas`.\n`@` olmadan: `/check`, `/status` ve `/updates` her ana makineye bakar; `/update`, `/start`, `/stop` ve `/restart` yalnızca yerel makinede iş görür.\nYönetilen ana makineler: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Ön kontrol:* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
+  "hostcheck_denied": "• `{endpoint}` yanıt verdi — ve bizi reddetti: {error}. Bu, ağ değil soketin izinleri: mount'u, grubu ve etkinse SELinux'u kontrol et.",
   "hostcheck_engine": "• {engine} {version} yanıt verdi",
   "hostcheck_engine_unsure": "• Bir şey {version} sürümüyle yanıt verdi ama Docker mı Podman mı olduğunu söylemedi",
   "hostcheck_can_list": "• Kapsayıcılar listelenebiliyor: {count} bulundu",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Bir kapsayıcı incelenebiliyor (`{name}`)",
   "hostcheck_cannot_inspect": "• Bir kapsayıcı incelenemiyor — {error}. Listelemeye izin verip incelemeye izin vermeyen bir soket proxy'si sağlıklı görünür ve güncelleme için kullanılamaz.",
   "hostcheck_no_containers": "• Burada henüz kapsayıcı yok, bu yüzden inceleme izni sınanmadan kaldı",
-  "hostcheck_ready": "• Hazır: `{endpoint}` yönetilebilir",
+  "hostcheck_ready": "• Hazır: `{endpoint}` tümüyle okunabiliyor. Güncelleme ayrıca yazma izni ister ve bir ön kontrol bunu bir şeyi değiştirmeden sınayamaz — salt okunur bir soket proxy'si tam buraya kadar gelir.",
+  "hostcheck_usable": "• Kullanılabilir: `{endpoint}` eklenebilir. Inspect ve yazma izinleri sınanmadan kaldı.",
   "hostcheck_usage": "Kullanım: `/hosts check <endpoint>` — örneğin `/hosts check ssh://user@10.0.0.5`"
 }

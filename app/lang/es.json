@@ -829,7 +829,7 @@
   "restore_how": "📥 *Restaurar*\n\nEnvía el archivo de copia de seguridad a este chat — arrástralo, o reenvía uno desde el chat de otro Docksentry. Te diré qué contiene y preguntaré antes de cambiar nada.\n\nUsa `/backup` para obtener uno.",
   "help_restore": "/restore — Restaurar desde un archivo de copia de seguridad enviado a este chat",
   "help_detail_restore": "*/restore*\n\nEnvía una copia de seguridad de Docksentry a este chat y te ofreceré restaurarla. Basta con arrastrar el archivo — el comando en sí solo explica cómo hacerlo.\n\nAntes de que cambie nada se te dice de qué instancia viene el paquete, cuándo se creó y qué sobrescribiría. La decisión es el botón, no que llegue el archivo.\n\nLos ajustes desconocidos se descartan y los enlaces se comprueban, porque una copia de seguridad es un archivo y que la elijas tú no dice que la hayas escrito tú.",
-  "help_detail_hosts": "*/hosts*\n\nLista todos los hosts que gestiona esta instancia y el punto de acceso por el que llega a cada uno. En una instalación de un solo host, lo indica.\n\nÚtil cuando una comprobación informa de un host inalcanzable: el punto de acceso que aparece aquí es el que falló.",
+  "help_detail_hosts": "*/hosts*\n\nLista todos los hosts que gestiona esta instancia y el punto de acceso por el que llega a cada uno. En una instalación de un solo host, lo indica.\n\nÚtil cuando una comprobación informa de un host inalcanzable: el punto de acceso que aparece aquí es el que falló.\n\n`/hosts check <endpoint>` prueba un endpoint antes de añadirlo: si responde, qué motor, si se pueden listar contenedores e inspeccionar uno. No cambia nada y funciona antes de que el endpoint esté en `DOCKER_HOSTS`.",
   "help_updateall": "/updateall — Actualizar todos los contenedores con actualización pendiente",
   "help_detail_updateall": "*/updateall*\n\nActualiza todo lo que figure ahora mismo con actualización disponible, igual que el botón *Actualizar todo* bajo un aviso de actualización.\n\nLos contenedores fijados se omiten, los grupos se actualizan en orden y un fallo detiene ese grupo pero no los demás.",
   "help_hosts_block": "🖥 *Varios hosts:* añade `@<host>` para dirigir un comando a uno de ellos, `@all` a todos — p. ej. `/check @nas` o `/update sonarr @nas`.\nSin `@`: `/check`, `/status` y `/updates` miran todos los hosts; `/update`, `/start`, `/stop` y `/restart` actúan solo en el host local.\nHosts gestionados: {hosts}",
@@ -994,6 +994,7 @@
   "hostcheck_header": "🔎 *Comprobación previa de* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` no es un punto final que yo entienda. Se espera uno de: {schemes}",
   "hostcheck_unreachable": "• Nada respondió en `{endpoint}` — {error}",
+  "hostcheck_denied": "• `{endpoint}` respondió — y nos rechazó: {error}. Son los permisos del socket, no la red: revisa el montaje, el grupo y, si está activo, SELinux.",
   "hostcheck_engine": "• Respondió {engine} {version}",
   "hostcheck_engine_unsure": "• Algo respondió con la versión {version}, pero no dijo si es Docker o Podman",
   "hostcheck_can_list": "• Los contenedores se pueden listar: {count} encontrados",
@@ -1001,6 +1002,7 @@
   "hostcheck_can_inspect": "• Un contenedor se puede inspeccionar (`{name}`)",
   "hostcheck_cannot_inspect": "• Un contenedor no se puede inspeccionar — {error}. Un proxy de socket que permite listar pero no inspeccionar parece sano y no sirve para actualizar.",
   "hostcheck_no_containers": "• Aquí todavía no hay contenedores, así que el permiso de inspección quedó sin probar",
-  "hostcheck_ready": "• Listo: `{endpoint}` se puede gestionar",
+  "hostcheck_ready": "• Listo: `{endpoint}` se puede leer por completo. Actualizar necesita además permiso de escritura, y una comprobación previa no puede probarlo sin cambiar algo — un proxy de socket de solo lectura llega exactamente hasta aquí.",
+  "hostcheck_usable": "• Utilizable: `{endpoint}` se puede añadir. Los permisos de inspección y de escritura quedaron sin probar.",
   "hostcheck_usage": "Uso: `/hosts check <endpoint>` — por ejemplo `/hosts check ssh://user@10.0.0.5`"
 }

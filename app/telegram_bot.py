@@ -1405,12 +1405,20 @@ class TelegramBot:
             return "\n".join(lines + [
                 self.t("hostcheck_unreachable", endpoint=endpoint,
                        error=str(e)[:300])])
-        for kind, params in hostcheck.preflight(endpoint, backend,
-                                                hint=hostdiag.hint):
+        findings = hostcheck.preflight(endpoint, backend,
+                                       hint=hostdiag.hint)
+        for kind, params in findings:
             extra = params.pop("hint", "")
             lines.append(self.t(f"hostcheck_{kind}", **params))
             if extra:
                 lines.append("  " + extra)
+        # The conclusion, when the findings do not already carry one.
+        # Without it a host with no containers on it ended on three
+        # observations and no answer to the question that was asked.
+        closing = hostcheck.verdict(findings)
+        if closing:
+            lines.append(self.t(f"hostcheck_{closing}",
+                                endpoint=endpoint or "local"))
         return "\n".join(lines)
 
     def _self_audit_text(self, checker):
@@ -4255,12 +4263,17 @@ class TelegramBot:
             self.announce(self.t("testchannel_message"))
             return
         elif text.startswith("/hosts"):
-            # `/hosts check <endpoint>` — the step that did not exist
-            # (#7, @LeeNX): "there should be a setup step and tests that
-            # can be done before adding the hub pointing at the agent
-            # host." Answered on screen, not in a log, and it works
-            # before the endpoint is in DOCKER_HOSTS — that is the whole
-            # point of a pre-flight.
+            # `/hosts check <endpoint>` — half of what @LeeNX asked for
+            # in #7: "I feel like there should be a agent setup step and
+            # tests that can be done before adding the hub dockSentry
+            # pointing at the agent host."
+            #
+            # The tests, not the agent. He described an agent setup step
+            # and there is no agent; calling this "the step he asked
+            # for" would be claiming more than was built. What it does
+            # do is answer on screen rather than in a log, and work
+            # before the endpoint is in DOCKER_HOSTS at all — which is
+            # the whole point of a pre-flight.
             _parts = text.split()
             if len(_parts) > 1 and _parts[1] == "check":
                 if len(_parts) < 3:
