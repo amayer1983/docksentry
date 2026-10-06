@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry इस कंटेनर की Compose फ़ाइल तक नहीं पहुँच पाता, इसलिए अपडेट इसे `docker run` से दोबारा बनाता है। कंटेनर पृष्ठ सटीक पथ और छूटा माउंट दिखाता है।",
   "web_compose_mount_wrong_source": "आप पहले से `{src}` को `{dest}` पर माउंट करते हैं, फिर भी ऊपर वाली फ़ाइल उसमें नहीं है — माउंट है, स्रोत ग़लत है। जाँचें कि `{src}` सचमुच Compose फ़ाइलों वाला फ़ोल्डर है।",
   "web_compose_mount_use_instead": "डेमॉन के अनुसार वह फ़ाइल `{src}` में है — उसे `{dest}` पर माउंट करें।",
-  "web_compose_mount_no_holder": "इस मशीन पर और कुछ भी `{path}` नहीं रखता। जिसने यह स्टैक बनाया वह कहीं और है — दूसरा होस्ट, या ऐसा मैनेजर जो अब नहीं है — इसलिए यहाँ कोई माउंट उस फ़ाइल तक नहीं पहुँचेगा।"
+  "web_compose_mount_no_holder": "इस मशीन पर और कुछ भी `{path}` नहीं रखता। जिसने यह स्टैक बनाया वह कहीं और है — दूसरा होस्ट, या ऐसा मैनेजर जो अब नहीं है — इसलिए यहाँ कोई माउंट उस फ़ाइल तक नहीं पहुँचेगा।",
+  "hostcheck_header": "🔎 *`{endpoint}` की पूर्व-जाँच*",
+  "hostcheck_scheme_bad": "• `{endpoint}` ऐसा एंडपॉइंट नहीं है जिसे मैं समझता हूँ। अपेक्षित: {schemes}",
+  "hostcheck_unreachable": "• `{endpoint}` पर कुछ भी उत्तर नहीं आया — {error}",
+  "hostcheck_engine": "• {engine} {version} ने उत्तर दिया",
+  "hostcheck_can_list": "• कंटेनर सूचीबद्ध किए जा सकते हैं: {count} मिले",
+  "hostcheck_cannot_list": "• कंटेनर सूचीबद्ध नहीं किए जा सकते — {error}",
+  "hostcheck_can_inspect": "• एक कंटेनर की जाँच की जा सकती है (`{name}`)",
+  "hostcheck_cannot_inspect": "• एक कंटेनर की जाँच नहीं की जा सकती — {error}। जो सॉकेट प्रॉक्सी सूची देने दे पर जाँच न करने दे, वह स्वस्थ दिखता है और अपडेट के काम नहीं आता।",
+  "hostcheck_no_containers": "• यहाँ अभी कोई कंटेनर नहीं है, इसलिए जाँच की अनुमति अपरीक्षित रह गई",
+  "hostcheck_ready": "• तैयार: `{endpoint}` का प्रबंधन किया जा सकता है",
+  "hostcheck_usage": "उपयोग: `/hosts check <endpoint>` — उदाहरण `/hosts check ssh://user@10.0.0.5`"
 }

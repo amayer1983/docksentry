@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry cannot reach this container's Compose file, so an update rebuilds it with `docker run` instead. Open the container page to see the exact path and the mount that would fix it.",
   "web_compose_mount_wrong_source": "You already mount `{src}` at `{dest}`, and the file above is still not in it — so the mount is there and its source is the wrong directory. Check that `{src}` really is the folder holding the Compose files.",
   "web_compose_mount_use_instead": "The daemon says that file lives in `{src}` — mount that at `{dest}` instead.",
-  "web_compose_mount_no_holder": "Nothing else on this machine holds `{path}`. Whatever created this stack is somewhere else — another host, or a manager that is gone — so no mount here will reach that file."
+  "web_compose_mount_no_holder": "Nothing else on this machine holds `{path}`. Whatever created this stack is somewhere else — another host, or a manager that is gone — so no mount here will reach that file.",
+  "hostcheck_header": "🔎 *Pre-flight for* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` is not an endpoint I speak. Expected one of: {schemes}",
+  "hostcheck_unreachable": "• Nothing answered at `{endpoint}` — {error}",
+  "hostcheck_engine": "• {engine} {version} answered",
+  "hostcheck_can_list": "• Containers can be listed: {count} found",
+  "hostcheck_cannot_list": "• Containers cannot be listed — {error}",
+  "hostcheck_can_inspect": "• A container can be inspected (`{name}`)",
+  "hostcheck_cannot_inspect": "• A container cannot be inspected — {error}. A socket proxy that allows listing but not inspecting looks healthy and cannot be updated from.",
+  "hostcheck_no_containers": "• No containers here yet, so inspect permission stayed untested",
+  "hostcheck_ready": "• Ready: `{endpoint}` can be managed",
+  "hostcheck_usage": "Usage: `/hosts check <endpoint>` — for example `/hosts check ssh://user@10.0.0.5`"
 }

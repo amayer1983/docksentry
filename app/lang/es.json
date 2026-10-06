@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry no puede alcanzar el archivo Compose de este contenedor, así que una actualización lo reconstruye con `docker run`. La página del contenedor muestra la ruta exacta y el montaje que falta.",
   "web_compose_mount_wrong_source": "Ya montas `{src}` en `{dest}` y el archivo de arriba sigue sin estar ahí — el montaje existe y su origen es el directorio equivocado. Comprueba que `{src}` sea realmente la carpeta con los archivos Compose.",
   "web_compose_mount_use_instead": "Según el daemon, ese archivo está en `{src}` — monta eso en `{dest}` en su lugar.",
-  "web_compose_mount_no_holder": "Nada más en esta máquina contiene `{path}`. Lo que creó este stack está en otro sitio — otro host, o un gestor que ya no existe — así que ningún montaje aquí alcanzará ese archivo."
+  "web_compose_mount_no_holder": "Nada más en esta máquina contiene `{path}`. Lo que creó este stack está en otro sitio — otro host, o un gestor que ya no existe — así que ningún montaje aquí alcanzará ese archivo.",
+  "hostcheck_header": "🔎 *Comprobación previa de* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` no es un punto final que yo entienda. Se espera uno de: {schemes}",
+  "hostcheck_unreachable": "• Nada respondió en `{endpoint}` — {error}",
+  "hostcheck_engine": "• Respondió {engine} {version}",
+  "hostcheck_can_list": "• Los contenedores se pueden listar: {count} encontrados",
+  "hostcheck_cannot_list": "• Los contenedores no se pueden listar — {error}",
+  "hostcheck_can_inspect": "• Un contenedor se puede inspeccionar (`{name}`)",
+  "hostcheck_cannot_inspect": "• Un contenedor no se puede inspeccionar — {error}. Un proxy de socket que permite listar pero no inspeccionar parece sano y no sirve para actualizar.",
+  "hostcheck_no_containers": "• Aquí todavía no hay contenedores, así que el permiso de inspección quedó sin probar",
+  "hostcheck_ready": "• Listo: `{endpoint}` se puede gestionar",
+  "hostcheck_usage": "Uso: `/hosts check <endpoint>` — por ejemplo `/hosts check ssh://user@10.0.0.5`"
 }

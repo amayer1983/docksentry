@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry n'atteint pas le fichier Compose de ce conteneur ; une mise à jour le reconstruit donc avec `docker run`. La page du conteneur indique le chemin exact et le montage manquant.",
   "web_compose_mount_wrong_source": "Vous montez déjà `{src}` sur `{dest}` et le fichier ci-dessus n'y est toujours pas — le montage existe, c'est sa source qui est fausse. Vérifiez que `{src}` est bien le dossier contenant les fichiers Compose.",
   "web_compose_mount_use_instead": "D'après le daemon, ce fichier se trouve dans `{src}` — montez plutôt cela sur `{dest}`.",
-  "web_compose_mount_no_holder": "Rien d'autre sur cette machine ne détient `{path}`. Ce qui a créé ce stack est ailleurs — un autre hôte, ou un gestionnaire qui n'existe plus — donc aucun montage ici n'atteindra ce fichier."
+  "web_compose_mount_no_holder": "Rien d'autre sur cette machine ne détient `{path}`. Ce qui a créé ce stack est ailleurs — un autre hôte, ou un gestionnaire qui n'existe plus — donc aucun montage ici n'atteindra ce fichier.",
+  "hostcheck_header": "🔎 *Contrôle préalable pour* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` n'est pas un point de terminaison que je comprends. Attendu : {schemes}",
+  "hostcheck_unreachable": "• Rien n'a répondu à `{endpoint}` — {error}",
+  "hostcheck_engine": "• {engine} {version} a répondu",
+  "hostcheck_can_list": "• Les conteneurs peuvent être listés : {count} trouvés",
+  "hostcheck_cannot_list": "• Les conteneurs ne peuvent pas être listés — {error}",
+  "hostcheck_can_inspect": "• Un conteneur peut être inspecté (`{name}`)",
+  "hostcheck_cannot_inspect": "• Un conteneur ne peut pas être inspecté — {error}. Un proxy de socket qui autorise la liste mais pas l'inspection paraît sain et ne permet pas de mettre à jour.",
+  "hostcheck_no_containers": "• Aucun conteneur ici pour l'instant, le droit d'inspection n'a donc pas pu être vérifié",
+  "hostcheck_ready": "• Prêt : `{endpoint}` peut être géré",
+  "hostcheck_usage": "Utilisation : `/hosts check <endpoint>` — par exemple `/hosts check ssh://user@10.0.0.5`"
 }

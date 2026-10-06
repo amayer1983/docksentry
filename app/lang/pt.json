@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "O Docksentry não alcança o ficheiro Compose deste contentor, por isso uma atualização reconstrói-o com `docker run`. A página do contentor mostra o caminho exato e a montagem em falta.",
   "web_compose_mount_wrong_source": "Já montas `{src}` em `{dest}` e o ficheiro acima continua a não estar lá — a montagem existe e a origem é a errada. Confirma que `{src}` é mesmo a pasta com os ficheiros Compose.",
   "web_compose_mount_use_instead": "Segundo o daemon, esse ficheiro está em `{src}` — monta isso em `{dest}`.",
-  "web_compose_mount_no_holder": "Mais nada nesta máquina contém `{path}`. O que criou esta stack está noutro sítio — outro host, ou um gestor que já não existe — por isso nenhuma montagem aqui alcança esse ficheiro."
+  "web_compose_mount_no_holder": "Mais nada nesta máquina contém `{path}`. O que criou esta stack está noutro sítio — outro host, ou um gestor que já não existe — por isso nenhuma montagem aqui alcança esse ficheiro.",
+  "hostcheck_header": "🔎 *Verificação prévia de* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` não é um endpoint que eu entenda. Esperado um de: {schemes}",
+  "hostcheck_unreachable": "• Nada respondeu em `{endpoint}` — {error}",
+  "hostcheck_engine": "• Respondeu {engine} {version}",
+  "hostcheck_can_list": "• Os contentores podem ser listados: {count} encontrados",
+  "hostcheck_cannot_list": "• Os contentores não podem ser listados — {error}",
+  "hostcheck_can_inspect": "• Um contentor pode ser inspecionado (`{name}`)",
+  "hostcheck_cannot_inspect": "• Um contentor não pode ser inspecionado — {error}. Um proxy de socket que permite listar mas não inspecionar parece saudável e não serve para atualizar.",
+  "hostcheck_no_containers": "• Ainda não há contentores aqui, por isso a permissão de inspeção ficou por verificar",
+  "hostcheck_ready": "• Pronto: `{endpoint}` pode ser gerido",
+  "hostcheck_usage": "Utilização: `/hosts check <endpoint>` — por exemplo `/hosts check ssh://user@10.0.0.5`"
 }

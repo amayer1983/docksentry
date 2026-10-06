@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry nie sięga pliku Compose tego kontenera, więc aktualizacja odtwarza go przez `docker run`. Strona kontenera pokazuje dokładną ścieżkę i brakujące montowanie.",
   "web_compose_mount_wrong_source": "Montujesz już `{src}` w `{dest}`, a pliku powyżej nadal tam nie ma — montowanie jest, źródło jest złe. Sprawdź, czy `{src}` to naprawdę katalog z plikami Compose.",
   "web_compose_mount_use_instead": "Według demona ten plik jest w `{src}` — podmontuj to w `{dest}`.",
-  "web_compose_mount_no_holder": "Nic innego na tej maszynie nie trzyma `{path}`. To, co utworzyło ten stack, jest gdzie indziej — na innym hoście albo w menedżerze, którego już nie ma — więc żadne montowanie tutaj nie sięgnie tego pliku."
+  "web_compose_mount_no_holder": "Nic innego na tej maszynie nie trzyma `{path}`. To, co utworzyło ten stack, jest gdzie indziej — na innym hoście albo w menedżerze, którego już nie ma — więc żadne montowanie tutaj nie sięgnie tego pliku.",
+  "hostcheck_header": "🔎 *Kontrola wstępna dla* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` nie jest punktem końcowym, który rozumiem. Oczekiwany jeden z: {schemes}",
+  "hostcheck_unreachable": "• Nic nie odpowiedziało pod `{endpoint}` — {error}",
+  "hostcheck_engine": "• Odpowiedział {engine} {version}",
+  "hostcheck_can_list": "• Kontenery można wylistować: znaleziono {count}",
+  "hostcheck_cannot_list": "• Kontenerów nie można wylistować — {error}",
+  "hostcheck_can_inspect": "• Kontener można zinspekcjonować (`{name}`)",
+  "hostcheck_cannot_inspect": "• Kontenera nie można zinspekcjonować — {error}. Proxy gniazda, które pozwala listować, ale nie inspekcjonować, wygląda zdrowo i nie nadaje się do aktualizacji.",
+  "hostcheck_no_containers": "• Nie ma tu jeszcze kontenerów, więc uprawnienie do inspekcji pozostało niesprawdzone",
+  "hostcheck_ready": "• Gotowe: `{endpoint}` można zarządzać",
+  "hostcheck_usage": "Użycie: `/hosts check <endpoint>` — na przykład `/hosts check ssh://user@10.0.0.5`"
 }

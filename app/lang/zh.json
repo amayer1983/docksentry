@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry 读不到该容器的 Compose 文件，更新会改用 `docker run` 重建。容器页面会显示确切路径和缺少的挂载。",
   "web_compose_mount_wrong_source": "你已经把 `{src}` 挂载到 `{dest}`，但上面那个文件仍然不在其中 — 挂载有，源目录不对。请确认 `{src}` 确实是存放 Compose 文件的目录。",
   "web_compose_mount_use_instead": "守护进程显示该文件位于 `{src}` — 请改为把它挂载到 `{dest}`。",
-  "web_compose_mount_no_holder": "这台机器上没有其他容器持有 `{path}`。创建这个堆栈的东西在别处 — 另一台主机，或一个已经不存在的管理器 — 所以在这里挂载什么都够不到那个文件。"
+  "web_compose_mount_no_holder": "这台机器上没有其他容器持有 `{path}`。创建这个堆栈的东西在别处 — 另一台主机，或一个已经不存在的管理器 — 所以在这里挂载什么都够不到那个文件。",
+  "hostcheck_header": "🔎 *`{endpoint}` 预检*",
+  "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
+  "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
+  "hostcheck_engine": "• {engine} {version} 作出了响应",
+  "hostcheck_can_list": "• 可以列出容器: 找到 {count} 个",
+  "hostcheck_cannot_list": "• 无法列出容器 — {error}",
+  "hostcheck_can_inspect": "• 可以检查某个容器 (`{name}`)",
+  "hostcheck_cannot_inspect": "• 无法检查容器 — {error}。允许列出却不允许检查的套接字代理看起来是健康的, 却无法用来更新。",
+  "hostcheck_no_containers": "• 这里还没有容器, 因此检查权限未能验证",
+  "hostcheck_ready": "• 就绪: `{endpoint}` 可以纳管",
+  "hostcheck_usage": "用法: `/hosts check <endpoint>` — 例如 `/hosts check ssh://user@10.0.0.5`"
 }

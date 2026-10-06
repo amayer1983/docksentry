@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry bu kapsayıcının Compose dosyasına erişemiyor, bu yüzden güncelleme onu `docker run` ile yeniden kuruyor. Kapsayıcı sayfası tam yolu ve eksik bağlamayı gösterir.",
   "web_compose_mount_wrong_source": "`{src}` zaten `{dest}` konumuna bağlı ama yukarıdaki dosya hâlâ içinde değil — bağlama var, kaynağı yanlış. `{src}` gerçekten Compose dosyalarının bulunduğu klasör mü kontrol edin.",
   "web_compose_mount_use_instead": "Daemon'a göre o dosya `{src}` içinde — `{dest}` konumuna onu bağlayın.",
-  "web_compose_mount_no_holder": "Bu makinede `{path}` yolunu tutan başka bir şey yok. Bu stack'i oluşturan şey başka yerde — başka bir host ya da artık var olmayan bir yönetici — bu yüzden buradaki hiçbir bağlama o dosyaya ulaşamaz."
+  "web_compose_mount_no_holder": "Bu makinede `{path}` yolunu tutan başka bir şey yok. Bu stack'i oluşturan şey başka yerde — başka bir host ya da artık var olmayan bir yönetici — bu yüzden buradaki hiçbir bağlama o dosyaya ulaşamaz.",
+  "hostcheck_header": "🔎 *Ön kontrol:* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
+  "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
+  "hostcheck_engine": "• {engine} {version} yanıt verdi",
+  "hostcheck_can_list": "• Kapsayıcılar listelenebiliyor: {count} bulundu",
+  "hostcheck_cannot_list": "• Kapsayıcılar listelenemiyor — {error}",
+  "hostcheck_can_inspect": "• Bir kapsayıcı incelenebiliyor (`{name}`)",
+  "hostcheck_cannot_inspect": "• Bir kapsayıcı incelenemiyor — {error}. Listelemeye izin verip incelemeye izin vermeyen bir soket proxy'si sağlıklı görünür ve güncelleme için kullanılamaz.",
+  "hostcheck_no_containers": "• Burada henüz kapsayıcı yok, bu yüzden inceleme izni sınanmadan kaldı",
+  "hostcheck_ready": "• Hazır: `{endpoint}` yönetilebilir",
+  "hostcheck_usage": "Kullanım: `/hosts check <endpoint>` — örneğin `/hosts check ssh://user@10.0.0.5`"
 }

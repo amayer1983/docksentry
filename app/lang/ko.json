@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "이 컨테이너의 Compose 파일에 접근할 수 없어 업데이트가 `docker run` 으로 다시 만듭니다. 컨테이너 페이지에 정확한 경로와 빠진 마운트가 나옵니다.",
   "web_compose_mount_wrong_source": "이미 `{src}` 를 `{dest}` 에 마운트했는데도 위 파일이 그 안에 없습니다 — 마운트는 있고 원본이 틀렸습니다. `{src}` 가 정말 Compose 파일이 있는 폴더인지 확인하세요.",
   "web_compose_mount_use_instead": "데몬에 따르면 그 파일은 `{src}` 에 있습니다 — 그것을 `{dest}` 에 마운트하세요.",
-  "web_compose_mount_no_holder": "이 머신에는 `{path}` 를 가진 다른 것이 없습니다. 이 스택을 만든 것은 다른 곳 — 다른 호스트, 또는 이제는 없는 매니저 — 에 있으므로, 여기서 무엇을 마운트해도 그 파일에는 닿지 않습니다."
+  "web_compose_mount_no_holder": "이 머신에는 `{path}` 를 가진 다른 것이 없습니다. 이 스택을 만든 것은 다른 곳 — 다른 호스트, 또는 이제는 없는 매니저 — 에 있으므로, 여기서 무엇을 마운트해도 그 파일에는 닿지 않습니다.",
+  "hostcheck_header": "🔎 *`{endpoint}` 사전 점검*",
+  "hostcheck_scheme_bad": "• `{endpoint}` 는 제가 아는 엔드포인트가 아닙니다. 예상: {schemes}",
+  "hostcheck_unreachable": "• `{endpoint}` 에서 아무 응답이 없습니다 — {error}",
+  "hostcheck_engine": "• {engine} {version} 이(가) 응답했습니다",
+  "hostcheck_can_list": "• 컨테이너를 나열할 수 있습니다: {count}개 발견",
+  "hostcheck_cannot_list": "• 컨테이너를 나열할 수 없습니다 — {error}",
+  "hostcheck_can_inspect": "• 컨테이너를 검사할 수 있습니다 (`{name}`)",
+  "hostcheck_cannot_inspect": "• 컨테이너를 검사할 수 없습니다 — {error}. 나열은 허용하고 검사는 막는 소켓 프록시는 멀쩡해 보이지만 업데이트에는 쓸 수 없습니다.",
+  "hostcheck_no_containers": "• 여기에는 아직 컨테이너가 없어 검사 권한은 확인되지 않았습니다",
+  "hostcheck_ready": "• 준비됨: `{endpoint}` 를 관리할 수 있습니다",
+  "hostcheck_usage": "사용법: `/hosts check <endpoint>` — 예: `/hosts check ssh://user@10.0.0.5`"
 }

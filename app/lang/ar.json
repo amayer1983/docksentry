@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "لا يصل Docksentry إلى ملف Compose لهذه الحاوية، لذا يعيد التحديث بناءها عبر `docker run`. صفحة الحاوية تُظهر المسار الدقيق والتركيب الناقص.",
   "web_compose_mount_wrong_source": "أنت تُركّب `{src}` على `{dest}` بالفعل، ومع ذلك الملف أعلاه ليس فيه — التركيب موجود ومصدره خاطئ. تحقق من أن `{src}` هو فعلاً المجلد الذي يحوي ملفات Compose.",
   "web_compose_mount_use_instead": "وفق الـdaemon، الملف موجود في `{src}` — ركّب ذلك على `{dest}` بدلاً منه.",
-  "web_compose_mount_no_holder": "لا شيء آخر على هذا الجهاز يملك `{path}`. ما أنشأ هذه الحزمة موجود في مكان آخر — مضيف آخر أو مدير لم يعد موجوداً — لذا لن يصل أي تركيب هنا إلى ذلك الملف."
+  "web_compose_mount_no_holder": "لا شيء آخر على هذا الجهاز يملك `{path}`. ما أنشأ هذه الحزمة موجود في مكان آخر — مضيف آخر أو مدير لم يعد موجوداً — لذا لن يصل أي تركيب هنا إلى ذلك الملف.",
+  "hostcheck_header": "🔎 *فحص مسبق لـ* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` ليس عنواناً أفهمه. المتوقع أحد: {schemes}",
+  "hostcheck_unreachable": "• لم يُجب شيء على `{endpoint}` — {error}",
+  "hostcheck_engine": "• أجاب {engine} {version}",
+  "hostcheck_can_list": "• يمكن سرد الحاويات: وُجدت {count}",
+  "hostcheck_cannot_list": "• لا يمكن سرد الحاويات — {error}",
+  "hostcheck_can_inspect": "• يمكن فحص حاوية (`{name}`)",
+  "hostcheck_cannot_inspect": "• لا يمكن فحص حاوية — {error}. وكيل المقبس الذي يسمح بالسرد دون الفحص يبدو سليماً ولا يصلح للتحديث.",
+  "hostcheck_no_containers": "• لا توجد حاويات هنا بعد، لذا بقي إذن الفحص غير مُختبر",
+  "hostcheck_ready": "• جاهز: يمكن إدارة `{endpoint}`",
+  "hostcheck_usage": "الاستخدام: `/hosts check <endpoint>` — مثلاً `/hosts check ssh://user@10.0.0.5`"
 }

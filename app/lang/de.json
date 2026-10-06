@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry kommt an die Compose-Datei dieses Containers nicht heran, ein Update baut ihn deshalb mit `docker run` neu. Die Container-Seite zeigt den genauen Pfad und den Mount, der fehlt.",
   "web_compose_mount_wrong_source": "Du hängst bereits `{src}` auf `{dest}` ein, und die Datei oben liegt trotzdem nicht darin — der Mount ist also da, die Quelle stimmt nicht. Prüf, ob `{src}` wirklich der Ordner mit den Compose-Dateien ist.",
   "web_compose_mount_use_instead": "Laut Daemon liegt die Datei in `{src}` — häng stattdessen das auf `{dest}`.",
-  "web_compose_mount_no_holder": "Sonst hält auf dieser Maschine nichts `{path}`. Was diesen Stack angelegt hat, ist woanders — ein anderer Host oder ein Manager, den es nicht mehr gibt — also kommt kein Mount hier an die Datei."
+  "web_compose_mount_no_holder": "Sonst hält auf dieser Maschine nichts `{path}`. Was diesen Stack angelegt hat, ist woanders — ein anderer Host oder ein Manager, den es nicht mehr gibt — also kommt kein Mount hier an die Datei.",
+  "hostcheck_header": "🔎 *Vorab-Prüfung für* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` ist kein Endpunkt, den ich spreche. Erwartet wird einer von: {schemes}",
+  "hostcheck_unreachable": "• Unter `{endpoint}` hat nichts geantwortet — {error}",
+  "hostcheck_engine": "• {engine} {version} hat geantwortet",
+  "hostcheck_can_list": "• Container lassen sich auflisten: {count} gefunden",
+  "hostcheck_cannot_list": "• Container lassen sich nicht auflisten — {error}",
+  "hostcheck_can_inspect": "• Ein Container lässt sich inspizieren (`{name}`)",
+  "hostcheck_cannot_inspect": "• Ein Container lässt sich nicht inspizieren — {error}. Ein Socket-Proxy, der Auflisten erlaubt und Inspizieren nicht, sieht gesund aus und taugt nicht zum Aktualisieren.",
+  "hostcheck_no_containers": "• Hier gibt es noch keine Container, die Inspizier-Berechtigung blieb also ungeprüft",
+  "hostcheck_ready": "• Bereit: `{endpoint}` kann verwaltet werden",
+  "hostcheck_usage": "Verwendung: `/hosts check <endpunkt>` — zum Beispiel `/hosts check ssh://user@10.0.0.5`"
 }

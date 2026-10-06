@@ -990,5 +990,16 @@
   "web_badge_compose_unreachable_tt": "Docksentry kan het Compose-bestand van deze container niet bereiken; een update bouwt hem daarom opnieuw met `docker run`. De containerpagina toont het exacte pad en de ontbrekende koppeling.",
   "web_compose_mount_wrong_source": "Je koppelt `{src}` al op `{dest}` en het bestand hierboven zit er nog steeds niet in — de koppeling is er, de bron klopt niet. Controleer of `{src}` echt de map met de Compose-bestanden is.",
   "web_compose_mount_use_instead": "Volgens de daemon staat dat bestand in `{src}` — koppel dat in plaats daarvan op `{dest}`.",
-  "web_compose_mount_no_holder": "Niets anders op deze machine heeft `{path}`. Wat deze stack heeft aangemaakt staat ergens anders — een andere host, of een manager die er niet meer is — dus geen koppeling hier komt bij dat bestand."
+  "web_compose_mount_no_holder": "Niets anders op deze machine heeft `{path}`. Wat deze stack heeft aangemaakt staat ergens anders — een andere host, of een manager die er niet meer is — dus geen koppeling hier komt bij dat bestand.",
+  "hostcheck_header": "🔎 *Voorcontrole voor* `{endpoint}`",
+  "hostcheck_scheme_bad": "• `{endpoint}` is geen endpoint dat ik ken. Verwacht wordt een van: {schemes}",
+  "hostcheck_unreachable": "• Niets antwoordde op `{endpoint}` — {error}",
+  "hostcheck_engine": "• {engine} {version} antwoordde",
+  "hostcheck_can_list": "• Containers kunnen worden opgesomd: {count} gevonden",
+  "hostcheck_cannot_list": "• Containers kunnen niet worden opgesomd — {error}",
+  "hostcheck_can_inspect": "• Een container kan worden geïnspecteerd (`{name}`)",
+  "hostcheck_cannot_inspect": "• Een container kan niet worden geïnspecteerd — {error}. Een socketproxy die opsommen toestaat maar inspecteren niet, oogt gezond en is niet bruikbaar om bij te werken.",
+  "hostcheck_no_containers": "• Hier staan nog geen containers, dus het inspectierecht bleef ongetest",
+  "hostcheck_ready": "• Klaar: `{endpoint}` kan worden beheerd",
+  "hostcheck_usage": "Gebruik: `/hosts check <endpoint>` — bijvoorbeeld `/hosts check ssh://user@10.0.0.5`"
 }

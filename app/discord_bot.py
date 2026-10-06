@@ -163,7 +163,10 @@ COMMANDS = [
      ]},
     {"name": "updates", "description": "List pending updates", "type": 1},
     {"name": "hosts", "description": "List the hosts this instance manages",
-     "type": 1},
+     "type": 1,
+     "options": [{"name": "check", "description":
+                  "Try an endpoint before adding it, e.g. ssh://user@10.0.0.5",
+                  "type": 3, "required": False}]},
     # ── state toggles ─────────────────────────────────────────────
     # Discord validates the whole registration as one document: a single
     # optional-before-required option makes the bulk PUT fail and the bot
@@ -1354,7 +1357,7 @@ class DiscordBot:
         except Exception:
             pass
         if name == "hosts":
-            return self._cmd_hosts()
+            return self._cmd_hosts(opts)
         if name == "status":
             return self._cmd_status(opts)
         if name == "check":
@@ -1424,7 +1427,14 @@ class DiscordBot:
             return self._cmd_checkimages(opts)
         return self.t("chan_unknown_command", name=name)
 
-    def _cmd_hosts(self):
+    def _cmd_hosts(self, opts=None):
+        # `check` answers the four questions before an endpoint is in
+        # `DOCKER_HOSTS` at all — the step @LeeNX said should exist and
+        # did not (#7). Findings from the core, so this says the same as
+        # Telegram about the same endpoint.
+        _ep = ((opts or {}).get("check") or "").strip()
+        if _ep:
+            return self._hostcheck_text(_ep)
         if not self.hosts or not self.hosts.is_multi:
             return self.t("hosts_single")
         lines = []
@@ -2149,6 +2159,29 @@ class DiscordBot:
             targets, store_for=self._store_for,
             backend_for=self._backend_for, partial=arg,
             url=(opts.get("url") or "").strip())))
+
+    def _hostcheck_text(self, endpoint):
+        """The pre-flight, worded for Discord. Findings are the core's."""
+        import hostcheck
+        import hostdiag
+        from container_backend import RemoteBackend, resolve_cli
+        lines = [self.t("hostcheck_header", endpoint=endpoint)]
+        try:
+            backend = RemoteBackend(
+                endpoint, name="preflight",
+                cli_binary=resolve_cli(getattr(self.config,
+                                               "container_cli", "auto")))
+        except Exception as e:                              # noqa: BLE001
+            return "\n".join(lines + [
+                self.t("hostcheck_unreachable", endpoint=endpoint,
+                       error=str(e)[:300])])
+        for kind, params in hostcheck.preflight(endpoint, backend,
+                                                hint=hostdiag.hint):
+            extra = params.pop("hint", "")
+            lines.append(self.t(f"hostcheck_{kind}", **params))
+            if extra:
+                lines.append("  " + extra)
+        return self._clip("\n".join(lines))
 
     def _self_audit_text(self):
         """`/audit` with no name: what Docksentry sees of itself.

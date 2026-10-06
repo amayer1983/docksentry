@@ -1382,6 +1382,35 @@ class TelegramBot:
                        errors=("\n⚠️ " + "; ".join(errors)) if errors else ""),
                 bool(restored))
 
+    def _hostcheck_text(self, endpoint):
+        """`/hosts check <endpoint>` — the four questions, answered.
+
+        The findings come from `hostcheck` so both chats and the Web UI
+        say the same thing about the same endpoint; only the wording is
+        this connection's. A backend is built for the endpoint alone and
+        thrown away: nothing is added to the configuration by asking.
+        """
+        import hostcheck
+        import hostdiag
+        from container_backend import RemoteBackend, resolve_cli
+        lines = [self.t("hostcheck_header", endpoint=endpoint)]
+        try:
+            backend = RemoteBackend(
+                endpoint, name="preflight",
+                cli_binary=resolve_cli(getattr(self.config,
+                                               "container_cli", "auto")))
+        except Exception as e:                              # noqa: BLE001
+            return "\n".join(lines + [
+                self.t("hostcheck_unreachable", endpoint=endpoint,
+                       error=str(e)[:300])])
+        for kind, params in hostcheck.preflight(endpoint, backend,
+                                                hint=hostdiag.hint):
+            extra = params.pop("hint", "")
+            lines.append(self.t(f"hostcheck_{kind}", **params))
+            if extra:
+                lines.append("  " + extra)
+        return "\n".join(lines)
+
     def _self_audit_text(self, checker):
         """`/audit` with no name: what Docksentry sees of itself.
 
@@ -4224,6 +4253,19 @@ class TelegramBot:
             self.announce(self.t("testchannel_message"))
             return
         elif text.startswith("/hosts"):
+            # `/hosts check <endpoint>` — the step that did not exist
+            # (#7, @LeeNX): "there should be a setup step and tests that
+            # can be done before adding the hub pointing at the agent
+            # host." Answered on screen, not in a log, and it works
+            # before the endpoint is in DOCKER_HOSTS — that is the whole
+            # point of a pre-flight.
+            _parts = text.split()
+            if len(_parts) > 1 and _parts[1] == "check":
+                if len(_parts) < 3:
+                    self.send_message(self.t("hostcheck_usage"))
+                    return
+                self.send_message(self._hostcheck_text(_parts[2]))
+                return
             if not self.hosts or not getattr(self.hosts, "is_multi", False):
                 self.send_message(self.t("hosts_single"))
                 return
