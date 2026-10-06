@@ -582,15 +582,19 @@ class DiscordBot:
         """
         return not bool(getattr(self.config, "discord_public_replies", False))
 
-    def announce(self, text, reply=False):
-        """Say something into the configured channel.
+    def announce(self, text):
+        """Say something into the configured channel, unprompted.
 
-        `reply=True` marks an answer to a command somebody just typed.
-        Those keep going out with the channel switched off — the switch
-        is about unprompted notices, and swallowing the running
-        commentary of a `/selfupdate` somebody started themselves turns
-        "off" into "half off": the slash reply still arrives, then
-        silence. That regressed when the switch was first honoured here.
+        The switch covers everything, which is what Telegram has always
+        done — "off means off: no notifications and no answers to
+        commands either". For two days this had an exception for command
+        replies, justified with the same words Telegram uses for the
+        opposite rule, and both cannot be right. @NotRetarded settled it
+        on his own install: "I expected silence everywhere."
+
+        An answer to a command is not lost by that. It goes back to the
+        interaction it came from, ephemerally, where the person typed
+        it — see `_cmd_selfupdate`.
 
         The bot could only ever answer before this: every slash reply is
         ephemeral, so "bot started" and crash alerts had nowhere to go.
@@ -601,8 +605,7 @@ class DiscordBot:
         # page and this method never read it, so a channel somebody had
         # turned off went on receiving. Telegram has had the rule from the
         # start: off means off, notifications and answers alike.
-        if not reply and not getattr(self.config,
-                                     "channel_discordbot_enabled", True):
+        if not getattr(self.config, "channel_discordbot_enabled", True):
             return
         channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
         if not channel or not self.rest:
@@ -2028,22 +2031,43 @@ class DiscordBot:
         # all-channel seam instead was the overcorrection: one /selfupdate
         # then answered in Telegram AND Discord, fourteen times over. The
         # events (found an update, restarting) still reach every channel.
-        # Where the running commentary goes. Public request: the channel,
-        # as always. Private one: a direct message, because "checking
-        # localhost:5000/docksentry:test" in the channel gives away the
-        # same thing the ephemeral answer was hiding — we already keep
-        # the restart notice out of there for exactly that reason, and
-        # doing one without the other is half a promise (#63).
-        _reply = lambda text: self.announce(text, reply=True)  # noqa: E731
+        # Where the running commentary goes. Back to the interaction it
+        # came from, ephemerally — the answer belongs where the person
+        # typed the command, not in a channel they may have silenced and
+        # not in a DM thread they never opened (@NotRetarded, #63).
+        #
+        # Two things fall back to a direct message, for the same reason:
+        # the interaction is only good for fifteen minutes and the
+        # update restarts this process out from under the token. A
+        # private request takes the DM from the start — "checking
+        # localhost:5000/docksentry:test" would otherwise give away what
+        # the ephemeral answer was hiding — and the report that lands
+        # after the restart has nowhere else to go at all.
+        _tok = (data or {}).get("token")
+
+        def _reply(text, _tok=_tok):
+            if _tok and self.rest and self.application_id:
+                try:
+                    self.rest.followup(self.application_id, _tok, text)
+                    return
+                except Exception as e:                    # noqa: BLE001
+                    self.log(f"Discord: could not answer on the "
+                             f"interaction ({e}); falling back")
+            self.announce(text)
+
         if reply_to:
             _uid = reply_to["discord_user"]
 
-            def _reply(text, _uid=_uid):
-                if not send_private(self.config, _uid, text, log=self.log):
-                    # never lose it outright — and `reply=True`, or the
-                    # channel switch would lose it outright right here,
-                    # which is what this line exists to prevent
-                    self.announce(text, reply=True)
+            def _reply(text, _uid=_uid, _tok=_tok):
+                if send_private(self.config, _uid, text, log=self.log):
+                    return
+                if _tok and self.rest and self.application_id:
+                    try:
+                        self.rest.followup(self.application_id, _tok, text)
+                        return
+                    except Exception:                     # noqa: BLE001
+                        pass
+                self.announce(text)      # never lose it outright
 
         import threading
         threading.Thread(target=selfupdate.start, args=(ctx, target),

@@ -48,6 +48,20 @@ checks["a switched-on Discord channel is announced to"] = (
 _cfg.channel_discordbot_enabled = False
 _bot.announce("bot started again")
 checks["…and a switched-off one is not"] = len(_bot.rest.posts) == 1
+# Everything, not only unprompted notices. For two days this had an
+# exception for command replies, justified with the same sentence
+# Telegram uses for the opposite rule. @NotRetarded settled it on his
+# own install: "I expected silence everywhere." The answer to a command
+# is not lost by it — it goes back to the interaction instead.
+import inspect as _inspect                                   # noqa: E402
+checks["…with no exception for replies"] = (
+    "reply=" not in _inspect.signature(DiscordBot.announce).parameters
+    and "reply=True" not in _inspect.getsource(DiscordBot.announce))
+_cmd = _inspect.getsource(DiscordBot._cmd_selfupdate)
+checks["a command's commentary answers on the interaction instead"] = (
+    "self.rest.followup(" in _cmd)
+checks["…and falls back to a DM, then the channel, never nowhere"] = (
+    _cmd.index("send_private(") < _cmd.rindex("self.announce(text)"))
 
 
 # ── the retry queue asks again before it delivers ────────────────────

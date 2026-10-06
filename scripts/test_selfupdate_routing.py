@@ -64,12 +64,12 @@ tsrc = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
 checks["Telegram passes its own sender as the reply"] = (
     "reply=self.send_message" in tsrc)
-# `reply=True` on the way in: the channel switch silences unprompted
-# notices, and a /selfupdate's running commentary is an answer to
-# something somebody typed. Without the flag the switch turned "off"
-# into "half off" — slash reply, then silence.
-checks["Discord passes its own channel as the reply"] = (
-    "self.announce(text, reply=True)" in dsrc and '"reply": _reply' in dsrc)
+# Discord answers on the interaction the command came from, which is
+# where the asker is looking; the channel is the last resort, after a
+# DM for a private request. The switch covers the channel either way.
+checks["Discord answers where the command was typed"] = (
+    "self.rest.followup(self.application_id, _tok, text)" in dsrc
+    and '"reply": _reply' in dsrc)
 # The restart event must NOT be a reply — it concerns everyone.
 ssrc = open(os.path.join(APP, "selfupdate.py"), encoding="utf-8").read()
 checks["the 'restarting' event goes through tell(), not the reply"] = (

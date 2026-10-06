@@ -267,6 +267,28 @@ class DiscordREST:
         return self.upload(f"/channels/{channel_id}/messages",
                            filename, data, content)
 
+    def followup(self, application_id, interaction_token, content,
+                 *, ephemeral=True):
+        """Another message on the same interaction, after the first one.
+
+        `edit_original_response` replaces what is there; a running
+        commentary needs to add. Ephemeral by default, which is the
+        self-deleting kind: @NotRetarded asked for the answer to land
+        where he typed the command rather than in a channel he had
+        silenced or a DM thread he never opened (#63).
+
+        The interaction is good for fifteen minutes. Anything that
+        outlives that — a self-update restarts this process out from
+        under the token — cannot come back this way at all, and the
+        caller has to fall back to a direct message.
+        """
+        payload = {"content": content}
+        if ephemeral:
+            payload["flags"] = 64
+        return self.request(
+            "POST", f"/webhooks/{application_id}/{interaction_token}",
+            payload)
+
     def upload_followup(self, application_id, interaction_token,
                         filename, data, content=""):
         """A file as the answer to a deferred slash command."""

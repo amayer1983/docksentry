@@ -319,15 +319,18 @@ checks["…and hands the work to the module that does it"] = (
 # already suppress.
 checks["a private request keeps its progress out of the channel"] = (
     "send_private(self.config" in cmd and '"reply": _reply' in cmd)
-# `reply=True` on both: the channel switch is about unprompted
-# notices, and swallowing the commentary of a /selfupdate somebody just
-# typed turned "off" into "half off" — the slash reply arrives, then
-# silence.
-checks["…and a public one still reports there"] = (
-    "self.announce(text, reply=True)" in cmd)
+# The answer goes back to the interaction it came from, ephemerally —
+# where the person typed the command, not into a channel they may have
+# silenced and not into a DM thread they never opened. The channel
+# switch covers everything again, the way Telegram has always had it.
+checks["…and a public one answers on the interaction"] = (
+    "self.rest.followup(self.application_id, _tok, text)" in cmd)
+checks["…with the channel only as the last resort"] = (
+    "self.announce(text)" in cmd and "reply=True" not in cmd)
 checks["…and a DM that will not open falls back rather than vanishing"] = (
-    "self.announce(text, reply=True)" in cmd
-    and "send_private(self.config, _uid, text" in cmd)
+    "send_private(self.config, _uid, text" in cmd
+    and cmd.index("send_private(self.config, _uid, text")
+    < cmd.rindex("self.announce(text)"))
 checks["…and only records a reply route when replies are private"] = (
     "self._replies_private()" in cmd)
 
