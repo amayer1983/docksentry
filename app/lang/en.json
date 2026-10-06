@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` is not an endpoint I speak. Expected one of: {schemes}",
   "hostcheck_unreachable": "• Nothing answered at `{endpoint}` — {error}",
   "hostcheck_engine": "• {engine} {version} answered",
+  "hostcheck_engine_unsure": "• Something answered with version {version}, but it did not say whether it is Docker or Podman",
   "hostcheck_can_list": "• Containers can be listed: {count} found",
   "hostcheck_cannot_list": "• Containers cannot be listed — {error}",
   "hostcheck_can_inspect": "• A container can be inspected (`{name}`)",

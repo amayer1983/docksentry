@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` 는 제가 아는 엔드포인트가 아닙니다. 예상: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 에서 아무 응답이 없습니다 — {error}",
   "hostcheck_engine": "• {engine} {version} 이(가) 응답했습니다",
+  "hostcheck_engine_unsure": "• 무언가가 버전 {version} 으로 응답했지만 Docker 인지 Podman 인지는 밝히지 않았습니다",
   "hostcheck_can_list": "• 컨테이너를 나열할 수 있습니다: {count}개 발견",
   "hostcheck_cannot_list": "• 컨테이너를 나열할 수 없습니다 — {error}",
   "hostcheck_can_inspect": "• 컨테이너를 검사할 수 있습니다 (`{name}`)",

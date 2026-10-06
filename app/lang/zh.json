@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
   "hostcheck_engine": "• {engine} {version} 作出了响应",
+  "hostcheck_engine_unsure": "• 有东西以版本 {version} 作出了响应, 但没有说明它是 Docker 还是 Podman",
   "hostcheck_can_list": "• 可以列出容器: 找到 {count} 个",
   "hostcheck_cannot_list": "• 无法列出容器 — {error}",
   "hostcheck_can_inspect": "• 可以检查某个容器 (`{name}`)",

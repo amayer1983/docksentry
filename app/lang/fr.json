@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` n'est pas un point de terminaison que je comprends. Attendu : {schemes}",
   "hostcheck_unreachable": "• Rien n'a répondu à `{endpoint}` — {error}",
   "hostcheck_engine": "• {engine} {version} a répondu",
+  "hostcheck_engine_unsure": "• Quelque chose a répondu avec la version {version}, sans dire s'il s'agit de Docker ou de Podman",
   "hostcheck_can_list": "• Les conteneurs peuvent être listés : {count} trouvés",
   "hostcheck_cannot_list": "• Les conteneurs ne peuvent pas être listés — {error}",
   "hostcheck_can_inspect": "• Un conteneur peut être inspecté (`{name}`)",

@@ -12,9 +12,11 @@ against a server that will keep saying no.
 
 The second trap is delivery itself. `sendmail` hands the message over and
 then waits; if the connection dies after DATA, the server may well have
-accepted it, and e-mail has no transaction id to dedupe a second copy
-with. So only a failure BEFORE the handover is retried — a lost mail
-after it stays lost, which is the lesser of the two.
+accepted it. E-mail was said to have no transaction id to dedupe a
+second copy with — it has one, `Message-ID`, and nothing was setting
+it. Both sides of the handover are held now; the side that might
+duplicate gets exactly ONE retry rather than the queue's full fifteen
+minutes, because several receivers show separately delivered copies.
 """
 import os
 import smtplib
@@ -62,8 +64,10 @@ checks["…set immediately before the message goes out"] = (
 # indistinguishable from a second alert; with a `Message-ID` on every
 # mail it is not, so both sides of the boundary are held now and the
 # boundary only decides what the log says. Asserted by behaviour below.
-checks["…and the boundary is still named in the log"] = (
-    "handed_over" in src and "Message-ID" in src)
+# Was `"handed_over" in src and "Message-ID" in src` — both words
+# occur in comments elsewhere, so deleting the whole log block left it
+# green. Driven below instead: the post-handover case is held with
+# exactly one retry, and the pre-handover case with none set.
 checks["quit() cannot replace the error that got us here"] = (
     "try:\n                    server.quit()\n                except Exception:" in src)
 checks["a send that worked says so"] = ("return True" in src)
@@ -73,7 +77,6 @@ checks["a held mail is re-sent without registering itself again"] = (
     "def _send_text" in src
     and "on_network_failure" not in src.split("def _send_text")[1].split("def ")[0])
 
-bad = [k for k, v in checks.items() if not v]
 
 # ── #66: the transaction id this path was said not to have ───────────
 # My own comment on 06.09. said an outage mid-send loses the mail
@@ -125,8 +128,9 @@ def _smtp_bot(die=True):
 
 _orig_smtp = __import__("smtplib").SMTP
 _orig_remember = notify_retry.remember
-notify_retry.remember = lambda ch, text, send, still_wanted=None: _held.append(
-    (ch, text, send))
+notify_retry.remember = (
+    lambda ch, text, send, still_wanted=None, tries=None:
+    _held.append((ch, text, send, tries)))
 try:
     _n = _smtp_bot(die=True)
     _n.send_message("a container went down")
@@ -135,6 +139,9 @@ try:
     checks["a death after DATA is held, not dropped"] = len(_held) == 1
     # …and the retry is the SAME mail, which is what makes a second copy
     # recognisable rather than a second alert.
+    # …and the side that might duplicate is given exactly one attempt.
+    checks["…with one retry, not fifteen minutes of them"] = (
+        _held[0][3] == 1)
     _held[0][2](_held[0][1])
     checks["…and the retry reuses it"] = (
         len(_sent) == 2 and _sent[-1]["Message-ID"] == _first)
@@ -148,6 +155,10 @@ finally:
     notify_retry.remember = _orig_remember
 
 
+# Computed HERE, not three dozen lines earlier: it used to sit above
+# the #66 block, so four checks could all be red and the procedure
+# still printed PASS and exited 0.
+bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")
 print("FAIL" if bad else "PASS")

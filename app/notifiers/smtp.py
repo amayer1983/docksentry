@@ -83,7 +83,7 @@ class SmtpNotifier(BaseNotifier):
         import smtplib
         import ssl
         from email.message import EmailMessage
-        from email.utils import make_msgid
+        from email.utils import make_msgid, parseaddr
         c = self.config
         recipients = [r.strip() for r in c.smtp_to.replace(";", ",").split(",") if r.strip()]
         if not recipients:
@@ -100,8 +100,13 @@ class SmtpNotifier(BaseNotifier):
         # copy is byte-identical where it counts: receivers that honour
         # `Message-ID` collapse it, and the ones that do not show two
         # crash alerts instead of none.
-        msgid = msgid or make_msgid(domain=(c.smtp_from.split("@")[-1]
-                                            or "docksentry").strip() or None)
+        # `parseaddr`, because SMTP_FROM may carry a display name —
+        # "Docksentry <alerts@example.com>" would otherwise give the
+        # domain `example.com>` and an id ending `@example.com>>`, which
+        # is invalid and exactly the sort of thing a submission server
+        # rewrites. A rewritten id defeats the whole point.
+        _dom = parseaddr(c.smtp_from or "")[1].rpartition("@")[2].strip()
+        msgid = msgid or make_msgid(domain=_dom or None)
         msg["Message-ID"] = msgid
         msg.set_content(body)
         if attachment:
@@ -132,12 +137,12 @@ class SmtpNotifier(BaseNotifier):
             print("SMTP: certificate verification is OFF "
                   "(SMTP_TLS_VERIFY=false) — the password is sent to "
                   "whatever answers on that address.")
-        # Everything up to `send_message` can be retried safely: nothing
-        # has been handed to the server yet. From that call onwards it
-        # cannot — if the connection dies after DATA, the server may well
-        # have accepted the mail, and e-mail has no transaction id to
-        # dedupe a second copy with. So a lost mail there stays lost,
-        # which is the lesser of the two (#66, @NotRetarded).
+        # Everything up to `send_message` can be retried freely:
+        # nothing has been handed over yet. From that call onwards a
+        # retry might DUPLICATE rather than replace, because the server
+        # may already have taken the mail — so that side is held for
+        # exactly one attempt, under the same `Message-ID`, and the
+        # caller is told which side it was (#66, @NotRetarded).
         handed_over = False
         try:
             if c.smtp_tls == "ssl":
@@ -182,10 +187,12 @@ class SmtpNotifier(BaseNotifier):
                     # mail clients show twice. This used to be dropped.
                     print(f"SMTP: the connection died after handing the "
                           f"mail over, so it may have arrived. Holding it "
-                          f"for a retry under the same Message-ID "
-                          f"({msgid}) — a receiver that honours it will "
-                          f"collapse the copy.")
-                on_network_failure(msgid)
+                          f"for ONE retry under the same Message-ID "
+                          f"({msgid}). A receiver that honours the id can "
+                          f"collapse the copy; several do not, so this is "
+                          f"capped at one rather than retried for the "
+                          f"queue's full lifetime.")
+                on_network_failure(msgid, handed_over)
         return False
 
     # ── payloads ─────────────────────────────────────────────────────
@@ -223,11 +230,18 @@ class SmtpNotifier(BaseNotifier):
         # same `Message-ID`, so a receiver that honours it collapses the
         # copy, and the ones that do not show a crash alert twice rather
         # than not at all (#66, @NotRetarded).
-        def _hold(msgid=None):
+        def _hold(msgid=None, duplicate_risk=False):
+            # One attempt where a resend might duplicate rather than
+            # replace. The queue would otherwise try for its full
+            # fifteen minutes — about twenty-nine deliveries of the same
+            # crash alert, and `Message-ID` does not save that: Exchange,
+            # Dovecot and Thunderbird all show separately delivered
+            # copies. Losing one alert is bad; two dozen is worse.
             notify_retry.remember(
                 self.name, text,
                 lambda t, _m=msgid: self._send_text(t, msgid=_m),
-                still_wanted=lambda: self.enabled)
+                still_wanted=lambda: self.enabled,
+                tries=1 if duplicate_risk else None)
 
         self.send_raw("Docksentry", text.replace("*", ""),
                       on_network_failure=_hold)

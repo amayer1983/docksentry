@@ -1385,10 +1385,12 @@ class TelegramBot:
     def _hostcheck_text(self, endpoint):
         """`/hosts check <endpoint>` — the four questions, answered.
 
-        The findings come from `hostcheck` so both chats and the Web UI
-        say the same thing about the same endpoint; only the wording is
-        this connection's. A backend is built for the endpoint alone and
-        thrown away: nothing is added to the configuration by asking.
+        The findings come from `hostcheck`, so both chats answer the
+        same way about the same endpoint; only the wording is this
+        connection's. The Web UI has no pre-flight yet.
+
+        A backend is built for the endpoint alone and thrown away:
+        nothing is added to the configuration by asking.
         """
         import hostcheck
         import hostdiag

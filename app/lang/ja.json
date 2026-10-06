@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` は私が扱えるエンドポイントではありません。想定: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` から応答がありません — {error}",
   "hostcheck_engine": "• {engine} {version} が応答しました",
+  "hostcheck_engine_unsure": "• 何かがバージョン {version} で応答しましたが、Docker か Podman かは名乗りませんでした",
   "hostcheck_can_list": "• コンテナを一覧できます: {count} 件",
   "hostcheck_cannot_list": "• コンテナを一覧できません — {error}",
   "hostcheck_can_inspect": "• コンテナを検査できます (`{name}`)",

@@ -2161,7 +2161,11 @@ class DiscordBot:
             url=(opts.get("url") or "").strip())))
 
     def _hostcheck_text(self, endpoint):
-        """The pre-flight, worded for Discord. Findings are the core's."""
+        """The pre-flight, worded for Discord.
+
+        Findings are the core's, so this answers the same way Telegram
+        does about the same endpoint. The Web UI has no pre-flight yet.
+        """
         import hostcheck
         import hostdiag
         from container_backend import RemoteBackend, resolve_cli

@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` — не той вид адреси, який я розумію. Очікується один із: {schemes}",
   "hostcheck_unreachable": "• За адресою `{endpoint}` ніхто не відповів — {error}",
   "hostcheck_engine": "• Відповів {engine} {version}",
+  "hostcheck_engine_unsure": "• Щось відповіло версією {version}, але не сказало, Docker це чи Podman",
   "hostcheck_can_list": "• Контейнери перелічуються: знайдено {count}",
   "hostcheck_cannot_list": "• Контейнери не перелічуються — {error}",
   "hostcheck_can_inspect": "• Контейнер можна оглянути (`{name}`)",

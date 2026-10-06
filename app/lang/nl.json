@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` is geen endpoint dat ik ken. Verwacht wordt een van: {schemes}",
   "hostcheck_unreachable": "• Niets antwoordde op `{endpoint}` — {error}",
   "hostcheck_engine": "• {engine} {version} antwoordde",
+  "hostcheck_engine_unsure": "• Iets antwoordde met versie {version}, maar zei niet of het Docker of Podman is",
   "hostcheck_can_list": "• Containers kunnen worden opgesomd: {count} gevonden",
   "hostcheck_cannot_list": "• Containers kunnen niet worden opgesomd — {error}",
   "hostcheck_can_inspect": "• Een container kan worden geïnspecteerd (`{name}`)",

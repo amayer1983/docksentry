@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` ليس عنواناً أفهمه. المتوقع أحد: {schemes}",
   "hostcheck_unreachable": "• لم يُجب شيء على `{endpoint}` — {error}",
   "hostcheck_engine": "• أجاب {engine} {version}",
+  "hostcheck_engine_unsure": "• أجاب شيء ما بالإصدار {version} لكنه لم يقل إن كان Docker أم Podman",
   "hostcheck_can_list": "• يمكن سرد الحاويات: وُجدت {count}",
   "hostcheck_cannot_list": "• لا يمكن سرد الحاويات — {error}",
   "hostcheck_can_inspect": "• يمكن فحص حاوية (`{name}`)",

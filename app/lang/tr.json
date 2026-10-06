@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
   "hostcheck_engine": "• {engine} {version} yanıt verdi",
+  "hostcheck_engine_unsure": "• Bir şey {version} sürümüyle yanıt verdi ama Docker mı Podman mı olduğunu söylemedi",
   "hostcheck_can_list": "• Kapsayıcılar listelenebiliyor: {count} bulundu",
   "hostcheck_cannot_list": "• Kapsayıcılar listelenemiyor — {error}",
   "hostcheck_can_inspect": "• Bir kapsayıcı incelenebiliyor (`{name}`)",

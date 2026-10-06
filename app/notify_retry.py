@@ -97,7 +97,7 @@ class RetryQueue:
             self._items = []
 
     # ── the two things it does ───────────────────────────────────────
-    def remember(self, channel, text, send, still_wanted=None):
+    def remember(self, channel, text, send, still_wanted=None, tries=None):
         """Hold `text` for `channel`; `send(text)` will be tried again later.
 
         `still_wanted()` is asked again at delivery time. The stored `send`
@@ -121,6 +121,14 @@ class RetryQueue:
                 "text": text,
                 "send": send,
                 "wanted": still_wanted,
+                #: How many deliveries this entry may be given, or None
+                #: for "as many as fit in its lifetime". One is for the
+                #: case where a resend might DUPLICATE rather than
+                #: replace: an SMTP connection that died after DATA may
+                #: already have handed the mail over, and retrying that
+                #: for a quarter of an hour turns one crash alert into
+                #: a couple of dozen.
+                "tries": tries,
                 "at": self._clock(),
                 "wall": self._wall(),
             })
@@ -180,10 +188,18 @@ class RetryQueue:
             except Exception as e:                        # pragma: no cover
                 print(f"Notify retry: {held['channel']} resend error: {e}")
                 ok = False
+            left = held.get("tries")
+            if left is not None:
+                held["tries"] = left - 1
             if ok:
                 sent += 1
                 print(f"Notify retry: delivered a held {held['channel']} "
                       f"message, {_ago(age)} late")
+            elif left is not None and left <= 1:
+                dropped += 1
+                print(f"Notify retry: giving up on a held "
+                      f"{held['channel']} message — its one retry is "
+                      f"spent, and trying again could duplicate it")
             else:
                 keep.append(held)
                 blocked.add(held["channel"])
@@ -212,9 +228,9 @@ class RetryQueue:
 queue = RetryQueue()
 
 
-def remember(channel, text, send, still_wanted=None):
+def remember(channel, text, send, still_wanted=None, tries=None):
     """Hold a message on the shared queue."""
-    return queue.remember(channel, text, send, still_wanted)
+    return queue.remember(channel, text, send, still_wanted, tries)
 
 
 def flush():

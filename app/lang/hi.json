@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` ऐसा एंडपॉइंट नहीं है जिसे मैं समझता हूँ। अपेक्षित: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` पर कुछ भी उत्तर नहीं आया — {error}",
   "hostcheck_engine": "• {engine} {version} ने उत्तर दिया",
+  "hostcheck_engine_unsure": "• किसी ने संस्करण {version} के साथ उत्तर दिया, पर यह नहीं बताया कि वह Docker है या Podman",
   "hostcheck_can_list": "• कंटेनर सूचीबद्ध किए जा सकते हैं: {count} मिले",
   "hostcheck_cannot_list": "• कंटेनर सूचीबद्ध नहीं किए जा सकते — {error}",
   "hostcheck_can_inspect": "• एक कंटेनर की जाँच की जा सकती है (`{name}`)",
