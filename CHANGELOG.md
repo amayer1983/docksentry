@@ -2,6 +2,59 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.37] - 2026-10-06
+
+@NotRetarded turned the Discord channel off, ran a public `/selfupdate`
+and it talked anyway. Asked what he expected, he said silence
+everywhere — and added the thing I had not thought about: he did not
+want the answer in a DM thread he never opened either. It belongs where
+he typed the command.
+
+### Fixed
+- **The Discord channel switch covers everything that goes into the
+  channel**, unprompted notices and command commentary alike. For a week
+  it had an exception for replies, justified with the same sentence
+  Telegram uses for the opposite rule — and both cannot be right.
+
+- **A `/selfupdate`'s running commentary goes back to the interaction it
+  came from.** Not into a channel that may be silenced, not into a DM
+  thread nobody opened. Visibility follows `DISCORD_PUBLIC_REPLIES`, so
+  a team that keeps the channel as a record still gets one.
+
+  Two things stay direct messages, for one reason: an interaction is
+  good for fifteen minutes and the update replaces this process. A
+  private request takes the DM from the start, because "checking
+  localhost:5000/docksentry:test" would otherwise give away what the
+  ephemeral answer was hiding. And the report that lands after the
+  restart has nowhere else to go — including, now, when the channel is
+  switched off, which previously meant a Discord-only team with public
+  replies never learned whether the update had worked at all.
+
+- **Five hand-written fan-outs became one call.** Each was
+  `bot.send_message(...)` followed by `notifier.send_message(...)`, kept
+  in step by hand — the shape behind #57 and #61. The bot was also
+  missing an adapter for the urgent class, which is part of why they
+  were written out at all.
+
+  Four pairs stay, each for a reason the seam cannot express, and each
+  now says so where the next reader will look: two send deliberately
+  different texts per channel, one tells a webhook reader that a cleanup
+  was the automatic one, and one reads the Telegram return value to know
+  the alert never arrived.
+
+### Worth knowing on upgrade
+- An automatic self-update inside quiet hours or a maintenance window now
+  reaches the webhook channels, where it was silenced before. The
+  Telegram side never was, and the asymmetry is what this release set
+  out to remove.
+- The Discord commentary follows the command rather than
+  `DISCORD_BOT_CHANNEL`: typing `/selfupdate` in `#general` now reports
+  there, not in the configured announcement channel.
+- With the channel switched off, the slash answer itself ("Self-update
+  started") is still public if you asked for public replies. That is a
+  different setting with its own meaning, and overriding it here would
+  be the same mistake in the other direction.
+
 ## [2.18.0-beta.36] - 2026-10-04
 
 Everything here is about which channel hears what. It started with one
