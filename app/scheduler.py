@@ -200,17 +200,18 @@ class Scheduler:
     def _tell(self, text):
         """Every channel, not just Telegram — a host dropping out is not
         a Telegram-only fact."""
+        # `Broadcast.tell`, which is exactly what the two calls that
+        # used to stand here were: Telegram without `auto` (so past the
+        # quiet gate) and the plugins marked urgent (so past theirs).
+        # Written out by hand it was a place where the next line added
+        # could forget its second half — which is how #57 and #61
+        # happened, twice.
         try:
-            if getattr(self.bot, "enabled", False):
+            seam = getattr(self.bot, "broadcast", None)
+            if seam is not None:
+                seam.tell(text)
+            elif getattr(self.bot, "enabled", False):
                 self.bot.send_message(text)
-            notifier = getattr(self.bot, "notifier", None)
-            if notifier is not None and notifier.has_channels():
-                # `urgent`: these are the host-down and host-back lines,
-                # the example the notifier's own gate comment gives. The
-                # Telegram leg above passes no `auto` and so already
-                # goes past quiet hours; without this the plugins did
-                # not, and at 02:00 the alert was Telegram-only.
-                notifier.send_message(text, urgent=True)
         except Exception as e:
             print(f"Could not report the host state change: {e}")
 
@@ -294,7 +295,12 @@ class Scheduler:
             try:
                 from version import VERSION
                 resumed_msg = self.bot.t("selfupdate_resumed_check", version=VERSION)
-                if self.bot.enabled:
+                # Routine, so the seam's `announce`: quiet hours apply,
+                # on every channel alike.
+                seam = getattr(self.bot, "broadcast", None)
+                if seam is not None:
+                    self.bot.broadcast.announce(resumed_msg)
+                elif self.bot.enabled:
                     self.bot.send_message(resumed_msg, auto=True)
                 # Also fan out to Discord / webhook so non-Telegram users
                 # see the post-restart confirmation too (#19).

@@ -1046,6 +1046,9 @@ class ContainerMonitor:
         will_attach = bool(body and send_doc)
         msg = _body + t("monitor_mass_footer" if will_attach
                         else "monitor_mass_footer_nofile")
+        # Not the seam, on purpose: it carries ONE text to every
+        # channel, and these two differ — only Telegram is offered the
+        # attachment, so only Telegram's footer may promise one.
         try:
             self.bot.send_message(msg, auto=True)
         except Exception as e:

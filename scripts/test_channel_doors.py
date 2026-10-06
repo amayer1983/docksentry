@@ -255,6 +255,29 @@ checks["…and _say_once is the seam with a memory in front"] = (
     "_held_seen[kind] = signature" in _tgsrc
     and "self.announce(text, **kw)" in _tgsrc)
 
+# ── the hand-rolled fan-outs, and the ones that stay ─────────────────
+# Each pair was `bot.send_message(...)` followed by
+# `notifier.send_message(...)`, kept in step by hand — the shape that
+# produced #57 and #61. The ones whose two legs carry the SAME text are
+# the seam written out longhand and are gone. Three are not: two send
+# deliberately different texts per channel, one needs the Telegram
+# return value to know the alert failed. Those say so in a comment, so
+# the next reader does not collapse them and lose it.
+_sch = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "scheduler.py"), encoding="utf-8").read()
+_tellblk = _sch[_sch.index("    def _tell(self"):]
+_tellblk = _tellblk[:_tellblk.index("\n    def ", 10)]
+checks["the scheduler's host notice is the seam, not a pair"] = (
+    "seam.tell(text)" in _tellblk
+    and "notifier.send_message" not in _tellblk)
+checks["the bot has an adapter for the urgent door too"] = (
+    "def announce_urgent(" in _tgsrc and "seam.tell(text, skip=skip)" in _tgsrc)
+
+_mon = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "monitor.py"), encoding="utf-8").read()
+checks["the mass-stop pair stays, and says why"] = (
+    "Not the seam, on purpose" in _mon and "msg_nofile" in _mon)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

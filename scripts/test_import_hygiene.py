@@ -202,8 +202,12 @@ checks["a host that never failed says nothing"] = s2.sent == []
 ssrc = open(os.path.join(APP, "scheduler.py"), encoding="utf-8").read()
 _tell = ssrc[ssrc.index("    def _tell(self"):]
 _tell = _tell[:_tell.index("\n    def ", 10)]
+# It used to name the two legs separately, because `_tell` wrote the
+# fan-out out by hand. It is the seam now — one call, which is the
+# point: a hand-rolled pair is a place where the next line added forgets
+# its second half.
 checks["the report goes to every channel"] = (
-    "notifier.send_message" in _tell and "self.bot.send_message" in _tell)
+    "seam.tell(text)" in _tell and "broadcast" in _tell)
 checks["…and a failure to report cannot stop the check"] = (
     "except Exception" in _tell)
 

@@ -7103,6 +7103,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     # message that already starts with ✅ or ❌, and this
                     # used to put a second one in front of it.
                     bot.send_message(msg)
+                # Not the seam, on purpose: the plugins get the text
+                # with a prefix saying a human pressed the button, and
+                # the seam carries one text to everybody.
                 if bot.notifier and bot.notifier.has_channels():
                     bot.notifier.send_message(
                         bot.t("cleanup_manual_prefix", message=msg))

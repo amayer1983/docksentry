@@ -1413,6 +1413,21 @@ class TelegramBot:
             lines.append(self.t(f"selfaudit_{kind}", **p))
         return "\n".join(lines)
 
+    def announce_urgent(self, text, skip=()):
+        """One unattended message that quiet hours may not swallow.
+
+        `announce`'s counterpart: the seam's `tell`. A rollback, a host
+        that stopped answering, "started on vX" — the class where losing
+        the message is worse than a woken night. The bot had an adapter
+        for the routine door and none for this one, so every caller that
+        needed it wrote the two legs out by hand and had to keep them in
+        step (#19, #57, #61).
+        """
+        seam = getattr(self, "broadcast", None)
+        if seam is None:
+            seam = Broadcast(telegram=self, notifier=self.notifier)
+        seam.tell(text, skip=skip)
+
     def announce(self, text, reply_markup=None, detail=""):
         """One unattended message, to every channel that is switched on.
 
@@ -2632,11 +2647,10 @@ class TelegramBot:
                 + self.t("selfupdate_releases_link") + "\n"
                 + self.t("selfupdate_restarting")
             )
-        self.send_message(msg)
-        # Fan out to Discord / generic webhook so non-Telegram users
-        # see self-update events too (#19).
-        if self.notifier and self.notifier.has_channels():
-            self.notifier.send_message(msg)
+        # One text, every channel, past the quiet gate on both legs —
+        # which is `tell`. It was two calls that had to be kept in step
+        # by hand (#19).
+        self.announce_urgent(msg)
 
         # Record in history BEFORE _do_selfupdate kills us — otherwise the
         # entry never gets written (#13). Same data path as the manual
