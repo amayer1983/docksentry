@@ -69,19 +69,94 @@ def main():
     checks["the context we pass does verify"] = (
         default_ctx.check_hostname and default_ctx.verify_mode == ssl.CERT_REQUIRED)
 
-    import inspect
+    # Driven, not grepped. These four used to read the source of
+    # `send_raw`, which stopped containing the transport when the body
+    # moved to `_attempt` — so they went red for a rename rather than
+    # for a defect, and would have gone GREEN for a rename in the other
+    # direction. What matters is the context the transport is actually
+    # handed, so the transport is replaced and asked.
+    import smtplib
+    import types as _t
     from notifiers.smtp import SmtpNotifier
-    src = inspect.getsource(SmtpNotifier.send_raw)
-    # Both transports have to carry the context; passing it to only one
-    # would leave the other silently unverified, which is the shape of the
-    # original bug.
-    checks["SMTP_SSL is given a context"] = "SMTP_SSL(" in src and "context=ctx" in src
-    checks["starttls is given a context"] = "starttls(context=ctx)" in src
-    checks["verification is on unless asked otherwise"] = (
-        'getattr(c, "smtp_tls_verify", True)' in src)
+
+    def _ctx_given(tls, verify=True):
+        """The ssl context `_attempt` hands this transport, or None."""
+        seen = {}
+
+        class _SSL:
+            def __init__(self, host, port, timeout=None, context=None):
+                seen["ctx"] = context
+                seen["how"] = "SMTP_SSL"
+                raise smtplib.SMTPServerDisconnected("stop here")
+
+        class _Plain:
+            def __init__(self, host, port, timeout=None):
+                seen["how"] = "SMTP"
+
+            def starttls(self, context=None):
+                seen["ctx"] = context
+                raise smtplib.SMTPServerDisconnected("stop here")
+
+            def quit(self):
+                pass
+
+        real_ssl, real_plain = smtplib.SMTP_SSL, smtplib.SMTP
+        smtplib.SMTP_SSL, smtplib.SMTP = _SSL, _Plain
+        try:
+            n = SmtpNotifier(_t.SimpleNamespace(
+                smtp_host="h", smtp_port=465 if tls == "ssl" else 587,
+                smtp_user="", smtp_password="", smtp_from="a@ex.test",
+                smtp_to="b@ex.test", smtp_tls=tls, smtp_tls_verify=verify,
+                language="en", channel_smtp_enabled=True))
+            n.send_raw("s", "b")
+        finally:
+            smtplib.SMTP_SSL, smtplib.SMTP = real_ssl, real_plain
+        return seen
+
+    _implicit = _ctx_given("ssl")
+    checks["SMTP_SSL is given a verifying context"] = (
+        _implicit.get("how") == "SMTP_SSL"
+        and _implicit.get("ctx") is not None
+        and _implicit["ctx"].check_hostname
+        and _implicit["ctx"].verify_mode == ssl.CERT_REQUIRED)
+    _starttls = _ctx_given("starttls")
+    checks["starttls is given a verifying context"] = (
+        _starttls.get("ctx") is not None
+        and _starttls["ctx"].check_hostname
+        and _starttls["ctx"].verify_mode == ssl.CERT_REQUIRED)
+    # …and the escape hatch really does turn it off, so somebody with a
+    # self-signed internal server is not stuck — the point of the
+    # setting is that it has to be asked for.
+    _off = _ctx_given("starttls", verify=False)
+    checks["SMTP_TLS_VERIFY=false is the only way to stop verifying"] = (
+        _off.get("ctx") is not None
+        and not _off["ctx"].check_hostname
+        and _off["ctx"].verify_mode == ssl.CERT_NONE)
+
     # A new failure for self-signed setups is expected; leaving them to
-    # guess why is not.
-    checks["the escape hatch is named in the error"] = "SMTP_TLS_VERIFY=false" in src
+    # guess why is not. The sentence has to reach stdout, not merely
+    # exist in the file.
+    import io
+    import contextlib
+    _buf = io.StringIO()
+
+    class _BadCert:
+        def __init__(self, *a, **kw):
+            raise ssl.SSLCertVerificationError("self signed certificate")
+
+    _real = smtplib.SMTP_SSL
+    smtplib.SMTP_SSL = _BadCert
+    try:
+        with contextlib.redirect_stdout(_buf):
+            SmtpNotifier(_t.SimpleNamespace(
+                smtp_host="h", smtp_port=465, smtp_user="", smtp_password="",
+                smtp_from="a@ex.test", smtp_to="b@ex.test", smtp_tls="ssl",
+                smtp_tls_verify=True, language="en",
+                channel_smtp_enabled=True)).send_raw("s", "b")
+    finally:
+        smtplib.SMTP_SSL = _real
+    checks["the escape hatch is named in the error the operator reads"] = (
+        "SMTP_TLS_VERIFY=false" in _buf.getvalue())
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

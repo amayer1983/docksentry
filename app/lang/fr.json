@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` n'est pas un point de terminaison que je comprends. Attendu : {schemes}",
   "hostcheck_unreachable": "• Rien n'a répondu à `{endpoint}` — {error}",
   "hostcheck_denied": "• `{endpoint}` a répondu — et nous a refusés : {error}. Ce sont les droits du socket, pas le réseau : vérifiez le montage, le groupe et, s'il est actif, SELinux.",
+  "hostcheck_denied_ssh": "• ssh a répondu sur `{endpoint}` et ne nous a pas laissés entrer : {error}. C'est une clé, pas le socket — ce conteneur a son propre système de fichiers, donc la clé que vous utilisez depuis le shell n'est pas celle qu'il présente.",
   "hostcheck_engine": "• {engine} {version} a répondu",
   "hostcheck_engine_unsure": "• Quelque chose a répondu avec la version {version}, sans dire s'il s'agit de Docker ou de Podman",
   "hostcheck_can_list": "• Les conteneurs peuvent être listés : {count} trouvés",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Un conteneur peut être inspecté (`{name}`)",
   "hostcheck_cannot_inspect": "• Un conteneur ne peut pas être inspecté — {error}. Un proxy de socket qui autorise la liste mais pas l'inspection paraît sain et ne permet pas de mettre à jour.",
   "hostcheck_no_containers": "• Aucun conteneur ici pour l'instant, le droit d'inspection n'a donc pas pu être vérifié",
+  "hostcheck_gone": "• Tout ce qui était listé était déjà terminé au moment où j'ai posé la question : le droit d'inspection n'a donc pas été testé. C'est un hôte avec des tâches de courte durée, pas un problème d'hôte.",
   "hostcheck_ready": "• Prêt : `{endpoint}` est entièrement lisible. Mettre à jour demande en plus les droits d'écriture, et un contrôle préalable ne peut pas les essayer sans rien modifier — un proxy de socket en lecture seule arrive exactement jusqu'ici.",
   "hostcheck_usable": "• Utilisable : `{endpoint}` peut être ajouté. Les droits d'inspection et d'écriture n'ont pas été testés.",
   "hostcheck_usage": "Utilisation : `/hosts check <endpoint>` — par exemple `/hosts check ssh://user@10.0.0.5`"

@@ -90,6 +90,48 @@ Drei Dinge, die die Regel ausmachen und ohne die sie nichts wert ist:
 * Danach **`VERIFICATION.md` neu schreiben** und die Suite laufen
   lassen, erst dann taggen.
 
+## Ein Test darf nicht ersetzen, was er prüft
+
+Am 06.10.2026 hat eine Mutationsprobe über die ganze Suite zehn
+Kernzusagen gefunden, deren Durchsetzung man löschen kann, ohne dass
+**eine** von 181 Prozeduren rot wird — Rollback, Ruhezeiten, Pin,
+`EXCLUDE_CONTAINERS`, CSRF. 4272 Prüfungen, und diese zehn Dinge hielt
+nichts. Drei Ursachen, immer dieselben:
+
+1. **Der Test ersetzt die Funktion, die er prüfen soll.**
+   `test_weekly_report_channels.py` setzt `should_send_now = lambda: True`
+   und prüft danach den Zeitplan nicht mehr; zwei von drei
+   CSRF-Prozeduren setzen `_check_csrf = lambda: True`. Ein Mock an der
+   Stelle, um die es geht, ist keine Prüfung, sondern ihre Abwesenheit.
+2. **Der Test prüft eine Kopie der Produktionslogik.** `test_labels.py`
+   hat eine Überschrift »exclude decision (mirrors
+   get_running_containers)« und schreibt den Ausdruck danach ab. Die
+   Kopie war mit sich einig, während das Original alles tun konnte.
+3. **Die Prüfung ist ein grep, der auf einem Kommentar sitzt.**
+   `"Capture config up front" in checker` — dieser Text steht
+   ausschließlich in einem Kommentar. Und ein **auskommentierter**
+   Aufruf erfüllt jeden grep, der ihn sucht: so war `/hosts check` auf
+   beiden Verbindungen tot und drei Prüfungen grün.
+
+Daraus drei Regeln:
+
+* **Die Zusage fahren, nicht die Umgebung.** Was geprüft wird, ist das,
+  was hinten herauskommt — die Liste, die Nachricht, die Antwort —, nicht
+  dass eine Zeile existiert. Ein Stand-in ersetzt die *Umgebung* (Socket,
+  Netz, Uhr), niemals die Entscheidung.
+* **Immer die Gegenrichtung mitprüfen.** »Wird zurückgehalten« ist
+  wertlos ohne »und ohne den Grund geht es raus«: sonst besteht die
+  Prüfung auch auf einem Stand-in, der nie etwas sendet. Genau so war
+  mein eigener Ruhezeiten-Test erst grün.
+* **Keine Prüfung, die von der Wanduhr abhängt.** Dieselbe Datei hing an
+  der echten Uhrzeit, und weil es 01:00 war, bestanden die
+  Ruhezeit-Prüfungen aus dem falschen Grund. Zeit wird übergeben.
+
+Festgehalten als Prüfung, nicht als Vorsatz: `test_guard_mutations.py`
+bricht je Zusage die Zeile, die sie durchsetzt, und verlangt, dass eine
+genannte Prozedur rot wird. Was dort noch in `UNGUARDED` steht, ist
+offene Schuld und darf nur kürzer werden.
+
 ## Test-Hosts der lokalen Instanz
 
 Die lokale Instanz hängt an mehreren Endpunkten; die Adressen stehen in

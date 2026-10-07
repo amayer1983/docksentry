@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` 는 제가 아는 엔드포인트가 아닙니다. 예상: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 에서 아무 응답이 없습니다 — {error}",
   "hostcheck_denied": "• `{endpoint}` 이(가) 응답했고, 그리고 우리를 거부했습니다 — {error}. 네트워크가 아니라 소켓 권한입니다. 마운트, 그룹, 그리고 활성화되어 있다면 SELinux를 확인하세요.",
+  "hostcheck_denied_ssh": "• `{endpoint}` 에서 ssh가 응답했고, 우리를 들여보내지 않았습니다: {error}. 이것은 키 문제이고 소켓 문제가 아닙니다. 이 컨테이너는 자체 파일시스템을 가지므로, 셸에서 쓰는 키와 같은 키를 제시하지 않습니다.",
   "hostcheck_engine": "• {engine} {version} 이(가) 응답했습니다",
   "hostcheck_engine_unsure": "• 무언가가 버전 {version} 으로 응답했지만 Docker 인지 Podman 인지는 밝히지 않았습니다",
   "hostcheck_can_list": "• 컨테이너를 나열할 수 있습니다: {count}개 발견",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• 컨테이너를 검사할 수 있습니다 (`{name}`)",
   "hostcheck_cannot_inspect": "• 컨테이너를 검사할 수 없습니다 — {error}. 나열은 허용하고 검사는 막는 소켓 프록시는 멀쩡해 보이지만 업데이트에는 쓸 수 없습니다.",
   "hostcheck_no_containers": "• 여기에는 아직 컨테이너가 없어 검사 권한은 확인되지 않았습니다",
+  "hostcheck_gone": "• 나열된 것은 물어볼 때쯤 이미 모두 끝나 있었고, 그래서 inspect 권한은 검증되지 않은 채 남았습니다. 이는 수명이 짧은 작업을 돌리는 호스트이며, 호스트의 문제가 아닙니다.",
   "hostcheck_ready": "• 준비됨: `{endpoint}` 은(는) 전부 읽을 수 있습니다. 업데이트에는 쓰기 권한도 필요하고, 사전 점검은 무언가를 바꾸지 않고는 그것을 시험할 수 없습니다 — 읽기 전용 소켓 프록시는 정확히 여기까지 통과합니다.",
   "hostcheck_usable": "• 사용 가능: `{endpoint}` 을(를) 추가할 수 있습니다. inspect 권한과 쓰기 권한은 검증되지 않은 채 남았습니다.",
   "hostcheck_usage": "사용법: `/hosts check <endpoint>` — 예: `/hosts check ssh://user@10.0.0.5`"

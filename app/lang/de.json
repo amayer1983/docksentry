@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` ist kein Endpunkt, den ich spreche. Erwartet wird einer von: {schemes}",
   "hostcheck_unreachable": "• Unter `{endpoint}` hat nichts geantwortet — {error}",
   "hostcheck_denied": "• `{endpoint}` hat geantwortet — und uns abgewiesen: {error}. Das sind die Rechte am Socket, nicht das Netz: Mount, Gruppe und, falls aktiv, SELinux prüfen.",
+  "hostcheck_denied_ssh": "• ssh hat unter `{endpoint}` geantwortet und uns nicht hereingelassen: {error}. Das ist ein Schlüssel, nicht der Socket — dieser Container hat sein eigenes Dateisystem, der Schlüssel aus deiner Shell ist also nicht der, den er anbietet.",
   "hostcheck_engine": "• {engine} {version} hat geantwortet",
   "hostcheck_engine_unsure": "• Etwas hat mit Version {version} geantwortet, aber nicht gesagt, ob es Docker oder Podman ist",
   "hostcheck_can_list": "• Container lassen sich auflisten: {count} gefunden",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Ein Container lässt sich inspizieren (`{name}`)",
   "hostcheck_cannot_inspect": "• Ein Container lässt sich nicht inspizieren — {error}. Ein Socket-Proxy, der Auflisten erlaubt und Inspizieren nicht, sieht gesund aus und taugt nicht zum Aktualisieren.",
   "hostcheck_no_containers": "• Hier gibt es noch keine Container, die Inspizier-Berechtigung blieb also ungeprüft",
+  "hostcheck_gone": "• Alles, was aufgelistet war, war beim Nachfragen schon beendet — die Inspizier-Berechtigung blieb damit ungeprüft. Das ist ein Host mit kurzlebigen Jobs, kein Problem des Hosts.",
   "hostcheck_ready": "• Bereit: `{endpoint}` ist vollständig lesbar. Für Updates braucht es zusätzlich Schreibrechte, und die kann eine Vorab-Prüfung nicht testen, ohne etwas zu verändern — ein nur lesender Socket-Proxy kommt genau bis hierher.",
   "hostcheck_usable": "• Brauchbar: `{endpoint}` kann aufgenommen werden. Inspect- und Schreibrechte blieben ungeprüft.",
   "hostcheck_usage": "Verwendung: `/hosts check <endpunkt>` — zum Beispiel `/hosts check ssh://user@10.0.0.5`"

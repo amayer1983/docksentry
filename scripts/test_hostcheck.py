@@ -67,6 +67,7 @@ def kinds(findings):
     return [k for k, _p in findings]
 
 
+
 # ── an endpoint we do not speak is caught before anything is tried ───
 b = _Backend({})
 f = hostcheck.preflight("http://nas:2375", b)
@@ -171,6 +172,40 @@ checks["…and a refused socket is not usable"] = hostcheck.usable(f) is False
 checks["…while a timeout stays unreachable"] = (
     kinds(hostcheck.preflight("tcp://nas:2375", _Backend({}))) == ["unreachable"])
 
+# …and the three sentences that are NOT a refusal, however much the
+# wording looks like one. The docker cli prints "Cannot connect to the
+# Docker daemon … Is the docker daemon running?" both when the rights
+# are missing and when nothing is listening, so matching that phrase
+# reported a stopped daemon as a permission problem and sent the reader
+# to his socket group when the answer was `systemctl start docker`.
+# Three separate audits found that by three different routes.
+for _txt, _want in (
+        ("Cannot connect to the Docker daemon at unix:///var/run/"
+         "docker.sock. Is the docker daemon running?", "unreachable"),
+        ("stat /var/run/docker.sock: no such file or directory", "unreachable"),
+        # Both shapes in one sentence, which rootless Podman really
+        # does produce. The permission word has to win: there IS
+        # something there and it is the rights.
+        ("Cannot connect to Podman. Please verify your connection to the "
+         "Linux system using `podman system connection list`: permission "
+         "denied", "denied"),
+        ("ssh: connect to host nas port 22: Connection refused", "unreachable"),
+        ("Got permission denied while trying to connect to the Docker "
+         "daemon socket", "denied")):
+    _f = hostcheck.preflight("unix:///var/run/docker.sock",
+                             _Backend({"version --format": (1, "", _txt)}))
+    checks[f"'{_txt[:34]}…' is {_want}"] = kinds(_f) == [_want]
+
+# An ssh host that refuses the KEY is not a socket permission problem,
+# and the socket advice (mount, group, SELinux) is the wrong way to send
+# that reader — `hostdiag` appends the right sentence directly below it.
+_ssh = hostcheck.preflight(
+    "ssh://root@nas",
+    _Backend({"version --format": (1, "", "root@nas: Permission denied (publickey).")}))
+checks["an ssh key refusal is its own finding, not the socket's"] = (
+    kinds(_ssh) == ["denied_ssh"])
+checks["…and still blocks the host"] = hostcheck.usable(_ssh) is False
+
 # ── a container that vanished says nothing about the host ────────────
 # `ps -aq` lists the NEWEST first, which is exactly the `--rm` backup
 # job most likely to be gone a moment later. Judging on that one id
@@ -184,6 +219,23 @@ checks["a container that disappeared does not condemn the host"] = (
     kinds(f) == ["engine", "can_list", "can_inspect", "ready"])
 checks["…and the next one is the one reported"] = (
     dict(f)["can_inspect"]["name"] == "web")
+# …and when every candidate it tried had finished, that is a host
+# running short-lived jobs, not a proxy that will not let us inspect.
+# It must not read as one and must not block: the ids[:3] loop healed
+# the one-container case and left this one saying "a socket proxy that
+# allows listing but not inspecting looks healthy".
+all_gone = dict(HEALTHY)
+all_gone["ps -aq"] = (0, "aaa111\nbbb222\nccc333", "")
+for _i in ("aaa111", "bbb222", "ccc333"):
+    all_gone[f"inspect {_i}"] = (
+        1, "", f"Error response from daemon: No such container: {_i}")
+f = hostcheck.preflight("tcp://ci:2375", _Backend(all_gone))
+checks["three for three gone is not a socket proxy"] = (
+    kinds(f) == ["engine", "can_list", "gone"])
+checks["…and does not block the host"] = hostcheck.usable(f) is True
+checks["…and gets the verdict instead of silence"] = (
+    hostcheck.verdict(f) == "usable")
+
 # …but a refusal still stops on the first one: asking twice would only
 # be two refusals.
 refused_all = dict(HEALTHY)
@@ -278,6 +330,18 @@ def _plain(t):
 checks["…and Discord says the same thing about the same endpoint"] = (
     _plain(_dc_text) == _plain(_tg_text))
 
+# The ssh refusal must read as a key problem where the reader sees it,
+# not just in the finding list — the socket wording (mount, group,
+# SELinux) is the wrong way to send him.
+_ssh_answers = {"version --format":
+                (1, "", "root@nas: Permission denied (publickey).")}
+_ssh_said = _rendered(TelegramBot, "ssh://root@nas", _ssh_answers)
+checks["the ssh refusal talks about a key, not about a group"] = (
+    "key" in _ssh_said and "SELinux" not in _ssh_said)
+checks["…and Discord says the same about it"] = (
+    _plain(_rendered(DiscordBot, "ssh://root@nas", _ssh_answers))
+    == _plain(_ssh_said))
+
 # The verdict for the no-containers host has to reach the reader, in
 # both chats — a conclusion only `hostcheck` knows about is no use.
 checks["the verdict reaches the reader in both chats"] = (
@@ -350,10 +414,25 @@ checks["…and the option reaches it in Discord"] = (
 # pre-flight against the empty string.
 checks["…while /hosts without it is still the host list"] = (
     "27.1.1" not in (_drive_discord([]) or ""))
-_dcsrc = open(os.path.join(ROOT, "app", "discord_bot.py"),
-              encoding="utf-8").read()
+# The registration read as DATA, not as source text. This was the last
+# grep left in this file, and it was the same trap as the three above:
+# commenting the option block out — feature not typable by anyone — left
+# it green, because the words were still in the file.
+import discord_bot as _db                                     # noqa: E402
+
+_hosts_cmd = next((c for c in _db.COMMANDS if c.get("name") == "hosts"), None)
+_hosts_opts = [o.get("name") for o in (_hosts_cmd or {}).get("options", [])]
 checks["…and Discord registers the option so it can be typed"] = (
-    '"name": "check"' in _dcsrc.split('{"name": "hosts"')[1][:400])
+    "check" in _hosts_opts)
+# Discord validates the registration as one document: one
+# optional-before-required option makes the bulk PUT fail and the bot
+# ends up with NO commands at all. So the option must carry a type and
+# must not sit in front of a required one.
+checks["…as a string option that cannot break the registration"] = (
+    _hosts_cmd is not None
+    and all(o.get("type") == 3 for o in _hosts_cmd["options"])
+    and not any(_hosts_cmd["options"][i].get("required")
+                for i in range(1, len(_hosts_cmd["options"]))))
 
 # every kind has wording, in every language
 import json                                                  # noqa: E402

@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` non è un endpoint che conosco. Atteso uno di: {schemes}",
   "hostcheck_unreachable": "• Nessuna risposta da `{endpoint}` — {error}",
   "hostcheck_denied": "• `{endpoint}` ha risposto — e ci ha rifiutati: {error}. Sono i permessi del socket, non la rete: controlla il mount, il gruppo e, se attivo, SELinux.",
+  "hostcheck_denied_ssh": "• ssh ha risposto su `{endpoint}` e non ci ha fatti entrare: {error}. È una chiave, non il socket — questo container ha il proprio filesystem, quindi la chiave che usi dalla shell non è quella che offre.",
   "hostcheck_engine": "• Ha risposto {engine} {version}",
   "hostcheck_engine_unsure": "• Qualcosa ha risposto con la versione {version}, ma non ha detto se è Docker o Podman",
   "hostcheck_can_list": "• I container si possono elencare: {count} trovati",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Un container si può ispezionare (`{name}`)",
   "hostcheck_cannot_inspect": "• Un container non si può ispezionare — {error}. Un proxy del socket che consente l'elenco ma non l'ispezione sembra sano e non permette di aggiornare.",
   "hostcheck_no_containers": "• Qui non ci sono ancora container, quindi il permesso di ispezione è rimasto non verificato",
+  "hostcheck_gone": "• Tutto ciò che era elencato era già terminato quando l'ho chiesto, quindi il permesso di inspect è rimasto non verificato. È un host con job di breve durata, non un problema dell'host.",
   "hostcheck_ready": "• Pronto: `{endpoint}` è leggibile per intero. Per aggiornare servono anche i permessi di scrittura, e un controllo preliminare non può provarli senza modificare qualcosa — un proxy socket in sola lettura arriva esattamente fino a qui.",
   "hostcheck_usable": "• Utilizzabile: `{endpoint}` può essere aggiunto. I permessi di inspect e di scrittura sono rimasti non verificati.",
   "hostcheck_usage": "Uso: `/hosts check <endpoint>` — per esempio `/hosts check ssh://user@10.0.0.5`"

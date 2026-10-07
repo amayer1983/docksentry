@@ -1,8 +1,8 @@
 # Audit vor der Veröffentlichung
 
-Vier Blickrichtungen, parallel, auf den Diff seit dem letzten Tag. Vor
-jedem Tag, ohne Ausnahme — die Regel steht in CLAUDE.md, das Handwerk
-hier.
+Fünf Blickrichtungen, parallel. Vier auf den Diff seit dem letzten Tag,
+die fünfte auf die ganze Suite. Vor jedem Tag, ohne Ausnahme — die Regel
+steht in CLAUDE.md, das Handwerk hier.
 
 ## Was es bringt
 
@@ -22,12 +22,19 @@ alle Tests grün gelassen hatten:
 * drei Kommentare, die als Tatsache hinstellten, was eine spätere eigene
   Messung widerlegt hatte.
 
+Am 06.10.2026 liefen fünf. Richtung 4 fand, dass eine Kappe, die ich am
+selben Tag gebaut hatte, durch nichts abgesichert war — die Durchsetzung
+ließ sich löschen, und keine von 181 Prozeduren wurde rot. Richtung 5
+fand zehn Kernzusagen in derselben Lage: Rollback, Ruhezeiten, Pin,
+`EXCLUDE_CONTAINERS`, CSRF.
+
 Die vierte Richtung — Behauptungen gegen Code, und Jagd auf vakuöse
-Tests — war die ergiebigste. Wenn nur eine läuft, dann die.
+Tests — war zweimal die ergiebigste. Wenn nur eine läuft, dann die; wenn
+zwei, dann 4 und 5.
 
 ## Wie
 
-Alle vier in **einer** Nachricht starten, damit sie nebenher laufen.
+Alle fünf in **einer** Nachricht starten, damit sie nebenher laufen.
 `{RANGE}` ist der Vergleich, meist `v<letzter-tag>..HEAD`.
 
 Vorher `git status` prüfen: läuft der Baum während des Audits weiter,
@@ -111,6 +118,48 @@ doch, sagen sie es — aber besser, es passiert nicht.
 >
 > Klassifizierte Liste, `datei:zeile`, die Behauptung, und was der Code
 > tatsächlich tut.
+
+### 5 — Hält die Suite die Zusagen? *(suiteweit, nicht nur der Diff)*
+
+Die einzige Richtung, die nicht auf den Diff schaut. Am 06.10.2026 war
+sie die ergiebigste von fünf: zehn Kernzusagen ohne jede wirksame
+Absicherung, bei 4272 grünen Prüfungen.
+
+> Repository: `{PFAD}`. Die Suite besteht aus `{N}` Prozeduren unter
+> `{PFAD ZU DEN TESTS}`; jede endet mit PASS/FAIL.
+>
+> **Durchsuche die ganze Suite nach Prüfungen, die nichts halten** —
+> nicht nur den letzten Diff.
+>
+> 1. **Mustersuche per AST über alle Testdateien, vollständig gezählt:**
+>    nackte `True`/`False`-Konstanten; Tautologien; `all()`/`any()` über
+>    eine Liste, die leer sein kann; `A and B or C`; f-string-Schlüssel
+>    ohne Interpolation; ein Verdikt, das vor einem Teil der Prüfungen
+>    berechnet wird; Quelltext-greps, die ein **Kommentar oder Docstring**
+>    erfüllen kann; Mocks, die genau die Funktion ersetzen, um die es
+>    geht, und Prüfungen, die danach nur die **Argumente** des Mocks
+>    ansehen; Stand-ins mit Ausgaben, die das echte Werkzeug nie liefert.
+>    Je Muster die vollständige Trefferliste mit `datei:zeile`.
+> 2. **Mutationsproben.** Nimm die verdächtigsten Treffer, die eine
+>    *wichtige* Zusage absichern sollen (Sicherheit, Datenverlust, Geld,
+>    Rechte, Zustellung), baue in einer **Kopie** die abgesicherte Zeile
+>    zurück und lass die betroffene Prozedur **und die ganze Suite**
+>    laufen. Je Probe: was zurückgebaut, was erwartet, was tatsächlich
+>    passierte, mit Ausgabe. **Ein Rückbau, bei dem keine Prozedur rot
+>    wird, ist ein Blocker.**
+>    Wichtig: die Prozedur muss im **unveränderten** Baum zuerst grün
+>    sein. Sonst zählt ein Absturz — eine fehlende Datei, ein Dienst, der
+>    nicht läuft — als gefangene Mutation. Mir ist genau das passiert und
+>    hat eine Zusage als abgesichert gemeldet, die es nicht ist.
+> 3. **Umgekehrt: was ist gar nicht abgedeckt?** Welche Zusagen aus
+>    README und Doku haben keine Prüfung? Nach Schaden ordnen, nicht nach
+>    Aufwand.
+> 4. **Laufzeit und Nutzen.** Was kostet am meisten Zeit, und was sichert
+>    es ab? Was prüft dasselbe doppelt? Löschvorschläge nur, wo der
+>    Verlust nachweislich null ist.
+>
+> Nichts melden, was nicht nachgestellt ist, ohne es als Vermutung zu
+> kennzeichnen.
 
 ## Was danach passiert
 

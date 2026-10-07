@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
   "hostcheck_denied": "• `{endpoint}` yanıt verdi — ve bizi reddetti: {error}. Bu, ağ değil soketin izinleri: mount'u, grubu ve etkinse SELinux'u kontrol et.",
+  "hostcheck_denied_ssh": "• ssh `{endpoint}` üzerinde yanıt verdi ve bizi içeri almadı: {error}. Bu bir anahtar sorunu, soket değil — bu konteynerin kendi dosya sistemi var, yani kabuktan kullandığın anahtar onun sunduğu anahtar değil.",
   "hostcheck_engine": "• {engine} {version} yanıt verdi",
   "hostcheck_engine_unsure": "• Bir şey {version} sürümüyle yanıt verdi ama Docker mı Podman mı olduğunu söylemedi",
   "hostcheck_can_list": "• Kapsayıcılar listelenebiliyor: {count} bulundu",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Bir kapsayıcı incelenebiliyor (`{name}`)",
   "hostcheck_cannot_inspect": "• Bir kapsayıcı incelenemiyor — {error}. Listelemeye izin verip incelemeye izin vermeyen bir soket proxy'si sağlıklı görünür ve güncelleme için kullanılamaz.",
   "hostcheck_no_containers": "• Burada henüz kapsayıcı yok, bu yüzden inceleme izni sınanmadan kaldı",
+  "hostcheck_gone": "• Listelenen her şey, sorduğum anda çoktan sona ermişti; inspect izni bu yüzden sınanmadan kaldı. Bu, kısa ömürlü işler çalıştıran bir makine, makinenin bir sorunu değil.",
   "hostcheck_ready": "• Hazır: `{endpoint}` tümüyle okunabiliyor. Güncelleme ayrıca yazma izni ister ve bir ön kontrol bunu bir şeyi değiştirmeden sınayamaz — salt okunur bir soket proxy'si tam buraya kadar gelir.",
   "hostcheck_usable": "• Kullanılabilir: `{endpoint}` eklenebilir. Inspect ve yazma izinleri sınanmadan kaldı.",
   "hostcheck_usage": "Kullanım: `/hosts check <endpoint>` — örneğin `/hosts check ssh://user@10.0.0.5`"

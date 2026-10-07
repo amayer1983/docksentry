@@ -87,12 +87,24 @@ _DIALLED = []         # every connection attempt
 class _Transport:
     """A `smtplib.SMTP` stand-in that fails exactly where told.
 
-    `where` is "connect" (the network is down), "mail_from" (the relay
-    drops the envelope), "after_data" (it takes the body and dies before
-    saying so), "refuse" (a permanent no) or None (it works).
+    It mirrors the real call chain rather than approximating it, because
+    the code under test watches a specific point in that chain: real
+    `send_message` goes to `sendmail`, which does MAIL FROM, RCPT TO,
+    then `data()`, and `data()` sends the DATA command, waits for a
+    `354`, and only then sends the body. An earlier version of this
+    class had `data()` append and raise with no `getreply` at all — so
+    the 354 watch never fired here, and a mutation that broke it kept
+    this procedure green. The guard ratchet caught that.
+
+    `where` is where it dies: "connect" (nothing is listening),
+    "mail_from" (the relay drops the envelope), "at_data_cmd" (it dies
+    on the DATA command, before saying go-ahead — nothing was handed
+    over), "after_354" (it says go-ahead and dies while the body is
+    going out), "greylist" (a 4xx "come back later"), "refused" (a 5xx
+    no) or None (it works).
     """
 
-    where = "after_data"
+    where = "after_354"
 
     def __init__(self, *a, **kw):
         _DIALLED.append(self.where)
@@ -105,20 +117,35 @@ class _Transport:
     def login(self, u, p):
         pass
 
+    def getreply(self):
+        if self.where == "at_data_cmd":
+            raise smtplib.SMTPServerDisconnected("died on the DATA command")
+        if self.where == "data_refused":
+            # A server may answer the DATA command with a refusal
+            # instead of go-ahead. `smtplib` turns that into
+            # `SMTPDataError`; nothing was handed over, and a 5xx will
+            # be a 5xx again in thirty seconds.
+            return (554, b"5.7.1 Message rejected")
+        return (354, b"go ahead, end with <CRLF>.<CRLF>")
+
     def data(self, arg):
-        # What `sendmail` calls once the envelope is accepted. Reaching
-        # this means the server is taking the message.
-        _ACCEPTED.append(arg)
-        if self.where == "after_data":
-            raise smtplib.SMTPServerDisconnected("died after DATA")
+        code, msg = self.getreply()     # the 354 — or a death, or a no
+        if code != 354:
+            raise smtplib.SMTPDataError(code, msg)
+        _ACCEPTED.append(arg)           # the server is taking the body
+        if self.where == "after_354":
+            raise smtplib.SMTPServerDisconnected("died mid-body")
         return (250, b"ok")
 
     def send_message(self, msg, to_addrs=None):
         if self.where == "mail_from":
             raise smtplib.SMTPServerDisconnected("dropped at MAIL FROM")
-        if self.where == "refuse":
-            raise smtplib.SMTPRecipientsRefused({"a@b": (550, b"no such user")})
-        self._msg = msg
+        if self.where == "greylist":
+            raise smtplib.SMTPSenderRefused(
+                450, b"4.2.0 Greylisted, try again later", "ds@example.test")
+        if self.where == "refused":
+            raise smtplib.SMTPRecipientsRefused(
+                {"ops@example.test": (550, b"5.1.1 No such user")})
         return self.data(msg.as_string())
 
     def quit(self):
@@ -163,7 +190,7 @@ try:
     clock = {"t": 0.0}
     q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
     notify_retry.queue = q
-    passes = _drain(q, clock, "connect", "after_data")
+    passes = _drain(q, clock, "connect", "after_354")
     checks["a half-returned network cannot turn one alert into a stack"] = (
         len(_ACCEPTED) <= 2 and not q.pending())
 
@@ -173,7 +200,7 @@ try:
     clock = {"t": 0.0}
     q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
     notify_retry.queue = q
-    _drain(q, clock, "after_data", "after_data")
+    _drain(q, clock, "after_354", "after_354")
     checks["…and taken-then-dropped twice stops at two copies"] = (
         len(_ACCEPTED) == 2 and not q.pending())
     checks["…both of them the same mail, not two alerts"] = (
@@ -214,6 +241,66 @@ try:
     checks["a drop on the envelope keeps its free retries"] = (
         _held_once and not _ACCEPTED and q.pending() == 1)
 
+    # 4b — the DATA command itself. `data()` sends it and waits for a
+    # `354` before a single byte of the body goes out, so a connection
+    # that dies there has handed over nothing and the retry is free.
+    # The boundary used to be "we called `data()`", which loses the
+    # alert on a relay that drops at that moment.
+    clock = {"t": 0.0}
+    q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+    notify_retry.queue = q
+    _ACCEPTED.clear()
+    _Transport.where = "at_data_cmd"
+    _notifier().send_message("a container went down")
+    _held = q.pending() == 1
+    _Transport.where = None                   # the line comes back
+    clock["t"] = 30.0
+    q.flush()
+    checks["dying on the DATA command still gets a free retry"] = (
+        _held and len(_ACCEPTED) == 1 and not q.pending())
+
+    # 4b-ii — and a server that answers the DATA command with a refusal
+    # has taken nothing. Reading that as a handover would hold an alert
+    # the server has already rejected, and then give up on it after one
+    # attempt instead of saying the mail was refused.
+    clock = {"t": 0.0}
+    q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+    notify_retry.queue = q
+    _ACCEPTED.clear()
+    _Transport.where = "data_refused"
+    _notifier().send_message("a container went down")
+    checks["a DATA command answered with 554 is a refusal, not a handover"] = (
+        not q.pending() and not _ACCEPTED)
+
+    # 4c — greylisting. A relay answering `450 … try again later` is
+    # asking us to come back, and that is the most ordinary 4xx there
+    # is. It used to be filed as a refusal and the alert thrown away
+    # while the server was telling us to retry.
+    clock = {"t": 0.0}
+    q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+    notify_retry.queue = q
+    _ACCEPTED.clear()
+    _Transport.where = "greylist"
+    _notifier().send_message("a container went down")
+    _greylisted = q.pending() == 1
+    _Transport.where = None                   # the greylist has expired
+    clock["t"] = 30.0
+    q.flush()
+    checks["a greylisted mail is come back to, not thrown away"] = (
+        _greylisted and len(_ACCEPTED) == 1 and not q.pending())
+
+    # 4d — …and a permanent no is not held in the first place. The queue
+    # would ask the same server the same question every thirty seconds
+    # for a quarter of an hour and get the same answer.
+    clock = {"t": 0.0}
+    q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+    notify_retry.queue = q
+    _ACCEPTED.clear()
+    _Transport.where = "refused"
+    _notifier().send_message("a container went down")
+    checks["a 5xx refusal is never queued at all"] = (
+        not q.pending() and not _ACCEPTED)
+
     # 5 — a refusal on the RETRY path is not retried for a quarter of an
     # hour. `_is_network` makes that call on the first attempt; the queue
     # only ever saw True or False, so a 550 looped against a server that
@@ -235,13 +322,23 @@ try:
     q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
     notify_retry.queue = q
     _ACCEPTED.clear()
-    _Transport.where = "after_data"
+    _Transport.where = "after_354"
     _n = _notifier()
     _n.send_message("a container went down")
     _ids = [m.split("Message-ID:")[1].split("\n")[0].strip() for m in _ACCEPTED]
     checks["every mail carries a Message-ID of its own"] = bool(_ids and _ids[0])
+    # NOT read off the wire: `EmailMessage.__setitem__` + `as_string()`
+    # normalise a malformed id back to a single `>`, so the broken
+    # `make_msgid(domain="example.test>")` looked identical there —
+    # measured, the check this replaces passed with `parseaddr` taken
+    # out again. The id that matters is the in-memory one: it goes into
+    # the log line and into the retry's `msgid` argument.
+    _, _, _inmem = _notifier()._attempt("Docksentry", "x")
     checks["…with the domain from SMTP_FROM, display name and all"] = (
-        _ids and _ids[0].endswith("@example.test>"))
+        _inmem is not None
+        and _inmem.endswith("@example.test>")
+        and not _inmem.endswith(">>")
+        and _inmem.count(">") == 1)
     _ACCEPTED.clear()
     _n.send_message("a different container went down")
     _other = [m.split("Message-ID:")[1].split("\n")[0].strip() for m in _ACCEPTED]
@@ -257,7 +354,7 @@ try:
     _orig_remember = notify_retry.remember
     notify_retry.remember = lambda *a, **kw: _spied.append(a)
     try:
-        _Transport.where = "after_data"
+        _Transport.where = "after_354"
         _notifier()._send_text("held and failing again")
     finally:
         notify_retry.remember = _orig_remember
@@ -268,7 +365,7 @@ try:
     # raises as well, and an exception from a `finally` REPLACES the one
     # that got us here. We would then classify the wrong failure.
     class _BadQuit(_Transport):
-        where = "after_data"
+        where = "after_354"
 
         def quit(self):
             # Deliberately NOT a network error: if this one replaced the

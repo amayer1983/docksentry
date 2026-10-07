@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` nie jest punktem końcowym, który rozumiem. Oczekiwany jeden z: {schemes}",
   "hostcheck_unreachable": "• Nic nie odpowiedziało pod `{endpoint}` — {error}",
   "hostcheck_denied": "• `{endpoint}` odpowiedział — i nas odrzucił: {error}. To uprawnienia gniazda, nie sieć: sprawdź montowanie, grupę i, jeśli jest włączony, SELinux.",
+  "hostcheck_denied_ssh": "• ssh odpowiedział na `{endpoint}` i nie wpuścił nas: {error}. To klucz, nie gniazdo — ten kontener ma własny system plików, więc klucz, którego używasz z powłoki, nie jest tym, który on przedstawia.",
   "hostcheck_engine": "• Odpowiedział {engine} {version}",
   "hostcheck_engine_unsure": "• Coś odpowiedziało wersją {version}, ale nie powiedziało, czy to Docker, czy Podman",
   "hostcheck_can_list": "• Kontenery można wylistować: znaleziono {count}",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Kontener można zinspekcjonować (`{name}`)",
   "hostcheck_cannot_inspect": "• Kontenera nie można zinspekcjonować — {error}. Proxy gniazda, które pozwala listować, ale nie inspekcjonować, wygląda zdrowo i nie nadaje się do aktualizacji.",
   "hostcheck_no_containers": "• Nie ma tu jeszcze kontenerów, więc uprawnienie do inspekcji pozostało niesprawdzone",
+  "hostcheck_gone": "• Wszystko, co zostało wylistowane, zakończyło się już, gdy o to zapytałem, więc uprawnienie do inspect pozostało niesprawdzone. To host z krótko żyjącymi zadaniami, a nie problem hosta.",
   "hostcheck_ready": "• Gotowe: `{endpoint}` da się w pełni odczytać. Aktualizacja wymaga dodatkowo prawa zapisu, a wstępne sprawdzenie nie może go wypróbować bez zmiany czegokolwiek — proxy gniazda tylko do odczytu dochodzi dokładnie dotąd.",
   "hostcheck_usable": "• Nadaje się: `{endpoint}` można dodać. Uprawnienia do inspect i do zapisu pozostały niesprawdzone.",
   "hostcheck_usage": "Użycie: `/hosts check <endpoint>` — na przykład `/hosts check ssh://user@10.0.0.5`"

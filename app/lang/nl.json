@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` is geen endpoint dat ik ken. Verwacht wordt een van: {schemes}",
   "hostcheck_unreachable": "• Niets antwoordde op `{endpoint}` — {error}",
   "hostcheck_denied": "• `{endpoint}` antwoordde — en weigerde ons: {error}. Dat zijn de rechten op de socket, niet het netwerk: controleer de mount, de groep en, als die actief is, SELinux.",
+  "hostcheck_denied_ssh": "• ssh antwoordde op `{endpoint}` en liet ons niet binnen: {error}. Dat is een sleutel, niet de socket — deze container heeft zijn eigen bestandssysteem, dus de sleutel die je vanaf de shell gebruikt is niet die hij aanbiedt.",
   "hostcheck_engine": "• {engine} {version} antwoordde",
   "hostcheck_engine_unsure": "• Iets antwoordde met versie {version}, maar zei niet of het Docker of Podman is",
   "hostcheck_can_list": "• Containers kunnen worden opgesomd: {count} gevonden",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• Een container kan worden geïnspecteerd (`{name}`)",
   "hostcheck_cannot_inspect": "• Een container kan niet worden geïnspecteerd — {error}. Een socketproxy die opsommen toestaat maar inspecteren niet, oogt gezond en is niet bruikbaar om bij te werken.",
   "hostcheck_no_containers": "• Hier staan nog geen containers, dus het inspectierecht bleef ongetest",
+  "hostcheck_gone": "• Alles wat werd opgesomd was al klaar toen ik ernaar vroeg, dus het inspect-recht bleef ongetest. Dat is een host met kortlevende taken, geen probleem met de host.",
   "hostcheck_ready": "• Klaar: `{endpoint}` is volledig leesbaar. Bijwerken vraagt ook schrijfrechten, en die kan een voorafgaande controle niet proberen zonder iets te veranderen — een alleen-lezen socketproxy komt precies tot hier.",
   "hostcheck_usable": "• Bruikbaar: `{endpoint}` kan worden toegevoegd. Inspect- en schrijfrechten bleven ongetest.",
   "hostcheck_usage": "Gebruik: `/hosts check <endpoint>` — bijvoorbeeld `/hosts check ssh://user@10.0.0.5`"

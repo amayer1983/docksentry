@@ -995,6 +995,7 @@
   "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
   "hostcheck_denied": "• `{endpoint}` 回应了，并且拒绝了我们 — {error}。这是套接字的权限，不是网络：请检查挂载、用户组，以及若已启用的 SELinux。",
+  "hostcheck_denied_ssh": "• ssh 在 `{endpoint}` 上回应了，并且没让我们进去：{error}。这是密钥的问题，不是套接字 — 这个容器有自己的文件系统，所以你在 shell 里用的密钥并不是它出示的那一把。",
   "hostcheck_engine": "• {engine} {version} 作出了响应",
   "hostcheck_engine_unsure": "• 有东西以版本 {version} 作出了响应, 但没有说明它是 Docker 还是 Podman",
   "hostcheck_can_list": "• 可以列出容器: 找到 {count} 个",
@@ -1002,6 +1003,7 @@
   "hostcheck_can_inspect": "• 可以检查某个容器 (`{name}`)",
   "hostcheck_cannot_inspect": "• 无法检查容器 — {error}。允许列出却不允许检查的套接字代理看起来是健康的, 却无法用来更新。",
   "hostcheck_no_containers": "• 这里还没有容器, 因此检查权限未能验证",
+  "hostcheck_gone": "• 列出的那些，在我去问的时候都已经结束了，因此 inspect 权限仍未验证。这是一台运行短命任务的主机，而不是主机本身有问题。",
   "hostcheck_ready": "• 就绪：`{endpoint}` 可以完整读取。更新还需要写入权限，而预检无法在不改动任何东西的情况下试它 — 只读的套接字代理恰好能走到这一步。",
   "hostcheck_usable": "• 可用：`{endpoint}` 可以添加。inspect 权限和写入权限仍未验证。",
   "hostcheck_usage": "用法: `/hosts check <endpoint>` — 例如 `/hosts check ssh://user@10.0.0.5`"

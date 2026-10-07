@@ -58,7 +58,8 @@ SUGGEST = ("tcp://", "ssh://", "unix://", "context://")
 #: Finding kinds, in the order they can occur.
 #:   scheme_bad      the endpoint is not one we speak
 #:   unreachable     nothing answered
-#:   denied          something answered, and refused us
+#:   denied          the socket answered, and refused us
+#:   denied_ssh      ssh answered, and would not let us in
 #:   engine          what answered, and its version
 #:   engine_unsure   …or would not say what it is
 #:   can_list        `ps` works, and how many containers it saw
@@ -66,33 +67,56 @@ SUGGEST = ("tcp://", "ssh://", "unix://", "context://")
 #:   can_inspect     one container could be inspected
 #:   cannot_inspect  …or could not
 #:   no_containers   nothing to inspect, so that half is untested
+#:   gone            everything it listed had finished by the time we
+#:                   asked, so that half is untested too
 #:   ready           every question answered yes
 
 
 #: Every kind `preflight` can emit. Named here rather than only in the
 #: comment above, so a test can ask the module instead of keeping its
 #: own copy — a kind added without wording would otherwise go unnoticed.
-KINDS = ("scheme_bad", "unreachable", "denied",
+#: Every kind that can appear in a rendered pre-flight — the eleven
+#: `preflight` emits plus `usable`, which is `verdict`'s. Kept as one
+#: list because what reads it is the wording check, and a kind without
+#: wording renders as a bare key wherever it comes from.
+KINDS = ("scheme_bad", "unreachable", "denied", "denied_ssh",
          "engine", "engine_unsure",
          "can_list", "cannot_list", "can_inspect", "cannot_inspect",
-         "no_containers", "ready", "usable")
+         "no_containers", "gone", "ready", "usable")
+
+#: What `preflight` itself can emit — everything above except `usable`.
+#: Separate, so a test can hold each list to its own promise instead of
+#: one list standing for two different claims.
+EMITTED = tuple(k for k in KINDS if k != "usable")
 
 
-#: An answer that means "I heard you and you may not". Docker and Podman
-#: both phrase it as a permission problem, and the reader needs sending
-#: to the socket's rights rather than to the network: rootless Podman,
-#: the wrong group, SELinux. Before this they were all told "nothing
-#: answered at …", which is the one thing that had not happened.
+#: Words that mean "I heard you and you may not" — an actual refusal.
+#:
+#: This list was wider and that was worse than having none. It held
+#: "cannot connect to the docker daemon at unix", which the docker cli
+#: prints both when the rights are missing AND when nothing is listening
+#: at all ("Is the docker daemon running?"). A stopped daemon was then
+#: reported as "it answered and refused us: check the mount, the group,
+#: and SELinux", when the answer is `systemctl start docker` and nothing
+#: had answered. Three separate audits found it by three different
+#: routes. So: a real permission word, or it is not a refusal.
 _REFUSED = ("permission denied", "access denied", "not permitted",
-            "operation not permitted", "unauthorized", "forbidden",
-            "must be root", "cannot connect to the docker daemon at "
-            "unix", "connect: permission denied")
-
+            "unauthorized", "must be root", "forbidden",
+            "permission or group", "insufficient privileges")
 
 def _refused(text):
+    """Did something answer and say no, as opposed to not answering?
+
+    One list, deliberately. There was a second one here — phrases that
+    mean "nothing was listening", checked first — and it was both
+    unexercised and wrong: removing the narrow list above is what fixes
+    the stopped-daemon misdiagnosis, and in the one case where a message
+    carries a connect phrase AND a permission word (rootless Podman:
+    "Cannot connect to Podman … permission denied") that really is a
+    permission problem, so letting the connect phrase win would have
+    reintroduced the same class of error facing the other way.
+    """
     low = (text or "").lower()
-    if "permission denied" in low or "access denied" in low:
-        return True
     return any(k in low for k in _REFUSED)
 
 
@@ -150,7 +174,19 @@ def preflight(endpoint, backend, hint=None):
                 extra = ""
             if extra:
                 params["hint"] = extra
-        out.append(("denied" if _refused(why) else "unreachable", params))
+        # Split by scheme, because "you may not" means two different
+        # things and the advice is not interchangeable. Over a socket it
+        # is the mount, the group, SELinux. Over ssh it is a key, and
+        # telling that reader to check his socket group sends him the
+        # wrong way — while `hostdiag` appends the right sentence
+        # directly underneath, so he got both at once.
+        if not _refused(why):
+            kind = "unreachable"
+        elif ep.startswith("ssh://"):
+            kind = "denied_ssh"
+        else:
+            kind = "denied"
+        out.append((kind, params))
         return out
 
     # Podman answers `docker version` too, so ask what it calls itself
@@ -208,14 +244,26 @@ def preflight(endpoint, backend, hint=None):
     # first one gone, verdict `cannot_inspect` and not usable.
     raw = err = ""
     ok = False
+    every_one_gone = True
     for _id in ids[:3]:
         ok, raw, err = _run(backend, ["inspect", _id])
         if ok:
             ids = [_id] + [i for i in ids if i != _id]
+            every_one_gone = False
             break
         if not _gone(err):
+            every_one_gone = False
             break            # a real refusal: no point asking again
     if not ok:
+        if every_one_gone:
+            # Three for three finished between the two calls. That says
+            # nothing about the host — it says this box runs short-lived
+            # jobs — so it must not read as "a socket proxy that allows
+            # listing but not inspecting", and it must not block. The
+            # inspect right simply stayed untested, same as on a host
+            # with nothing on it.
+            out.append(("gone", {}))
+            return out
         out.append(("cannot_inspect", {"error": (err or "no answer")[:300]}))
         return out
     # The wording says "name", so show one rather than a truncated id —
@@ -263,6 +311,6 @@ def usable(findings):
     # `denied` belongs here and was missed when it was added: a socket
     # that answers and refuses us is the most blocking answer there is,
     # and leaving it out reported a host with no rights as usable.
-    bad = {"scheme_bad", "unreachable", "denied",
+    bad = {"scheme_bad", "unreachable", "denied", "denied_ssh",
            "cannot_list", "cannot_inspect"}
     return bool(findings) and not any(kind in bad for kind, _p in findings)
