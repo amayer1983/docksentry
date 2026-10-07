@@ -44,6 +44,31 @@ def _retry_after(err):
     except (AttributeError, TypeError, ValueError):
         return None
 
+#: HTTP answers that mean "not now" rather than "no".
+#:
+#: The same distinction SMTP needed and did not have (#66): a relay
+#: answering `450 Greylisted` is asking us to come back, and treating it
+#: as a refusal threw the alert away. Over HTTP it is `429` — ntfy.sh
+#: rate-limits free accounts, so this is an ordinary Tuesday, not an
+#: exotic case — and the gateway family a reverse proxy emits while the
+#: thing behind it restarts.
+#:
+#: `500` is deliberately NOT here. It can just as easily be a permanent
+#: bug on the server, and a notification queue that retries it every
+#: thirty seconds for a quarter of an hour is a loop against something
+#: that will keep failing. `408` is the request timing out server-side,
+#: which is the network by another name.
+TEMPORARY_STATUS = (408, 429, 502, 503, 504)
+
+
+def retryable_status(code):
+    """Is this HTTP status worth another attempt in thirty seconds?"""
+    try:
+        return int(code) in TEMPORARY_STATUS
+    except (TypeError, ValueError):
+        return False
+
+
 def post_json_with_retry(url, payload, headers, channel, on_network_failure=None):
     """POST a JSON body with bounded retry for transient network failures
     (timeout / connection error) — 3 attempts, 2s and 4s backoff. Same
@@ -56,10 +81,12 @@ def post_json_with_retry(url, payload, headers, channel, on_network_failure=None
     `channel` is a label used only in the error log ("Discord webhook",
     "Webhook") so failures stay distinguishable.
 
-    `on_network_failure` is called once, with no arguments, when the three
-    attempts are spent on real network errors — and never for an HTTP
-    status. That is the whole distinction the retry queue needs: a 400 is
-    a no, an unreachable network is a not-yet (#66).
+    `on_network_failure` is called once, with no arguments, when the
+    three attempts are spent on a real network error — or on an HTTP
+    status that means "not now" (`TEMPORARY_STATUS`). That is the
+    distinction the retry queue needs: a 400 is a no, an unreachable
+    network is a not-yet, and so is a 429 (#66). It used to be called
+    for the network only, so a rate-limited alert was dropped.
     """
     data = json.dumps(payload).encode()
     merged = {"Content-Type": "application/json", **(headers or {})}
@@ -81,9 +108,17 @@ def post_json_with_retry(url, payload, headers, channel, on_network_failure=None
                     print(f"{channel}: rate limited, waiting {wait:.1f}s")
                     time.sleep(wait)
                     continue
-            # Everything else: the server answered and said no. Retrying an
-            # actual 400 or 403 just repeats the same rejection.
+            # A "not now" answer is handed to the retry queue rather than
+            # dropped: the in-line waits above cover a rate limit that
+            # clears in seconds, and this covers the one that does not,
+            # plus the gateway family a proxy emits while the service
+            # behind it comes back. Everything else: the server answered
+            # and said no, and retrying an actual 400 or 403 just repeats
+            # the same rejection.
             print(f"{channel} error: HTTP {e.code}")
+            if retryable_status(e.code) and on_network_failure is not None:
+                print(f"{channel}: holding it — that is a 'not now', not a 'no'")
+                on_network_failure()
             return None
         except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
             if attempt < 2:

@@ -43,7 +43,7 @@ import urllib.request
 
 import notify_retry
 
-from .base import BaseNotifier, channel_setting
+from .base import BaseNotifier, channel_setting, retryable_status
 
 #: Apprise's own severities. Mapping onto them (rather than sending
 #: everything as "info") is what makes a failed update stand out on
@@ -82,8 +82,11 @@ class AppriseNotifier(BaseNotifier):
         failure rather than raising into the facade, same as every other
         channel — a broken notification must never take an update with it.
 
-        `on_network_failure` is called, with no arguments, only when the
-        send died on the network — never for an HTTP status. Apprise
+        `on_network_failure` is called, with no arguments, when the
+        send died on the network — or on an HTTP status that means
+        "not now" rather than "no" (`base.TEMPORARY_STATUS`). Never for
+        a refusal: a rejected token is rejected again in fifteen
+        minutes. Apprise
         answering 400 to a malformed URL answers 400 again fifteen
         minutes later; an Apprise container that is still booting does
         not (#66).
@@ -119,6 +122,14 @@ class AppriseNotifier(BaseNotifier):
                   + (" — check APPRISE_URL and APPRISE_URLS"
                      if e.code < 500 else "")
                   + " (response body withheld: it can echo APPRISE_URLS)")
+            # A "not now" answer belongs in the retry queue, not in the
+            # bin. Measured before this: a 429 and a 503 were both
+            # dropped outright, and ntfy.sh rate-limits free accounts —
+            # so the alert that arrives during a burst is exactly the
+            # one that went missing. Same distinction SMTP needed for
+            # greylisting (#66).
+            if retryable_status(e.code) and on_network_failure is not None:
+                on_network_failure()
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             # Below the HTTPError clause on purpose, and it has to stay
             # there: HTTPError is a subclass of URLError, so swapping the
@@ -168,7 +179,11 @@ class AppriseNotifier(BaseNotifier):
 
     def send_message(self, text):
         if not self._post_text(text):
-            print(f"{self.name} send failed: no answer — holding the message "
+            # Not "no answer": since the "not now" statuses are held
+            # too, this reaches a rate limit and a gateway error as
+            # well, and both of those ARE answers. The line above has
+            # already said which it was.
+            print(f"{self.name} send failed — holding the message "
                   f"for redelivery")
             notify_retry.remember(self.name, text, self._post_text,
                                   still_wanted=lambda: self.enabled)

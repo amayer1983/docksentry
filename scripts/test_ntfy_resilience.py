@@ -178,11 +178,15 @@ _src = open(ntfy_mod.__file__, encoding="utf-8").read()
 checks["the HTTPError clause comes before the network one"] = (
     _src.index("except urllib.error.HTTPError")
     < _src.index("except (urllib.error.URLError"))
-checks["…and the network clause is the only one that signals"] = (
-    _src.count("on_network_failure()") == 1
-    and _src.index("except (urllib.error.URLError")
-    < _src.index("on_network_failure()")
-    < _src.index("except Exception"))
+checks["…and the clause order decides which statuses are held"] = (
+    _src.index("except urllib.error.HTTPError")
+    < _src.index("except (urllib.error.URLError"))
+# It used to read `_src.count("on_network_failure()") == 1` — "only the
+# network clause signals the queue". That rule is gone on purpose: a
+# `429` and a `503` are held too now, so there are two call sites, and
+# counting them was never the point anyway. What the order protects is
+# that a refusal is NOT read as an outage, and that is driven for all
+# six channels in `test_channel_backoff.py` rather than grepped here.
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

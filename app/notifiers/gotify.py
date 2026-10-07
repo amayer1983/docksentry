@@ -32,7 +32,7 @@ import urllib.request
 
 import notify_retry
 
-from .base import BaseNotifier, channel_setting
+from .base import BaseNotifier, channel_setting, retryable_status
 
 #: Gotify priorities. Its Android client treats ≥8 as loud (bypasses
 #: quiet settings), which is right for a failed update and wrong for
@@ -75,8 +75,11 @@ class GotifyNotifier(BaseNotifier):
         """POST one message. Best-effort: logs and returns on failure,
         never raises into the facade.
 
-        `on_network_failure` is called, with no arguments, only when the
-        send died on the network — never for an HTTP status. A rejected
+        `on_network_failure` is called, with no arguments, when the
+        send died on the network — or on an HTTP status that means
+        "not now" rather than "no" (`base.TEMPORARY_STATUS`). Never for
+        a refusal: a rejected token is rejected again in fifteen
+        minutes. A rejected
         token is rejected again in fifteen minutes; an unreachable server
         may well be back (#66)."""
         url = _message_url(self.config)
@@ -104,6 +107,14 @@ class GotifyNotifier(BaseNotifier):
                 except Exception:
                     pass
                 print(f"Gotify notification failed: HTTP {e.code} {body}")
+            # A "not now" answer belongs in the retry queue, not in the
+            # bin. Measured before this: a 429 and a 503 were both
+            # dropped outright, and ntfy.sh rate-limits free accounts —
+            # so the alert that arrives during a burst is exactly the
+            # one that went missing. Same distinction SMTP needed for
+            # greylisting (#66).
+            if retryable_status(e.code) and on_network_failure is not None:
+                on_network_failure()
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             # Below the HTTPError clause on purpose, and it has to stay
             # there: HTTPError is a subclass of URLError, so swapping the
@@ -151,7 +162,11 @@ class GotifyNotifier(BaseNotifier):
 
     def send_message(self, text):
         if not self._post_text(text):
-            print(f"{self.name} send failed: no answer — holding the message "
+            # Not "no answer": since the "not now" statuses are held
+            # too, this reaches a rate limit and a gateway error as
+            # well, and both of those ARE answers. The line above has
+            # already said which it was.
+            print(f"{self.name} send failed — holding the message "
                   f"for redelivery")
             notify_retry.remember(self.name, text, self._post_text,
                                   still_wanted=lambda: self.enabled)

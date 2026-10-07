@@ -172,6 +172,18 @@ GUARDED = [
      "            ctx = ssl._create_unverified_context()",
      "test_cron_dow.py"),
 
+    ("a rate-limited alert is held, not thrown away",
+     "app/notifiers/base.py",
+     "TEMPORARY_STATUS = (408, 429, 502, 503, 504)",
+     "TEMPORARY_STATUS = ()",
+     "test_channel_backoff.py"),
+
+    ("…and a refused one is not asked again every 30 seconds",
+     "app/notifiers/base.py",
+     "        return int(code) in TEMPORARY_STATUS",
+     "        return True",
+     "test_channel_backoff.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

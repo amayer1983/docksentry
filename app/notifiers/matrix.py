@@ -37,7 +37,7 @@ import urllib.request
 import notify_retry
 from container_store import is_safe_link
 
-from .base import BaseNotifier, channel_setting
+from .base import BaseNotifier, channel_setting, retryable_status
 
 
 def _esc(value):
@@ -131,9 +131,11 @@ class MatrixNotifier(BaseNotifier):
         message again — the homeserver drops the duplicate. Left out, a
         fresh one is minted, which is what every one-shot payload wants.
 
-        `on_network_failure` is called, with no arguments, only when the
-        send died on the network — never for an HTTP status, and never
-        for a malformed answer (#66).
+        `on_network_failure` is called, with no arguments, when the send
+        died on the network — or on an HTTP status that means "not now"
+        rather than "no" (`base.TEMPORARY_STATUS`). Never for a refusal,
+        and never for a malformed answer: both would be the same again
+        in thirty seconds (#66).
         """
         if not self.configured():
             return None
@@ -171,6 +173,14 @@ class MatrixNotifier(BaseNotifier):
                       "the account has joined MATRIX_ROOM")
             else:
                 print(f"Matrix notification failed: HTTP {e.code} {detail}")
+            # A "not now" answer belongs in the retry queue, not in the
+            # bin. Measured before this: a 429 and a 503 were both
+            # dropped outright, and ntfy.sh rate-limits free accounts —
+            # so the alert that arrives during a burst is exactly the
+            # one that went missing. Same distinction SMTP needed for
+            # greylisting (#66).
+            if retryable_status(e.code) and on_network_failure is not None:
+                on_network_failure()
         except ValueError as e:
             # The homeserver answered, with something that is not JSON.
             # It used to sit in the clause below and will not go back
@@ -277,7 +287,10 @@ class MatrixNotifier(BaseNotifier):
     def send_message(self, text):
         send = self._text_sender()
         if not send(text):
-            print(f"{self.name} send failed: no answer — holding the message "
-                  f"for redelivery")
+            # "no answer" was the only case this had when it was
+            # written; a rate limit or a gateway error is an answer, and
+            # saying otherwise sends the reader looking at his network.
+            print(f"{self.name} send failed — holding the message for "
+                  f"redelivery; the line above says why")
             notify_retry.remember(self.name, text, send,
                                   still_wanted=lambda: self.enabled)

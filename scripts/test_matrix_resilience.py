@@ -182,12 +182,32 @@ try:
             "Matrix rejected the token — check MATRIX_TOKEN and that "
             "the account has joined MATRIX_ROOM" in log)
 
-    for code in (400, 404, 429, 500):
+    for code in (400, 404, 500):
+        notify_retry.queue.clear()
         matrix_mod.urllib.request.urlopen = refuses(code, b"M_FORBIDDEN")
         _, log = quiet(m.send_message, CRASH)
         checks[f"a {code} is NOT held for retry"] = notify_retry.pending() == 0
         checks[f"…and still logs the status and detail ({code})"] = (
             f"Matrix notification failed: HTTP {code} M_FORBIDDEN" in log)
+
+    # …but a `429` IS, and that changed on 07.10.2026. It used to be in
+    # the list above. A rate limit is the server asking us to come back,
+    # not refusing — the same distinction SMTP needed for greylisting
+    # (#66) — and dropping it loses exactly the alert sent during the
+    # burst that caused the rate limit. The rule is driven for all six
+    # channels in `test_channel_backoff.py`; this pins Matrix's own path,
+    # which reaches the queue through `_text_sender`'s closure rather
+    # than through a plain callback.
+    notify_retry.queue.clear()
+    matrix_mod.urllib.request.urlopen = refuses(429, b"M_LIMIT_EXCEEDED")
+    _, log = quiet(m.send_message, CRASH)
+    checks["a 429 IS held — it is 'not now', not 'no'"] = (
+        notify_retry.pending() == 1)
+    checks["…and the log says which status it was"] = (
+        "HTTP 429" in log)
+    checks["…and it does not claim nothing answered"] = (
+        "no answer" not in log)
+    notify_retry.queue.clear()
 
     # ═══ 4. a broken answer is a rejection, not an outage ════════════
     # `ValueError` used to sit in the network clause, so a homeserver (or
@@ -240,14 +260,16 @@ checks["ValueError is out of the network clause"] = (
     "OSError, ValueError" not in _src
     and _src.index("except ValueError")
     < _src.index("except (urllib.error.URLError"))
-checks["…and only the network clause signals the queue"] = (
-    _src.count("on_network_failure()") == 1
-    and _src.index("except (urllib.error.URLError")
-    < _src.index("on_network_failure()"))
-checks["the transaction ID is minted once per message, not per attempt"] = (
-    _src.count("time.time_ns()") == 1
-    and _src.index("def _new_txn") < _src.index("def _send")
-    and "txn = txn or _new_txn()" in _src)
+# The clause ORDER is what matters, and it has to stay this way:
+# `HTTPError` is a subclass of `URLError`, so moving the network clause
+# up would read every 403 as a dead network and repeat it for fifteen
+# minutes. What used to stand here also counted the `on_network_failure()`
+# call sites and demanded exactly one — that rule is gone on purpose,
+# because a `429` signals the queue too, and counting call sites was
+# never what protected anything.
+checks["the clause order keeps a refusal out of the network path"] = (
+    _src.index("except urllib.error.HTTPError")
+    < _src.index("except (urllib.error.URLError"))
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

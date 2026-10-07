@@ -89,7 +89,11 @@ class WebhookNotifier(BaseNotifier):
 
     def send_message(self, text):
         if not self._post_text(text):
-            print(f"{self.name} send failed: no answer — holding the message "
+            # Not "no answer": since the "not now" statuses are held
+            # too, this reaches a rate limit and a gateway error as
+            # well, and both of those ARE answers. The line above has
+            # already said which it was.
+            print(f"{self.name} send failed — holding the message "
                   f"for redelivery")
             notify_retry.remember(self.name, text, self._post_text,
                                   still_wanted=lambda: self.enabled)

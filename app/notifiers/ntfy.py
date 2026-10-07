@@ -28,7 +28,7 @@ import urllib.request
 
 import notify_retry
 
-from .base import BaseNotifier, channel_setting
+from .base import BaseNotifier, channel_setting, retryable_status
 
 
 def _header_value(text):
@@ -131,8 +131,11 @@ class NtfyNotifier(BaseNotifier):
         on any failure, never raising into the caller — same contract as the
         other channels.
 
-        `on_network_failure` is called, with no arguments, only when the
-        send died on the network — and never for an HTTP status. That is
+        `on_network_failure` is called, with no arguments, when the
+        send died on the network — or on an HTTP status that means
+        "not now" rather than "no" (`base.TEMPORARY_STATUS`). Never for
+        a refusal: a rejected token is rejected again in fifteen
+        minutes. That is
         the one distinction the retry queue needs: a 400 or a 401 comes
         back identical fifteen minutes later, an unreachable server may
         not (#66)."""
@@ -162,6 +165,14 @@ class NtfyNotifier(BaseNotifier):
             # swallow every 4xx and have the queue repeat it for fifteen
             # minutes.
             print(f"ntfy error: HTTP {e.code}")
+            # A "not now" answer belongs in the retry queue, not in
+            # the bin. Measured before this: a 429 and a 503 were
+            # both dropped outright, and ntfy.sh rate-limits free
+            # accounts — so the alert that arrives during a burst
+            # is exactly the one that went missing.
+            if retryable_status(getattr(e, "code", None)) \
+                    and on_network_failure is not None:
+                on_network_failure()
             return None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             # The same four errors the other self-hosted channels catch,
@@ -209,7 +220,11 @@ class NtfyNotifier(BaseNotifier):
 
     def send_message(self, text):
         if not self._post_text(text):
-            print(f"{self.name} send failed: no answer — holding the message "
+            # Not "no answer": since the "not now" statuses are held
+            # too, this reaches a rate limit and a gateway error as
+            # well, and both of those ARE answers. The line above has
+            # already said which it was.
+            print(f"{self.name} send failed — holding the message "
                   f"for redelivery")
             notify_retry.remember(self.name, text, self._post_text,
                                   still_wanted=lambda: self.enabled)
