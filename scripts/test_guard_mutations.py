@@ -226,6 +226,66 @@ GUARDED = [
      "                _probe()",
      "test_hostcheck.py"),
 
+    ("a failed update rolls back to the old container",
+     "app/update_checker.py",
+     "    def _rollback_to_old(self, name, old_name):\n",
+     "    def _rollback_to_old(self, name, old_name):\n        return False  # MUTATION\n",
+     "test_rollback.py"),
+
+    ("…and never destroys the container when there is no backup",
+     "app/update_checker.py",
+     "        if not self._container_exists(old_name):",
+     "        if False:",
+     "test_rollback.py"),
+
+    ("…removing the broken one forcibly, so a wedged container cannot block it",
+     "app/update_checker.py",
+     "            self.backend.rm(name, force=True,",
+     "            self.backend.rm(name, force=False,",
+     "test_rollback.py"),
+
+    ("…and a restored-but-not-started container is not called a success",
+     "app/update_checker.py",
+     "            ok = start.returncode == 0",
+     "            ok = True",
+     "test_rollback.py"),
+
+    ("the Web UI rejects a POST that did not come from its own page",
+     "app/web_ui.py",
+     "        def _check_csrf(self):\n",
+     "        def _check_csrf(self):\n            return True  # MUTATION\n",
+     "test_web_csrf.py"),
+
+    ("…including one with no Origin and no Referer at all",
+     "app/web_ui.py",
+     "            source = origin or referer\n            if not source:\n                return False",
+     "            source = origin or referer\n            if not source:\n                return True",
+     "test_web_csrf.py"),
+
+    ("…and the login form is checked too",
+     "app/web_ui.py",
+     '                if not self._check_csrf():\n                    return self._send_forbidden("CSRF check failed")',
+     "                if False:\n                    return self._send_forbidden(\"CSRF check failed\")",
+     "test_web_csrf.py"),
+
+    ("a maintenance window holds an auto-update back",
+     "app/telegram_bot.py",
+     "        skipped_window = [u for u in auto_candidates\n                          if not is_window_open(_state_of(u)[1].get(u[\"name\"]))]",
+     "        skipped_window = []",
+     "test_update_window_enforcement.py"),
+
+    ("…and its weekday list is not ignored",
+     "app/update_window.py",
+     "        if weekdays and current_wd not in weekdays:\n            return False",
+     "        if False:\n            return False",
+     "test_update_window_enforcement.py"),
+
+    ("…and the small hours belong to the day the window opened on",
+     "app/update_window.py",
+     "            return not weekdays or yesterday_wd in weekdays",
+     "            return not weekdays or current_wd in weekdays",
+     "test_update_window_enforcement.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
@@ -237,30 +297,10 @@ GUARDED = [
 #: minutes per entry, which is not a price a pre-commit run can pay. The
 #: full sweep is the audit's job (AUDIT.md); this keeps the finding from
 #: rotting away between audits.
-UNGUARDED = [
-    ("a failed update rolls back to the old container",
-     "app/update_checker.py",
-     "    def _rollback_to_old(self, name, old_name):\n",
-     "    def _rollback_to_old(self, name, old_name):\n        return None  # MUTATION\n",
-     ["test_gluetun_docs.py", "test_recovery.py", "test_lifecycle_core.py",
-      "test_rename_timeout_recovery.py", "test_leftover_backups.py",
-      "test_health_output.py"]),
-
-
-    ("the Web UI rejects a request without a CSRF token",
-     "app/web_ui.py",
-     "        def _check_csrf(self):\n",
-     "        def _check_csrf(self):\n            return True  # MUTATION\n",
-     ["test_settings_post.py", "test_web_login.py",
-      "test_setup_password.py"]),
-
-
-
-
-]
+UNGUARDED = []
 
 #: How many promises are known to be unguarded. May only go down.
-DEBT = 2
+DEBT = 0
 
 
 def _tree():
@@ -376,8 +416,14 @@ def main():
                    f"blind — lower it"] = False
 
         # This file has to be able to fail, or it is the thing it hunts.
+        # Not "the debt list is not empty" any more — it IS empty now,
+        # and that was the goal. What proves the machinery ran is that
+        # procedures were actually started and came back green on the
+        # untouched copy; a baseline that was never taken means every
+        # mutation above was compared against nothing.
         checks["the mutations really are being applied"] = (
-            len(GUARDED) >= 8 and len(UNGUARDED) >= 1)
+            len(GUARDED) >= 20 and len(_BASE) >= 4
+            and all(_BASE.values()))
     finally:
         shutil.rmtree(tree, ignore_errors=True)
 

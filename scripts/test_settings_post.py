@@ -99,7 +99,10 @@ def post(cfg, body, restart=None, path="/connections"):
     out = {}
     h._send_redirect = lambda loc: out.update(loc=loc)
     h._check_auth = lambda: True
-    h._check_csrf = lambda: True
+    # No `_check_csrf` override here, deliberately. The headers above
+    # already satisfy it, so switching it off bought nothing — and it
+    # was one of the two procedures that left the real check with no
+    # coverage at all (see `test_web_csrf.py`).
     h._audit = lambda *a, **k: None
     h._page_settings = lambda: None
     h._page_connections = lambda: None
