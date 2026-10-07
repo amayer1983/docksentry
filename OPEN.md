@@ -16,32 +16,41 @@ durchgestrichener Zeilen liest irgendwann niemand mehr.
 
 ---
 
-## 1 — Zusagen, die nichts absicherte
+## 1 — ~~Zusagen, die nichts absicherte~~ — alle sieben erledigt
 
-Aus der suiteweiten Mutationsprobe. **Vier von sieben erledigt am
-07.10.2026**, jede mit eigenen Prüfungen und Einträgen in
-`test_guard_mutations.py`, dessen Schuldenliste damit **leer** ist:
+**07.10.2026.** Die suiteweite Mutationsprobe hatte sieben Kernzusagen
+gefunden, deren Durchsetzung man löschen kann, ohne dass eine von 181
+Prozeduren rot wird. Alle sieben haben jetzt eigene Prüfungen, und
+`test_guard_mutations.py` bricht für jede die Zeile, die sie durchsetzt
+— 48 Einträge, Schuldenliste **leer**.
 
-* **Rollback** — `test_rollback.py`, zwanzig Prüfungen über alle sechs
-  Pfade. Der wichtigste ist der, in dem es *nichts* tut: ohne Backup
-  wird `name` nicht angefasst, weil das die einzige Kopie sein kann,
-  die der Nutzer noch hat. Dazu: niemals werfen, denn der Aufrufer
-  ruft aus seinem eigenen `except`-Block.
-* **CSRF** — `test_web_csrf.py`, durch `do_POST` mit echten Headern
-  gefahren. Und die zwei Prozeduren, die den Schutz abschalteten, tun
-  es nicht mehr: ihre Header erfüllten ihn sowieso.
+* **Rollback** — `test_rollback.py`. Der wichtigste Fall ist der, in
+  dem es *nichts* tun darf: ohne Backup wird `name` nicht angefasst,
+  weil das die einzige Kopie sein kann, die der Nutzer noch hat.
+* **CSRF** — `test_web_csrf.py`, durch `do_POST` mit echten Headern.
+  Die zwei Prozeduren, die den Schutz abschalteten, tun es nicht mehr.
+* **Auth-Tor der Web-UI** — `test_web_auth_gate.py`. `webauth.verify`
+  war abgesichert, das Tor davor nicht; acht Prozeduren schalten es ab,
+  damit ihre Seite rendert. Dazu die Regel, dass das Passwort je
+  Anfrage frisch gelesen wird — sonst wirkt »Passwort setzen« erst nach
+  einem Neustart.
 * **Update-Fenster** — `test_update_window_enforcement.py`, beide
-  Hälften: die Arithmetik samt der Frage, wessen Wochentag die Stunden
-  nach Mitternacht gehören, und das Tor in `handle_autoupdates`, das
-  sie benutzt.
+  Hälften samt der Frage, wessen Wochentag die Stunden nach Mitternacht
+  gehören.
+* **Wochenbericht-Zeitplan** — `test_weekly_schedule.py`. Beide
+  Richtungen sind schlimm: immer-ja schickt den Bericht bei jedem Tick,
+  immer-nein hält eine Funktion an, die erst eine Woche später auffällt.
+* **`healthcheck.py`** — `test_healthcheck_exit.py`, als Unterprozess,
+  weil der Exit-Code die Schnittstelle ist. Keine Prozedur hatte die
+  Datei überhaupt geladen; ein Syntaxfehler darin wäre ausgeliefert
+  worden.
+* **`--rm`-Abhängige** — `test_netns_dependent_recreate.py`. Ein
+  `AutoRemove`-Container hört im Moment des Stops auf zu existieren,
+  also muss `inspect` **vor** dem Stop laufen. Die alte Prüfung war
+  `"Capture config up front" in checker`, und dieser Text steht nur im
+  Kommentar: den Kommentar umformulieren hätte sie rot gemacht, den
+  Code verschieben nicht.
 * **Ruhezeiten und Wartungsmodus** — am 06.10. erledigt.
-
-| Noch offen | Stand | Wo |
-|---|---|---|
-| Auth-Tor der Web-UI | gemeldet, nicht nachgestellt | `web_ui._check_auth` |
-| Wochenbericht-Zeitplan | gemeldet (der eigene Test ersetzt die Funktion) | `weekly_report.should_send_now` |
-| `healthcheck.py` wird von keiner Prozedur geladen | gemeldet | `app/healthcheck.py`, `Dockerfile:90` |
-| `--rm`-Abhängige neu bauen | gemeldet; die Prüfung sitzt auf einem Kommentar | `update_checker` ~:2999 |
 
 ## 2 — ~~Dieselbe 4xx-Sache in vier weiteren Kanälen~~ — gemessen, behoben
 

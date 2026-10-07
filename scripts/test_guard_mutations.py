@@ -286,6 +286,54 @@ GUARDED = [
      "            return not weekdays or current_wd in weekdays",
      "test_update_window_enforcement.py"),
 
+    ("the Web UI asks for a password when one is set",
+     "app/web_ui.py",
+     "        def _check_auth(self):\n",
+     "        def _check_auth(self):\n            return True  # MUTATION\n",
+     "test_web_auth_gate.py"),
+
+    ("…and reads it fresh, so setting one takes effect at once",
+     "app/web_ui.py",
+     '            current = getattr(config, "web_password", "") or ""\n            if not current:\n                return True',
+     '            current = ""\n            if not current:\n                return True',
+     "test_web_auth_gate.py"),
+
+    ("the weekly report fires on its day and hour, not every tick",
+     "app/weekly_report.py",
+     "    if now.weekday() != target_wd:\n        return False",
+     "    if False:\n        return False",
+     "test_weekly_schedule.py"),
+
+    ("…and only once a day",
+     "app/weekly_report.py",
+     "    if last == now.date().isoformat():\n        return False",
+     "    if False:\n        return False",
+     "test_weekly_schedule.py"),
+
+    ("…and not at all when it is switched off",
+     "app/weekly_report.py",
+     '    if not getattr(config, "weekly_report_enabled", False):\n        return False',
+     "    if False:\n        return False",
+     "test_weekly_schedule.py"),
+
+    ("a Web UI that stopped listening reports the container unhealthy",
+     "app/healthcheck.py",
+     "        if _check_web_ui(web_port):\n            sys.exit(0)",
+     "        if True:\n            sys.exit(0)",
+     "test_healthcheck_exit.py"),
+
+    ("…and a webhook-only install is not reported unhealthy forever",
+     "app/healthcheck.py",
+     "    if headless_only:",
+     "    if False:",
+     "test_healthcheck_exit.py"),
+
+    ("a --rm sidecar's config is read before it is stopped, not after",
+     "app/update_checker.py",
+     "        insp = self.backend.run([\"inspect\", name])\n        if insp.returncode != 0:\n            return False, \"inspect failed\"",
+     "        self._stop_container(name)\n        insp = self.backend.run([\"inspect\", name])\n        if insp.returncode != 0:\n            return False, \"inspect failed\"",
+     "test_netns_dependent_recreate.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
