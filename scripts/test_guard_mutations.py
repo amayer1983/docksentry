@@ -108,8 +108,8 @@ GUARDED = [
 
     ("/hosts check reaches the pre-flight in Telegram",
      "app/telegram_bot.py",
-     "                self.send_message(self._hostcheck_text(_parts[2]))",
-     '                self.send_message("x")',
+     "                    self.send_message(self._hostcheck_text(_ep))",
+     '                    self.send_message("x")',
      "test_hostcheck.py"),
 
     ("…and the Discord option reaches it too",
@@ -183,6 +183,48 @@ GUARDED = [
      "        return int(code) in TEMPORARY_STATUS",
      "        return True",
      "test_channel_backoff.py"),
+
+    ("a STOPped message is never logged as delivered",
+     "app/notify_retry.py",
+     "    def __bool__(self):\n        return False",
+     "    def __bool__(self):\n        return True",
+     "test_notifier_retry.py"),
+
+    ("a host nobody measured is not called usable",
+     "app/hostcheck.py",
+     "    return bool(findings) and not any(kind in bad for kind, _p in findings)",
+     "    return not any(kind in bad for kind, _p in findings)",
+     "test_hostcheck.py"),
+
+    ("a docker cli talking to podman is not reported as docker",
+     "app/hostcheck.py",
+     '        out.append(("engine", {"engine": "podman" if "podman" in low',
+     '        out.append(("engine", {"engine": "docker" if "docker" in low',
+     "test_hostcheck.py"),
+
+    ("the pre-flight does not promise what it never tested",
+     "app/lang/en.json",
+     '"hostcheck_ready": "\u2022 Ready: `{endpoint}` can be read in full.',
+     '"hostcheck_ready": "\u2022 Ready: `{endpoint}` is fully writable.',
+     "test_hostcheck.py"),
+
+    ("a capitalised or unknown SMTP_TLS never means plaintext",
+     "app/notifiers/smtp.py",
+     '            if _tls not in ("ssl", "starttls", "none"):',
+     "            if False:",
+     "test_cron_dow.py"),
+
+    ("one message cannot make the retry queue grow past its cap",
+     "app/notify_retry.py",
+     "            while len(self._items) > self.max_items:\n                gone = self._items.pop(0)\n                dropped += 1",
+     "            while False:\n                gone = self._items.pop(0)\n                dropped += 1",
+     "test_notifier_retry.py"),
+
+    ("a slow pre-flight does not stop the Telegram bot answering",
+     "app/telegram_bot.py",
+     "                threading.Thread(target=_probe, daemon=True).start()",
+     "                _probe()",
+     "test_hostcheck.py"),
 
 ]
 

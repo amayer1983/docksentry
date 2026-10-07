@@ -4275,11 +4275,34 @@ class TelegramBot:
             # before the endpoint is in DOCKER_HOSTS at all — which is
             # the whole point of a pre-flight.
             _parts = text.split()
-            if len(_parts) > 1 and _parts[1] == "check":
+            # `lower()`, because `/hosts Check …` used to fall through to
+            # the host list without a word — the reader then sees the
+            # answer to a question he did not ask. Telegram's own
+            # commands are case-sensitive, a typed sub-word is not.
+            if len(_parts) > 1 and _parts[1].lower() == "check":
                 if len(_parts) < 3:
                     self.send_message(self.t("hostcheck_usage"))
                     return
-                self.send_message(self._hostcheck_text(_parts[2]))
+                if len(_parts) > 3:
+                    # An endpoint has no spaces in it. Silently using
+                    # the first word and dropping the rest answers about
+                    # something the reader did not type.
+                    self.send_message(self.t("hostcheck_usage"))
+                    return
+                # On a thread, like every other command that waits on a
+                # network. `_handle_message` runs inside the `getUpdates`
+                # loop, and the pre-flight asks four questions with a
+                # 30-second timeout each — so an endpoint behind a packet
+                # filter used to stop the bot answering anything at all
+                # for up to two minutes, repeatable by anyone allowed to
+                # command it. Discord already did it right: it acks
+                # first and works in a pool.
+                _ep = _parts[2]
+
+                def _probe():
+                    self.send_message(self._hostcheck_text(_ep))
+
+                threading.Thread(target=_probe, daemon=True).start()
                 return
             if not self.hosts or not getattr(self.hosts, "is_multi", False):
                 self.send_message(self.t("hosts_single"))

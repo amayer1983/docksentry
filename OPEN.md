@@ -53,78 +53,57 @@ Kopien, und zwei Einträgen in der Ratsche.
 `500` bleibt bewusst auf der »nein«-Seite: es kann ebenso ein dauerhafter
 Serverfehler sein, und dann ist die Warteschlange eine Schleife.
 
-## 3 — Behauptungen im Code, die ungeprüft dastehen
+## 3 — ~~Behauptungen im Code, die ungeprüft dastehen~~ — erledigt
 
-Alle aus Audit D, alle durch Rückbau in einer Kopie belegt: der Rückbau
-ließ die Suite grün.
+**07.10.2026.** Alle sieben fahren jetzt, jede mit einem Eintrag in
+`test_guard_mutations.py`: `STOP` ist falsy und sperrt seinen Kanal
+(aber nicht die anderen), `usable([])` ist False, die Engine-Reihenfolge
+wird mit einer Ausgabe geprüft, die **beide** Namen enthält — das ist
+der Fall, für den sie existiert, und keine Fixture hatte ihn —,
+`EMITTED` wird gegen dreizehn gefahrene Szenarien gehalten, und die
+englischen Texte werden gelesen: `hostcheck_ready` darf nicht
+»writable« sagen.
 
-* `notify_retry.STOP.__bool__` → `True` zurückgeben: nichts wird rot.
-  Folge wäre, dass `flush` „delivered a held smtp message" für eine
-  nicht zugestellte Mail loggt.
-* `usable([])` → die `bool(findings)`-Wache entfernen: nichts wird rot.
-* `blocked.add` im `STOP`-Zweig entfernen: nichts wird rot.
-* Die Engine-Reihenfolge („podman zuerst") umdrehen: nichts wird rot.
-  Die podman-Fixture enthält das Wort „docker" gar nicht, modelliert
-  also nicht den Fall, für den die Reihenfolge laut Kommentar existiert.
-* `KINDS` ↔ was `preflight` wirklich ausgibt: `EMITTED` existiert jetzt,
-  aber nichts hält die beiden Listen gegeneinander.
-* Die Wording-Prüfung greift nur, wenn eine neue Befundart *zusätzlich*
-  in `KINDS` landet — eine in `preflight` neu erfundene Art ohne
-  Übersetzung bleibt unbemerkt.
-* Kein Test liest die Sprachtexte: `hostcheck_ready` auf „is fully
-  writable" ändern → grün.
+Die vier überdehnten Sätze sind korrigiert. `SSLZeroReturnError` steht
+jetzt ausdrücklich als Lesart da, nicht als Messung. Die
+`parseaddr`-Begründung sagt, was wirklich kaputt war: nicht der Header
+auf der Leitung, sondern die ID, die an den Retry geht. Und die Zeile
+»another attempt would be a second copy« sagt das nicht mehr, weil
+`STOP` zwei Ursachen hat und bei einer Ablehnung nichts zugestellt
+wurde.
 
-Und zwei Sätze, die mehr behaupten als gemessen wurde:
-
-* `smtp.py` ~:193 — die `parseaddr`-Begründung sagt, ein
-  Submission-Server schreibe die kaputte ID um. Gemessen war der Header
-  auf der Leitung in beiden Varianten gültig; kaputt war nur die ID im
-  Log und im Retry-Aufruf. Der Fix stimmt, die Begründung ist zu groß.
-* `smtp.py` ~:92 — `SSLZeroReturnError` als Handshake-Abbruch
-  nachgemessen: ließ sich auf diesem Pfad **nicht** erzeugen
-  (`close_notify` kam als `b''` ohne Ausnahme). `SSLEOFError` stimmt.
-* `notify_retry.py` ~:230 — „another attempt would be a second copy
-  rather than a second chance". `STOP` hat zwei Ursachen; bei einer
-  Ablehnung ist nichts zugestellt und „second copy" ist falsch.
-* `hostcheck.py` ~:201 — „`ps -aq` lists the NEWEST first" auf Docker
-  29.5.3 bestätigt, für **Podman nicht gemessen**, und der Kommentar
-  nennt keine Engine.
-* `hostcheck.py` ~:26 und `README.md` ~:507 — „fails the first update
-  with a 403" ist **nicht gemessen** und nicht als Annahme gekennzeichnet.
+Offen geblieben: dass `ps -aq` auch unter Podman den neuesten zuerst
+listet, ist weiter **nicht gemessen** — dafür braucht es einen Podman-Host
+mit mehreren Containern. Der Kommentar nennt jetzt Docker.
 
 ## 4 — Struktur und Nutzererfahrung
 
-* **`/hosts check` blockiert den Telegram-Listener.** `_handle_message`
-  läuft inline in der `getUpdates`-Schleife, `hostcheck._run` hat
-  `timeout=15` bei bis zu vier Aufrufen. Gemessen 15,0 s bei einem
-  gefilterten Port; rechnerisch bis 60 s. Discord macht es richtig
-  (defer + Worker-Pool). Jedes kommandierberechtigte Gruppenmitglied
-  kann das wiederholen.
+Sechs von sieben erledigt am 07.10.2026: `/hosts check` läuft auf einem
+eigenen Thread (gemessen: `_handle_message` kehrt nach 0,00 s zurück,
+die Antwort kommt trotzdem), der Prüf-Timeout ist auf die 30 s des
+Betriebs angehoben, `{endpoint}` wird bei 200 Zeichen gekappt — damit
+ist der letzte bekannte Gleichstands-Unterschied weg —, `MAX_QUEUED`
+gilt auch beim Zurückschreiben, `/hosts CHECK` wird erkannt und
+überzählige Argumente werden nicht mehr stumm verworfen, und der
+Datenschutzsatz im README sagt jetzt, dass `TELEGRAM_ALLOWED_USERS`
+regelt, *wer fragen darf*, nicht wer die Antwort liest.
+
+Bei `smtp_tls` kam ein Fund dazu, den kein Audit gemeldet hatte: der
+Vergleich war **case-sensitiv**. `SMTP_TLS=SSL` traf keinen der beiden
+Zweige und fiel auf Klartext-SMTP durch — mit gesetztem `smtp_user`
+also das Passwort unverschlüsselt auf die Leitung. Jetzt wird
+kleingeschrieben verglichen, und ein unbekannter Wert wie `tls`
+verbindet gar nicht erst.
+
+**Offen:**
+
 * **`tcp://…:2376` bekommt die unbrauchbarste Antwort.** Das ist
   Dockers eigene empfohlene Absicherung, und es gibt im ganzen Projekt
   keine TLS-Client-Zertifikate (`DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`
   kommen in `app/` und `README.md` nirgends vor). Die Vorab-Prüfung
   meldet „Nothing answered … malformed HTTP response \x15\x03\x01".
-  Zwei Dinge: die Antwort erkennen und benennen — und entscheiden, ob
-  TLS-Client-Zertifikate ein eigenes Paket werden.
-* **Der Datenschutzsatz im README ist zu kurz gegriffen.** Habe ich
-  selbst geschrieben: `TELEGRAM_ALLOWED_USERS` begrenzt, *wer fragen
-  darf*, nicht *wer die Antwort sieht* — die geht immer an `chat_id`,
-  also liest die ganze Gruppe Endpunkt, Container-Namen und bis zu 300
-  Zeichen fremdes stderr. Discord ist standardmäßig ephemeral.
-* **Der Vorab-Prüfungs-Timeout ist 15 s, produktiv sind es 30.** Ein
-  Host, der 15–30 s braucht, gilt in der Prüfung als unerreichbar und
-  läuft im Betrieb.
-* **`/hosts CHECK` fällt stumm auf die Hostliste durch** —
-  `_parts[1] == "check"` ist case-sensitiv, und `_parts[3:]` wird
-  kommentarlos verworfen.
-* **`smtp_tls` wird nicht validiert.** Ein Wert außerhalb
-  `ssl`/`starttls`/`none` — etwa `tls` — schickt stillschweigend
-  Klartext-SMTP mit dem Passwort. Vorbestehend.
-* **`MAX_QUEUED` gilt auf dem Rückschreibe-Pfad nicht.**
-  `self._items = keep + self._items` kappt nicht. Gemessen: 620
-  Einträge bei 20 neuen pro Durchgang über 15 Minuten; begrenzt nur
-  durch das Altersfenster.
+  Zwei getrennte Dinge: die Antwort erkennen und benennen, und
+  entscheiden, ob TLS-Client-Zertifikate ein eigenes Paket werden.
 
 ## 5 — Texte über 16 Sprachen
 

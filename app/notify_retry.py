@@ -225,9 +225,15 @@ class RetryQueue:
                       f"message, {_ago(age)} late")
             elif result is STOP:
                 dropped += 1
+                # Deliberately not "another copy": `STOP` has two
+                # causes and only one of them has delivered anything.
+                # A refusal has delivered nothing, and telling the
+                # operator he may have a duplicate when the server said
+                # no sends him looking for a mail that does not exist.
+                # The channel printed which it was on the way here.
                 print(f"Notify retry: giving up on a held "
-                      f"{held['channel']} message — another attempt would "
-                      f"be a second copy rather than a second chance")
+                      f"{held['channel']} message — the channel says "
+                      f"another attempt would not help")
                 # Blocked for the rest of the pass like any other
                 # failure: a connection that takes a message and then
                 # dies is a connection, and dialling the other nineteen
@@ -241,6 +247,18 @@ class RetryQueue:
         # first.
         with self._lock:
             self._items = keep + self._items
+            # The cap applies here too, which it did not: `remember`
+            # trims, but during a flush it appends to a list that
+            # started empty, so nothing trimmed the survivors going back
+            # in. Measured with an injected clock: twenty held alerts
+            # plus twenty arriving per pass reached 620 entries over the
+            # fifteen minutes, bounded only by the age window. The
+            # oldest go first, same rule and same wording as `remember`.
+            while len(self._items) > self.max_items:
+                gone = self._items.pop(0)
+                dropped += 1
+                print(f"Notify retry: queue full at {self.max_items}, "
+                      f"dropped the oldest held {gone['channel']} message")
         return (sent, dropped)
 
     # ── how a late message says it is late ───────────────────────────

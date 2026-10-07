@@ -120,7 +120,20 @@ def _refused(text):
     return any(k in low for k in _REFUSED)
 
 
-def _run(backend, args, timeout=15):
+#: Per-question timeout. 30, not 15, because that is what the scheduler
+#: gives a host in normal operation — and a pre-flight that is stricter
+#: than production tells somebody his working host is unreachable. A box
+#: that answers in twenty seconds was called dead here and ran fine
+#: afterwards, which is the one answer a pre-flight must never give.
+#:
+#: The cost is the other way round: four questions at 30 seconds is two
+#: minutes in the worst case, and on Telegram that blocks the poller.
+#: See OPEN.md — the fix for that is to take the check off the listening
+#: thread, not to make it lie faster.
+PROBE_TIMEOUT = 30
+
+
+def _run(backend, args, timeout=PROBE_TIMEOUT):
     """`(ok, stdout, stderr)` — never raises, so one dead endpoint cannot
     take the check with it."""
     try:
@@ -143,6 +156,15 @@ def _gone(text):
     return "no such container" in low or "no such object" in low
 
 
+#: How much of a typed endpoint goes back into the answer.
+#:
+#: `{error}` was already bounded at 300 and `{endpoint}` was not, so a
+#: 4000-character endpoint was the one input that made the two chats
+#: disagree: Telegram split the reply into pieces, Discord clipped it at
+#: 1900. The findings are the core's job and so is their size.
+MAX_ENDPOINT = 200
+
+
 def preflight(endpoint, backend, hint=None):
     """`[(kind, params)]` for one endpoint. Does not write anything.
 
@@ -159,14 +181,14 @@ def preflight(endpoint, backend, hint=None):
     out = []
     ep = (endpoint or "").strip()
     if ep and not any(ep.startswith(s) for s in SCHEMES):
-        out.append(("scheme_bad", {"endpoint": ep,
+        out.append(("scheme_bad", {"endpoint": ep[:MAX_ENDPOINT],
                                    "schemes": ", ".join(SUGGEST)}))
         return out
 
     ok, ver, err = _run(backend, ["version", "--format", "{{.Server.Version}}"])
     if not ok or not ver:
         why = err or "no answer"
-        params = {"endpoint": ep or "local", "error": why[:300]}
+        params = {"endpoint": ep[:MAX_ENDPOINT] or "local", "error": why[:300]}
         if hint is not None:
             try:
                 extra = hint(ep, why)
@@ -277,7 +299,7 @@ def preflight(endpoint, backend, hint=None):
     except Exception:                                       # noqa: BLE001
         pass
     out.append(("can_inspect", {"name": shown}))
-    out.append(("ready", {"endpoint": ep or "local"}))
+    out.append(("ready", {"endpoint": ep[:MAX_ENDPOINT] or "local"}))
     return out
 
 

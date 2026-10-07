@@ -133,6 +133,51 @@ def main():
         and not _off["ctx"].check_hostname
         and _off["ctx"].verify_mode == ssl.CERT_NONE)
 
+    # ── SMTP_TLS: a value we do not know must not mean plaintext ──
+    # Two defects in one line, both measured. The comparison was
+    # case-sensitive, so `SMTP_TLS=SSL` matched neither branch and fell
+    # through to plain SMTP — with `smtp_user` set, that puts the
+    # password on the wire for anyone who capitalised it. And an
+    # unknown value such as `tls`, which is the obvious thing to type,
+    # did the same silently.
+    for _value, _want in (("ssl", "SMTP_SSL"), ("SSL", "SMTP_SSL"),
+                          ("starttls", "SMTP"), ("StartTLS", "SMTP"),
+                          ("STARTTLS", "SMTP"), (" ssl ", "SMTP_SSL")):
+        _seen = _ctx_given(_value)
+        checks[f"SMTP_TLS={_value!r} still encrypts"] = (
+            _seen.get("how") == _want and _seen.get("ctx") is not None)
+
+    _dialled = []
+
+    class _Count:
+        def __init__(self, *a, **kw):
+            _dialled.append(1)
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, u, p):
+            pass
+
+        def send_message(self, msg, to_addrs=None):
+            return {}
+
+        def quit(self):
+            pass
+
+    _rs, _rp = smtplib.SMTP_SSL, smtplib.SMTP
+    smtplib.SMTP_SSL = smtplib.SMTP = _Count
+    try:
+        _n = SmtpNotifier(_t.SimpleNamespace(
+            smtp_host="h", smtp_port=25, smtp_user="u", smtp_password="p",
+            smtp_from="a@ex.test", smtp_to="b@ex.test", smtp_tls="tls",
+            smtp_tls_verify=True, language="en", channel_smtp_enabled=True))
+        _sent = _n.send_raw("s", "b")
+    finally:
+        smtplib.SMTP_SSL, smtplib.SMTP = _rs, _rp
+    checks["an unknown SMTP_TLS value sends nothing at all"] = (
+        _sent is False and _dialled == [])
+
     # A new failure for self-signed setups is expected; leaving them to
     # guess why is not. The sentence has to reach stdout, not merely
     # exist in the file.

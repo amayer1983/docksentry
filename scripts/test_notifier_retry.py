@@ -92,6 +92,79 @@ def main():
         notifier_mod.time.sleep = orig_sleep
         time.sleep = orig_sleep
 
+    # ── STOP: the three things about it that were only ever asserted ──
+    # Each survived a revert with the whole suite green, which is how
+    # they came to be written down here instead.
+    import notify_retry as _nr
+
+    # 1. Falsy. `flush` asks `if result:` first, so a truthy STOP would
+    #    log "delivered a held message" for a mail that never arrived —
+    #    the worst line a log can carry.
+    checks["STOP is falsy, so nothing reads it as delivered"] = not _nr.STOP
+    _q = _nr.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
+    _log = []
+    import builtins as _b
+    _real_print = _b.print
+    _b.print = lambda *a, **k: _log.append(" ".join(str(x) for x in a))
+    try:
+        _q.remember("ch", "alert", lambda t: _nr.STOP)
+        _sent, _dropped = _q.flush()
+    finally:
+        _b.print = _real_print
+    checks["…a STOPped message counts as dropped, never as sent"] = (
+        (_sent, _dropped) == (0, 1))
+    checks["…and the log does not claim it was delivered"] = (
+        not any("delivered" in line for line in _log))
+
+    # 2. It blocks its channel for the rest of the pass. A connection
+    #    that takes a message and then dies is still a connection, and
+    #    dialling nineteen more held alerts into it costs a timeout each.
+    _q = _nr.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
+    _tried = []
+    _q.remember("ch", "first", lambda t: _tried.append(1) or _nr.STOP)
+    for _i in range(5):
+        _q.remember("ch", f"later {_i}", lambda t: _tried.append(1) or False)
+    _q.flush()
+    checks["a STOP blocks its channel for the rest of the pass"] = (
+        len(_tried) == 1)
+    checks["…while the messages behind it are kept, not lost"] = (
+        _q.pending() == 5)
+
+    # 3. …but a different channel still gets its turn in the same pass.
+    _q = _nr.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
+    _seen = []
+    _q.remember("one", "a", lambda t: _seen.append("one") or _nr.STOP)
+    _q.remember("two", "b", lambda t: _seen.append("two") or True)
+    _q.flush()
+    checks["…but another channel is not punished for it"] = _seen == ["one", "two"]
+
+    # ── the cap holds on the way back in, too ─────────────────────
+    # `remember` trims, but a flush takes the whole batch out and puts
+    # the survivors back, and that path did not. The two overlap exactly
+    # during an outage, which is the only time either of them does
+    # anything: the sending thread hands in new alerts while the
+    # scheduler thread is sitting on timeouts. Measured before this:
+    # twenty held plus twenty arriving per pass reached 620 entries over
+    # the fifteen-minute window, bounded by nothing but age.
+    _q = _nr.RetryQueue(max_items=5, clock=lambda: 0.0, wall=lambda: 0.0)
+
+    def _fails_and_another_arrives(_text):
+        # What the other thread is doing while this send sits on a
+        # socket. Not something a channel may do — it is modelled here
+        # because the race is the point.
+        _q.remember("other", "an alert that just happened", lambda t: False)
+        return False
+
+    for _i in range(5):
+        _q.remember("ch", f"held {_i}", _fails_and_another_arrives)
+    _b.print = lambda *a, **k: None
+    try:
+        _q.flush()
+    finally:
+        _b.print = _real_print
+    checks["a flush cannot leave the queue over its cap"] = (
+        _q.pending() <= 5)
+
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
     if not all(checks.values()):

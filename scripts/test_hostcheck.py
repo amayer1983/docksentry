@@ -376,9 +376,16 @@ def _drive_telegram(text):
     bot.log = lambda *a, **kw: None
     real = _cb.RemoteBackend
     _cb.RemoteBackend = lambda *a, **kw: _Backend(HEALTHY)
+    import threading
+    before = set(threading.enumerate())
     try:
         bot._handle_message({"text": text, "from": {"id": "1"},
                              "chat": {"id": "1"}}, None, None)
+        # The pre-flight answers from a worker thread, so waiting for it
+        # is part of driving the command. Without this the fixture
+        # happened to finish first and the check was a race that passed.
+        for t in set(threading.enumerate()) - before:
+            t.join(timeout=30)
     finally:
         _cb.RemoteBackend = real
     return "\n".join(said)
@@ -387,6 +394,49 @@ def _drive_telegram(text):
 _tg_said = _drive_telegram("/hosts check ssh://nas")
 checks["/hosts check reaches the pre-flight in Telegram"] = (
     "27.1.1" in _tg_said and "ssh://nas" in _tg_said)
+# …and it does not do it on the thread that listens. Four questions at
+# `PROBE_TIMEOUT` seconds each is two minutes, and `_handle_message` runs
+# inside the `getUpdates` loop — so a filtered port used to stop the bot
+# answering anything, repeatable by anyone allowed to command it.
+import threading as _th                                        # noqa: E402
+import time as _time                                           # noqa: E402
+
+
+class _Slow:
+    """Every question takes a second."""
+
+    def run(self, args, timeout=None):
+        _time.sleep(1.0)
+        return _t.SimpleNamespace(returncode=1, stdout="", stderr="timeout")
+
+
+_slowbot = TelegramBot.__new__(TelegramBot)
+_slow_said = []
+_slowbot.config = _t.SimpleNamespace(language="en", container_cli="docker",
+                                     bot_token="", chat_id="1")
+from i18n import get_translator as _gt                       # noqa: E402
+_slowbot.t = _gt("en")
+_slowbot.send_message = lambda m, **kw: _slow_said.append(m)
+_slowbot._check_auth = lambda *a, **kw: True
+_slowbot.audit = None
+_slowbot.hosts = None
+_slowbot.log = lambda *a, **kw: None
+_before = set(_th.enumerate())
+_real_be = _cb.RemoteBackend
+_cb.RemoteBackend = lambda *a, **kw: _Slow()
+try:
+    _started = _time.monotonic()
+    _slowbot._handle_message({"text": "/hosts check ssh://slow",
+                              "from": {"id": "1"}, "chat": {"id": "1"}},
+                             None, None)
+    _blocked = _time.monotonic() - _started
+    for _worker in set(_th.enumerate()) - _before:
+        _worker.join(timeout=30)
+finally:
+    _cb.RemoteBackend = _real_be
+checks["a slow endpoint does not block the listening thread"] = _blocked < 0.5
+checks["…and the answer still arrives afterwards"] = bool(_slow_said)
+
 checks["…and without an endpoint it says how to use it"] = (
     "/hosts check" in _drive_telegram("/hosts check"))
 
@@ -434,6 +484,60 @@ checks["…as a string option that cannot break the registration"] = (
     and not any(_hosts_cmd["options"][i].get("required")
                 for i in range(1, len(_hosts_cmd["options"]))))
 
+# ── the claims that were only ever asserted ──────────────────────────
+# Each of these survived a revert with the whole suite green.
+
+# `usable([])` — "nothing was measured" is not "nothing is wrong". An
+# empty list is the shape a caller gets when the check never ran.
+checks["an empty finding list is not 'usable'"] = hostcheck.usable([]) is False
+
+# The engine tie-break. The plain `version` output carries a `Client:`
+# block naming the LOCAL cli, so against a podman service a docker
+# client prints BOTH names in one answer — measured. "podman" is tested
+# first on purpose, because the docker cli says "docker" about itself on
+# every host it ever talks to, while nothing says "podman" unless podman
+# is in the conversation. No fixture used to contain both, so reversing
+# the order changed nothing and the comment described a decision that
+# was never exercised.
+both = dict(HEALTHY)
+both["version --format"] = (0, "4.9.3", "")
+both["version"] = (0, "Client: Docker Engine - Community\n Version: 29.5.3\n"
+                      "Server: linux/amd64\n Podman Engine:\n  Version: 4.9.3", "")
+f = hostcheck.preflight("unix:///run/podman.sock", _Backend(both))
+checks["a docker cli talking to podman is reported as podman"] = (
+    dict(f)["engine"] == {"engine": "podman", "version": "4.9.3"})
+
+# `EMITTED` against what `preflight` really produces. `KINDS` carries
+# one kind `preflight` never emits (`usable`, which is `verdict`'s), so
+# a single list stood for two different claims and nothing held either.
+SCENARIOS = {
+    "scheme_bad": ("http://nas", {}),
+    "unreachable": ("ssh://nas", {}),
+    "denied": ("unix:///var/run/docker.sock",
+               {"version --format": (1, "", "permission denied")}),
+    "denied_ssh": ("ssh://nas",
+                   {"version --format": (1, "", "Permission denied (publickey).")}),
+    "engine": ("ssh://nas", HEALTHY),
+    "engine_unsure": ("ssh://nas", mute),
+    "can_list": ("ssh://nas", HEALTHY),
+    "cannot_list": ("tcp://p:2375", nolist),
+    "can_inspect": ("ssh://nas", HEALTHY),
+    "cannot_inspect": ("tcp://p:2375", proxy),
+    "no_containers": ("ssh://fresh", empty),
+    "gone": ("tcp://ci:2375", all_gone),
+    "ready": ("ssh://nas", HEALTHY),
+}
+_produced = set()
+for _ep, _answers in SCENARIOS.values():
+    _produced |= set(kinds(hostcheck.preflight(_ep, _Backend(_answers))))
+checks["every kind EMITTED names can actually be produced"] = (
+    _produced == set(hostcheck.EMITTED))
+if _produced != set(hostcheck.EMITTED):
+    print(f"      → never produced: {sorted(set(hostcheck.EMITTED) - _produced)}")
+    print(f"      → produced but not listed: {sorted(_produced - set(hostcheck.EMITTED))}")
+checks["…and `usable` is a verdict, not something preflight emits"] = (
+    "usable" not in _produced and "usable" in hostcheck.KINDS)
+
 # every kind has wording, in every language
 import json                                                  # noqa: E402
 
@@ -453,6 +557,30 @@ checks["every finding has wording in all 16 languages"] = (
     len(LANGS) == 16 and not missing)
 if missing:
     print("      → " + ", ".join(missing[:8]))
+
+# ── the texts say what was measured ──────────────────────────────────
+# Nothing read these, so `hostcheck_ready` could be changed to "is fully
+# writable" and the suite stayed green. The wording of this one finding
+# is the whole difference between an honest check and one that promises
+# a host "can be managed" after four read-only questions — a socket
+# proxy that allows GET and refuses POST gets this far and fails the
+# first update with a 403.
+_en = json.load(open(os.path.join(ROOT, "app", "lang", "en.json"),
+                     encoding="utf-8"))
+_ready = _en["hostcheck_ready"].lower()
+checks["'ready' does not promise the host can be managed"] = (
+    "can be managed" not in _ready and "writable" not in _ready)
+checks["…and says that write permission was not tested"] = (
+    "write permission" in _ready)
+# …and the one for a host with nothing on it must not claim more.
+_us = _en["hostcheck_usable"].lower()
+checks["'usable' says inspect and write stayed untested"] = (
+    "untested" in _us and "write" in _us)
+# The ssh refusal must point at a key; the socket one must not.
+checks["the ssh refusal points at a key, the socket one does not"] = (
+    "key" in _en["hostcheck_denied_ssh"].lower()
+    and "key" not in _en["hostcheck_denied"].lower()
+    and "selinux" in _en["hostcheck_denied"].lower())
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

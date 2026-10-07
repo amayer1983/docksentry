@@ -88,13 +88,21 @@ def _is_network(err):
     import smtplib
     import ssl
 
-    # Not every `SSLError` is an answer. `SSLEOFError` and
-    # `SSLZeroReturnError` are what OpenSSL raises when the TCP
-    # connection dies *during* the handshake — the wire failing, with no
-    # refusal behind it — and STARTTLS is the default transport here, so
-    # treating them as "the server said no" dropped the alert on exactly
-    # the path most installs use. Measured: both were held=False before
-    # this, while the same outage over `smtp_tls=none` was held=True.
+    # Not every `SSLError` is an answer. `SSLEOFError` is what OpenSSL
+    # raises when the TCP connection dies *during* the handshake — the
+    # wire failing, with no refusal behind it — and STARTTLS is the
+    # default transport here, so treating it as "the server said no"
+    # dropped the alert on exactly the path most installs use. Measured
+    # against a real socket: a clean FIN mid-handshake gives
+    # `SSLEOFError`, an RST gives `ConnectionResetError`, and before
+    # this change the first was held=False while the second was True —
+    # the same outage, two answers.
+    #
+    # `SSLZeroReturnError` rides along on the reading that it is the
+    # same shape of failure. It is NOT measured: trying to produce one
+    # on this path gave a `close_notify` back as `b""` with no
+    # exception at all, which is a TLS shutdown *after* the handshake.
+    # Harmless to include, and said out loud rather than implied.
     if isinstance(err, (ssl.SSLEOFError, ssl.SSLZeroReturnError)):
         return True
     if isinstance(err, ssl.SSLError):
@@ -190,8 +198,16 @@ class SmtpNotifier(BaseNotifier):
         # `parseaddr`, because SMTP_FROM may carry a display name —
         # "Docksentry <alerts@example.com>" would otherwise give the
         # domain `example.com>` and an id ending `@example.com>>`, which
-        # is invalid and exactly the sort of thing a submission server
-        # rewrites. A rewritten id defeats the whole point.
+        # is invalid.
+        #
+        # Measured, because the first version of this comment claimed
+        # more: the header that went out on the wire was valid either
+        # way, because `EmailMessage.__setitem__` and `as_string()`
+        # normalise the trailing `>`. No server ever saw the broken id,
+        # so none of them rewrote anything. What WAS broken is the id
+        # this function hands back — the one that goes in the log line
+        # and into the retry — and that is the one that has to match the
+        # first attempt for the second copy to be recognisable.
         _dom = parseaddr(c.smtp_from or "")[1].rpartition("@")[2].strip()
         msgid = msgid or make_msgid(domain=_dom or None)
         msg["Message-ID"] = msgid
@@ -247,13 +263,25 @@ class SmtpNotifier(BaseNotifier):
         # body.
         handed = {"over": False}
         try:
-            if c.smtp_tls == "ssl":
+            # A value we do not know means plain SMTP, and plain SMTP
+            # with `smtp_user` set puts the password on the wire. `tls`
+            # is the obvious thing to type and it is not one of the
+            # three, so that typo silently downgraded the transport. Say
+            # it and refuse rather than sending the credential.
+            _tls = (c.smtp_tls or "none").strip().lower()
+            if _tls not in ("ssl", "starttls", "none"):
+                print(f"SMTP error: SMTP_TLS is {c.smtp_tls!r}, which is not "
+                      f"one of ssl / starttls / none. Nothing was sent — "
+                      f"plain SMTP with a password set would put it on the "
+                      f"wire, and that is not something to guess at.")
+                return (False, PERMANENT, msgid)
+            if _tls == "ssl":
                 server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port,
                                           timeout=15, context=ctx)
             else:
                 server = smtplib.SMTP(c.smtp_host, c.smtp_port, timeout=15)
             try:
-                if c.smtp_tls == "starttls":
+                if _tls == "starttls":
                     server.starttls(context=ctx)
                 if c.smtp_user:
                     server.login(c.smtp_user, c.smtp_password)
