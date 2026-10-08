@@ -141,29 +141,63 @@ verbindet gar nicht erst.
 
 ## 6 — Die Suite selbst
 
-* **12 nur-durch-Kommentar und 22 nur-durch-Docstring erfüllbare
-  Quelltext-Prüfungen** (von 554 insgesamt). Liste beim Audit; die
-  schädlichen sind die mit „code: agrees"-Etikett.
-* `test_compose_recreate_budget.py` — alle sechs Prüfungen sind Greps,
-  verankert auf einem Kommentar. Formuliert jemand den Kommentar um,
-  **stürzt die Prozedur ab**, statt zu urteilen.
-* `test_trust_running.py` benutzt nacktes `assert` statt des
-  `checks`-Dicts: 14,2 s echte Docker-Laufzeit erscheinen in
-  `VERIFICATION.md` als zwei Prüfungen.
-* `telegram_bot._policy_decision` — die Delegation ist ungeprüft, weil
-  beide zuständigen Tests sie überschreiben. Die Logik am Motor ist
-  abgesichert, die Verdrahtung nicht.
-* Die fünf `*_resilience.py` teilen 25 identische Assertion-Ausdrücke
-  und 8 identische Prüfnamen. Zusammenlegen zu einer tabellengetriebenen
-  Prozedur: ja. Löschen: nein — siehe Abschnitt 2, der vierfach kopierte
-  Grep ist dort der einzige Wächter.
-* **Parallellauf (`-P 8`) ist flaky**: `test_multihost_live.py` (3/3
-  rot), `test_remote_transports.py` (1/3). Seriell nicht nachstellbar —
-  ich habe alle drei Verdächtigen 5× seriell laufen lassen, 5/5 grün.
-* Laufzeit: 126,9 s seriell, sechs Prozeduren machen 69 % davon aus.
-  `test_trust_running` wartet auf einen echten Healthcheck-Umschlag —
-  die 14 s sind die Sache, nicht Verschwendung.
+**08.10.2026 abgearbeitet**, bis auf die zwei Posten unten.
 
+* Die **24 Quelltext-Prüfungen, die ein Kommentar erfüllt**, sind auf 21
+  gesunken, und die vier mit der größten Folge sind weg:
+  * **Die Cookie-Flags** (`HttpOnly`, `SameSite=Lax`, kein `Secure`)
+    waren ein grep über `web_ui.py`, erfüllt vom Kommentar direkt über
+    der Zeile, die sie setzt. Jetzt wird die Anmeldung gefahren und der
+    `Set-Cookie`-Header gelesen. Gegenprobe: jedes Flag entfernen macht
+    rot.
+  * **Der Token-Vergleich der Metrics-Schnittstelle** war
+    `"compare_digest" in src`, und das Wort steht drei Zeilen höher im
+    Docstring. Jetzt als Baum gelesen *und* gefahren — inklusive eines
+    Tokens, das nur das Präfix teilt, was ein einschleichendes
+    `startswith` fängt, das der alte grep nie gesehen hätte.
+  * **`test_compose_recreate_budget.py`** hatte alle sechs Prüfungen auf
+    `src.index("# Recreate service via compose.")` verankert, also auf
+    einem Kommentar: ihn umzuformulieren ließ die Prozedur *abstürzen*,
+    den Code zu verändern nicht. Jetzt als AST. Genau umgekehrt
+    nachgemessen — die drei echten Defekte werden rot, die
+    Kommentar-Umformulierung bleibt grün.
+  * **`test_gluetun_docs.py`**: die beiden Nadeln über `--rm` und
+    »Capture config up front« deckt jetzt
+    `test_netns_dependent_recreate.py` verhaltensbasiert ab.
+* **`test_trust_running.py`** benutzt das `checks`-Dict statt nackter
+  `assert`s. Vorher hielt der erste Fehlschlag die anderen beiden Fälle
+  auf — darunter den einzigen, der wirklich zählt: dass das
+  »Laufzustand vertrauen«-Flag eine Absturzschleife *nicht* verschluckt.
+  Und 14 Sekunden echte Docker-Zeit erschienen in `VERIFICATION.md` als
+  zwei Prüfungen.
+* **`_policy_decision`** — beide zuständigen Tests überschrieben die
+  Weiterleitung, um die Regel zu prüfen. Die Weiterleitung ist jetzt ihre
+  eigene Zusage: der Bot fragt den Motor, und was er zurückgibt, kommt
+  unverändert heraus.
+
+**Offen:**
+
+* **21 Quelltext-Prüfungen**, die ein Kommentar oder Docstring erfüllen
+  könnte. Die verbliebenen sichern Kleineres ab (Meldungstexte,
+  Dockerfile-Zeilen, Hilfsnamen); Liste erzeugt
+  `scratchpad/needles2.py`. `not in`-Prüfungen sind nicht darunter — die
+  macht ein Kommentar rot, nicht grün, und das ist die sichere Richtung.
+* **Parallellauf (`-P 8`) ist flaky**: `test_multihost_live.py`,
+  `test_remote_transports.py`. Seriell nicht nachstellbar — fünf Läufe
+  je Prozedur, 5/5 grün. Beide nutzen echtes Docker und echte Ports.
+* Die fünf `*_resilience.py` teilen weiter 25 identische
+  Assertion-Ausdrücke. `test_channel_backoff.py` hat den wichtigsten
+  Teil davon zusammengefasst; der Rest wäre Kosmetik mit Risiko.
+
+## 7 — Entschieden, bleibt so
+
+* `de.json` übersetzt die Metavariable zu `<endpunkt>`, die anderen 15
+  behalten `<endpoint>`. Für einen deutschen Leser ist das besser, und
+  der kopierbare Teil des Befehls ist unberührt.
+* `fd://` und `npipe://` bleiben **akzeptiert**, werden aber nicht mehr
+  empfohlen: wer so ein Setup hat, weiß es besser als unsere Liste.
+* Die Vorab-Prüfung gibt es in der Web-UI nicht, und kein Text behauptet
+  etwas anderes.
 ## 7 — Entschieden, bleibt so
 
 * `de.json` übersetzt die Metavariable zu `<endpunkt>`, die anderen 15

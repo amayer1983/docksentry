@@ -334,6 +334,48 @@ GUARDED = [
      "        self._stop_container(name)\n        insp = self.backend.run([\"inspect\", name])\n        if insp.returncode != 0:\n            return False, \"inspect failed\"",
      "test_netns_dependent_recreate.py"),
 
+    ("the session cookie cannot be read by a script",
+     "app/web_ui.py",
+     'f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; "',
+     'f"{SESSION_COOKIE}={token}; Path=/; SameSite=Lax; "',
+     "test_web_login.py"),
+
+    ("…and is not sent on a cross-site request",
+     "app/web_ui.py",
+     'f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; "',
+     'f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; "',
+     "test_web_login.py"),
+
+    ("an API token is compared in constant time",
+     "app/web_ui.py",
+     "                if _hmac.compare_digest(token.strip(), supplied):",
+     "                if token.strip() == supplied:",
+     "test_metrics_api.py"),
+
+    ("…and not by its prefix",
+     "app/web_ui.py",
+     "                if _hmac.compare_digest(token.strip(), supplied):",
+     "                if supplied.startswith(token.strip()[:6]):",
+     "test_metrics_api.py"),
+
+    ("a compose recreate waits longer than the grace it grants",
+     "app/update_checker.py",
+     "        result = self.backend.run(up_cmd[1:], timeout=stop_grace + 120)",
+     "        result = self.backend.run(up_cmd[1:], timeout=120)",
+     "test_compose_recreate_budget.py"),
+
+    ("…and still grants it",
+     "app/update_checker.py",
+     '                                 "--timeout", str(stop_grace), service]',
+     "                                 service]",
+     "test_compose_recreate_budget.py"),
+
+    ("the bot forwards the policy question to the engine",
+     "app/telegram_bot.py",
+     "    def _policy_decision(self, *a, **k):\n        return self.engine._policy_decision(*a, **k)",
+     "    def _policy_decision(self, *a, **k):\n        return None",
+     "test_update_policy.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

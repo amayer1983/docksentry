@@ -186,8 +186,48 @@ def test_integration_manual():
     return checks
 
 
+def test_delegation():
+    """The bot asks the engine, and that forwarding is its own claim.
+
+    Everything else in this file drives `UpdateEngine._policy_decision`
+    directly — reasonable for testing the rule, and it leaves the two
+    lines that forward to it with nothing. A mutation sweep on
+    06.10.2026 found exactly that: the bot could stop delegating and the
+    policy would simply never apply, with the whole suite green.
+    """
+    checks = {}
+    asked = []
+
+    class _Engine:
+        def _policy_decision(self, u, checker):
+            asked.append(("policy", u, checker))
+            return ("major", "1.0.0", "2.0.0")
+
+        def _age_decision(self, u, checker):
+            asked.append(("age", u, checker))
+            return (1, 3)
+
+    bot = TelegramBot.__new__(TelegramBot)
+    bot.engine = _Engine()
+    u = {"name": "web", "image": "nginx:1.25"}
+
+    answer = TelegramBot._policy_decision(bot, u, "the checker")
+    checks["the bot asks the engine for the policy decision"] = (
+        asked and asked[0] == ("policy", u, "the checker"))
+    checks["…and hands back what it said, unchanged"] = (
+        answer == ("major", "1.0.0", "2.0.0"))
+
+    asked.clear()
+    age = TelegramBot._age_decision(bot, u, "the checker")
+    checks["…and the same for the minimum-age decision"] = (
+        asked and asked[0] == ("age", u, "the checker") and age == (1, 3))
+    return checks
+
+
 def main():
     all_checks = {}
+    all_checks.update({f"[wiring] {k}": v
+                       for k, v in test_delegation().items()})
     all_checks.update({f"[bump] {k}": v for k, v in test_bump_level().items()})
     all_checks.update({f"[matrix] {k}": v for k, v in test_decision_matrix().items()})
     all_checks.update({f"[precedence] {k}": v for k, v in test_precedence().items()})

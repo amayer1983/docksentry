@@ -2,12 +2,25 @@
 """Regression test for the per-container "trust running state over
 healthcheck" flag (#9).
 
-Asserts three things against real containers:
+Three things, against real containers:
   1. running + unhealthy, flag OFF  → "unhealthy" (would roll back)
   2. running + unhealthy, flag ON   → "healthy"   (accepted)
   3. crash-loop, flag ON            → "crashloop" (flag must NOT mask this)
 
-Requires a working Docker daemon. Exits non-zero on any failure.
+The third is the one worth having. The flag says "trust that it is
+running even though its healthcheck is unhappy", and a container that
+keeps dying and being restarted is also, briefly, running — so the flag
+must not swallow a crash loop. That is the difference between accepting
+a container whose healthcheck is wrong and accepting one that is broken.
+
+Requires a working Docker daemon; says SKIP and exits 0 without one,
+because a missing runtime is not a regression.
+
+Collected in a `checks` dict rather than asserted inline. Bare `assert`
+stopped at the first failure, so a broken case one hid cases two and
+three — and `verify.py` counted the file's two print lines as its two
+checks, which is how fourteen seconds of real Docker time appeared in
+`VERIFICATION.md` as less coverage than a two-line grep.
 """
 import sys, os, time, json, subprocess, tempfile, types
 
@@ -40,6 +53,9 @@ def _rm(name):
     subprocess.run(["docker", "rm", "-f", name], capture_output=True)
 
 
+checks = {}
+
+
 def test_unhealthy_running():
     tmp = tempfile.mkdtemp()
     trust_file = os.path.join(tmp, "trust.json")
@@ -67,9 +83,14 @@ def test_unhealthy_running():
         out_on, _, _ = chk._wait_healthy(name, interval=1)
     finally:
         _rm(name)
-    assert out_off == "unhealthy", f"flag OFF: expected unhealthy, got {out_off}"
-    assert out_on == "healthy", f"flag ON: expected healthy, got {out_on}"
-    print("  ✅ running+unhealthy: OFF→unhealthy, ON→healthy")
+    checks["running but unhealthy, flag OFF: reported unhealthy"] = (
+        out_off == "unhealthy")
+    checks["…and with the flag ON: accepted as healthy"] = (
+        out_on == "healthy")
+    if out_off != "unhealthy":
+        print(f"      → flag OFF gave {out_off!r}")
+    if out_on != "healthy":
+        print(f"      → flag ON gave {out_on!r}")
 
 
 def test_crashloop_not_masked():
@@ -87,16 +108,26 @@ def test_crashloop_not_masked():
         out, _, _ = chk._wait_healthy(name, interval=2)
     finally:
         _rm(name)
-    assert out == "crashloop", f"crash-loop with flag ON: expected crashloop, got {out}"
-    print("  ✅ crash-loop with flag ON still reported as crashloop")
+    # The flag must not mask this: a container that keeps dying is
+    # briefly running too, and "trust the running state" was never meant
+    # to mean "accept anything that is up at the moment I looked".
+    checks["a crash loop is still a crash loop with the flag ON"] = (
+        out == "crashloop")
+    if out != "crashloop":
+        print(f"      → got {out!r}")
 
 
 if __name__ == "__main__":
-    print("trust_running (#9) regression test")
-    try:
-        test_unhealthy_running()
-        test_crashloop_not_masked()
-    except AssertionError as e:
-        print(f"  ❌ {e}")
-        sys.exit(1)
-    print("PASS")
+    # Both cases run even if the first one fails: a bare `assert` stopped
+    # here and hid the crash-loop case, which is the one that matters.
+    for case in (test_unhealthy_running, test_crashloop_not_masked):
+        try:
+            case()
+        except Exception as e:                              # noqa: BLE001
+            checks[f"{case.__name__} ran at all"] = False
+            print(f"      → {type(e).__name__}: {e}")
+    bad = [k for k, v in checks.items() if not v]
+    for k, v in checks.items():
+        print(f"  {'✅' if v else '❌'} {k}")
+    print("FAIL" if bad else "PASS")
+    sys.exit(1 if bad else 0)

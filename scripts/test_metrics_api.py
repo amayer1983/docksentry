@@ -39,11 +39,75 @@ def main():
     checks["backslash then quote"] = _metric_label('a\\"b') == 'a\\\\\\"b'
 
     # ── the token comparison ─────────────────────────────────────
+    import ast as _ast
     import inspect as _i
+    import os as _os
+    import types as _ty
     import web_ui
     src = _i.getsource(web_ui.create_handler)
-    # Secrets: `==` leaks length and prefix through timing.
-    checks["tokens are compared in constant time"] = "compare_digest" in src
+
+    # Secrets: a plain `==` leaks their length and prefix through timing.
+    #
+    # This was `"compare_digest" in src`, and the word also appears in
+    # the docstring three lines above the call — so rewording the
+    # comment would have broken the check while swapping the call for
+    # `==` would not. Two things are asked instead: that the comparison
+    # really is the constant-time one, read as a tree, and that the
+    # whole token path behaves.
+    _mod = _ast.parse(open(web_ui.__file__, encoding="utf-8").read())
+    _calls = [n for n in _ast.walk(_mod)
+              if isinstance(n, _ast.Call)
+              and isinstance(n.func, _ast.Attribute)
+              and n.func.attr == "compare_digest"]
+    checks["tokens are compared in constant time"] = bool(_calls)
+    # …and nothing in that function compares a token with `==`, which is
+    # the mistake the constant-time call exists to avoid.
+    _fn = next((n for n in _ast.walk(_mod)
+                if isinstance(n, _ast.FunctionDef)
+                and n.name == "_api_token_name"), None)
+    _eq = [n for n in _ast.walk(_fn or _ast.Module(body=[], type_ignores=[]))
+           if isinstance(n, _ast.Compare)
+           and any(isinstance(o, (_ast.Eq, _ast.NotEq)) for o in n.ops)
+           and "supplied" in (_ast.dump(n))]
+    checks["…and never with a plain =="] = _eq == []
+
+    # Driven: the right token is recognised, a wrong one is not, and
+    # neither a token that shares a prefix nor one that shares a suffix
+    # gets in. Those two are what a timing attack builds towards, and
+    # they are also the cheapest way to catch a `startswith` creeping in.
+    def _supplied(header=None, query=None, tokens=("prom:s3cret-token",)):
+        handler_cls = web_ui.create_handler(
+            _ty.SimpleNamespace(api_tokens=list(tokens), language="en",
+                                web_password="", web_username=""),
+            checker=None, bot=_ty.SimpleNamespace(t=None), store=None)
+        h = handler_cls.__new__(handler_cls)
+        h.path = f"/metrics?token={query}" if query else "/metrics"
+        h.headers = {"Authorization": f"Bearer {header}"} if header else {}
+        return h._api_token_name()
+
+    checks["the right token in a Bearer header is recognised"] = (
+        _supplied(header="s3cret-token") == "prom")
+    checks["…and in a query string too, for scrapers that cannot set one"] = (
+        _supplied(query="s3cret-token") == "prom")
+    checks["a wrong token is not recognised"] = (
+        _supplied(header="wrong-token") == "")
+    checks["…nor one that shares the prefix"] = (
+        _supplied(header="s3cret-tok") == ""
+        and _supplied(header="s3cret-tokenX") == "")
+    checks["…nor one that shares the suffix"] = (
+        _supplied(header="Xs3cret-token") == ""
+        and _supplied(header="token") == "")
+    checks["…and no token at all is no token"] = _supplied() == ""
+    # With nothing configured, nothing is a valid token — including the
+    # empty string, which is what a bare `?token=` sends.
+    checks["with no tokens configured, none is accepted"] = (
+        _supplied(header="anything", tokens=()) == ""
+        and _supplied(query="", tokens=()) == "")
+    # Each token keeps its own name, so one can be revoked without
+    # disturbing the other.
+    checks["each token is reported under its own name"] = (
+        _supplied(header="yyy", tokens=("prom:xxx", "grafana:yyy"))
+        == "grafana")
     # A token that was presented and rejected must not fall through to the
     # password check — on an instance with no WEB_PASSWORD that answers
     # 200, so a revoked token would appear to keep working and the operator

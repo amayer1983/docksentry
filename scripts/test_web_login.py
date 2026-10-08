@@ -204,14 +204,62 @@ checks["the login page does not leak the configured username"] = (
 checks["a failed login does not say which half was wrong"] = (
     "web_login_failed" in src and "web_login_user_wrong" not in src)
 
-# The cookie's flags.
-checks["the session cookie is HttpOnly"] = "HttpOnly" in src
-checks["…and SameSite"] = "SameSite=Lax" in src
-# No Secure flag on purpose: this is served over plain HTTP by design, and
-# Secure would stop the cookie working at all.
-i = src.index("Set-Cookie")
+import io as _io                                               # noqa: E402
+import types as _types                                         # noqa: E402
+
+
+def _cfg_with_password():
+    """A config whose password is the one `_login_cookie` signs in with."""
+    return types.SimpleNamespace(
+        web_username="", web_password=webauth.hash_password("correct horse"),
+        language="en", web_session_hours=8)
+
+
+# ── the cookie's flags, read off the header it actually sends ────────
+# These were `"HttpOnly" in src` and friends — a grep over the module's
+# own source, satisfied by the comment above the line that sets them.
+# Rewording that comment would have turned them red; dropping the flag
+# would not. So the login is driven and the header is read.
+def _login_cookie(hours=8):
+    """The `Set-Cookie` a successful login sends, as a string."""
+    handler_cls = web_ui.create_handler(
+        _cfg_with_password(), checker=None,
+        bot=_types.SimpleNamespace(t=None), store=None,
+        restart_discord=lambda *_a, **_k: None)
+    h = handler_cls.__new__(handler_cls)
+    h.path = "/login"
+    h.headers = {"Host": "x", "Origin": "http://x", "Content-Length": "0"}
+    h.client_address = ("127.0.0.1", 0)
+    h.rfile = _types.SimpleNamespace(read=lambda n: b"")
+    h.wfile = _io.BytesIO()
+    sent = {}
+    h.send_response = lambda code: sent.setdefault("code", code)
+    h.send_header = lambda k, v: sent.setdefault("headers", []).append((k, v))
+    h.end_headers = lambda: None
+    h._check_csrf = lambda: True
+    h._audit = lambda *a, **k: None
+    h._sessions = lambda: _types.SimpleNamespace(
+        create=lambda user: "a-session-token")
+    h._login_page = lambda **kw: b""
+    h.config = _cfg_with_password()
+    h._do_login({"username": ["admin"], "password": ["correct horse"]})
+    return next((v for k, v in sent.get("headers", [])
+                 if k == "Set-Cookie"), "")
+
+
+_cookie = _login_cookie()
+checks["the session cookie is HttpOnly"] = "HttpOnly" in _cookie
+checks["…and SameSite=Lax, so it is not sent on a cross-site POST"] = (
+    "SameSite=Lax" in _cookie)
+# No Secure flag on purpose: this is served over plain HTTP by design —
+# TLS belongs in the reverse proxy — and Secure would stop the cookie
+# working at all. Stated as a decision, measured on the header.
 checks["…and not Secure, which would break plain HTTP"] = (
-    "Secure" not in src[i:i + 400])
+    "Secure" not in _cookie)
+checks["…with a path and a lifetime"] = (
+    "Path=/" in _cookie and "Max-Age=" in _cookie)
+checks["…and the token itself, or there is no session"] = (
+    "a-session-token" in _cookie)
 
 # Saving a password stores a hash, never the password.
 i = src.index('if "web_password" in params:')
