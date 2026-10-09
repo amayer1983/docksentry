@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ Güncelleme zaten devam ediyor...",
   "no_pending_updates": "⚠️ Bekleyen güncelleme yok.",
   "container_not_in_list": "⚠️ Konteyner `{name}` listede değil.",
+  "update_same_running": "🕒 `{name}` şu anda güncelleniyor — bu aynısı, ikinci bir iş değil.",
+  "update_already_done": "✅ `{name}` bu kayıt beklerken zaten güncellendi. Yapılacak bir şey kalmadı.",
   "rate_limit": "Hız sınırına ulaşıldı. Ana makinede `docker login` çalıştırın.",
   "pending_title": "*Bekleyen güncellemeler:*",
   "no_pending": "Bekleyen güncelleme yok.",

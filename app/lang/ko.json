@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ 업데이트가 이미 진행 중...",
   "no_pending_updates": "⚠️ 대기 중인 업데이트가 없습니다.",
   "container_not_in_list": "⚠️ 컨테이너 `{name}`이(가) 목록에 없습니다.",
+  "update_same_running": "🕒 `{name}` 은(는) 지금 업데이트 중입니다 — 같은 것이며, 두 번째 작업이 아닙니다.",
+  "update_already_done": "✅ `{name}` 은(는) 이 항목이 기다리는 동안 이미 업데이트되었습니다. 남은 작업이 없습니다.",
   "rate_limit": "요청 제한에 도달했습니다. 호스트에서 `docker login`을 실행하세요.",
   "pending_title": "*대기 중인 업데이트:*",
   "no_pending": "대기 중인 업데이트가 없습니다.",

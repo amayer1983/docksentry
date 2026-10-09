@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ 更新は既に実行中です...",
   "no_pending_updates": "⚠️ 保留中のアップデートはありません。",
   "container_not_in_list": "⚠️ コンテナ `{name}` はリストにありません。",
+  "update_same_running": "🕒 `{name}` はいま更新中です — 同じものであって、二つ目の作業ではありません。",
+  "update_already_done": "✅ `{name}` はこの項目が待っている間にすでに更新されました。残っている作業はありません。",
   "rate_limit": "レート制限に達しました。ホストで `docker login` を実行してください。",
   "pending_title": "*保留中のアップデート:*",
   "no_pending": "保留中のアップデートはありません。",

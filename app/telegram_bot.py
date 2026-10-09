@@ -1667,7 +1667,17 @@ class TelegramBot:
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
         if not self._update_lock.acquire(blocking=False):
-            # Queue it instead of dropping it. Tapping four containers in
+            # Tapping the SAME container again while it is running is not
+            # a second piece of work — it is the same one. Queueing it
+            # meant the drain picked it up after the update had finished
+            # and emptied the pending list, and then reported "container
+            # not in update list" directly under a green OK (seen on the
+            # local instance, 08.10.2026).
+            if container_key in self.engine.updating:
+                self.send_message(self.t("update_same_running",
+                                         name=self._key_label(container_key)))
+                return
+            # Anything else: queue it rather than drop it. Tapping four containers in
             # the notification used to run one and discard three, with an
             # "an update is already running" for each — so you had to come
             # back and tap them again, one at a time, and nothing told you
@@ -1698,7 +1708,15 @@ class TelegramBot:
                            if self._pending_key(u) == (host_name, container_name)),
                           None)
             if not target:
-                self.send_message(self.t("container_not_in_list", name=container_name))
+                # Two different things, and they used to read the same.
+                # Off the queue it almost always means the update already
+                # happened while this entry waited — saying "not in the
+                # update list" there puts a warning under a green result
+                # for work that succeeded. Typed by hand it really is a
+                # name that is not pending.
+                self.send_message(self.t(
+                    "update_already_done" if from_queue else "container_not_in_list",
+                    name=self._key_label(container_key)))
                 return
 
             # Enrich source_url so both the inline send_message line and
@@ -1706,6 +1724,13 @@ class TelegramBot:
             # (parity with the auto-update + bulk-update flows, fixed in
             # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
             self._enrich_with_source_url([target])
+            # Say what is running, where the rest of the program can see
+            # it. The batch path has always done this; the single path
+            # never did — so the Web UI showed no "updating" badge for a
+            # container updated from a chat, and a second tap had no way
+            # to know it was already in flight.
+            self.engine.mark_updating(container_key,
+                                      target.get("new_version") or "")
             self.send_message(self.t("update_single_starting", name=container_name))
 
             try:
@@ -1737,6 +1762,7 @@ class TelegramBot:
             if not remaining:
                 self.send_message(self.t("update_all_done"))
         finally:
+            self.engine.clear_updating(container_key)
             self._update_lock.release()
             self._run_queued_selfupdate()
         # Only after the lock is back: whoever ran gets to work off what
@@ -1802,6 +1828,19 @@ class TelegramBot:
     def _short_key(container_key):
         from container_store import split_host_key
         return split_host_key(container_key)[1]
+
+    def _key_label(self, container_key):
+        """`portainer` locally, `portainer @srv30` on a remote host.
+
+        The same shape the buttons and the result lines use. A bare name
+        is ambiguous the moment two hosts run a container of that name,
+        which is the ordinary case for portainer, watchtower or a
+        reverse proxy — and the messages that named only the container
+        were the ones a reader had to guess at.
+        """
+        from container_store import LOCAL_HOST, split_host_key
+        host, name = split_host_key(container_key)
+        return name if host == LOCAL_HOST else f"{name} @{host}"
 
     def _group_of(self, container_key):
         """The group name a queued container belongs to, or None."""

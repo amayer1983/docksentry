@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ Actualización ya en curso...",
   "no_pending_updates": "⚠️ No hay actualizaciones pendientes.",
   "container_not_in_list": "⚠️ Contenedor `{name}` no está en la lista.",
+  "update_same_running": "🕒 `{name}` se está actualizando ahora mismo — es el mismo, no un segundo trabajo.",
+  "update_already_done": "✅ `{name}` ya se actualizó mientras esta entrada esperaba. No queda nada por hacer.",
   "rate_limit": "Límite alcanzado. Ejecute `docker login` en el host y monte las credenciales.",
   "pending_title": "*Actualizaciones pendientes:*",
   "no_pending": "No hay actualizaciones pendientes.",

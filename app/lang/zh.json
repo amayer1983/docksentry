@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ 更新已在进行中...",
   "no_pending_updates": "⚠️ 没有待处理的更新。",
   "container_not_in_list": "⚠️ 容器 `{name}` 不在更新列表中。",
+  "update_same_running": "🕒 `{name}` 正在更新中 — 这是同一个，不是第二个任务。",
+  "update_already_done": "✅ `{name}` 在这一条等待期间已经更新过了。没有剩下要做的事。",
   "rate_limit": "请求限制已达到。请在主机上运行 `docker login` 并挂载凭据。",
   "pending_title": "*待处理的更新：*",
   "no_pending": "没有待处理的更新。",

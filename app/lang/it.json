@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ Aggiornamento già in corso...",
   "no_pending_updates": "⚠️ Nessun aggiornamento in sospeso.",
   "container_not_in_list": "⚠️ Container `{name}` non presente nella lista.",
+  "update_same_running": "🕒 `{name}` è in aggiornamento proprio ora — è lo stesso, non un secondo lavoro.",
+  "update_already_done": "✅ `{name}` è già stato aggiornato mentre questa voce aspettava. Non resta nulla da fare.",
   "rate_limit": "Limite raggiunto. Eseguire `docker login` sull'host e montare le credenziali.",
   "pending_title": "*Aggiornamenti in sospeso:*",
   "no_pending": "Nessun aggiornamento in sospeso.",

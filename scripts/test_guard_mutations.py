@@ -376,6 +376,24 @@ GUARDED = [
      "    def _policy_decision(self, *a, **k):\n        return None",
      "test_update_policy.py"),
 
+    ("tapping the same update twice does not produce a bogus warning",
+     "app/telegram_bot.py",
+     "            if container_key in self.engine.updating:",
+     "            if False:",
+     "test_update_queue_duplicate.py"),
+
+    ("…which needs the single-update path to say what it is doing",
+     "app/telegram_bot.py",
+     "            self.engine.mark_updating(container_key,",
+     "            self.engine.noop_updating(container_key,",
+     "test_update_queue_duplicate.py"),
+
+    ("…and finished work is not called a mistake",
+     "app/telegram_bot.py",
+     '                    "update_already_done" if from_queue else "container_not_in_list",',
+     '                    "container_not_in_list",',
+     "test_update_queue_duplicate.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

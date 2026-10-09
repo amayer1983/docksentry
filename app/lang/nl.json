@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ Update is al bezig...",
   "no_pending_updates": "⚠️ Geen openstaande updates.",
   "container_not_in_list": "⚠️ Container `{name}` staat niet in de lijst.",
+  "update_same_running": "🕒 `{name}` wordt nu bijgewerkt — dat is dezelfde, niet een tweede taak.",
+  "update_already_done": "✅ `{name}` is al bijgewerkt terwijl dit item wachtte. Er is niets meer te doen.",
   "rate_limit": "Limiet bereikt. Voer `docker login` uit op de host en koppel de inloggegevens.",
   "pending_title": "*Openstaande updates:*",
   "no_pending": "Geen openstaande updates.",

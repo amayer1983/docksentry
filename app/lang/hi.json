@@ -14,6 +14,8 @@
   "update_already_running": "⚠️ अपडेट पहले से चल रहा है...",
   "no_pending_updates": "⚠️ कोई लंबित अपडेट नहीं।",
   "container_not_in_list": "⚠️ कंटेनर `{name}` सूची में नहीं है।",
+  "update_same_running": "🕒 `{name}` अभी अपडेट हो रहा है — यह वही है, दूसरा काम नहीं।",
+  "update_already_done": "✅ `{name}` इस प्रविष्टि के प्रतीक्षा करते समय पहले ही अपडेट हो चुका है। करने को कुछ नहीं बचा।",
   "rate_limit": "दर सीमा पूरी हुई। होस्ट पर `docker login` चलाएँ।",
   "pending_title": "*लंबित अपडेट:*",
   "no_pending": "कोई लंबित अपडेट नहीं।",
