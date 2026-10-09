@@ -60,14 +60,14 @@ GUARDED = [
 
     ("a connection that dies before the server says 'go ahead' is retried free",
      "app/notifiers/smtp.py",
-     "                            if code == 354:",
-     "                            if True:",
+     "                _data = getattr(server, \"data\", None)",
+     '                handed["over"] = True\n                _data = getattr(server, "data", None)',
      "test_smtp_resilience.py"),
 
     ("a greylisting relay's 'come back later' is come back to",
      "app/notifiers/smtp.py",
-     "    if code is not None and 400 <= code <= 499:",
-     "    if False:",
+     "        return TEMPORARY if 400 <= code <= 499 else PERMANENT",
+     "        return PERMANENT",
      "test_smtp_resilience.py"),
 
     ("an outage during the TLS handshake holds the alert",
@@ -90,8 +90,8 @@ GUARDED = [
 
     ("an ssh key refusal is not reported as a socket permission",
      "app/hostcheck.py",
-     '        elif ep.startswith("ssh://"):\n            kind = "denied_ssh"\n',
-     "",
+     "        elif _ssh_refused(why):",
+     '        elif ep.startswith("ssh://"):',
      "test_hostcheck.py"),
 
     ("containers that finished mid-check do not condemn the host",
@@ -393,6 +393,42 @@ GUARDED = [
      '                    "update_already_done" if from_queue else "container_not_in_list",',
      '                    "container_not_in_list",',
      "test_update_queue_duplicate.py"),
+
+    ("a server that answers after the body is believed over a guess",
+     "app/notifiers/smtp.py",
+     "    code = _smtp_code(err)\n    if code is not None:\n        return TEMPORARY if 400 <= code <= 499 else PERMANENT\n    if taken:",
+     "    if taken:\n        return TAKEN\n    code = _smtp_code(err)\n    if code is not None:\n        return TEMPORARY if 400 <= code <= 499 else PERMANENT\n    if taken:",
+     "test_smtp_resilience.py"),
+
+    ("…and mixed recipient codes follow the recoverable one",
+     "app/notifiers/smtp.py",
+     "            return min(codes)",
+     "            return max(codes)",
+     "test_smtp_resilience.py"),
+
+    ("who refused decides, not which scheme was typed",
+     "app/hostcheck.py",
+     "        elif _ssh_refused(why):",
+     '        elif ep.startswith("ssh://"):',
+     "test_hostcheck.py"),
+
+    ("…and a daemon refusal over ssh is still the socket's",
+     "app/hostcheck.py",
+     '    if "docker daemon socket" in low or "unix://" in low:\n        return False            # the far side\'s socket, over ssh\n    return any(k in low for k in _SSH_REFUSED)',
+     "    return True",
+     "test_hostcheck.py"),
+
+    ("a very long endpoint does not split the two chats",
+     "app/telegram_bot.py",
+     "        endpoint = hostcheck.short_endpoint(endpoint)",
+     "        endpoint = endpoint",
+     "test_hostcheck.py"),
+
+    ("an empty SMTP_TLS means STARTTLS, as it does everywhere else",
+     "app/notifiers/smtp.py",
+     '            _tls = (c.smtp_tls or "").strip().lower() or "starttls"',
+     '            _tls = (c.smtp_tls or "none").strip().lower()',
+     "test_cron_dow.py"),
 
 ]
 

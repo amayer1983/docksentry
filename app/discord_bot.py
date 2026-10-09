@@ -2170,6 +2170,11 @@ class DiscordBot:
         import hostcheck
         import hostdiag
         from container_backend import RemoteBackend, resolve_cli
+        # Bounded here too, not only inside the findings: the header and
+        # the closing line are the two places that used the raw value,
+        # and they are what made the two chats disagree on a very long
+        # endpoint.
+        endpoint = hostcheck.short_endpoint(endpoint)
         lines = [self.t("hostcheck_header", endpoint=endpoint)]
         try:
             backend = RemoteBackend(

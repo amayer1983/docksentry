@@ -46,22 +46,50 @@ def _smtp_code(err):
     if isinstance(err, smtplib.SMTPRecipientsRefused):
         codes = [v[0] for v in (err.recipients or {}).values()
                  if isinstance(v, (tuple, list)) and v]
-        # The worst one decides: if any address is a hard no, a retry
-        # cannot fix that address.
+        # The RECOVERABLE one decides. `max` was the first answer here —
+        # "if any address is a hard no, a retry cannot fix that one" —
+        # and it throws the mail away for the addresses a retry WOULD
+        # fix. smtplib only raises this when every recipient was
+        # refused, so `{a: 450 greylisted, b: 550 no such user}` under
+        # `max` is a permanent verdict on a temporary problem, and the
+        # alert is gone. Under `min` it is retried, and the 550 address
+        # simply keeps saying no — which costs nothing it was not going
+        # to cost anyway.
         if codes:
-            return max(codes)
+            return min(codes)
     return None
 
 
 def _why(err, taken):
-    """Which of the four an exception is. `taken` is the 354 boundary."""
+    """Which of the four an exception is. `taken` is the 354 boundary.
+
+    The order matters and the first version had it wrong. `taken` only
+    says the server answered `354`; it does not say the line then died.
+    A server that takes the body and then ANSWERS — `451 Greylisted` from
+    an end-of-data restriction, `552 message size exceeds limit`, `550
+    rejected as spam` — has told us exactly what happened, and the answer
+    beats the guess.
+
+    Measured against a real socket server: `451` at end-of-data came back
+    as `TAKEN`, so the alert got one retry and was dropped, while the
+    same greylisting at `RCPT TO` was correctly retried for the full
+    fifteen minutes. The two are the same thing happening at different
+    moments. And a `552` produced the line "the connection died while
+    the message was going out" for a connection that was perfectly
+    alive, which sends the operator looking for a mail that was never
+    accepted.
+
+    So: a reply code decides, whenever there is one. `TAKEN` is for the
+    case it was always about — the line going quiet after the server
+    said go-ahead, with nothing to read.
+    """
+    code = _smtp_code(err)
+    if code is not None:
+        return TEMPORARY if 400 <= code <= 499 else PERMANENT
     if taken:
         return TAKEN
     if _is_network(err):
         return NETWORK
-    code = _smtp_code(err)
-    if code is not None and 400 <= code <= 499:
-        return TEMPORARY
     return PERMANENT
 
 
@@ -268,7 +296,17 @@ class SmtpNotifier(BaseNotifier):
             # is the obvious thing to type and it is not one of the
             # three, so that typo silently downgraded the transport. Say
             # it and refuse rather than sending the credential.
-            _tls = (c.smtp_tls or "none").strip().lower()
+            # `or "starttls"`, which is what `config.py:857` and the
+            # Connections page both use. This said `or "none"`, so an
+            # empty value meant plain SMTP here and STARTTLS everywhere
+            # else — and with `smtp_user` set, the password went out in
+            # clear while the interface showed STARTTLS. `Config.from_env`
+            # normalises it, so this only bites a value that came in
+            # another way: a hand-written `settings.json`, or a restored
+            # backup bundle, both of which `setattr` straight on.
+            # Stripped BEFORE the default, or a whitespace-only value
+            # is "unknown" rather than "unset" and gets refused.
+            _tls = (c.smtp_tls or "").strip().lower() or "starttls"
             if _tls not in ("ssl", "starttls", "none"):
                 print(f"SMTP error: SMTP_TLS is {c.smtp_tls!r}, which is not "
                       f"one of ssl / starttls / none. Nothing was sent — "

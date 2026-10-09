@@ -175,6 +175,30 @@ def main():
         _sent = _n.send_raw("s", "b")
     finally:
         smtplib.SMTP_SSL, smtplib.SMTP = _rs, _rp
+    # An EMPTY value is not unknown, it is unset — and unset means
+    # STARTTLS, which is what `config.py` and the Connections page both
+    # say. This read `or "none"`, so an empty value meant plain SMTP
+    # here and STARTTLS everywhere else, and with `smtp_user` set the
+    # password went out in clear while the interface showed STARTTLS.
+    # `Config.from_env` normalises it; a hand-written `settings.json`
+    # or a restored backup bundle does not.
+    for _empty in ("", None, "   "):
+        _seen = _ctx_given(_empty)
+        checks[f"SMTP_TLS={_empty!r} means STARTTLS, not plaintext"] = (
+            _seen.get("ctx") is not None)
+
+    # An EMPTY value is not unknown, it is unset — and unset means
+    # STARTTLS, which is what `config.py` and the Connections page both
+    # say. This read `or "none"`, so an empty value meant plain SMTP
+    # here and STARTTLS everywhere else, and with `smtp_user` set the
+    # password went out in clear while the interface showed STARTTLS.
+    # `Config.from_env` normalises it; a hand-written `settings.json`
+    # or a restored backup bundle does not — both `setattr` straight on.
+    for _empty in ("", None, "   "):
+        _seen = _ctx_given(_empty)
+        checks[f"SMTP_TLS={_empty!r} means STARTTLS, not plaintext"] = (
+            _seen.get("ctx") is not None)
+
     checks["an unknown SMTP_TLS value sends nothing at all"] = (
         _sent is False and _dialled == [])
 

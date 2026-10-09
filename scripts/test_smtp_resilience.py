@@ -128,6 +128,10 @@ class _Transport:
             return (554, b"5.7.1 Message rejected")
         return (354, b"go ahead, end with <CRLF>.<CRLF>")
 
+    #: A reply code the server gives AFTER the body, instead of 250.
+    #: Set by the end-of-data cases; None the rest of the time.
+    answer_code = None
+
     def data(self, arg):
         code, msg = self.getreply()     # the 354 — or a death, or a no
         if code != 354:
@@ -135,17 +139,27 @@ class _Transport:
         _ACCEPTED.append(arg)           # the server is taking the body
         if self.where == "after_354":
             raise smtplib.SMTPServerDisconnected("died mid-body")
+        if self.answer_code:
+            # It took the body and then said something. That is an
+            # answer, not silence, and it decides.
+            raise smtplib.SMTPDataError(self.answer_code, b"end-of-data reply")
         return (250, b"ok")
 
     def send_message(self, msg, to_addrs=None):
         if self.where == "mail_from":
             raise smtplib.SMTPServerDisconnected("dropped at MAIL FROM")
+        if str(self.where).startswith("answer_"):
+            return self.data(msg.as_string())
         if self.where == "greylist":
             raise smtplib.SMTPSenderRefused(
                 450, b"4.2.0 Greylisted, try again later", "ds@example.test")
         if self.where == "refused":
             raise smtplib.SMTPRecipientsRefused(
                 {"ops@example.test": (550, b"5.1.1 No such user")})
+        if self.where == "mixed_recipients":
+            raise smtplib.SMTPRecipientsRefused(
+                {"a@example.test": (450, b"4.2.0 Greylisted"),
+                 "b@example.test": (550, b"5.1.1 No such user")})
         return self.data(msg.as_string())
 
     def quit(self):
@@ -272,6 +286,28 @@ try:
     checks["a DATA command answered with 554 is a refusal, not a handover"] = (
         not q.pending() and not _ACCEPTED)
 
+    # 4b-iii — a server that ANSWERS after the 354 has told us what
+    # happened, and the answer beats the guess. The first version asked
+    # `if taken:` before the reply code, so an end-of-data greylisting
+    # was filed as "it may have arrived" and given one retry, while the
+    # same greylisting at RCPT TO was retried for the full fifteen
+    # minutes — the same thing at a different moment, two verdicts. And
+    # a `552 too big` produced "the connection died while the message
+    # was going out" for a line that was perfectly alive.
+    for _code, _want_held, _label in (
+            (451, True, "a 4xx after the body is still 'come back later'"),
+            (552, False, "…and a 5xx after it is a refusal, not a maybe"),
+            (550, False, "…including one that calls it spam")):
+        clock = {"t": 0.0}
+        q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+        notify_retry.queue = q
+        _ACCEPTED.clear()
+        _Transport.where = f"answer_{_code}"
+        _Transport.answer_code = _code
+        _notifier().send_message("a container went down")
+        checks[_label] = (q.pending() == 1) is _want_held
+    _Transport.answer_code = None
+
     # 4c — greylisting. A relay answering `450 … try again later` is
     # asking us to come back, and that is the most ordinary 4xx there
     # is. It used to be filed as a refusal and the alert thrown away
@@ -300,6 +336,19 @@ try:
     _notifier().send_message("a container went down")
     checks["a 5xx refusal is never queued at all"] = (
         not q.pending() and not _ACCEPTED)
+
+    # 4e — every recipient refused, with mixed codes. smtplib only
+    # raises this when all of them said no, so `{a: 450 greylisted,
+    # b: 550 no such user}` under the old `max()` was a permanent
+    # verdict on a problem a retry would have fixed for one of them.
+    clock = {"t": 0.0}
+    q = notify_retry.RetryQueue(clock=lambda: clock["t"], wall=lambda: 0.0)
+    notify_retry.queue = q
+    _Transport.where = "mixed_recipients"
+    _notifier().send_message("a container went down")
+    checks["mixed recipient codes follow the recoverable one"] = (
+        q.pending() == 1)
+    _Transport.where = "after_354"
 
     # 5 — a refusal on the RETRY path is not retried for a quarter of an
     # hour. `_is_network` makes that call on the first attempt; the queue

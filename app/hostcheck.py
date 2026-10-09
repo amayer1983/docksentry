@@ -104,6 +104,33 @@ _REFUSED = ("permission denied", "access denied", "not permitted",
             "unauthorized", "must be root", "forbidden",
             "permission or group", "insufficient privileges")
 
+#: Phrases that say SSH itself turned us away, as opposed to the
+#: daemon behind it. The difference is the whole advice: an ssh refusal
+#: is a key, a daemon refusal over the same ssh connection is the
+#: socket's group.
+_SSH_REFUSED = ("ssh:", "publickey", "password)", "keyboard-interactive",
+                "host key verification", "remote host identification",
+                "no supported authentication")
+
+
+def _ssh_refused(text):
+    """Did SSH refuse us, rather than something on the far side?
+
+    Decided on the words, not on the scheme — which is how the first
+    version got it wrong. `ssh://bob@srv30` where the login works and
+    `bob` is not in the `docker` group produces "permission denied while
+    trying to connect to the Docker daemon socket at unix://…", and
+    reading that as a key problem sends the reader to his
+    `authorized_keys` when the answer is `usermod -aG docker bob`. That
+    is the most ordinary `ssh://` failure there is, and before the split
+    it was answered correctly.
+    """
+    low = (text or "").lower()
+    if "docker daemon socket" in low or "unix://" in low:
+        return False            # the far side's socket, over ssh
+    return any(k in low for k in _SSH_REFUSED)
+
+
 def _refused(text):
     """Did something answer and say no, as opposed to not answering?
 
@@ -165,6 +192,22 @@ def _gone(text):
 MAX_ENDPOINT = 200
 
 
+def short_endpoint(endpoint):
+    """The endpoint as it goes into a message, bounded.
+
+    Exported because clipping it inside `preflight` was not enough and
+    I said it was: both renderers put the RAW endpoint into their header
+    line and their closing line, so a 4000-character endpoint still made
+    the two chats disagree — measured, Telegram 8231 characters over
+    five lines, Discord clipped to 1900 with not one finding left in it.
+    The reader got a truncated address and nothing else.
+
+    One function, used by the module and by whoever renders it, so there
+    is one answer to "how long can this get".
+    """
+    return (endpoint or "")[:MAX_ENDPOINT]
+
+
 def preflight(endpoint, backend, hint=None):
     """`[(kind, params)]` for one endpoint. Does not write anything.
 
@@ -181,14 +224,14 @@ def preflight(endpoint, backend, hint=None):
     out = []
     ep = (endpoint or "").strip()
     if ep and not any(ep.startswith(s) for s in SCHEMES):
-        out.append(("scheme_bad", {"endpoint": ep[:MAX_ENDPOINT],
+        out.append(("scheme_bad", {"endpoint": short_endpoint(ep),
                                    "schemes": ", ".join(SUGGEST)}))
         return out
 
     ok, ver, err = _run(backend, ["version", "--format", "{{.Server.Version}}"])
     if not ok or not ver:
         why = err or "no answer"
-        params = {"endpoint": ep[:MAX_ENDPOINT] or "local", "error": why[:300]}
+        params = {"endpoint": short_endpoint(ep) or "local", "error": why[:300]}
         if hint is not None:
             try:
                 extra = hint(ep, why)
@@ -204,7 +247,11 @@ def preflight(endpoint, backend, hint=None):
         # directly underneath, so he got both at once.
         if not _refused(why):
             kind = "unreachable"
-        elif ep.startswith("ssh://"):
+        elif _ssh_refused(why):
+            # Not `ep.startswith("ssh://")`: `context://` reaches a
+            # remote Podman over ssh too — the README calls it the only
+            # way to give one its own key — so the scheme does not say
+            # who refused, and the words do.
             kind = "denied_ssh"
         else:
             kind = "denied"
@@ -299,7 +346,7 @@ def preflight(endpoint, backend, hint=None):
     except Exception:                                       # noqa: BLE001
         pass
     out.append(("can_inspect", {"name": shown}))
-    out.append(("ready", {"endpoint": ep[:MAX_ENDPOINT] or "local"}))
+    out.append(("ready", {"endpoint": short_endpoint(ep) or "local"}))
     return out
 
 

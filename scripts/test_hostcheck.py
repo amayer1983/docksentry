@@ -196,6 +196,28 @@ for _txt, _want in (
                              _Backend({"version --format": (1, "", _txt)}))
     checks[f"'{_txt[:34]}…' is {_want}"] = kinds(_f) == [_want]
 
+# …and WHO refused decides, not which scheme was typed. `ssh://bob@nas`
+# where the login works and `bob` is not in the `docker` group produces
+# a socket refusal over an ssh connection — the answer is
+# `usermod -aG docker bob`, and reading it as a key problem sends the
+# reader to his `authorized_keys`. The first version split on the
+# scheme and got exactly this backwards, on the most ordinary `ssh://`
+# failure there is.
+_DOCKER_DENIED = ("permission denied while trying to connect to the "
+                  "Docker daemon socket at unix:///var/run/docker.sock")
+for _ep, _err, _want in (
+        ("ssh://bob@nas", _DOCKER_DENIED, "denied"),
+        ("ssh://bob@nas", "bob@nas: Permission denied (publickey).", "denied_ssh"),
+        # `context://` reaches a remote Podman over ssh too — the README
+        # calls it the only way to give one its own key — so it needs the
+        # ssh answer as much as `ssh://` does, and the scheme split left
+        # it with the socket advice and no hint at all.
+        ("context://pve1", "ssh: Permission denied (publickey).", "denied_ssh"),
+        ("unix:///var/run/docker.sock", _DOCKER_DENIED, "denied")):
+    _f = hostcheck.preflight(_ep, _Backend({"version --format": (1, "", _err)}))
+    checks[f"{_ep.split(':')[0]} + {_err[:28]}… is {_want}"] = (
+        kinds(_f) == [_want])
+
 # An ssh host that refuses the KEY is not a socket permission problem,
 # and the socket advice (mount, group, SELinux) is the wrong way to send
 # that reader — `hostdiag` appends the right sentence directly below it.
@@ -557,6 +579,23 @@ checks["every finding has wording in all 16 languages"] = (
     len(LANGS) == 16 and not missing)
 if missing:
     print("      → " + ", ".join(missing[:8]))
+
+# ── a very long endpoint must not split the two chats ────────────────
+# This is the case the earlier version of this file deliberately did
+# NOT cover ("which this fixture stays well under"), and it was the one
+# place the two renderers still disagreed: clipping inside `preflight`
+# left the header and the closing line using the raw value. Measured
+# before the fix — Telegram 8231 characters over five lines, Discord
+# clipped to 1900 with not one finding left in it.
+_LONG = "tcp://" + "a" * 4000
+_tg_long = _rendered(TelegramBot, _LONG, HEALTHY)
+_dc_long = _rendered(DiscordBot, _LONG, HEALTHY)
+checks["a 4000-character endpoint does not split the two chats"] = (
+    _plain(_tg_long) == _plain(_dc_long))
+checks["…and the findings survive in both"] = (
+    "27.1.1" in _tg_long and "27.1.1" in _dc_long)
+checks["…because the endpoint itself is bounded"] = (
+    len(_tg_long) < 1000 and len(_dc_long) < 1000)
 
 # ── the texts say what was measured ──────────────────────────────────
 # Nothing read these, so `hostcheck_ready` could be changed to "is fully
