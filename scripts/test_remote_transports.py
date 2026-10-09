@@ -92,9 +92,35 @@ def main():
         if not ready:
             raise SystemExit(_report(checks))
 
-        subprocess.run(["docker", "-H", endpoint, "run", "-d",
-                        "--name", "probe", "alpine:3.19", "sleep", "600"],
-                       capture_output=True)
+        # The probe container is FIXTURE, not the thing under test — and
+        # its result was never looked at. A fresh dind has no images, so
+        # this pulls `alpine:3.19` through the dind's own network, and
+        # when that is slow or rate-limited the `run` fails quietly and
+        # the listing check below goes red for a reason that has nothing
+        # to do with Docksentry. Measured: one red in six serial runs,
+        # always on "containers are listed over TCP".
+        #
+        # So: say whether it worked, retry once, and skip with the
+        # reason rather than reporting a defect that is not there. The
+        # same treatment dind itself already gets twenty lines up.
+        probe = None
+        for attempt in range(2):
+            probe = subprocess.run(
+                ["docker", "-H", endpoint, "run", "-d",
+                 "--name", "probe", "alpine:3.19", "sleep", "600"],
+                capture_output=True, text=True)
+            if probe.returncode == 0:
+                break
+            subprocess.run(["docker", "-H", endpoint, "rm", "-f", "probe"],
+                           capture_output=True)
+            time.sleep(3)
+        if probe is None or probe.returncode != 0:
+            why = (probe.stderr.strip()[:120] if probe is not None
+                   else "no attempt")
+            print(f"SKIP: the dind could not start the probe container "
+                  f"({why}) — that is this fixture's own network, not a "
+                  f"Docksentry failure")
+            return 0
 
         # Same shape the other host procedures use — a namespace with the
         # state-file paths, not a full Config, so the test owns its data
