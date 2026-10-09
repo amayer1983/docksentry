@@ -28,6 +28,7 @@ but a window nobody can configure out of is a tool that stops working.
 import datetime
 import os
 import sys
+import tempfile
 import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
@@ -108,6 +109,9 @@ class _Store:
         return self._w
 
 
+_TMP = tempfile.mkdtemp(prefix="window-gate-")
+
+
 def _auto_applied(windows, when_open):
     """Which containers the auto path would update right now."""
     bot = TelegramBot.__new__(TelegramBot)
@@ -120,8 +124,13 @@ def _auto_applied(windows, when_open):
         auto_update_all = False
         bot_token = ""
         chat_id = "1"
-        pending_file = os.path.join(os.path.dirname(__file__), "..",
-                                    "nonexistent-pending.json")
+        # In a temp directory, not the repo: `handle_autoupdates`
+        # writes this file on its way past the gate, and the first
+        # version pointed it at the working tree — which committed an
+        # empty `nonexistent-pending.json` into the repository. A test
+        # that leaves something behind is a test that touched something
+        # it was not asked to.
+        pending_file = os.path.join(_TMP, "pending.json")
 
         def __getattr__(self, name):
             return ""
