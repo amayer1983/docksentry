@@ -1693,10 +1693,11 @@ class TelegramBot:
                                          max=self.engine.UPDATE_QUEUE_MAX))
             elif pos == 0:
                 self.send_message(self.t("update_already_queued",
-                                         name=container_name))
+                                         name=self._key_label(container_key)))
             else:
                 self.send_message(self.t("update_queued",
-                                         name=container_name, pos=pos))
+                                         name=self._key_label(container_key),
+                                         pos=pos))
             return
         # Reset per attempt: a stale value from a previous failure would
         # make the drain skip a group that has nothing to do with this run.
@@ -1736,7 +1737,11 @@ class TelegramBot:
             # to know it was already in flight.
             self.engine.mark_updating(container_key,
                                       target.get("new_version") or "")
-            self.send_message(self.t("update_single_starting", name=container_name))
+            # The host here too: this line sits directly above a result
+            # line that names it, and `portainer` alone is ambiguous the
+            # moment two machines run one.
+            self.send_message(self.t("update_single_starting",
+                                     name=self._key_label(container_key)))
 
             try:
                 compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}

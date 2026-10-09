@@ -69,9 +69,17 @@ class _Backend:
 
     def rename(self, src, dst, timeout=None):
         r = self._answer("rename", src, dst)
-        if r.returncode == 0:
+        # A rename only works if the source is there. The first version
+        # added `dst` regardless, so with the no-backup guard removed
+        # the container reappeared and "the container the user still
+        # has is still there" read green on a container that had just
+        # been removed. Real Docker fails the rename.
+        if r.returncode == 0 and src in self.existing:
             self.existing.discard(src)
             self.existing.add(dst)
+        elif r.returncode == 0:
+            return types.SimpleNamespace(returncode=1, stdout="",
+                                         stderr=f"No such container: {src}")
         return r
 
     def run(self, args, timeout=None):

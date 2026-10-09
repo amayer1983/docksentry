@@ -40,12 +40,30 @@ checks = {}
 
 
 class _Cfg:
+    """A config that answers anything — including the calls.
+
+    `__getattr__` returning `""` for everything meant
+    `config.save_persistent()` raised `TypeError: 'str' object is not
+    callable` the moment a request got past the gate. The procedure
+    then died with a traceback and printed not one ✅ or ❌, and the
+    guard ratchet read that non-zero exit as "the mutation was caught".
+    Ten of seventeen checks would really have been red; none of them
+    reached the output. A missing attribute must not be able to decide
+    whether this file reports anything.
+    """
+
     def __init__(self, password="", username=""):
         self.web_password = password
         self.web_username = username
         self.language = "en"
 
     def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        # Callables stay callable, so a path past the gate runs instead
+        # of exploding; everything else is the empty answer it was.
+        if name.startswith(("save", "load", "apply", "write", "set_")):
+            return lambda *a, **kw: None
         return ""
 
 
@@ -85,10 +103,15 @@ checks["…and so is the wrong password"] = (
     _handler(locked, headers=_basic("", "wrong"))._check_auth() is False)
 checks["…and an empty password"] = (
     _handler(locked, headers=_basic("", ""))._check_auth() is False)
-checks["…and a header that is not Basic at all"] = (
-    _handler(locked,
-             headers={"Authorization": "Bearer something"})._check_auth()
-    is False)
+# With a payload that WOULD decode, so the scheme is what is being
+# tested. `Bearer something` failed at the base64 step instead, and
+# replacing `startswith("Basic ")` with `if not auth:` kept this green
+# while every scheme with a valid payload authenticated.
+_valid_payload = base64.b64encode(b":correct horse").decode()
+checks["…and a header that is not Basic at all"] = all(
+    _handler(locked, headers={"Authorization": f"{scheme} {_valid_payload}"}
+             )._check_auth() is False
+    for scheme in ("Bearer", "Digest", "Negotiate", "basic", "BASIC"))
 checks["…and Basic with rubbish behind it"] = (
     _handler(locked,
              headers={"Authorization": "Basic not-base64!!"})._check_auth()

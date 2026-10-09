@@ -112,8 +112,60 @@ def main():
     # password check — on an instance with no WEB_PASSWORD that answers
     # 200, so a revoked token would appear to keep working and the operator
     # would believe they had cut access when they had not.
+    # Driven, not grepped. This read `"_api_token_supplied" in src and
+    # "Invalid API token" in src`, and both strings sit in the comment
+    # above the branch — deleting the whole branch and leaving the
+    # comment kept it green, while a revoked token then answered 200 on
+    # an instance with no WEB_PASSWORD. That is the exact thing the
+    # production comment gives as the reason for the branch.
+    _answered = []
+
+    class _Resp:
+        def __init__(self):
+            self.code = None
+            self.sent = []
+
+    def _get(path, token=None, password=""):
+        handler_cls = web_ui.create_handler(
+            _ty.SimpleNamespace(api_tokens=["prom:s3cret-token"],
+                                language="en", web_password=password,
+                                web_username=""),
+            checker=None, bot=_ty.SimpleNamespace(t=None), store=None)
+        h = handler_cls.__new__(handler_cls)
+        h.path = path
+        h.headers = {"Authorization": f"Bearer {token}"} if token else {}
+        h.client_address = ("127.0.0.1", 0)
+        h.rfile = _ty.SimpleNamespace(read=lambda n: b"")
+        h.wfile = __import__("io").BytesIO()
+        seen = {}
+        h.send_response = lambda code: seen.setdefault("code", code)
+        # `send_error`, not `send_response`, is how the rejection goes
+        # out — and a fixture that only stubs one of the two measures
+        # the wrong half.
+        h.send_error = lambda code, msg="": seen.setdefault("code", code)
+        h.send_header = lambda k, v: None
+        h.end_headers = lambda: None
+        h._session_user = lambda: None
+        h._audit = lambda *a, **k: None
+        try:
+            h.do_GET()
+        except Exception as e:                              # noqa: BLE001
+            seen["raised"] = type(e).__name__
+        return seen
+
+    # No password set, so the only thing standing between a revoked
+    # token and the data is this branch.
+    _wrong = _get("/metrics", token="revoked-token")
     checks["a wrong token is rejected, not passed on"] = (
-        "_api_token_supplied" in src and "Invalid API token" in src)
+        _wrong.get("code") in (401, 403))
+    _right = _get("/metrics", token="s3cret-token")
+    checks["…while the right one is served"] = (
+        _right.get("code") == 200)
+    # …and a request with NO token still falls through to the password
+    # check, which is the distinction the branch exists for.
+    _none = _get("/metrics")
+    checks["…and no token at all is not treated as a wrong one"] = (
+        _none.get("code") != 401)
     # Read-only: the token is checked only for these two paths, so it can
     # never reach an endpoint that changes anything.
     checks["only the two read paths accept a token"] = (

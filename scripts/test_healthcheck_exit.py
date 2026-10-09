@@ -40,8 +40,14 @@ SCRIPT = os.path.join(HERE, "..", "app", "healthcheck.py")
 checks = {}
 
 
-def _run(env, timeout=30):
-    """The exit code, with only the variables given set."""
+def _run(env, timeout=30, want_output=False):
+    """The exit code, with only the variables given set.
+
+    `want_output` also returns what it printed, because the exit code
+    alone cannot tell "exited 1 because the Web UI is down" from
+    "exited 1 because the file does not parse" — and the first check
+    below claimed to catch the second.
+    """
     clean = {k: v for k, v in os.environ.items()
              if k not in ("BOT_TOKEN", "CHAT_ID", "WEB_UI", "WEB_PORT",
                           "DISCORD_WEBHOOK", "WEBHOOK_URL")}
@@ -50,9 +56,10 @@ def _run(env, timeout=30):
         r = subprocess.run([sys.executable, SCRIPT], env=clean,
                            timeout=timeout, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT)
-        return r.returncode
+        out = (r.stdout or b"").decode("utf-8", "replace")
+        return (r.returncode, out) if want_output else r.returncode
     except subprocess.TimeoutExpired:
-        return None
+        return (None, "") if want_output else None
 
 
 def _listening():
@@ -86,8 +93,16 @@ def _free_port():
 # ── it runs at all ───────────────────────────────────────────────────
 # The cheapest and, until now, missing check: the file Docker executes
 # every minute parses and runs.
-checks["the script Docker runs every minute executes"] = (
-    _run({"DISCORD_WEBHOOK": "https://example.invalid/hook"}) is not None)
+# `is not None` was only false on a timeout, so this passed on a file
+# with a syntax error in it — which is the one thing the docstring
+# above says it exists to catch. The interpreter's own complaint is
+# what distinguishes the two.
+_rc, _out = _run({"DISCORD_WEBHOOK": "https://example.invalid/hook"},
+                 want_output=True)
+checks["the script Docker runs every minute parses and runs"] = (
+    _rc is not None
+    and "SyntaxError" not in _out
+    and "Traceback (most recent call last)" not in _out)
 
 # ── Web UI: the local socket decides ─────────────────────────────────
 _srv, _port = _listening()

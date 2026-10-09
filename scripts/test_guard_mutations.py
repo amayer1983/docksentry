@@ -384,8 +384,8 @@ GUARDED = [
 
     ("…which needs the single-update path to say what it is doing",
      "app/telegram_bot.py",
-     "            self.engine.mark_updating(container_key,",
-     "            self.engine.noop_updating(container_key,",
+     "            self.engine.mark_updating(container_key,\n                                      target.get(\"new_version\") or \"\")",
+     "            pass  # MUTATION: nothing says what is running",
      "test_update_queue_duplicate.py"),
 
     ("…and finished work is not called a mistake",
@@ -429,6 +429,36 @@ GUARDED = [
      '            _tls = (c.smtp_tls or "").strip().lower() or "starttls"',
      '            _tls = (c.smtp_tls or "none").strip().lower()',
      "test_cron_dow.py"),
+
+    ("a weekday list that cannot be read does not mean every day",
+     "app/update_window.py",
+     "    if _raw and not weekdays:\n        return False",
+     "    if False:\n        return False",
+     "test_update_window_enforcement.py"),
+
+    ("a revoked API token is rejected, not passed to the password check",
+     "app/web_ui.py",
+     "                if self._api_token_supplied():",
+     "                if False:",
+     "test_metrics_api.py"),
+
+    ("the Web UI's session cookie keeps its path and its lifetime",
+     "app/web_ui.py",
+     '            max_age = int(getattr(config, "web_session_hours", 8)) * 3600',
+     "            max_age = 0",
+     "test_web_login.py"),
+
+    ("a scheme that is not Basic does not authenticate",
+     "app/web_ui.py",
+     '            if not auth.startswith("Basic "):',
+     "            if not auth:",
+     "test_web_auth_gate.py"),
+
+    ("a sidecar rejoins the head's current container, not its dead one",
+     "app/update_checker.py",
+     "                                   netns_name=netns_name,\n                                   inherited=self._image_config(config.get(\"Image\")),",
+     "                                   netns_name=None,\n                                   inherited=self._image_config(config.get(\"Image\")),",
+     "test_netns_dependent_recreate.py"),
 
 ]
 
@@ -482,14 +512,44 @@ def _restore(tree, rel):
 
 
 def _red(tree, procedure, timeout=240):
-    """Did `procedure` fail in the tree as it stands?"""
+    """`True` failed a check, `False` passed, `None` could not say.
+
+    The three are different and the first version had two. It returned
+    `r.returncode != 0`, so a procedure that CRASHED — a traceback, no
+    verdict line, not one check reported — counted as having caught the
+    mutation. Two entries lived off that: one mutation opened an auth
+    gate and the procedure then died in `save_persistent`, printing no
+    ✅ or ❌ at all, and another named a method that does not exist, so
+    an `AttributeError` made it red whatever the checks said.
+    So a crash is `None` and is reported as such, not banked.
+
+    `PYTHONDONTWRITEBYTECODE` is the other half, and it is not a tidying
+    detail. Python invalidates a `.pyc` on `(mtime seconds, size)`; the
+    mutations here are written within the same second and several leave
+    the size unchanged, so the second run of a procedure imported the
+    FIRST mutation's bytecode. Measured: a cosmetic comment edit was
+    certified as a caught mutation. Four entries on `update_checker.py`
+    were in that position.
+    """
     p = os.path.join(tree, "scripts", procedure)
     if not os.path.exists(p):
         return None
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     try:
         r = subprocess.run([sys.executable, p], cwd=tree, timeout=timeout,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                           env=env, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
     except subprocess.TimeoutExpired:
+        return None
+    out = (r.stdout or b"").decode("utf-8", "replace")
+    said_something = ("FAIL" in out or "PASS" in out
+                      or "✅" in out or "❌" in out)
+    if not said_something:
+        return None                     # it died before judging anything
+    if r.returncode != 0 and "Traceback (most recent call last)" in out:
+        # It judged some checks and THEN fell over. The verdict is not
+        # trustworthy: the mutation may have broken the fixture rather
+        # than tripped a check.
         return None
     return r.returncode != 0
 
@@ -538,14 +598,21 @@ def main():
 
         still_blind = []
         for promise, rel, anchor, repl, watchers in UNGUARDED:
+            watchers = [w for w in watchers if _baseline(tree, w)]
             ok, note = _mutate(tree, rel, anchor, repl)
             if not ok:
                 checks[f"[stale debt] {promise}"] = False
                 print(f"      → {note}; the entry needs updating")
                 continue
             # Only procedures that are green without the mutation count.
-            noticed = [w for w in watchers
-                       if _baseline(tree, w) and _red(tree, w)]
+            # `_baseline` BEFORE the mutation, always. It used to be
+            # asked inside the comprehension, after `_mutate` had run —
+            # so a watcher with no cached baseline was measured on the
+            # MUTATED tree, went red, was recorded as "not green on an
+            # untouched copy" and dropped. A promise that is in fact
+            # guarded then stayed on the debt list, and the "move it to
+            # GUARDED" message could never fire.
+            noticed = [w for w in watchers if _red(tree, w)]
             _restore(tree, rel)
             if noticed:
                 checks[f"'{promise}' is guarded now — move it to GUARDED "
@@ -565,9 +632,20 @@ def main():
         # procedures were actually started and came back green on the
         # untouched copy; a baseline that was never taken means every
         # mutation above was compared against nothing.
-        checks["the mutations really are being applied"] = (
-            len(GUARDED) >= 20 and len(_BASE) >= 4
-            and all(_BASE.values()))
+        # Not "are they applied" by counting baselines, which is what
+        # this measured while saying something else. A control: a
+        # mutation that changes NOTHING a check can see must come back
+        # green, or every ✅ above is the machinery agreeing with itself.
+        _ok, _note = _mutate(tree, "app/hostcheck.py",
+                             "def _gone(text):",
+                             "def _gone(text):  # control, changes nothing")
+        _control = _red(tree, "test_hostcheck.py") if _ok else None
+        _restore(tree, "app/hostcheck.py")
+        checks["a change no check can see comes back green"] = (
+            _control is False)
+        if _control is not False:
+            print(f"      → the control came back {_control!r}; every "
+                  f"caught mutation above is in doubt")
     finally:
         shutil.rmtree(tree, ignore_errors=True)
 

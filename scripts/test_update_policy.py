@@ -213,14 +213,19 @@ def test_delegation():
 
     answer = TelegramBot._policy_decision(bot, u, "the checker")
     checks["the bot asks the engine for the policy decision"] = (
-        asked and asked[0] == ("policy", u, "the checker"))
+        # `bool(...)`, not `asked and ...`: with an empty list the `and`
+        # stores the LIST OBJECT, and a later `append` from the next
+        # case made the stored value truthy after the fact. Measured —
+        # with the delegation removed entirely, this read green.
+        bool(asked) and asked[0] == ("policy", u, "the checker"))
     checks["…and hands back what it said, unchanged"] = (
         answer == ("major", "1.0.0", "2.0.0"))
 
     asked.clear()
     age = TelegramBot._age_decision(bot, u, "the checker")
     checks["…and the same for the minimum-age decision"] = (
-        asked and asked[0] == ("age", u, "the checker") and age == (1, 3))
+        bool(asked) and asked[0] == ("age", u, "the checker")
+        and age == (1, 3))
     return checks
 
 

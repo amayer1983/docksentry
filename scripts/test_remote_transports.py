@@ -120,7 +120,13 @@ def main():
             print(f"SKIP: the dind could not start the probe container "
                   f"({why}) — that is this fixture's own network, not a "
                   f"Docksentry failure")
-            return 0
+            # Report what IS known before leaving. `return 0` on its own
+            # threw away every check gathered so far — three of them do
+            # not touch dind at all — so a real defect in those was
+            # swallowed by a slow image pull. Measured: a deliberate
+            # failure in "the image installs an ssh client" exited 0.
+            # The SKIP fifty lines up already does it this way.
+            raise SystemExit(_report(checks))
 
         # Same shape the other host procedures use — a namespace with the
         # state-file paths, not a full Config, so the test owns its data

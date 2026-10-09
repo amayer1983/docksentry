@@ -38,7 +38,15 @@ CONFIG = [{
     "Name": "/qbittorrent",
     "Config": {"Image": "linuxserver/qbittorrent:4.6", "Env": [],
                "Labels": {}},
-    "HostConfig": {"AutoRemove": True, "NetworkMode": "container:gluetun",
+    # The STALE id, on purpose. This is the whole of #8: after the head
+    # is recreated it has a new container id, and the sidecar's own
+    # inspect still records the dead one. Rebuilding from the inspect
+    # alone rejoins a container that no longer exists, which is exactly
+    # the failure `netns_name` was added to prevent — so the fixture has
+    # to disagree with the caller, or dropping `netns_name` changes
+    # nothing and the check cannot fall.
+    "HostConfig": {"AutoRemove": True,
+                   "NetworkMode": "container:0dead0dead0d",
                    "RestartPolicy": {"Name": "unless-stopped"},
                    "Binds": [], "PortBindings": {}},
     "Mounts": [],
@@ -53,12 +61,17 @@ class _Host:
         self.run_fails = run_fails
         self.exists = {"qbittorrent"}
         self.did = []
+        self.argv = []
         self.inspect_after_stop = None    # was inspect asked too late?
         self.stopped = False
 
     def run(self, args, timeout=None):
         verb = args[0]
         self.did.append(" ".join(str(a) for a in args[:2]))
+        # The WHOLE command, kept: `did` only held the first two words,
+        # so "it rejoins the head's namespace" was satisfied by the
+        # word "run" and passed with `netns_name` dropped entirely.
+        self.argv.append([str(a) for a in args])
         if verb == "inspect":
             name = args[-1]
             if name == "qbittorrent" and self.stopped and self.auto_remove:
@@ -88,6 +101,7 @@ class _Host:
 
     def rm(self, name, force=False, timeout=None):
         self.did.append(f"rm {name}")
+        self.argv.append(["rm", name])
         self.exists.discard(name)
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -96,10 +110,15 @@ class _Host:
 
     def start(self, name, timeout=None):
         self.did.append(f"start {name}")
+        self.argv.append(["start", name])
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     def rename(self, src, dst, timeout=None):
+        # In `argv` too: the named backend methods do not go through
+        # `run`, so a check that reads only `argv` missed the rollback's
+        # rename entirely.
         self.did.append(f"rename {src} {dst}")
+        self.argv.append(["rename", src, dst])
         if src in self.exists:
             self.exists.discard(src)
             self.exists.add(dst)
@@ -132,8 +151,12 @@ checks["an AutoRemove sidecar is rebuilt after its head moved"] = ok is True
 checks["…and the config was read before the stop, not after"] = (
     host.inspect_after_stop is not True)
 checks["…so it exists again afterwards"] = "qbittorrent" in host.exists
-checks["…and it rejoins the head's namespace"] = any(
-    "run" in d for d in host.did)
+_run_argv = next((a for a in host.argv if a and a[0] == "run"), [])
+checks["…and it rejoins the head's CURRENT container, not the dead one"] = (
+    "--network" in _run_argv
+    and _run_argv[_run_argv.index("--network") + 1] == "container:gluetun")
+checks["…so the id from its own stale inspect is not reused"] = (
+    "container:0dead0dead0d" not in _run_argv)
 
 # ── order, stated ────────────────────────────────────────────────────
 # `inspect` must come before `stop`. This is the whole finding, said as
@@ -161,14 +184,16 @@ ok, detail = _checker(broken).recreate_dependent("qbittorrent", "gluetun")
 checks["a rebuild that fails reports the failure"] = (
     ok is False and "port already allocated" in detail)
 checks["…and puts the backup back"] = any(
-    d.startswith("rename qbittorrent_old qbittorrent") for d in broken.did)
+    a[:3] == ["rename", "qbittorrent_old", "qbittorrent"] for a in broken.argv)
 
 # ── a host that cannot be inspected at all ───────────────────────────
 missing = _Host(auto_remove=True)
 missing.exists.clear()
 ok, detail = _checker(missing).recreate_dependent("qbittorrent", "gluetun")
+# `"inspect" in detail` also matched "inspect parse failed", which is a
+# different failure. The one this case produces is the lookup itself.
 checks["a container that is already gone is reported, not guessed at"] = (
-    ok is False and "inspect" in detail)
+    ok is False and detail == "inspect failed")
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

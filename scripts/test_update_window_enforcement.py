@@ -72,9 +72,29 @@ checks["a weekday list keeps the window shut on other days"] = (
 checks["…and an empty weekday list means every day"] = (
     _open({"start": "02:00", "end": "04:00", "weekdays": []}, _at(SAT, 3))
     is True)
-checks["…and weekdays given as strings still count"] = (
+# A list the user gave must not evaporate. The filter dropped whatever
+# it could not read, and an empty list means "every day" — so `["Sat"]`,
+# `[5.0]` and `["-1"]` all opened the window on all seven days, which is
+# the restriction disappearing in the one direction that matters: it
+# updates on a day the user said not to. The old check here passed
+# `["5"]` and read True, which is also what a list of pure rubbish gave.
+checks["weekdays given as digit strings still count"] = (
     _open({"start": "02:00", "end": "04:00", "weekdays": ["5"]}, _at(SAT, 3))
+    is True
+    and _open({"start": "02:00", "end": "04:00", "weekdays": ["5"]},
+              _at(MON, 3)) is False)
+checks["…and a whole number written as a float does too"] = (
+    _open({"start": "02:00", "end": "04:00", "weekdays": [5.0]}, _at(SAT, 3))
     is True)
+for _rubbish in (["Sat"], ["-1"], [5.5], [None], [True]):
+    checks[f"a weekday list of {_rubbish!r} does not mean every day"] = (
+        not any(_open({"start": "02:00", "end": "04:00",
+                       "weekdays": _rubbish}, _at(_d, 3))
+                for _d in range(7)))
+# …but one readable entry among rubbish is honoured, not thrown away.
+checks["one readable weekday among rubbish still counts"] = (
+    _open({"start": "02:00", "end": "04:00", "weekdays": ["5", "oops"]},
+          _at(SAT, 3)) is True)
 
 # ── the wrapping window, and whose day the small hours belong to ─────
 weekend = {"start": "23:00", "end": "03:00", "weekdays": [SAT]}

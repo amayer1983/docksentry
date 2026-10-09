@@ -138,8 +138,17 @@ checks["…and the update itself still finished"] = (
     "All updates" in _text or "complete" in _text.lower())
 # Every message names the host, because `portainer` alone is ambiguous
 # the moment two machines run one.
+# Read off the SECOND TAP's own line, not the whole transcript. The
+# result line "✅ portainer @srv30: OK" names the host too, so looking
+# for it anywhere satisfied this check even with the host taken out of
+# the message under test — measured.
+_tap_line = next((m for m in said if "being updated right now" in m), "")
 checks["…and the second tap's answer names the host"] = (
-    "portainer @srv30" in _text)
+    "portainer @srv30" in _tap_line)
+# …and so do the lines around it, which is what "every one of them"
+# claimed and three of them did not do.
+checks["…as does the line that confirms the tap"] = any(
+    "portainer @srv30" in m for m in said if "Updating" in m)
 
 # ── the in-flight marker the single path never set ───────────────────
 # Without it the half above cannot work at all, and the Web UI showed
@@ -186,7 +195,7 @@ checks["a different container tapped meanwhile is still queued and run"] = (
 checks["…and is not told it is the same one"] = (
     "being updated right now" not in _t5)
 checks["…and really does run, rather than being dropped"] = (
-    "Updating `other`" in _t5)
+    "Updating `other" in _t5)
 if "being updated right now" in _t5:
     print("      → " + _t5.replace("\n", " | ")[:220])
 

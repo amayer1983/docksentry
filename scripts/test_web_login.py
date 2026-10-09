@@ -256,8 +256,16 @@ checks["…and SameSite=Lax, so it is not sent on a cross-site POST"] = (
 # working at all. Stated as a decision, measured on the header.
 checks["…and not Secure, which would break plain HTTP"] = (
     "Secure" not in _cookie)
-checks["…with a path and a lifetime"] = (
-    "Path=/" in _cookie and "Max-Age=" in _cookie)
+# The VALUES, not the words. `"Max-Age=" in cookie` passed on
+# `Max-Age=0` — a cookie that expires immediately — and `"Path=/"`
+# passed on `Path=/nonsense`.
+import re as _re                                              # noqa: E402
+
+_path = _re.search(r"Path=([^;]*)", _cookie)
+_age = _re.search(r"Max-Age=(\d+)", _cookie)
+checks["…scoped to the whole site"] = bool(_path) and _path.group(1) == "/"
+checks["…and lasting the configured number of hours"] = (
+    bool(_age) and int(_age.group(1)) == 8 * 3600)
 checks["…and the token itself, or there is no session"] = (
     "a-session-token" in _cookie)
 

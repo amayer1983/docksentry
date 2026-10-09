@@ -22,7 +22,7 @@ durchgestrichener Zeilen liest irgendwann niemand mehr.
 gefunden, deren Durchsetzung man löschen kann, ohne dass eine von 181
 Prozeduren rot wird. Alle sieben haben jetzt eigene Prüfungen, und
 `test_guard_mutations.py` bricht für jede die Zeile, die sie durchsetzt
-— 48 Einträge, Schuldenliste **leer**.
+— 69 Einträge, Schuldenliste **leer**.
 
 * **Rollback** — `test_rollback.py`. Der wichtigste Fall ist der, in
   dem es *nichts* tun darf: ohne Backup wird `name` nicht angefasst,
@@ -182,22 +182,18 @@ verbindet gar nicht erst.
   Dockerfile-Zeilen, Hilfsnamen); Liste erzeugt
   `scratchpad/needles2.py`. `not in`-Prüfungen sind nicht darunter — die
   macht ein Kommentar rot, nicht grün, und das ist die sichere Richtung.
-* **Parallellauf (`-P 8`) ist flaky**: `test_multihost_live.py`,
-  `test_remote_transports.py`. Seriell nicht nachstellbar — fünf Läufe
-  je Prozedur, 5/5 grün. Beide nutzen echtes Docker und echte Ports.
+* **Flakiness, Stand 09.10.2026**: die serielle Aussage von oben ist
+  **zurückgezogen** — sechs Läufe ergaben fünf grün, einen rot, immer
+  auf derselben Prüfung. Ursache war das Fixture (ein Probe-Container,
+  dessen Start nie geprüft wurde); behoben, danach fünf grün und ein
+  sauberer SKIP. Offen bleibt: beide Live-Docker-Prozeduren benutzen
+  **feste Containernamen** (`ds_trust_test`, `ds-tcp-transport-test`,
+  `probe`) und einen festen Port 12375, zerstören sich also bei zwei
+  gleichzeitigen Läufen gegenseitig.
 * Die fünf `*_resilience.py` teilen weiter 25 identische
   Assertion-Ausdrücke. `test_channel_backoff.py` hat den wichtigsten
   Teil davon zusammengefasst; der Rest wäre Kosmetik mit Risiko.
 
-## 7 — Entschieden, bleibt so
-
-* `de.json` übersetzt die Metavariable zu `<endpunkt>`, die anderen 15
-  behalten `<endpoint>`. Für einen deutschen Leser ist das besser, und
-  der kopierbare Teil des Befehls ist unberührt.
-* `fd://` und `npipe://` bleiben **akzeptiert**, werden aber nicht mehr
-  empfohlen: wer so ein Setup hat, weiß es besser als unsere Liste.
-* Die Vorab-Prüfung gibt es in der Web-UI nicht, und kein Text behauptet
-  etwas anderes.
 ## 7 — Entschieden, bleibt so
 
 * `de.json` übersetzt die Metavariable zu `<endpunkt>`, die anderen 15

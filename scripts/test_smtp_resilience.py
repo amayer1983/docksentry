@@ -267,11 +267,18 @@ try:
     _Transport.where = "at_data_cmd"
     _notifier().send_message("a container went down")
     _held = q.pending() == 1
-    _Transport.where = None                   # the line comes back
+    # The line stays down for the first retry, and only then comes
+    # back. Healing it before the single flush made this pass whether
+    # the attempt was free or capped — both worlds deliver on the one
+    # retry they are given, so "free" was never observed.
     clock["t"] = 30.0
+    q.flush()                                 # still at the DATA command
+    _survived = q.pending() == 1
+    _Transport.where = None                   # now the line comes back
+    clock["t"] = 60.0
     q.flush()
     checks["dying on the DATA command still gets a free retry"] = (
-        _held and len(_ACCEPTED) == 1 and not q.pending())
+        _held and _survived and len(_ACCEPTED) == 1 and not q.pending())
 
     # 4b-ii — and a server that answers the DATA command with a refusal
     # has taken nothing. Reading that as a handover would hold an alert
@@ -414,7 +421,13 @@ try:
     # raises as well, and an exception from a `finally` REPLACES the one
     # that got us here. We would then classify the wrong failure.
     class _BadQuit(_Transport):
-        where = "after_354"
+        # `mail_from`, not `after_354`. With the body already out, the
+        # verdict is TAKEN whatever the exception says, so the check
+        # could not fall: removing the `try/except` around `quit()`
+        # left it green while the real failure was misclassified. On
+        # the envelope the classification is what decides, which is
+        # where a swapped exception actually shows.
+        where = "mail_from"
 
         def quit(self):
             # Deliberately NOT a network error: if this one replaced the
@@ -429,8 +442,11 @@ try:
     smtplib.SMTP = _BadQuit
     _ACCEPTED.clear()
     _notifier().send_message("a container went down")
+    # Nothing was handed over, so this must be held for a FREE retry.
+    # If `quit()`'s own exception replaced the real one, the failure is
+    # read as a refusal and the alert is dropped instead.
     checks["quit() cannot replace the error that got us here"] = (
-        len(_ACCEPTED) == 1 and q.pending() == 1)
+        not _ACCEPTED and q.pending() == 1)
     smtplib.SMTP = _Transport
 finally:
     smtplib.SMTP = _orig_smtp
