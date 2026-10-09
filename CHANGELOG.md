@@ -2,6 +2,100 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.38] - 2026-10-09
+
+Two features that were asked for, and four days of taking the tests
+apart to find out which of the promises around them anything actually
+held.
+
+### Added
+- **`/hosts check <endpoint>`** — try a host before you add it (#7,
+  @LeeNX). It asks, in order, whether the scheme is one Docksentry
+  speaks, whether anything answers, which engine it is, and whether
+  containers can be listed and one inspected, then names the question
+  that failed instead of returning a bare no. It writes nothing and
+  works before the endpoint is in `DOCKER_HOSTS`, which is the point:
+  you find out now rather than when an update fails.
+
+  Two limits, stated rather than implied. Every question is a **read**,
+  so a socket proxy that allows GET and refuses POST passes the whole
+  check and fails the first update with a 403 — the "ready" line says
+  so. And the endpoint is whatever you type, so anyone who may command
+  the bot can point it at an address on your network: on Telegram the
+  answer goes to the whole group, on Discord only to whoever asked
+  unless `DISCORD_PUBLIC_REPLIES=true`.
+
+  On Discord it is `/hosts check:<endpoint>`.
+
+- **E-mail now carries a `Message-ID`** (#66, @NotRetarded). It was said
+  this path had no transaction id to recognise a second copy with. It
+  has one, nothing was setting it, and a retry therefore arrived as a
+  fresh alert. Each notification gets its own and the retry reuses it.
+
+### Fixed
+- **A rate-limited notification is no longer thrown away.** `429 Too
+  Many Requests` and `503 Service Unavailable` are the server asking us
+  to come back, and all six channels — ntfy, Gotify, Apprise, Matrix,
+  the Discord webhook and the generic one — dropped them outright.
+  ntfy.sh rate-limits free accounts, and a burst of failed updates is
+  exactly when a limit is hit and when the message matters. `408`, `502`
+  and `504` travel with them; `500` deliberately does not, because it
+  is as likely to be a permanent fault and a queue that repeats it
+  every thirty seconds is a loop.
+
+- **SMTP understands "later" as well as "no".** A relay answering
+  `450 Greylisted — try again later` was filed as a refusal and the
+  crash alert thrown away while the server was asking for a retry.
+  There are four outcomes now — the wire, a 4xx, a 5xx, and "the body
+  was already going out" — and a server that answers after the body is
+  believed rather than guessed at.
+
+  A connection that dies once the server has said `354` is held for one
+  more attempt under the same `Message-ID`, and no further: the worst
+  case is two copies of one alert, not thirty.
+
+- **`SMTP_TLS` with a value that is not `ssl`, `starttls` or `none`
+  refuses to send.** `SMTP_TLS=TLS` — the obvious thing to type — fell
+  through to plain SMTP, so with `SMTP_USER` set the password went out
+  in clear. It is compared case-insensitively now, and an unknown value
+  stops rather than guessing. **If you have one, mail stops working and
+  says why in the container log; the fix is one of the three words.**
+
+  An empty value meant plain SMTP here and STARTTLS everywhere else,
+  including in the interface. It means STARTTLS now, as it says.
+
+- **Tapping the same update twice no longer produces a warning under a
+  green result.** The second tap was queued, the first finished and
+  emptied the pending list, and the queue then reported the container
+  as "not in the update list" — directly below `OK`. A second tap on
+  something already running is told so; a queued entry whose work is
+  done says that instead.
+
+- **Messages about one container name the host it is on.** `portainer`
+  alone is ambiguous the moment two machines run one.
+
+- **A maintenance window with an unreadable weekday no longer opens
+  every day.** `["Sat"]` instead of `[5]` dropped the restriction
+  entirely and updated on days you had excluded. It now stays shut.
+
+### Changed
+- The host pre-flight waits 30 seconds per question, the same as the
+  scheduler gives a host in normal operation. A pre-flight stricter
+  than production reports a working host as unreachable.
+
+### Internal
+- Four days of audits on the test suite itself, which is why this
+  release is mostly things you cannot see. The short version: a
+  mutation sweep found ten promises — rollback after a failed update,
+  quiet hours, maintenance mode, update windows, `EXCLUDE_CONTAINERS`,
+  `/pin`, both GitOps labels, the Web UI's CSRF check and its auth
+  gate, the weekly report's schedule, `healthcheck.py` — whose
+  enforcement could be deleted without a single one of 181 test
+  procedures going red. All of them are driven now, and
+  `scripts/test_guard_mutations.py` breaks each one on purpose and
+  requires a named procedure to notice. 193 procedures, 4605 checks, 69
+  guarded promises.
+
 ## [2.18.0-beta.37] - 2026-10-06
 
 @NotRetarded turned the Discord channel off, ran a public `/selfupdate`
