@@ -2785,7 +2785,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         # press — worth it to stop reporting sends that
                         # did not happen.
                         import contextlib as _ctx
+                        import notify_retry as _nr
                         buf = _io.StringIO()
+                        # A test runs the real send path, and that path
+                        # holds a failed message for redelivery. So a
+                        # test pressed while the server is down used to
+                        # leave an entry behind that arrived minutes
+                        # later out of nowhere (@NotRetarded, #66). A
+                        # test is a question about now: whatever it
+                        # queued is taken back out, and the toast says
+                        # that this is what a real alert would have
+                        # done instead of calling it a flat failure.
+                        _mark = _nr.queue.snapshot()
                         try:
                             with _ctx.redirect_stdout(buf):
                                 probe.send_message(
@@ -2793,10 +2804,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                             said = buf.getvalue().strip()
                         except Exception as e:
                             said = f"{type(e).__name__}: {e}"
+                        _held = _nr.queue.drop_since(_mark)
                         last = said.splitlines()[-1].strip() if said else ""
-                        if last and any(w in last.lower() for w in
-                                        ("error", "failed", "refused",
-                                         "timed out", "rejected")):
+                        if _held:
+                            # It did not get through, and on a real
+                            # alert it would not have been lost either.
+                            # Both halves belong in the answer.
+                            response = {"ok": False,
+                                        "error": (f"{last[:160]} — a real "
+                                                  f"alert would be held and "
+                                                  f"retried for up to 15 "
+                                                  f"minutes").strip(" —")}
+                        elif last and any(w in last.lower() for w in
+                                          ("error", "failed", "refused",
+                                           "timed out", "rejected")):
                             response = {"ok": False, "error": last[:200]}
                         elif last:
                             # Said something that is not a failure — the

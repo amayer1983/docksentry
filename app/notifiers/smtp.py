@@ -260,14 +260,66 @@ class SmtpNotifier(BaseNotifier):
         # self-signed certificate, which is a real and common setup — but
         # it has to be asked for, and it says so when used, because the
         # thing being risked is a password.
+        # The transport is decided before the context, because what
+        # the warning below should SAY depends on it — and because an
+        # unknown value must refuse before anything is built.
+        # A value we do not know means plain SMTP, and plain SMTP
+        # with `smtp_user` set puts the password on the wire. `tls`
+        # is the obvious thing to type and it is not one of the
+        # three, so that typo silently downgraded the transport. Say
+        # it and refuse rather than sending the credential.
+        # `or "starttls"`, which is what `config.py:857` and the
+        # Connections page both use. This said `or "none"`, so an
+        # empty value meant plain SMTP here and STARTTLS everywhere
+        # else — and with `smtp_user` set, the password went out in
+        # clear while the interface showed STARTTLS. `Config.from_env`
+        # normalises it, so this only bites a value that came in
+        # another way: a hand-written `settings.json`, or a restored
+        # backup bundle, both of which `setattr` straight on.
+        # Stripped BEFORE the default, or a whitespace-only value
+        # is "unknown" rather than "unset" and gets refused.
+        _tls = (c.smtp_tls or "").strip().lower() or "starttls"
+        if _tls not in ("ssl", "starttls", "none"):
+            print(f"SMTP error: SMTP_TLS is {c.smtp_tls!r}, which is not "
+                  f"one of ssl / starttls / none. Nothing was sent — "
+                  f"plain SMTP with a password set would put it on the "
+                  f"wire, and that is not something to guess at.")
+            return (False, PERMANENT, msgid)
+
         verify = getattr(c, "smtp_tls_verify", True)
+        _has_password = bool(c.smtp_user and c.smtp_password)
         if verify:
             ctx = ssl.create_default_context()
         else:
             ctx = ssl._create_unverified_context()
-            print("SMTP: certificate verification is OFF "
-                  "(SMTP_TLS_VERIFY=false) — the password is sent to "
-                  "whatever answers on that address.")
+        # Say what is actually at risk, in this setup, right now. The
+        # first version printed one sentence in all six combinations of
+        # (transport × password), including `smtp_tls=none`, where
+        # there is no certificate to verify at all, and with no
+        # credentials, where there is no password to send. @NotRetarded
+        # got "the password is sent to whatever answers on that
+        # address" for an internal Mailrise he does not authenticate
+        # against — a security warning about something he does not
+        # have, which teaches people to skip the line.
+        if _tls == "none":
+            if _has_password:
+                # The one that was NOT warned about and is the worst of
+                # them: no transport encryption with credentials set
+                # puts the password on the wire in clear, with or
+                # without `SMTP_TLS_VERIFY`.
+                print("SMTP: SMTP_TLS=none and a user is set, so the "
+                      "password goes out unencrypted. Use starttls or "
+                      "ssl unless the server is on this machine.")
+        elif not verify:
+            if _has_password:
+                print("SMTP: certificate verification is OFF "
+                      "(SMTP_TLS_VERIFY=false) — the password is sent to "
+                      "whatever answers on that address.")
+            else:
+                print("SMTP: certificate verification is OFF "
+                      "(SMTP_TLS_VERIFY=false) — no credentials are at "
+                      "stake, but the mail goes to whatever answers on "
+                      "that address.")
         # Which side of the point of no return a failure happened on.
         # Before DATA a retry is free: the server has nothing. From the
         # moment the DATA command goes out it may have the mail and be
@@ -291,28 +343,6 @@ class SmtpNotifier(BaseNotifier):
         # body.
         handed = {"over": False}
         try:
-            # A value we do not know means plain SMTP, and plain SMTP
-            # with `smtp_user` set puts the password on the wire. `tls`
-            # is the obvious thing to type and it is not one of the
-            # three, so that typo silently downgraded the transport. Say
-            # it and refuse rather than sending the credential.
-            # `or "starttls"`, which is what `config.py:857` and the
-            # Connections page both use. This said `or "none"`, so an
-            # empty value meant plain SMTP here and STARTTLS everywhere
-            # else — and with `smtp_user` set, the password went out in
-            # clear while the interface showed STARTTLS. `Config.from_env`
-            # normalises it, so this only bites a value that came in
-            # another way: a hand-written `settings.json`, or a restored
-            # backup bundle, both of which `setattr` straight on.
-            # Stripped BEFORE the default, or a whitespace-only value
-            # is "unknown" rather than "unset" and gets refused.
-            _tls = (c.smtp_tls or "").strip().lower() or "starttls"
-            if _tls not in ("ssl", "starttls", "none"):
-                print(f"SMTP error: SMTP_TLS is {c.smtp_tls!r}, which is not "
-                      f"one of ssl / starttls / none. Nothing was sent — "
-                      f"plain SMTP with a password set would put it on the "
-                      f"wire, and that is not something to guess at.")
-                return (False, PERMANENT, msgid)
             if _tls == "ssl":
                 server = smtplib.SMTP_SSL(c.smtp_host, c.smtp_port,
                                           timeout=15, context=ctx)

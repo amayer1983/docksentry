@@ -202,6 +202,68 @@ def main():
     checks["an unknown SMTP_TLS value sends nothing at all"] = (
         _sent is False and _dialled == [])
 
+    # ── the warning has to be about this setup, not about a setup ──
+    # @NotRetarded runs an internal Mailrise with no credentials and was
+    # told "the password is sent to whatever answers on that address"
+    # (#63). One sentence was printed for all six combinations of
+    # transport and credentials, including `smtp_tls=none`, where there
+    # is no certificate to verify at all. A security line that does not
+    # apply teaches people to skip the next one.
+    import contextlib as _ctx_mod
+    import io as _io_mod
+
+    def _warning(tls, user, pw, verify):
+        _buf = _io_mod.StringIO()
+        _rs, _rp = smtplib.SMTP_SSL, smtplib.SMTP
+
+        class _Ok:
+            def __init__(self, *a, **kw):
+                pass
+
+            def starttls(self, context=None):
+                pass
+
+            def login(self, u, p):
+                pass
+
+            def getreply(self):
+                return (354, b"ok")
+
+            def data(self, arg):
+                return (250, b"ok")
+
+            def send_message(self, msg, to_addrs=None):
+                return self.data("")
+
+            def quit(self):
+                pass
+
+        smtplib.SMTP_SSL = smtplib.SMTP = _Ok
+        try:
+            with _ctx_mod.redirect_stdout(_buf):
+                SmtpNotifier(_t.SimpleNamespace(
+                    smtp_host="h", smtp_port=25, smtp_user=user,
+                    smtp_password=pw, smtp_from="a@ex.test",
+                    smtp_to="b@ex.test", smtp_tls=tls,
+                    smtp_tls_verify=verify, language="en",
+                    channel_smtp_enabled=True)).send_raw("s", "b")
+        finally:
+            smtplib.SMTP_SSL, smtplib.SMTP = _rs, _rp
+        return next((l for l in _buf.getvalue().splitlines()
+                     if l.startswith("SMTP")), "")
+
+    checks["no credentials and no TLS: nothing to warn about"] = (
+        _warning("none", "", "", False) == "")
+    checks["…but no TLS WITH a password says the password is in clear"] = (
+        "unencrypted" in _warning("none", "bob", "pw", True))
+    checks["an unverified certificate with a password names the password"] = (
+        "password is sent" in _warning("starttls", "bob", "pw", False))
+    checks["…and without one does not invent a password"] = (
+        "no credentials are at stake" in _warning("ssl", "", "", False)
+        and "the password is sent" not in _warning("ssl", "", "", False))
+    checks["…and a verified certificate says nothing at all"] = (
+        _warning("starttls", "bob", "pw", True) == "")
+
     # ── and the interface must not claim a setting it does not have ──
     # With `SMTP_TLS=tls` in a compose file, no option matched, so none
     # carried `selected`, the browser showed the first — and the page

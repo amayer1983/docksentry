@@ -210,8 +210,8 @@ GUARDED = [
 
     ("a capitalised or unknown SMTP_TLS never means plaintext",
      "app/notifiers/smtp.py",
-     '            if _tls not in ("ssl", "starttls", "none"):',
-     "            if False:",
+     '        if _tls not in ("ssl", "starttls", "none"):',
+     "        if False:",
      "test_cron_dow.py"),
 
     ("one message cannot make the retry queue grow past its cap",
@@ -426,8 +426,8 @@ GUARDED = [
 
     ("an empty SMTP_TLS means STARTTLS, as it does everywhere else",
      "app/notifiers/smtp.py",
-     '            _tls = (c.smtp_tls or "").strip().lower() or "starttls"',
-     '            _tls = (c.smtp_tls or "none").strip().lower()',
+     '        _tls = (c.smtp_tls or "").strip().lower() or "starttls"',
+     '        _tls = (c.smtp_tls or "none").strip().lower()',
      "test_cron_dow.py"),
 
     ("a weekday list that cannot be read does not mean every day",
@@ -464,6 +464,24 @@ GUARDED = [
      "app/web_ui.py",
      '            if _tls not in ("starttls", "ssl", "none"):\n                smtp_tls_options = (',
      "            if False:\n                smtp_tls_options = (",
+     "test_cron_dow.py"),
+
+    ("a test send leaves nothing in the retry queue",
+     "app/web_ui.py",
+     "                        _held = _nr.queue.drop_since(_mark)",
+     "                        _held = 0",
+     "test_channel_test_button.py"),
+
+    ("…and says a real alert would have been held, not just 'failed'",
+     "app/web_ui.py",
+     "                        if _held:",
+     "                        if False:",
+     "test_channel_test_button.py"),
+
+    ("the certificate warning names what is actually at risk",
+     "app/notifiers/smtp.py",
+     '        _has_password = bool(c.smtp_user and c.smtp_password)',
+     "        _has_password = True",
      "test_cron_dow.py"),
 
 ]

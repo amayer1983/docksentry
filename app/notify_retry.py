@@ -125,6 +125,29 @@ class RetryQueue:
         with self._lock:
             self._items = []
 
+    def snapshot(self):
+        """A marker for `drop_since`. Opaque; do not read it."""
+        with self._lock:
+            return [id(i) for i in self._items]
+
+    def drop_since(self, marker):
+        """Remove everything queued after `marker` was taken. Returns how
+        many went.
+
+        For the "send a test" button. A test runs the real send path on
+        purpose — that is the point of it — and since a failed mail is
+        held for redelivery, pressing it while the server was down left
+        an entry behind that arrived minutes later as a surprise.
+        @NotRetarded hit exactly that: the page said the test had
+        failed, and the message turned up when he restarted Mailrise.
+        A test is a question about now; it must not leave work behind.
+        """
+        keep_ids = set(marker)
+        with self._lock:
+            before = len(self._items)
+            self._items = [i for i in self._items if id(i) in keep_ids]
+            return before - len(self._items)
+
     # ── the two things it does ───────────────────────────────────────
     def remember(self, channel, text, send, still_wanted=None):
         """Hold `text` for `channel`; `send(text)` will be tried again later.
