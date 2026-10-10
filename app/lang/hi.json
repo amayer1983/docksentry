@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (पोर्ट 587)",
   "web_smtp_tls_ssl": "SSL (पोर्ट 465)",
   "web_smtp_tls_none": "कोई नहीं (बिना एन्क्रिप्शन)",
+  "web_smtp_tls_invalid": "{value} — अमान्य, मेल नहीं भेजी जा रही",
   "web_smtp_from": "प्रेषक",
   "web_smtp_from_help": "प्रेषक का पता। कुछ प्रदाता खाते के अपने पते के अलावा सब कुछ अस्वीकार कर देते हैं।",
   "web_smtp_to": "प्राप्तकर्ता",

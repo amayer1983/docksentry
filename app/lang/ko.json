@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (포트 587)",
   "web_smtp_tls_ssl": "SSL (포트 465)",
   "web_smtp_tls_none": "없음 (암호화 안 함)",
+  "web_smtp_tls_invalid": "{value} — 유효하지 않음, 메일이 전송되지 않습니다",
   "web_smtp_from": "보내는 주소",
   "web_smtp_from_help": "보내는 사람 주소. 계정 자신의 주소가 아니면 거부하는 제공자도 있습니다.",
   "web_smtp_to": "받는 주소",

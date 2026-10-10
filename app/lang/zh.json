@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS（端口 587）",
   "web_smtp_tls_ssl": "SSL（端口 465）",
   "web_smtp_tls_none": "无（不加密）",
+  "web_smtp_tls_invalid": "{value} — 无效，邮件不会发送",
   "web_smtp_from": "发件人",
   "web_smtp_from_help": "发件地址。有些服务商会拒绝账号本身地址之外的一切。",
   "web_smtp_to": "收件人",

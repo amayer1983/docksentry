@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (porta 587)",
   "web_smtp_tls_ssl": "SSL (porta 465)",
   "web_smtp_tls_none": "Nenhuma (sem cifra)",
+  "web_smtp_tls_invalid": "{value} — inválido, não é enviado correio",
   "web_smtp_from": "Remetente",
   "web_smtp_from_help": "O endereço do remetente. Alguns fornecedores rejeitam tudo o que não seja o endereço da própria conta.",
   "web_smtp_to": "Destinatários",

@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (Port 587)",
   "web_smtp_tls_ssl": "SSL (Port 465)",
   "web_smtp_tls_none": "Keine (unverschlüsselt)",
+  "web_smtp_tls_invalid": "{value} — ungültig, es wird keine Mail gesendet",
   "web_smtp_from": "Absender",
   "web_smtp_from_help": "Die Absenderadresse. Manche Anbieter lehnen alles ab, was nicht die Adresse des Kontos selbst ist.",
   "web_smtp_to": "Empfänger",

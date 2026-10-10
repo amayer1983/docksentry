@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (587)",
   "web_smtp_tls_ssl": "SSL (465)",
   "web_smtp_tls_none": "Yok (şifresiz)",
+  "web_smtp_tls_invalid": "{value} — geçersiz, posta gönderilmiyor",
   "web_smtp_from": "Gönderen",
   "web_smtp_from_help": "Gönderen adresi. Bazı sağlayıcılar hesabın kendi adresi olmayan her şeyi reddeder.",
   "web_smtp_to": "Alıcılar",

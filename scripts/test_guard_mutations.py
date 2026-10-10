@@ -460,6 +460,12 @@ GUARDED = [
      "                                   netns_name=None,\n                                   inherited=self._image_config(config.get(\"Image\")),",
      "test_netns_dependent_recreate.py"),
 
+    ("the interface does not claim STARTTLS for a value that is not valid",
+     "app/web_ui.py",
+     '            if _tls not in ("starttls", "ssl", "none"):\n                smtp_tls_options = (',
+     "            if False:\n                smtp_tls_options = (",
+     "test_cron_dow.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

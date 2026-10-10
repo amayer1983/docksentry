@@ -202,6 +202,80 @@ def main():
     checks["an unknown SMTP_TLS value sends nothing at all"] = (
         _sent is False and _dialled == [])
 
+    # ── and the interface must not claim a setting it does not have ──
+    # With `SMTP_TLS=tls` in a compose file, no option matched, so none
+    # carried `selected`, the browser showed the first — and the page
+    # told the one person whose mail was refusing to send that they
+    # were on STARTTLS.
+    #
+    # The REAL page is rendered and the real `<select>` read out. The
+    # first version of this block rebuilt the dropdown's logic here and
+    # asserted against its own copy, so mutating `web_ui.py` changed
+    # nothing — which is the mistake CLAUDE.md has a rule about, made
+    # in the file that was fixing a different one.
+    import re as _re
+    import web_ui as _wu
+
+    def _selected(value):
+        class _C:
+            smtp_host = "mail.example.test"
+            smtp_from = "a@example.test"
+            smtp_to = "b@example.test"
+            smtp_tls = value
+            language = "en"
+
+            # The page asks `config.env_override(key)` for every field,
+            # so a config whose `__getattr__` hands back a string for
+            # everything dies with `'str' object is not callable` —
+            # which is a fixture problem, and it would have looked like
+            # a page problem.
+            _CALLS = ("env_override", "save", "load", "apply", "write",
+                      "set_")   # a real attribute, so `__getattr__` is
+                                # not asked for it and cannot recurse
+
+            def __getattr__(self, name):
+                if name.startswith("_"):
+                    raise AttributeError(name)
+                if name.startswith(self._CALLS):
+                    return lambda *a, **kw: None
+                return ""
+
+        cls = _wu.create_handler(_C(), checker=None,
+                                 bot=_t.SimpleNamespace(t=None), store=None)
+        h = cls.__new__(cls)
+        h.path = "/connections"
+        h.headers = {}
+        h.client_address = ("127.0.0.1", 0)
+        h.rfile = _t.SimpleNamespace(read=lambda n: b"")
+        body = {}
+        h._send_html = lambda html, **kw: body.update(html=html)
+        h._check_auth = lambda: True
+        h._session_user = lambda: "admin"
+        try:
+            h._page_connections()
+        except Exception as e:                              # noqa: BLE001
+            return ("raised", f"{type(e).__name__}: {e}")
+        html = body.get("html", "")
+        if isinstance(html, bytes):
+            html = html.decode("utf-8", "replace")
+        sel = _re.search(r'<select name="smtp_tls".*?</select>', html, _re.S)
+        if not sel:
+            return ("no select", "")
+        m = _re.search(r'<option value="([^"]+)" selected>([^<]*)',
+                       sel.group(0))
+        return (m.group(1), m.group(2)) if m else (None, "")
+
+    for _good in ("starttls", "ssl", "none"):
+        checks[f"the interface shows {_good} when that is what is set"] = (
+            _selected(_good)[0] == _good)
+    _bad_value, _bad_label = _selected("tls")
+    checks["…and does not show STARTTLS for a value that is not valid"] = (
+        _bad_value == "tls")
+    checks["…but says it is not valid, and that no mail is going out"] = (
+        "not valid" in _bad_label and "not being sent" in _bad_label)
+    checks["…while an unset value is still STARTTLS, as it is elsewhere"] = (
+        _selected("")[0] == "starttls" and _selected(None)[0] == "starttls")
+
     # A new failure for self-signed setups is expected; leaving them to
     # guess why is not. The sentence has to reach stdout, not merely
     # exist in the file.

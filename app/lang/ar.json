@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "‏STARTTLS (المنفذ 587)",
   "web_smtp_tls_ssl": "‏SSL (المنفذ 465)",
   "web_smtp_tls_none": "بدون (غير مشفّر)",
+  "web_smtp_tls_invalid": "{value} — غير صالح، لا يتم إرسال البريد",
   "web_smtp_from": "المرسِل",
   "web_smtp_from_help": "عنوان المرسِل. بعض المزوّدين يرفضون أي عنوان غير عنوان الحساب نفسه.",
   "web_smtp_to": "المستلمون",

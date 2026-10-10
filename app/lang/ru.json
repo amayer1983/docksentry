@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS (порт 587)",
   "web_smtp_tls_ssl": "SSL (порт 465)",
   "web_smtp_tls_none": "Нет (без шифрования)",
+  "web_smtp_tls_invalid": "{value} — недопустимо, почта не отправляется",
   "web_smtp_from": "Отправитель",
   "web_smtp_from_help": "Адрес отправителя. Некоторые провайдеры отклоняют всё, кроме адреса самой учётной записи.",
   "web_smtp_to": "Получатели",

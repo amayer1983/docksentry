@@ -654,6 +654,7 @@
   "web_smtp_tls_starttls": "STARTTLS（ポート 587）",
   "web_smtp_tls_ssl": "SSL（ポート 465）",
   "web_smtp_tls_none": "なし（暗号化しない）",
+  "web_smtp_tls_invalid": "{value} — 無効です。メールは送信されません",
   "web_smtp_from": "差出人",
   "web_smtp_from_help": "差出人アドレス。アカウント自身のアドレス以外を拒否する事業者もあります。",
   "web_smtp_to": "宛先",

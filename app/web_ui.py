@@ -6265,13 +6265,27 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<label for="cb-smtp-clear">{t("web_smtp_password_clear")}'
                     f' {help_(t("web_smtp_password_clear_help"))}</label></div>')
 
-            _tls = (config.smtp_tls or "starttls").lower()
+            _tls = (config.smtp_tls or "").strip().lower() or "starttls"
             smtp_tls_options = "".join(
                 f'<option value="{v}"{" selected" if v == _tls else ""}>'
                 f'{_e(t(k))}</option>'
                 for v, k in (("starttls", "web_smtp_tls_starttls"),
                              ("ssl", "web_smtp_tls_ssl"),
                              ("none", "web_smtp_tls_none")))
+            # A value that is none of the three gets an entry of its own,
+            # selected, and says it is not valid. Without it no option
+            # carried `selected`, the browser showed the first one, and
+            # the page told somebody with `SMTP_TLS=tls` in their compose
+            # file that they were on STARTTLS — while mail was refusing
+            # to send. The one person who needs to see the problem was
+            # the one being shown something else. The save path only
+            # ever writes one of the three, so this can only come from
+            # the environment or a restored backup.
+            if _tls not in ("starttls", "ssl", "none"):
+                smtp_tls_options = (
+                    f'<option value="{_e(_tls)}" selected>'
+                    f'{_e(t("web_smtp_tls_invalid", value=_tls))}</option>'
+                    + smtp_tls_options)
 
             # ── the state of each channel, and its switch ────────────
             # Three states, deliberately, because they need three
