@@ -2,6 +2,58 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.39] - 2026-10-10
+
+Four days after beta.38, and three of these came from @NotRetarded
+pressing buttons and telling me what he saw.
+
+### Fixed
+- **The Connections page no longer claims a TLS setting it does not
+  have.** With something invalid in `SMTP_TLS` — `tls` in a compose
+  file, say — no option in the dropdown matched, so the browser showed
+  the first one and the page said STARTTLS while mail was refusing to
+  send. The one person who needed to see the problem was the only one
+  being shown something else. An unknown value now has its own entry,
+  selected, saying it is not valid and that no mail is going out.
+
+- **The certificate warning says what is actually at risk.** One
+  sentence was printed in all six combinations of transport and
+  credentials, including with no TLS at all and with no password set —
+  so an internal relay with no authentication was told "the password is
+  sent to whatever answers on that address". And the combination that
+  is genuinely dangerous, `SMTP_TLS=none` with a user configured, was
+  not warned about at all. It is now.
+
+- **"Send test" answers about now and leaves nothing behind.** Pressed
+  while the server was down, it reported a flat failure and then the
+  test message arrived minutes later, because the real send path holds
+  a failed mail for redelivery. The test still runs that path — that is
+  the value of it — but takes back whatever it queued, and says what a
+  real alert would have done: "timed out — a real alert would be held
+  and retried for up to 15 minutes".
+
+### Internal
+- **A container that fails its healthcheck is rolled back — and now
+  something checks that.** All three places that read a health outcome
+  and act on it could be disabled without a single one of 194 test
+  procedures noticing. The rollback function itself was well covered;
+  the decision to call it was not. No behaviour changed, but the
+  headline promise in the README is held by something now.
+
+- **`/metrics` and `/api/status` are checked for what they report**,
+  not just that they exist. Eight reverts in those two endpoints —
+  deleting a gauge, pinning a count to zero, renaming a JSON key,
+  serving it as `text/html` — all went unnoticed. For a report-only
+  install the numbers are the whole product, so a gauge silently stuck
+  at zero is the worst thing the endpoint can do.
+
+- Six further promises are recorded as provably unguarded rather than
+  quietly left: the major-version gate, `MIN_IMAGE_AGE_DAYS`,
+  redaction in the audit log, OOM detection, the retry queue's age
+  limit and `insecure_registries`. The list may only get shorter.
+
+  196 procedures, 4666 checks, 81 guarded promises.
+
 ## [2.18.0-beta.38] - 2026-10-09
 
 Two features that were asked for, and four days of taking the tests
