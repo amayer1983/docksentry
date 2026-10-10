@@ -52,6 +52,77 @@ Prozeduren rot wird. Alle sieben haben jetzt eigene Prüfungen, und
   Code verschieben nicht.
 * **Ruhezeiten und Wartungsmodus** — am 06.10. erledigt.
 
+## 1b — Der Durchlauf vom 10.10.: 39 Zusagen, die nichts hält
+
+Audit E, isoliert in einem eigenen Worktree, auf die Zusagen angesetzt,
+die beim ersten Durchlauf **nicht dran waren**. Methode: Zeile
+entfernen, alle 194 Prozeduren fahren, zählen was rot wird —
+`PYTHONDONTWRITEBYTECODE=1`, Absturz zählt nicht als Treffer, beidseitige
+Kontrolle.
+
+**Erledigt:** die Verdrahtung Gesundheit → Rollback. Alle **drei**
+Stellen ließen sich abschalten, ohne dass eine Prozedur rot wurde —
+selbst nachgestellt. Ich hatte letzte Woche `_rollback_to_old` gründlich
+abgesichert und geglaubt, die Zusage sei gedeckt; gedeckt war der
+Aufruf, nicht die Entscheidung ihn zu tun. Jetzt
+`test_health_rollback_wiring.py`, beide Richtungen.
+
+**In der Schuldenliste** (`UNGUARDED`, `DEBT = 6`), also beweisbar
+ungedeckt und nur noch verkleinerbar: Major-Bestätigung,
+`MIN_IMAGE_AGE_DAYS`, Schwärzen im Audit-Trail, OOM-Erkennung, das
+Altersfenster der Warteschlange, `insecure_registries`.
+
+**Gemeldet, Anker noch nicht festgenagelt** — gehören hier hinein,
+sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,
+die bestanden hat ohne zu laufen:
+
+* **`/metrics` und `/api/status`**, acht Rückbauten, alle ohne rote
+  Prozedur. Keine Prozedur ruft `_serve_metrics` oder
+  `_serve_status_json` je auf; die ganze Inhaltszusage hängt an zwei
+  Substring-Greps. Der größte einzelne Block.
+* **Selbst-Update-Kette**, sechs: Pull-Fehler bricht nicht ab, Tausch
+  trotz gleicher Image-ID, `/selfupdate previous`, Aufräumen des alten
+  Containers, Neustart nach fehlgeschlagenem Rename, die Boot-Meldung
+  »es wurde zurückgerollt«.
+* **Container-Gruppen**, drei: die Wartezeit zwischen Containern, der
+  30-Sekunden-Boden, ein Container = eine Gruppe. Die
+  VPN-Sidecar-Mechanik selbst ist abgesichert.
+* **Platzwarnung**, drei: Schwelle, 23-Stunden-Sperre, Klemmung 50..100.
+* **Audit-Trail**, vier weitere: der Telegram-Seam (geprüft wird nur,
+  wie oft `audit.record(` im Quelltext steht), der Akteur bei
+  Token-Zugriff, die History-Seite, die Werte-Kürzung.
+* **Restore über Discord**: 2-MB-Kappe und Schema-Prüfung ungedeckt,
+  während die wortgleichen Telegram-Zeilen beide gefangen werden. Reine
+  Paritätslücke.
+* **`Retry-After`-Kappe** im gemeinsamen HTTP-Pfad: ein Server mit
+  `Retry-After: 3600` würde ausgeschlafen. Telegram und Discord haben
+  dieselbe Kappe und sind dort abgesichert.
+
+**Und drei Dinge, die keine Durchsetzung zum Rückbauen haben, weil sie
+fehlen:**
+
+* Der **Scheduler schreibt nichts in den Audit-Trail**, obwohl
+  `en.json:601` »… and the scheduler« verspricht und `audit.py` die
+  Quelle `"schedule"` dokumentiert. Ein unbeaufsichtigtes Auto-Update
+  hinterlässt keinen Eintrag.
+* **`/api/backup_import` hat keine Größenkappe** — die 2-MB-Regel steht
+  nur in den beiden Chat-Oberflächen.
+* `scripts/test_dependents_recreate.py:89` kann nicht fehlschlagen:
+  es sucht `"failed"`, die Meldung schreibt `"FAILED"`.
+
+**Prozeduren, die ohne Defekt rot werden können:** vier prüfen den
+Rückgabewert von `docker run` nicht und melden bei nicht beschaffbarem
+Image die Zusage als gebrochen statt die Umgebung
+(`test_glob.py`, `test_protect_stop.py`, `test_netns_recreate.py`,
+`test_dependents_recreate.py`). `test_multihost_live.py` stirbt gegen
+einen laufenden, aber leeren Daemon. Und elf Prozeduren benutzen feste
+Containernamen, zwei Läufe parallel zerstören sich gegenseitig.
+
+**Sauber gemessen:** ohne Daemon laufen alle 194 durch, in drei
+Zeitzonen (+14, −11, +5:45) je ein kompletter Durchgang ohne Rot, kein
+`datetime.now()` in den zeitabhängigen Prozeduren, jedes `urlopen`
+gemockt.
+
 ## 2 — ~~Dieselbe 4xx-Sache in vier weiteren Kanälen~~ — gemessen, behoben
 
 **Erledigt am 07.10.2026.** Gemessen war es nicht, was der Agent

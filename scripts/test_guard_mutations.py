@@ -495,10 +495,62 @@ GUARDED = [
 #: minutes per entry, which is not a price a pre-commit run can pay. The
 #: full sweep is the audit's job (AUDIT.md); this keeps the finding from
 #: rotting away between audits.
-UNGUARDED = []
+UNGUARDED = [
+    # Found on 10.10.2026 by a suite-wide sweep in its own worktree:
+    # delete the line that enforces the promise, run all 194
+    # procedures, nothing goes red. Three were reproduced by hand
+    # before being written here; the rest carry the sweep's own
+    # measurement, which is why they are debt and not yet findings.
+    #
+    # Listed so the number can only go down. `watchers` are the
+    # procedures that ought to notice — when one starts noticing, this
+    # file says so and the entry moves up to GUARDED.
+
+    ("a major version bump waits for confirmation",
+     "app/update_engine.py",
+     "            if auto and ask_this:",
+     "            if False:",
+     ["test_update_policy.py", "test_v271_batch.py"]),
+
+    ("an image too fresh to trust is held back",
+     "app/telegram_bot.py",
+     "            if age is not None:",
+     "            if False:",
+     ["test_image_age.py", "test_update_policy.py"]),
+
+    ("secrets are redacted before anything is written to the audit log",
+     "app/audit.py",
+     "        clean = redact(detail)",
+     "        clean = detail",
+     ["test_audit.py"]),
+
+    ("an OOM kill is recognised as one",
+     "app/monitor.py",
+     '"oom": bool(state.get("OOMKilled"))',
+     '"oom": False',
+     ["test_monitor.py", "test_event_labels.py"]),
+
+    ("a held notification is not kept past its usefulness",
+     "app/notify_retry.py",
+     "MAX_AGE_SECONDS = 900",
+     "MAX_AGE_SECONDS = 999999",
+     ["test_notifier_retry.py", "test_channel_backoff.py"]),
+
+    ("only the registries named in the setting are treated as insecure",
+     "app/update_checker.py",
+     '            host, getattr(self.config, "insecure_registries", []))',
+     "            host, [])",
+     ["test_registry_reach.py", "test_check_diag.py"]),
+]
 
 #: How many promises are known to be unguarded. May only go down.
-DEBT = 0
+#:
+#: The sweep found more than these — `/metrics` content, the group
+#: wait, the disk-warning threshold, the self-update chain, the Discord
+#: restore parity. They are in OPEN.md with their measurements; an
+#: entry only comes in here once its anchor is pinned down, because a
+#: stale anchor is a check that passed without running.
+DEBT = 6
 
 
 def _tree():
