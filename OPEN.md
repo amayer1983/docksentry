@@ -67,6 +67,13 @@ abgesichert und geglaubt, die Zusage sei gedeckt; gedeckt war der
 Aufruf, nicht die Entscheidung ihn zu tun. Jetzt
 `test_health_rollback_wiring.py`, beide Richtungen.
 
+**Ebenfalls erledigt:** `/metrics` und `/api/status`, der größte
+Einzelblock. Acht Rückbauten, alle ohne rote Prozedur — keine Prozedur
+rief `_serve_metrics` oder `_serve_status_json` je auf. Jetzt werden
+beide Endpunkte wirklich bedient und die Bytes zurückgelesen, gegen
+einen Aufbau mit zwei Hosts, von denen einer nicht antwortet. Alle acht
+Rückbauten gegengeprüft, alle rot.
+
 **In der Schuldenliste** (`UNGUARDED`, `DEBT = 6`), also beweisbar
 ungedeckt und nur noch verkleinerbar: Major-Bestätigung,
 `MIN_IMAGE_AGE_DAYS`, Schwärzen im Audit-Trail, OOM-Erkennung, das
@@ -76,10 +83,6 @@ Altersfenster der Warteschlange, `insecure_registries`.
 sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,
 die bestanden hat ohne zu laufen:
 
-* **`/metrics` und `/api/status`**, acht Rückbauten, alle ohne rote
-  Prozedur. Keine Prozedur ruft `_serve_metrics` oder
-  `_serve_status_json` je auf; die ganze Inhaltszusage hängt an zwei
-  Substring-Greps. Der größte einzelne Block.
 * **Selbst-Update-Kette**, sechs: Pull-Fehler bricht nicht ab, Tausch
   trotz gleicher Image-ID, `/selfupdate previous`, Aufräumen des alten
   Containers, Neustart nach fehlgeschlagenem Rename, die Boot-Meldung

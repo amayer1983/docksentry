@@ -484,6 +484,54 @@ GUARDED = [
      "        _has_password = True",
      "test_cron_dow.py"),
 
+    ("/metrics reports that the program is up",
+     "app/web_ui.py",
+     '                "docksentry_up 1",',
+     "",
+     "test_machine_endpoints.py"),
+
+    ("…and counts the containers it is watching",
+     "app/web_ui.py",
+     "                f\"docksentry_containers {st['containers']}\",",
+     '                "docksentry_containers 0",',
+     "test_machine_endpoints.py"),
+
+    ("…and the updates that are pending",
+     "app/web_ui.py",
+     "docksentry_updates_pending {st['pending']}",
+     "docksentry_x_pending {st['pending']}",
+     "test_machine_endpoints.py"),
+
+    ("…and says which hosts answered",
+     "app/web_ui.py",
+     "                lines.append(f'docksentry_host_up{{host=\"{_metric_label(host)}\"}} {up}')",
+     "                pass",
+     "test_machine_endpoints.py"),
+
+    ("…as Prometheus text, not as a web page",
+     "app/web_ui.py",
+     '"text/plain; version=0.0.4; charset=utf-8"',
+     '"text/html"',
+     "test_machine_endpoints.py"),
+
+    ("the JSON endpoint reports the same numbers",
+     "app/web_ui.py",
+     '                "containers": st["containers"],',
+     '                "containers": 0,',
+     "test_machine_endpoints.py"),
+
+    ("…under the names it documents",
+     "app/web_ui.py",
+     '                "updates_pending": st["pending"],',
+     '                "pending_updates": st["pending"],',
+     "test_machine_endpoints.py"),
+
+    ("a container name cannot break the metrics format",
+     "app/web_ui.py",
+     """            .replace('"', '\\\\"')\n""",
+     "",
+     "test_machine_endpoints.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
