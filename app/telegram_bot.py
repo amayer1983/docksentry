@@ -2083,6 +2083,26 @@ class TelegramBot:
                     _list += self.t("and_n_more", n=_rest)
                 self.announce(self.t("autoupdate_running_named",
                                      count=len(auto_updates), names=_list))
+                # The scheduler leaves a trail too. The Connections page
+                # says the log covers "the Web UI, Telegram, Discord and
+                # the scheduler" and `audit.record` documents the source
+                # `"schedule"` with the actor `"system"` — but every one
+                # of the five call sites in the program was a front end,
+                # so an unattended update, the only kind nobody watched
+                # happen, was the one kind that left no record.
+                #
+                # Named rather than counted: "4 containers" answers
+                # nothing anyone asks of an audit log afterwards.
+                try:
+                    _audit = getattr(self, "audit", None)
+                    if _audit is not None:
+                        _audit.record(
+                            "schedule", "system", "auto-update",
+                            ", ".join(self._display_name(u)
+                                      for u in auto_updates[:12]),
+                            {"count": len(auto_updates)})
+                except Exception:
+                    pass
                 results, success_count, major_pending_now = self._process_update_batch(
                     auto_updates, checker, auto=True)
                 # Outcome in the first line. The lines below name every

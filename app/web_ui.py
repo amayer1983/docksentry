@@ -3049,8 +3049,32 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # path too). Unknown / missing sections are silently
                 # skipped — forward-compatible if a future schema adds
                 # new keys.
+                # The same ceiling both chat front ends apply
+                # (`TelegramBot.RESTORE_MAX_BYTES`). This path had none:
+                # `Content-Length` was trusted and read in one go, so a
+                # declared gigabyte was a gigabyte in memory before
+                # anything looked at it. A backup bundle is settings,
+                # groups, notes and links — two megabytes is already
+                # generous — and the limit lives behind the auth and
+                # CSRF gates, so this is about an accident or a logged-in
+                # mistake rather than a stranger.
+                from telegram_bot import TelegramBot as _TB
+                _cap = getattr(_TB, "RESTORE_MAX_BYTES", 2 * 1024 * 1024)
                 length = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(length)
+                if length > _cap:
+                    payload = json.dumps(
+                        {"ok": False,
+                         "error": f"Backup too large: {length} bytes, "
+                                  f"the limit is {_cap}"}).encode()
+                    self.send_response(413)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    return self.wfile.write(payload)
+                # Read at most the cap even so: `Content-Length` is the
+                # client's word for it, and a body longer than it claims
+                # must not get through on the strength of the claim.
+                raw = self.rfile.read(min(length, _cap))
                 content_type = self.headers.get("Content-Type", "")
                 # Strip multipart boundary to find the JSON payload.
                 # Simple parser — we only ever expect one file field.

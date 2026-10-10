@@ -568,6 +568,18 @@ GUARDED = [
      '            if "xx-never-matches" in _hcontent:',
      "test_selfupdate_chain.py"),
 
+    ("an unattended update leaves a record too",
+     "app/telegram_bot.py",
+     '                        _audit.record(\n                            "schedule", "system", "auto-update",',
+     '                        pass  # MUTATION\n                        _noop = (\n                            "schedule", "system", "auto-update",',
+     "test_audit.py"),
+
+    ("a backup import is refused when it is too large",
+     "app/web_ui.py",
+     "                if length > _cap:",
+     "                if False:",
+     "test_backup_channels.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

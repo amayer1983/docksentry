@@ -104,17 +104,23 @@ die bestanden hat ohne zu laufen:
   `Retry-After: 3600` würde ausgeschlafen. Telegram und Discord haben
   dieselbe Kappe und sind dort abgesichert.
 
-**Und drei Dinge, die keine Durchsetzung zum Rückbauen haben, weil sie
-fehlen:**
+**Die drei Dinge, denen die Durchsetzung ganz fehlte — erledigt:**
 
-* Der **Scheduler schreibt nichts in den Audit-Trail**, obwohl
-  `en.json:601` »… and the scheduler« verspricht und `audit.py` die
-  Quelle `"schedule"` dokumentiert. Ein unbeaufsichtigtes Auto-Update
-  hinterlässt keinen Eintrag.
-* **`/api/backup_import` hat keine Größenkappe** — die 2-MB-Regel steht
-  nur in den beiden Chat-Oberflächen.
-* `scripts/test_dependents_recreate.py:89` kann nicht fehlschlagen:
-  es sucht `"failed"`, die Meldung schreibt `"FAILED"`.
+* Der **Scheduler schreibt jetzt in den Audit-Trail**. Die
+  Connections-Seite verspricht »… and the scheduler« seit jeher, und
+  `record` dokumentiert die Quelle `"schedule"` mit dem Akteur
+  `"system"` — aber jede Aufrufstelle im Programm war eine Oberfläche.
+  Ausgerechnet das unbeaufsichtigte Update, die einzige Art, bei der
+  niemand zugesehen hat, hinterließ keine Spur. Mit Namen, nicht mit
+  Anzahl: »2 Container« beantwortet keine Frage, die man ein Woche
+  später an ein Protokoll stellt.
+* **`/api/backup_import` hat dieselbe Obergrenze wie die beiden Chats.**
+  Vorher wurde `Content-Length` geglaubt und am Stück gelesen — ein
+  angekündigtes Gigabyte war ein Gigabyte im Speicher, bevor irgendetwas
+  hinsah. Und es wird höchstens die Kappe gelesen, denn die angegebene
+  Länge ist das Wort des Aufrufers.
+* `test_dependents_recreate.py` sucht nicht mehr nur `"failed"`, wo die
+  Meldung `"FAILED"` schreibt.
 
 **Prozeduren, die ohne Defekt rot werden können:** vier prüfen den
 Rückgabewert von `docker run` nicht und melden bei nicht beschaffbarem

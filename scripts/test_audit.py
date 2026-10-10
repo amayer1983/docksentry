@@ -143,17 +143,108 @@ def main():
     checks["the web records in exactly one place"] = (
         web.count("self._audit_post(") == 1)
     tg = open(os.path.join(root, "telegram_bot.py"), encoding="utf-8").read()
-    checks["telegram records in one place"] = tg.count('audit.record(') == 1
+    # Two, and both on purpose: the command seam, and the scheduler —
+    # which the Connections page has always promised and which nothing
+    # wrote until 10.10.2026. Counting call sites was the wrong
+    # question anyway; what the design is about is that the COMMAND
+    # path has one seam rather than one per handler.
+    checks["telegram records commands in one place"] = (
+        tg.count('audit.record("telegram"') == 1)
+    checks["…and the scheduler writes its own, separately"] = (
+        tg.count('audit.record(\n') + tg.count('_audit.record(') >= 1
+        and '"schedule", "system"' in tg)
     dc = open(os.path.join(root, "discord_bot.py"), encoding="utf-8").read()
     checks["discord records in one place"] = dc.count('audit.record(') == 1
     # And the shim that lets the 26 handlers keep reading the body.
     checks["the body is replayed to the handlers"] = "_ReplayedBody" in web
+
+    # ── the scheduler leaves a trail too ─────────────────────────────
+    # `web_audit_intro` says the log covers "the Web UI, Telegram,
+    # Discord and the scheduler", and `record` documents the source
+    # `"schedule"` with the actor `"system"`. Every call site in the
+    # program was a front end — so the unattended update, the only kind
+    # nobody watched happen, was the one kind that left no record.
+    _ups = [{"name": "web", "image": "nginx:1.25", "host": "srv30"},
+            {"name": "db", "image": "postgres:16", "host": "srv30"}]
+    _sched = _scheduler_entries(_ups)
+    checks["an unattended update is recorded"] = bool(_sched)
+    checks["…as the scheduler, not as a person"] = (
+        bool(_sched) and _sched[0][1] == "system")
+    # Named rather than counted: "2 containers" answers nothing anyone
+    # asks of an audit log a week later.
+    checks["…naming the containers it touched"] = (
+        bool(_sched) and "web" in _sched[0][3] and "db" in _sched[0][3])
+    checks["…with the host, since two machines may run the same name"] = (
+        bool(_sched) and "srv30" in _sched[0][3])
+    # …and a tick with nothing to do writes nothing, or the log fills
+    # with entries that say an hour passed.
+    checks["a tick with nothing to update writes nothing"] = (
+        _scheduler_entries([]) == [])
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
         print(f"  {'PASS' if v else 'FAIL'} {k}")
     print("FAIL" if failed else "PASS")
     return 1 if failed else 0
+
+
+def _scheduler_entries(updates):
+    """What an unattended update run writes to the audit log.
+
+    Driven through `handle_autoupdates`, because the promise is about
+    the scheduler's path and not about a function anyone could call.
+    """
+    import tempfile
+    import threading
+    from i18n import get_translator
+    from telegram_bot import TelegramBot
+    import update_engine as _ue
+
+    written = []
+
+    class _Recorder:
+        def record(self, source, actor, action, target="", detail=None):
+            written.append((source, actor, action, target, detail))
+
+    class _Cfg:
+        language = "en"
+        auto_update_all = True
+        bot_token = ""
+        chat_id = "1"
+        pending_file = os.path.join(tempfile.mkdtemp(), "pending.json")
+
+        def __getattr__(self, name):
+            return ""
+
+    bot = TelegramBot.__new__(TelegramBot)
+    bot.config = _Cfg()
+    bot.t = get_translator("en")
+    for n in ("send_message", "announce", "log", "_say_once"):
+        setattr(bot, n, lambda *a, **kw: None)
+    bot.audit = _Recorder()
+    bot.hosts = None
+    bot._policy_decision = lambda u, c: None
+    bot._age_decision = lambda u, c: None
+    bot._display_name = lambda u: f"{u['name']} @{u.get('host', 'local')}"
+    bot._process_update_batch = lambda ups, checker, auto=False: ([], 0, [])
+    bot.engine = types.SimpleNamespace(_update_lock=threading.Lock(),
+                                       _queued_selfupdate=None,
+                                       _swap_in_flight=False)
+
+    class _Store:
+        def get_autoupdate(self):
+            return [u["name"] for u in updates]
+
+        def get_update_windows(self):
+            return {}
+
+    real = _ue.host_store
+    _ue.host_store = lambda scope, host: _Store()
+    try:
+        bot.handle_autoupdates(list(updates), None)
+    finally:
+        _ue.host_store = real
+    return [e for e in written if e[0] == "schedule"]
 
 
 def _record_bare(path):

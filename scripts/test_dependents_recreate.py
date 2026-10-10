@@ -85,7 +85,11 @@ def main():
         # directly (it only needs the passed `checker` + subprocess).
         msg = UpdateEngine._restart_group_dependents(bot, HEAD, [SIDE, PLAIN], chk, max_wait=5)
         c2 = _running(SIDE) and chk.netns_target_name(SIDE) == HEAD and _running(PLAIN)
-        c3 = ("`%s`" % SIDE in msg) and ("failed" not in msg)
+        # `"failed"` lower-case, while `update_engine.py:532` writes
+        # `"{n} FAILED"` — so this could not fall. Both spellings now,
+        # and the failure marker with them.
+        c3 = (("`%s`" % SIDE in msg)
+              and not any(w in msg for w in ("failed", "FAILED", "❌")))
     finally:
         _rm(HEAD, SIDE, PLAIN)
 

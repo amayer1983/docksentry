@@ -472,6 +472,71 @@ checks["…and a file that is not JSON says which part failed"] = (
 checks["no blank 'could not read that attachment' is left"] = (
     "I could not read that attachment." not in dsrc_now())
 
+# ── the Web import has the same ceiling as the chats ─────────────────
+# Both chat front ends refuse a bundle over `RESTORE_MAX_BYTES`;
+# `/api/backup_import` trusted `Content-Length` and read it in one go,
+# so a declared gigabyte was a gigabyte in memory before anything
+# looked at it. It is behind the auth and CSRF gates, so this is about
+# an accident or a logged-in mistake rather than a stranger — but the
+# three front doors should not disagree about what is too big.
+import io as _io2                                             # noqa: E402
+import json as _json2                                         # noqa: E402
+import types as _ty2                                          # noqa: E402
+
+import web_ui as _wu2                                         # noqa: E402
+from telegram_bot import TelegramBot as _TB2                  # noqa: E402
+
+_CAP = _TB2.RESTORE_MAX_BYTES
+
+
+def _import(declared, body=b"{}"):
+    """POST a bundle of `declared` bytes; return the status code."""
+    class _C:
+        _CALLS = ("env_override", "save", "load", "apply", "write", "set_")
+        language = "en"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith(self._CALLS):
+                return lambda *a, **kw: None
+            return ""
+
+    cls = _wu2.create_handler(_C(), checker=None,
+                              bot=_ty2.SimpleNamespace(t=None), store=None)
+    h = cls.__new__(cls)
+    h.path = "/api/backup_import"
+    h.headers = {"Content-Length": str(declared), "Host": "x",
+                 "Origin": "http://x", "Content-Type": "application/json"}
+    h.rfile = _io2.BytesIO(body)
+    h.client_address = ("127.0.0.1", 0)
+    h.wfile = _io2.BytesIO()
+    seen = {}
+    h.send_response = lambda c: seen.setdefault("code", c)
+    h.send_error = lambda c, m="": seen.setdefault("code", c)
+    h.send_header = lambda k, v: None
+    h.end_headers = lambda: None
+    h._check_auth = lambda: True
+    h._check_csrf = lambda: True
+    h._audit = lambda *a, **k: None
+    try:
+        h.do_POST()
+    except Exception:                                       # noqa: BLE001
+        pass
+    return seen.get("code"), h.wfile.getvalue().decode("utf-8", "replace")
+
+_code, _msg = _import(_CAP + 1)
+checks["an oversized backup import is refused"] = _code == 413
+checks["…and says how big it may be"] = str(_CAP) in _msg
+# …and a bundle within the limit still goes through, or the cap is
+# just a way of switching the feature off.
+_code, _ = _import(2, body=b"{}")
+checks["…while one within the limit is still accepted"] = _code != 413
+# A body longer than the header claims must not get through on the
+# strength of the claim.
+_code, _ = _import(2, body=b"{}" + b"x" * (_CAP * 2))
+checks["…and only the declared length is ever read"] = _code != 413
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")
