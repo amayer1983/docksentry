@@ -532,6 +532,42 @@ GUARDED = [
      "",
      "test_machine_endpoints.py"),
 
+    ("a self-update clears the old backup before it starts",
+     "app/selfupdate.py",
+     'f"docker rm -f {qname}_old >/dev/null 2>&1; "',
+     '""',
+     "test_selfupdate_chain.py"),
+
+    ("…stops itself with the configured grace, not Docker's ten seconds",
+     "app/selfupdate.py",
+     "docker stop -t {stop_timeout} {qname}",
+     "docker stop {qname}",
+     "test_selfupdate_chain.py"),
+
+    ("…restarts the container it still has if the rename fails",
+     "app/selfupdate.py",
+     "docker start {qname}; exit 1",
+     "exit 1",
+     "test_selfupdate_chain.py"),
+
+    ("…rolls back if the new container will not run",
+     "app/selfupdate.py",
+     "'Selfupdate recreate failed — rolling back'",
+     "'Selfupdate recreate failed'",
+     "test_selfupdate_chain.py"),
+
+    ("…and removes the backup only once the new one is up",
+     "app/selfupdate.py",
+     'f"docker rm {qname}_old"',
+     'f"true"',
+     "test_selfupdate_chain.py"),
+
+    ("the next boot reports a self-update that rolled back",
+     "app/main.py",
+     '            if "rolling back" in _hcontent:',
+     '            if "xx-never-matches" in _hcontent:',
+     "test_selfupdate_chain.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

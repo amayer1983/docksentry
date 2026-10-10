@@ -74,6 +74,13 @@ beide Endpunkte wirklich bedient und die Bytes zurückgelesen, gegen
 einen Aufbau mit zwei Hosts, von denen einer nicht antwortet. Alle acht
 Rückbauten gegengeprüft, alle rot.
 
+**Und erledigt:** die Selbst-Update-Kette. Sechs Rückbauten, keine rot
+— der Pfad, auf dem sich das Programm selbst ersetzt, und der einzige,
+auf dem ein Fehler niemanden mehr hat, der ihn meldet. #43 und #62 sind
+beides Narben davon. Jetzt `test_selfupdate_chain.py`: die Reihenfolge,
+beide Fehlerarme getrennt, die Stop-Frist, und die Boot-Meldung, die den
+Satz sucht, den das Skript wirklich schreibt.
+
 **In der Schuldenliste** (`UNGUARDED`, `DEBT = 6`), also beweisbar
 ungedeckt und nur noch verkleinerbar: Major-Bestätigung,
 `MIN_IMAGE_AGE_DAYS`, Schwärzen im Audit-Trail, OOM-Erkennung, das
@@ -83,10 +90,6 @@ Altersfenster der Warteschlange, `insecure_registries`.
 sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,
 die bestanden hat ohne zu laufen:
 
-* **Selbst-Update-Kette**, sechs: Pull-Fehler bricht nicht ab, Tausch
-  trotz gleicher Image-ID, `/selfupdate previous`, Aufräumen des alten
-  Containers, Neustart nach fehlgeschlagenem Rename, die Boot-Meldung
-  »es wurde zurückgerollt«.
 * **Container-Gruppen**, drei: die Wartezeit zwischen Containern, der
   30-Sekunden-Boden, ein Container = eine Gruppe. Die
   VPN-Sidecar-Mechanik selbst ist abgesichert.
