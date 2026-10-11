@@ -184,6 +184,24 @@ GUARDED = [
      "        return True",
      "test_channel_backoff.py"),
 
+    ("a server asking for an hour does not get it",
+     "app/notifiers/base.py",
+     "                if wait is not None and wait <= 60:",
+     "                if wait is not None:",
+     "test_channel_backoff.py"),
+
+    ("a backup dropped on Discord has the same size ceiling",
+     "app/discord_bot.py",
+     "        if size > self.RESTORE_MAX_BYTES:",
+     "        if False:",
+     "test_restore_parity.py"),
+
+    ("…and the same question of whether it is a backup at all",
+     "app/discord_bot.py",
+     '        if not isinstance(bundle, dict) or "schema_version" not in bundle:',
+     "        if False:",
+     "test_restore_parity.py"),
+
     ("a STOPped message is never logged as delivered",
      "app/notify_retry.py",
      "    def __bool__(self):\n        return False",

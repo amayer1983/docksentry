@@ -175,6 +175,57 @@ finally:
     urllib.request.urlopen = _open
     notify_retry.queue = _real
 
+# ── a `Retry-After` the server names is honoured, within reason ──────
+# The shared HTTP path waits out a short rate limit in-line rather than
+# queueing it, which is right: a limit that clears in two seconds
+# should not cost the message a trip through the queue. What it must
+# not do is sleep for as long as the server asks. `Retry-After: 3600`
+# is a legal answer, and a notifier that obeys it has stopped being a
+# notifier for an hour — on the scheduler's thread, so the monitor
+# stops with it.
+#
+# Telegram and Discord have the same cap and it is covered there; this
+# path, which four channels share, had nothing.
+import time as _time                                          # noqa: E402
+
+from notifiers import base as _base                           # noqa: E402
+
+
+def _slept_for(retry_after):
+    """How long the shared path sleeps when the server says to wait."""
+    slept = []
+    attempts = []
+    real_sleep, _time.sleep = _time.sleep, lambda s: slept.append(s)
+    real_base_sleep = _base.time.sleep
+    _base.time.sleep = lambda s: slept.append(s)
+    real_open = urllib.request.urlopen
+
+    def _limited(*_a, **_kw):
+        attempts.append(1)
+        raise urllib.error.HTTPError(
+            "https://example/x", 429, "slow down",
+            {"Retry-After": str(retry_after)}, io.BytesIO(b"{}"))
+
+    urllib.request.urlopen = _limited
+    try:
+        _base.post_json_with_retry("https://example/x", {"a": 1}, {},
+                                   "test", on_network_failure=lambda: None)
+    finally:
+        urllib.request.urlopen = real_open
+        _time.sleep = real_sleep
+        _base.time.sleep = real_base_sleep
+    return slept, len(attempts)
+
+
+_short, _tries = _slept_for(2)
+checks["a short rate limit is waited out in place"] = 2 in _short
+checks["…and the request is tried again after it"] = _tries > 1
+
+_long, _tries = _slept_for(3600)
+checks["an hour-long one is not slept through"] = not any(
+    s >= 3600 for s in _long)
+checks["…it goes to the queue instead"] = _tries == 1
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

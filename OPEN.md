@@ -108,12 +108,27 @@ die bestanden hat ohne zu laufen:
 * **Audit-Trail**, vier weitere: der Telegram-Seam (geprüft wird nur,
   wie oft `audit.record(` im Quelltext steht), der Akteur bei
   Token-Zugriff, die History-Seite, die Werte-Kürzung.
-* **Restore über Discord**: 2-MB-Kappe und Schema-Prüfung ungedeckt,
-  während die wortgleichen Telegram-Zeilen beide gefangen werden. Reine
-  Paritätslücke.
-* **`Retry-After`-Kappe** im gemeinsamen HTTP-Pfad: ein Server mit
-  `Retry-After: 3600` würde ausgeschlafen. Telegram und Discord haben
-  dieselbe Kappe und sind dort abgesichert.
+
+**Erledigt am 11.10.2026:** die Restore-Parität und die
+`Retry-After`-Kappe.
+
+`test_restore_parity.py` fragt beide Türen dasselbe — die Kappe, das
+`schema_version`-Siegel, Nicht-JSON, eine Datei ohne `.json` — und
+dazu die Gegenrichtung, dass eine echte Sicherung weiter durchkommt.
+Die erste Fassung war grün und wertlos: sie las die Antwort nach den
+Wörtern »backup« und »json«, und `restore_offer` beginnt mit »A backup
+arrived«, während die Antwort den Dateinamen `backup.json` zitiert.
+Beide Ablehnungsprüfungen waren vom Annahmepfad erfüllt — die
+Gegenprobe hat es gesagt, nicht das Lesen. Jetzt wird gemessen, ob
+*angeboten* wurde: bei Discord der Bestätigungs-Token, bei Telegram die
+eigene `_pending_restores`-Tabelle. Die Zeile, die ich zuerst
+überwacht glaubte, ruft Telegram auf diesem Pfad nie auf.
+
+Die `Retry-After`-Kappe fährt jetzt zwei Fälle durch
+`post_json_with_retry`: zwei Sekunden werden abgewartet und der Versuch
+wiederholt, eine Stunde nicht — die Nachricht geht in die
+Warteschlange, statt den Scheduler-Thread eine Stunde schlafen zu
+legen.
 
 **Die drei Dinge, denen die Durchsetzung ganz fehlte — erledigt:**
 
