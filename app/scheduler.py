@@ -181,7 +181,7 @@ class Scheduler:
                 if getattr(h, "name", None) == host_name:
                     endpoint = getattr(h, "endpoint", "") or ""
                     break
-            extra = hostdiag.hint(endpoint, err)
+            extra = hostdiag.hint(endpoint, err, t=self.bot.t)
             if extra:
                 detail += "\n\n" + extra
         except Exception:

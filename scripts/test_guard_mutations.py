@@ -184,6 +184,18 @@ GUARDED = [
      "        return True",
      "test_channel_backoff.py"),
 
+    ("the ssh hint is spoken in the reader's language",
+     "app/hostdiag.py",
+     "                return t(key, dir=ssh_dir)",
+     "                return _EN[key].format(dir=ssh_dir)",
+     "test_ssh_hint.py"),
+
+    ("…and the scheduled check asks for it that way too",
+     "app/scheduler.py",
+     "            extra = hostdiag.hint(endpoint, err, t=self.bot.t)",
+     "            extra = hostdiag.hint(endpoint, err)",
+     "test_ssh_hint.py"),
+
     ("a Telegram command leaves a trace",
      "app/telegram_bot.py",
      "                    audit.record(\"telegram\", user_id, cmd.strip(),",

@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• 나열된 것은 물어볼 때쯤 이미 모두 끝나 있었고, 그래서 inspect 권한은 검증되지 않은 채 남았습니다. 이는 수명이 짧은 작업을 돌리는 호스트이며, 호스트의 문제가 아닙니다.",
   "hostcheck_ready": "• 준비됨: `{endpoint}` 은(는) 전부 읽을 수 있습니다. 업데이트에는 쓰기 권한도 필요하고, 사전 점검은 무언가를 바꾸지 않고는 그것을 시험할 수 없습니다 — 읽기 전용 소켓 프록시는 정확히 여기까지 통과합니다.",
   "hostcheck_usable": "• 사용 가능: `{endpoint}` 을(를) 추가할 수 있습니다. inspect 권한과 쓰기 권한은 검증되지 않은 채 남았습니다.",
-  "hostcheck_usage": "사용법: `/hosts check <endpoint>` — 예: `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "사용법: `/hosts check <endpoint>` — 예: `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "이 컨테이너 안에는 `{dir}`가 없습니다. 키는 호스트에 있습니다 — `ssh-copy-id`가 사용자 홈 디렉터리에 기록했고, 컨테이너는 자체 파일 시스템을 가집니다. 읽기 전용으로 마운트하세요: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}`는 마운트되어 있지만 `known_hosts`가 없어서, 새 호스트에 처음 연결할 때 물어볼 대상이 없습니다. 키만이 아니라 디렉터리 전체를 마운트하세요.",
+  "hostdiag_ssh_key_refused": "`{dir}`가 마운트되어 있고 `known_hosts`도 있으므로 거부되는 것은 키 자체입니다 — 이 컨테이너의 키가 원격의 해당 사용자 `authorized_keys`에 들어 있는지 확인하세요.",
+  "hostdiag_hostkey_unknown": "`{dir}`에 `known_hosts`가 없어서, 사용자는 아는 호스트라도 컨테이너에게는 모르는 호스트입니다. `.ssh` 디렉터리 전체를 마운트하세요: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "호스트 키가 바뀌었거나 `known_hosts`에 다른 주소에 대한 항목이 있습니다. 여기서 SSH가 거부하는 것은 의도된 동작입니다 — 검사를 없애지 말고 항목을 확인하세요."
 }

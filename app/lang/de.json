@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• Alles, was aufgelistet war, war beim Nachfragen schon beendet — die Inspizier-Berechtigung blieb damit ungeprüft. Das ist ein Host mit kurzlebigen Jobs, kein Problem des Hosts.",
   "hostcheck_ready": "• Bereit: `{endpoint}` ist vollständig lesbar. Für Updates braucht es zusätzlich Schreibrechte, und die kann eine Vorab-Prüfung nicht testen, ohne etwas zu verändern — ein nur lesender Socket-Proxy kommt genau bis hierher.",
   "hostcheck_usable": "• Brauchbar: `{endpoint}` kann aufgenommen werden. Inspect- und Schreibrechte blieben ungeprüft.",
-  "hostcheck_usage": "Verwendung: `/hosts check <endpunkt>` — zum Beispiel `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "Verwendung: `/hosts check <endpunkt>` — zum Beispiel `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "In diesem Container gibt es kein `{dir}`. Die Schlüssel liegen auf dem Host — `ssh-copy-id` hat sie in dein eigenes Home geschrieben, und ein Container hat sein eigenes Dateisystem. Nur lesend einbinden: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}` ist eingebunden, enthält aber kein `known_hosts` — die erste Verbindung zu einem neuen Host hat also niemanden, den sie fragen kann. Binde das ganze Verzeichnis ein, nicht nur den Schlüssel.",
+  "hostdiag_ssh_key_refused": "`{dir}` ist eingebunden und bringt ein `known_hosts` mit, es wird also der Schlüssel selbst abgelehnt — prüfe, ob der Schlüssel dieses Containers in den `authorized_keys` des Gegenübers für diesen Benutzer steht.",
+  "hostdiag_hostkey_unknown": "Kein `known_hosts` in `{dir}` — dieser Host ist dem Container also unbekannt, obwohl du ihn kennst. Binde das ganze `.ssh`-Verzeichnis ein: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "Der Host-Schlüssel hat sich geändert, oder `known_hosts` hat einen Eintrag für eine andere Adresse. SSH verweigert hier mit Absicht — prüfe den Eintrag, statt die Prüfung abzuschalten."
 }

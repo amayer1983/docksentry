@@ -852,7 +852,8 @@ class TelegramBot:
                 _detail = human(e, self.t)
                 try:
                     import hostdiag
-                    _extra = hostdiag.hint(getattr(host, "endpoint", ""), e)
+                    _extra = hostdiag.hint(getattr(host, "endpoint", ""), e,
+                                           t=self.t)
                     if _extra:
                         _detail += "\n\n" + _extra
                 except Exception:
@@ -1410,8 +1411,9 @@ class TelegramBot:
             return "\n".join(lines + [
                 self.t("hostcheck_unreachable", endpoint=endpoint,
                        error=str(e)[:300])])
-        findings = hostcheck.preflight(endpoint, backend,
-                                       hint=hostdiag.hint)
+        findings = hostcheck.preflight(
+            endpoint, backend,
+            hint=lambda ep, why: hostdiag.hint(ep, why, t=self.t))
         for kind, params in findings:
             extra = params.pop("hint", "")
             lines.append(self.t(f"hostcheck_{kind}", **params))
@@ -3514,7 +3516,8 @@ class TelegramBot:
                 # appended when hostdiag has one.
                 try:
                     import hostdiag
-                    _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why)
+                    _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why,
+                                       t=self.t)
                     if _h:
                         _why += "\n" + _h
                 except Exception:

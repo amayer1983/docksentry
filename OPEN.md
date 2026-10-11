@@ -250,9 +250,20 @@ verbindet gar nicht erst.
 
 ## 5 — Texte über 16 Sprachen
 
-* **Der `hostdiag`-Hinweis ist hart kodiertes Englisch** und hängt in
-  allen 16 Sprachen unter einem übersetzten Befund. Betrifft jetzt fünf
-  Anhängepunkte. Fünf Sätze × 16 — eigenes Paket.
+**Erledigt am 11.10.2026:** der `hostdiag`-Hinweis ist übersetzt. Fünf
+Sätze × 16 Sprachen, und alle fünf Anhängepunkte fragen jetzt in der
+Sprache des Lesers — der geplante Durchgang, `/check`, `/status`, die
+Vorab-Prüfung in Telegram und die in Discord. Ein deutscher Leser bekam
+die Diagnose auf Deutsch und die eine Zeile, die ihm sagt was zu tun
+ist, auf Englisch.
+
+Der englische Boden bleibt in `hostdiag._EN` und wird gegen `en.json`
+gehalten: ein Aufrufer ohne Übersetzer darf den Satz nicht verlieren,
+und zwei Fassungen desselben Satzes dürfen nicht auseinanderlaufen.
+Was dort an Prüfungen stand, war `"hostdiag.hint" in sched` und zwei
+`count() >= N` — jetzt als Baum gelesen: jede `hostdiag.hint`-Aufrufstelle
+in `app/` muss ein `t=` mitgeben, und es sind genau fünf.
+
 * `{endpoint}` wird ungekappt ausgegeben, `{error}` auf 300 Zeichen.
   Mit einem 4011-Zeichen-Endpunkt gehen die beiden Bots auseinander:
   Telegram splittet, Discord klippt. `ep[:200]` schließt es. Das ist

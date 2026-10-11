@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• Tutto ciò che era elencato era già terminato quando l'ho chiesto, quindi il permesso di inspect è rimasto non verificato. È un host con job di breve durata, non un problema dell'host.",
   "hostcheck_ready": "• Pronto: `{endpoint}` è leggibile per intero. Per aggiornare servono anche i permessi di scrittura, e un controllo preliminare non può provarli senza modificare qualcosa — un proxy socket in sola lettura arriva esattamente fino a qui.",
   "hostcheck_usable": "• Utilizzabile: `{endpoint}` può essere aggiunto. I permessi di inspect e di scrittura sono rimasti non verificati.",
-  "hostcheck_usage": "Uso: `/hosts check <endpoint>` — per esempio `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "Uso: `/hosts check <endpoint>` — per esempio `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "In questo container non esiste `{dir}`. Le chiavi stanno sull'host — `ssh-copy-id` le ha scritte nella tua home, e un container ha il proprio filesystem. Montale in sola lettura: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}` è montato ma non contiene `known_hosts`, quindi la prima connessione a un host nuovo non ha nessuno a cui chiedere. Monta l'intera directory, non solo la chiave.",
+  "hostdiag_ssh_key_refused": "`{dir}` è montato e contiene un `known_hosts`, quindi viene rifiutata la chiave stessa — controlla che la chiave di questo container sia negli `authorized_keys` remoti di quell'utente.",
+  "hostdiag_hostkey_unknown": "Nessun `known_hosts` in `{dir}`, quindi questo host è sconosciuto al container anche se tu lo conosci. Monta l'intera directory `.ssh`: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "La chiave dell'host è cambiata, oppure `known_hosts` ha una voce per un altro indirizzo. Qui SSH rifiuta di proposito — controlla la voce invece di togliere il controllo."
 }

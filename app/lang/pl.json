@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• Wszystko, co zostało wylistowane, zakończyło się już, gdy o to zapytałem, więc uprawnienie do inspect pozostało niesprawdzone. To host z krótko żyjącymi zadaniami, a nie problem hosta.",
   "hostcheck_ready": "• Gotowe: `{endpoint}` da się w pełni odczytać. Aktualizacja wymaga dodatkowo prawa zapisu, a wstępne sprawdzenie nie może go wypróbować bez zmiany czegokolwiek — proxy gniazda tylko do odczytu dochodzi dokładnie dotąd.",
   "hostcheck_usable": "• Nadaje się: `{endpoint}` można dodać. Uprawnienia do inspect i do zapisu pozostały niesprawdzone.",
-  "hostcheck_usage": "Użycie: `/hosts check <endpoint>` — na przykład `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "Użycie: `/hosts check <endpoint>` — na przykład `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "W tym kontenerze nie ma `{dir}`. Klucze są na hoście — `ssh-copy-id` zapisał je w twoim katalogu domowym, a kontener ma własny system plików. Zamontuj je tylko do odczytu: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}` jest zamontowany, ale nie ma w nim `known_hosts`, więc pierwsze połączenie z nowym hostem nie ma kogo zapytać. Zamontuj cały katalog, nie tylko klucz.",
+  "hostdiag_ssh_key_refused": "`{dir}` jest zamontowany i zawiera `known_hosts`, więc odrzucany jest sam klucz — sprawdź, czy klucz tego kontenera jest w zdalnym `authorized_keys` tego użytkownika.",
+  "hostdiag_hostkey_unknown": "Brak `known_hosts` w `{dir}`, więc ten host jest nieznany kontenerowi, choć tobie jest znany. Zamontuj cały katalog `.ssh`: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "Klucz hosta się zmienił albo `known_hosts` ma wpis dla innego adresu. SSH odmawia tu celowo — sprawdź wpis, zamiast wyłączać kontrolę."
 }

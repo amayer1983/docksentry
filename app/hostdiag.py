@@ -33,12 +33,19 @@ _AUTH = ("permission denied", "publickey", "no supported authentication",
 _HOSTKEY = ("host key verification failed", "remote host identification")
 
 
-def hint(endpoint, error, ssh_dir=None):
+def hint(endpoint, error, ssh_dir=None, t=None):
     """A sentence to append to a host failure, or "".
 
     `ssh_dir` is injectable so a test can describe a container that has
     keys and one that does not, without either being true of the machine
     running the test.
+
+    `t` is the caller's translator. Without it the sentence comes out in
+    English, which is what every caller did until 11.10.2026 — and the
+    result was a translated finding with an untranslated sentence stuck
+    underneath it in fifteen of the sixteen languages. The default
+    stays, because a missing translator must not cost the reader the
+    one sentence that explains the failure.
     """
     endpoint = (endpoint or "").strip()
     if not endpoint.startswith("ssh://"):
@@ -46,32 +53,52 @@ def hint(endpoint, error, ssh_dir=None):
     text = str(error or "").lower()
     ssh_dir = ssh_dir if ssh_dir is not None else _home_ssh()
 
+    def _say(key):
+        if t is not None:
+            try:
+                return t(key, dir=ssh_dir)
+            except Exception:                               # noqa: BLE001
+                pass
+        return _EN[key].format(dir=ssh_dir)
+
     if any(k in text for k in _AUTH):
         if not os.path.isdir(ssh_dir):
-            return (
-                f"There is no `{ssh_dir}` inside this container. Keys live "
-                f"on the host — `ssh-copy-id` wrote them to your own home "
-                f"directory, and a container has its own filesystem. Mount "
-                f"them read-only: `-v {ssh_dir}:{ssh_dir}:ro`")
+            return _say("hostdiag_ssh_no_dir")
         if not os.path.isfile(os.path.join(ssh_dir, "known_hosts")):
-            return (
-                f"`{ssh_dir}` is mounted but has no `known_hosts`, so the "
-                f"first connection to a new host has nobody to ask. Mount "
-                f"the whole directory rather than the key alone.")
-        return (
-            f"`{ssh_dir}` is mounted and carries a `known_hosts`, so the "
-            f"key itself is being refused — check that this container's "
-            f"key is in the remote `authorized_keys` for that user.")
+            return _say("hostdiag_ssh_no_known_hosts")
+        return _say("hostdiag_ssh_key_refused")
 
     if any(k in text for k in _HOSTKEY):
         if not os.path.isfile(os.path.join(ssh_dir, "known_hosts")):
-            return (
-                f"No `known_hosts` in `{ssh_dir}`, so this host is unknown "
-                f"to the container even though it is known to you. Mount "
-                f"the whole `.ssh` directory: `-v {ssh_dir}:{ssh_dir}:ro`")
-        return (
-            f"The host key changed, or `known_hosts` has an entry for a "
-            f"different address. SSH refuses on purpose here — check the "
-            f"entry rather than removing the check.")
+            return _say("hostdiag_hostkey_unknown")
+        return _say("hostdiag_hostkey_changed")
 
     return ""
+
+
+#: The same five sentences as `lang/en.json`, kept here as the floor for
+#: a caller with no translator. Held to the language files by
+#: `test_hostdiag.py`, so the two cannot drift apart silently.
+_EN = {
+    "hostdiag_ssh_no_dir":
+        "There is no `{dir}` inside this container. Keys live on the host "
+        "— `ssh-copy-id` wrote them to your own home directory, and a "
+        "container has its own filesystem. Mount them read-only: "
+        "`-v {dir}:{dir}:ro`",
+    "hostdiag_ssh_no_known_hosts":
+        "`{dir}` is mounted but has no `known_hosts`, so the first "
+        "connection to a new host has nobody to ask. Mount the whole "
+        "directory rather than the key alone.",
+    "hostdiag_ssh_key_refused":
+        "`{dir}` is mounted and carries a `known_hosts`, so the key "
+        "itself is being refused — check that this container's key is in "
+        "the remote `authorized_keys` for that user.",
+    "hostdiag_hostkey_unknown":
+        "No `known_hosts` in `{dir}`, so this host is unknown to the "
+        "container even though it is known to you. Mount the whole "
+        "`.ssh` directory: `-v {dir}:{dir}:ro`",
+    "hostdiag_hostkey_changed":
+        "The host key changed, or `known_hosts` has an entry for a "
+        "different address. SSH refuses on purpose here — check the entry "
+        "rather than removing the check.",
+}

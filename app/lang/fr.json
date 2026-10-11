@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• Tout ce qui était listé était déjà terminé au moment où j'ai posé la question : le droit d'inspection n'a donc pas été testé. C'est un hôte avec des tâches de courte durée, pas un problème d'hôte.",
   "hostcheck_ready": "• Prêt : `{endpoint}` est entièrement lisible. Mettre à jour demande en plus les droits d'écriture, et un contrôle préalable ne peut pas les essayer sans rien modifier — un proxy de socket en lecture seule arrive exactement jusqu'ici.",
   "hostcheck_usable": "• Utilisable : `{endpoint}` peut être ajouté. Les droits d'inspection et d'écriture n'ont pas été testés.",
-  "hostcheck_usage": "Utilisation : `/hosts check <endpoint>` — par exemple `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "Utilisation : `/hosts check <endpoint>` — par exemple `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "Il n'y a pas de `{dir}` dans ce conteneur. Les clés sont sur l'hôte — `ssh-copy-id` les a écrites dans ton propre répertoire personnel, et un conteneur a son propre système de fichiers. Monte-les en lecture seule : `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}` est monté mais sans `known_hosts` : la première connexion à un nouvel hôte n'a donc personne à interroger. Monte le répertoire entier, pas seulement la clé.",
+  "hostdiag_ssh_key_refused": "`{dir}` est monté et contient un `known_hosts` : c'est donc la clé elle-même qui est refusée — vérifie que la clé de ce conteneur figure dans le `authorized_keys` distant de cet utilisateur.",
+  "hostdiag_hostkey_unknown": "Pas de `known_hosts` dans `{dir}` : cet hôte est donc inconnu du conteneur, même si toi tu le connais. Monte tout le répertoire `.ssh` : `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "La clé de l'hôte a changé, ou `known_hosts` contient une entrée pour une autre adresse. SSH refuse volontairement ici — vérifie l'entrée plutôt que de supprimer le contrôle."
 }

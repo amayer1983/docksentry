@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 #: Pattern → how many are left. Lower these as you fix them; never raise.
 BUDGET = {
     "bare-true": 0,
-    "count-threshold": 18,
+    "count-threshold": 16,
     "and-or-precedence": 0,
     "dead-fstring-key": 0,
 }

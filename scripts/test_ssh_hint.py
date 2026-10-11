@@ -88,18 +88,98 @@ with tempfile.TemporaryDirectory() as tmp:
     checks["…and neither does an empty one"] = (
         hostdiag.hint("ssh://root@nas", "", ssh_dir=empty) == "")
 
-# ── it reaches all three places a host failure is reported ───────────
+# ── the sentence comes out in the reader's language ─────────────────
+# It did not, until 11.10.2026: five hard-coded English sentences hung
+# under a finding that is translated in all sixteen languages. A German
+# reader got the diagnosis in German and the one line telling him what
+# to do in English.
+from i18n import available_languages, get_translator  # noqa: E402
+
+KEYS = ("hostdiag_ssh_no_dir", "hostdiag_ssh_no_known_hosts",
+        "hostdiag_ssh_key_refused", "hostdiag_hostkey_unknown",
+        "hostdiag_hostkey_changed")
+
+_langs = available_languages()
+checks["all sixteen languages carry the five sentences"] = (
+    len(_langs) == 16
+    and all(get_translator(lg)(k) != k for lg in _langs for k in KEYS))
+_missing = [(lg, k) for lg in _langs for k in KEYS
+            if get_translator(lg)(k) == k]
+if _missing:
+    print(f"      → missing: {_missing[:6]}")
+
+# The in-module English floor and `en.json` have to say the same thing,
+# or a caller with no translator gets a different sentence from one with.
+_en = get_translator("en")
+checks["the English floor matches the language file"] = all(
+    hostdiag._EN[k] == _en(k) for k in KEYS)
+
+# Driven, per language: the branch is reached and the sentence that
+# comes back is the one from that language's file.
+with tempfile.TemporaryDirectory() as _d:
+    _empty = os.path.join(_d, "nothing")
+    _mounted = os.path.join(_d, "ssh")
+    os.makedirs(_mounted)
+    _cases = [(REFUSED, _empty, "hostdiag_ssh_no_dir"),
+              (REFUSED, _mounted, "hostdiag_ssh_no_known_hosts"),
+              (HOSTKEY, _mounted, "hostdiag_hostkey_unknown")]
+    for _lang in ("de", "ja", "ru", "en"):
+        _t = get_translator(_lang)
+        _ok = all(
+            hostdiag.hint("ssh://root@nas", _err, ssh_dir=_dir, t=_t)
+            == _t(_key, dir=_dir)
+            for _err, _dir, _key in _cases)
+        checks[f"a {_lang} reader gets the {_lang} sentence"] = _ok
+    # …and the sentences really differ, or the check above would pass on
+    # a translator that returns English for everything.
+    checks["the languages are not all the same text"] = (
+        hostdiag.hint("ssh://root@nas", REFUSED, ssh_dir=_empty,
+                      t=get_translator("de"))
+        != hostdiag.hint("ssh://root@nas", REFUSED, ssh_dir=_empty,
+                         t=get_translator("ja")))
+    # A translator that throws must not cost the reader the sentence.
+    def _broken(key, **kw):
+        raise RuntimeError("no")
+
+    checks["a broken translator still yields English"] = (
+        hostdiag.hint("ssh://root@nas", REFUSED, ssh_dir=_empty,
+                      t=_broken).startswith("There is no"))
+
+# ── and every place that reports a host failure asks in the language ─
+# Read as a tree, not as a grep. `"hostdiag.hint" in src` was what
+# stood here, and a commented-out call satisfies it — which is how
+# `/hosts check` was dead on both connections with three checks green.
+import ast  # noqa: E402
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
-sched = open(os.path.join(APP, "scheduler.py"), encoding="utf-8").read()
-tele = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
-checks["the scheduled check carries the hint"] = "hostdiag.hint" in sched
-checks["…and so does /check"] = tele.count("hostdiag.hint") >= 1
-checks["…and /status"] = tele.count("hostdiag.hint") >= 2
+SITES = {"scheduler.py": 1, "telegram_bot.py": 3, "discord_bot.py": 1}
+_found, _untranslated = {}, []
+for _file in SITES:
+    _src = open(os.path.join(APP, _file), encoding="utf-8").read()
+    _calls = [n for n in ast.walk(ast.parse(_src))
+              if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Attribute)
+              and n.func.attr == "hint"
+              and isinstance(n.func.value, ast.Name)
+              and n.func.value.id == "hostdiag"]
+    _found[_file] = len(_calls)
+    _untranslated += [f"{_file}:{n.lineno}" for n in _calls
+                      if not any(kw.arg == "t" for kw in n.keywords)]
+
+checks["every reporting surface asks for the hint"] = _found == SITES
+checks["…and every one of them asks in the reader's language"] = (
+    not _untranslated)
+if _untranslated:
+    print(f"      → no translator at: {_untranslated}")
+if _found != SITES:
+    print(f"      → call sites: {_found}, expected {SITES}")
+
 # The hint must never be the reason a check fails.
-for src, name in ((sched, "scheduler"), (tele, "telegram_bot")):
-    i = src.index("import hostdiag")
-    checks[f"a broken hint cannot break {name}"] = (
-        "except Exception" in src[i:i + 700])
+for _file in ("scheduler.py", "telegram_bot.py"):
+    _src = open(os.path.join(APP, _file), encoding="utf-8").read()
+    i = _src.index("import hostdiag")
+    checks[f"a broken hint cannot break {_file[:-3]}"] = (
+        "except Exception" in _src[i:i + 700])
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

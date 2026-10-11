@@ -2185,8 +2185,9 @@ class DiscordBot:
             return "\n".join(lines + [
                 self.t("hostcheck_unreachable", endpoint=endpoint,
                        error=str(e)[:300])])
-        findings = hostcheck.preflight(endpoint, backend,
-                                       hint=hostdiag.hint)
+        findings = hostcheck.preflight(
+            endpoint, backend,
+            hint=lambda ep, why: hostdiag.hint(ep, why, t=self.t))
         for kind, params in findings:
             extra = params.pop("hint", "")
             lines.append(self.t(f"hostcheck_{kind}", **params))

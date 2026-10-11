@@ -1009,5 +1009,10 @@
   "hostcheck_gone": "• Everything it listed had already finished by the time I asked about it, so inspect permission stayed untested. That is a host running short-lived jobs, not a problem with the host.",
   "hostcheck_ready": "• Ready: `{endpoint}` can be read in full. Updating needs write permission as well, and a pre-flight cannot try that without changing something — a read-only socket proxy gets exactly this far.",
   "hostcheck_usable": "• Usable: `{endpoint}` can be added. Inspect and write permission stayed untested.",
-  "hostcheck_usage": "Usage: `/hosts check <endpoint>` — for example `/hosts check ssh://user@10.0.0.5`"
+  "hostcheck_usage": "Usage: `/hosts check <endpoint>` — for example `/hosts check ssh://user@10.0.0.5`",
+  "hostdiag_ssh_no_dir": "There is no `{dir}` inside this container. Keys live on the host — `ssh-copy-id` wrote them to your own home directory, and a container has its own filesystem. Mount them read-only: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_known_hosts": "`{dir}` is mounted but has no `known_hosts`, so the first connection to a new host has nobody to ask. Mount the whole directory rather than the key alone.",
+  "hostdiag_ssh_key_refused": "`{dir}` is mounted and carries a `known_hosts`, so the key itself is being refused — check that this container's key is in the remote `authorized_keys` for that user.",
+  "hostdiag_hostkey_unknown": "No `known_hosts` in `{dir}`, so this host is unknown to the container even though it is known to you. Mount the whole `.ssh` directory: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_changed": "The host key changed, or `known_hosts` has an entry for a different address. SSH refuses on purpose here — check the entry rather than removing the check."
 }
