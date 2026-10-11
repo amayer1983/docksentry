@@ -58,6 +58,7 @@ SUGGEST = ("tcp://", "ssh://", "unix://", "context://")
 #: Finding kinds, in the order they can occur.
 #:   scheme_bad      the endpoint is not one we speak
 #:   unreachable     nothing answered
+#:   needs_tls       the port speaks TLS and we have no certificates
 #:   denied          the socket answered, and refused us
 #:   denied_ssh      ssh answered, and would not let us in
 #:   engine          what answered, and its version
@@ -79,7 +80,7 @@ SUGGEST = ("tcp://", "ssh://", "unix://", "context://")
 #: `preflight` emits plus `usable`, which is `verdict`'s. Kept as one
 #: list because what reads it is the wording check, and a kind without
 #: wording renders as a bare key wherever it comes from.
-KINDS = ("scheme_bad", "unreachable", "denied", "denied_ssh",
+KINDS = ("scheme_bad", "unreachable", "needs_tls", "denied", "denied_ssh",
          "engine", "engine_unsure",
          "can_list", "cannot_list", "can_inspect", "cannot_inspect",
          "no_containers", "gone", "ready", "usable")
@@ -111,6 +112,58 @@ _REFUSED = ("permission denied", "access denied", "not permitted",
 _SSH_REFUSED = ("ssh:", "publickey", "password)", "keyboard-interactive",
                 "host key verification", "remote host identification",
                 "no supported authentication")
+
+
+#: What a CLI says when it spoke plain HTTP to a TLS port. Go's own
+#: server answers the plaintext request with an HTTP 400 carrying the
+#: first sentence, so a current Docker says it outright; older clients
+#: and other servers hand back the raw TLS record instead, which reads
+#: as `malformed HTTP response "\x15\x03\x01…"`. Podman says only
+#: `ping response was 400`, which on its own means nothing — that case
+#: is answered by the handshake below rather than by a guess.
+_TLS_WORDS = ("client sent an http request to an https server",
+              "http request to an https server",
+              "tls handshake", "record layer")
+
+
+def speaks_tls(endpoint, timeout=3.0):
+    """Does the port behind a `tcp://` endpoint speak TLS?
+
+    Asked, not inferred. 2376 is the conventional TLS port and 2375 the
+    plaintext one, but the port number is a convention and the question
+    is answerable directly: offer a handshake and see whether one
+    completes. Certificates are not verified — the question is what the
+    port speaks, not whether we trust it.
+
+    Measured both ways against a real daemon on 11.10.2026: a dind with
+    `DOCKER_TLS_CERTDIR=/certs` completes the handshake, and the same
+    image with TLS off refuses it with `WRONG_VERSION_NUMBER`.
+
+    A read, like everything else in this module, and bounded: three
+    seconds and one connection.
+    """
+    ep = (endpoint or "").strip()
+    if not ep.startswith("tcp://"):
+        return False
+    rest = ep[len("tcp://"):].split("/")[0]
+    host, _, port = rest.rpartition(":")
+    if not host or not port.isdigit():
+        return False
+    import socket
+    import ssl
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection((host.strip("[]"), int(port)),
+                                      timeout=timeout) as raw:
+            with ctx.wrap_socket(raw) as tls:
+                return bool(tls.version())
+    except Exception:                                       # noqa: BLE001
+        # Anything at all: refused, timed out, not TLS. The answer to
+        # "does it speak TLS" is no, and why it is no belongs to the
+        # finding the caller already has.
+        return False
 
 
 def _ssh_refused(text):
@@ -208,10 +261,14 @@ def short_endpoint(endpoint):
     return (endpoint or "")[:MAX_ENDPOINT]
 
 
-def preflight(endpoint, backend, hint=None):
+def preflight(endpoint, backend, hint=None, probe_tls=None):
     """`[(kind, params)]` for one endpoint. Does not write anything.
 
     `backend` is a container backend already pointed at `endpoint`;
+    `probe_tls` answers "does that port speak TLS?" and is injectable so
+    a test can describe both a TLS port and a plaintext one without
+    needing either on the machine running it. Default: `speaks_tls`.
+
     `hint` is `hostdiag.hint`, asked when the FIRST question fails — the
     one where the endpoint does not answer or refuses us. That is where
     the `/root/.ssh` trap shows up: an ssh host whose keys work on the
@@ -245,6 +302,27 @@ def preflight(endpoint, backend, hint=None):
         # telling that reader to check his socket group sends him the
         # wrong way — while `hostdiag` appends the right sentence
         # directly underneath, so he got both at once.
+        # A TLS port is its own answer, and it was the worst-served
+        # case in the module: `tcp://host:2376` is Docker's own
+        # recommended hardening, and the pre-flight called it "nothing
+        # answered" — when in fact the daemon answered perfectly well
+        # and we spoke the wrong language at it. I had told somebody in
+        # #2 that this is the right form and that Docksentry "then just
+        # talks to tcp://host:2376", which is not true: there are no
+        # client certificates anywhere in the program. So the reader
+        # was sent down that path by me and then told his machine was
+        # unreachable.
+        #
+        # The words first, because a current Docker says it outright,
+        # and the handshake second, because Podman says only "ping
+        # response was 400" and that means nothing on its own.
+        _tls_said = any(w in why.lower() for w in _TLS_WORDS)
+        if ep.startswith("tcp://") and (
+                _tls_said or (probe_tls or speaks_tls)(ep)):
+            params.pop("hint", None)
+            out.append(("needs_tls", params))
+            return out
+
         if not _refused(why):
             kind = "unreachable"
         elif _ssh_refused(why):
@@ -380,6 +458,6 @@ def usable(findings):
     # `denied` belongs here and was missed when it was added: a socket
     # that answers and refuses us is the most blocking answer there is,
     # and leaving it out reported a host with no rights as usable.
-    bad = {"scheme_bad", "unreachable", "denied", "denied_ssh",
+    bad = {"scheme_bad", "unreachable", "needs_tls", "denied", "denied_ssh",
            "cannot_list", "cannot_inspect"}
     return bool(findings) and not any(kind in bad for kind, _p in findings)

@@ -997,6 +997,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` 사전 점검*",
   "hostcheck_scheme_bad": "• `{endpoint}` 는 제가 아는 엔드포인트가 아닙니다. 예상: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 에서 아무 응답이 없습니다 — {error}",
+  "hostcheck_needs_tls": "• `{endpoint}`는 TLS로 말하고, Docksentry에는 제시할 클라이언트 인증서가 없습니다 — 제 쪽의 빈자리이고 설정 문제가 아닙니다. 이것은 Docker 자체의 `--tlsverify` 강화이며 데몬을 네트워크로 내보내는 올바른 방법이지만, 아직 지원하지 않습니다. 그때까지는 `ssh://`로 이 머신에 닿거나, 소켓을 프록시로 마운트하세요. 데몬의 응답: {error}",
   "hostcheck_denied": "• `{endpoint}` 이(가) 응답했고, 그리고 우리를 거부했습니다 — {error}. 네트워크가 아니라 소켓 권한입니다. 마운트, 그룹, 그리고 활성화되어 있다면 SELinux를 확인하세요.",
   "hostcheck_denied_ssh": "• `{endpoint}` 에서 ssh가 응답했고, 우리를 들여보내지 않았습니다: {error}. 이것은 키 문제이고 소켓 문제가 아닙니다. 이 컨테이너는 자체 파일시스템을 가지므로, 셸에서 쓰는 키와 같은 키를 제시하지 않습니다.",
   "hostcheck_engine": "• {engine} {version} 이(가) 응답했습니다",

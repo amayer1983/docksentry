@@ -997,6 +997,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` の事前チェック*",
   "hostcheck_scheme_bad": "• `{endpoint}` は私が扱えるエンドポイントではありません。想定: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` から応答がありません — {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` は TLS で話しています。Docksentry には差し出せるクライアント証明書がありません — これは私の側の不足で、設定の問題ではありません。これは Docker 自身の `--tlsverify` による堅牢化で、デーモンをネットワークに出す正しい方法ですが、まだ対応していません。それまでは `ssh://` でこのマシンに届けるか、ソケットをプロキシ経由でマウントしてください。デーモンの返答：{error}",
   "hostcheck_denied": "• `{endpoint}` は応答し、そのうえで拒否しました — {error}。ネットワークではなくソケットの権限です。マウント、グループ、有効なら SELinux を確認してください。",
   "hostcheck_denied_ssh": "• `{endpoint}` では ssh が応答し、そして入れてくれませんでした: {error}。これは鍵の問題で、ソケットではありません。このコンテナは独自のファイルシステムを持つため、あなたがシェルから使う鍵とは別の鍵を提示します。",
   "hostcheck_engine": "• {engine} {version} が応答しました",

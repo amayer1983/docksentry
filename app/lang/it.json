@@ -997,6 +997,7 @@
   "hostcheck_header": "🔎 *Controllo preliminare per* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` non è un endpoint che conosco. Atteso uno di: {schemes}",
   "hostcheck_unreachable": "• Nessuna risposta da `{endpoint}` — {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` parla TLS, e Docksentry non ha alcun certificato client da offrire — manca da parte mia, non nella tua configurazione. È l'irrigidimento `--tlsverify` di Docker stesso e il modo giusto di esporre un demone in rete; non è ancora supportato. Fino ad allora raggiungi questa macchina via `ssh://`, oppure monta il suo socket tramite un proxy. Il demone ha detto: {error}",
   "hostcheck_denied": "• `{endpoint}` ha risposto — e ci ha rifiutati: {error}. Sono i permessi del socket, non la rete: controlla il mount, il gruppo e, se attivo, SELinux.",
   "hostcheck_denied_ssh": "• ssh ha risposto su `{endpoint}` e non ci ha fatti entrare: {error}. È una chiave, non il socket — questo container ha il proprio filesystem, quindi la chiave che usi dalla shell non è quella che offre.",
   "hostcheck_engine": "• Ha risposto {engine} {version}",

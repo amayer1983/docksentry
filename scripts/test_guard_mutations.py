@@ -102,8 +102,21 @@ GUARDED = [
 
     ("a socket that refuses us blocks the host",
      "app/hostcheck.py",
-     '    bad = {"scheme_bad", "unreachable", "denied", "denied_ssh",',
-     '    bad = {"scheme_bad", "unreachable",',
+     '    bad = {"scheme_bad", "unreachable", "needs_tls", "denied", '
+     '"denied_ssh",',
+     '    bad = {"scheme_bad", "unreachable", "needs_tls",',
+     "test_hostcheck.py"),
+
+    ("a TLS port is named as one, not called unreachable",
+     "app/hostcheck.py",
+     '            out.append(("needs_tls", params))',
+     '            out.append(("unreachable", params))',
+     "test_hostcheck.py"),
+
+    ("…and the port is asked rather than guessed from the words",
+     "app/hostcheck.py",
+     "                _tls_said or (probe_tls or speaks_tls)(ep)):",
+     "                _tls_said):",
      "test_hostcheck.py"),
 
     ("/hosts check reaches the pre-flight in Telegram",

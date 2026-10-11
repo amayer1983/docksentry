@@ -172,6 +172,51 @@ def main():
 
         argv = host.backend.build(["ps"])
         checks["the endpoint reaches argv"] = argv[:3] == ["docker", "-H", endpoint]
+
+        # ── the same daemon, with TLS in front of it ────────────────
+        # `tcp://host:2376` is Docker's own recommended hardening, and
+        # the pre-flight used to call it "nothing answered". Only a real
+        # TLS-protected daemon can settle what happens here: the error
+        # wording differs between client versions, and the handshake
+        # probe is the half that cannot be stood in for at all.
+        #
+        # The plaintext dind above is the counter-direction, and it is
+        # the one that matters — without it this passes on a module that
+        # answers `needs_tls` about everything.
+        import hostcheck                                    # noqa: E402
+        tls_port = lf.free_port()
+        tls_name = lf.name("ds-tls-transport-test")
+        lf.rm(tls_name)
+        up_tls = subprocess.run(
+            ["docker", "run", "-d", "--name", tls_name, "--privileged",
+             "-p", f"127.0.0.1:{tls_port}:2376", "docker:dind"],
+            capture_output=True, text=True)
+        if up_tls.returncode != 0:
+            print(f"  (SKIP of the TLS half: {up_tls.stderr.strip()[:120]})")
+        else:
+            try:
+                tls_ep = f"tcp://127.0.0.1:{tls_port}"
+                for _ in range(40):
+                    time.sleep(2)
+                    if hostcheck.speaks_tls(tls_ep, timeout=2.0):
+                        break
+                checks["a TLS daemon is recognised as speaking TLS"] = (
+                    hostcheck.speaks_tls(tls_ep, timeout=3.0))
+                checks["…and the plaintext one is not"] = (
+                    not hostcheck.speaks_tls(endpoint, timeout=3.0))
+                from container_backend import (RemoteBackend,
+                                               resolve_cli)
+                tls_backend = RemoteBackend(
+                    tls_ep, name="tlsbox",
+                    cli_binary=resolve_cli("docker"))
+                found = [k for k, _p in hostcheck.preflight(tls_ep,
+                                                            tls_backend)]
+                checks["the pre-flight says TLS rather than 'nothing "
+                       "answered'"] = found == ["needs_tls"]
+                if found != ["needs_tls"]:
+                    print(f"      → the TLS endpoint produced {found}")
+            finally:
+                lf.rm(tls_name)
     finally:
         subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
 

@@ -532,9 +532,16 @@ checks["a docker cli talking to podman is reported as podman"] = (
 # `EMITTED` against what `preflight` really produces. `KINDS` carries
 # one kind `preflight` never emits (`usable`, which is `verdict`'s), so
 # a single list stood for two different claims and nothing held either.
+# Scenarios may carry a third element: what the TLS handshake probe
+# should answer. `needs_tls` is the one kind that does not come from the
+# CLI's words alone — Podman says only "ping response was 400", and the
+# port is asked directly instead of guessed at.
 SCENARIOS = {
     "scheme_bad": ("http://nas", {}),
     "unreachable": ("ssh://nas", {}),
+    "needs_tls": ("tcp://nas:2376",
+                  {"version --format": (1, "", "Error response from daemon: "
+                   "Client sent an HTTP request to an HTTPS server.")}),
     "denied": ("unix:///var/run/docker.sock",
                {"version --format": (1, "", "permission denied")}),
     "denied_ssh": ("ssh://nas",
@@ -550,13 +557,82 @@ SCENARIOS = {
     "ready": ("ssh://nas", HEALTHY),
 }
 _produced = set()
-for _ep, _answers in SCENARIOS.values():
-    _produced |= set(kinds(hostcheck.preflight(_ep, _Backend(_answers))))
+for _scenario in SCENARIOS.values():
+    _ep, _answers = _scenario[0], _scenario[1]
+    _tls = _scenario[2] if len(_scenario) > 2 else (lambda ep: False)
+    _produced |= set(kinds(hostcheck.preflight(_ep, _Backend(_answers),
+                                               probe_tls=_tls)))
 checks["every kind EMITTED names can actually be produced"] = (
     _produced == set(hostcheck.EMITTED))
 if _produced != set(hostcheck.EMITTED):
     print(f"      → never produced: {sorted(set(hostcheck.EMITTED) - _produced)}")
     print(f"      → produced but not listed: {sorted(_produced - set(hostcheck.EMITTED))}")
+# ── a TLS port, which used to be called "nothing answered" ──────────
+# `tcp://host:2376` is Docker's own recommended hardening, and the
+# pre-flight reported it as unreachable — the daemon answered perfectly
+# well and we spoke the wrong language at it. Worse, I had told somebody
+# in #2 that this is the right form and that Docksentry "then just talks
+# to tcp://host:2376", which is not true: there are no client
+# certificates anywhere in the program. He was sent down that path by me
+# and then told his machine was unreachable.
+#
+# Both halves are driven here: the words a current Docker prints, and
+# the handshake for a CLI that says nothing useful.
+_tls_said = {"version --format": (1, "", "Error response from daemon: "
+             "Client sent an HTTP request to an HTTPS server.")}
+_tls_mute = {"version --format": (1, "", "ping response was 400")}
+
+_f = hostcheck.preflight("tcp://nas:2376", _Backend(_tls_said),
+                         probe_tls=lambda ep: False)
+checks["a daemon that says we spoke HTTP to HTTPS is understood"] = (
+    kinds(_f) == ["needs_tls"])
+
+_f = hostcheck.preflight("tcp://nas:2376", _Backend(_tls_mute),
+                         probe_tls=lambda ep: True)
+checks["…and a CLI that says nothing useful is answered by the port"] = (
+    kinds(_f) == ["needs_tls"])
+# `.get`, not `[...]`: with the finding renamed this raised KeyError,
+# and a procedure that dies is not a procedure that noticed — the
+# mutation probe reported both of these as "did not finish" rather than
+# as caught, which is the difference between a guard and a crash.
+checks["…naming the endpoint it was asked about"] = (
+    dict(_f).get("needs_tls", {}).get("endpoint") == "tcp://nas:2376")
+
+# The counter-direction, and it is the one that matters: a port that is
+# simply dead must NOT be called a TLS port. Without this the check
+# above passes on a module that says `needs_tls` about everything.
+_f = hostcheck.preflight("tcp://nas:2375", _Backend(_tls_mute),
+                         probe_tls=lambda ep: False)
+checks["a port that does not speak TLS is not blamed on TLS"] = (
+    kinds(_f) == ["unreachable"])
+# …and a refusal stays a refusal rather than being read as TLS.
+_f = hostcheck.preflight(
+    "tcp://nas:2375",
+    _Backend({"version --format": (1, "", "permission denied")}),
+    probe_tls=lambda ep: False)
+checks["…and a refusal stays a refusal"] = kinds(_f) == ["denied"]
+
+# A host behind TLS cannot be added, so the verdict must say so. It is
+# the one case where everything is configured correctly on the far side
+# and the answer is still no.
+checks["a TLS-only host is not reported as usable"] = (
+    not hostcheck.usable([("needs_tls", {})]))
+
+# ── and the probe itself, against the real thing ────────────────────
+# `speaks_tls` is the only part that cannot be answered by a stand-in,
+# because what is claimed is what a real TLS port does. Measured on
+# 11.10.2026 against two dinds: one with `DOCKER_TLS_CERTDIR=/certs`
+# completes the handshake, the same image with TLS off refuses it with
+# `WRONG_VERSION_NUMBER`. Here only the cheap half runs — a port with
+# nothing on it, and the shapes that must not be probed at all.
+checks["nothing listening does not look like TLS"] = (
+    hostcheck.speaks_tls("tcp://127.0.0.1:1", timeout=1.0) is False)
+checks["…and a non-tcp endpoint is never probed"] = (
+    hostcheck.speaks_tls("ssh://root@nas") is False
+    and hostcheck.speaks_tls("unix:///var/run/docker.sock") is False)
+checks["…nor an endpoint with no port to probe"] = (
+    hostcheck.speaks_tls("tcp://nocolon") is False)
+
 checks["…and `usable` is a verdict, not something preflight emits"] = (
     "usable" not in _produced and "usable" in hostcheck.KINDS)
 

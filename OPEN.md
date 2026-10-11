@@ -262,13 +262,31 @@ verbindet gar nicht erst.
 
 **Offen:**
 
-* **`tcp://…:2376` bekommt die unbrauchbarste Antwort.** Das ist
-  Dockers eigene empfohlene Absicherung, und es gibt im ganzen Projekt
-  keine TLS-Client-Zertifikate (`DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`
-  kommen in `app/` und `README.md` nirgends vor). Die Vorab-Prüfung
-  meldet „Nothing answered … malformed HTTP response \x15\x03\x01".
-  Zwei getrennte Dinge: die Antwort erkennen und benennen, und
-  entscheiden, ob TLS-Client-Zertifikate ein eigenes Paket werden.
+* **`tcp://…:2376`: die Meldung ist erledigt (11.10.2026), die
+  Client-Zertifikate nicht.** Die Vorab-Prüfung sagt jetzt
+  `needs_tls` statt „Nothing answered" — in 16 Sprachen, und sie sagt
+  ausdrücklich, dass die Lücke bei mir liegt und nicht beim Leser. Das
+  ist auch nötig: ich habe am 18.08. in #2 selbst geschrieben,
+  Docksentry „then just talks to `tcp://host:2376`", und das stimmt
+  nicht. Wer dem folgte, bekam seine Maschine als unerreichbar gemeldet.
+
+  Entschieden wird nicht am Port, sondern gemessen — `speaks_tls()`
+  bietet einen Handshake an. Nachgestellt gegen zwei echte dinds: mit
+  `DOCKER_TLS_CERTDIR=/certs` kommt der Handshake zustande, dasselbe
+  Image ohne TLS lehnt mit `WRONG_VERSION_NUMBER` ab. Beides als
+  Prüfung festgehalten, die Gegenrichtung mit: ein totes Port und eine
+  echte Ablehnung dürfen nicht als TLS gelesen werden. Nebenbei
+  gelernt: Docker 29.5 sagt es inzwischen selbst („Client sent an HTTP
+  request to an HTTPS server"), Podman sagt nur „ping response was
+  400" — deshalb wird gefragt und nicht geraten.
+
+  **Offen bleibt:** TLS-Client-Zertifikate selbst
+  (`DOCKER_CERT_PATH`, `--tlsverify --tlscacert --tlscert --tlskey`).
+  Bewusst hinter den Kern-Umbau gestellt: es sind nur zwei
+  `-H`-Aufrufstellen, aber die Zertifikate gehören pro Verbindung
+  konfiguriert, und diese Schicht entsteht erst dort — vorher gebaut
+  heißt zweimal gebaut. Gefragt hat danach übrigens niemand; die
+  einzige Erwähnung von 2376 im Tracker ist meine eigene.
 
 ## 5 — Texte über 16 Sprachen
 

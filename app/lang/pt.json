@@ -997,6 +997,7 @@
   "hostcheck_header": "🔎 *Verificação prévia de* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` não é um endpoint que eu entenda. Esperado um de: {schemes}",
   "hostcheck_unreachable": "• Nada respondeu em `{endpoint}` — {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` fala TLS, e o Docksentry não tem nenhum certificado de cliente para oferecer — isso falta do meu lado, não na tua configuração. É o reforço `--tlsverify` do próprio Docker e a forma correta de expor um daemon pela rede; ainda não é suportado. Até lá, alcança esta máquina por `ssh://`, ou monta o socket dela através de um proxy. O daemon disse: {error}",
   "hostcheck_denied": "• `{endpoint}` respondeu — e recusou-nos: {error}. São as permissões do socket, não a rede: verifique o mount, o grupo e, se estiver ativo, o SELinux.",
   "hostcheck_denied_ssh": "• o ssh respondeu em `{endpoint}` e não nos deixou entrar: {error}. É uma chave, não o socket — este contentor tem o seu próprio sistema de ficheiros, por isso a chave que usa a partir da shell não é a que ele apresenta.",
   "hostcheck_engine": "• Respondeu {engine} {version}",

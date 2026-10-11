@@ -487,6 +487,14 @@ environment:
 
 Each entry is `name:endpoint`, and the endpoint is whatever the container CLI takes for `-H`. A **TCP socket / [socket proxy](docs/security.md) is the simplest option** — the same pattern you'd use locally, no keys to manage. SSH endpoints work too and lean on the CLI's own SSH handling, so key-based login has to already succeed non-interactively for the user Docksentry runs as.
 
+**TLS on 2376 is not supported yet.** That is Docker's own
+`--tlsverify` hardening and the right way to put a daemon on the
+network — but Docksentry has no client certificates anywhere, so it
+cannot present one. Until it does, reach such a machine over `ssh://`
+or through a [socket proxy](docs/security.md). The pre-flight says so
+by name now; it used to report a TLS port as "nothing answered", which
+is the opposite of what is going on.
+
 An endpoint may also be `context://<name>`, meaning "the endpoint this machine already has saved under that name" — `docker --context <name>` / `podman --connection <name>`. On Podman that is the *only* way to give each remote host its own SSH key, because `podman --url ssh://…` ignores `~/.ssh/config` and borrows whichever stored connection happens to be the default one. Measured, and written up in [docs/podman.md](docs/podman.md#ssh-endpoints-podmans-key-handling-is-not-dockers).
 
 The machine Docksentry runs on is always managed and is **not** listed. Leave `DOCKER_HOSTS` unset and everything behaves exactly as a single-host install — no host column, no `@` anywhere.

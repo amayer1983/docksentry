@@ -997,6 +997,7 @@
   "hostcheck_header": "🔎 *Kontrola wstępna dla* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` nie jest punktem końcowym, który rozumiem. Oczekiwany jeden z: {schemes}",
   "hostcheck_unreachable": "• Nic nie odpowiedziało pod `{endpoint}` — {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` mówi TLS, a Docksentry nie ma certyfikatu klienta, który mógłby przedstawić — brakuje tego u mnie, nie u ciebie. To własne zabezpieczenie Dockera `--tlsverify` i właściwy sposób udostępnienia demona przez sieć; nie jest jeszcze obsługiwane. Do tego czasu połącz się z tą maszyną przez `ssh://` albo udostępnij jej gniazdo przez proxy. Demon powiedział: {error}",
   "hostcheck_denied": "• `{endpoint}` odpowiedział — i nas odrzucił: {error}. To uprawnienia gniazda, nie sieć: sprawdź montowanie, grupę i, jeśli jest włączony, SELinux.",
   "hostcheck_denied_ssh": "• ssh odpowiedział na `{endpoint}` i nie wpuścił nas: {error}. To klucz, nie gniazdo — ten kontener ma własny system plików, więc klucz, którego używasz z powłoki, nie jest tym, który on przedstawia.",
   "hostcheck_engine": "• Odpowiedział {engine} {version}",
