@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 import notify_retry
+import retry_after as _ra
 from errfmt import clip, human
 import changelog
 import container_info
@@ -893,10 +894,11 @@ class TelegramBot:
 
     #: A 429 asking us to wait longer than this is not a blip — it is
     #: usually a global limit earned by something else sharing the token,
-    #: and sitting it out inside a request would hang the caller. Same
-    #: number and same reasoning as `discord_rest.MAX_RETRY_AFTER` and the
-    #: notifier's shared POST helper.
-    MAX_RETRY_AFTER = 60.0
+    #: The in-line wait budget, from `retry_after` so that the three
+    #: call sites share one number rather than three literals that
+    #: happen to agree. An audit pointed out that nothing held them to
+    #: each other, and it was right.
+    MAX_RETRY_AFTER = _ra.MAX_TOTAL_WAIT
 
     @staticmethod
     def _retry_after(body, err):
@@ -1022,6 +1024,7 @@ class TelegramBot:
         # returned to the caller unchanged.
         import time as _t
         attempts = 1 if quiet_timeout else 3
+        _slept = 0.0
         for attempt in range(attempts):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -1054,10 +1057,13 @@ class TelegramBot:
                 # limit. So a rate-limited alert was thrown away at the one
                 # moment the chat was busiest (#66).
                 if e.code == 429 and attempt < attempts - 1:
-                    wait = self._retry_after(body, e)
-                    if wait is not None and wait <= self.MAX_RETRY_AFTER:
+                    # The budget is for the whole call. Two answers of
+                    # `Retry-After: 60` used to mean two minutes here.
+                    wait = _ra.usable_wait(self._retry_after(body, e), _slept)
+                    if wait is not None:
                         print(f"Telegram rate limited, waiting {wait:.1f}s")
                         _t.sleep(wait)
+                        _slept += wait
                         continue
                 if not (quiet_timeout and self._is_timeout(e)):
                     print(f"Telegram API {e.code}: {body.get('description', body)}")
@@ -1227,7 +1233,7 @@ class TelegramBot:
     #: a question asked on Monday was still live on Friday.
     STOP_CONFIRM_TTL = 15 * 60
 
-    def _offer_restore(self, doc):
+    def _offer_restore(self, doc, asker=None):
         """A file arrived. Say what it is and ask, do not act.
 
         Restoring overwrites settings, groups, pins, notes, links and
@@ -1242,8 +1248,9 @@ class TelegramBot:
         if not name.lower().endswith(".json"):
             return                                   # not for us, stay quiet
         if size > self.RESTORE_MAX_BYTES:
-            self.send_message(self.t("restore_too_big",
-                                     size=f"{size / 1024 / 1024:.1f}"))
+            self.send_message(self.t(
+                "restore_too_big", size=f"{size / 1024 / 1024:.1f}",
+                limit=f"{self.RESTORE_MAX_BYTES / 1024 / 1024:.0f}"))
             return
         raw = self._download_file(doc.get("file_id"))
         if raw is None:
@@ -1262,12 +1269,23 @@ class TelegramBot:
         # flow: the button carries the token, not the payload, so a
         # 30 kB bundle never has to fit in a callback_data field.
         import secrets as _secrets
+        import time as _time
         token = _secrets.token_hex(6)
         pending = getattr(self, "_pending_restores", None)
         if pending is None:
             pending = self._pending_restores = {}
         pending.clear()          # one at a time; the newest wins
-        pending[token] = bundle
+        # Who asked, and when — the same record `_offer_stop` keeps, for
+        # the same reason and more of it. A restore overwrites settings,
+        # groups, pins, notes, links and update windows; a stop can be
+        # taken back. This side kept neither, so in a group chat any
+        # authorised user could press somebody else's button, and a file
+        # dropped on Monday was still live on Friday when someone
+        # scrolled up and tapped. An audit found the asymmetry on
+        # 11.10.2026 and it was the wrong way round.
+        pending[token] = {"bundle": bundle,
+                          "user": str(asker) if asker is not None else "",
+                          "created": _time.time()}
 
         parts = [k for k in ("settings", "groups", "pinned", "autoupdate",
                              "notes", "links", "update_windows", "ask_major")
@@ -1368,8 +1386,13 @@ class TelegramBot:
         decides whether to offer a restart — a restore that failed or had
         nothing to do should not.
         """
-        bundle = (getattr(self, "_pending_restores", {}) or {}).pop(token, None)
-        if bundle is None:
+        rec = (getattr(self, "_pending_restores", {}) or {}).pop(token, None)
+        if rec is None:
+            return self.t("restore_expired"), False
+        if time.time() - rec.get("created", 0) > self.STOP_CONFIRM_TTL:
+            return self.t("restore_expired"), False
+        bundle = rec.get("bundle")
+        if not isinstance(bundle, dict):
             return self.t("restore_expired"), False
         import backup as _backup
         from config import PERSISTENT_KEYS as _PK
@@ -3103,6 +3126,10 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("restore_cancelled"))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
+            # `stop_cancel` clears its table and this did not, so a
+            # declined bundle stayed in memory with its token still
+            # redeemable — including the `settings` section it carries.
+            getattr(self, "_pending_restores", {}).clear()
             return
 
         if data.startswith("restore_go:"):
@@ -3111,8 +3138,18 @@ class TelegramBot:
             # token is popped as well, so even a race only restores once.
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
+            # Same two gates as `stop_go:`, and the more necessary of the
+            # two places to have them: only the person who dropped the
+            # file may press, and not days later.
+            _rtok = data.split(":", 1)[1]
+            _rrec = (getattr(self, "_pending_restores", {}) or {}).get(_rtok)
+            if _rrec is not None and (not _rrec.get("user")
+                                      or _rrec["user"] != user_id):
+                self.answer_callback(callback["id"],
+                                     self.t("chan_confirm_not_yours"))
+                return
             self.answer_callback(callback["id"], self.t("restore_running"))
-            text, ok = self._do_restore(data.split(":", 1)[1])
+            text, ok = self._do_restore(_rtok)
             # "Some settings only take effect after a restart" is a thing
             # to *do*, not a thing to read — the owner's point when he
             # tested this. So offer the restart rather than describing
@@ -3319,7 +3356,7 @@ class TelegramBot:
         # the press is what restores. Same reasoning as Discord's /stop.
         doc = message.get("document")
         if doc and not text.startswith("/"):
-            self._offer_restore(doc)
+            self._offer_restore(doc, asker=user_id)
             return
 
         # Audit trail (v2.1). One seam, after the auth check so only

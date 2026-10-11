@@ -16,6 +16,7 @@ here, once, rather than trusted to every call site.
 
 import hashlib
 import json
+import retry_after as _ra
 import time
 import urllib.error
 import urllib.parse
@@ -41,7 +42,12 @@ USER_AGENT = ("DiscordBot (https://github.com/amayer1983/docksentry, 1.0)")
 #: wrong (usually a global limit from another instance sharing the
 #: token). Waiting it out inside a request would hang the caller, so we
 #: give up and let it retry later instead.
-MAX_RETRY_AFTER = 60.0
+#:
+#: From `retry_after`, so the three call sites that do this share one
+#: number instead of three literals that happen to agree — nothing held
+#: them to each other, and the budget rule below needs to be the same
+#: rule in all three as well.
+MAX_RETRY_AFTER = _ra.MAX_TOTAL_WAIT
 
 
 class DiscordRESTError(Exception):
@@ -75,6 +81,7 @@ class DiscordREST:
         if body is not None:
             headers["Content-Type"] = "application/json"
 
+        _slept = 0.0
         for attempt in range(attempts):
             req = urllib.request.Request(url, data=body, headers=headers,
                                          method=method)
@@ -87,11 +94,15 @@ class DiscordREST:
             except urllib.error.HTTPError as e:
                 raw = e.read().decode("utf-8", "replace")
                 if e.code == 429 and attempt < attempts - 1:
-                    wait = self._retry_after(raw, e)
-                    if wait is None or wait > MAX_RETRY_AFTER:
+                    # Budget for the whole request, not per attempt, and
+                    # a value that is checked rather than trusted: a
+                    # negative `Retry-After` used to reach `sleep()`.
+                    wait = _ra.usable_wait(self._retry_after(raw, e), _slept)
+                    if wait is None:
                         raise DiscordRESTError(e.code, raw)
                     self.log(f"Discord rate limited; waiting {wait:.1f}s")
                     self._sleep(wait)
+                    _slept += wait
                     continue
                 # 5xx is Discord having a bad day — worth one more go.
                 if 500 <= e.code < 600 and attempt < attempts - 1:

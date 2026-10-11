@@ -1906,8 +1906,9 @@ class DiscordBot:
         if not name.lower().endswith(".json"):
             return self.t("restore_not_json")
         if size > self.RESTORE_MAX_BYTES:
-            return self.t("chan_file_too_large",
-                          size=f"{size / 1024 / 1024:.1f}")
+            return self.t(
+                "chan_file_too_large", size=f"{size / 1024 / 1024:.1f}",
+                limit=f"{self.RESTORE_MAX_BYTES / 1024 / 1024:.0f}")
         # `json` is imported here because this module has no module-level
         # import of it — every other user does the same. Leaving it out is
         # what actually broke `/restore` for @NotRetarded (#2): the

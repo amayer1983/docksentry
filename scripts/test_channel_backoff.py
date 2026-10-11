@@ -176,28 +176,34 @@ finally:
     notify_retry.queue = _real
 
 # ── a `Retry-After` the server names is honoured, within reason ──────
-# The shared HTTP path waits out a short rate limit in-line rather than
-# queueing it, which is right: a limit that clears in two seconds
-# should not cost the message a trip through the queue. What it must
-# not do is sleep for as long as the server asks. `Retry-After: 3600`
-# is a legal answer, and a notifier that obeys it has stopped being a
-# notifier for an hour — on the scheduler's thread, so the monitor
-# stops with it.
+# Waiting out a two-second limit in place is right: a trip through the
+# queue would cost the message thirty seconds for nothing. Sleeping as
+# long as the server asks is not — `Retry-After: 3600` is a legal
+# answer, and a notifier that obeys it has stopped being a notifier for
+# an hour, on the thread that also runs the monitor ticks.
 #
-# Telegram and Discord have the same cap and it is covered there; this
-# path, which four channels share, had nothing.
+# This path is shared by Discord webhooks and the generic webhook. Not
+# four: ntfy, Gotify, Apprise and Matrix each have their own
+# `_post_text` and honour no `Retry-After` at all, which the first
+# version of this comment got wrong — it claimed four and nothing here
+# says anything about those four.
 import time as _time                                          # noqa: E402
 
+import retry_after as _ra                                     # noqa: E402
 from notifiers import base as _base                           # noqa: E402
 
 
 def _slept_for(retry_after):
-    """How long the shared path sleeps when the server says to wait."""
+    """How long the shared path sleeps when the server says to wait.
+
+    `_base.time` *is* the `time` module, so patching both names put the
+    recorder back in place in the `finally` and left `time.sleep`
+    monkey-patched for the rest of the process. One name, restored.
+    """
     slept = []
     attempts = []
-    real_sleep, _time.sleep = _time.sleep, lambda s: slept.append(s)
-    real_base_sleep = _base.time.sleep
-    _base.time.sleep = lambda s: slept.append(s)
+    real_sleep = _time.sleep
+    _time.sleep = lambda s: slept.append(s)
     real_open = urllib.request.urlopen
 
     def _limited(*_a, **_kw):
@@ -213,7 +219,6 @@ def _slept_for(retry_after):
     finally:
         urllib.request.urlopen = real_open
         _time.sleep = real_sleep
-        _base.time.sleep = real_base_sleep
     return slept, len(attempts)
 
 
@@ -225,6 +230,57 @@ _long, _tries = _slept_for(3600)
 checks["an hour-long one is not slept through"] = not any(
     s >= 3600 for s in _long)
 checks["…it goes to the queue instead"] = _tries == 1
+
+# The cap is for the whole send, not for each attempt. Two answers of
+# `Retry-After: 60` used to mean `slept=[60.0, 60.0]` — two minutes on
+# the scheduler's thread, where the commit that added the cap had
+# claimed "a rate limit that cannot put the scheduler to sleep".
+_at_cap, _tries = _slept_for(_ra.MAX_TOTAL_WAIT)
+checks["the whole send waits at most the budget, not that per attempt"] = (
+    sum(_at_cap) <= _ra.MAX_TOTAL_WAIT)
+checks["…and the budget is spent, so the rest goes to the queue"] = (
+    len(_at_cap) == 1)
+
+# A server may answer anything at all, including something hostile.
+# `float("-1") <= 60` is true and `time.sleep(-1)` raises — measured
+# propagating out of `post_json_with_retry`, past a channel's promise
+# never to raise into the facade, and the alert was lost *without*
+# reaching the queue because `on_network_failure` was never called.
+_held = []
+for _hostile in ("-1", "-3600", "nan", "inf", "tomorrow", ""):
+    _s, _t = _slept_for(_hostile)
+    _held.append((_hostile, _s, _t))
+checks["a hostile Retry-After is not slept on"] = all(
+    s == [] for _v, s, _t in _held)
+checks["…and does not raise out of the notifier"] = all(
+    t == 1 for _v, _s, t in _held)
+for _v, _s, _t in _held:
+    if _s or _t != 1:
+        print(f"      → Retry-After {_v!r}: slept={_s}, attempts={_t}")
+
+# …and the one message still ends up held, which is the whole point of
+# refusing to sleep: the slow path is the correct one.
+_q = notify_retry.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
+_real_q, notify_retry.queue = notify_retry.queue, _q
+_open2 = urllib.request.urlopen
+urllib.request.urlopen = lambda *_a, **_kw: (_ for _ in ()).throw(
+    urllib.error.HTTPError("https://x", 429, "slow down",
+                           {"Retry-After": "-1"}, io.BytesIO(b"{}")))
+try:
+    _ntfy().send_message("three containers failed to update")
+    checks["…the alert is held rather than lost"] = _q.pending() == 1
+finally:
+    urllib.request.urlopen = _open2
+    notify_retry.queue = _real_q
+
+# The three call sites share one number rather than three literals that
+# happen to agree. Nothing held them to each other before.
+from discord_rest import MAX_RETRY_AFTER as _dc_cap            # noqa: E402
+from telegram_bot import TelegramBot as _TB                    # noqa: E402
+
+checks["all three in-line waits share one budget"] = (
+    _dc_cap == _ra.MAX_TOTAL_WAIT
+    and _TB.MAX_RETRY_AFTER == _ra.MAX_TOTAL_WAIT)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

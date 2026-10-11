@@ -3059,13 +3059,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # CSRF gates, so this is about an accident or a logged-in
                 # mistake rather than a stranger.
                 from telegram_bot import TelegramBot as _TB
+                t = _web_translator(config.language)
                 _cap = getattr(_TB, "RESTORE_MAX_BYTES", 2 * 1024 * 1024)
                 length = int(self.headers.get("Content-Length", 0))
                 if length > _cap:
+                    # Translated and in megabytes, like both chats:
+                    # `restore_too_big` exists in all sixteen languages
+                    # and said the same thing, while this one answered
+                    # in English and in bytes.
                     payload = json.dumps(
                         {"ok": False,
-                         "error": f"Backup too large: {length} bytes, "
-                                  f"the limit is {_cap}"}).encode()
+                         "error": t("restore_too_big",
+                                    size=f"{length / 1024 / 1024:.1f}",
+                                    limit=f"{_cap / 1024 / 1024:.0f}")}
+                    ).encode()
                     self.send_response(413)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(payload)))
@@ -3092,13 +3099,39 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 try:
                     bundle = json.loads(body.decode("utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    payload = json.dumps({"ok": False, "error": f"Invalid JSON: {str(e)[:100]}"}).encode()
-                    self.send_response(200)
+                    # 400, and the same sentence both chats use. This
+                    # answered 200 with `ok: false` while the very same
+                    # endpoint answers 413 for a file that is too big
+                    # and 400 for one that is not a backup — three
+                    # refusals, three status codes, one endpoint.
+                    payload = json.dumps(
+                        {"ok": False,
+                         "error": t("restore_not_json") + f" {str(e)[:100]}"}
+                    ).encode()
+                    self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
                     self.wfile.write(payload)
                     return
+                # The same seal both chats apply, and the door that
+                # did not. `backup.restore` has no sentinel of its own,
+                # so without this any JSON object was applied section by
+                # section: a file that happens to carry a `settings` key
+                # overwrote the real one — including the Web UI
+                # password, the bot token and `TELEGRAM_ALLOWED_USERS`,
+                # because `save_persistent` writes every persistent key
+                # at once. `test_restore_parity.py` was named for parity
+                # and asked two of the three doors; this was the third.
+                if not isinstance(bundle, dict) or "schema_version" not in bundle:
+                    payload = json.dumps(
+                        {"ok": False, "error": t("restore_not_a_backup")}
+                    ).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    return self.wfile.write(payload)
                 # One implementation, two callers: Telegram restores from
                 # a file dropped into the chat and needs exactly this.
                 import backup as _backup

@@ -318,9 +318,47 @@ GUARDED = [
 
     ("a server asking for an hour does not get it",
      "app/notifiers/base.py",
-     "                if wait is not None and wait <= 60:",
-     "                if wait is not None:",
+     "                wait = _ra.usable_wait(_retry_after(e), slept)",
+     "                wait = _retry_after(e)",
      "test_channel_backoff.py"),
+
+    ("…and the wait budget is for the send, not for each attempt",
+     "app/retry_after.py",
+     "    remaining = budget - float(already_slept or 0.0)",
+     "    remaining = budget",
+     "test_channel_backoff.py"),
+
+    ("…and a negative Retry-After never reaches sleep()",
+     "app/retry_after.py",
+     "    if wait < 0:\n        return None",
+     "    if False:\n        return None",
+     "test_channel_backoff.py"),
+
+    ("…and reads at most the cap, not the length the caller claims",
+     "app/web_ui.py",
+     "                raw = self.rfile.read(min(length, _cap))",
+     "                raw = self.rfile.read()",
+     "test_backup_channels.py"),
+
+    ("the Web door asks whether the file is a backup at all",
+     "app/web_ui.py",
+     '                if not isinstance(bundle, dict) or "schema_version" not in bundle:',
+     "                if False:",
+     "test_restore_parity.py"),
+
+    ("only the person who dropped a bundle may restore it",
+     "app/telegram_bot.py",
+     '            if _rrec is not None and (not _rrec.get("user")\n'
+     '                                      or _rrec["user"] != user_id):',
+     "            if False:",
+     "test_restore_parity.py"),
+
+    ("…and not days after they dropped it",
+     "app/telegram_bot.py",
+     '        if time.time() - rec.get("created", 0) > self.STOP_CONFIRM_TTL:\n'
+     '            return self.t("restore_expired"), False',
+     "        if False:\n            return self.t(\"restore_expired\"), False",
+     "test_restore_parity.py"),
 
     ("a backup dropped on Discord has the same size ceiling",
      "app/discord_bot.py",

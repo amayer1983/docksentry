@@ -489,7 +489,7 @@ from telegram_bot import TelegramBot as _TB2                  # noqa: E402
 _CAP = _TB2.RESTORE_MAX_BYTES
 
 
-def _import(declared, body=b"{}"):
+def _import(declared, body=b"{}", rfile=None):
     """POST a bundle of `declared` bytes; return the status code."""
     class _C:
         _CALLS = ("env_override", "save", "load", "apply", "write", "set_")
@@ -508,7 +508,7 @@ def _import(declared, body=b"{}"):
     h.path = "/api/backup_import"
     h.headers = {"Content-Length": str(declared), "Host": "x",
                  "Origin": "http://x", "Content-Type": "application/json"}
-    h.rfile = _io2.BytesIO(body)
+    h.rfile = rfile if rfile is not None else _io2.BytesIO(body)
     h.client_address = ("127.0.0.1", 0)
     h.wfile = _io2.BytesIO()
     seen = {}
@@ -527,15 +527,40 @@ def _import(declared, body=b"{}"):
 
 _code, _msg = _import(_CAP + 1)
 checks["an oversized backup import is refused"] = _code == 413
-checks["…and says how big it may be"] = str(_CAP) in _msg
-# …and a bundle within the limit still goes through, or the cap is
-# just a way of switching the feature off.
-_code, _ = _import(2, body=b"{}")
-checks["…while one within the limit is still accepted"] = _code != 413
+# In megabytes and translated, like both chats. It used to be English
+# and in bytes — the one door of three that answered differently, in
+# the commit whose whole subject was making the three agree.
+checks["…and says how big it may be, in MB"] = "2 MB" in _msg
+checks["…in the reader's language, not in bytes"] = (
+    str(_CAP) not in _msg and "too large" in _msg)
+# …and a real bundle within the limit still goes through, or the cap is
+# just a way of switching the feature off. `_code != 413` was what
+# stood here and it could not tell an accepted bundle from a rejected
+# one — every other refusal this endpoint has is also not 413.
+_GOOD = b'{"schema_version": 1, "settings": {"language": "en"}}'
+_code, _ = _import(len(_GOOD), body=_GOOD)
+checks["…while a real bundle within the limit is accepted"] = _code == 200
+
 # A body longer than the header claims must not get through on the
-# strength of the claim.
-_code, _ = _import(2, body=b"{}" + b"x" * (_CAP * 2))
-checks["…and only the declared length is ever read"] = _code != 413
+# strength of the claim. Asserted on the bytes that were *read*, not on
+# the status code: with an unbounded `self.rfile.read()` the oversized
+# body simply made the JSON invalid, which answers 400 — and 400 is not
+# 413 either, so the old check passed on exactly the defect it names.
+_asked = []
+
+
+class _Counting(_io2.BytesIO):
+    def read(self, n=-1):
+        _asked.append(n)
+        return super().read(n)
+
+
+_code, _ = _import(len(_GOOD), body=_GOOD + b"x" * (_CAP * 2),
+                   rfile=_Counting(_GOOD + b"x" * (_CAP * 2)))
+checks["…and the read is bounded by the cap, not by the claim"] = (
+    bool(_asked) and all(0 <= n <= _CAP for n in _asked))
+if not (_asked and all(0 <= n <= _CAP for n in _asked)):
+    print(f"      → read() was asked for {_asked}")
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

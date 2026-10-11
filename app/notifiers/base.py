@@ -15,6 +15,7 @@ live here so the plugins stay tiny and behave identically.
 
 import json
 import os
+import retry_after as _ra
 import socket
 import time
 import urllib.error
@@ -91,6 +92,7 @@ def post_json_with_retry(url, payload, headers, channel, on_network_failure=None
     data = json.dumps(payload).encode()
     merged = {"Content-Type": "application/json", **(headers or {})}
     req = urllib.request.Request(url, data=data, headers=merged, method="POST")
+    slept = 0.0
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -103,10 +105,16 @@ def post_json_with_retry(url, payload, headers, channel, on_network_failure=None
             # busiest, which is when a "3 containers failed to update"
             # message matters most (dc#255, dc#185).
             if e.code == 429 and attempt < 2:
-                wait = _retry_after(e)
-                if wait is not None and wait <= 60:
+                # One budget for the whole call, not one per attempt:
+                # two answers of `Retry-After: 60` used to mean two
+                # minutes on the scheduler's thread. And the value is
+                # checked rather than trusted — `Retry-After: -1` went
+                # into `time.sleep(-1)` and raised out of here.
+                wait = _ra.usable_wait(_retry_after(e), slept)
+                if wait is not None:
                     print(f"{channel}: rate limited, waiting {wait:.1f}s")
                     time.sleep(wait)
+                    slept += wait
                     continue
             # A "not now" answer is handed to the retry queue rather than
             # dropped: the in-line waits above cover a rate limit that

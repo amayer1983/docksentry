@@ -124,7 +124,76 @@ def _telegram(name="backup.json", size=1000, body=GOOD):
     return _Door("\n".join(said), offered, crashed)
 
 
-DOORS = (("Discord", _discord), ("Telegram", _telegram))
+def _web(name="backup.json", size=1000, body=GOOD):
+    """The third door: `POST /api/backup_import` from the browser.
+
+    It was missing from this file, and it was the door with the hole.
+    `backup.restore` has no `schema_version` sentinel of its own, so
+    any JSON object was applied section by section — and `settings`
+    carries the Web UI password, the bot token and
+    `TELEGRAM_ALLOWED_USERS`, because `save_persistent` writes every
+    persistent key at once. The docstring above said "three doors" and
+    the table asked two of them.
+    """
+    import web_ui
+    raw = body.encode() if isinstance(body, str) else body
+    # Declared length wins where the caller gave one: the size checks
+    # above are about `Content-Length`, which is the client's word.
+    declared = size if size != 1000 else len(raw)
+    applied = []
+
+    class _Cfg:
+        _CALLABLE = ("env_override", "save", "load", "apply", "write",
+                     "set_", "has_", "reload")
+        language = "en"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith(self._CALLABLE):
+                return lambda *a, **kw: None
+            return ""
+
+    cls = web_ui.create_handler(_Cfg(), checker=None,
+                                bot=types.SimpleNamespace(t=None),
+                                store=None,
+                                restart_discord=lambda *a, **kw: None)
+    h = cls.__new__(cls)
+    h.path = "/api/backup_import"
+    h.headers = {"Content-Length": str(declared), "Host": "x",
+                 "Origin": "http://x", "Content-Type": "application/json"}
+    h.rfile = types.SimpleNamespace(read=lambda n: raw[:n])
+    h.client_address = ("127.0.0.1", 0)
+    h._check_auth = lambda: True
+    h._check_csrf = lambda: True
+    h._audit = lambda *a, **k: None
+    h._audit_post = lambda *a, **k: None
+    seen = {}
+    h.send_response = lambda code: seen.__setitem__("code", code)
+    h.send_header = lambda *a, **k: None
+    h.end_headers = lambda: None
+    out = []
+    h.wfile = types.SimpleNamespace(write=lambda b: out.append(b))
+
+    import backup as _backup
+    _real = _backup.restore
+    _backup.restore = lambda bundle, *a, **kw: (
+        applied.append(bundle) or (["settings"], [], 0))
+    try:
+        h.do_POST()
+    except Exception as e:                                  # noqa: BLE001
+        return _Door(f"raised {type(e).__name__}: {e}", False, True)
+    finally:
+        _backup.restore = _real
+    said = b"".join(out).decode("utf-8", "replace")
+    # "Offered" has no meaning here — the Web UI has no confirmation
+    # step, the POST *is* the decision. So what is measured is whether
+    # the bundle reached `backup.restore`, which is the same question:
+    # did this door let it through?
+    return _Door(said, bool(applied), False)
+
+
+DOORS = (("Discord", _discord), ("Telegram", _telegram), ("Web", _web))
 
 # ── the ceiling ──────────────────────────────────────────────────────
 # A bundle is settings, groups, notes and links. Two megabytes is
@@ -138,7 +207,8 @@ for _door, _fn in DOORS:
     _r = _fn(size=_CAP + 1)
     checks[f"{_door} refuses a backup over the limit"] = not _r.offered
     checks[f"…and {_door} says why rather than failing silently"] = (
-        ("large" in _r.said.lower() or "big" in _r.said.lower())
+        ("large" in _r.said.lower() or "big" in _r.said.lower()
+         or "2 MB" in _r.said)
         and not _r.crashed)
     checks[f"…while {_door} accepts one under it"] = _fn(size=1000).offered
 
@@ -158,8 +228,14 @@ for _door, _fn in DOORS:
     checks[f"…and {_door} says so"] = (
         "not json" in _r.said.lower() and not _r.crashed)
 
-    _r = _fn(name="notes.txt")
-    checks[f"…and {_door} does not even read a non-.json file"] = not _r.offered
+    # The filename rule is the one thing that genuinely has no Web
+    # equivalent: a POST body has no name to look at. Stated rather
+    # than faked — a check that quietly skips a door is how this file
+    # came to claim three and ask two.
+    if _door != "Web":
+        _r = _fn(name="notes.txt")
+        checks[f"…and {_door} does not even read a non-.json file"] = (
+            not _r.offered)
 
 # ── a real bundle still gets through ─────────────────────────────────
 # Without this every check above passes on a door that refuses
@@ -168,6 +244,65 @@ for _door, _fn in DOORS:
     _r = _fn()
     checks[f"{_door} still offers a real backup"] = (
         _r.offered and not _r.crashed)
+
+# ── and who may press the button, and for how long ──────────────────
+# `_offer_stop` recorded the asker and the time from the start, with a
+# comment saying why: "a question left unanswered on Monday was still
+# live on Friday when someone scrolled up and tapped". `_offer_restore`
+# recorded neither — the more destructive of the two operations had the
+# weaker guard. An audit found the asymmetry on 11.10.2026.
+import time as _time                                          # noqa: E402
+
+
+def _press(asker="4711", presser="4711", age=0.0):
+    """Drop a bundle as `asker`, then have `presser` tap Restore."""
+    said, applied = [], []
+    bot = TelegramBot.__new__(TelegramBot)
+    bot.config = types.SimpleNamespace(language="en", bot_token="",
+                                       chat_id="1")
+    bot.t = get_translator("en")
+    bot.store = None
+    bot.log = lambda *a, **kw: None
+    bot.send_message = lambda m, **kw: said.append(m)
+    bot.send_message_with_buttons = lambda *a, **kw: None
+    bot.answer_callback = lambda *a, **kw: said.append(str(a[1:]))
+    bot.remove_buttons = lambda *a, **kw: None
+    bot._check_auth = lambda chat_id, uid, kind="message": True
+    bot._download_file = lambda fid: GOOD.encode()
+    bot._offer_restore({"file_name": "backup.json", "file_size": 900,
+                        "file_id": "f1"}, asker=asker)
+    token = next(iter(bot._pending_restores))
+    if age:
+        bot._pending_restores[token]["created"] -= age
+    import backup as _backup
+    _real = _backup.restore
+    _backup.restore = lambda bundle, *a, **kw: (
+        applied.append(bundle) or (["settings"], [], 0))
+    try:
+        bot._handle_callback({"id": "c1", "data": f"restore_go:{token}",
+                              "from": {"id": presser},
+                              "message": {"message_id": 5,
+                                          "chat": {"id": 1}}},
+                             None, None)
+    finally:
+        _backup.restore = _real
+    return bool(applied), "\n".join(said)
+
+
+_applied, _said = _press()
+checks["the person who dropped the file may restore it"] = _applied
+
+_applied, _said = _press(asker="4711", presser="9999")
+checks["…and nobody else may"] = not _applied
+checks["…and is told why"] = "confirm" in _said.lower() or "can" in _said.lower()
+
+# The deadline. A bundle dropped on Monday must not still be armed on
+# Friday, which is the case the stop path already refused.
+_applied, _said = _press(age=TelegramBot.STOP_CONFIRM_TTL + 60)
+checks["a question left unanswered expires"] = not _applied
+
+_applied, _said = _press(age=TelegramBot.STOP_CONFIRM_TTL - 60)
+checks["…while one answered inside the window still works"] = _applied
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

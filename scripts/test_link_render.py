@@ -287,7 +287,16 @@ def link_section(html):
 
 
 def restore(bundle, tmpdir):
-    """Drive POST /api/backup_import against a real ContainerStore."""
+    """Drive POST /api/backup_import against a real ContainerStore.
+
+    `schema_version` is filled in unless the caller set it: since
+    11.10.2026 the endpoint refuses a JSON object without it, the same
+    way both chats do. This fixture is about the links filter, not
+    about the seal — `test_restore_parity.py` asks all three doors
+    about that.
+    """
+    bundle = dict(bundle)
+    bundle.setdefault("schema_version", 1)
     cfg = _config()
     for attr in ("pinned_file", "autoupdate_file", "update_windows_file",
                  "ask_before_major_file", "trust_running_file", "cooldown_file",
