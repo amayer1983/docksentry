@@ -222,6 +222,76 @@ GUARDED = [
      "            extra = hostdiag.hint(endpoint, err)",
      "test_ssh_hint.py"),
 
+    ("a container that is merely slow is not rolled back",
+     "app/update_checker.py",
+     '        return "starting", state, health',
+     '        return "unhealthy", state, health',
+     "test_health_outcomes.py"),
+
+    ("…and a crash loop is not mistaken for a slow start",
+     "app/update_checker.py",
+     "            if restarts > baseline_restarts:",
+     "            if False:",
+     "test_health_outcomes.py"),
+
+    ("docksentry.auto=false keeps a container manual under AUTO_UPDATE_ALL",
+     "app/telegram_bot.py",
+     "            if lab is not None:\n                return lab",
+     "            if False:\n                return lab",
+     "test_auto_label_rule.py"),
+
+    ("a group member whose update raised still aborts the group",
+     "app/update_engine.py",
+     "                if cur_group:\n                    group_aborted.add(abort_key)",
+     "                if False:\n                    group_aborted.add(abort_key)",
+     "test_manual_update_gates.py"),
+
+    ("a new password ends the old password's sessions",
+     "app/web_ui.py",
+     "                        sessions = self._sessions()\n"
+     "                        if sessions is not None:\n"
+     "                            sessions.clear()",
+     "                        sessions = self._sessions()\n"
+     "                        if False:\n"
+     "                            sessions.clear()",
+     "test_secret_handling.py"),
+
+    ("settings.json is not left world-readable",
+     "app/config.py",
+     "            os.chmod(self.settings_file, 0o600)",
+     "            pass  # os.chmod(self.settings_file, 0o600)",
+     "test_secret_handling.py"),
+
+    ("the settings page does not print the bot token",
+     "app/web_ui.py",
+     '            token_masked = f"{config.bot_token[:4]}...{config.bot_token[-4:]}" if len(config.bot_token) > 8 else "***"',
+     "            token_masked = config.bot_token",
+     "test_secret_handling.py"),
+
+    ("cleanup only prunes images idle for the grace period",
+     "app/update_checker.py",
+     '                all=True, force=True, until=f"{grace}h", timeout=180)',
+     "                all=True, force=True, timeout=180)",
+     "test_cleanup_rules.py"),
+
+    ("…and only deletes backups older than the retention window",
+     "app/update_checker.py",
+     "                if os.path.isdir(path) and os.path.getmtime(path) < cutoff:",
+     "                if os.path.isdir(path):",
+     "test_cleanup_rules.py"),
+
+    ("…and a locally-built image is copied before it is pruned",
+     "app/update_checker.py",
+     "        if self.config.cleanup_backup_local_only:",
+     "        if False:",
+     "test_cleanup_rules.py"),
+
+    ("…while an image that can be pulled again is not copied",
+     "app/update_checker.py",
+     "            if repo_digests:\n                continue",
+     "            if False:\n                continue",
+     "test_cleanup_rules.py"),
+
     ("a Telegram command leaves a trace",
      "app/telegram_bot.py",
      "                    audit.record(\"telegram\", user_id, cmd.strip(),",

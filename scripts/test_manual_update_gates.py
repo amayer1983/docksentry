@@ -24,19 +24,36 @@ class _Store:
 
 
 class _Updater:
-    def __init__(self):
+    """`how` picks the way the head fails: by answering no, or by raising.
+
+    Both arms matter and only one was covered. A mutation sweep on
+    11.10.2026 switched off the `if cur_group:` inside the engine's
+    `except Exception` and no procedure went red — so a head whose
+    update *threw* (a daemon that went away mid-recreate, a rename that
+    timed out) let the rest of the stack update against a head that is
+    not there. That is the shape of failure a group exists to prevent,
+    and it was the arm nobody drove.
+    """
+
+    def __init__(self, how="return"):
         self.calls = []
+        self.how = how
 
     def netns_target_name(self, name):
         return None
 
     def update_container(self, name, image, **kw):
         self.calls.append(name)
-        return (False, "boom") if name == "head" else (True, "ok")
+        if name != "head":
+            return (True, "ok")
+        if self.how == "raise":
+            raise RuntimeError("the daemon went away mid-recreate")
+        return (False, "boom")
 
 
-def main():
-    up = _Updater()
+def _run(how):
+    """One batch through the real engine loop; who got updated?"""
+    up = _Updater(how)
     bot = types.SimpleNamespace()
     bot._update_lock = threading.Lock()
     bot._run_queued_selfupdate = lambda: None
@@ -63,17 +80,27 @@ def main():
     updates = [{"name": "dep2", "image": "i"}, {"name": "head", "image": "i"},
                {"name": "dep1", "image": "i"}]
     TelegramBot.run_updates(bot, up, updates=updates)
+    return up.calls
 
+
+def main():
+    _returned = _run("return")
+    _raised = _run("raise")
     checks = {
-        "head was attempted first (group order)": up.calls[:1] == ["head"],
-        "dep1 skipped after head failed (group_aborted)": "dep1" not in up.calls,
-        "dep2 skipped after head failed (group_aborted)": "dep2" not in up.calls,
-        "only the failed head was actually updated": up.calls == ["head"],
+        "head was attempted first (group order)": _returned[:1] == ["head"],
+        "dep1 skipped after head failed (group_aborted)":
+            "dep1" not in _returned,
+        "dep2 skipped after head failed (group_aborted)":
+            "dep2" not in _returned,
+        "only the failed head was actually updated": _returned == ["head"],
+        # The other failure arm: the head did not answer no, it threw.
+        "a head whose update RAISED also aborts the group":
+            _raised == ["head"],
     }
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
     if not all(checks.values()):
-        print("calls:", up.calls)
+        print("returned:", _returned, "raised:", _raised)
         print("FAIL")
         return 1
     print("PASS")
