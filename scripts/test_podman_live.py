@@ -34,6 +34,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 
 from container_backend import PodmanBackend, RemoteBackend   # noqa: E402
 
@@ -42,12 +44,28 @@ if not shutil.which("podman"):
     sys.exit(0)
 
 checks = {}
-PORT = 8791
+# Per-run, all of it. The port was a constant that this file binds, the
+# stored connection is per-user state in `containers.conf`, and the pod
+# and container names are force-removed on the way in — so a second run
+# could not bind 8791, reported the remote transport broken, and pulled
+# the first run's connection and pod out from under it.
+PORT = lf.free_port()
 ENDPOINT = f"tcp://127.0.0.1:{PORT}"
 
 # ── local podman ─────────────────────────────────────────────────────
 pb = PodmanBackend()
-r = pb.version(fmt="{{.Client.Version}}", timeout=30)
+# Installed is not the same as working. The guard above only asked
+# whether the binary is on PATH, so a podman that cannot reach its own
+# service — no rootless setup, no `/run/user/<uid>` — produced red
+# checks saying Docksentry's podman support is broken. A refusal here
+# is the machine, and it says so.
+_probe = pb.version(fmt="{{.Client.Version}}", timeout=30)
+if _probe.returncode != 0:
+    lf.skip("podman is installed but will not answer — "
+            f"{(_probe.stderr or '').strip().splitlines()[-1][:160]
+               if (_probe.stderr or '').strip() else 'no reason given'}")
+
+r = _probe
 checks["local podman answers through the backend"] = (
     r.returncode == 0 and r.stdout.strip() != "")
 checks["ps works locally"] = pb.ps(fmt="{{.Names}}", timeout=30).returncode == 0
@@ -98,7 +116,7 @@ try:
     # is the narrow, self-contained half: a real podman accepts the flag
     # we emit and answers on the connection we name. The key half needs
     # an sshd and key material and stays a manual procedure.
-    CONN = "ds-selftest-conn"
+    CONN = lf.name("ds-selftest-conn")
     podman = shutil.which("podman")
     subprocess.run([podman, "system", "connection", "remove", CONN],
                    capture_output=True)
@@ -118,7 +136,7 @@ try:
             # than quietly falling back to the local socket — otherwise a
             # typo'd DOCKER_HOSTS entry would report the WRONG machine's
             # containers under the remote host's name.
-            miss = RemoteBackend("context://ds-selftest-nope",
+            miss = RemoteBackend(f"context://{lf.name('ds-selftest-nope')}",
                                  cli_binary="podman").ps(timeout=20)
             checks["an unknown connection name fails, it does not fall back"] = (
                 miss.returncode != 0)
@@ -140,7 +158,7 @@ finally:
 # The shapes are pinned in test_podman_recreate.py without needing a
 # runtime; this is the half that only a real Podman can answer. A pod,
 # because a pod member exercises all three differences at once.
-POD, CTR = "ds-selftest-pod", "ds-selftest-ctr"
+POD, CTR = lf.name("ds-selftest-pod"), lf.name("ds-selftest-ctr")
 _have_image = pb.run(["image", "exists", "alpine:3.19"], timeout=30).returncode == 0
 if not _have_image:
     _have_image = pb.run(["pull", "-q", "alpine:3.19"], timeout=300).returncode == 0

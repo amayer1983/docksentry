@@ -35,10 +35,16 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-PORT = 12375
-NAME = "ds-tcp-transport-test"
+# Both per-run. 12375 and `ds-tcp-transport-test` were constants, and
+# the fixture force-removes the name and binds the port — so a second
+# run could not bind, reported the TCP transport broken, and removed
+# the first run's dind on its way out.
+PORT = lf.free_port()
+NAME = lf.name("ds-tcp-transport-test")
 
 
 def docker_ok():
@@ -76,8 +82,11 @@ def main():
          "-e", "DOCKER_TLS_CERTDIR=", "-p", f"127.0.0.1:{PORT}:2375",
          "docker:dind"], capture_output=True, text=True)
     if up.returncode != 0:
+        # The two Dockerfile checks above do not touch dind, and
+        # `return 0` here threw them away — the same defect this file
+        # already fixed for the probe-container skip sixty lines down.
         print(f"SKIP: could not start dind ({up.stderr.strip()[:80]})")
-        return 0
+        return _report(checks)
     try:
         endpoint = f"tcp://127.0.0.1:{PORT}"
         ready = False

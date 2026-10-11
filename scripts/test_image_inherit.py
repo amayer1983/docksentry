@@ -20,6 +20,8 @@ Exits non-zero on any failure.
 import sys, os, json, subprocess, tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 from update_checker import UpdateChecker
 
 
@@ -208,13 +210,24 @@ def main():
                     'USER root\nWORKDIR /tmp\nSTOPSIGNAL SIGTERM\n'
                     'HEALTHCHECK --interval=7s CMD echo ok\n'
                     'CMD ["sleep","60"]\n')
-        tag, cname = "dsinherit:test", "dsinherit_c"
-        ok = subprocess.run(["docker", "build", "-q", "-t", tag, d],
-                            capture_output=True).returncode == 0
+        # Per-run tag and name: both were fixed, and the fixture ends
+        # by deleting them — so two suites at once removed each other's
+        # image mid-run.
+        tag = lf.name("dsinherit") + ":test"
+        cname = lf.name("dsinherit_c")
+        built = subprocess.run(["docker", "build", "-q", "-t", tag, d],
+                               capture_output=True, text=True)
+        ok = built.returncode == 0
+        if not ok:
+            # Said out loud. It used to be an `if ok:` with no `else`:
+            # the five real-daemon checks simply vanished from the dict
+            # and the procedure still printed PASS, so a build that
+            # never ran looked exactly like one that passed.
+            print("  (SKIP: the image would not build — "
+                  f"{(built.stderr or '').strip().splitlines()[-1][:160]})")
         if ok:
-            subprocess.run(["docker", "rm", "-f", cname], capture_output=True)
-            subprocess.run(["docker", "run", "-d", "--name", cname, tag],
-                           capture_output=True)
+            lf.rm(cname)
+            lf.start(["run", "-d", "--name", cname, tag], checks=checks)
             raw = subprocess.run(["docker", "inspect", cname],
                                  capture_output=True, text=True)
             try:
@@ -240,7 +253,7 @@ def main():
                 flags(got, "--label") == [] and flags(got, "--user") == []
                 and flags(got, "--workdir") == [] and flags(got, "--health-cmd") == []
                 and flags(got, "--stop-signal") == [])
-            subprocess.run(["docker", "rm", "-f", cname], capture_output=True)
+            lf.rm(cname)
             subprocess.run(["docker", "rmi", "-f", tag], capture_output=True)
     else:
         print("  (no docker daemon - skipping real-daemon verification)")

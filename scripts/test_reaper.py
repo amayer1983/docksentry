@@ -30,6 +30,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 
 import reaper                                              # noqa: E402
 
@@ -143,19 +145,34 @@ strangers_after = zombies().get("other", 0)
 ok_codes = codes == [i % 7 for i in range(40)]
 print(f"RESULT pid={os.getpid()} before={before} reaped={reaped} left={left} after={after} codes_ok={ok_codes} strangers={strangers_before}/{strangers_after}")
 '''
-    build = subprocess.run(["docker", "build", "-q", "-t", "docksentry-reaper-test", ROOT],
+    # Per-run tag: this one is deleted at the end, so two suites at once
+    # pulled the image out from under each other mid-build.
+    TAG = lf.name("docksentry-reaper-test")
+    build = subprocess.run(["docker", "build", "-q", "-t", TAG, ROOT],
                            capture_output=True, text=True, timeout=900)
     if build.returncode != 0:
         print("SKIP: image build failed —", build.stderr.strip()[-200:])
     else:
         run = subprocess.run(
             ["docker", "run", "--rm", "--entrypoint", "python3",
-             "docksentry-reaper-test", "-c", probe],
+             TAG, "-c", probe],
             capture_output=True, text=True, timeout=120)
+        # The return code, read rather than ignored. Without this a
+        # container that never started — no route to the registry, no
+        # python3 in the image — produced no match below, the defaults
+        # took over, and all six behavioural checks went red as if the
+        # reaper were broken.
+        if run.returncode != 0:
+            print(f"      → the probe container exited {run.returncode}: "
+                  f"{(run.stderr or run.stdout or '').strip()[-200:]}")
         m = re.search(r"RESULT pid=(\d+) before=(\d+) reaped=(\d+) left=(\d+) "
                       r"after=(\d+) codes_ok=(\w+) strangers=(\d+)/(\d+)", run.stdout)
         if not m:
             print("probe output:", (run.stdout + run.stderr)[-400:])
+        if run.returncode != 0 and not m:
+            subprocess.run(["docker", "rmi", "-f", TAG], capture_output=True)
+            lf.skip("the probe container would not run — that is this "
+                    "fixture's image, not the reaper", checks)
         pid, before, reaped, left, after, codes_ok, s_before, s_after = (
             m.groups() if m else ("0",) * 5 + ("False", "0", "0"))
         checks["the probe ran as PID 1"] = pid == "1"
@@ -169,8 +186,7 @@ print(f"RESULT pid={os.getpid()} before={before} reaped={reaped} left={left} aft
         checks["…and counted rather than hidden"] = int(left) == int(s_before)
         checks["subprocess.run kept all 40 of its own exit codes meanwhile"] = (
             codes_ok == "True")
-        subprocess.run(["docker", "rmi", "-f", "docksentry-reaper-test"],
-                       capture_output=True)
+        subprocess.run(["docker", "rmi", "-f", TAG], capture_output=True)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

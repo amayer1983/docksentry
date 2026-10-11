@@ -25,6 +25,8 @@ checks, which is how fourteen seconds of real Docker time appeared in
 import sys, os, time, json, subprocess, tempfile, types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 from update_checker import UpdateChecker
 
 # A missing container runtime is not a regression. Without this the
@@ -50,7 +52,7 @@ def _make_checker(trust_file, stable=2, max_starting=6):
 
 
 def _rm(name):
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+    lf.rm(name)
 
 
 checks = {}
@@ -60,13 +62,18 @@ def test_unhealthy_running():
     tmp = tempfile.mkdtemp()
     trust_file = os.path.join(tmp, "trust.json")
     chk = _make_checker(trust_file)
-    name = "ds_trust_test"
+    # Per-run: the name was fixed and the fixture force-removes it
+    # first, so two suites at once destroyed each other's container
+    # and the loser reported the trust flag as broken.
+    name = lf.name("ds_trust_test")
     _rm(name)
-    subprocess.run(
-        ["docker", "run", "-d", "--name", name,
-         "--health-cmd", "exit 1", "--health-interval=1s",
-         "--health-retries=1", "--health-start-period=0s",
-         "alpine", "sleep", "300"], capture_output=True)
+    # And the return code is read: with no container, the 20-second
+    # wait never sees `unhealthy` and both checks go red for a reason
+    # that has nothing to do with the flag.
+    lf.start(["run", "-d", "--name", name,
+              "--health-cmd", "exit 1", "--health-interval=1s",
+              "--health-retries=1", "--health-start-period=0s",
+              "alpine", "sleep", "300"], checks=checks)
     try:
         for _ in range(20):
             h = subprocess.run(
@@ -96,13 +103,12 @@ def test_unhealthy_running():
 def test_crashloop_not_masked():
     tmp = tempfile.mkdtemp()
     trust_file = os.path.join(tmp, "trust.json")
-    name = "ds_trust_crash"
+    name = lf.name("ds_trust_crash")
     json.dump([name], open(trust_file, "w"))  # flag ON
     chk = _make_checker(trust_file, stable=5, max_starting=60)
     _rm(name)
-    subprocess.run(
-        ["docker", "run", "-d", "--name", name, "--restart", "always",
-         "alpine", "sh", "-c", "exit 1"], capture_output=True)
+    lf.start(["run", "-d", "--name", name, "--restart", "always",
+              "alpine", "sh", "-c", "exit 1"], checks=checks)
     time.sleep(2)
     try:
         out, _, _ = chk._wait_healthy(name, interval=2)

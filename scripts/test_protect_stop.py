@@ -11,6 +11,8 @@ Exits non-zero on any failure.
 import sys, os, types, tempfile, subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 from telegram_bot import TelegramBot
 from container_store import ContainerStore
 from update_checker import UpdateChecker
@@ -27,7 +29,9 @@ if __import__("subprocess").run(["docker", "info"],
     print("SKIP: no Docker daemon available")
     __import__("sys").exit(0)
 
-NAME = "ds_protect_test"
+# Per-run, so two suites at once do not force-remove each other's
+# container and then report the stop protection as broken.
+NAME = lf.name("ds_protect_test")
 FILE_ATTRS = ["pinned_file", "autoupdate_file", "update_windows_file",
               "ask_before_major_file", "trust_running_file", "cooldown_file",
               "protect_stop_file", "major_pending_file", "groups_file",
@@ -69,9 +73,11 @@ def main():
         r = o.replies[0]
         return r.ok, t(r.key, **r.params)
 
-    subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", NAME, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"],
-                   capture_output=True)
+    lf.rm(NAME)
+    # A registry that will not serve `alpine` leaves no container, and
+    # the four checks below then report the protection as broken.
+    lf.start(["run", "-d", "--name", NAME, "alpine", "sh", "-c",
+              "trap 'exit 0' TERM; sleep 300 & wait"])
     try:
         c1 = store.toggle_protect_stop(NAME) is True and store.is_protect_stop(NAME)
 
@@ -85,7 +91,7 @@ def main():
         ok_stop2, _ = act("stop")
         c4 = (ok_stop2 is True) and (not _running(NAME))
     finally:
-        subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
+        lf.rm(NAME)
 
     checks = {
         "toggle/is roundtrip": c1,

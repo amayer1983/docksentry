@@ -19,6 +19,8 @@ Requires a working Docker daemon. Exits non-zero on any failure.
 import sys, os, json, subprocess, types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 from update_checker import UpdateChecker
 
 # A missing container runtime is not a regression. Without this the
@@ -31,13 +33,14 @@ if __import__("subprocess").run(["docker", "info"],
     print("SKIP: no Docker daemon available")
     __import__("sys").exit(0)
 
-HEAD = "ds_netns_head"
-SIDE = "ds_netns_side"
+# Per-run, so two suites at once do not force-remove each other's
+# head and sidecar and then both report the netns recreate as broken.
+HEAD = lf.name("ds_netns_head")
+SIDE = lf.name("ds_netns_side")
 
 
 def _rm(*names):
-    for n in names:
-        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
+    lf.rm(*names)
 
 
 def _run(args):
@@ -48,10 +51,15 @@ def main():
     chk = UpdateChecker(types.SimpleNamespace(debug=False))
     _rm(HEAD, SIDE)
     try:
-        # head v1 + sidecar sharing its netns
-        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
-        _run(["docker", "run", "-d", "--name", SIDE,
-              "--network", f"container:{HEAD}", "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
+        # head v1 + sidecar sharing its netns. `lf.start`, because a
+        # registry that will not serve `alpine` leaves no containers,
+        # and then all four checks below report the netns recreate as
+        # broken rather than saying the fixture could not be built.
+        lf.start(["run", "-d", "--name", HEAD, "alpine", "sh", "-c",
+                  "trap 'exit 0' TERM; sleep 300 & wait"])
+        lf.start(["run", "-d", "--name", SIDE, "--network",
+                  f"container:{HEAD}", "alpine", "sh", "-c",
+                  "trap 'exit 0' TERM; sleep 300 & wait"])
 
         # 1. resolve the netns owner name
         resolved = chk.netns_target_name(SIDE)
@@ -68,7 +76,8 @@ def main():
 
         # recreate the HEAD → new ID; the old ID in old_netmode is now dead
         _rm(HEAD)
-        _run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait"])
+        lf.start(["run", "-d", "--name", HEAD, "alpine", "sh", "-c",
+                  "trap 'exit 0' TERM; sleep 300 & wait"])
 
         # 3a. stale-ID recreate (the bug) must FAIL
         _rm(SIDE)

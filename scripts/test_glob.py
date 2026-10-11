@@ -10,6 +10,8 @@ Uses real throwaway containers. Requires Docker. Exits non-zero on failure.
 import sys, os, types, subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf
 from telegram_bot import TelegramBot
 from container_backend import get_backend
 
@@ -23,12 +25,13 @@ if __import__("subprocess").run(["docker", "info"],
     print("SKIP: no Docker daemon available")
     __import__("sys").exit(0)
 
-NAMES = ["ds_ctf-a-even", "ds_ctf-b-even", "ds_ctf-a-odd"]
-
-
-def _rm(*names):
-    for n in names:
-        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
+# The run's own stem, so two suites at once do not force-remove each
+# other's containers and then each report globbing as broken. It sits
+# in front of the part the patterns below vary, because a suffix would
+# stop `ds_ctf-*-even` matching anything at all.
+STEM = f"ds_ctf{lf.TAG}"
+NAMES = [f"{STEM}-a-even", f"{STEM}-b-even", f"{STEM}-a-odd"]
+OLD = f"{STEM}-a-even_old"
 
 
 def main():
@@ -38,29 +41,35 @@ def main():
     stub._match_glob = types.MethodType(TelegramBot._match_glob, stub)
     is_glob = TelegramBot._is_glob
 
-    _rm(*NAMES, "ds_ctf-a-even_old")
+    lf.rm(*NAMES, OLD)
+    # `lf.start` rather than a discarded return code: on a machine with
+    # no route to a registry the containers are simply not there, and
+    # the five checks below then report globbing as broken. That reading
+    # points at code that is fine.
     for n in NAMES:
-        subprocess.run(["docker", "run", "-d", "--name", n, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 200 & wait"],
-                       capture_output=True)
+        lf.start(["run", "-d", "--name", n, "alpine", "sh", "-c",
+                  "trap 'exit 0' TERM; sleep 200 & wait"])
     # an _old rollback leftover that must NOT match
-    subprocess.run(["docker", "run", "-d", "--name", "ds_ctf-a-even_old", "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 200 & wait"],
-                   capture_output=True)
+    lf.start(["run", "-d", "--name", OLD, "alpine", "sh", "-c",
+              "trap 'exit 0' TERM; sleep 200 & wait"])
     try:
-        even = stub._match_glob("ds_ctf-*-even")
-        allc = stub._match_glob("ds_ctf-*")
-        q = stub._match_glob("ds_ctf-?-odd")
-        upper = stub._match_glob("DS_CTF-*-EVEN")  # case-insensitive
+        even = stub._match_glob(f"{STEM}-*-even")
+        allc = stub._match_glob(f"{STEM}-*")
+        q = stub._match_glob(f"{STEM}-?-odd")
+        upper = stub._match_glob(f"{STEM.upper()}-*-EVEN")  # case-insensitive
     finally:
-        _rm(*NAMES, "ds_ctf-a-even_old")
+        lf.rm(*NAMES, OLD)
 
     checks = {
         "_is_glob true for *,?,[": is_glob("a*") and is_glob("a?b") and is_glob("a[0-9]"),
         "_is_glob false for plain name": not is_glob("sonarr"),
-        "glob *-even matches both even": even == ["ds_ctf-a-even", "ds_ctf-b-even"],
+        "glob *-even matches both even": even == [f"{STEM}-a-even",
+                                                   f"{STEM}-b-even"],
         "glob ctf-* matches all three": allc == sorted(NAMES),
-        "_old leftover excluded": "ds_ctf-a-even_old" not in allc,
-        "? single-char glob": q == ["ds_ctf-a-odd"],
-        "case-insensitive match": upper == ["ds_ctf-a-even", "ds_ctf-b-even"],
+        "_old leftover excluded": OLD not in allc,
+        "? single-char glob": q == [f"{STEM}-a-odd"],
+        "case-insensitive match": upper == [f"{STEM}-a-even",
+                                            f"{STEM}-b-even"],
     }
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)

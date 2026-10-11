@@ -166,13 +166,35 @@ legen.
 * `test_dependents_recreate.py` sucht nicht mehr nur `"failed"`, wo die
   Meldung `"FAILED"` schreibt.
 
-**Prozeduren, die ohne Defekt rot werden können:** vier prüfen den
-Rückgabewert von `docker run` nicht und melden bei nicht beschaffbarem
-Image die Zusage als gebrochen statt die Umgebung
-(`test_glob.py`, `test_protect_stop.py`, `test_netns_recreate.py`,
-`test_dependents_recreate.py`). `test_multihost_live.py` stirbt gegen
-einen laufenden, aber leeren Daemon. Und elf Prozeduren benutzen feste
-Containernamen, zwei Läufe parallel zerstören sich gegenseitig.
+**Erledigt am 11.10.2026: Prozeduren, die ohne Defekt rot werden
+konnten.** Vollständig aufgezählt statt geschätzt — es waren neun
+Dateien, 23 feste Bezeichner auf dem Daemon (15 Containernamen, ein Pod,
+zwei gebaute Image-Tags, zwei Podman-Verbindungen, zwei feste Ports) und
+18 Startaufrufe, von denen 15 bei nicht beschaffbarem Image die Zusage
+als gebrochen gemeldet hätten; zwölf lasen den Rückgabewert gar nicht.
+Null davon waren pro Lauf eindeutig.
+
+Gemessen, nicht behauptet: mit einem fremden `ds_ctf-a-even` auf dem
+Daemon hat die alte `test_glob.py` ihn entfernt — danach ist er noch da.
+Das ist das ganze Argument für `livefixture.TAG`.
+
+Jetzt ein gemeinsames `scripts/livefixture.py`: `name()` hängt die PID
+an, `free_port()` ersetzt 12375 und 8791, `start()` liest den
+Rückgabecode und macht aus einer Absage einen SKIP, der die bereits
+erreichten Prüfungen **mitnimmt** statt sie wegzuwerfen. Dazu
+`test_multihost_live.py` bringt seinen eigenen Container mit (vorher
+`sorted(remote_names)[0]` → IndexError gegen einen leeren Daemon, also
+ein Absturz, der weder Prüfung noch SKIP ist), `test_image_inherit.py`
+sagt einen fehlgeschlagenen Build laut (vorher `if ok:` ohne `else`:
+fünf Prüfungen verschwanden und PASS stand trotzdem da),
+`test_podman_live.py` prüft, ob Podman überhaupt antwortet, und
+`test_remote_transports.py` wirft beim dind-SKIP nicht mehr die zwei
+Dockerfile-Prüfungen weg.
+
+Als Wächter festgehalten: `test_live_fixtures.py` liest die ganze Suite
+als Baum und wird rot, sobald eine Prozedur wieder einen festen Namen
+anlegt oder einen Container startet, ohne das Ergebnis anzusehen —
+beides mit Gegenprobe, dass der Scanner wirklich beides findet.
 
 **Sauber gemessen:** ohne Daemon laufen alle 194 durch, in drei
 Zeitzonen (+14, −11, +5:45) je ein kompletter Durchgang ohne Rot, kein

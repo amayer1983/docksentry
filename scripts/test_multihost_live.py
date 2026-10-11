@@ -15,7 +15,9 @@ import tempfile
 import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import livefixture as lf                      # noqa: E402
 from config import parse_docker_hosts          # noqa: E402
 from container_store import ContainerStore     # noqa: E402
 from hosts import build_hosts                  # noqa: E402
@@ -42,6 +44,16 @@ def _cfg(d, hosts):
     return cfg
 
 
+# This procedure used to read whatever happened to be running on the
+# machine, and `sorted(remote_names)[0]` then raised IndexError against
+# a daemon that is up but empty — a crash, which is not a failed check
+# and not a skip either. It brings its own container now, so the
+# measurement is of the host registry rather than of the machine.
+OWN = lf.name("ds_mhlive")
+lf.rm(OWN)
+lf.start(["run", "-d", "--name", OWN, "alpine", "sh", "-c",
+          "trap 'exit 0' TERM; sleep 300 & wait"])
+
 with tempfile.TemporaryDirectory() as d:
     cfg = _cfg(d, f"selftest:{SOCKET}")
     reg = build_hosts(cfg, ContainerStore(cfg))
@@ -52,19 +64,25 @@ with tempfile.TemporaryDirectory() as d:
     # The remote checker really talks to a daemon over its endpoint.
     remote_names = {c["name"] for c in remote.checker.get_running_containers()}
     local_names = {c["name"] for c in reg.local.checker.get_running_containers()}
-    checks["remote host lists containers over its endpoint"] = len(remote_names) > 0
+    checks["remote host lists containers over its endpoint"] = (
+        OWN in remote_names)
     # Same daemon behind both, so the two views must agree — which is
     # exactly what makes this a valid stand-in for a real second host.
     checks["remote view matches the local one"] = remote_names == local_names
 
     # State written through the remote host is keyed to it, and does not
     # leak into the local host's keys.
-    sample = sorted(remote_names)[0]
+    # Our own container, not "whatever is first alphabetically" — the
+    # pin below writes state, and writing it to a stranger's container
+    # name is not something a test may do on somebody's machine.
+    sample = OWN
     remote.store.pin(sample)
     checks["pin via remote is visible on remote"] = remote.store.is_pinned(sample)
     checks["pin via remote is NOT on local"] = not reg.local.store.is_pinned(sample)
     raw_keys = ContainerStore(cfg).get_pinned()
     checks["stored under the host-prefixed key"] = raw_keys == [f"selftest/{sample}"]
+
+lf.rm(OWN)
 
 
 def main():

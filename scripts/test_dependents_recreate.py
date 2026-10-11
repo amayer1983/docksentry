@@ -16,6 +16,8 @@ Requires Docker. Exits non-zero on any failure.
 import sys, os, types, subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import livefixture as lf  # noqa: E402
 from update_checker import UpdateChecker
 from telegram_bot import TelegramBot
 from update_engine import UpdateEngine
@@ -30,17 +32,28 @@ if __import__("subprocess").run(["docker", "info"],
     print("SKIP: no Docker daemon available")
     __import__("sys").exit(0)
 
-HEAD, SIDE, PLAIN = "ds8_head", "ds8_side", "ds8_plain"
+# Per-run names. They were fixed, and every run begins by force-removing
+# them — so two suites at once pulled each other's containers out from
+# underneath and the loser reported dependent recreation as broken.
+# Measured on `test_glob.py`, which had the same shape: with a foreign
+# `ds_ctf-a-even` running, the old fixture removed it.
+HEAD, SIDE, PLAIN = (lf.name("ds8_head"), lf.name("ds8_side"),
+                     lf.name("ds8_plain"))
 
 
 def _rm(*names):
-    for n in names:
-        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
+    lf.rm(*names)
 
 
 def _running(name):
     return subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", name],
                           capture_output=True, text=True).stdout.strip() == "true"
+
+
+def _alpine(name, *extra):
+    """The argv for one throwaway container that waits to be stopped."""
+    return ["run", "-d", "--name", name, *extra, "alpine", "sh", "-c",
+            "trap 'exit 0' TERM; sleep 400 & wait"]
 
 
 def _netns(name):
@@ -52,14 +65,17 @@ def main():
     chk = UpdateChecker(types.SimpleNamespace(debug=False))
     _rm(HEAD, SIDE, PLAIN)
     try:
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
-        subprocess.run(["docker", "run", "-d", "--name", SIDE, "--network", f"container:{HEAD}",
-                        "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
-        subprocess.run(["docker", "run", "-d", "--name", PLAIN, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
+        # `lf.start`, not a discarded return code: a registry that will
+        # not serve `alpine` leaves no container, and then every check
+        # below reports dependent recreation as broken — a red that
+        # points at code which is fine.
+        lf.start(_alpine(HEAD))
+        lf.start(_alpine(SIDE, "--network", f"container:{HEAD}"))
+        lf.start(_alpine(PLAIN))
 
         # recreate the head → new ID; SIDE's stored netns id is now dead
         _rm(HEAD)
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
+        lf.start(_alpine(HEAD))
 
         # sanity: a plain restart of SIDE would fail now
         stale = subprocess.run(["docker", "restart", SIDE], capture_output=True, text=True)
@@ -72,7 +88,7 @@ def main():
 
         # break SIDE again (recreate head once more) to test the cascade path
         _rm(HEAD)
-        subprocess.run(["docker", "run", "-d", "--name", HEAD, "alpine", "sh", "-c", "trap 'exit 0' TERM; sleep 400 & wait"], capture_output=True)
+        lf.start(_alpine(HEAD))
 
         # 2. cascade: SIDE (netns) recreated, PLAIN restarted.
         # The cascade waits on the head via checker._wait_healthy (3-tuple) —
