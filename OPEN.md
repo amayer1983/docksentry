@@ -105,12 +105,30 @@ Altersfenster der Warteschlange, `insecure_registries`.
 sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,
 die bestanden hat ohne zu laufen:
 
-* **Audit-Trail**, vier weitere: der Telegram-Seam (geprüft wird nur,
-  wie oft `audit.record(` im Quelltext steht), der Akteur bei
-  Token-Zugriff, die History-Seite, die Werte-Kürzung.
 
-**Erledigt am 11.10.2026:** die Restore-Parität und die
-`Retry-After`-Kappe.
+**Erledigt am 11.10.2026:** der Audit-Trail (die vier offenen Punkte),
+die Restore-Parität und die `Retry-After`-Kappe.
+
+Der **Telegram-Seam** wird jetzt gefahren statt gezählt. Was dort stand,
+war `tg.count('audit.record("telegram"') == 1` — eine Zahl im Quelltext,
+die ein auskommentierter Aufruf genauso erfüllt, und genau so war
+`/hosts check` auf beiden Verbindungen tot bei drei grünen Prüfungen.
+Jetzt geht der Befehl durch `_handle_message` und der Eintrag wird
+zurückgelesen, mit der Gegenrichtung: ein Befehl von einem Fremden
+hinterlässt keine Spur (der Seam sitzt *nach* der Auth-Prüfung), eine
+normale Chat-Nachricht auch nicht, und ein aufgezeichneter Befehl ist
+weiter ein beantworteter. Dafür `/help`, nicht `/stop`: der
+`/stop`-Prüfstand brauchte Motor, Hosts und Lifecycle-Modul, bevor er
+irgendetwas Beobachtbares erreichte — so weit gestützt misst er sein
+eigenes Gerüst.
+
+Dazu der **Akteur bei Token-Zugriff** (ein Prometheus-Scrape ist
+`token:prom` über die Quelle `api`, kein Mensch), die
+**History-Seite** (gerendert und die Bytes zurückgelesen: Zeit, Akteur,
+Befehl, Ziel, `id="audit"` zum Finden, geschärft, und der
+Schwärzungs-Marker statt eines Werts) und die **Werte-Kürzung** — und
+zwar am Eintrag auf der Platte, nicht nur am Rückgabewert von `redact`.
+Vier Einträge in der Ratsche, alle vier gegengeprüft.
 
 `test_restore_parity.py` fragt beide Türen dasselbe — die Kappe, das
 `schema_version`-Siegel, Nicht-JSON, eine Datei ohne `.json` — und

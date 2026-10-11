@@ -184,6 +184,30 @@ GUARDED = [
      "        return True",
      "test_channel_backoff.py"),
 
+    ("a Telegram command leaves a trace",
+     "app/telegram_bot.py",
+     "                    audit.record(\"telegram\", user_id, cmd.strip(),",
+     "                    (lambda *a, **kw: None)(",
+     "test_audit.py"),
+
+    ("a token is recorded as a token, not as a person",
+     "app/web_ui.py",
+     '                return f"token:{token}", "api"',
+     '                return "?", "web"',
+     "test_audit.py"),
+
+    ("the history page shows the trail",
+     "app/web_ui.py",
+     "            rows = audit.entries(100) if audit is not None else []",
+     "            rows = []",
+     "test_audit.py"),
+
+    ("a logged value is a pointer, not a copy",
+     "app/audit.py",
+     "        elif len(text) > MAX_VALUE:",
+     "        elif False:",
+     "test_audit.py"),
+
     ("a server asking for an hour does not get it",
      "app/notifiers/base.py",
      "                if wait is not None and wait <= 60:",
