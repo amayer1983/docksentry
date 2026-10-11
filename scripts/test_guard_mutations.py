@@ -580,6 +580,48 @@ GUARDED = [
      "                if False:",
      "test_backup_channels.py"),
 
+    ("the disk warning fires at the configured threshold",
+     "app/update_checker.py",
+     "        if percent < threshold:",
+     "        if False:",
+     "test_disk_warn_rules.py"),
+
+    ("…and says it once a day, not once a tick",
+     "app/update_checker.py",
+     "        if last_warn and (datetime.now() - last_warn) < timedelta(hours=23):",
+     "        if False:",
+     "test_disk_warn_rules.py"),
+
+    ("…and the settings page cannot store a threshold that never fires",
+     "app/web_ui.py",
+     "                        config.disk_warn_percent = max(50, min(v, 100))",
+     "                        config.disk_warn_percent = v",
+     "test_disk_warn_rules.py"),
+
+    ("a group pauses between its containers",
+     "app/update_engine.py",
+     "                if wait_s > 0:\n                    _wait(wait_s, self)",
+     "                pass",
+     "test_group_rules.py"),
+
+    ("…and a dependent restart never waits less than thirty seconds",
+     "app/update_engine.py",
+     '                            wait_s = max(int(grp.get("wait_seconds", 30) or 30), 30)',
+     '                            wait_s = int(grp.get("wait_seconds", 30) or 30)',
+     "test_group_rules.py"),
+
+    ("a container belongs to one group, not two",
+     "app/container_store.py",
+     '            other["containers"] = [c for c in (other.get("containers") or []) if c not in cleaned]',
+     "            pass",
+     "test_group_rules.py"),
+
+    ("…and a group's wait cannot be absurd",
+     "app/container_store.py",
+     "            wait = max(0, min(int(wait_seconds), 600))",
+     "            wait = int(wait_seconds)",
+     "test_group_rules.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

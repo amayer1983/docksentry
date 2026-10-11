@@ -81,6 +81,21 @@ beides Narben davon. Jetzt `test_selfupdate_chain.py`: die Reihenfolge,
 beide Fehlerarme getrennt, die Stop-Frist, und die Boot-Meldung, die den
 Satz sucht, den das Skript wirklich schreibt.
 
+**Und erledigt:** Container-Gruppen und Platzwarnung. Die Gruppen-Regeln
+sind das, was eine Gruppe zur Gruppe macht — eine Datenbank und ihre
+Anwendung in derselben Sekunde neu zu bauen heißt, dass die Anwendung
+gegen eine Datenbank startet, die noch nicht hört. Die Platzwarnung
+scheitert in beide Richtungen schlimm: feuert sie nicht, läuft die
+Platte still voll; feuert sie bei jedem Tick, schaltet der Nutzer den
+Kanal stumm und verliert den nächsten echten Alarm mit.
+
+Zwei Dinge dabei, die ich offen hinschreibe. Die beiden Wartezeiten im
+Stapel werden als **Baum** gelesen, nicht gefahren: `_process_update_batch`
+braucht ein Dutzend Mitspieler, bevor es dort ankommt, und ich habe beim
+sechsten Stub abgebrochen — ein so weit gestützter Prüfstand misst sein
+eigenes Gerüst. Und die erste Fassung war schlechter als beides, sie hat
+die Schleifenbedingung des Motors abgeschrieben und die Kopie geprüft.
+
 **In der Schuldenliste** (`UNGUARDED`, `DEBT = 6`), also beweisbar
 ungedeckt und nur noch verkleinerbar: Major-Bestätigung,
 `MIN_IMAGE_AGE_DAYS`, Schwärzen im Audit-Trail, OOM-Erkennung, das
@@ -90,10 +105,6 @@ Altersfenster der Warteschlange, `insecure_registries`.
 sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,
 die bestanden hat ohne zu laufen:
 
-* **Container-Gruppen**, drei: die Wartezeit zwischen Containern, der
-  30-Sekunden-Boden, ein Container = eine Gruppe. Die
-  VPN-Sidecar-Mechanik selbst ist abgesichert.
-* **Platzwarnung**, drei: Schwelle, 23-Stunden-Sperre, Klemmung 50..100.
 * **Audit-Trail**, vier weitere: der Telegram-Seam (geprüft wird nur,
   wie oft `audit.record(` im Quelltext steht), der Akteur bei
   Token-Zugriff, die History-Seite, die Werte-Kürzung.
