@@ -532,10 +532,13 @@ checks["a docker cli talking to podman is reported as podman"] = (
 # `EMITTED` against what `preflight` really produces. `KINDS` carries
 # one kind `preflight` never emits (`usable`, which is `verdict`'s), so
 # a single list stood for two different claims and nothing held either.
-# Scenarios may carry a third element: what the TLS handshake probe
-# should answer. `needs_tls` is the one kind that does not come from the
-# CLI's words alone — Podman says only "ping response was 400", and the
-# port is asked directly instead of guessed at.
+# A scenario is `(endpoint, cli answers)`, plus an optional third
+# element: what the TLS handshake probe should answer. The `needs_tls`
+# scenario below uses the words rather than the probe, so the third
+# element is currently unused — it stays because the alternative is a
+# caller that has to pass `lambda ep: False` eleven times, and an audit
+# flagged it as dead. It is: one entry away from being used again, and
+# the default is the safe one.
 SCENARIOS = {
     "scheme_bad": ("http://nas", {}),
     "unreachable": ("ssh://nas", {}),
@@ -597,6 +600,43 @@ checks["…and a CLI that says nothing useful is answered by the port"] = (
 # as caught, which is the difference between a guard and a crash.
 checks["…naming the endpoint it was asked about"] = (
     dict(_f).get("needs_tls", {}).get("endpoint") == "tcp://nas:2376")
+
+# The phrase that means the opposite. `_TLS_WORDS` first held four
+# entries, three of them guessed, and one of those was `"tls
+# handshake"` — which matches Go's `tls: first record does not look
+# like a TLS handshake`, the message for a port that is **not** TLS.
+# So the sentence saying "no TLS here" produced a `needs_tls` finding,
+# and anyone with `DOCKER_TLS_VERIFY` set on the container was told his
+# plaintext port speaks TLS. Found by an audit the same day I wrote it.
+_f = hostcheck.preflight(
+    "tcp://nas:2375",
+    _Backend({"version --format": (1, "", 'error during connect: Get '
+              '"https://nas:2375/v1.50/version": tls: first record does '
+              'not look like a TLS handshake')}),
+    probe_tls=lambda ep: False)
+checks["the words for 'this is not TLS' are not read as TLS"] = (
+    kinds(_f) == ["unreachable"])
+
+# A name that never resolved has no port to offer a handshake to, and
+# asking anyway costs the resolver timeout a second time for an answer
+# that is already known.
+_dns = {"version --format": (1, "", "dial tcp: lookup nas: no such host")}
+_asked = []
+_f = hostcheck.preflight("tcp://nas:2376", _Backend(_dns),
+                         probe_tls=lambda ep: _asked.append(ep) or True)
+checks["a name that will not resolve is not probed"] = (
+    _asked == [] and kinds(_f) == ["unreachable"])
+
+# …and neither is a socket that answered and refused us: that is
+# already explained, and three seconds of handshake on top buys the
+# reader of `/hosts check` nothing but three seconds.
+_asked = []
+_f = hostcheck.preflight(
+    "tcp://nas:2376",
+    _Backend({"version --format": (1, "", "permission denied")}),
+    probe_tls=lambda ep: _asked.append(ep) or True)
+checks["…nor a socket that answered and said no"] = (
+    _asked == [] and kinds(_f) == ["denied"])
 
 # The counter-direction, and it is the one that matters: a port that is
 # simply dead must NOT be called a TLS port. Without this the check

@@ -186,10 +186,18 @@ def main():
         import hostcheck                                    # noqa: E402
         tls_port = lf.free_port()
         tls_name = lf.name("ds-tls-transport-test")
+        tls_certs = os.path.join(d, "certs")
+        os.makedirs(tls_certs, exist_ok=True)
         lf.rm(tls_name)
+        # `/certs/client` mounted out, because the half that matters is
+        # not "TLS is detected" but "and here is how you get through
+        # it". `docs/security.md` documents two routes and the README
+        # points at them; this is where those two sentences are held to
+        # something that ran.
         up_tls = subprocess.run(
             ["docker", "run", "-d", "--name", tls_name, "--privileged",
-             "-p", f"127.0.0.1:{tls_port}:2376", "docker:dind"],
+             "-p", f"127.0.0.1:{tls_port}:2376",
+             "-v", f"{tls_certs}:/certs/client", "docker:dind"],
             capture_output=True, text=True)
         if up_tls.returncode != 0:
             print(f"  (SKIP of the TLS half: {up_tls.stderr.strip()[:120]})")
@@ -215,6 +223,77 @@ def main():
                        "answered'"] = found == ["needs_tls"]
                 if found != ["needs_tls"]:
                     print(f"      → the TLS endpoint produced {found}")
+
+                # ── and the two routes the docs name really work ────
+                # The first version of the `needs_tls` text said
+                # "support for it is not built yet" and offered only
+                # `ssh://` and a proxy. An audit asked whether that was
+                # measured, and it was not: both of these reach the
+                # daemon with no change to Docksentry at all, because
+                # `RemoteBackend` passes no `env=` and the CLI inherits
+                # the container's environment. A false sentence in 16
+                # languages was one tag away.
+                for _ in range(30):
+                    if os.path.exists(os.path.join(tls_certs, "cert.pem")):
+                        break
+                    time.sleep(2)
+                have_certs = os.path.exists(os.path.join(tls_certs,
+                                                         "cert.pem"))
+                checks["the TLS daemon hands out client certificates"] = (
+                    have_certs)
+                if have_certs:
+                    _saved = {k: os.environ.get(k)
+                              for k in ("DOCKER_TLS_VERIFY",
+                                        "DOCKER_CERT_PATH")}
+                    os.environ["DOCKER_TLS_VERIFY"] = "1"
+                    os.environ["DOCKER_CERT_PATH"] = tls_certs
+                    try:
+                        env_backend = RemoteBackend(
+                            tls_ep, name="tlsenv",
+                            cli_binary=resolve_cli("docker"))
+                        got = [k for k, _p in hostcheck.preflight(
+                            tls_ep, env_backend)]
+                        checks["DOCKER_CERT_PATH gets a tcp:// endpoint "
+                               "all the way in"] = "engine" in got
+                        if "engine" not in got:
+                            print(f"      → with certs in the env: {got}")
+                    finally:
+                        for k, v in _saved.items():
+                            if v is None:
+                                os.environ.pop(k, None)
+                            else:
+                                os.environ[k] = v
+
+                    # …and the same thing through a saved context, which
+                    # is the route that scales: one certificate set per
+                    # host rather than one for the process.
+                    ctx = lf.name("ds-tls-ctx")
+                    subprocess.run(["docker", "context", "rm", "-f", ctx],
+                                   capture_output=True)
+                    made = subprocess.run(
+                        ["docker", "context", "create", ctx, "--docker",
+                         f"host={tls_ep},ca={tls_certs}/ca.pem,"
+                         f"cert={tls_certs}/cert.pem,"
+                         f"key={tls_certs}/key.pem"],
+                        capture_output=True, text=True)
+                    if made.returncode != 0:
+                        print(f"  (SKIP of the context route: "
+                              f"{made.stderr.strip()[:120]})")
+                    else:
+                        try:
+                            ctx_backend = RemoteBackend(
+                                f"context://{ctx}", name="tlsctx",
+                                cli_binary=resolve_cli("docker"))
+                            got = [k for k, _p in hostcheck.preflight(
+                                f"context://{ctx}", ctx_backend)]
+                            checks["…and so does context:// with the "
+                                   "certificates in it"] = "engine" in got
+                            if "engine" not in got:
+                                print(f"      → through the context: {got}")
+                        finally:
+                            subprocess.run(
+                                ["docker", "context", "rm", "-f", ctx],
+                                capture_output=True)
             finally:
                 lf.rm(tls_name)
     finally:

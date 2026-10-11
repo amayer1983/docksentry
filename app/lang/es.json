@@ -997,7 +997,7 @@
   "hostcheck_header": "🔎 *Comprobación previa de* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` no es un punto final que yo entienda. Se espera uno de: {schemes}",
   "hostcheck_unreachable": "• Nada respondió en `{endpoint}` — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` habla TLS, y Docksentry no tiene ningún certificado de cliente que ofrecerle — eso falta por mi parte, no en tu configuración. Es el refuerzo `--tlsverify` propio de Docker y la forma correcta de exponer un demonio por la red; aún no está soportado. Hasta entonces, llega a esta máquina por `ssh://`, o monta su socket a través de un proxy. El demonio dijo: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` responde con TLS, y desde aquí no se le ofreció ningún certificado de cliente — por eso no se pasó del saludo inicial. Si detrás hay un demonio con `--tlsverify`, hoy funcionan dos caminos: guardar la conexión como contexto y usar `context://<nombre>`, o definir `DOCKER_TLS_VERIFY=1` y `DOCKER_CERT_PATH` en el contenedor de Docksentry con los certificados montados dentro. Lo que llegó de vuelta: {error}",
   "hostcheck_denied": "• `{endpoint}` respondió — y nos rechazó: {error}. Son los permisos del socket, no la red: revisa el montaje, el grupo y, si está activo, SELinux.",
   "hostcheck_denied_ssh": "• ssh respondió en `{endpoint}` y no nos dejó entrar: {error}. Es una clave, no el socket — este contenedor tiene su propio sistema de archivos, así que la clave que usas desde la shell no es la que ofrece.",
   "hostcheck_engine": "• Respondió {engine} {version}",

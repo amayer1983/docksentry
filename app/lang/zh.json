@@ -997,7 +997,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` 预检*",
   "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` 讲的是 TLS，而 Docksentry 没有可以出示的客户端证书——这是我这边缺的，不是你的配置问题。这是 Docker 自己的 `--tlsverify` 加固，也是把守护进程放到网络上的正确做法；只是目前还不支持。在那之前，请通过 `ssh://` 连到这台机器，或者用代理把它的套接字挂出来。守护进程说：{error}",
+  "hostcheck_needs_tls": "• `{endpoint}` 以 TLS 作答，而这边没有向它出示客户端证书——所以只走到握手为止。如果后面是启用了 `--tlsverify` 的守护进程，今天有两条路可走：把连接保存为一个上下文并使用 `context://<名称>`，或者在 Docksentry 容器上设置 `DOCKER_TLS_VERIFY=1` 和 `DOCKER_CERT_PATH`，并把证书挂载进去。返回的内容：{error}",
   "hostcheck_denied": "• `{endpoint}` 回应了，并且拒绝了我们 — {error}。这是套接字的权限，不是网络：请检查挂载、用户组，以及若已启用的 SELinux。",
   "hostcheck_denied_ssh": "• ssh 在 `{endpoint}` 上回应了，并且没让我们进去：{error}。这是密钥的问题，不是套接字 — 这个容器有自己的文件系统，所以你在 shell 里用的密钥并不是它出示的那一把。",
   "hostcheck_engine": "• {engine} {version} 作出了响应",

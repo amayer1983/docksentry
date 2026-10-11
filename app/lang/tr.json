@@ -997,7 +997,7 @@
   "hostcheck_header": "🔎 *Ön kontrol:* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` TLS konuşuyor ve Docksentry'nin sunacak bir istemci sertifikası yok — bu bendeki eksik, senin kurulumunda değil. Docker'ın kendi `--tlsverify` sıkılaştırması ve bir daemon'u ağ üzerinden sunmanın doğru yolu; henüz desteklenmiyor. O zamana kadar bu makineye `ssh://` ile ulaş ya da soketini bir proxy üzerinden bağla. Daemon şöyle dedi: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` TLS ile yanıt veriyor ve buradan ona bir istemci sertifikası sunulmadı — bu yüzden el sıkışmadan öteye geçilemedi. Arkasında `--tlsverify` ile çalışan bir daemon varsa bugün iki yol işliyor: bağlantıyı bir bağlam olarak kaydedip `context://<ad>` kullanmak, ya da Docksentry kapsayıcısında `DOCKER_TLS_VERIFY=1` ve `DOCKER_CERT_PATH` ayarlayıp sertifikaları içine bağlamak. Geri gelen: {error}",
   "hostcheck_denied": "• `{endpoint}` yanıt verdi — ve bizi reddetti: {error}. Bu, ağ değil soketin izinleri: mount'u, grubu ve etkinse SELinux'u kontrol et.",
   "hostcheck_denied_ssh": "• ssh `{endpoint}` üzerinde yanıt verdi ve bizi içeri almadı: {error}. Bu bir anahtar sorunu, soket değil — bu konteynerin kendi dosya sistemi var, yani kabuktan kullandığın anahtar onun sunduğu anahtar değil.",
   "hostcheck_engine": "• {engine} {version} yanıt verdi",

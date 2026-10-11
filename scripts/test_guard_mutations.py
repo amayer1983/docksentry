@@ -107,6 +107,13 @@ GUARDED = [
      '    bad = {"scheme_bad", "unreachable", "needs_tls",',
      "test_hostcheck.py"),
 
+    ("the phrase for 'not TLS' does not produce a TLS finding",
+     "app/hostcheck.py",
+     '_TLS_WORDS = ("client sent an http request to an https server",)',
+     '_TLS_WORDS = ("client sent an http request to an https server",\n'
+     '              "tls handshake")',
+     "test_hostcheck.py"),
+
     ("a TLS port is named as one, not called unreachable",
      "app/hostcheck.py",
      '            out.append(("needs_tls", params))',
@@ -115,8 +122,14 @@ GUARDED = [
 
     ("…and the port is asked rather than guessed from the words",
      "app/hostcheck.py",
-     "                _tls_said or (probe_tls or speaks_tls)(ep)):",
-     "                _tls_said):",
+     "                and (_tls_said or (probe_tls or speaks_tls)(ep))):",
+     "                and (_tls_said)):",
+     "test_hostcheck.py"),
+
+    ("…and a refusal is not made to wait for a handshake",
+     "app/hostcheck.py",
+     "        if (ep.startswith(\"tcp://\") and not _refused(why)",
+     "        if (ep.startswith(\"tcp://\")",
      "test_hostcheck.py"),
 
     ("/hosts check reaches the pre-flight in Telegram",

@@ -97,7 +97,50 @@ cannot do that there.
   reachable from your LAN at all;
 - the remote daemon is configured with **TLS client certificates**
   (`2376`), which Docker supports and which is a job for the daemon's own
-  configuration, not for Docksentry.
+  configuration — but Docksentry has to be told where the certificates
+  are, and the two ways to do that are below.
+
+### TLS client certificates on 2376
+
+Docksentry emits no certificate flags of its own. It does not need to:
+it drives the container CLI, and the CLI takes the certificates from
+either a saved context or the environment. Both routes are measured
+against a `docker:dind` with `DOCKER_TLS_CERTDIR=/certs` — bare
+`tcp://host:2376` gets as far as the handshake and no further, and each
+of these gets all the way to listing containers.
+
+**A context, one per host.** Save the connection wherever your `docker`
+CLI keeps its contexts, mount `~/.docker` into the Docksentry container,
+and name it as the endpoint:
+
+```yaml
+environment:
+  - DOCKER_HOSTS=nas:context://nas
+volumes:
+  - ~/.docker:/root/.docker:ro
+```
+
+This is the one that scales: a context carries its own `ca`, `cert` and
+`key`, so several TLS hosts can each have their own.
+
+**The environment, one set for all of them.** Simpler, and enough when
+there is one such host:
+
+```yaml
+environment:
+  - DOCKER_HOSTS=nas:tcp://nas:2376
+  - DOCKER_TLS_VERIFY=1
+  - DOCKER_CERT_PATH=/certs
+volumes:
+  - /path/to/certs:/certs:ro
+```
+
+`DOCKER_CERT_PATH` is global to the process, so every `tcp://` endpoint
+is then verified against that one set of certificates.
+
+The pre-flight says which of the two is missing: `/hosts check
+tcp://nas:2376` answers that the port speaks TLS and nothing offered it
+a certificate, rather than the "nothing answered" it used to report.
 
 If you have a `tcp://` host that is neither, Docksentry says so once at
 startup, naming the host. That warning is deliberately not silenceable: it

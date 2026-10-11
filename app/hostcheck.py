@@ -114,16 +114,24 @@ _SSH_REFUSED = ("ssh:", "publickey", "password)", "keyboard-interactive",
                 "no supported authentication")
 
 
-#: What a CLI says when it spoke plain HTTP to a TLS port. Go's own
-#: server answers the plaintext request with an HTTP 400 carrying the
-#: first sentence, so a current Docker says it outright; older clients
-#: and other servers hand back the raw TLS record instead, which reads
-#: as `malformed HTTP response "\x15\x03\x01…"`. Podman says only
-#: `ping response was 400`, which on its own means nothing — that case
-#: is answered by the handshake below rather than by a guess.
-_TLS_WORDS = ("client sent an http request to an https server",
-              "http request to an https server",
-              "tls handshake", "record layer")
+#: What a CLI says when it spoke plain HTTP to a TLS port.
+#:
+#: One entry, and it is one entry because the other three were guesses
+#: that an audit took apart the same day I wrote them. `"tls handshake"`
+#: matches Go's `tls: first record does not look like a TLS handshake`,
+#: which is the message for a port that is **not** TLS — so the phrase
+#: meaning "no TLS here" produced a `needs_tls` finding, and anybody
+#: with `DOCKER_TLS_VERIFY` set on the container was told his plaintext
+#: port speaks TLS. `"record layer"` was never reachable on this path at
+#: all, and the fourth was a substring of this one.
+#:
+#: Measured: Docker 29.5.3 against a TLS daemon answers `Error response
+#: from daemon: Client sent an HTTP request to an HTTPS server.`
+#: verbatim — Go's own TLS server replies to a plaintext request with an
+#: HTTP 400 carrying that sentence. Podman 4.9.3 says only `ping
+#: response was 400`, which means nothing on its own, so the handshake
+#: below is load-bearing rather than a belt-and-braces second opinion.
+_TLS_WORDS = ("client sent an http request to an https server",)
 
 
 def speaks_tls(endpoint, timeout=3.0):
@@ -164,6 +172,19 @@ def speaks_tls(endpoint, timeout=3.0):
         # "does it speak TLS" is no, and why it is no belongs to the
         # finding the caller already has.
         return False
+
+
+#: The name never resolved, so there is no port to offer a handshake to.
+#: Asking anyway costs the resolver timeout a second time (glibc: 5 s,
+#: twice) for an answer that is already known.
+_DNS_WORDS = ("no such host", "name or service not known",
+              "temporary failure in name resolution", "nodename nor servname",
+              "name does not resolve", "could not resolve")
+
+
+def _dns_failed(text):
+    low = (text or "").lower()
+    return any(w in low for w in _DNS_WORDS)
 
 
 def _ssh_refused(text):
@@ -303,22 +324,35 @@ def preflight(endpoint, backend, hint=None, probe_tls=None):
         # wrong way — while `hostdiag` appends the right sentence
         # directly underneath, so he got both at once.
         # A TLS port is its own answer, and it was the worst-served
-        # case in the module: `tcp://host:2376` is Docker's own
-        # recommended hardening, and the pre-flight called it "nothing
-        # answered" — when in fact the daemon answered perfectly well
-        # and we spoke the wrong language at it. I had told somebody in
-        # #2 that this is the right form and that Docksentry "then just
-        # talks to tcp://host:2376", which is not true: there are no
-        # client certificates anywhere in the program. So the reader
-        # was sent down that path by me and then told his machine was
-        # unreachable.
+        # case in the module: the pre-flight called it "nothing
+        # answered" when the daemon had answered perfectly well and we
+        # spoke the wrong language at it.
+        #
+        # What this finding does NOT say any more: that the setup is
+        # unsupported. Measured through this module's own backend
+        # against a dind with `DOCKER_TLS_CERTDIR=/certs` —
+        # `context://<name>` and `DOCKER_TLS_VERIFY=1` +
+        # `DOCKER_CERT_PATH` both reach it and come back
+        # `engine/can_list`, because `RemoteBackend` passes no `env=` and
+        # the CLI therefore inherits the container's environment. The
+        # first version of this text said "support for it is not built
+        # yet", which would have frozen a false claim into 16 languages
+        # and withheld the one route that works. `docs/security.md` had
+        # it right all along.
         #
         # The words first, because a current Docker says it outright,
         # and the handshake second, because Podman says only "ping
-        # response was 400" and that means nothing on its own.
+        # response was 400".
+        #
+        # After `_refused`, deliberately: a socket that answered and
+        # said no is already explained, and a 3-second handshake on top
+        # of it buys nothing but a 3-second wait for the reader of
+        # `/hosts check`. Same for a name that would not resolve —
+        # there is no port to ask.
         _tls_said = any(w in why.lower() for w in _TLS_WORDS)
-        if ep.startswith("tcp://") and (
-                _tls_said or (probe_tls or speaks_tls)(ep)):
+        if (ep.startswith("tcp://") and not _refused(why)
+                and not _dns_failed(why)
+                and (_tls_said or (probe_tls or speaks_tls)(ep))):
             params.pop("hint", None)
             out.append(("needs_tls", params))
             return out

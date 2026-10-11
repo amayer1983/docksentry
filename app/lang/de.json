@@ -997,7 +997,7 @@
   "hostcheck_header": "🔎 *Vorab-Prüfung für* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` ist kein Endpunkt, den ich spreche. Erwartet wird einer von: {schemes}",
   "hostcheck_unreachable": "• Unter `{endpoint}` hat nichts geantwortet — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` spricht TLS, und Docksentry hat kein Client-Zertifikat anzubieten — das fehlt bei mir, nicht bei dir. Es ist Dockers eigene `--tlsverify`-Absicherung und der richtige Weg, einen Daemon über das Netz anzubieten; unterstützt wird es noch nicht. Bis dahin: diese Maschine über `ssh://` erreichen oder ihren Socket über einen Proxy einbinden. Der Daemon sagte: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` antwortet mit TLS, und von hier aus wurde ihm kein Client-Zertifikat angeboten — weiter als bis zum Handshake kam es deshalb nicht. Wenn dahinter ein Daemon mit `--tlsverify` steht, gehen heute zwei Wege: die Verbindung als Kontext speichern und `context://<name>` benutzen, oder `DOCKER_TLS_VERIFY=1` und `DOCKER_CERT_PATH` am Docksentry-Container setzen und die Zertifikate hineinmounten. Zurückkam: {error}",
   "hostcheck_denied": "• `{endpoint}` hat geantwortet — und uns abgewiesen: {error}. Das sind die Rechte am Socket, nicht das Netz: Mount, Gruppe und, falls aktiv, SELinux prüfen.",
   "hostcheck_denied_ssh": "• ssh hat unter `{endpoint}` geantwortet und uns nicht hereingelassen: {error}. Das ist ein Schlüssel, nicht der Socket — dieser Container hat sein eigenes Dateisystem, der Schlüssel aus deiner Shell ist also nicht der, den er anbietet.",
   "hostcheck_engine": "• {engine} {version} hat geantwortet",
