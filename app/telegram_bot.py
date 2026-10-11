@@ -3067,6 +3067,28 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("not_authorized"))
             return
 
+        # Telegram's second entry path, and it had no seam. "One seam per
+        # front end" was one too few: a press of `restore_go:` overwrites
+        # settings, groups, pins, notes, links and update windows, and
+        # `stop_go:` stops a container — neither left a trace, while the
+        # typed `/stop` that merely *asked* did. An audit found it on
+        # 11.10.2026, and it is the same shape as the scheduler gap
+        # closed the day before: the action nobody watched happen was
+        # the one kind that went unrecorded.
+        #
+        # After the auth check, same as the command seam, and before the
+        # dispatch, so a button added later cannot be added without one.
+        # The token is not recorded — it is a one-time secret and says
+        # nothing a week later; the button's name is what answers "who
+        # pressed what".
+        try:
+            audit = getattr(self, "audit", None)
+            if audit is not None:
+                _btn, _, _ = data.partition(":")
+                audit.record("telegram", user_id, f"button:{_btn}")
+        except Exception:
+            pass
+
         if data == "stop_cancel":
             self.answer_callback(callback["id"], self.t("chan_cancelled"))
             if msg_id and chat_id:

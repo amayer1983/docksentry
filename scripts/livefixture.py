@@ -4,9 +4,11 @@
 Two defects it exists to remove, both found on 10.10.2026 and both of
 the same kind: the fixture reporting its own trouble as the program's.
 
-**A pull that fails is not a broken promise.** Twelve call sites started
-a container with `capture_output=True` and never looked at the return
-code. On a machine with no route to a registry, or against a
+**A pull that fails is not a broken promise.** Fourteen call sites
+started a container with `capture_output=True` and never looked at the
+return code — counted with `test_live_fixtures._unchecked_runs` against
+`v2.18.0-beta.39`, after an audit pointed out that "twelve" was a
+number I had not counted. On a machine with no route to a registry, or against a
 rate-limited one, the container simply is not there — and the procedure
 then reports that globbing, protection or dependent recreation is
 broken. That is the worst possible reading of a red check: it points at
@@ -70,12 +72,19 @@ def skip(why, checks=None):
     """
     print(f"SKIP: {why}")
     code = 0
+    bad = [k for k, v in (checks or {}).items() if not v]
+    for k, v in (checks or {}).items():
+        print(f"  {'✅' if v else '❌'} {k}")
     if checks:
-        bad = [k for k, v in checks.items() if not v]
-        for k, v in checks.items():
-            print(f"  {'✅' if v else '❌'} {k}")
         print("FAIL" if bad else "PASS")
         code = 1 if bad else 0
+    else:
+        # Said out loud rather than exiting silently: a procedure that
+        # prints only `SKIP:` and ends with 0 is indistinguishable in
+        # the run log from one that measured something, and
+        # `test_guard_mutations.py` reads a missing verdict as
+        # "unrunnable" rather than as a skip.
+        print("SKIP (no checks had run yet)")
     sys.exit(code)
 
 

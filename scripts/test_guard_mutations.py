@@ -292,6 +292,24 @@ GUARDED = [
      "            if False:\n                continue",
      "test_cleanup_rules.py"),
 
+    ("a Web UI POST leaves a trace",
+     "app/web_ui.py",
+     "            self._audit_post(path)",
+     "            pass  # self._audit_post(path)",
+     "test_audit.py"),
+
+    ("…and so does a Discord command",
+     "app/discord_bot.py",
+     '                audit.record("discord",',
+     '                (lambda *a, **kw: None)(',
+     "test_audit.py"),
+
+    ("…and so does a Telegram button press",
+     "app/telegram_bot.py",
+     '                audit.record("telegram", user_id, f"button:{_btn}")',
+     "                pass",
+     "test_audit.py"),
+
     ("a Telegram command leaves a trace",
      "app/telegram_bot.py",
      "                    audit.record(\"telegram\", user_id, cmd.strip(),",

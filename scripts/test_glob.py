@@ -41,6 +41,18 @@ def main():
     stub._match_glob = types.MethodType(TelegramBot._match_glob, stub)
     is_glob = TelegramBot._is_glob
 
+    # The two checks that need no daemon, computed before anything is
+    # started, and handed to `lf.start`: a registry that will not serve
+    # `alpine` then reports a SKIP *with* these two rather than
+    # discarding them. They used to be built after the start and went
+    # with it — the same defect this fixture family fixed in
+    # `test_remote_transports.py`.
+    checks = {
+        "_is_glob true for *,?,[": (is_glob("a*") and is_glob("a?b")
+                                    and is_glob("a[0-9]")),
+        "_is_glob false for plain name": not is_glob("sonarr"),
+    }
+
     lf.rm(*NAMES, OLD)
     # `lf.start` rather than a discarded return code: on a machine with
     # no route to a registry the containers are simply not there, and
@@ -48,10 +60,10 @@ def main():
     # points at code that is fine.
     for n in NAMES:
         lf.start(["run", "-d", "--name", n, "alpine", "sh", "-c",
-                  "trap 'exit 0' TERM; sleep 200 & wait"])
+                  "trap 'exit 0' TERM; sleep 200 & wait"], checks=checks)
     # an _old rollback leftover that must NOT match
     lf.start(["run", "-d", "--name", OLD, "alpine", "sh", "-c",
-              "trap 'exit 0' TERM; sleep 200 & wait"])
+              "trap 'exit 0' TERM; sleep 200 & wait"], checks=checks)
     try:
         even = stub._match_glob(f"{STEM}-*-even")
         allc = stub._match_glob(f"{STEM}-*")
@@ -60,17 +72,15 @@ def main():
     finally:
         lf.rm(*NAMES, OLD)
 
-    checks = {
-        "_is_glob true for *,?,[": is_glob("a*") and is_glob("a?b") and is_glob("a[0-9]"),
-        "_is_glob false for plain name": not is_glob("sonarr"),
+    checks.update({
         "glob *-even matches both even": even == [f"{STEM}-a-even",
-                                                   f"{STEM}-b-even"],
+                                                 f"{STEM}-b-even"],
         "glob ctf-* matches all three": allc == sorted(NAMES),
         "_old leftover excluded": OLD not in allc,
         "? single-char glob": q == [f"{STEM}-a-odd"],
         "case-insensitive match": upper == [f"{STEM}-a-even",
                                             f"{STEM}-b-even"],
-    }
+    })
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
     if not all(checks.values()):

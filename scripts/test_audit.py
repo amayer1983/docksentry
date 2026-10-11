@@ -133,30 +133,61 @@ def main():
 
     # ── one seam per front end, not one per endpoint ─────────────
     root = os.path.join(os.path.dirname(__file__), "..", "app")
+    # Driven, both of them. What stood here was `"self._audit_post(path)"
+    # in web` plus a `.count()` — and an audit commented the call out
+    # with the text left standing: all four checks green, both seams
+    # dead. Exactly the defect this file's own comment above claims to
+    # have fixed, fixed for Telegram only.
+    _web = _web_entries("/api/pin", {"name": ["gitlab"]})
+    checks["a Web UI POST leaves a trace"] = len(_web) == 1
+    checks["…as the web, naming the endpoint and its target"] = (
+        bool(_web) and _web[0][0] == "web" and _web[0][2] == "/api/pin"
+        and _web[0][3] == "gitlab")
+    # Before the dispatch, so the 27th endpoint cannot be added without
+    # one. The point is not the count in the source, it is that an
+    # endpoint nobody instrumented is recorded anyway.
+    _unknown = _web_entries("/api/something-nobody-instrumented", {})
+    checks["…including an endpoint nobody thought about"] = (
+        len(_unknown) == 1)
+    # A GET is not a state change and must not fill the log.
+    checks["…while a read leaves none"] = _web_entries("/status", {},
+                                                       method="GET") == []
+
+    # Telegram's buttons, which had no seam at all: `restore_go:`
+    # overwrites every setting and `stop_go:` stops a container, and
+    # neither left a trace while the typed command that only *asked*
+    # did.
+    _btn = _callback_entries("restore_go:abc123")
+    checks["a button press leaves a trace"] = len(_btn) == 1
+    checks["…naming the button, not the one-time token"] = (
+        bool(_btn) and _btn[0][2] == "button:restore_go"
+        and "abc123" not in str(_btn[0]))
+    checks["…and the person who pressed it"] = (
+        bool(_btn) and _btn[0][1] == "4711")
+    # After the auth check, like the command seam: a press from a
+    # stranger is not something this instance did.
+    checks["…while a press from a stranger is not recorded"] = (
+        _callback_entries("stop_go:abc", authorised=False) == [])
+
+    _dc = _discord_entries("stop", "gitlab")
+    checks["a Discord command leaves a trace"] = len(_dc) == 1
+    checks["…as discord, naming the command"] = (
+        bool(_dc) and _dc[0][0] == "discord" and "stop" in _dc[0][2])
+
     web = open(os.path.join(root, "web_ui.py"), encoding="utf-8").read()
-    checks["the web seam is in do_POST"] = (
-        "self._audit_post(path)" in web
-        and web.index("def do_POST") < web.index("self._audit_post(path)"))
-    # Exactly one call site. More than one means someone started
-    # instrumenting endpoints individually, which is the failure this
-    # design exists to prevent.
-    checks["the web records in exactly one place"] = (
-        web.count("self._audit_post(") == 1)
     tg = open(os.path.join(root, "telegram_bot.py"), encoding="utf-8").read()
-    # Two, and both on purpose: the command seam, and the scheduler —
-    # which the Connections page has always promised and which nothing
-    # wrote until 10.10.2026. Counting call sites was the wrong
-    # question anyway; what the design is about is that the COMMAND
-    # path has one seam rather than one per handler.
-    checks["telegram records commands in one place"] = (
-        tg.count('audit.record("telegram"') == 1)
-    checks["…and the scheduler writes its own, separately"] = (
-        tg.count('audit.record(\n') + tg.count('_audit.record(') >= 1
-        and '"schedule", "system"' in tg)
-    dc = open(os.path.join(root, "discord_bot.py"), encoding="utf-8").read()
-    checks["discord records in one place"] = dc.count('audit.record(') == 1
-    # And the shim that lets the 26 handlers keep reading the body.
-    checks["the body is replayed to the handlers"] = "_ReplayedBody" in web
+    # What the design is about is not how often `audit.record` appears —
+    # that was the check, and it broke the moment a legitimate third
+    # seam was added — but that a handler nobody instrumented is
+    # recorded anyway. Driven: two commands that share nothing, and one
+    # the program does not have.
+    checks["every command goes through the one seam"] = all(
+        len(_telegram_entry(cmd)[0]) == 1
+        for cmd in ("/help", "/status", "/notacommand"))
+    # The shim that lets the handlers keep reading the body after the
+    # seam has consumed it — driven, because a POST that records and
+    # then loses its own body would pass everything above.
+    checks["the body is replayed to the handlers"] = _body_survives()
 
     # ── the scheduler leaves a trail too ─────────────────────────────
     # `web_audit_intro` says the log covers "the Web UI, Telegram,
@@ -335,6 +366,187 @@ def _scheduler_entries(updates):
     finally:
         _ue.host_store = real
     return [e for e in written if e[0] == "schedule"]
+
+
+def _web_entries(path, params, method="POST"):
+    """What one Web UI request writes to the audit log.
+
+    The seam sits in `do_POST` before the path dispatch, so this runs
+    `do_POST` for real and reads the recorder back.
+    """
+    import web_ui
+    from urllib.parse import urlencode
+
+    written = []
+
+    class _Recorder:
+        def record(self, source, actor, action, target="", detail=None):
+            written.append((source, actor, action, target, detail))
+
+    class _Cfg:
+        _CALLABLE = ("env_override", "save", "load", "apply", "write",
+                     "set_", "has_", "reload")
+        language = "en"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith(self._CALLABLE):
+                return lambda *a, **kw: None
+            return ""
+
+    cls = web_ui.create_handler(_Cfg(), checker=None,
+                                bot=types.SimpleNamespace(t=None), store=None,
+                                restart_discord=lambda *a, **kw: None)
+    h = cls.__new__(cls)
+    body = urlencode(params, doseq=True)
+    h.path = path
+    h.headers = {"Content-Length": str(len(body)), "Host": "x",
+                 "Origin": "http://x",
+                 "Content-Type": "application/x-www-form-urlencoded"}
+    h.rfile = types.SimpleNamespace(read=lambda n: body.encode()[:n])
+    h.client_address = ("127.0.0.1", 0)
+    h.server = types.SimpleNamespace(audit=_Recorder())
+    h._check_auth = lambda: True
+    h._check_csrf = lambda: True
+    h._send_redirect = lambda loc: None
+    h.send_response = lambda *a, **k: None
+    h.send_header = lambda *a, **k: None
+    h.send_error = lambda *a, **k: None
+    h.end_headers = lambda: None
+    h.wfile = types.SimpleNamespace(write=lambda b: None)
+    h._send_html = lambda *a, **k: None
+    try:
+        (h.do_POST if method == "POST" else h.do_GET)()
+    except Exception:                                       # noqa: BLE001
+        # The endpoint itself may well fall over on a stand-in store;
+        # the seam runs before the dispatch, so the entry is already
+        # written and that is what is being read.
+        pass
+    return [e for e in written if e[0] in ("web", "api")]
+
+
+def _discord_entries(command, target=""):
+    """What one Discord slash command writes."""
+    from discord_bot import DiscordBot
+
+    written = []
+
+    class _Recorder:
+        def record(self, source, actor, action, target="", detail=None):
+            written.append((source, actor, action, target, detail))
+
+    bot = DiscordBot.__new__(DiscordBot)
+    bot.config = types.SimpleNamespace(language="en", container_cli="docker",
+                                       discord_guild_id="")
+    bot.audit = _Recorder()
+    bot.log = lambda *a, **kw: None
+    bot.store = None
+    bot.application_id, bot.rest = "", None
+    data = {"data": {"name": command,
+                     "options": ([{"name": "name", "value": target}]
+                                 if target else [])},
+            "member": {"user": {"id": "77", "username": "leenx"}},
+            "guild_id": ""}
+    try:
+        bot._dispatch(data)
+    except Exception:                                       # noqa: BLE001
+        pass
+    return [e for e in written if e[0] == "discord"]
+
+
+def _body_survives():
+    """Does a handler still see its body after the seam consumed it?"""
+    import web_ui
+
+    read_back = []
+
+    class _Cfg:
+        _CALLABLE = ("env_override", "save", "load", "apply", "write",
+                     "set_", "has_", "reload")
+        language = "en"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith(self._CALLABLE):
+                return lambda *a, **kw: None
+            return ""
+
+    cls = web_ui.create_handler(_Cfg(), checker=None,
+                                bot=types.SimpleNamespace(t=None), store=None,
+                                restart_discord=lambda *a, **kw: None)
+    h = cls.__new__(cls)
+    body = "name=gitlab&settings_page=1"
+    h.path = "/api/pin"
+    h.headers = {"Content-Length": str(len(body)), "Host": "x",
+                 "Origin": "http://x",
+                 "Content-Type": "application/x-www-form-urlencoded"}
+    h.rfile = types.SimpleNamespace(read=lambda n: body.encode()[:n])
+    h.client_address = ("127.0.0.1", 0)
+    h.server = types.SimpleNamespace(
+        audit=types.SimpleNamespace(record=lambda *a, **kw: None))
+    h._check_auth = lambda: True
+    h._check_csrf = lambda: True
+    h._send_redirect = lambda loc: None
+    h.send_response = lambda *a, **k: None
+    h.send_header = lambda *a, **k: None
+    h.send_error = lambda *a, **k: None
+    h.end_headers = lambda: None
+    h.wfile = types.SimpleNamespace(write=lambda b: None)
+    # Whatever the handler reads from `rfile` after the seam ran.
+    _orig_post = cls.do_POST
+
+    def _spy(self):
+        try:
+            _orig_post(self)
+        finally:
+            read_back.append(self.rfile.read(1024))
+
+    try:
+        _spy(h)
+    except Exception:                                       # noqa: BLE001
+        pass
+    return bool(read_back) and b"gitlab" in (read_back[0] or b"")
+
+
+def _callback_entries(data, user_id="4711", authorised=True):
+    """What one Telegram button press writes to the audit log."""
+    from i18n import get_translator
+    from telegram_bot import TelegramBot
+
+    written = []
+
+    class _Recorder:
+        def record(self, source, actor, action, target="", detail=None):
+            written.append((source, actor, action, target, detail))
+
+    class _Cfg:
+        language = "en"
+        bot_token = ""
+        chat_id = "1"
+
+        def __getattr__(self, name):
+            return ""
+
+    bot = TelegramBot.__new__(TelegramBot)
+    bot.config = _Cfg()
+    bot.t = get_translator("en")
+    bot.audit = _Recorder()
+    bot.store = None
+    bot._check_auth = lambda chat_id, uid, kind="message": authorised
+    for n in ("send_message", "log", "answer_callback", "remove_buttons"):
+        setattr(bot, n, lambda *a, **kw: None)
+    try:
+        bot._handle_callback({"id": "c1", "data": data,
+                              "from": {"id": user_id},
+                              "message": {"message_id": 5,
+                                          "chat": {"id": 1}}}, None)
+    except Exception:                                       # noqa: BLE001
+        # The branch behind the button may well need more than a
+        # stand-in; the seam runs before the dispatch.
+        pass
+    return [e for e in written if e[0] == "telegram"]
 
 
 def _telegram_entry(text, user_id="4711", authorised=True):

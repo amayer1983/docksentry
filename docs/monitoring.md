@@ -25,7 +25,12 @@ restart loop tells you once, then less and less often, instead of every half
 hour all night.
 
 A clean exit — code 0 — says nothing. That is a container finishing its
-job, not dying.
+job, not dying. **Your own `docker stop` is usually that case**: stop
+sends SIGTERM, a container that shuts down properly exits 0, and nothing
+is reported. Measured: 0 for a container that handles SIGTERM, 137 only
+when it ignores it and has to be killed. So `docker stop` is not a way
+to try the alert path — `docker kill <name>` is, and gives you a 137
+within one sweep.
 
 ## What an alert tells you
 
