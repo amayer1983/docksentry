@@ -17,9 +17,12 @@ fifteen minutes — and wrong about the two statuses whose whole meaning
 is "ask again".
 
 One procedure for all six channels rather than six copies in six files.
-The five `*_resilience.py` already share twenty-five identical assertion
-expressions between them, and the identical check copied five times is
-how a rule drifts in one place and nobody notices. Each channel keeps
+The five `*_resilience.py` share six distinct assertion expressions
+between them, 24 occurrences in all and none of them in all five —
+counted on 16.10.2026, after an audit could not reproduce the
+"twenty-five" that stood here on any reading. The identical check
+copied four times is still how a rule drifts in one place and nobody
+notices. Each channel keeps
 its own file for what is genuinely its own; this is the part that has
 to be the same everywhere, so it is written once and the table says who
 it applies to.

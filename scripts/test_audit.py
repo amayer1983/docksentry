@@ -8,13 +8,16 @@ stopped the database last night" was unanswerable.
 Two properties carry the whole design, and both are asserted here rather
 than assumed.
 
-**One seam per front end.** There are 26 state-changing HTTP endpoints and
-19 Discord commands. Instrumenting them individually is not merely tedious
-— the 27th gets added without a line and nobody notices, and a gap in an
+**One seam per front end.** There are 31 state-changing HTTP endpoints and
+35 Discord commands — counted on 16.10.2026, after an audit pointed out
+that the 26 and 19 standing here were from the v2.1 era and had been
+quoted ever since. Instrumenting them individually is not merely tedious:
+the next one gets added without a line and nobody notices, and a gap in an
 audit log is worse than no log, because a missing entry reads as evidence
 that nothing happened. So the recording sits in `do_POST` before the path
-dispatch, in `_handle_message` after the auth check, and at the top of
-Discord's `_dispatch`.
+dispatch, in `_handle_message` after the auth check, at the top of
+Discord's `_dispatch`, and — since 11.10.2026 — in `_handle_callback`,
+which is Telegram's second entry path and had none.
 
 **No secrets on disk.** A settings save carries the Web UI password, the
 bot token and both webhook URLs in its body. Writing those to a plaintext

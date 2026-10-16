@@ -1344,8 +1344,8 @@ class DiscordBot:
     def _dispatch(self, data):
         name = (data.get("data") or {}).get("name")
         opts = self._options(data)
-        # Audit trail (v2.1) — one seam for all 19 slash commands, so the
-        # 20th cannot be added without one.
+        # Audit trail (v2.1) — one seam for all 35 slash commands, so the
+        # next cannot be added without one. (19 until someone counted.)
         try:
             audit = getattr(self, "audit", None)
             if audit is not None:

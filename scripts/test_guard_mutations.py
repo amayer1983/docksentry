@@ -240,6 +240,48 @@ GUARDED = [
      "            if False:\n                return lab",
      "test_auto_label_rule.py"),
 
+    ("a failed pull stops the self-update before the swap",
+     "app/selfupdate.py",
+     "        ctx.send_message(msg)\n        return\n\n    # Check if image actually changed",
+     "        ctx.send_message(msg)\n\n    # Check if image actually changed",
+     "test_selfupdate_chain.py"),
+
+    ("…and an identical image is not swapped onto itself",
+     "app/selfupdate.py",
+     "    if new_id == old_id:",
+     "    if False:",
+     "test_selfupdate_chain.py"),
+
+    ("a hostile container name cannot reach the self-update shell",
+     "app/selfupdate.py",
+     "    qname = shlex.quote(name)",
+     "    qname = name",
+     "test_selfupdate_chain.py"),
+
+    ("…and the boot report that names a failed recreate stays live",
+     "app/main.py",
+     '            if "rolling back" in _hcontent:',
+     "            if False:",
+     "test_selfupdate_chain.py"),
+
+    ("…and `/selfupdate previous` finds the release below this one",
+     "app/selfupdate.py",
+     '    if target.lower() == "previous":',
+     "    if False:",
+     "test_selfupdate_chain.py"),
+
+    ("the disk warning waits the documented twenty-three hours",
+     "app/update_checker.py",
+     "        if last_warn and (datetime.now() - last_warn) < timedelta(hours=23):",
+     "        if last_warn and (datetime.now() - last_warn) < timedelta(hours=24):",
+     "test_disk_warn_rules.py"),
+
+    ("the batch really pauses between a group's containers",
+     "app/update_engine.py",
+     "                    _wait(wait_s, self)",
+     "                    pass  # _wait(wait_s, self)",
+     "test_group_rules.py"),
+
     ("a group member whose update raised still aborts the group",
      "app/update_engine.py",
      "                if cur_group:\n                    group_aborted.add(abort_key)",

@@ -2,8 +2,9 @@
 """When the disk warning fires, and when it stays quiet.
 
 `docs/notifications.md:78`: warns above a threshold that defaults to
-85, accepts 50 to 100, and says it once per 23 hours rather than every
-scheduler tick. On 10.10.2026 a sweep found three reverts here that no
+85, accepts 50 to 100, and says it once per 23 hours rather than on
+every scheduler pass (one every five minutes, not every thirty
+seconds — the comment here said the latter for a while). On 10.10.2026 a sweep found three reverts here that no
 procedure noticed — the threshold comparison, the 23-hour lock, and the
 clamp on what the settings page accepts.
 
@@ -66,16 +67,27 @@ checks["…and a higher one later"] = (
     _action(90, threshold=95) == "ok" and _action(96, threshold=95) == "warn")
 
 # ── once a day, not once a tick ──────────────────────────────────────
-# The scheduler asks every thirty seconds. Without this the operator
-# gets a full disk warning every thirty seconds, mutes the channel, and
-# the next real alert goes with it.
+# The scheduler asks every five minutes (`scheduler.py`, default 300 —
+# the outer loop's own 30-second sleep is not the cadence of this
+# check, which is what the comment here used to say). Without the
+# lock the operator gets a full-disk warning every five minutes, mutes
+# the channel, and the next real alert goes with it.
 _recent = datetime.now() - timedelta(hours=2)
 checks["having warned two hours ago, it stays quiet"] = (
     _action(97, last_warn=_recent) == "silent")
 checks["…and still quiet at twenty-two hours"] = (
     _action(97, last_warn=datetime.now() - timedelta(hours=22)) == "silent")
+# 23, which is the documented figure (`docs/notifications.md:78`), not
+# 24 — the check was named "after twenty-three" and tested 24, so
+# changing the code to 24 left it green and the documented window was
+# pinned by nothing. A few minutes past the boundary, because exactly
+# 23 h is the one moment the comparison is allowed to go either way.
 checks["…but warns again after twenty-three"] = (
-    _action(97, last_warn=datetime.now() - timedelta(hours=24)) == "warn")
+    _action(97, last_warn=datetime.now()
+            - timedelta(hours=23, minutes=5)) == "warn")
+checks["…and not five minutes before that"] = (
+    _action(97, last_warn=datetime.now()
+            - timedelta(hours=22, minutes=55)) == "silent")
 
 # "silent" is not "ok": the caller has to be able to tell "nothing is
 # wrong" from "something is wrong and I have already said so".

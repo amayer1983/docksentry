@@ -174,12 +174,86 @@ if _untranslated:
 if _found != SITES:
     print(f"      → call sites: {_found}, expected {SITES}")
 
-# The hint must never be the reason a check fails.
-for _file in ("scheduler.py", "telegram_bot.py"):
+# The hint must never be the reason a check fails — at EVERY call
+# site, not at the first one. `"except Exception" in src[i:i+700]`
+# after the first `import hostdiag` was the check, and Telegram has
+# three: stripping the try/except from the third left it green.
+#
+# As a tree: every `hostdiag.hint` call has to sit inside a `Try` that
+# catches something. A window of 700 characters says nothing about
+# which call it landed near.
+def _inside_lambda(tree, target):
+    """Is this call the body of a lambda handed to somebody else?"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Lambda):
+            for sub in ast.walk(node):
+                if sub is target:
+                    return True
+    return False
+
+
+_unprotected = []
+for _file in SITES:
     _src = open(os.path.join(APP, _file), encoding="utf-8").read()
-    i = _src.index("import hostdiag")
-    checks[f"a broken hint cannot break {_file[:-3]}"] = (
-        "except Exception" in _src[i:i + 700])
+    _t = ast.parse(_src)
+    _protected = set()
+    for _node in ast.walk(_t):
+        if not isinstance(_node, ast.Try):
+            continue
+        for _sub in ast.walk(_node):
+            if (isinstance(_sub, ast.Call)
+                    and isinstance(_sub.func, ast.Attribute)
+                    and _sub.func.attr == "hint"
+                    and isinstance(_sub.func.value, ast.Name)
+                    and _sub.func.value.id == "hostdiag"):
+                _protected.add(_sub.lineno)
+    for _node in ast.walk(_t):
+        if (isinstance(_node, ast.Call)
+                and isinstance(_node.func, ast.Attribute)
+                and _node.func.attr == "hint"
+                and isinstance(_node.func.value, ast.Name)
+                and _node.func.value.id == "hostdiag"
+                and _node.lineno not in _protected
+                # The two pre-flight sites hand the hint to
+                # `hostcheck.preflight` as a lambda, and preflight
+                # catches it there instead. Driven below rather than
+                # assumed, because "somebody else catches it" is the
+                # kind of belief this file exists to stop.
+                and not isinstance(_node, ast.Lambda)
+                and not _inside_lambda(_t, _node)):
+            _unprotected.append(f"{_file}:{_node.lineno}")
+
+checks["a broken hint cannot break the sites that call it directly"] = (
+    not _unprotected)
+if _unprotected:
+    print(f"      → unprotected: {_unprotected}")
+
+# …and the two that pass it on: `preflight` has to swallow a hint that
+# throws, or the pre-flight dies on the one host it was asked about.
+def _raises(ep, why, **kw):
+    raise RuntimeError("the hint blew up")
+
+
+class _Dead:
+    def build(self, args):
+        return ["docker"] + args
+
+    def run(self, args, **kw):
+        import types as _t2
+        return _t2.SimpleNamespace(returncode=1, stdout="",
+                                   stderr="Permission denied (publickey).")
+
+
+import hostcheck as _hc  # noqa: E402
+
+try:
+    _found = [k for k, _p in _hc.preflight("ssh://nas", _Dead(),
+                                           hint=_raises)]
+    checks["…and a hint that throws does not take the pre-flight down"] = (
+        _found == ["denied_ssh"])
+except Exception as _e:                                     # noqa: BLE001
+    checks["…and a hint that throws does not take the pre-flight down"] = False
+    print(f"      → preflight raised: {_e}")
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

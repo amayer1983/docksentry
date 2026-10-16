@@ -353,6 +353,27 @@ in `app/` muss ein `t=` mitgeben, und es sind genau fünf.
   eigene Zusage: der Bot fragt den Motor, und was er zurückgibt, kommt
   unverändert heraus.
 
+**Erledigt am 16.10.2026 — die Prüfungen, die nur ihre eigene Form
+lasen.** Audit 4 hat sie als Mutation belegt, jede einzelne, und hier
+stehen nur die, die ich selbst nachgefahren habe: die Gruppen-Wartezeit
+und die 30-Sekunden-Untergrenze (vier Mutationen, vier Mal grün),
+`shlex.quote` beim Image, die Boot-Meldung nach einem zurückgerollten
+Recreate, `/selfupdate previous`, der `return` nach einem
+fehlgeschlagenen Pull, der Kurzschluss bei identischem Image, und das
+Fenster von 700 Zeichen in `test_ssh_hint.py`, das nur die erste von
+drei Aufrufstellen sah.
+
+Zwei Dinge dabei, die ich hinschreibe, weil sie dieselbe Lehre zweimal
+sind. Die Gegenprobe hat *mich* zweimal erwischt: der Pull-Fehler blieb
+grün, weil der Prüfstand dem Code einen zweiten Grund zum Anhalten gab
+(gleiches Image), und die drei neuen Selbst-Update-Prüfungen waren
+zuerst grün, weil `run()` schon an der eigenen Container-Suche
+ausstieg. Beide Male hat die Gegenrichtung es gesagt, nicht das Lesen.
+
+Und die 23 Stunden der Platzwarnung sind jetzt bei 23 geprüft, nicht
+bei 24 — die Prüfung hieß „after twenty-three" und testete 24, also
+hielt die dokumentierte Zahl nichts.
+
 **Offen:**
 
 * **21 Quelltext-Prüfungen**, die ein Kommentar oder Docstring erfüllen
@@ -371,6 +392,25 @@ in `app/` muss ein `t=` mitgeben, und es sind genau fünf.
 * Die fünf `*_resilience.py` teilen weiter 25 identische
   Assertion-Ausdrücke. `test_channel_backoff.py` hat den wichtigsten
   Teil davon zusammengefasst; der Rest wäre Kosmetik mit Risiko.
+
+## 8 — Ein stiller Kanal ist nur im Log sichtbar
+
+**Aufgekommen am 16.10.2026 in #63.** @NotRetarded konnte nicht selbst
+feststellen, warum seine Mails ausbleiben — er musste fragen. Der
+Test-Knopf beweist einen Kanal im Moment des Tests; ein Kanal, der
+danach verstummt, taucht nirgends in der Oberfläche auf. Der Grund
+steht ausschließlich im Container-Log (`SMTP error: …`).
+
+Gemessen, damit die Diagnose nicht daran hängt: eine tote SMTP bringt
+die anderen Kanäle *nicht* zum Schweigen (abgelehnt: Discord und
+Telegram in 0,0 s; angenommen-und-stumm: beide nach 15 s), und der
+Wochenbericht geht per Mail raus. Die Verdrahtung ist also in Ordnung.
+
+Was fehlt, ist die Anzeige: letzter Versand je Kanal, Zeitpunkt und
+Grund, auf der Connections-Seite. Die Daten dafür entstehen bereits —
+`_dispatch` fängt die Ausnahme pro Kanal und druckt sie, und der
+Monitor liest seit #66 den Rückgabewert. Sie werden nur nirgends
+aufgehoben.
 
 ## 7 — Entschieden, bleibt so
 
