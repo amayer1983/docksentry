@@ -290,6 +290,24 @@ def main():
     checks["…and shows the redaction marker, never a value"] = (
         "redacted:9" in _html2)
 
+    # ── and the redaction is on the path to the file ────────────────
+    # `redact()` itself is checked above, thoroughly. What was not: that
+    # `record` calls it. The line `clean = redact(detail)` could be
+    # `clean = detail` and nothing went red — the function was guarded
+    # and its use was not, which is the same shape as the health
+    # outcome and the session clear. Debt entry, now closed.
+    log.record("web", "andreas", "/settings", "",
+               {"web_password": ["hunter2"],
+                "discord_webhook": ["https://discord.com/api/webhooks/1/TK"]})
+    _last = json.load(open(path))[-1]
+    _written = json.dumps(_last)
+    checks["a secret in the form never reaches the file"] = (
+        "hunter2" not in _written and "/1/TK" not in _written)
+    checks["…while the entry is still written"] = (
+        _last["action"] == "/settings")
+    checks["…and says a secret was there"] = (
+        "redacted" in _written)
+
     # ── a value is a pointer, not a copy ────────────────────────────
     # `MAX_VALUE` exists because a settings save can carry a 4 kB
     # `EXCLUDE_CONTAINERS` list, and 500 of those is the whole ring

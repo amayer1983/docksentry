@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• Pronto: `{endpoint}` pode ser lido por completo. Atualizar exige também permissão de escrita, e uma verificação prévia não pode tentá-la sem alterar algo — um proxy de socket só de leitura chega exatamente até aqui.",
   "hostcheck_usable": "• Utilizável: `{endpoint}` pode ser adicionado. As permissões de inspeção e de escrita ficaram sem teste.",
   "hostcheck_usage": "Utilização: `/hosts check <endpoint>` — por exemplo `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "Não existe `{dir}` dentro deste contentor. As chaves estão no anfitrião — o `ssh-copy-id` escreveu-as na tua própria pasta pessoal, e um contentor tem o seu próprio sistema de ficheiros. Monta-as como somente leitura: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "Não existe `{dir}` dentro deste contentor. As chaves estão no anfitrião — o `ssh-copy-id` escreveu-as na tua própria pasta pessoal, e um contentor tem o seu próprio sistema de ficheiros. Monta-as como somente leitura: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` está montado mas não tem `known_hosts`, por isso a primeira ligação a um anfitrião novo não tem a quem perguntar. Monta a pasta inteira, não só a chave.",
   "hostdiag_ssh_key_refused": "`{dir}` está montado e traz um `known_hosts`, por isso o que está a ser recusado é a própria chave — verifica se a chave deste contentor está no `authorized_keys` remoto desse utilizador.",
-  "hostdiag_hostkey_unknown": "Sem `known_hosts` em `{dir}`, por isso este anfitrião é desconhecido para o contentor embora seja conhecido para ti. Monta a pasta `.ssh` inteira: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "Sem `known_hosts` em `{dir}`, por isso este anfitrião é desconhecido para o contentor embora seja conhecido para ti. Monta a pasta `.ssh` inteira: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "A chave do anfitrião mudou, ou o `known_hosts` tem uma entrada para outro endereço. Aqui o SSH recusa de propósito — verifica a entrada em vez de remover a verificação."
 }

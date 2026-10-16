@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• Klaar: `{endpoint}` is volledig leesbaar. Bijwerken vraagt ook schrijfrechten, en die kan een voorafgaande controle niet proberen zonder iets te veranderen — een alleen-lezen socketproxy komt precies tot hier.",
   "hostcheck_usable": "• Bruikbaar: `{endpoint}` kan worden toegevoegd. Inspect- en schrijfrechten bleven ongetest.",
   "hostcheck_usage": "Gebruik: `/hosts check <endpoint>` — bijvoorbeeld `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "Er is geen `{dir}` in deze container. De sleutels staan op de host — `ssh-copy-id` heeft ze in je eigen home geschreven, en een container heeft zijn eigen bestandssysteem. Mount ze alleen-lezen: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "Er is geen `{dir}` in deze container. De sleutels staan op de host — `ssh-copy-id` heeft ze in je eigen home geschreven, en een container heeft zijn eigen bestandssysteem. Mount ze alleen-lezen: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` is gemount maar heeft geen `known_hosts`, dus de eerste verbinding met een nieuwe host heeft niemand om te vragen. Mount de hele map, niet alleen de sleutel.",
   "hostdiag_ssh_key_refused": "`{dir}` is gemount en bevat een `known_hosts`, dus de sleutel zelf wordt geweigerd — controleer of de sleutel van deze container in de `authorized_keys` aan de andere kant staat voor die gebruiker.",
-  "hostdiag_hostkey_unknown": "Geen `known_hosts` in `{dir}`, dus deze host is onbekend voor de container ook al ken jij hem wel. Mount de hele `.ssh`-map: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "Geen `known_hosts` in `{dir}`, dus deze host is onbekend voor de container ook al ken jij hem wel. Mount de hele `.ssh`-map: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "De hostsleutel is veranderd, of `known_hosts` heeft een regel voor een ander adres. SSH weigert hier met opzet — controleer de regel in plaats van de controle weg te halen."
 }

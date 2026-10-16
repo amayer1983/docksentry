@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• 就绪：`{endpoint}` 可以完整读取。更新还需要写入权限，而预检无法在不改动任何东西的情况下试它 — 只读的套接字代理恰好能走到这一步。",
   "hostcheck_usable": "• 可用：`{endpoint}` 可以添加。inspect 权限和写入权限仍未验证。",
   "hostcheck_usage": "用法: `/hosts check <endpoint>` — 例如 `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "这个容器里没有 `{dir}`。密钥在宿主机上——`ssh-copy-id` 把它们写进了你自己的主目录，而容器有自己的文件系统。以只读方式挂载：`-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "这个容器里没有 `{dir}`。密钥在宿主机上——`ssh-copy-id` 把它们写进了你自己的主目录，而容器有自己的文件系统。以只读方式挂载：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` 已挂载，但里面没有 `known_hosts`，所以首次连接新主机时无人可问。请挂载整个目录，而不是只挂载密钥。",
   "hostdiag_ssh_key_refused": "`{dir}` 已挂载且带有 `known_hosts`，所以被拒绝的是密钥本身——请检查这个容器的密钥是否在对端该用户的 `authorized_keys` 里。",
-  "hostdiag_hostkey_unknown": "`{dir}` 里没有 `known_hosts`，所以即便你认识这台主机，容器并不认识它。请挂载整个 `.ssh` 目录：`-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "`{dir}` 里没有 `known_hosts`，所以即便你认识这台主机，容器并不认识它。请挂载整个 `.ssh` 目录：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "主机密钥变了，或者 `known_hosts` 里有一条指向别的地址的记录。SSH 在这里是故意拒绝的——请检查那条记录，而不是取消检查。"
 }

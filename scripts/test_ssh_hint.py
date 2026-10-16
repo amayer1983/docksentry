@@ -53,7 +53,14 @@ with tempfile.TemporaryDirectory() as tmp:
     checks["a refused key with no .ssh in the container is explained"] = bool(h)
     checks["…saying the container has its own filesystem"] = (
         "container has its own filesystem" in h)
-    checks["…and giving the mount that fixes it"] = f"-v {empty}:{empty}:ro" in h
+    # The host path on the left, the container path on the right. Both
+    # sides were `{dir}` — the path *inside* the container — so a reader
+    # who is not root on the host got a left-hand side that does not
+    # exist, Docker made an empty directory, the keys were still
+    # missing, and the sentence had looked right.
+    checks["…and giving the mount that fixes it"] = f"-v ~/.ssh:{empty}:ro" in h
+    checks["…with the host's own path on the left, not the container's"] = (
+        f"-v {empty}:{empty}:ro" not in h)
 
     # ── mounted, but only the key ────────────────────────────────────
     h = hostdiag.hint("ssh://root@nas", REFUSED, ssh_dir=keyonly)

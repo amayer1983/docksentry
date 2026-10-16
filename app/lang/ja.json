@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• 準備完了: `{endpoint}` はすべて読み取れます。更新には書き込み権限も必要で、事前チェックは何も変更せずにそれを試すことができません — 読み取り専用のソケットプロキシはちょうどここまで通ります。",
   "hostcheck_usable": "• 利用可能: `{endpoint}` は追加できます。inspect と書き込みの権限は未検証のままです。",
   "hostcheck_usage": "使い方: `/hosts check <endpoint>` — 例 `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "このコンテナの中に `{dir}` がありません。鍵はホスト側にあります — `ssh-copy-id` はあなた自身のホームディレクトリに書き込み、コンテナは別のファイルシステムを持っています。読み取り専用でマウントしてください：`-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "このコンテナの中に `{dir}` がありません。鍵はホスト側にあります — `ssh-copy-id` はあなた自身のホームディレクトリに書き込み、コンテナは別のファイルシステムを持っています。読み取り専用でマウントしてください：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` はマウントされていますが `known_hosts` がないため、新しいホストへの最初の接続で問い合わせる相手がいません。鍵だけでなくディレクトリ全体をマウントしてください。",
   "hostdiag_ssh_key_refused": "`{dir}` はマウントされ `known_hosts` もあるので、拒否されているのは鍵そのものです — このコンテナの鍵が接続先のそのユーザーの `authorized_keys` に入っているか確認してください。",
-  "hostdiag_hostkey_unknown": "`{dir}` に `known_hosts` がないため、あなたは知っているホストでもコンテナには未知のホストです。`.ssh` ディレクトリ全体をマウントしてください：`-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "`{dir}` に `known_hosts` がないため、あなたは知っているホストでもコンテナには未知のホストです。`.ssh` ディレクトリ全体をマウントしてください：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "ホスト鍵が変わったか、`known_hosts` に別のアドレスの行があります。ここで SSH が拒否するのは意図された動作です — 検査を外すのではなく、その行を確認してください。"
 }

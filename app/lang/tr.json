@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• Hazır: `{endpoint}` tümüyle okunabiliyor. Güncelleme ayrıca yazma izni ister ve bir ön kontrol bunu bir şeyi değiştirmeden sınayamaz — salt okunur bir soket proxy'si tam buraya kadar gelir.",
   "hostcheck_usable": "• Kullanılabilir: `{endpoint}` eklenebilir. Inspect ve yazma izinleri sınanmadan kaldı.",
   "hostcheck_usage": "Kullanım: `/hosts check <endpoint>` — örneğin `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "Bu kapsayıcının içinde `{dir}` yok. Anahtarlar ana makinede duruyor — `ssh-copy-id` onları kendi ev dizinine yazdı ve kapsayıcının kendi dosya sistemi var. Salt okunur bağla: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "Bu kapsayıcının içinde `{dir}` yok. Anahtarlar ana makinede duruyor — `ssh-copy-id` onları kendi ev dizinine yazdı ve kapsayıcının kendi dosya sistemi var. Salt okunur bağla: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` bağlı ama içinde `known_hosts` yok, dolayısıyla yeni bir makineye ilk bağlantının soracağı kimse yok. Yalnızca anahtarı değil, dizinin tamamını bağla.",
   "hostdiag_ssh_key_refused": "`{dir}` bağlı ve içinde bir `known_hosts` var, yani reddedilen şey anahtarın kendisi — bu kapsayıcının anahtarının karşı taraftaki `authorized_keys` içinde, o kullanıcı için bulunduğunu kontrol et.",
-  "hostdiag_hostkey_unknown": "`{dir}` içinde `known_hosts` yok, yani sen bu makineyi tanısan da kapsayıcı tanımıyor. `.ssh` dizininin tamamını bağla: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "`{dir}` içinde `known_hosts` yok, yani sen bu makineyi tanısan da kapsayıcı tanımıyor. `.ssh` dizininin tamamını bağla: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "Makine anahtarı değişti ya da `known_hosts` başka bir adres için kayıt içeriyor. SSH burada bilerek reddediyor — denetimi kaldırmak yerine kaydı kontrol et."
 }

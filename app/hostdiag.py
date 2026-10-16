@@ -40,6 +40,15 @@ def hint(endpoint, error, ssh_dir=None, t=None):
     keys and one that does not, without either being true of the machine
     running the test.
 
+    Note which side of the `-v` each path belongs on. `{dir}` is the
+    path *inside* the container — `/root/.ssh`, since the image sets no
+    `USER` — and the first version of these sentences put it on both
+    sides. For a reader who is not root on the host, the left-hand side
+    then named a directory that does not exist, Docker created an empty
+    one, the keys were still missing, and the advice had looked right.
+    The host side is `~/.ssh`, which the shell expands to whoever is
+    running the command, and that is the user whose keys these are.
+
     `t` is the caller's translator. Without it the sentence comes out in
     English, which is what every caller did until 11.10.2026 — and the
     result was a translated finding with an untranslated sentence stuck
@@ -84,7 +93,7 @@ _EN = {
         "There is no `{dir}` inside this container. Keys live on the host "
         "— `ssh-copy-id` wrote them to your own home directory, and a "
         "container has its own filesystem. Mount them read-only: "
-        "`-v {dir}:{dir}:ro`",
+        "`-v ~/.ssh:{dir}:ro`",
     "hostdiag_ssh_no_known_hosts":
         "`{dir}` is mounted but has no `known_hosts`, so the first "
         "connection to a new host has nobody to ask. Mount the whole "
@@ -96,7 +105,7 @@ _EN = {
     "hostdiag_hostkey_unknown":
         "No `known_hosts` in `{dir}`, so this host is unknown to the "
         "container even though it is known to you. Mount the whole "
-        "`.ssh` directory: `-v {dir}:{dir}:ro`",
+        "`.ssh` directory: `-v ~/.ssh:{dir}:ro`",
     "hostdiag_hostkey_changed":
         "The host key changed, or `known_hosts` has an entry for a "
         "different address. SSH refuses on purpose here — check the entry "

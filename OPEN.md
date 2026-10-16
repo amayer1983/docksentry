@@ -96,10 +96,21 @@ sechsten Stub abgebrochen — ein so weit gestützter Prüfstand misst sein
 eigenes Gerüst. Und die erste Fassung war schlechter als beides, sie hat
 die Schleifenbedingung des Motors abgeschrieben und die Kopie geprüft.
 
-**In der Schuldenliste** (`UNGUARDED`, `DEBT = 6`), also beweisbar
-ungedeckt und nur noch verkleinerbar: Major-Bestätigung,
-`MIN_IMAGE_AGE_DAYS`, Schwärzen im Audit-Trail, OOM-Erkennung, das
-Altersfenster der Warteschlange, `insecure_registries`.
+**Die Schuldenliste ist leer** (16.10.2026, `DEBT = 0`). Die sechs
+Einträge — Major-Bestätigung, `MIN_IMAGE_AGE_DAYS`, Schwärzen im
+Audit-Trail, OOM-Erkennung, das Altersfenster der Warteschlange,
+`insecure_registries` — sind alle gefahren und gegengeprüft.
+
+Was „leer" heißt, und was nicht: jede Zusage, *die diese Datei kennt*,
+ist widerlegbar. Nicht jede Zusage. Der Durchlauf vom 10.10. fand sechs,
+an die niemand gedacht hatte, der vom 11.10. neun weitere. Eine leere
+Liste ist eine Einladung, wieder zu kehren, kein Ergebnis.
+
+Zwei der sechs hat die Gegenprobe zuerst durchgewunken, beide aus
+meinem Fehler: das Altersfenster las `MAX_AGE_SECONDS` aus dem Modul,
+das es prüfen sollte — die Erwartung wanderte mit der Mutation mit —,
+und beim Major-Riegel habe ich das Richtlinien-Tor gefahren und das
+Bestätigungs-Tor behauptet. Es sind zwei verschiedene Stellen.
 
 **Gemeldet, Anker noch nicht festgenagelt** — gehören hier hinein,
 sobald sie eindeutig sind, denn ein veralteter Anker ist eine Prüfung,

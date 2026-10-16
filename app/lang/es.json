@@ -1011,9 +1011,9 @@
   "hostcheck_ready": "• Listo: `{endpoint}` se puede leer por completo. Actualizar necesita además permiso de escritura, y una comprobación previa no puede probarlo sin cambiar algo — un proxy de socket de solo lectura llega exactamente hasta aquí.",
   "hostcheck_usable": "• Utilizable: `{endpoint}` se puede añadir. Los permisos de inspección y de escritura quedaron sin probar.",
   "hostcheck_usage": "Uso: `/hosts check <endpoint>` — por ejemplo `/hosts check ssh://user@10.0.0.5`",
-  "hostdiag_ssh_no_dir": "No existe `{dir}` dentro de este contenedor. Las claves están en el anfitrión — `ssh-copy-id` las escribió en tu propio directorio personal, y un contenedor tiene su propio sistema de archivos. Móntalas en modo solo lectura: `-v {dir}:{dir}:ro`",
+  "hostdiag_ssh_no_dir": "No existe `{dir}` dentro de este contenedor. Las claves están en el anfitrión — `ssh-copy-id` las escribió en tu propio directorio personal, y un contenedor tiene su propio sistema de archivos. Móntalas en modo solo lectura: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` está montado pero no tiene `known_hosts`, así que la primera conexión a un host nuevo no tiene a quién preguntar. Monta el directorio completo, no solo la clave.",
   "hostdiag_ssh_key_refused": "`{dir}` está montado e incluye un `known_hosts`, así que lo que se rechaza es la clave misma — comprueba que la clave de este contenedor esté en el `authorized_keys` remoto de ese usuario.",
-  "hostdiag_hostkey_unknown": "No hay `known_hosts` en `{dir}`, así que este host es desconocido para el contenedor aunque tú lo conozcas. Monta el directorio `.ssh` completo: `-v {dir}:{dir}:ro`",
+  "hostdiag_hostkey_unknown": "No hay `known_hosts` en `{dir}`, así que este host es desconocido para el contenedor aunque tú lo conozcas. Monta el directorio `.ssh` completo: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "La clave del host cambió, o `known_hosts` tiene una entrada para otra dirección. SSH se niega a propósito aquí — revisa la entrada en vez de quitar la comprobación."
 }

@@ -138,6 +138,40 @@ def main():
     _q.flush()
     checks["…but another channel is not punished for it"] = _seen == ["one", "two"]
 
+    # ── and a held message is not kept past its usefulness ────────
+    # `MAX_AGE_SECONDS = 900`. A crash alert arriving two hours late is
+    # not a late alert, it is a wrong one: the reader acts on something
+    # that stopped being true while it sat in the queue. The constant
+    # could be set to 999999 and nothing went red — debt entry, closed.
+    #
+    # The clock is handed in, so this is fifteen minutes of queue time
+    # and no waiting. The boundary is written out rather than read from
+    # `MAX_AGE_SECONDS`: a test that takes its expectation from the
+    # thing it is testing moves with it, and the counter-probe said so
+    # — setting the constant to 999999 left this green.
+    _now = {"t": 0.0}
+    _q = _nr.RetryQueue(clock=lambda: _now["t"], wall=lambda: _now["t"])
+    _delivered = []
+    _q.remember("ch", "three containers failed",
+                lambda t: _delivered.append(t) or True)
+    _now["t"] = 16 * 60          # the documented window is 15 minutes
+    _sent, _dropped = _q.flush()
+    checks["an alert older than the window is dropped, not sent late"] = (
+        (_sent, _dropped) == (0, 1) and _delivered == [])
+
+    # The counter-direction, and it is the one that matters: inside the
+    # window it still goes. Without this the check above passes on a
+    # queue that delivers nothing at all.
+    _now = {"t": 0.0}
+    _q = _nr.RetryQueue(clock=lambda: _now["t"], wall=lambda: _now["t"])
+    _delivered = []
+    _q.remember("ch", "three containers failed",
+                lambda t: _delivered.append(t) or True)
+    _now["t"] = 14 * 60
+    _sent, _dropped = _q.flush()
+    checks["…while one inside it is still delivered"] = (
+        (_sent, _dropped) == (1, 0) and len(_delivered) == 1)
+
     # ── the cap holds on the way back in, too ─────────────────────
     # `remember` trims, but a flush takes the whole batch out and puts
     # the survivors back, and that path did not. The two overlap exactly
