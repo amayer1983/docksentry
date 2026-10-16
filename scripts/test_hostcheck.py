@@ -500,11 +500,15 @@ checks["…and Discord registers the option so it can be typed"] = (
 # optional-before-required option makes the bulk PUT fail and the bot
 # ends up with NO commands at all. So the option must carry a type and
 # must not sit in front of a required one.
+# The third conjunct was measured vacuous: `/hosts` has exactly one
+# option, so `range(1, 1)` is empty and `not any(...)` over nothing is
+# true whatever the option says. The optional-before-required rule
+# holds for every command in `test_discord_bot.py`, which is the right
+# place for it; what is left here is what is specific to `/hosts`.
 checks["…as a string option that cannot break the registration"] = (
     _hosts_cmd is not None
-    and all(o.get("type") == 3 for o in _hosts_cmd["options"])
-    and not any(_hosts_cmd["options"][i].get("required")
-                for i in range(1, len(_hosts_cmd["options"]))))
+    and len(_hosts_cmd["options"]) >= 1
+    and all(o.get("type") == 3 for o in _hosts_cmd["options"]))
 
 # ── the claims that were only ever asserted ──────────────────────────
 # Each of these survived a revert with the whole suite green.

@@ -130,9 +130,11 @@ full = webauth.SessionStore()
 kept = full.create("a")
 full.clear()
 checks["a password change ends every session"] = full.validate(kept) is None
-# `sessions`, not `store`: `create_handler` already takes a `store`
-# argument, and a local of that name shadows it for the whole of do_POST.
-checks["…and the interface does that on save"] = "sessions.clear()" in src
+# The wiring — that a settings save really reaches `clear()` — is
+# driven in `test_secret_handling.py` through a real `do_POST`. It used
+# to be `"sessions.clear()" in src` here, and I made the call
+# unreachable with the literal still in place: green. A grep cannot
+# tell live code from dead, and this one has a better home.
 
 # ── what the request path does with all this ─────────────────────────
 # A browser gets the page; a script keeps the 401 it has always had.

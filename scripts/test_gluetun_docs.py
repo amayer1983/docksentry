@@ -79,14 +79,21 @@ checks["code: agrees — recreate for netns, restart otherwise"] = (
     and "backend.restart(dep" in engine)
 checks["doc: explains WHY (the head's ID dies, the name survives)"] = (
     "ID" in sec and "name" in sec)
+# `"container:<name>"` dropped: it occurs only in a docstring, so
+# rewording the prose would have turned this red and moving the code
+# would not. The promise itself is driven in
+# `test_netns_recreate.py`, which rebuilds a sidecar against a
+# recreated head and reads the namespace back.
 checks["code: agrees — rejoins by name"] = (
-    "netns_name=netns_name" in checker
-    and "container:<name>" in checker)
+    "netns_name=netns_name" in checker)
 
 # ── same image, no version change ────────────────────────────────────
 checks["doc: says the rebuild keeps the same image"] = (
     "same image" in sec and "no pull" in sec)
-checks["code: agrees"] = "no pull, no version change" in checker
+# The code half is gone: `"no pull, no version change"` is a docstring
+# and nothing else, so it checked the prose twice. The behaviour —
+# a sidecar rebuilt onto the same image rather than a fresh pull — is
+# driven in `test_dependents_recreate.py`.
 
 # ── rollback safety net ──────────────────────────────────────────────
 checks["doc: says the old container is kept until the new one is up"] = (
@@ -97,8 +104,11 @@ checks["code: agrees — renames to <name>_old and rolls back"] = (
 
 # ── AutoRemove containers ────────────────────────────────────────────
 checks["doc: mentions --rm containers are handled"] = "--rm" in sec
-checks["code: agrees — config captured before the stop"] = (
-    "Capture config up front" in checker and "AutoRemove" in checker)
+# `"Capture config up front"` dropped — comment text, and the thing it
+# stood for is driven in `test_netns_dependent_recreate.py`, which is
+# also where the ratchet mutates it. `AutoRemove` is a real identifier
+# the code reads, so that half stays.
+checks["code: agrees — AutoRemove is handled"] = "AutoRemove" in checker
 
 # ── unhealthy head does not block the repair ─────────────────────────
 checks["doc: says an unhealthy head does not stop the repair"] = (

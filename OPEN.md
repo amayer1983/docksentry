@@ -387,11 +387,22 @@ hielt die dokumentierte Zahl nichts.
 
 **Offen:**
 
-* **21 Quelltext-Prüfungen**, die ein Kommentar oder Docstring erfüllen
-  könnte. Die verbliebenen sichern Kleineres ab (Meldungstexte,
-  Dockerfile-Zeilen, Hilfsnamen); Liste erzeugt
-  `scratchpad/needles2.py`. `not in`-Prüfungen sind nicht darunter — die
-  macht ein Kommentar rot, nicht grün, und das ist die sichere Richtung.
+* **Die Quelltext-Prüfungen, die ein Kommentar erfüllt**, sind weiter
+  gesunken. Am 16.10. sind die vier weg, die ein Audit einzeln belegt
+  hat: `"sessions.clear()" in src` (die Verdrahtung wird jetzt in
+  `test_secret_handling.py` durch ein echtes `do_POST` gefahren — ich
+  habe den Aufruf unerreichbar gemacht und die alte Prüfung blieb
+  grün), `"container:<name>"` und `"no pull, no version change"` und
+  `"Capture config up front"`, alle drei reiner Docstring- oder
+  Kommentartext, alle drei anderswo verhaltensbasiert gedeckt.
+
+  Dazu eine vakuöse Prüfung, die kein Grep war: `not any(… for i in
+  range(1, len(options)))` über ein Kommando mit genau einer Option —
+  die Schleife ist leer, die Prüfung hielt nichts.
+
+  Was bleibt, sichert Kleineres ab (Meldungstexte, Dockerfile-Zeilen,
+  Hilfsnamen). `not in`-Prüfungen sind nicht darunter — die macht ein
+  Kommentar rot, nicht grün, und das ist die sichere Richtung.
 * **Flakiness, Stand 09.10.2026**: die serielle Aussage von oben ist
   **zurückgezogen** — sechs Läufe ergaben fünf grün, einen rot, immer
   auf derselben Prüfung. Ursache war das Fixture (ein Probe-Container,
