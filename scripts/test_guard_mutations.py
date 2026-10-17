@@ -58,6 +58,13 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    ("the alert is logged before the channels are tried",
+     "app/monitor.py",
+     '        print(f"Monitor: {msg}")\n        try:\n'
+     "            sent = self.bot.send_message(msg, auto=True)",
+     "        try:\n            sent = self.bot.send_message(msg, auto=True)",
+     "test_monitor.py"),
+
     ("the mail subject says which container and what happened",
      "app/notifiers/smtp.py",
      "        ok, why, msgid = self._attempt(_subject_for(text),",

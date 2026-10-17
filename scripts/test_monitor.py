@@ -651,6 +651,55 @@ def main():
     except Exception:
         checks["event: write failure doesn't break tick"] = False
 
+    # ── the log reads in the order things happened ─────────────────
+    # The `Monitor: <alert>` line used to be printed after the sends,
+    # so a channel's failure appeared ABOVE the event it belonged to.
+    # @NotRetarded's log of 17.10.2026 shows three SMTP timeouts and
+    # then the alert they were about, which reads as a failure with no
+    # cause. The operator reads a log for the order things occurred in.
+    import builtins as _b
+    _lines = []
+    _real_print = _b.print
+
+    class _Loud:
+        name = "smtp"
+
+        def has_channels(self):
+            return True
+
+        def send_message(self, text):
+            # Straight into the transcript rather than through `print`:
+            # `print` is the thing being captured, and a channel that
+            # printed through it would be measuring the stub's own
+            # call rather than where the send sits in the sequence.
+            _lines.append("SMTP error: timed out")
+
+    _bot = types.SimpleNamespace(
+        t=lambda key, **kw: f"{key}:{kw.get('name', '')}",
+        send_message=lambda m, **kw: True,
+        notifier=_Loud())
+    _m = ContainerMonitor.__new__(ContainerMonitor)
+    _m.bot = _bot
+    _m.config = types.SimpleNamespace(debug=False)
+    _m.checker = types.SimpleNamespace(_tail_logs=lambda n, lines=10: "")
+    _m.host_name = ""
+    _m._label = lambda n: n
+    _m._resources_for = lambda kind, name: {}
+    _m._latest = {}
+    _b.print = lambda *a, **kw: _lines.append(" ".join(str(x) for x in a))
+    try:
+        _m._notify("exited", "kuma", {"code": 137})
+    finally:
+        _b.print = _real_print
+    _alert = next((i for i, l in enumerate(_lines)
+                   if l.startswith("Monitor: ")), -1)
+    _fail = next((i for i, l in enumerate(_lines)
+                  if "SMTP error" in l), -1)
+    checks["the alert is logged before the channels are tried"] = (
+        _alert >= 0 and _fail >= 0 and _alert < _fail)
+    if not (_alert >= 0 and _fail >= 0 and _alert < _fail):
+        print(f"      → log order: {_lines}")
+
     for k, v in checks.items():
         print(("  PASS" if v else "  FAIL"), k)
     if not all(checks.values()):

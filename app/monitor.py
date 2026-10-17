@@ -1198,6 +1198,13 @@ class ContainerMonitor:
         # know the alert did not arrive, and `Broadcast.announce` throws
         # that away. A monitor that cannot tell a delivered alert from a
         # lost one is the #66 shape.
+        # The event first, then how each channel went. This line used
+        # to come last, so a channel's failure was printed ABOVE the
+        # alert it belonged to and the log read as if SMTP had failed
+        # before anything happened — @NotRetarded's log of 17.10.2026
+        # shows exactly that, three timeouts and then the event. What
+        # the operator reads a log for is the order things occurred in.
+        print(f"Monitor: {msg}")
         try:
             sent = self.bot.send_message(msg, auto=True)
         except Exception as e:
@@ -1212,4 +1219,3 @@ class ContainerMonitor:
                 notifier.send_message(msg)
             except Exception as e:
                 print(f"Monitor notifier error: {e}")
-        print(f"Monitor: {msg}")
