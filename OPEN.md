@@ -434,6 +434,22 @@ Grund, auf der Connections-Seite. Die Daten dafür entstehen bereits —
 Monitor liest seit #66 den Rückgabewert. Sie werden nur nirgends
 aufgehoben.
 
+## 11 — Einmal gesehen, nicht erklärt: Stille auf allen drei Kanälen
+
+**17.10.2026, #63.** @NotRetarded hat per Arcane einen SIGKILL auf
+Uptime Kuma gegeben und bekam auf **keinem** der drei Kanäle etwas.
+Danach hat er seine Mailrise-Konfiguration gerichtet, und seitdem
+läuft es — Discord und die nachgereichte Mail beide belegt.
+
+Was das erklärt: die Mail. Was es **nicht** erklärt: warum Discord und
+Telegram damals still blieben. Gemessen: ein SIGKILL auf Uptime Kuma
+gibt 137, und 137 löst einen Alarm aus — der Fall hätte feuern müssen.
+
+Bewusst offen gelassen statt zugezogen. Keine Theorie ohne Messung,
+und die Messung fehlt: ohne die Logzeile von damals ist alles andere
+Raten. Wenn es wiederkommt, ist sie das Entscheidende; bis dahin steht
+es hier, damit es nicht als erledigt durchgeht.
+
 ## 10 — Der Mail-Betreff trägt nichts
 
 **17.10.2026, aus #63.** @NotRetarded will in Mailrise nach Betreff
