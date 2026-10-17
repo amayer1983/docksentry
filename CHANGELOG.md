@@ -2,6 +2,63 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.40] - 2026-10-17
+
+A week of audits rather than features. Two full runs of the review
+protocol over everything since beta.39, and most of what they found was
+wrong *about* the code rather than wrong *in* it — claims in comments,
+numbers I had not counted, and checks that passed without testing
+anything. Four things reached a user, and those are first.
+
+### Fixed
+- **TLS on `tcp://…:2376` works, and the pre-flight said it did not.**
+  A host behind `--tlsverify` used to be reported as "Nothing answered",
+  and the first fix for that told the reader in sixteen languages that
+  support "is not built yet". Measured against a real TLS daemon: a
+  saved context (`context://nas`) and `DOCKER_TLS_VERIFY` plus
+  `DOCKER_CERT_PATH` both reach it with no change to Docksentry at all.
+  The finding now names both, and `docs/security.md` carries the
+  recipes.
+- **ssh refusing its own config file is explained.** Mounting `~/.ssh`
+  carries the host user's ownership in, and OpenSSH refuses a `config`
+  that is not owned by the user running ssh — it aborts before dialling,
+  so this arrived as "Nothing answered" for a host that was never
+  contacted. The keys and `known_hosts` are unaffected; the hint says so.
+- **A rate limit can no longer put the scheduler to sleep.** The
+  `Retry-After` cap was per attempt, so two answers of 60 seconds meant
+  two minutes on the thread that also runs the monitor. One budget for
+  the whole send now. A negative `Retry-After` used to reach
+  `time.sleep()` and raise out of the notifier, losing the alert without
+  it reaching the queue.
+- **A restore asks who you are.** The confirmation button carried
+  neither an owner nor a deadline, so in a group chat anybody could
+  press somebody else's, days later — and a restore overwrites settings,
+  groups, pins, notes, links and windows. The `/api/backup_import` door
+  had no `schema_version` check at all, so any JSON object was applied
+  section by section.
+- **The mail subject says what happened.** Every alert arrived as
+  `Subject: Docksentry`, which leaves a relay or a mail rule nothing to
+  sort on (#63, @NotRetarded). It now carries the container and the
+  event.
+- **The audit log no longer writes fragments of uploaded files.** A
+  non-form body was parsed as a form, so a backup upload came back as a
+  key built from the file's own bytes — past a redaction that matches on
+  key names. `apprise_urls` was also unredacted while its four
+  neighbours on the same form were caught.
+
+### Changed
+- `docs/monitoring.md` said a `docker stop` usually exits 0. It does
+  not: a container with no signal handler is killed after the grace
+  period and exits 137. Corrected, with the four shapes measured.
+
+### Under the surface
+- The mutation ratchet is at 153 guarded promises and the debt list is
+  empty — every promise it knows about can now be falsified. Nine core
+  promises had no guard at all when the week started, among them the
+  cleanup retention window, the image-prune grace period, the rule that
+  a slow-starting container is not rolled back, and three about secrets.
+- 206 procedures, 5018 named checks.
+
 ## [2.18.0-beta.39] - 2026-10-10
 
 Four days after beta.38, and three of these came from @NotRetarded

@@ -142,6 +142,49 @@ def _is_network(err):
     return isinstance(err, OSError)  # gaierror, ConnectionError, TimeoutError
 
 
+#: How long the whole subject may get — the `Docksentry: ` included,
+#: because that is what a mail client has to fit in a column. Long
+#: enough for a container name and what happened to it.
+MAX_SUBJECT = 80
+
+
+def _subject_for(text):
+    """A subject that says which container and what happened.
+
+    Every alert used to arrive as `Subject: Docksentry`, so a relay or
+    a mail rule had nothing to sort on — @NotRetarded ran into exactly
+    that with Mailrise (#63). Only the update notifications carried a
+    real title; the crash alerts, the ones worth routing, did not.
+
+    Built from the message's own first line, which is already the
+    headline in every language: `💥 gitlab exited with code 137.` The
+    body is the authority here rather than a second set of strings to
+    keep in sixteen files — a subject assembled separately would drift
+    from what the mail actually says.
+
+    Emoji out (a leading `💥` is noise in a subject list and some
+    relays mangle it), `*` out like the body, collapsed to one line,
+    and cut at `MAX_SUBJECT`. Nothing usable left means the old
+    constant, because a subject must not be empty.
+    """
+    first = ""
+    for line in (text or "").replace("*", "").splitlines():
+        if line.strip():
+            first = line.strip()
+            break
+    # Leading symbols: the headline's own emoji, and any space after.
+    first = first.lstrip("".join(
+        ch for ch in first[:4] if not ch.isalnum() and not ch.isspace()
+    ) + " ").strip()
+    first = " ".join(first.split())
+    if not first:
+        return "Docksentry"
+    out = f"Docksentry: {first}"
+    if len(out) > MAX_SUBJECT:
+        out = out[:MAX_SUBJECT - 1].rstrip() + "…"
+    return out
+
+
 class SmtpNotifier(BaseNotifier):
     name = "smtp"
     order = 30
@@ -487,7 +530,8 @@ class SmtpNotifier(BaseNotifier):
         answers `STOP` for that, so the cap sits where the knowledge is
         rather than being a counter set here in advance.
         """
-        ok, why, msgid = self._attempt("Docksentry", text.replace("*", ""))
+        ok, why, msgid = self._attempt(_subject_for(text),
+                                       text.replace("*", ""))
         if ok or why == PERMANENT:
             # A refusal is not held: the queue would ask the same server
             # the same question every thirty seconds for a quarter of an

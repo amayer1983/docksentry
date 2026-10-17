@@ -58,6 +58,12 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    ("the mail subject says which container and what happened",
+     "app/notifiers/smtp.py",
+     "        ok, why, msgid = self._attempt(_subject_for(text),",
+     '        ok, why, msgid = self._attempt("Docksentry",',
+     "test_smtp.py"),
+
     ("a mail the server took is not delivered a third time",
      "app/notify_retry.py",
      "            elif result is STOP:",
