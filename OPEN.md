@@ -434,6 +434,32 @@ Grund, auf der Connections-Seite. Die Daten dafür entstehen bereits —
 Monitor liest seit #66 den Rückgabewert. Sie werden nur nirgends
 aufgehoben.
 
+## 10 — Der Mail-Betreff trägt nichts
+
+**17.10.2026, aus #63.** @NotRetarded will in Mailrise nach Betreff
+sortieren und kann es nicht. Gemessen an einer echten Nachricht gegen
+einen Test-Server:
+
+```
+Subject: Docksentry
+Content-Type: text/plain; charset="utf-8"
+```
+
+Alarme bekommen den festen Betreff `Docksentry` (`smtp.py`,
+`_attempt("Docksentry", …)`); nur `send_updates_available` und
+`send_update_result` tragen einen echten, übersetzten Titel.
+`SMTP_SUBJECT_PREFIX` setzt ein `[deins] ` davor, mehr nicht.
+
+Wer Mails nach Betreff filtert — und das ist der Normalfall bei einem
+Relais wie Mailrise —, bekommt von uns einen Eimer. Containername und
+Ereignis gehören hinein, in 16 Sprachen, und die Titel dafür gibt es
+teilweise schon (`notify_updates_title`). Angeboten in #63, wartet auf
+seine Antwort.
+
+Nebenbei gemessen und damit erledigt: kein HTML, nie — ein typischer
+Crash-Alarm ist 325 Bytes inklusive Kopfzeilen. An einem Größenlimit
+des Relais liegt sein Problem nicht.
+
 ## 9 — Beobachten: cloudflared und das Versions-Label
 
 **17.10.2026.** [cloudflare/cloudflared#1682](https://github.com/cloudflare/cloudflared/issues/1682)
