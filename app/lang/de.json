@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram gibt mir die Datei nicht.",
   "restore_not_json": "⚠️ Diese Datei ist kein JSON, also kein Docksentry-Backup.",
   "restore_not_a_backup": "⚠️ Das ist JSON, aber kein Docksentry-Backup — kein `schema_version` darin.",
+  "restore_not_yours": "Nur wer diese Datei geschickt hat, kann sie einspielen.",
   "restart_now_btn": "🔄 Jetzt neu starten",
   "restart_running": "Wird neu gestartet…",
   "restart_going_down": "🔄 Neustart läuft — gleich wieder da. (Restart-Policy: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Vorab-Prüfung für* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` ist kein Endpunkt, den ich spreche. Erwartet wird einer von: {schemes}",
   "hostcheck_unreachable": "• Unter `{endpoint}` hat nichts geantwortet — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` antwortet mit TLS, und von hier aus wurde ihm kein Client-Zertifikat angeboten — weiter als bis zum Handshake kam es deshalb nicht. Wenn dahinter ein Daemon mit `--tlsverify` steht, gehen heute zwei Wege: die Verbindung als Kontext speichern und `context://<name>` benutzen, oder `DOCKER_TLS_VERIFY=1` und `DOCKER_CERT_PATH` am Docksentry-Container setzen und die Zertifikate hineinmounten. Zurückkam: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` antwortet mit TLS, und weiter als bis zum Handshake kam es nicht. Wenn noch nichts eingerichtet ist, gehen zwei Wege: die Verbindung als Kontext speichern und `context://<name>` benutzen, oder `DOCKER_TLS_VERIFY=1` und `DOCKER_CERT_PATH` am Docksentry-Container setzen und die Zertifikate hineinmounten. Wenn du das schon hast, liegt es an den Zertifikaten selbst — was zurückkam sagt woran: {error}",
   "hostcheck_denied": "• `{endpoint}` hat geantwortet — und uns abgewiesen: {error}. Das sind die Rechte am Socket, nicht das Netz: Mount, Gruppe und, falls aktiv, SELinux prüfen.",
   "hostcheck_denied_ssh": "• ssh hat unter `{endpoint}` geantwortet und uns nicht hereingelassen: {error}. Das ist ein Schlüssel, nicht der Socket — dieser Container hat sein eigenes Dateisystem, der Schlüssel aus deiner Shell ist also nicht der, den er anbietet.",
   "hostcheck_engine": "• {engine} {version} hat geantwortet",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "In diesem Container gibt es kein `{dir}`. Die Schlüssel liegen auf dem Host — `ssh-copy-id` hat sie in dein eigenes Home geschrieben, und ein Container hat sein eigenes Dateisystem. Nur lesend einbinden: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` ist eingebunden, enthält aber kein `known_hosts` — die erste Verbindung zu einem neuen Host hat also niemanden, den sie fragen kann. Binde das ganze Verzeichnis ein, nicht nur den Schlüssel.",
   "hostdiag_ssh_key_refused": "`{dir}` ist eingebunden und bringt ein `known_hosts` mit, es wird also der Schlüssel selbst abgelehnt — prüfe, ob der Schlüssel dieses Containers in den `authorized_keys` des Gegenübers für diesen Benutzer steht.",
+  "hostdiag_ssh_bad_owner": "ssh hat seine eigene Konfigurationsdatei abgelehnt, bevor es gewählt hat: `{dir}/config` muss dem Benutzer *innerhalb* dieses Containers gehören, und ein eingebundenes `.ssh` behält den Eigentümer vom Host. Schlüssel und `known_hosts` stören dabei nicht — es ist allein die config. Lass sie aus der Einbindung heraus, oder gib diese eine Datei root.",
   "hostdiag_hostkey_unknown": "Kein `known_hosts` in `{dir}` — dieser Host ist dem Container also unbekannt, obwohl du ihn kennst. Binde das ganze `.ssh`-Verzeichnis ein: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "Der Host-Schlüssel hat sich geändert, oder `known_hosts` hat einen Eintrag für eine andere Adresse. SSH verweigert hier mit Absicht — prüfe den Eintrag, statt die Prüfung abzuschalten."
 }

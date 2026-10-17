@@ -32,6 +32,14 @@ _AUTH = ("permission denied", "publickey", "no supported authentication",
          "authentication failed")
 _HOSTKEY = ("host key verification failed", "remote host identification")
 
+#: OpenSSH refusing its own config file because of who owns it. Its own
+#: rule: `~/.ssh/config` must belong to the user running ssh, and a
+#: mounted `.ssh` keeps the host user's ownership. The keys and
+#: `known_hosts` are unaffected — measured, uid 1000 keys in a root
+#: container dial fine — so this is about one file and the sentence
+#: says which.
+_BADOWNER = ("bad owner or permissions",)
+
 
 def hint(endpoint, error, ssh_dir=None, t=None):
     """A sentence to append to a host failure, or "".
@@ -70,6 +78,9 @@ def hint(endpoint, error, ssh_dir=None, t=None):
                 pass
         return _EN[key].format(dir=ssh_dir)
 
+    if any(k in text for k in _BADOWNER):
+        return _say("hostdiag_ssh_bad_owner")
+
     if any(k in text for k in _AUTH):
         if not os.path.isdir(ssh_dir):
             return _say("hostdiag_ssh_no_dir")
@@ -106,6 +117,12 @@ _EN = {
         "No `known_hosts` in `{dir}`, so this host is unknown to the "
         "container even though it is known to you. Mount the whole "
         "`.ssh` directory: `-v ~/.ssh:{dir}:ro`",
+    "hostdiag_ssh_bad_owner":
+        "ssh refused its own config file before dialling: `{dir}/config` "
+        "has to belong to the user inside this container, and a mounted "
+        "`.ssh` keeps whoever owns it on the host. The keys and "
+        "`known_hosts` are fine that way — it is the config alone. "
+        "Leave it out of the mount, or give that one file to root.",
     "hostdiag_hostkey_changed":
         "The host key changed, or `known_hosts` has an entry for a "
         "different address. SSH refuses on purpose here — check the entry "

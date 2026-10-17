@@ -33,7 +33,15 @@ from datetime import datetime
 #: against the lower-cased key, so `smtp_password`, `WEB_PASSWORD` and
 #: `discord_webhook` are all caught by three entries.
 SECRET_HINTS = ("password", "token", "secret", "webhook", "auth", "apikey",
-                "api_key", "credential", "passwd", "bot_", "chat_id")
+                "api_key", "credential", "passwd", "bot_", "chat_id",
+                # `apprise_urls` embeds its credentials in the URL —
+                # `pover://user@token`, `mailto://user:pw@smtp…` — and
+                # matched none of the hints above, so it went into the
+                # file in the clear while its four neighbours on the
+                # same form were all caught. The denylist errs towards
+                # hiding and this one slipped through the net anyway;
+                # found by an audit on 17.10.2026.
+                "apprise")
 
 #: Values longer than this are cut. An audit line is a pointer to what
 #: happened, not a copy of the payload.
@@ -55,7 +63,15 @@ def redact(params):
         if isinstance(value, (list, tuple)):
             value = value[0] if value else ""
         text = str(value)
-        low = str(key).lower()
+        # The KEY is capped too. `MAX_VALUE` applied only to values, and
+        # a body that is not a form — a JSON upload, say — comes out of
+        # `parse_qs` as one enormous key with a short value. A megabyte
+        # of key then went into a file that is rewritten whole on every
+        # request and capped at 500 entries. Found on 17.10.2026.
+        key = str(key)
+        if len(key) > MAX_VALUE:
+            key = key[:MAX_VALUE] + "…"
+        low = key.lower()
         if any(h in low for h in SECRET_HINTS):
             # Length is safe to keep and occasionally useful ("they saved
             # an empty password") — the value is not.

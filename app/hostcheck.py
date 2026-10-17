@@ -103,7 +103,12 @@ EMITTED = tuple(k for k in KINDS if k != "usable")
 #: routes. So: a real permission word, or it is not a refusal.
 _REFUSED = ("permission denied", "access denied", "not permitted",
             "unauthorized", "must be root", "forbidden",
-            "permission or group", "insufficient privileges")
+            "permission or group", "insufficient privileges",
+            # ssh refusing its own config file over who owns it. It is
+            # a refusal — something answered and said no — and without
+            # it here the first branch below calls it "Nothing answered
+            # at that endpoint", for a host ssh never dialled.
+            "bad owner or permissions")
 
 #: Phrases that say SSH itself turned us away, as opposed to the
 #: daemon behind it. The difference is the whole advice: an ssh refusal
@@ -111,7 +116,17 @@ _REFUSED = ("permission denied", "access denied", "not permitted",
 #: socket's group.
 _SSH_REFUSED = ("ssh:", "publickey", "password)", "keyboard-interactive",
                 "host key verification", "remote host identification",
-                "no supported authentication")
+                "no supported authentication",
+                # OpenSSH refusing its own config file. It aborts before
+                # dialling, so nothing answers and the finding used to
+                # be "Nothing answered at that endpoint" — for a host
+                # that was never contacted. Measured on 17.10.2026
+                # against a real container: a `~/.ssh/config` owned by
+                # the host user, mounted into a container running as
+                # root, gives `Bad owner or permissions on
+                # /root/.ssh/config`. The keys and `known_hosts` are
+                # fine that way; it is the config file alone.
+                "bad owner or permissions")
 
 
 #: What a CLI says when it spoke plain HTTP to a TLS port.

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-17T15:15:14",
+  "docksentry_version": "2.18.0-beta.39",
+  "instance": "",
+  "settings": {},
+  "pinned": {},
+  "autoupdate": {},
+  "ask_major": {},
+  "groups": {},
+  "notes": {},
+  "links": {},
+  "update_windows": {},
+  "hosts": [
+    "local"
+  ]
+}

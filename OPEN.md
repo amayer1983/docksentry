@@ -411,7 +411,7 @@ hielt die dokumentierte Zahl nichts.
   **feste Containernamen** (`ds_trust_test`, `ds-tcp-transport-test`,
   `probe`) und einen festen Port 12375, zerstören sich also bei zwei
   gleichzeitigen Läufen gegenseitig.
-* Die fünf `*_resilience.py` teilen weiter 25 identische
+* Die `*_resilience.py` wiederholen weiter identische
   Assertion-Ausdrücke. `test_channel_backoff.py` hat den wichtigsten
   Teil davon zusammengefasst; der Rest wäre Kosmetik mit Risiko.
 
@@ -433,6 +433,27 @@ Grund, auf der Connections-Seite. Die Daten dafür entstehen bereits —
 `_dispatch` fängt die Ausnahme pro Kanal und druckt sie, und der
 Monitor liest seit #66 den Rückgabewert. Sie werden nur nirgends
 aufgehoben.
+
+## 9 — Beobachten: cloudflared und das Versions-Label
+
+**17.10.2026.** [cloudflare/cloudflared#1682](https://github.com/cloudflare/cloudflared/issues/1682)
+will `org.opencontainers.image.version` auf die Release-Images setzen;
+jemand hat sich das Thema genommen.
+
+Das Label ist bei uns kein Nebenschauplatz: `container_info` und
+`update_checker` lesen es, es füllt die Versions-Badge und beantwortet
+in `/status` „welche Version läuft hier wirklich" (#36) — und es hat
+uns #46 eingebracht, wo ein alter Wert beim Recreate am Container
+klebte. Gemessen am aktuellen Image: cloudflared setzt heute
+`org.opencontainers.image.source`, aber kein `…image.version`. Deshalb
+steht bei einem cloudflared-Container keine Version, nicht weil wir
+nicht suchen.
+
+Zu tun ist nichts — wenn es oben landet, erscheint die Version bei uns
+ohne eine Zeile Code. Im Blick behalten, weil cloudflared bei unseren
+Leuten verbreitet ist (#65), und weil `git describe` gern
+`2026.10.1-6-gabc1234` liefert: `_clean_version_label` normalisiert das
+zwar, aber die Badge könnte dann ein Commit-Suffix tragen.
 
 ## 7 — Entschieden, bleibt so
 

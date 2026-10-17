@@ -1301,7 +1301,7 @@ class TelegramBot:
                 {"text": self.t("restore_confirm_btn"),
                  "callback_data": f"restore_go:{token}"},
                 {"text": self.t("restore_cancel_btn"),
-                 "callback_data": "restore_cancel"},
+                 "callback_data": f"restore_cancel:{token}"},
             ]]})
 
     def _offer_stop(self, arg, raw_arg, question, hint="", asker=None):
@@ -3057,7 +3057,27 @@ class TelegramBot:
 
         print("Bot listener stopped.")
 
+    def _sweep_restores(self):
+        """Drop restore offers past their deadline.
+
+        The deadline was enforced on the way out only, so a bundle
+        nobody answered sat in memory until the next upload — with its
+        `settings` section, which carries the source instance's
+        persistent keys. One bundle at a time, so this is tidiness
+        rather than a leak, but an expired offer holding a copy of
+        somebody's settings is not something to keep on purpose.
+        """
+        pending = getattr(self, "_pending_restores", None)
+        if not pending:
+            return
+        now = time.time()
+        for tok in [k for k, v in pending.items()
+                    if now - (v or {}).get("created", 0)
+                    > self.STOP_CONFIRM_TTL]:
+            pending.pop(tok, None)
+
     def _handle_callback(self, callback, checker, snapshot=None):
+        self._sweep_restores()
         data = callback.get("data", "")
         user_id = str(callback["from"]["id"])
         msg_id = callback.get("message", {}).get("message_id")
@@ -3144,31 +3164,64 @@ class TelegramBot:
                 hint=self._host_hint(rec["raw"]))
             return
 
-        if data == "restore_cancel":
+        if data.startswith("restore_cancel"):
             self.answer_callback(callback["id"], self.t("restore_cancelled"))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
-            # `stop_cancel` clears its table and this did not, so a
-            # declined bundle stayed in memory with its token still
-            # redeemable — including the `settings` section it carries.
-            getattr(self, "_pending_restores", {}).clear()
+            # Only this offer's record, not the whole table. A bare
+            # `clear()` was the first fix — `stop_cancel` does that and
+            # this did not — and it was wrong here for a reason the stop
+            # path does not have: an older offer's message keeps its
+            # buttons, so cancelling Monday's file wiped Tuesday's live
+            # token and the newer upload answered "that offer is gone".
+            # Measured on 17.10.2026. A token-less `restore_cancel` is
+            # an old message from before this change; clearing nothing
+            # is the safe reading of it.
+            _ctok = data.partition(":")[2]
+            _pend = getattr(self, "_pending_restores", None) or {}
+            if _ctok:
+                _pend.pop(_ctok, None)
             return
 
         if data.startswith("restore_go:"):
-            # The press is the decision, not the file arriving. Buttons
-            # come off first so a second tap cannot run it twice — the
-            # token is popped as well, so even a race only restores once.
-            if msg_id and chat_id:
-                self.remove_buttons(chat_id, msg_id)
-            # Same two gates as `stop_go:`, and the more necessary of the
-            # two places to have them: only the person who dropped the
-            # file may press, and not days later.
+            # The press is the decision, not the file arriving.
+            #
+            # The ownership gate runs FIRST, and the order matters: the
+            # buttons used to come off before it, so a bystander's
+            # refused press took the owner's only way to confirm with
+            # it and the file had to be uploaded again. Measured on
+            # 17.10.2026 — Bob taps, the buttons vanish, the record
+            # stays, Alice has nothing left to press. A `/stop` can be
+            # re-typed; a restore needs the file back.
             _rtok = data.split(":", 1)[1]
             _rrec = (getattr(self, "_pending_restores", {}) or {}).get(_rtok)
             if _rrec is not None and (not _rrec.get("user")
                                       or _rrec["user"] != user_id):
                 self.answer_callback(callback["id"],
-                                     self.t("chan_confirm_not_yours"))
+                                     self.t("restore_not_yours"))
+                return
+            # Past the gate: buttons off, so a second tap cannot run it
+            # twice — the token is popped as well, so even a race only
+            # restores once.
+            if msg_id and chat_id:
+                self.remove_buttons(chat_id, msg_id)
+            # "Restoring…" only once it is going to restore. The toast
+            # went out before the record was looked at, so an expired
+            # or superseded token answered "Restoring…" and then "that
+            # offer is gone" — two sentences that contradict each
+            # other. `stop_go:` has always checked first and answered
+            # `⏳`; this now does the same.
+            #
+            # No deadline arithmetic here: `_sweep_restores()` at the
+            # top of this method has already dropped anything past the
+            # TTL, so an expired token simply is not in the table. A
+            # second comparison was there for a day and was dead code —
+            # and worse than dead, because it made the sweep and the
+            # deadline cover each other, so neither could be falsified
+            # on its own. One enforcement, one mutation that finds it.
+            if _rrec is None:
+                self.answer_callback(callback["id"], "⏳")
+                self.send_message(self.t("restore_expired"))
                 return
             self.answer_callback(callback["id"], self.t("restore_running"))
             text, ok = self._do_restore(_rtok)

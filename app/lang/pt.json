@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ O Telegram não me entregou esse ficheiro.",
   "restore_not_json": "⚠️ Esse ficheiro não é JSON, por isso não é um backup do Docksentry.",
   "restore_not_a_backup": "⚠️ Isso é JSON, mas não é um backup do Docksentry — não traz `schema_version`.",
+  "restore_not_yours": "Só quem enviou este ficheiro o pode restaurar.",
   "restart_now_btn": "🔄 Reiniciar agora",
   "restart_running": "A reiniciar…",
   "restart_going_down": "🔄 A reiniciar — volto já. (política de reinício: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Verificação prévia de* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` não é um endpoint que eu entenda. Esperado um de: {schemes}",
   "hostcheck_unreachable": "• Nada respondeu em `{endpoint}` — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` responde com TLS, e daqui não lhe foi apresentado nenhum certificado de cliente — por isso não passou do aperto de mão. Se por trás está um daemon com `--tlsverify`, hoje funcionam dois caminhos: guardar a ligação como contexto e usar `context://<nome>`, ou definir `DOCKER_TLS_VERIFY=1` e `DOCKER_CERT_PATH` no contentor do Docksentry com os certificados montados lá dentro. O que voltou: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` responde com TLS e não passou do aperto de mão. Se ainda não há nada configurado, funcionam dois caminhos: guardar a ligação como contexto e usar `context://<nome>`, ou definir `DOCKER_TLS_VERIFY=1` e `DOCKER_CERT_PATH` no contentor do Docksentry com os certificados montados lá dentro. Se já o fizeste, são os próprios certificados — o que voltou diz qual: {error}",
   "hostcheck_denied": "• `{endpoint}` respondeu — e recusou-nos: {error}. São as permissões do socket, não a rede: verifique o mount, o grupo e, se estiver ativo, o SELinux.",
   "hostcheck_denied_ssh": "• o ssh respondeu em `{endpoint}` e não nos deixou entrar: {error}. É uma chave, não o socket — este contentor tem o seu próprio sistema de ficheiros, por isso a chave que usa a partir da shell não é a que ele apresenta.",
   "hostcheck_engine": "• Respondeu {engine} {version}",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "Não existe `{dir}` dentro deste contentor. As chaves estão no anfitrião — o `ssh-copy-id` escreveu-as na tua própria pasta pessoal, e um contentor tem o seu próprio sistema de ficheiros. Monta-as como somente leitura: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` está montado mas não tem `known_hosts`, por isso a primeira ligação a um anfitrião novo não tem a quem perguntar. Monta a pasta inteira, não só a chave.",
   "hostdiag_ssh_key_refused": "`{dir}` está montado e traz um `known_hosts`, por isso o que está a ser recusado é a própria chave — verifica se a chave deste contentor está no `authorized_keys` remoto desse utilizador.",
+  "hostdiag_ssh_bad_owner": "o ssh recusou o seu próprio ficheiro de configuração antes de ligar: `{dir}/config` tem de pertencer ao utilizador *dentro* deste contentor, e um `.ssh` montado mantém o dono do anfitrião. As chaves e o `known_hosts` não são problema — é só a configuração. Deixa-a fora da montagem, ou dá esse ficheiro ao root.",
   "hostdiag_hostkey_unknown": "Sem `known_hosts` em `{dir}`, por isso este anfitrião é desconhecido para o contentor embora seja conhecido para ti. Monta a pasta `.ssh` inteira: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "A chave do anfitrião mudou, ou o `known_hosts` tem uma entrada para outro endereço. Aqui o SSH recusa de propósito — verifica a entrada em vez de remover a verificação."
 }

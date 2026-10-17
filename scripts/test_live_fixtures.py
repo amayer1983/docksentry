@@ -328,7 +328,13 @@ for _f, _lines in _unchecked.items():
 # and a `_p = subprocess.run(...)` walked straight past it. Each shape
 # below is one an audit got through on 11.10.2026.
 _all = list(_procedures())
-checks["the scanner read the whole suite"] = len(_all) > 150
+# Against 206 procedures, `> 150` would survive the scanner silently
+# dropping fifty files. It tracks the suite instead: every
+# `test_*.py` on disk has to come back from `_procedures()`.
+_on_disk = {f for f in os.listdir(HERE)
+            if f.startswith("test_") and f.endswith(".py")}
+checks["the scanner read every procedure on disk"] = (
+    {f for f, _s in _all} == _on_disk and len(_on_disk) > 150)
 
 #: (what it is, source, what must be found)
 PROBES = [

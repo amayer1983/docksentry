@@ -63,6 +63,9 @@ def main():
         "api_tokens": ["prom:xyz"],
         "smtp_password": ["pw"],
         "ntfy_token": ["tk_1"],
+        # Its four siblings on the same form were all caught and this
+        # one matched no hint, so it went into the file in the clear.
+        "apprise_urls": ["pover://user@apptok,mailto://u:pw@smtp.example"],
         "telegram_allowed_users": ["1,2"],
         "language": ["de"],
         "cron_schedule": ["0 18 * * *"],
@@ -70,7 +73,8 @@ def main():
     out = redact(secret_form)
     leaked = [k for k, v in out.items()
               if any(bad in str(v) for bad in
-                     ("hunter2", "TOKEN", "abc", "AAExample", "xyz", "tk_1"))]
+                     ("hunter2", "TOKEN", "abc", "AAExample", "xyz",
+                      "tk_1", "apptok", "u:pw@"))]
     checks["no secret value survives redaction"] = not leaked
     if leaked:
         print(f"    leaked: {leaked}")
@@ -290,6 +294,35 @@ def main():
     checks["…and shows the redaction marker, never a value"] = (
         "redacted:9" in _html2)
 
+    # ── a body that is not a form is not read as one ────────────────
+    # `_audit_post` ran `parse_qs` over whatever arrived, so a JSON or
+    # multipart upload came back as one key built out of the file's own
+    # bytes with a window of file content as its value — past the
+    # redaction, which matches on key NAMES. `/api/backup_import`
+    # carries a backup bundle, and a bundle carries every persistent
+    # key there is: the Web UI password, the bot token, the SMTP
+    # password. What landed in the log depended on where `&` and `=`
+    # happened to fall in the file, which is worse than always or never.
+    _bundle = json.dumps({"schema_version": 1, "settings": {
+        "web_password": "hunter2", "smtp_password": "swordfish",
+        "apprise_urls": "pover://user@secrettoken"}})
+    _e = _web_json("/api/backup_import", _bundle)
+    checks["a JSON upload is not parsed as a form"] = len(_e) == 1
+    _blob = json.dumps(_e)
+    checks["…so no part of the file reaches the log"] = (
+        "hunter2" not in _blob and "swordfish" not in _blob
+        and "secrettoken" not in _blob)
+    checks["…and what IS recorded says what arrived"] = (
+        bool(_e) and "application/json" in _blob and "bytes" in _blob)
+    # A real form still gets its fields, or the fix above is just
+    # switching the detail off.
+    _e = _web_entries("/api/pin", {"name": ["gitlab"], "scope": ["host"]})
+    # `record` is handed the parsed form as `parse_qs` returns it —
+    # values are lists — and flattens and redacts on the way to the
+    # file. What matters here is that the fields arrived at all.
+    checks["…while a form body is still recorded field by field"] = (
+        bool(_e) and (_e[0][4] or {}).get("scope") == ["host"])
+
     # ── and the redaction is on the path to the file ────────────────
     # `redact()` itself is checked above, thoroughly. What was not: that
     # `record` calls it. The line `clean = redact(detail)` could be
@@ -443,6 +476,55 @@ def _web_entries(path, params, method="POST"):
         # The endpoint itself may well fall over on a stand-in store;
         # the seam runs before the dispatch, so the entry is already
         # written and that is what is being read.
+        pass
+    return [e for e in written if e[0] in ("web", "api")]
+
+
+def _web_json(path, body, content_type="application/json"):
+    """One non-form POST through the Web seam; what was recorded?"""
+    import web_ui
+
+    written = []
+
+    class _Recorder:
+        def record(self, source, actor, action, target="", detail=None):
+            written.append((source, actor, action, target, detail))
+
+    class _Cfg:
+        _CALLABLE = ("env_override", "save", "load", "apply", "write",
+                     "set_", "has_", "reload")
+        language = "en"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith(self._CALLABLE):
+                return lambda *a, **kw: None
+            return ""
+
+    cls = web_ui.create_handler(_Cfg(), checker=None,
+                                bot=types.SimpleNamespace(t=None), store=None,
+                                restart_discord=lambda *a, **kw: None)
+    h = cls.__new__(cls)
+    raw = body.encode() if isinstance(body, str) else body
+    h.path = path
+    h.headers = {"Content-Length": str(len(raw)), "Host": "x",
+                 "Origin": "http://x", "Content-Type": content_type}
+    h.rfile = types.SimpleNamespace(read=lambda n: raw[:n])
+    h.client_address = ("127.0.0.1", 0)
+    h.server = types.SimpleNamespace(audit=_Recorder())
+    h._check_auth = lambda: True
+    h._check_csrf = lambda: True
+    h._send_redirect = lambda loc: None
+    h.send_response = lambda *a, **k: None
+    h.send_header = lambda *a, **k: None
+    h.send_error = lambda *a, **k: None
+    h.end_headers = lambda: None
+    h.wfile = types.SimpleNamespace(write=lambda b: None)
+    h._send_html = lambda *a, **k: None
+    try:
+        h.do_POST()
+    except Exception:                                       # noqa: BLE001
         pass
     return [e for e in written if e[0] in ("web", "api")]
 

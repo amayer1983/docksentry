@@ -140,6 +140,11 @@ def _web(name="backup.json", size=1000, body=GOOD):
     # Declared length wins where the caller gave one: the size checks
     # above are about `Content-Length`, which is the client's word.
     declared = size if size != 1000 else len(raw)
+    # An oversized *claim* is what the chats are asked about; the Web
+    # door reads the body, so give it one that really is too big.
+    if size > 1000:
+        raw = (b'{"schema_version": 1, "pad": "' + b"x" * size + b'"}')
+        declared = len(raw)
     applied = []
 
     class _Cfg:
@@ -203,8 +208,12 @@ checks["both doors agree on how big a backup may be"] = (
     DiscordBot.RESTORE_MAX_BYTES == TelegramBot.RESTORE_MAX_BYTES)
 
 _CAP = DiscordBot.RESTORE_MAX_BYTES
+# Over the cap by a real margin, not by one byte: the Web door allows
+# a few kilobytes for the multipart envelope a browser wraps the file
+# in, because measuring that made it refuse a bundle both chats take.
+# The chats weigh the file itself, so the margin changes nothing there.
 for _door, _fn in DOORS:
-    _r = _fn(size=_CAP + 1)
+    _r = _fn(size=_CAP + 64 * 1024)
     checks[f"{_door} refuses a backup over the limit"] = not _r.offered
     checks[f"…and {_door} says why rather than failing silently"] = (
         ("large" in _r.said.lower() or "big" in _r.said.lower()
@@ -254,9 +263,13 @@ for _door, _fn in DOORS:
 import time as _time                                          # noqa: E402
 
 
-def _press(asker="4711", presser="4711", age=0.0):
-    """Drop a bundle as `asker`, then have `presser` tap Restore."""
-    said, applied = [], []
+def _press(asker="4711", presser="4711", age=0.0, cancel=False,
+           second_offer=False, other_button=False):
+    """Drop a bundle as `asker`, then have `presser` tap a button.
+
+    Returns `(applied, said, buttons_removed, tokens_left)`.
+    """
+    said, applied, removed = [], [], []
     bot = TelegramBot.__new__(TelegramBot)
     bot.config = types.SimpleNamespace(language="en", bot_token="",
                                        chat_id="1")
@@ -266,43 +279,102 @@ def _press(asker="4711", presser="4711", age=0.0):
     bot.send_message = lambda m, **kw: said.append(m)
     bot.send_message_with_buttons = lambda *a, **kw: None
     bot.answer_callback = lambda *a, **kw: said.append(str(a[1:]))
-    bot.remove_buttons = lambda *a, **kw: None
+    bot.remove_buttons = lambda c, m: removed.append(m)
     bot._check_auth = lambda chat_id, uid, kind="message": True
     bot._download_file = lambda fid: GOOD.encode()
     bot._offer_restore({"file_name": "backup.json", "file_size": 900,
                         "file_id": "f1"}, asker=asker)
     token = next(iter(bot._pending_restores))
+    if second_offer:
+        # A newer file arrives; the older message keeps its buttons.
+        bot._offer_restore({"file_name": "tuesday.json", "file_size": 900,
+                            "file_id": "f2"}, asker=asker)
     if age:
-        bot._pending_restores[token]["created"] -= age
+        for _rec in bot._pending_restores.values():
+            _rec["created"] -= age
     import backup as _backup
     _real = _backup.restore
     _backup.restore = lambda bundle, *a, **kw: (
         applied.append(bundle) or (["settings"], [], 0))
     try:
-        bot._handle_callback({"id": "c1", "data": f"restore_go:{token}",
+        _data = ("stop_cancel" if other_button
+                 else f"restore_cancel:{token}" if cancel
+                 else f"restore_go:{token}")
+        bot._handle_callback({"id": "c1", "data": _data,
                               "from": {"id": presser},
                               "message": {"message_id": 5,
                                           "chat": {"id": 1}}},
                              None, None)
     finally:
         _backup.restore = _real
-    return bool(applied), "\n".join(said)
+    return (bool(applied), "\n".join(said), removed,
+            set(bot._pending_restores or {}))
 
 
-_applied, _said = _press()
+_applied, _said, _removed, _left = _press()
 checks["the person who dropped the file may restore it"] = _applied
 
-_applied, _said = _press(asker="4711", presser="9999")
+_applied, _said, _removed, _left = _press(asker="4711", presser="9999")
 checks["…and nobody else may"] = not _applied
 checks["…and is told why"] = "confirm" in _said.lower() or "can" in _said.lower()
 
 # The deadline. A bundle dropped on Monday must not still be armed on
 # Friday, which is the case the stop path already refused.
-_applied, _said = _press(age=TelegramBot.STOP_CONFIRM_TTL + 60)
-checks["a question left unanswered expires"] = not _applied
+#
+# `not _applied` alone is not enough and the counter-probe said so:
+# with the TTL check in `_do_restore` removed, the sweep at the top of
+# the callback had already dropped the record, so nothing was applied
+# for a different reason and this stayed green. What is asked now is
+# that the reader is TOLD it expired — only the TTL path says that.
+_applied, _said, _removed, _left = _press(
+    age=TelegramBot.STOP_CONFIRM_TTL + 60)
+checks["a question left unanswered expires"] = (
+    not _applied and "offer is gone" in _said)
+# …and is not told "Restoring…" first. The toast used to go out before
+# the record was looked at, so an expired press got two sentences that
+# contradict each other.
+# `"Restoring…"` with the ellipsis, not the bare word: the offer text
+# itself opens with "Restoring overwrites the settings…", so a check
+# for "Restoring" would have matched the question rather than the
+# answer.
+checks["…without being told it is restoring"] = (
+    "Restoring…" not in _said and "⏳" in _said)
 
-_applied, _said = _press(age=TelegramBot.STOP_CONFIRM_TTL - 60)
+_applied, _said, _removed, _left = _press(
+    age=TelegramBot.STOP_CONFIRM_TTL - 60)
 checks["…while one answered inside the window still works"] = _applied
+
+# ── and a refused press leaves the owner something to press ─────────
+# The gate used to run after the buttons came off, so a bystander's
+# tap took the owner's only way to confirm with it and the file had to
+# be uploaded again. Measured on 17.10.2026.
+_applied, _said, _removed, _left = _press(asker="4711", presser="9999")
+checks["a stranger's press leaves the buttons for the owner"] = (
+    _removed == [] and len(_left) == 1)
+_applied, _said, _removed, _left = _press()
+checks["…while the owner's own press takes them off"] = (
+    _removed == [5] and _applied)
+
+# Cancel clears its own offer and not a newer one. A bare `clear()`
+# was the first fix and it was wrong: an older message keeps its
+# buttons, so cancelling Monday's file wiped Tuesday's live token.
+_applied, _said, _removed, _left = _press(cancel=True)
+checks["cancelling an offer forgets it"] = _left == set() and not _applied
+_applied, _said, _removed, _left = _press(cancel=True, second_offer=True)
+checks["…and leaves a newer offer alone"] = len(_left) == 1
+
+# An offer nobody answered is not kept in memory for ever: the bundle
+# carries the source instance's settings. Measured on a button press
+# that has nothing to do with the offer — a cancel or a restore pops
+# its own record anyway, so either of those would pass with no sweep
+# at all. The counter-probe said exactly that.
+_applied, _said, _removed, _left = _press(
+    age=TelegramBot.STOP_CONFIRM_TTL + 60, other_button=True)
+checks["an expired offer is swept on the next press, not just refused"] = (
+    _left == set())
+# …and a live one is not swept out from under its owner.
+_applied, _said, _removed, _left = _press(other_button=True)
+checks["…while a live offer survives an unrelated press"] = len(_left) == 1
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram nie chciał mi wydać tego pliku.",
   "restore_not_json": "⚠️ Ten plik nie jest JSON-em, więc nie jest kopią zapasową Docksentry.",
   "restore_not_a_backup": "⚠️ To jest JSON, ale nie kopia zapasowa Docksentry — nie ma w nim `schema_version`.",
+  "restore_not_yours": "Przywrócić ten plik może tylko osoba, która go wysłała.",
   "restart_now_btn": "🔄 Zrestartuj teraz",
   "restart_running": "Restartowanie…",
   "restart_going_down": "🔄 Restartuję — zaraz wracam. (polityka restartu: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Kontrola wstępna dla* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` nie jest punktem końcowym, który rozumiem. Oczekiwany jeden z: {schemes}",
   "hostcheck_unreachable": "• Nic nie odpowiedziało pod `{endpoint}` — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` odpowiada po TLS, a stąd nie przedstawiono mu żadnego certyfikatu klienta — dlatego nie wyszło to poza uzgadnianie. Jeśli stoi za tym demon z `--tlsverify`, dziś działają dwie drogi: zapisać połączenie jako kontekst i użyć `context://<nazwa>`, albo ustawić `DOCKER_TLS_VERIFY=1` i `DOCKER_CERT_PATH` na kontenerze Docksentry, montując do niego certyfikaty. Wróciło: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` odpowiada po TLS i dalej niż uzgadnianie to nie poszło. Jeśli nic jeszcze nie jest skonfigurowane, działają dwie drogi: zapisać połączenie jako kontekst i użyć `context://<nazwa>`, albo ustawić `DOCKER_TLS_VERIFY=1` i `DOCKER_CERT_PATH` na kontenerze Docksentry, montując do niego certyfikaty. Jeśli to już masz, chodzi o same certyfikaty — odpowiedź mówi o które: {error}",
   "hostcheck_denied": "• `{endpoint}` odpowiedział — i nas odrzucił: {error}. To uprawnienia gniazda, nie sieć: sprawdź montowanie, grupę i, jeśli jest włączony, SELinux.",
   "hostcheck_denied_ssh": "• ssh odpowiedział na `{endpoint}` i nie wpuścił nas: {error}. To klucz, nie gniazdo — ten kontener ma własny system plików, więc klucz, którego używasz z powłoki, nie jest tym, który on przedstawia.",
   "hostcheck_engine": "• Odpowiedział {engine} {version}",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "W tym kontenerze nie ma `{dir}`. Klucze są na hoście — `ssh-copy-id` zapisał je w twoim katalogu domowym, a kontener ma własny system plików. Zamontuj je tylko do odczytu: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` jest zamontowany, ale nie ma w nim `known_hosts`, więc pierwsze połączenie z nowym hostem nie ma kogo zapytać. Zamontuj cały katalog, nie tylko klucz.",
   "hostdiag_ssh_key_refused": "`{dir}` jest zamontowany i zawiera `known_hosts`, więc odrzucany jest sam klucz — sprawdź, czy klucz tego kontenera jest w zdalnym `authorized_keys` tego użytkownika.",
+  "hostdiag_ssh_bad_owner": "ssh odrzucił własny plik konfiguracyjny, zanim w ogóle zadzwonił: `{dir}/config` musi należeć do użytkownika *wewnątrz* tego kontenera, a zamontowane `.ssh` zachowuje właściciela z hosta. Klucze i `known_hosts` są w porządku — chodzi wyłącznie o konfigurację. Zostaw ją poza montowaniem albo przekaż ten jeden plik rootowi.",
   "hostdiag_hostkey_unknown": "Brak `known_hosts` w `{dir}`, więc ten host jest nieznany kontenerowi, choć tobie jest znany. Zamontuj cały katalog `.ssh`: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "Klucz hosta się zmienił albo `known_hosts` ma wpis dla innego adresu. SSH odmawia tu celowo — sprawdź wpis, zamiast wyłączać kontrolę."
 }

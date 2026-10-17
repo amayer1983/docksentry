@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""The last three promises the suite could not see.
+"""The last promises the suite could not see.
 
 `test_guard_mutations.UNGUARDED` is the honest half of the ratchet: a
 promise the README or the docs make, where the enforcement can be
 deleted and no procedure notices. The list may only get shorter. These
-are the three it ends on.
+are the ones it ends on — four of the six, with the audit-log
+redaction and the queue's age window closed in the two procedures that
+already owned those subjects.
 
 * **An OOM kill is recognised as one.** `"oom": bool(state.get("OOMKilled"))`
   could be `False` and nothing went red. The alert then says "exited
@@ -113,8 +115,6 @@ checks["…and a wildcard entry matching the way the docs say"] = (
     registry_scheme("reg.lab.internal", ["*.lab.internal"]) == "http"
     and registry_scheme("reg.other.internal", ["*.lab.internal"]) == "https")
 # The checker has to ask with the setting, not with an empty list.
-_uc = types.SimpleNamespace(
-    config=types.SimpleNamespace(insecure_registries=["lab.internal"]))
 from update_checker import UpdateChecker  # noqa: E402
 
 _c = UpdateChecker.__new__(UpdateChecker)
@@ -248,6 +248,50 @@ def _major_gate(ask_major, is_major, auto=True):
         bot, [{"name": "db", "image": "db:2"}], _Updater(), auto=auto)
     return updated, pending
 
+
+# ── and the detection itself, not only the wiring ───────────────────
+# `_major_gate` stubs `_is_major_bump`, so it measures what the engine
+# does with the answer. An audit then switched the real detection off
+# (`best_parsed[0] > cur[0]` → `False`) and all 206 procedures stayed
+# green — every one that touches it replaces it with a lambda. The
+# gate was guarded and the thing feeding it was not, which is the same
+# shape as the health outcome and the session clear.
+def _detects(current, available):
+    """Run the real `_is_major_bump` over two version tags."""
+    from update_checker import UpdateChecker as _UC2
+
+    class _Checker2:
+        def _parse_image(self, image):
+            return "registry-1.docker.io", "lib/app", image.rsplit(":", 1)[1]
+
+        # The real parser — a classmethod, so it is called on the
+        # class. Standing in for it would make this measure my own
+        # arithmetic rather than the engine's.
+        def _parse_semver(self, tag):
+            return _UC2._parse_semver(tag)
+
+        def get_highest_semver_tag(self, registry, repo, tag):
+            return available, _UC2._parse_semver(available)
+
+    return _ue.UpdateEngine._is_major_bump(
+        types.SimpleNamespace(), {"image": f"app:{current}"}, _Checker2())
+
+
+checks["a 1.x → 2.0 bump is detected as major"] = (
+    _detects("1.9.3", "2.0.0")[0] is True)
+# The counter-directions, each a different way of switching the
+# detection off by accident.
+checks["…while a minor bump is not"] = (
+    _detects("1.9.3", "1.10.0")[0] is False)
+checks["…nor a patch"] = _detects("1.9.3", "1.9.4")[0] is False
+checks["…nor the same version again"] = (
+    _detects("1.9.3", "1.9.3")[0] is False)
+checks["…and the two tags come back with the verdict"] = (
+    _detects("1.9.3", "2.0.0")[1:] == ("1.9.3", "2.0.0"))
+# A tag that is not SemVer cannot be compared, and guessing would be
+# worse than the gate quietly not applying.
+checks["a non-semver tag is not guessed at"] = (
+    _detects("latest", "2.0.0") == (False, None, None))
 
 _updated, _pending = _major_gate(ask_major=True, is_major=True)
 checks["a major bump waits for confirmation"] = (

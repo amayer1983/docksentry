@@ -438,7 +438,7 @@ GUARDED = [
 
     ("…and reads at most the cap, not the length the caller claims",
      "app/web_ui.py",
-     "                raw = self.rfile.read(min(length, _cap))",
+     "                raw = self.rfile.read(min(length, _cap + _envelope))",
      "                raw = self.rfile.read()",
      "test_backup_channels.py"),
 
@@ -455,12 +455,78 @@ GUARDED = [
      "            if False:",
      "test_restore_parity.py"),
 
-    ("…and not days after they dropped it",
+    # The deadline has no entry of its own, and that is deliberate.
+    # `_sweep_restores()` (below) drops anything past the TTL before a
+    # button is handled, and `_do_restore` keeps a second check for a
+    # direct caller. Two guards covering each other means neither can
+    # be removed on its own — good code, and an unfalsifiable ratchet
+    # entry. The sweep is the one mutated.
+
+    ("a refused press leaves the owner's buttons alone",
      "app/telegram_bot.py",
-     '        if time.time() - rec.get("created", 0) > self.STOP_CONFIRM_TTL:\n'
-     '            return self.t("restore_expired"), False',
-     "        if False:\n            return self.t(\"restore_expired\"), False",
+     '            _rtok = data.split(":", 1)[1]\n'
+     '            _rrec = (getattr(self, "_pending_restores", {}) or {}).get(_rtok)',
+     '            if msg_id and chat_id:\n'
+     '                self.remove_buttons(chat_id, msg_id)\n'
+     '            _rtok = data.split(":", 1)[1]\n'
+     '            _rrec = (getattr(self, "_pending_restores", {}) or {}).get(_rtok)',
      "test_restore_parity.py"),
+
+    ("…and cancelling one offer does not forget another",
+     "app/telegram_bot.py",
+     "            if _ctok:\n                _pend.pop(_ctok, None)",
+     "            _pend.clear()",
+     "test_restore_parity.py"),
+
+    ("…and an expired offer is swept out of memory",
+     "app/telegram_bot.py",
+     '        self._sweep_restores()\n        data = callback.get("data", "")',
+     '        data = callback.get("data", "")',
+     "test_restore_parity.py"),
+
+    ("the backup cap weighs the file, not the envelope around it",
+     "app/web_ui.py",
+     "                if len(body) > _cap:",
+     "                if False and len(body) > _cap:",
+     "test_backup_channels.py"),
+
+    ("a body that is not a form is not read as one",
+     "app/web_ui.py",
+     '                if "application/x-www-form-urlencoded" in _ctype:',
+     "                if True:",
+     "test_audit.py"),
+
+    ("apprise URLs are a secret like their four neighbours",
+     "app/audit.py",
+     '                "apprise")',
+     "                )",
+     "test_audit.py"),
+
+    ("…and ssh refusing its own config is a refusal, not silence",
+     "app/hostcheck.py",
+     '            "permission or group", "insufficient privileges",',
+     '            "permission or group", "insufficient privileges")\nX_UNUSED = (',
+     "test_ssh_hint.py"),
+
+    ("…and one that looked healthy before the wait ran out is accepted",
+     "app/update_checker.py",
+     "        if healthy_since is not None:\n"
+     '            return "healthy", state, health',
+     "        if False:\n"
+     '            return "healthy", state, health',
+     "test_health_outcomes.py"),
+
+    ("a locally-built image is copied BEFORE the prune, not after",
+     "app/update_checker.py",
+     '        backup_msg = ""\n        if self.config.cleanup_backup_local_only:',
+     '        backup_msg = ""\n        if False:',
+     "test_cleanup_rules.py"),
+
+    ("a major version bump is detected, not just acted on",
+     "app/update_engine.py",
+     "        return best_parsed[0] > cur[0], tag, best_tag",
+     "        return False, tag, best_tag",
+     "test_debt_closers.py"),
 
     ("a backup dropped on Discord has the same size ceiling",
      "app/discord_bot.py",
@@ -864,9 +930,9 @@ GUARDED = [
      '                        pass  # MUTATION\n                        _noop = (\n                            "schedule", "system", "auto-update",',
      "test_audit.py"),
 
-    ("a backup import is refused when it is too large",
+    ("a declared gigabyte is refused before the body is read",
      "app/web_ui.py",
-     "                if length > _cap:",
+     "                if length > _cap + _envelope:",
      "                if False:",
      "test_backup_channels.py"),
 

@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram o dosyayı bana vermedi.",
   "restore_not_json": "⚠️ O dosya JSON değil, yani Docksentry yedeği değil.",
   "restore_not_a_backup": "⚠️ Bu JSON, ama bir Docksentry yedeği değil — içinde `schema_version` yok.",
+  "restore_not_yours": "Bu dosyayı yalnızca onu gönderen kişi geri yükleyebilir.",
   "restart_now_btn": "🔄 Şimdi yeniden başlat",
   "restart_running": "Yeniden başlatılıyor…",
   "restart_going_down": "🔄 Yeniden başlatılıyor — birazdan döneceğim. (yeniden başlatma ilkesi: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Ön kontrol:* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` bildiğim bir uç nokta değil. Beklenen: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` adresinden yanıt gelmedi — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` TLS ile yanıt veriyor ve buradan ona bir istemci sertifikası sunulmadı — bu yüzden el sıkışmadan öteye geçilemedi. Arkasında `--tlsverify` ile çalışan bir daemon varsa bugün iki yol işliyor: bağlantıyı bir bağlam olarak kaydedip `context://<ad>` kullanmak, ya da Docksentry kapsayıcısında `DOCKER_TLS_VERIFY=1` ve `DOCKER_CERT_PATH` ayarlayıp sertifikaları içine bağlamak. Geri gelen: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` TLS ile yanıt veriyor ve el sıkışmadan öteye geçilemedi. Henüz bir şey kurulmadıysa iki yol işliyor: bağlantıyı bir bağlam olarak kaydedip `context://<ad>` kullanmak, ya da Docksentry kapsayıcısında `DOCKER_TLS_VERIFY=1` ve `DOCKER_CERT_PATH` ayarlayıp sertifikaları içine bağlamak. Bunu zaten yaptıysan mesele sertifikaların kendisi — geri gelen yanıt hangisi olduğunu söylüyor: {error}",
   "hostcheck_denied": "• `{endpoint}` yanıt verdi — ve bizi reddetti: {error}. Bu, ağ değil soketin izinleri: mount'u, grubu ve etkinse SELinux'u kontrol et.",
   "hostcheck_denied_ssh": "• ssh `{endpoint}` üzerinde yanıt verdi ve bizi içeri almadı: {error}. Bu bir anahtar sorunu, soket değil — bu konteynerin kendi dosya sistemi var, yani kabuktan kullandığın anahtar onun sunduğu anahtar değil.",
   "hostcheck_engine": "• {engine} {version} yanıt verdi",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "Bu kapsayıcının içinde `{dir}` yok. Anahtarlar ana makinede duruyor — `ssh-copy-id` onları kendi ev dizinine yazdı ve kapsayıcının kendi dosya sistemi var. Salt okunur bağla: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` bağlı ama içinde `known_hosts` yok, dolayısıyla yeni bir makineye ilk bağlantının soracağı kimse yok. Yalnızca anahtarı değil, dizinin tamamını bağla.",
   "hostdiag_ssh_key_refused": "`{dir}` bağlı ve içinde bir `known_hosts` var, yani reddedilen şey anahtarın kendisi — bu kapsayıcının anahtarının karşı taraftaki `authorized_keys` içinde, o kullanıcı için bulunduğunu kontrol et.",
+  "hostdiag_ssh_bad_owner": "ssh daha aramadan kendi yapılandırma dosyasını reddetti: `{dir}/config` bu kapsayıcının *içindeki* kullanıcıya ait olmalı, bağlanan bir `.ssh` ise sahibini ana makineden taşır. Anahtarlar ve `known_hosts` böyle sorun çıkarmaz — mesele yalnızca yapılandırma. Onu bağlamanın dışında bırak ya da o tek dosyayı root'a ver.",
   "hostdiag_hostkey_unknown": "`{dir}` içinde `known_hosts` yok, yani sen bu makineyi tanısan da kapsayıcı tanımıyor. `.ssh` dizininin tamamını bağla: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "Makine anahtarı değişti ya da `known_hosts` başka bir adres için kayıt içeriyor. SSH burada bilerek reddediyor — denetimi kaldırmak yerine kaydı kontrol et."
 }

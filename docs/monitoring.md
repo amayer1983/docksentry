@@ -25,12 +25,26 @@ restart loop tells you once, then less and less often, instead of every half
 hour all night.
 
 A clean exit — code 0 — says nothing. That is a container finishing its
-job, not dying. **Your own `docker stop` is usually that case**: stop
-sends SIGTERM, a container that shuts down properly exits 0, and nothing
-is reported. Measured: 0 for a container that handles SIGTERM, 137 only
-when it ignores it and has to be killed. So `docker stop` is not a way
-to try the alert path — `docker kill <name>` is, and gives you a 137
-within one sweep.
+job, not dying.
+
+**Your own `docker stop` usually is not that case.** Measured on
+17.10.2026, four shapes, Docker 29.5.3:
+
+| the container | `docker stop` gives |
+|---|---|
+| `alpine sleep 300` — no signal handler, the ordinary shape | **137** after the 10 s grace |
+| a shell that traps SIGTERM and exits 0 | 0, immediately |
+| a shell that ignores SIGTERM | **137** after the grace |
+| started with `--init` | **143**, immediately |
+
+PID 1 has no default signal disposition, so a process that installs no
+handler simply ignores SIGTERM and Docker kills it when the grace runs
+out. Most images are that shape. So stopping a container by hand *does*
+normally produce an alert, and only a container that shuts itself down
+properly is silent.
+
+An earlier version of this page said the opposite, on the strength of
+one measurement taken against a container that did have a handler.
 
 ## What an alert tells you
 

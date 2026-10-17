@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram would not hand me that file.",
   "restore_not_json": "⚠️ That file is not JSON, so it is not a Docksentry backup.",
   "restore_not_a_backup": "⚠️ That is JSON, but not a Docksentry backup — no `schema_version` in it.",
+  "restore_not_yours": "Only the person who sent this file can restore it.",
   "restart_now_btn": "🔄 Restart now",
   "restart_running": "Restarting…",
   "restart_going_down": "🔄 Restarting — back in a moment. (restart policy: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Pre-flight for* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` is not an endpoint I speak. Expected one of: {schemes}",
   "hostcheck_unreachable": "• Nothing answered at `{endpoint}` — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` answers with TLS, and nothing here offered it a client certificate — so the handshake is as far as this got. If that is a daemon behind `--tlsverify`, two routes work today: save the connection as a context and use `context://<name>`, or set `DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH` on the Docksentry container with the certificates mounted in. What came back: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` answers with TLS, and the handshake is as far as this got. If nothing is set up yet, two routes work: save the connection as a context and use `context://<name>`, or set `DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH` on the Docksentry container with the certificates mounted in. If you already did that, it is the certificates themselves — what came back says which: {error}",
   "hostcheck_denied": "• `{endpoint}` answered — and refused us: {error}. Those are the socket's permissions rather than the network: check the mount, the group, and SELinux if it is enforcing.",
   "hostcheck_denied_ssh": "• ssh answered at `{endpoint}` and would not let us in: {error}. That is a key, not the socket — this container has its own filesystem, so the key you use from the shell is not the one it offers.",
   "hostcheck_engine": "• {engine} {version} answered",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "There is no `{dir}` inside this container. Keys live on the host — `ssh-copy-id` wrote them to your own home directory, and a container has its own filesystem. Mount them read-only: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` is mounted but has no `known_hosts`, so the first connection to a new host has nobody to ask. Mount the whole directory rather than the key alone.",
   "hostdiag_ssh_key_refused": "`{dir}` is mounted and carries a `known_hosts`, so the key itself is being refused — check that this container's key is in the remote `authorized_keys` for that user.",
+  "hostdiag_ssh_bad_owner": "ssh refused its own config file before dialling: `{dir}/config` has to belong to the user inside this container, and a mounted `.ssh` keeps whoever owns it on the host. The keys and `known_hosts` are fine that way — it is the config alone. Leave it out of the mount, or give that one file to root.",
   "hostdiag_hostkey_unknown": "No `known_hosts` in `{dir}`, so this host is unknown to the container even though it is known to you. Mount the whole `.ssh` directory: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "The host key changed, or `known_hosts` has an entry for a different address. SSH refuses on purpose here — check the entry rather than removing the check."
 }

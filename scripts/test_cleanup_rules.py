@@ -51,6 +51,10 @@ class _Backend:
     def __init__(self, images=None, used=None, inspect=None, save_ok=True):
         self.prunes = []
         self.saves = []
+        #: Every daemon call that changes something, in the order it
+        #: arrived. Counting the two separately said nothing about
+        #: which came first, and first is the whole point.
+        self.order = []
         self._images = images or []
         self._used = used or []
         self._inspect = inspect or {}
@@ -61,11 +65,13 @@ class _Backend:
         # everything cannot tell a missing `until` from a present one,
         # and that is the hole this procedure exists to close.
         self.prunes.append({"all": all, "force": force, "until": until})
+        self.order.append("prune")
         return types.SimpleNamespace(
             returncode=0, stdout="Total reclaimed space: 0B", stderr="")
 
     def image_save(self, img_id, path, timeout=None):
         self.saves.append((img_id, path))
+        self.order.append("save")
         if self._save_ok:
             with open(path, "wb") as f:
                 f.write(b"tarball")
@@ -216,11 +222,20 @@ _checker(_b, cleanup_backup_local_only=False).cleanup_images()
 checks["with the setting off no copy is taken"] = (
     _b.saves == [] and len(_b.prunes) == 1)
 
+# …and the ORDER, which is the file's whole argument and which
+# `len(saves)==1 and len(prunes)==1` did not hold: an audit moved the
+# backup step to after `image_prune` and this stayed green. The
+# tarball exists because the image is gone, so a copy taken afterwards
+# is a copy of nothing.
 _b = _Backend(images=["sha256:local"], used=[],
               inspect={"sha256:local": LOCAL})
 _checker(_b, cleanup_backup_local_only=True).cleanup_images()
-checks["…and with it on the copy comes before the prune"] = (
+checks["…and with it on, a copy is taken and the prune runs"] = (
     len(_b.saves) == 1 and len(_b.prunes) == 1)
+checks["…with the copy BEFORE the prune, not after it"] = (
+    _b.order[:2] == ["save", "prune"])
+if _b.order[:2] != ["save", "prune"]:
+    print(f"      → order was {_b.order}")
 
 # A failed save must not be reported as a copy taken — the whole value
 # of the step is that the tarball is there when the image is gone.

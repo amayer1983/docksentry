@@ -306,9 +306,13 @@ checks["…and an unsafe link never reaches the store"] = (
 checks["…while the safe one does"] = (
     (b.store.saved.get("links") or {}).get("ok") == "https://example.com/notes")
 
-checks["the confirm button strips itself before acting"] = (
-    "self.remove_buttons(chat_id, msg_id)" in tsrc.split(
-        'if data.startswith("restore_go:")')[1][:400])
+# "the confirm button strips itself before acting" used to live here
+# as a grep over the first 400 characters after the branch — a check
+# on a POSITION IN THE SOURCE, which went red the moment the ownership
+# gate moved in front of it without anything behaving differently.
+# Driven in `test_restore_parity.py` now, where both directions can be
+# asked: the owner's press takes the buttons off, a stranger's leaves
+# them for the owner.
 checks["a command is never mistaken for an attachment"] = (
     'if doc and not text.startswith("/")' in tsrc)
 
@@ -525,7 +529,30 @@ def _import(declared, body=b"{}", rfile=None):
         pass
     return seen.get("code"), h.wfile.getvalue().decode("utf-8", "replace")
 
-_code, _msg = _import(_CAP + 1)
+# The cheap `Content-Length` check exists to refuse an absurd claim
+# *before* reading anything. Two layers now guard "too large" — this
+# one and the check on the extracted body — so each is probed for what
+# only it does: this one, that a declared gigabyte never reaches
+# `read()` at all.
+_touched = []
+
+
+class _Tripwire(_io2.BytesIO):
+    def read(self, n=-1):
+        _touched.append(n)
+        return super().read(n)
+
+
+_code, _ = _import(1024 ** 3, body=b"{}", rfile=_Tripwire(b"{}"))
+checks["a declared gigabyte is refused before the body is read"] = (
+    _code == 413 and _touched == [])
+
+# A body that really is too big, not a header claiming it: the cheap
+# `Content-Length` check now allows a few kilobytes for the multipart
+# envelope, so a claim one byte over the cap is no longer the refusal
+# this is about.
+_BIG = b'{"schema_version": 1, "pad": "' + b"x" * (_CAP + 1) + b'"}'
+_code, _msg = _import(len(_BIG), body=_BIG)
 checks["an oversized backup import is refused"] = _code == 413
 # In megabytes and translated, like both chats. It used to be English
 # and in bytes — the one door of three that answered differently, in
@@ -538,6 +565,27 @@ checks["…in the reader's language, not in bytes"] = (
 # stood here and it could not tell an accepted bundle from a rejected
 # one — every other refusal this endpoint has is also not 413.
 _GOOD = b'{"schema_version": 1, "settings": {"language": "en"}}'
+
+# The ceiling is on the backup, not on the wrapper a browser puts
+# round it. A bundle just under the cap arrives with a boundary and
+# part headers on top, and measuring those made the Web UI refuse a
+# file both chats accept — with a message that then read "2.0 MB is
+# too large … the limit is 2 MB".
+_NEAR = b'{"schema_version": 1, "pad": "' + b"x" * (_CAP - 200) + b'"}'
+_ENVELOPED = (b"------x\r\nContent-Disposition: form-data; name=\"file\"; "
+              b"filename=\"docksentry-backup-dockmox.lan.json\"\r\n"
+              b"Content-Type: application/json\r\n\r\n"
+              + _NEAR + b"\r\n------x--\r\n")
+_code, _ = _import(len(_ENVELOPED), body=_ENVELOPED)
+checks["a backup just under the cap is not refused for its envelope"] = (
+    _code != 413)
+# …and the allowance is for the envelope only: the file itself is
+# still held to the cap exactly.
+_OVER = b'{"schema_version": 1, "pad": "' + b"x" * (_CAP + 100) + b'"}'
+_WRAPPED = (b"------x\r\nContent-Disposition: form-data; name=\"file\"\r\n"
+            b"\r\n" + _OVER + b"\r\n------x--\r\n")
+_code, _ = _import(len(_WRAPPED), body=_WRAPPED)
+checks["…while a file over it still is, envelope or not"] = _code == 413
 _code, _ = _import(len(_GOOD), body=_GOOD)
 checks["…while a real bundle within the limit is accepted"] = _code == 200
 

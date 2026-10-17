@@ -2166,10 +2166,28 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if 0 < length <= 1_000_000:
                 body = self.rfile.read(length)
                 self.rfile = _ReplayedBody(body, self.rfile)
-                try:
-                    params = parse_qs(body.decode("utf-8", "replace"))
-                except Exception:
-                    params = {}
+                # Only a form body is a form. `parse_qs` was applied to
+                # whatever arrived, so a JSON or multipart upload came
+                # back as one key built out of the file's own bytes,
+                # with a 120-character window of file content as its
+                # value — past the redaction, which matches on key
+                # NAMES. A backup bundle carries every persistent key
+                # there is, so what landed in the log depended on where
+                # `&` and `=` happened to fall. Measured on 17.10.2026.
+                #
+                # What is recorded for a non-form body instead: that it
+                # was one, and how big. An audit entry is a pointer to
+                # what happened, and "someone uploaded 1.9 MB of JSON"
+                # is the honest pointer here.
+                _ctype = (self.headers.get("Content-Type", "") or "").lower()
+                if "application/x-www-form-urlencoded" in _ctype:
+                    try:
+                        params = parse_qs(body.decode("utf-8", "replace"))
+                    except Exception:
+                        params = {}
+                elif _ctype:
+                    params = {"content_type": [_ctype.split(";")[0]],
+                              "bytes": [str(len(body))]}
             actor, source = self._audit_actor()
             target = ""
             for key in ("name", "container", "group", "id"):
@@ -2197,9 +2215,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return self._send_forbidden("CSRF check failed")
             path = self._get_path()
             # One seam for the whole front end (v2.1 audit trail). Placed
-            # here rather than in each handler because there are 26
-            # state-changing endpoints today: instrumenting them one by one
-            # means the 27th is added without a line, and a gap in an audit
+            # here rather than in each handler because there are 31
+            # state-changing endpoints today (26 when this was written): instrumenting them one by one
+            # means the next one is added without a line, and a gap in an audit
             # log is worse than no log at all — a missing entry reads as
             # evidence that nothing happened. After auth and CSRF, so only
             # accepted requests are recorded; a rejected one never reached
@@ -3062,7 +3080,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 t = _web_translator(config.language)
                 _cap = getattr(_TB, "RESTORE_MAX_BYTES", 2 * 1024 * 1024)
                 length = int(self.headers.get("Content-Length", 0))
-                if length > _cap:
+                # The ceiling is on the BACKUP, and a browser upload
+                # wraps it in a multipart envelope: a boundary plus the
+                # part headers, around 220 bytes for a
+                # `docksentry-backup-*.json` filename. Measured against
+                # the raw `Content-Length`, a 2,096,900-byte bundle that
+                # both chats accept was refused here with "2.0 MB is too
+                # large … the limit is 2 MB", which is a sentence that
+                # argues with itself. The envelope gets its own
+                # allowance; the point of the cap is the megabytes, not
+                # the last kilobyte.
+                _envelope = 8 * 1024
+                if length > _cap + _envelope:
                     # Translated and in megabytes, like both chats:
                     # `restore_too_big` exists in all sixteen languages
                     # and said the same thing, while this one answered
@@ -3081,7 +3110,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Read at most the cap even so: `Content-Length` is the
                 # client's word for it, and a body longer than it claims
                 # must not get through on the strength of the claim.
-                raw = self.rfile.read(min(length, _cap))
+                raw = self.rfile.read(min(length, _cap + _envelope))
                 content_type = self.headers.get("Content-Type", "")
                 # Strip multipart boundary to find the JSON payload.
                 # Simple parser — we only ever expect one file field.
@@ -3096,6 +3125,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         last_boundary = body.rfind(b"\r\n--")
                         if last_boundary > 0:
                             body = body[:last_boundary]
+                # The envelope allowance is for the wrapper, not for
+                # the file: once the part headers are off, the bundle
+                # itself is held to the cap exactly.
+                if len(body) > _cap:
+                    payload = json.dumps(
+                        {"ok": False,
+                         "error": t("restore_too_big",
+                                    size=f"{len(body) / 1024 / 1024:.1f}",
+                                    limit=f"{_cap / 1024 / 1024:.0f}")}
+                    ).encode()
+                    self.send_response(413)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    return self.wfile.write(payload)
                 try:
                     bundle = json.loads(body.decode("utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -3119,10 +3163,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # so without this any JSON object was applied section by
                 # section: a file that happens to carry a `settings` key
                 # overwrote the real one — including the Web UI
-                # password, the bot token and `TELEGRAM_ALLOWED_USERS`,
-                # because `save_persistent` writes every persistent key
-                # at once. `test_restore_parity.py` was named for parity
-                # and asked two of the three doors; this was the third.
+                # password, the bot token and `TELEGRAM_ALLOWED_USERS`
+                # — every section the bundle carries is applied, and
+                # `settings` is one of them. (An earlier version of
+                # this comment blamed `save_persistent` for writing
+                # every persistent key at once; it has not done that
+                # since #53, and the hazard needs no such help.)
+                # `test_restore_parity.py` was named for parity and
+                # asked two of the three doors; this was the third.
                 if not isinstance(bundle, dict) or "schema_version" not in bundle:
                     payload = json.dumps(
                         {"ok": False, "error": t("restore_not_a_backup")}

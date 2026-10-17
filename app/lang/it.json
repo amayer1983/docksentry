@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram non mi ha passato quel file.",
   "restore_not_json": "⚠️ Quel file non è JSON, quindi non è un backup di Docksentry.",
   "restore_not_a_backup": "⚠️ Quello è JSON, ma non è un backup di Docksentry — non contiene `schema_version`.",
+  "restore_not_yours": "Solo chi ha inviato questo file può ripristinarlo.",
   "restart_now_btn": "🔄 Riavvia ora",
   "restart_running": "Riavvio in corso…",
   "restart_going_down": "🔄 Riavvio — torno tra poco. (restart policy: `{policy}`)",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *Controllo preliminare per* `{endpoint}`",
   "hostcheck_scheme_bad": "• `{endpoint}` non è un endpoint che conosco. Atteso uno di: {schemes}",
   "hostcheck_unreachable": "• Nessuna risposta da `{endpoint}` — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` risponde in TLS, e da qui nessuno gli ha presentato un certificato client — per questo non si è andati oltre l'handshake. Se dietro c'è un demone con `--tlsverify`, oggi funzionano due strade: salvare la connessione come contesto e usare `context://<nome>`, oppure impostare `DOCKER_TLS_VERIFY=1` e `DOCKER_CERT_PATH` sul container Docksentry con i certificati montati dentro. È tornato: {error}",
+  "hostcheck_needs_tls": "• `{endpoint}` risponde in TLS, e non si è andati oltre l'handshake. Se non è ancora configurato nulla, funzionano due strade: salvare la connessione come contesto e usare `context://<nome>`, oppure impostare `DOCKER_TLS_VERIFY=1` e `DOCKER_CERT_PATH` sul container Docksentry con i certificati montati dentro. Se l'hai già fatto, sono i certificati stessi — quello che è tornato dice quale: {error}",
   "hostcheck_denied": "• `{endpoint}` ha risposto — e ci ha rifiutati: {error}. Sono i permessi del socket, non la rete: controlla il mount, il gruppo e, se attivo, SELinux.",
   "hostcheck_denied_ssh": "• ssh ha risposto su `{endpoint}` e non ci ha fatti entrare: {error}. È una chiave, non il socket — questo container ha il proprio filesystem, quindi la chiave che usi dalla shell non è quella che offre.",
   "hostcheck_engine": "• Ha risposto {engine} {version}",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "In questo container non esiste `{dir}`. Le chiavi stanno sull'host — `ssh-copy-id` le ha scritte nella tua home, e un container ha il proprio filesystem. Montale in sola lettura: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` è montato ma non contiene `known_hosts`, quindi la prima connessione a un host nuovo non ha nessuno a cui chiedere. Monta l'intera directory, non solo la chiave.",
   "hostdiag_ssh_key_refused": "`{dir}` è montato e contiene un `known_hosts`, quindi viene rifiutata la chiave stessa — controlla che la chiave di questo container sia negli `authorized_keys` remoti di quell'utente.",
+  "hostdiag_ssh_bad_owner": "ssh ha rifiutato il proprio file di configurazione prima ancora di comporre: `{dir}/config` deve appartenere all'utente *dentro* questo container, e un `.ssh` montato mantiene il proprietario dell'host. Le chiavi e `known_hosts` non danno problemi — è solo la configurazione. Lasciala fuori dal mount, oppure assegna quel singolo file a root.",
   "hostdiag_hostkey_unknown": "Nessun `known_hosts` in `{dir}`, quindi questo host è sconosciuto al container anche se tu lo conosci. Monta l'intera directory `.ssh`: `-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "La chiave dell'host è cambiata, oppure `known_hosts` ha una voce per un altro indirizzo. Qui SSH rifiuta di proposito — controlla la voce invece di togliere il controllo."
 }

@@ -109,7 +109,11 @@ STOPPED = ("exited", "")
 _out, _state, _health = _outcome([STARTING] * 5)
 checks["a container that stays 'starting' is reported as starting"] = (
     _out == "starting")
-checks["…not as unhealthy"] = _out != "unhealthy"
+# `_out != "unhealthy"` was here and is implied by the line above —
+# it cannot fail while that one passes. What is worth asking instead
+# is the thing the rollback path keys on.
+checks["…which the rollback path does not act on"] = (
+    _out not in ("unhealthy", "crashloop"))
 checks["…and the state it was last seen in comes back with it"] = (
     _state == "running" and _health == "starting")
 
@@ -159,9 +163,21 @@ checks["a count that was already high is not a crash loop"] = (
 # ── slow but stable is accepted, once it looks healthy ──────────────
 # `starting` for a while and then healthy for the window: the timeout is
 # a floor on patience, not a verdict.
+# Inside the loop, which is the ordinary case…
 checks["slow-then-healthy is accepted"] = (
     _outcome([STARTING, STARTING, HEALTHY, HEALTHY, HEALTHY],
              max_starting=50, stable=10)[0] == "healthy")
+# …and at the timeout, which is the other half and the one this
+# procedure was not reaching: the wait runs out while the container
+# has looked healthy but not yet for the full stability window. An
+# audit deleted `if healthy_since is not None: return "healthy"` and
+# only a live-daemon procedure noticed.
+checks["…and so is one that was healthy when the wait ran out"] = (
+    _outcome([STARTING, HEALTHY, HEALTHY], max_starting=30, stable=600)[0]
+    == "healthy")
+checks["…while one that never looked healthy is still 'starting'"] = (
+    _outcome([STARTING, STARTING, STARTING], max_starting=30,
+             stable=600)[0] == "starting")
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

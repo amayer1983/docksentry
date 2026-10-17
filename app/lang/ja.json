@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram がそのファイルを渡しませんでした。",
   "restore_not_json": "⚠️ そのファイルは JSON ではないため、Docksentry のバックアップではありません。",
   "restore_not_a_backup": "⚠️ これは JSON ですが、Docksentry のバックアップではありません — `schema_version` がありません。",
+  "restore_not_yours": "このファイルを復元できるのは、送った本人だけです。",
   "restart_now_btn": "🔄 今すぐ再起動",
   "restart_running": "再起動中…",
   "restart_going_down": "🔄 再起動します — すぐ戻ります。（再起動ポリシー: `{policy}`）",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` の事前チェック*",
   "hostcheck_scheme_bad": "• `{endpoint}` は私が扱えるエンドポイントではありません。想定: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` から応答がありません — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` は TLS で応答し、こちらからクライアント証明書を差し出していません — そのためハンドシェイクで止まりました。背後が `--tlsverify` のデーモンなら、今日使える道が二つあります：接続をコンテキストとして保存して `context://<名前>` を指定するか、Docksentry のコンテナに `DOCKER_TLS_VERIFY=1` と `DOCKER_CERT_PATH` を設定し、証明書をマウントしてください。返ってきた内容：{error}",
+  "hostcheck_needs_tls": "• `{endpoint}` は TLS で応答し、ハンドシェイクで止まりました。まだ何も設定していないなら、使える道が二つあります：接続をコンテキストとして保存して `context://<名前>` を指定するか、Docksentry のコンテナに `DOCKER_TLS_VERIFY=1` と `DOCKER_CERT_PATH` を設定し、証明書をマウントしてください。すでに設定済みなら、証明書そのものの問題です — どれかは返ってきた内容が示しています：{error}",
   "hostcheck_denied": "• `{endpoint}` は応答し、そのうえで拒否しました — {error}。ネットワークではなくソケットの権限です。マウント、グループ、有効なら SELinux を確認してください。",
   "hostcheck_denied_ssh": "• `{endpoint}` では ssh が応答し、そして入れてくれませんでした: {error}。これは鍵の問題で、ソケットではありません。このコンテナは独自のファイルシステムを持つため、あなたがシェルから使う鍵とは別の鍵を提示します。",
   "hostcheck_engine": "• {engine} {version} が応答しました",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "このコンテナの中に `{dir}` がありません。鍵はホスト側にあります — `ssh-copy-id` はあなた自身のホームディレクトリに書き込み、コンテナは別のファイルシステムを持っています。読み取り専用でマウントしてください：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` はマウントされていますが `known_hosts` がないため、新しいホストへの最初の接続で問い合わせる相手がいません。鍵だけでなくディレクトリ全体をマウントしてください。",
   "hostdiag_ssh_key_refused": "`{dir}` はマウントされ `known_hosts` もあるので、拒否されているのは鍵そのものです — このコンテナの鍵が接続先のそのユーザーの `authorized_keys` に入っているか確認してください。",
+  "hostdiag_ssh_bad_owner": "ssh は接続する前に自分の設定ファイルを拒否しました：`{dir}/config` はこのコンテナ *内* のユーザーのものである必要があり、マウントした `.ssh` はホスト側の所有者をそのまま持ち込みます。鍵と `known_hosts` は問題ありません — 設定ファイルだけの話です。マウントから外すか、そのファイルだけを root のものにしてください。",
   "hostdiag_hostkey_unknown": "`{dir}` に `known_hosts` がないため、あなたは知っているホストでもコンテナには未知のホストです。`.ssh` ディレクトリ全体をマウントしてください：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "ホスト鍵が変わったか、`known_hosts` に別のアドレスの行があります。ここで SSH が拒否するのは意図された動作です — 検査を外すのではなく、その行を確認してください。"
 }

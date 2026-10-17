@@ -95,6 +95,59 @@ with tempfile.TemporaryDirectory() as tmp:
     checks["…and neither does an empty one"] = (
         hostdiag.hint("ssh://root@nas", "", ssh_dir=empty) == "")
 
+# ── ssh refusing its own config file ────────────────────────────────
+# Introduced by the fix above, measured on 17.10.2026 against a real
+# container: `-v ~/.ssh:/root/.ssh:ro` carries the host user's
+# ownership in with it, and OpenSSH refuses a `config` that does not
+# belong to the user running ssh. `Bad owner or permissions on
+# /root/.ssh/config`, before it dials. The keys and `known_hosts` are
+# fine that way — uid-1000 keys in a root container reach "Connection
+# refused", i.e. they tried — so it is one file and the sentence says
+# which.
+#
+# And it must not be reported as "Nothing answered": ssh answered, it
+# said no.
+BADOWNER = "Bad owner or permissions on /root/.ssh/config"
+
+with tempfile.TemporaryDirectory() as _d:
+    _h = hostdiag.hint("ssh://root@nas", BADOWNER, ssh_dir=_d)
+    checks["ssh refusing its own config is explained"] = bool(_h)
+    checks["…naming the config and not the keys"] = (
+        "config" in _h and "known_hosts" in _h)
+    # The two neighbouring failures must keep their own sentences, or
+    # this one is just swallowing everything ssh says.
+    checks["…while a key refusal still gets the key sentence"] = (
+        "config" not in hostdiag.hint("ssh://root@nas", REFUSED,
+                                      ssh_dir=_d))
+
+import hostcheck as _hc2  # noqa: E402
+
+
+class _Says:
+    def __init__(self, err):
+        self.err = err
+
+    def build(self, args):
+        return ["docker"] + args
+
+    def run(self, args, **kw):
+        import types as _t3
+        return _t3.SimpleNamespace(returncode=1, stdout="", stderr=self.err)
+
+
+checks["…and the pre-flight calls it a refusal, not silence"] = (
+    [k for k, _p in _hc2.preflight("ssh://root@nas", _Says(BADOWNER))]
+    == ["denied_ssh"])
+# The counter-direction: a daemon that is simply not running must stay
+# "nothing answered", or the word "permissions" has swallowed the case
+# three audits spent time on.
+checks["…while a stopped daemon is still nothing answered"] = (
+    [k for k, _p in _hc2.preflight(
+        "ssh://root@nas",
+        _Says("Cannot connect to the Docker daemon at "
+              "unix:///var/run/docker.sock. Is the docker daemon running?"))]
+    == ["unreachable"])
+
 # ── the sentence comes out in the reader's language ─────────────────
 # It did not, until 11.10.2026: five hard-coded English sentences hung
 # under a finding that is translated in all sixteen languages. A German
@@ -103,8 +156,8 @@ with tempfile.TemporaryDirectory() as tmp:
 from i18n import available_languages, get_translator  # noqa: E402
 
 KEYS = ("hostdiag_ssh_no_dir", "hostdiag_ssh_no_known_hosts",
-        "hostdiag_ssh_key_refused", "hostdiag_hostkey_unknown",
-        "hostdiag_hostkey_changed")
+        "hostdiag_ssh_key_refused", "hostdiag_ssh_bad_owner",
+        "hostdiag_hostkey_unknown", "hostdiag_hostkey_changed")
 
 _langs = available_languages()
 checks["all sixteen languages carry the five sentences"] = (
@@ -226,7 +279,6 @@ for _file in SITES:
                 # catches it there instead. Driven below rather than
                 # assumed, because "somebody else catches it" is the
                 # kind of belief this file exists to stop.
-                and not isinstance(_node, ast.Lambda)
                 and not _inside_lambda(_t, _node)):
             _unprotected.append(f"{_file}:{_node.lineno}")
 

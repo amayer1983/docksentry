@@ -26,6 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import hostcheck                                            # noqa: E402
 
 checks = {}
+
+from i18n import get_translator as _gt  # noqa: E402
+_t_en = _gt("en")
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
@@ -641,6 +644,26 @@ _f = hostcheck.preflight(
     probe_tls=lambda ep: _asked.append(ep) or True)
 checks["…nor a socket that answered and said no"] = (
     _asked == [] and kinds(_f) == ["denied"])
+
+# The finding must not claim WHY the handshake stopped. `speaks_tls`
+# offers no certificate of its own, so it cannot tell "nothing is set
+# up" from "the CA is wrong" — and the first wording said "nothing
+# here offered it a client certificate", which hands somebody who
+# already configured certificates the same two recipes he followed.
+# Measured against three real refusal texts, all of which land here.
+for _tls_err in ("x509: certificate signed by unknown authority",
+                 "remote error: tls: expired certificate",
+                 "tls: certificate required"):
+    _f = hostcheck.preflight(
+        "tcp://nas:2376",
+        _Backend({"version --format": (1, "", _tls_err)}),
+        probe_tls=lambda ep: True)
+    _txt = _t_en(f"hostcheck_{_f[0][0]}", **_f[0][1])
+    checks[f"a TLS error of its own ({_tls_err[:18]}…) still lands here"] = (
+        kinds(_f) == ["needs_tls"])
+    checks[f"…and the wording for {_tls_err[:18]}… blames no cause"] = (
+        "offered it a client certificate" not in _txt
+        and _tls_err in _txt)
 
 # The counter-direction, and it is the one that matters: a port that is
 # simply dead must NOT be called a TLS port. Without this the check

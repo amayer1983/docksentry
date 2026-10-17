@@ -818,6 +818,7 @@
   "restore_download_failed": "⚠️ Telegram 不肯把那个文件交给我。",
   "restore_not_json": "⚠️ 那个文件不是 JSON，所以不是 Docksentry 的备份。",
   "restore_not_a_backup": "⚠️ 这是 JSON，但不是 Docksentry 的备份 — 里面没有 `schema_version`。",
+  "restore_not_yours": "只有发送这个文件的人才能还原它。",
   "restart_now_btn": "🔄 立即重启",
   "restart_running": "正在重启…",
   "restart_going_down": "🔄 正在重启 — 稍后回来。（重启策略：`{policy}`）",
@@ -997,7 +998,7 @@
   "hostcheck_header": "🔎 *`{endpoint}` 预检*",
   "hostcheck_scheme_bad": "• `{endpoint}` 不是我能识别的端点。应为: {schemes}",
   "hostcheck_unreachable": "• `{endpoint}` 没有任何响应 — {error}",
-  "hostcheck_needs_tls": "• `{endpoint}` 以 TLS 作答，而这边没有向它出示客户端证书——所以只走到握手为止。如果后面是启用了 `--tlsverify` 的守护进程，今天有两条路可走：把连接保存为一个上下文并使用 `context://<名称>`，或者在 Docksentry 容器上设置 `DOCKER_TLS_VERIFY=1` 和 `DOCKER_CERT_PATH`，并把证书挂载进去。返回的内容：{error}",
+  "hostcheck_needs_tls": "• `{endpoint}` 以 TLS 作答，只走到握手为止。如果还没有配置过，有两条路可走：把连接保存为一个上下文并使用 `context://<名称>`，或者在 Docksentry 容器上设置 `DOCKER_TLS_VERIFY=1` 和 `DOCKER_CERT_PATH`，并把证书挂载进去。如果你已经配置过了，那就是证书本身的问题——返回的内容说明是哪一种：{error}",
   "hostcheck_denied": "• `{endpoint}` 回应了，并且拒绝了我们 — {error}。这是套接字的权限，不是网络：请检查挂载、用户组，以及若已启用的 SELinux。",
   "hostcheck_denied_ssh": "• ssh 在 `{endpoint}` 上回应了，并且没让我们进去：{error}。这是密钥的问题，不是套接字 — 这个容器有自己的文件系统，所以你在 shell 里用的密钥并不是它出示的那一把。",
   "hostcheck_engine": "• {engine} {version} 作出了响应",
@@ -1014,6 +1015,7 @@
   "hostdiag_ssh_no_dir": "这个容器里没有 `{dir}`。密钥在宿主机上——`ssh-copy-id` 把它们写进了你自己的主目录，而容器有自己的文件系统。以只读方式挂载：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_ssh_no_known_hosts": "`{dir}` 已挂载，但里面没有 `known_hosts`，所以首次连接新主机时无人可问。请挂载整个目录，而不是只挂载密钥。",
   "hostdiag_ssh_key_refused": "`{dir}` 已挂载且带有 `known_hosts`，所以被拒绝的是密钥本身——请检查这个容器的密钥是否在对端该用户的 `authorized_keys` 里。",
+  "hostdiag_ssh_bad_owner": "ssh 在拨号之前就拒绝了自己的配置文件：`{dir}/config` 必须属于这个容器*内*的用户，而挂载进来的 `.ssh` 会保留宿主机上的属主。密钥和 `known_hosts` 不受影响——问题只在配置文件。把它排除在挂载之外，或者把这一个文件交给 root。",
   "hostdiag_hostkey_unknown": "`{dir}` 里没有 `known_hosts`，所以即便你认识这台主机，容器并不认识它。请挂载整个 `.ssh` 目录：`-v ~/.ssh:{dir}:ro`",
   "hostdiag_hostkey_changed": "主机密钥变了，或者 `known_hosts` 里有一条指向别的地址的记录。SSH 在这里是故意拒绝的——请检查那条记录，而不是取消检查。"
 }

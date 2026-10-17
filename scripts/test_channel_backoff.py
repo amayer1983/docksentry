@@ -17,12 +17,14 @@ fifteen minutes — and wrong about the two statuses whose whole meaning
 is "ask again".
 
 One procedure for all six channels rather than six copies in six files.
-The five `*_resilience.py` share six distinct assertion expressions
-between them, 24 occurrences in all and none of them in all five —
-counted on 16.10.2026, after an audit could not reproduce the
-"twenty-five" that stood here on any reading. The identical check
-copied four times is still how a rule drifts in one place and nobody
-notices. Each channel keeps
+The `*_resilience.py` files repeat assertion expressions between
+them, and the identical check copied four times is how a rule drifts
+in one place and nobody notices. No number here any more: "twenty-five"
+could not be reproduced on any reading, and the "24" that replaced it
+was wrong too — there are seven such files, not five, and the count
+depends on which you take and on whether you read the text or the
+tree. What is worth saying is the shape, and the shape is why this
+procedure exists. Each channel keeps
 its own file for what is genuinely its own; this is the part that has
 to be the same everywhere, so it is written once and the table says who
 it applies to.
@@ -31,6 +33,7 @@ Driven end to end: a real notifier, a real retry queue, an HTTP error
 raised where `urlopen` would raise it. What is asserted is whether the
 message is waiting afterwards — not which clause was taken.
 """
+import ast
 import io
 import os
 import sys
@@ -276,14 +279,40 @@ finally:
     urllib.request.urlopen = _open2
     notify_retry.queue = _real_q
 
-# The three call sites share one number rather than three literals that
-# happen to agree. Nothing held them to each other before.
+# The three call sites take one number from one place, rather than
+# three literals that happen to agree. Value equality was the first
+# check here and it held nothing — an audit put the two `60.0`
+# literals back, one at a time, and it stayed green, which is exactly
+# the state the comment above says was fixed. Read as a tree: each
+# module's name has to be *assigned from* `retry_after`.
+import ast as _ast                                             # noqa: E402
+import os as _os                                               # noqa: E402
+
 from discord_rest import MAX_RETRY_AFTER as _dc_cap            # noqa: E402
 from telegram_bot import TelegramBot as _TB                    # noqa: E402
 
-checks["all three in-line waits share one budget"] = (
+checks["all three in-line waits agree on the number"] = (
     _dc_cap == _ra.MAX_TOTAL_WAIT
     and _TB.MAX_RETRY_AFTER == _ra.MAX_TOTAL_WAIT)
+
+_APP = _os.path.join(_os.path.dirname(__file__), "..", "app")
+_borrowed = {}
+for _file in ("discord_rest.py", "telegram_bot.py"):
+    _tree = _ast.parse(open(_os.path.join(_APP, _file),
+                            encoding="utf-8").read())
+    _borrowed[_file] = any(
+        isinstance(n, ast.Assign)
+        and any(getattr(t, "id", getattr(t, "attr", "")) == "MAX_RETRY_AFTER"
+                for t in n.targets)
+        and any(isinstance(sub, ast.Attribute)
+                and getattr(sub.value, "id", "") in ("_ra", "retry_after")
+                for sub in ast.walk(n.value))
+        for n in _ast.walk(_tree))
+checks["…because they take it from one place, not three literals"] = all(
+    _borrowed.values())
+if not all(_borrowed.values()):
+    print(f"      → own literal in: "
+          f"{[f for f, ok in _borrowed.items() if not ok]}")
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
