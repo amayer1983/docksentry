@@ -9,13 +9,15 @@ The detail is held back until the matching stable release is out —
 everyone on `:latest` is still running the old code until then.
 
 ### Fixed
-- A case where a pinned container could be updated anyway.
-- A damaged `settings.json` could put the container into a restart loop
-  instead of being set aside.
-- Two output paths in the new list view.
-- Local backup bundles were written world-readable despite holding
-  channel credentials. They are owner-only now, and `backups/` is
-  ignored by git.
+- **A pinned container could be updated anyway.** Under the right
+  timing, the pin was not seen.
+- **A damaged settings file no longer loops the container.** It is set
+  aside and the start says so, instead of dying and retrying.
+- **Two output paths in the list view are filtered.** Both sit in
+  `STATUS_VIEW=list`.
+- **Local backups are no longer world-readable.** They hold channel
+  credentials and were written at the umask default; 0600 now, and
+  `backups/` is ignored by git.
 
 ### Internal
 - Four new procedures and 16 entries in the mutation ratchet: 169
