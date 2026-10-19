@@ -37,7 +37,41 @@ no npm anywhere near it, and that is worth keeping. Rendering a list is
 not a problem that needs 40 kB of library.
 """
 
+import html
 import json
+
+from container_store import is_safe_link
+from i18n import safe_language
+
+
+def script_json(obj):
+    """`json.dumps` for a value going INSIDE a `<script>` block.
+
+    `json.dumps` escapes what JSON needs escaped. HTML is not JSON: the
+    parser looks for the literal text `</script` and ends the block
+    there, wherever it appears — including inside a string. So
+
+        json.dumps({"lang": "</scr" "ipt><scr" "ipt>alert(1)//"})
+
+    produces a perfectly valid JSON document that closes the block and
+    opens a new one. Measured 18.10.2026; `<` and `/` come through
+    untouched.
+
+    Escaping `<` and `>` as `\\u003c` / `\\u003e` is enough on its own —
+    `</script` cannot survive it — and the escape is invisible to
+    `JSON.parse`, so the value the page sees is unchanged. `&` goes too,
+    so the text is also safe in an HTML-escaping context, and U+2028 /
+    U+2029 because those terminate a line in JavaScript but not in JSON.
+    """
+    out = json.dumps(obj)
+    return (out.replace("<", "\\u003c").replace(">", "\\u003e")
+               .replace("&", "\\u0026")
+               .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+
+
+def _link(url):
+    """A stored link, or "" if it is not safe to render as an href."""
+    return url if url and is_safe_link(url) else ""
 
 
 def _tag_of(image):
@@ -116,7 +150,17 @@ def container_rows(views, host_key, updating_label=None):
                 "self": bool(own and name == own),
                 "group": group[1] if group else "",
                 "note": notes.get(name, ""),
-                "link": links.get(name, ""),
+                # Checked HERE, not in the client. `web_ui.py` calls
+                # this "THE choke point for defence in depth" and runs
+                # it at five places on the V1 path; the V2 path ran it
+                # at none, and handed the stored string to `v2.js`,
+                # which renders it into an `href` with nothing but
+                # `esc()` around it. HTML-escaping does not touch a URL
+                # *scheme*, so `javascript:…` arrived intact and
+                # clickable. A rejected link is dropped rather than
+                # shown broken — the row simply has no link, which is
+                # what a container without one looks like anyway.
+                "link": _link(links.get(name, "")),
                 "advisory": advisories.get(name, ""),
             })
     rows.sort(key=lambda r: (not r["update"], r["host"], r["name"].lower()))
@@ -173,8 +217,16 @@ def shell(t, version, lang="en"):
     what the server sends is a few kilobytes regardless of how many
     containers there are. The old page grew to 173 kB at 25 of them.
     """
+    # `lang` reaches here from `config.language`, which is writable
+    # through the settings form AND through a backup bundle — and the
+    # bundle's allowlist checks the key, never the value. Two defences,
+    # because each covers a case the other does not: `safe_language`
+    # rejects anything that is not a translation we ship, and the
+    # escaping below holds even if some future caller passes a string
+    # straight through.
+    lang = safe_language(lang)
     return f"""
-<div id="v2" class="v2" data-lang="{lang}">
+<div id="v2" class="v2" data-lang="{html.escape(lang, quote=True)}">
   <header class="v2-bar">
     <div class="v2-stats" id="v2-stats"></div>
     <div class="v2-tools">
@@ -207,6 +259,6 @@ def shell(t, version, lang="en"):
     <div class="v2-panel-sheet" role="dialog" aria-modal="true"></div>
   </div>
 </div>
-<script>window.DS_V2 = {json.dumps({"version": version, "lang": lang})};</script>
+<script>window.DS_V2 = {script_json({"version": version, "lang": lang})};</script>
 <script src="/static/v2.js?v={version}"></script>
 """

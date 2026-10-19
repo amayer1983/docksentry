@@ -19,6 +19,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, urlparse
 
 from config import PERSISTENT_KEYS
+from i18n import safe_language
 from link_resolver import LinkResolver
 
 
@@ -1507,7 +1508,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 ui_mode_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
 
             return f"""<!DOCTYPE html>
-<html lang="{_e(config.language)}">
+<html lang="{_e(safe_language(config.language))}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1606,7 +1607,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # the password left to guess. A password manager fills the name
             # from the URL regardless, so nothing is lost by leaving it blank.
             return f"""<!DOCTYPE html>
-<html lang="{_e(config.language)}"><head>
+<html lang="{_e(safe_language(config.language))}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(t("web_login_title"))} · Docksentry</title>

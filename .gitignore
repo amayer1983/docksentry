@@ -29,3 +29,9 @@ scripts/issue_inbox.py
 # name the ignore list did not cover once got one committed.
 docker-compose.dev.yml.*
 *.bak-*
+
+# Local backup bundles. They carry every channel credential the
+# instance has, and three of them were committed to a public repo
+# before this line existed (18.10.2026 — checked: those three held no
+# settings, so nothing leaked, but the mechanism was live).
+backups/

@@ -36,6 +36,37 @@ def available_languages():
     return langs
 
 
+def safe_language(value, default="en"):
+    """A language code that is known to exist, never the caller's string.
+
+    `get_translator` already shrugs off nonsense — it truncates to two
+    characters and falls back to English. What it does NOT do is hand
+    back a *safe value*, and `config.language` is not only used to pick
+    a translation: it is rendered into the V2 page, into an HTML
+    attribute and into a `<script>` block. Until 18.10.2026 that string
+    went in exactly as stored, and nothing anywhere validated it —
+    `language` is in `PERSISTENT_KEYS`, and the backup import
+    (`backup.py`) checks the key against an allowlist and the value not
+    at all. A bundle carrying
+
+        "language": "</scr" "ipt><scr" "ipt>…"
+
+    closed the script block, because `json.dumps` does not escape `<`
+    or `/`. The template escapes its output now, which is the actual
+    fix; this function is the second layer, and it is also simply
+    correct: an unknown code cannot be displayed anyway.
+
+    Matching is on the same two-character prefix `get_translator` uses,
+    so what this returns is what will actually be loaded.
+    """
+    if not isinstance(value, str) or not value:
+        return default
+    code = value.lower()[:2]
+    if not code.isalpha():
+        return default
+    return code if code in available_languages() else default
+
+
 def get_translator(language="en"):
     """Return a translation function for the given language."""
     lang = language.lower()[:2]

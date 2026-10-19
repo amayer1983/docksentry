@@ -89,6 +89,16 @@ def _env(key, default=""):
     return _strip_quotes(os.environ.get(key, default))
 
 
+class _DamagedSettings(Exception):
+    """settings.json parsed, but is not something we can read.
+
+    Separate from `json.JSONDecodeError` only so the one handler in
+    `_load_persistent` covers both without the shape check having to
+    live outside the `try` — where it used to, which let a file
+    containing `null` crash the start.
+    """
+
+
 def _clamp_int(value, lo, hi, default):
     """`value` as an int within [lo, hi], or `default` if it isn't one.
 
@@ -1092,9 +1102,34 @@ class Config:
         """Load saved settings from settings.json, overriding ENV defaults."""
         if not os.path.exists(self.settings_file):
             return
+        # Bound BEFORE the try. Without this a settings.json that will
+        # not parse takes the `except` below, leaves `saved` unbound,
+        # and the `_migrate_web_password(saved ...)` call at the end of
+        # this method raises UnboundLocalError — during __init__, so the
+        # process dies at startup, and the restart reads the same file
+        # and dies again. A damaged settings file became a boot loop
+        # that nobody without filesystem access could get out of.
+        # Reproduced 18.10.2026:
+        #   UnboundLocalError: cannot access local variable 'saved'
+        #
+        # This is the ONLY place `saved` is bound. The handlers
+        # below each used to re-bind it, which made this line
+        # dead and unguardable — breaking it changed nothing and
+        # no procedure went red. One binding, and the mutation
+        # check can see it.
+        saved = {}
         try:
             with open(self.settings_file) as f:
                 saved = json.load(f)
+            # The shape check belongs HERE, before the first use, not
+            # after the try. `null` parses fine and gives `None`, and
+            # `k in None` raises TypeError — which neither handler
+            # below catches, so the boot loop came straight back for
+            # that one input. Found by test_config_damage.py while the
+            # check sat after the block.
+            if not isinstance(saved, dict):
+                raise _DamagedSettings(
+                    f"expected a JSON object, got {type(saved).__name__}")
             # Which keys the file actually carried, so `save_persistent`
             # can tell "somebody saved this on purpose" from "this was
             # swept in by an unrelated save".
@@ -1102,8 +1137,15 @@ class Config:
             for key in PERSISTENT_KEYS:
                 if key in saved:
                     setattr(self, key, saved[key])
-        except (json.JSONDecodeError, IOError):
-            pass
+        except (json.JSONDecodeError, _DamagedSettings) as e:
+            self._quarantine_settings(e)
+        except IOError as e:
+            # Could not read it at all — a permission problem or a
+            # transient failure. The file may be perfectly fine, so it
+            # is left exactly where it is; only the startup is saved.
+            print(f"WARNING: could not read {self.settings_file}: {e}")
+            print("WARNING: starting from environment defaults; saved "
+                  "settings are NOT applied.")
         # The two session bounds are read back raw above, but consumed as
         # `int(...) * 3600` at login time. Our own save_persistent always
         # writes clamped ints, so this only bites a hand-edited or foreign
@@ -1119,6 +1161,48 @@ class Config:
         # where the file was created with the umask default, typically 0644).
         self._restrict_settings_perms()
         self._migrate_web_password(saved if isinstance(saved, dict) else {})
+
+    def _quarantine_settings(self, why):
+        """Move a damaged settings.json aside, loudly, and carry on.
+
+        Three things have to be true at once after this, and only
+        moving the file achieves all three:
+
+        * **The process starts.** A damaged file must not be able to
+          keep the instance down — see the UnboundLocalError note in
+          `_load_persistent`.
+        * **The old file survives.** The next `save_persistent()` would
+          otherwise overwrite it, and with it the only copy of whatever
+          the operator had configured. Renaming keeps it readable: the
+          settings are usually still in there, one bad byte aside.
+        * **Somebody finds out.** Silently starting from environment
+          defaults looks exactly like a working instance until the
+          first notification goes to nobody.
+
+        A timestamp in the name so repeated failures do not overwrite
+        each other — plus a counter, because the timestamp is only
+        second-resolution and a crash loop can quarantine three times
+        inside one second, which is how this was written the first time
+        and what the check caught. If the rename itself fails there is
+        nothing further to do but say so — the start continues either way.
+        """
+        import time
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        kept = f"{self.settings_file}.corrupt-{stamp}"
+        n = 1
+        while os.path.exists(kept):
+            n += 1
+            kept = f"{self.settings_file}.corrupt-{stamp}-{n}"
+        print(f"ERROR: {self.settings_file} is damaged ({why}).")
+        try:
+            os.replace(self.settings_file, kept)
+            print(f"ERROR: moved it to {kept} — it is NOT lost, and the "
+                  f"settings in it can be recovered by hand.")
+        except OSError as e:
+            print(f"ERROR: could not move it aside ({e}); it will be "
+                  f"overwritten the next time settings are saved.")
+        print("ERROR: starting from environment defaults. Check the Web UI "
+              "settings page — anything configured there needs setting again.")
 
     def _migrate_web_password(self, saved):
         """Replace a plaintext `web_password` in settings.json with a hash.

@@ -26,6 +26,7 @@ regenerates) and `pending_updates.json` (transient by definition).
 import json
 import os
 import re
+import tempfile
 from datetime import datetime
 
 SCHEMA_VERSION = 1
@@ -151,10 +152,32 @@ def write_local(config, store, version, keep=KEEP, when=None):
         os.makedirs(directory, exist_ok=True)
         path = os.path.join(directory, filename(config, when))
         data = payload(config, store, version, when)
-        tmp = path + ".tmp"
-        with open(tmp, "wb") as f:
-            f.write(data)
-        os.replace(tmp, path)
+        # Unique temp name, and 0600. Two separate findings from the
+        # 18.10.2026 audit meeting in four lines:
+        #
+        # `<path>.tmp` is shared by every writer, so two backups
+        # starting together wrote into one file and `os.replace`
+        # published the mixture — the same defect as in
+        # `container_store.atomic_write_json`, a second copy of it.
+        #
+        # And the bundle holds every channel credential this install
+        # has, while being written with the umask default — in
+        # practice 0644, next to a `settings.json` deliberately kept at
+        # 0600. `mkstemp` creates at 0600 and `os.replace` keeps the
+        # mode, so the permission comes from the same change.
+        fd, tmp = tempfile.mkstemp(dir=directory,
+                                   prefix=os.path.basename(path) + ".",
+                                   suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except OSError:
         return ""
     prune(directory, keep)

@@ -58,6 +58,114 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    ("the outer page frame filters the language attribute too",
+     "app/web_ui.py",
+     '<html lang="{_e(safe_language(config.language))}"><head>',
+     '<html lang="{_e(config.language)}"><head>',
+     "test_v2_output_safety.py"),
+
+    ("a backup bundle is written only its owner can read",
+     "app/backup.py",
+     '        fd, tmp = tempfile.mkstemp(dir=directory,\n'
+     '                                   prefix=os.path.basename(path) + ".",\n'
+     '                                   suffix=".tmp")',
+     '        tmp = path + ".tmp"\n'
+     "        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o644)",
+     "test_backup_write_safety.py"),
+
+    ("a damaged settings file does not take the start down",
+     "app/config.py",
+     "        saved = {}\n        try:\n            with open(self.settings_file) as f:",
+     "        try:\n            with open(self.settings_file) as f:",
+     "test_config_damage.py"),
+
+    ("a settings file of the wrong shape is damage, not a crash",
+     "app/config.py",
+     "            if not isinstance(saved, dict):\n"
+     "                raise _DamagedSettings(",
+     "            if False:\n                raise _DamagedSettings(",
+     "test_config_damage.py"),
+
+    ("a damaged settings file is kept, not overwritten",
+     "app/config.py",
+     "            os.replace(self.settings_file, kept)",
+     "            pass",
+     "test_config_damage.py"),
+
+    ("two quarantines in one second do not overwrite each other",
+     "app/config.py",
+     "        n = 1\n        while os.path.exists(kept):",
+     "        n = 1\n        while False:",
+     "test_config_damage.py"),
+
+    ("a value cannot close the page's script block",
+     "app/web_v2.py",
+     '.replace("<", "\\\\u003c")',
+     '.replace("<", "<")',
+     "test_v2_output_safety.py"),
+
+    ("an unknown language code is never rendered",
+     "app/web_v2.py",
+     "    lang = safe_language(lang)",
+     "    pass",
+     "test_v2_output_safety.py"),
+
+    ("a stored link is checked before the V2 page gets it",
+     "app/web_v2.py",
+     '                "link": _link(links.get(name, "")),',
+     '                "link": links.get(name, ""),',
+     "test_v2_output_safety.py"),
+
+    ("two writers cannot publish a mixture of their writes",
+     "app/container_store.py",
+     '    fd, tmp = tempfile.mkstemp(dir=d, prefix=os.path.basename(path) + ".",\n'
+     '                               suffix=".tmp")',
+     '    tmp = path + ".tmp"\n'
+     "    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)",
+     "test_store_concurrency.py"),
+
+    ("a failed write removes its own temp file",
+     "app/container_store.py",
+     "        try:\n            os.unlink(tmp)\n        except OSError:\n            pass\n        raise",
+     "        raise",
+     "test_store_concurrency.py"),
+
+    ("an unreadable pin list means protected, not unprotected",
+     "app/container_store.py",
+     "        readable, pinned = self._load_checked(self.pinned_file)\n"
+     "        if not readable:\n            return True",
+     "        readable, pinned = self._load_checked(self.pinned_file)\n"
+     "        if not readable:\n            return False",
+     "test_store_concurrency.py"),
+
+    ("an unreadable ask-before-major list means ask",
+     "app/container_store.py",
+     "        readable, names = self._load_checked(self.ask_before_major_file)\n"
+     "        if not readable:\n            return True",
+     "        readable, names = self._load_checked(self.ask_before_major_file)\n"
+     "        if not readable:\n            return False",
+     "test_store_concurrency.py"),
+
+    ("an unreadable protect-stop list means protected",
+     "app/container_store.py",
+     "        readable, names = self._load_checked(self.protect_stop_file)\n"
+     "        if not readable:\n            return True",
+     "        readable, names = self._load_checked(self.protect_stop_file)\n"
+     "        if not readable:\n            return False",
+     "test_store_concurrency.py"),
+
+    ("a file that exists but will not parse is reported as unreadable",
+     "app/container_store.py",
+     '                print(f"Failed to read {path}: {e}")\n                return False, []',
+     "                return True, []",
+     "test_store_concurrency.py"),
+
+    ("concurrent pins are serialised and none is lost",
+     "app/container_store.py",
+     "            with path_lock(target):\n                return fn(self, *args, **kwargs)",
+     "            return fn(self, *args, **kwargs)",
+     "test_store_concurrency.py"),
+
     ("the alert is logged before the channels are tried",
      "app/monitor.py",
      '        print(f"Monitor: {msg}")\n        try:\n'

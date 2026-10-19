@@ -2,6 +2,25 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.41] - 2026-10-19
+
+A security update, following an independent audit of the whole tree.
+The detail is held back until the matching stable release is out —
+everyone on `:latest` is still running the old code until then.
+
+### Fixed
+- A case where a pinned container could be updated anyway.
+- A damaged `settings.json` could put the container into a restart loop
+  instead of being set aside.
+- Two output paths in the new list view.
+- Local backup bundles were written world-readable despite holding
+  channel credentials. They are owner-only now, and `backups/` is
+  ignored by git.
+
+### Internal
+- Four new procedures and 16 entries in the mutation ratchet: 169
+  guarded promises, empty debt list, 210 procedures, 5167 checks.
+
 ## [2.18.0-beta.40] - 2026-10-17
 
 A week of audits rather than features. Two full runs of the review

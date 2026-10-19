@@ -6,8 +6,11 @@ small dedicated module instead of the Telegram bot lets headless setups
 (no Telegram) still pin containers and toggle auto-update via the Web UI.
 """
 
+import functools
 import json
 import os
+import tempfile
+import threading
 import urllib.parse
 
 
@@ -95,7 +98,8 @@ def atomic_write_json(path, data, **dump_kwargs):
     pending updates, maintenance state, weekly-report state, post-
     selfupdate history fixup).
 
-    Strategy: write to ``<path>.tmp``, ``flush()`` + ``os.fsync()`` to
+    Strategy: write to a unique temp file beside the target (see the
+    note below on why the name must be unique), ``flush()`` + ``os.fsync()`` to
     push bytes through the kernel page cache to disk, then
     ``os.replace()`` which is POSIX-atomic — either the new file is
     fully visible or the old one is still there, never a partial state.
@@ -107,12 +111,96 @@ def atomic_write_json(path, data, **dump_kwargs):
     that's the current behaviour (most call sites print a warning and
     continue rather than crash on failed save).
     """
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, **dump_kwargs)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    # The temp name must be UNIQUE per writer, not `<path>.tmp`.
+    # With a fixed name two threads writing the same file open the same
+    # temp file, interleave their `json.dump` output into it, and the
+    # `os.replace` below publishes the mixture — which is the opposite
+    # of what this function promises. Measured on 18.10.2026 with two
+    # writers against one file: of 7309 reads, 262 got invalid JSON and
+    # 75 got *valid* JSON containing fields from both writes. The second
+    # kind is the dangerous one: nothing raises, and a `pinned.json`
+    # that parses but lost an entry means that container is no longer
+    # protected.
+    #
+    # `mkstemp` in the target directory keeps `os.replace` on the same
+    # filesystem, which is what makes it atomic.
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=os.path.basename(path) + ".",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, **dump_kwargs)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        # Our own temp file, named by us — safe to remove, and nobody
+        # else can be holding it. Leaving it behind would litter the
+        # state directory with one file per failed write.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# ── Serialising the writers ────────────────────────────────────────────
+# `atomic_write_json` above makes a single write all-or-nothing. That is
+# not enough for what this module actually does, which is read-modify-
+# write: `pin()` loads the list, appends, saves. Two threads doing that
+# at once both read the old list, and the second save overwrites the
+# first — no corruption, no error, one pin silently gone.
+#
+# Four threads touch these files (scheduler, monitor, Telegram, Web UI)
+# and before 18.10.2026 this module contained no lock of any kind.
+#
+# One reentrant lock per path, so a mutator can hold it across its whole
+# load-modify-save while the `_load`/`_save` helpers inside take it
+# again. Per path rather than one global lock so a slow write to one
+# file does not block an unrelated one; reentrant because the mutators
+# nest. Contention is a non-issue here — these files are a few hundred
+# bytes and writes are rare.
+_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def path_lock(path):
+    """The reentrant lock guarding `path`. Same object for the same path."""
+    with _LOCKS_GUARD:
+        lock = _LOCKS.get(path)
+        if lock is None:
+            lock = _LOCKS[path] = threading.RLock()
+        return lock
+
+
+def guarded(attr):
+    """Hold the lock for `self.<attr>` across the whole method.
+
+    For the read-modify-write methods below. The lock is reentrant, so
+    the `_load`/`_save` calls inside the body take it again without
+    deadlocking. Applied as a decorator rather than by wrapping each
+    body in a `with` block so the diff stays one line per method and
+    the indentation of 16 existing methods does not move.
+
+    Every method using this touches exactly one state file (checked),
+    so no method ever holds two of these locks and there is no lock
+    ordering to get wrong.
+
+    `attr` may be dotted (`"store.pinned_file"`) so the per-host view
+    below can lock the same path as the store it wraps — it must be the
+    SAME lock object, or the two classes serialise against each other
+    not at all.
+    """
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            target = self
+            for part in attr.split("."):
+                target = getattr(target, part)
+            with path_lock(target):
+                return fn(self, *args, **kwargs)
+        return wrapper
+    return deco
 
 
 class ContainerStore:
@@ -138,8 +226,33 @@ class ContainerStore:
         self._save(self.pinned_file, names)
 
     def is_pinned(self, name):
-        return name in self.get_pinned()
+        """Is `name` pinned? An unreadable pin list answers YES.
 
+        The three `is_*` guards below all fail CLOSED, and this is a
+        deliberate reversal. Until 18.10.2026 a `pinned.json` that could
+        not be parsed came back as `[]`, which reads as "nothing is
+        pinned" — so the one thing a pin exists to prevent, an
+        unattended update, is exactly what a damaged pin file caused.
+        Measured:
+
+            healthy   : is_pinned('db') -> True
+            truncated : is_pinned('db') -> False
+
+        and `update_checker.py` skips pinned containers on that answer.
+        Treating "I cannot read the list" as "everything is protected"
+        is the wrong answer in at most one direction: an update is
+        delayed until somebody looks at the loud message `_load_checked`
+        prints. The other direction loses a database.
+
+        A *missing* file is not an error — nothing was ever pinned —
+        and still answers no.
+        """
+        readable, pinned = self._load_checked(self.pinned_file)
+        if not readable:
+            return True
+        return name in pinned
+
+    @guarded("pinned_file")
     def pin(self, name):
         pinned = self.get_pinned()
         if name not in pinned:
@@ -148,6 +261,7 @@ class ContainerStore:
             return True
         return False
 
+    @guarded("pinned_file")
     def unpin(self, name):
         pinned = self.get_pinned()
         if name in pinned:
@@ -167,6 +281,7 @@ class ContainerStore:
     def is_auto(self, name):
         return name in self.get_autoupdate()
 
+    @guarded("autoupdate_file")
     def toggle_auto(self, name):
         """Toggle auto-update for `name`. Returns the new state (True=on)."""
         current = self.get_autoupdate()
@@ -189,6 +304,7 @@ class ContainerStore:
     def get_update_window(self, name):
         return self.get_update_windows().get(name)
 
+    @guarded("update_windows_file")
     def set_update_window(self, name, start, end, weekdays):
         windows = self.get_update_windows()
         windows[name] = {
@@ -198,6 +314,7 @@ class ContainerStore:
         }
         self._save_dict(self.update_windows_file, windows)
 
+    @guarded("update_windows_file")
     def clear_update_window(self, name):
         windows = self.get_update_windows()
         if name in windows:
@@ -212,8 +329,13 @@ class ContainerStore:
         return self._load(self.ask_before_major_file)
 
     def is_ask_before_major(self, name):
-        return name in self.get_ask_before_major()
+        """Fails closed — an unreadable list means ask, never update a major silently. See `is_pinned`."""
+        readable, names = self._load_checked(self.ask_before_major_file)
+        if not readable:
+            return True
+        return name in names
 
+    @guarded("ask_before_major_file")
     def toggle_ask_before_major(self, name):
         names = self.get_ask_before_major()
         if name in names:
@@ -230,6 +352,7 @@ class ContainerStore:
     def is_trust_running(self, name):
         return name in self.get_trust_running()
 
+    @guarded("trust_running_file")
     def toggle_trust_running(self, name):
         names = self.get_trust_running()
         if name in names:
@@ -244,8 +367,13 @@ class ContainerStore:
         return self._load(self.protect_stop_file)
 
     def is_protect_stop(self, name):
-        return name in self.get_protect_stop()
+        """Fails closed — an unreadable list means protected, never stop it unasked. See `is_pinned`."""
+        readable, names = self._load_checked(self.protect_stop_file)
+        if not readable:
+            return True
+        return name in names
 
+    @guarded("protect_stop_file")
     def toggle_protect_stop(self, name):
         names = self.get_protect_stop()
         if name in names:
@@ -266,6 +394,7 @@ class ContainerStore:
         except (ValueError, TypeError):
             return 0
 
+    @guarded("cooldown_file")
     def set_cooldown(self, name, seconds):
         """Set (or, when seconds<=0, clear) a container's update cooldown."""
         cds = self.get_cooldowns()
@@ -287,11 +416,13 @@ class ContainerStore:
     def get_pending_major(self):
         return self._load_dict(self.major_pending_file)
 
+    @guarded("major_pending_file")
     def add_pending_major(self, name, payload):
         pending = self.get_pending_major()
         pending[name] = payload
         self._save_dict(self.major_pending_file, pending)
 
+    @guarded("major_pending_file")
     def remove_pending_major(self, name):
         pending = self.get_pending_major()
         if name in pending:
@@ -323,6 +454,7 @@ class ContainerStore:
                 return gid, g
         return None, None
 
+    @guarded("groups_file")
     def save_group(self, group_id, name, containers, wait_seconds=30,
                    restart_dependents=False):
         """Create or update a group. Removes the listed containers from any
@@ -357,6 +489,7 @@ class ContainerStore:
         }
         self._save_dict(self.groups_file, groups)
 
+    @guarded("groups_file")
     def delete_group(self, group_id):
         groups = self.get_groups()
         if group_id in groups:
@@ -365,6 +498,7 @@ class ContainerStore:
             return True
         return False
 
+    @guarded("groups_file")
     def reorder_group_container(self, group_id, container_name, direction):
         """Move a container up (direction='up') or down ('down') one slot
         within its group. No-op when already at the edge."""
@@ -397,6 +531,7 @@ class ContainerStore:
     def get_note(self, name):
         return self.get_notes().get(name, "")
 
+    @guarded("notes_file")
     def set_note(self, name, text):
         notes = self.get_notes()
         text = (text or "").strip()
@@ -419,6 +554,7 @@ class ContainerStore:
     def get_link(self, name):
         return self.get_links().get(name, "")
 
+    @guarded("links_file")
     def set_link(self, name, url):
         links = self.get_links()
         url = (url or "").strip()
@@ -440,14 +576,35 @@ class ContainerStore:
 
     @staticmethod
     def _load(path):
+        return ContainerStore._load_checked(path)[1]
+
+    @staticmethod
+    def _load_checked(path):
+        """`(readable, list)` — the two cases `_load` cannot tell apart.
+
+        A missing file and an unparsable one both come back as `[]` from
+        `_load`, and for a *protection* list those mean opposite things:
+        "nothing was ever pinned" versus "we have no idea what was
+        pinned". Callers that gate an action on this list need the
+        difference; see `is_pinned`.
+
+        `readable` is False only when the file exists and could not be
+        turned into a list.
+        """
         if not os.path.exists(path):
-            return []
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, IOError):
-            return []
+            return True, []
+        with path_lock(path):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Failed to read {path}: {e}")
+                return False, []
+        if not isinstance(data, list):
+            print(f"Failed to read {path}: expected a list, got "
+                  f"{type(data).__name__}")
+            return False, []
+        return True, data
 
     @staticmethod
     def _save(path, names):
@@ -456,25 +613,28 @@ class ContainerStore:
         v1.22.0 fix patched the dict path but missed this one — fixed
         in v1.22.1 via the shared atomic_write_json helper.
         """
-        try:
-            atomic_write_json(path, names)
-        except OSError as e:
-            print(f"Failed to save {path}: {e}")
+        with path_lock(path):
             try:
-                os.unlink(path + ".tmp")
-            except OSError:
-                pass
+                atomic_write_json(path, names)
+            except OSError as e:
+                # atomic_write_json removes its own temp file now that
+                # the name is unique to the writer — unlinking
+                # `<path>.tmp` here would hit nothing, or somebody
+                # else's leftover.
+                print(f"Failed to save {path}: {e}")
 
     @staticmethod
     def _load_dict(path):
         if not os.path.exists(path):
             return {}
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, IOError):
-            return {}
+        with path_lock(path):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Failed to read {path}: {e}")
+                return {}
+        return data if isinstance(data, dict) else {}
 
     @staticmethod
     def _save_dict(path, data):
@@ -482,14 +642,12 @@ class ContainerStore:
         the rationale. Refactored in v1.22.1 to share the helper with
         every other JSON write in the codebase.
         """
-        try:
-            atomic_write_json(path, data, indent=2)
-        except OSError as e:
-            print(f"Failed to save {path}: {e}")
+        with path_lock(path):
             try:
-                os.unlink(path + ".tmp")
-            except OSError:
-                pass
+                atomic_write_json(path, data, indent=2)
+            except OSError as e:
+                # See `_save` — the temp file cleans itself up now.
+                print(f"Failed to save {path}: {e}")
 
 
 # ── Multi-host: one store, container names keyed per host (#7) ─────────
@@ -595,6 +753,7 @@ class HostScopedStore:
     def get_pinned(self):
         return self._mine(self.store.get_pinned())
 
+    @guarded("store.pinned_file")
     def save_pinned(self, names):
         self.store.save_pinned(self._foreign(self.store.get_pinned())
                                + [self._k(n) for n in names])
@@ -612,6 +771,7 @@ class HostScopedStore:
     def get_autoupdate(self):
         return self._mine(self.store.get_autoupdate())
 
+    @guarded("store.autoupdate_file")
     def save_autoupdate(self, names):
         self.store.save_autoupdate(self._foreign(self.store.get_autoupdate())
                                    + [self._k(n) for n in names])
