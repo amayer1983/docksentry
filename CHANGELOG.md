@@ -2,7 +2,12 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
-## [2.18.0-beta.41] - 2026-10-19
+## [2.18.0-beta.42] - 2026-10-19
+
+Same content as beta.41, re-tagged within the hour: that build shipped a
+changelog section without the bold leads this project builds its
+what's-new message from, so updating to it produced no message at all.
+
 
 A security update, following an independent audit of the whole tree.
 The detail is held back until the matching stable release is out —
@@ -22,6 +27,11 @@ everyone on `:latest` is still running the old code until then.
 ### Internal
 - Four new procedures and 16 entries in the mutation ratchet: 169
   guarded promises, empty debt list, 210 procedures, 5167 checks.
+
+## [2.18.0-beta.41] - 2026-10-19
+
+Superseded by beta.42 within the hour — same code, but the what's-new
+message after updating to it was empty. Use beta.42.
 
 ## [2.18.0-beta.40] - 2026-10-17
 
