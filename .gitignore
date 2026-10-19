@@ -35,3 +35,8 @@ docker-compose.dev.yml.*
 # before this line existed (18.10.2026 — checked: those three held no
 # settings, so nothing leaked, but the mechanism was live).
 backups/
+
+# Audit results stay on this machine. They describe, in order, what is
+# not fixed yet — which for a self-hosted tool is a map of every running
+# instance out there. Standing rule, 19.10.2026.
+audit-reports/
