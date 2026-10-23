@@ -141,6 +141,7 @@
   "status_containers": "Контейнеры",
   "status_pinned": "Закреплённые",
   "status_autoupdate": "Авто-обновление",
+  "status_queued": "In the queue",
   "selfupdate_recreate_failed": "⚠️ Самообновление не удалось: новый контейнер не создался, и Docksentry откатился на предыдущую версию (она работает). Вывод вспомогательного контейнера:\n```\n{detail}\n```",
   "selfupdate_recreate_hint": "💡 Так бывает, когда контейнер просит entrypoint, которого в новом образе уже нет. Пересоздайте его один раз — `docker compose up -d --force-recreate` — после этого самообновление снова работает. Данные лежат в именованном томе и не затрагиваются.",
   "startup_message": "🚀 *Docksentry запущен* (v{version})",

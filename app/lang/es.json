@@ -141,6 +141,7 @@
   "status_containers": "Contenedores",
   "status_pinned": "Fijados",
   "status_autoupdate": "Auto-actualización",
+  "status_queued": "In the queue",
   "selfupdate_recreate_failed": "⚠️ La autoactualización falló: no se pudo crear el contenedor nuevo y Docksentry volvió a la versión anterior (sigue en ejecución). Salida del ayudante:\n```\n{detail}\n```",
   "selfupdate_recreate_hint": "💡 Ocurre cuando el contenedor pide un entrypoint que la nueva imagen ya no tiene. Recréalo una vez — `docker compose up -d --force-recreate` — y la autoactualización volverá a funcionar. Tus datos están en el volumen con nombre y no se tocan.",
   "startup_message": "🚀 *Docksentry iniciado* (v{version})",
