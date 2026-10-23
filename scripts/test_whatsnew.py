@@ -109,6 +109,33 @@ def main():
     if real:
         print(f"    v{VERSION}: {'; '.join(real)[:110]}")
 
+    # Every bold-lead bullet in the section has to come out as a
+    # headline. A lead that WRAPS — `- **A release tag that disagrees\n
+    # with x` — is read as an ordinary line and vanishes from the
+    # message, silently, and the count is the only thing that notices.
+    # Caught exactly that while writing the beta.43 entry: four bullets
+    # went in, three came out, nothing said so.
+    import re as _re
+    _cl = open(os.path.join(os.path.dirname(__file__), "..", "CHANGELOG.md"),
+               encoding="utf-8").read()
+    _m = _re.search(r"^## \[%s\]" % _re.escape(VERSION), _cl, _re.M)
+    _bullets = 0
+    if _m:
+        _sec = _cl[_m.end():]
+        _nxt = _re.search(r"^## \[", _sec, _re.M)
+        _sec = _sec[:_nxt.start()] if _nxt else _sec
+        # Only the OPENING `- **`. Requiring the closing `**` on the
+        # same line would count exactly what the extractor counts,
+        # and the check could never disagree with it — which is what
+        # it did when first written.
+        _bullets = len(_re.findall(r"^- \*\*", _sec, _re.M))
+    _expected = min(_bullets, whatsnew.MAX_HEADLINES)
+    checks["every bold lead in the section becomes a headline"] = (
+        _bullets == 0 or len(real) == _expected)
+    if _bullets and len(real) != _expected:
+        print(f"    {_bullets} Leads im Abschnitt, {len(real)} Überschriften "
+              f"— einer bricht vermutlich um")
+
     # ── the guard against announcing on a fresh install ──────────
     # main.py owns the decision; assert the two conditions it must apply,
     # because getting this wrong means every new user is told they just

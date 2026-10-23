@@ -2,6 +2,37 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.18.0-beta.43] - 2026-10-23
+
+### Fixed
+- **Queued updates no longer wait for the right thread to finish.**
+  Tapping a container while something else is updating queues it, and
+  that queue was only ever worked off at the end of a *Telegram* single
+  update — while the lock is taken in eleven places, the scheduled run
+  and the Web UI among them. An entry queued while one of those was
+  busy sat there until the next Telegram update happened to end: on my
+  own instance that was a day. Nothing was lost, it just waited. The
+  poll loop now picks up whatever nobody else is going to drain.
+- **"Already in the queue" says since when.** It read as "you already
+  pressed this" to somebody pressing a button for the first time. It
+  now says how long the entry has been waiting — `27h` for the one
+  above, `2s` for an actual double tap.
+- **`/status` lists what is queued.** The queue was reported nowhere,
+  so the only way to find out something was in it was to press its
+  button again and be told off.
+- **A release tag that disagrees with the code is refused.** The build
+  stops. `v2.18.0` was tagged on a commit whose version file still read
+  `2.18.0-beta.35`, so `:latest` has been reporting itself as a beta
+  ever since — spotted from the outside by @famewolf, who had never
+  left the stable channel and was told by his own instance that he had.
+  Checked against all 72 tags in this repository: exactly one is
+  refused, and it is that one.
+
+### Internal
+- The release rule in CLAUDE.md said "tag the same commit", which
+  cannot carry the right version number and is how the above happened.
+  A final is now the beta tree plus one line: the version string.
+
 ## [2.18.0-beta.42] - 2026-10-19
 
 Same content as beta.41, re-tagged within the hour: that build shipped a

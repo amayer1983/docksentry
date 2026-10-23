@@ -18,6 +18,17 @@
    Discord. Die Uhr reicht da nicht; »he's got 3 people with totally
    different setups than what he's using«.
 3. Danach denselben Stand als `vX.Y.Z` taggen → `:latest` zieht nach.
+   **Genauer: den Beta-Baum plus eine Zeile — `app/version.py` auf die
+   Final-Nummer.** Kein neuer Code, nur der Name. Wörtlich „derselbe
+   Commit" geht nicht: der trägt `2.18.0-beta.N`, und ein `v2.19.0`
+   darauf veröffentlicht ein `:latest`, das sich selbst Beta nennt.
+   Genau so ist `v2.18.0` entstanden — getaggt auf einem Commit mit
+   `VERSION = "2.18.0-beta.35"`, zwei Monate lang unbemerkt, bis
+   @famewolf am 22.10.2026 schrieb: „somehow i've ended up on a beta
+   even though I never opted to leave stable". Er war es nicht; der
+   Code war der freigegebene, der Name darauf war falsch. Seit
+   beta.43 bricht der Build ab, wenn Tag und `version.py`
+   auseinanderlaufen (`test_release_tag_guard.py`).
    Release-Notes des Finals verweisen auf die Beta-Notes.
 
 **Einzige Ausnahme:** Fixes für akut Kaputtes (Beispiele: verklemmtes
