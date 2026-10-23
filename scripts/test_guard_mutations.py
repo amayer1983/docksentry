@@ -58,6 +58,42 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    ("queued work is picked up even when nobody drains it",
+     "app/telegram_bot.py",
+     "                self._sweep_update_queue(checker)",
+     "                pass",
+     "test_update_queue_sweep.py"),
+
+    ("the sweep leaves the queue alone while somebody holds the lock",
+     "app/telegram_bot.py",
+     "            if self._update_lock.locked():\n                return",
+     "            if False:\n                return",
+     "test_update_queue_sweep.py"),
+
+    ("a queue entry remembers when it was queued",
+     "app/update_engine.py",
+     "            self._queued_at[key] = time.time()",
+     "            pass",
+     "test_update_queue_sweep.py"),
+
+    ("a drained entry forgets its timestamp",
+     "app/update_engine.py",
+     "            key = self._update_queue.pop(0)\n            self._queued_at.pop(key, None)",
+     "            key = self._update_queue.pop(0)",
+     "test_update_queue_sweep.py"),
+
+    ("the 'already queued' answer says how long",
+     "app/lang/en.json",
+     "has been in the queue for {since}",
+     "is already in the queue.",
+     "test_update_queue_sweep.py"),
+
+    ("a tag that disagrees with version.py does not build",
+     ".github/workflows/docker-publish.yml",
+     '          if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then',
+     '          if false; then',
+     "test_release_tag_guard.py"),
+
     ("the outer page frame filters the language attribute too",
      "app/web_ui.py",
      '<html lang="{_e(safe_language(config.language))}"><head>',

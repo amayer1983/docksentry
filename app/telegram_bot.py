@@ -1717,8 +1717,17 @@ class TelegramBot:
                 self.send_message(self.t("update_queue_full",
                                          max=self.engine.UPDATE_QUEUE_MAX))
             elif pos == 0:
-                self.send_message(self.t("update_already_queued",
-                                         name=self._key_label(container_key)))
+                # How long it has been sitting there, because "already in
+                # the queue" alone reads as "you already pressed this" —
+                # and the entry may have been stranded since another day
+                # (see `_sweep_update_queue`). A genuine double tap says
+                # "for 2s", which is also the truth.
+                from notify_retry import _ago
+                waited = self.engine.queued_waiting_seconds(container_key)
+                self.send_message(self.t(
+                    "update_already_queued",
+                    name=self._key_label(container_key),
+                    since=_ago(waited if waited is not None else 0)))
             else:
                 self.send_message(self.t("update_queued",
                                          name=self._key_label(container_key),
@@ -1809,6 +1818,47 @@ class TelegramBot:
         if not from_queue:
             self._drain_update_queue(
                 checker, last_group=getattr(self, "_last_update_group", None))
+
+    def _sweep_update_queue(self, checker):
+        """Pick up queued work that nobody is going to drain.
+
+        `_drain_update_queue` runs in exactly one place: at the end of a
+        Telegram single update, once it has let go of the lock. The lock
+        itself is taken in eleven places — the scheduled run, the Web UI,
+        a self-update and six further Telegram paths among them. Queue
+        something while one of THOSE is holding it and the entry waits
+        for the next Telegram single update to finish, however long that
+        takes.
+
+        Measured on the maintainer's own instance, 23.10.2026: three
+        buttons pressed at 19:15:17, :21 and :22 (audit log). The second
+        came back "queued — position 2" and the third "already in the
+        queue", neither of which made sense for a first press. The queue
+        had been holding an entry since an earlier day, and both
+        portainers were then updated within the same minute once an
+        unrelated 2.3 GB update happened to end. Nothing was lost; it
+        simply sat there, and the person pressing the button was told
+        something that read like a correction.
+
+        Called once per poll cycle, so a stranded entry now waits
+        seconds. Cheap when there is nothing to do: one lock, one
+        truth test.
+
+        Never raises — this runs inside the listener loop, and taking
+        that down to retry a queued update would be a far worse trade.
+        """
+        try:
+            if not self.engine.has_queued_updates():
+                return
+            # Somebody is working: they will either drain it themselves
+            # or leave it for the next sweep. Racy by nature and
+            # harmless — `_drain_update_queue` re-acquires per entry and
+            # puts the entry back if it loses.
+            if self._update_lock.locked():
+                return
+            self._drain_update_queue(checker)
+        except Exception as e:                              # pragma: no cover
+            print(f"Queue sweep failed: {e}")
 
     def _drain_update_queue(self, checker, last_group=None):
         """Run whatever was queued while an update held the lock.
@@ -3050,6 +3100,11 @@ class TelegramBot:
                     if message:
                         self._handle_message(message, checker, scheduler)
 
+                # Anything queued while somebody OTHER than a Telegram
+                # single update held the lock gets picked up here. See
+                # `_sweep_update_queue` for why that is not a rare case.
+                self._sweep_update_queue(checker)
+
             except Exception as e:
                 print(f"Bot listener error: {e}")
                 import time
@@ -3764,6 +3819,20 @@ class TelegramBot:
                 header += f"📌 {self.t('status_pinned')}: {pinned_count}\n"
             if auto_count:
                 header += f"⚡ {self.t('status_autoupdate')}: {auto_count}\n"
+
+            # What is waiting to run. The queue lives in memory and was
+            # reported nowhere at all, so the only way to learn that
+            # something was in it was to press its button again and be
+            # told "already in the queue" — which is how an entry
+            # stranded from a previous day came to light on 23.10.2026.
+            # Anything the program is holding on your behalf belongs on
+            # the page that claims to say what it is doing.
+            queued = self.engine.queued_updates()
+            if queued:
+                from notify_retry import _ago
+                header += f"🕒 {self.t('status_queued')}: " + ", ".join(
+                    f"{self._key_label(k)} ({_ago(w)})" for k, w in queued
+                ) + "\n"
 
             header += f"\n{'─' * 28}\n\n"
 

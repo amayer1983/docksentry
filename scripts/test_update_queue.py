@@ -55,6 +55,10 @@ def engine():
     e = UpdateEngine.__new__(UpdateEngine)
     import threading
     e._update_queue = []
+    # Queued-at timestamps, same shape `__init__` builds. These
+    # procedures assemble the engine by hand rather than through
+    # `__init__`, so a new field has to be added here too.
+    e._queued_at = {}
     e._update_queue_lock = threading.Lock()
     e._update_lock = threading.Lock()      # the real shared update mutex
     e._queued_selfupdate = None

@@ -85,6 +85,10 @@ def _bot(pending_entries, on_update=None):
     eng = UpdateEngine.__new__(UpdateEngine)
     eng._update_lock = threading.Lock()
     eng._update_queue = []
+    # Queued-at timestamps, same shape `__init__` builds. These
+    # procedures assemble the engine by hand rather than through
+    # `__init__`, so a new field has to be added here too.
+    eng._queued_at = {}
     eng._update_queue_lock = threading.Lock()
     eng._updating = {}
     eng._queued_selfupdate = None

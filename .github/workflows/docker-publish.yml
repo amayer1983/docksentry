@@ -21,6 +21,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Before anything is built, let alone pushed: the tag and the
+      # version the image will report about itself have to agree.
+      #
+      # They did not once. `v2.18.0` was tagged on a commit whose
+      # app/version.py still read `2.18.0-beta.35`. The tag has no hyphen,
+      # so this workflow correctly treated it as a stable release and
+      # moved `latest` — and every `:latest` install has since been
+      # reporting itself as a beta. @famewolf noticed from the outside:
+      # "somehow i've ended up on a beta even though I never opted to
+      # leave stable" (#2, 22.10.2026). He had not: the code was the
+      # released code, the name on it was wrong.
+      #
+      # Nothing checked this, which is why it took two months and a user
+      # to find. A release is the one moment where the version string is
+      # load-bearing, so it is checked here rather than trusted to
+      # whoever is tagging.
+      - name: Tag must match app/version.py
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          FILE_VERSION="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' app/version.py)"
+          if [[ -z "$FILE_VERSION" ]]; then
+            echo "::error::Could not read VERSION from app/version.py."
+            exit 1
+          fi
+          if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
+            echo "::error::Tag v${TAG_VERSION} does not match app/version.py (${FILE_VERSION}). Nothing was built or pushed."
+            echo "Bump app/version.py to ${TAG_VERSION}, then move the tag."
+            exit 1
+          fi
+          echo "Tag and app/version.py agree: ${FILE_VERSION}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 

@@ -22,6 +22,7 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 
 import subprocess
 import threading
+import time
 
 from container_store import (LOCAL_HOST, HostScopedStore, entry_host,
                              host_key)
@@ -181,6 +182,9 @@ class UpdateEngine:
         # what it is dropping and why.
         self._update_queue = []
         self._update_queue_lock = threading.Lock()
+        #: key -> when it was queued, for the 'already queued' answer
+        #: and for /status. Cleared with the entry it belongs to.
+        self._queued_at = {}
         # Which container the held lock is currently busy with, and what
         # it is moving to: `{host key: target version}`. `update_running`
         # above already says "an update is in flight" but cannot say for
@@ -222,12 +226,23 @@ class UpdateEngine:
             if len(self._update_queue) >= self.UPDATE_QUEUE_MAX:
                 return -1
             self._update_queue.append(key)
+            # When it went in, so the "already queued" answer can say
+            # since when. Without it that message reads as a correction
+            # — "you already pressed this" — to somebody pressing a
+            # button for the first time, which is how a queue entry
+            # stranded from the previous day looked on the maintainer's
+            # own instance on 23.10.2026.
+            self._queued_at[key] = time.time()
             return len(self._update_queue)
 
     def take_queued_update(self):
         """Pop the next queued key, or None."""
         with self._update_queue_lock:
-            return self._update_queue.pop(0) if self._update_queue else None
+            if not self._update_queue:
+                return None
+            key = self._update_queue.pop(0)
+            self._queued_at.pop(key, None)
+            return key
 
     def drop_queued_updates(self, predicate=None):
         """Remove and return queued keys matching `predicate` (all if None)."""
@@ -236,7 +251,32 @@ class UpdateEngine:
             for k in self._update_queue:
                 (taken if (predicate is None or predicate(k)) else keep).append(k)
             self._update_queue = keep
+            for k in taken:
+                self._queued_at.pop(k, None)
             return taken
+
+    def queued_updates(self):
+        """A snapshot of the queue as [(key, waiting_seconds), …], in order.
+
+        A copy, deliberately: callers render it while the poll loop can
+        be draining, and handing out the live list would let it change
+        underneath a half-built message.
+        """
+        now = time.time()
+        with self._update_queue_lock:
+            return [(k, max(0.0, now - self._queued_at.get(k, now)))
+                    for k in self._update_queue]
+
+    def queued_waiting_seconds(self, key):
+        """How long `key` has been queued, or None if it is not."""
+        with self._update_queue_lock:
+            if key not in self._update_queue:
+                return None
+            return max(0.0, time.time() - self._queued_at.get(key, time.time()))
+
+    def has_queued_updates(self):
+        with self._update_queue_lock:
+            return bool(self._update_queue)
 
     def mark_updating(self, key, version=""):
         """Note that `key` is being updated right now, to `version`.
