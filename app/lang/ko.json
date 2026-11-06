@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "업데이트된 컨테이너가 「healthy」로 보고해야 하는 최대 시간이며, 이를 초과하면 업데이트가 실패로 간주되어 롤백됩니다.",
   "web_docker_stop_timeout": "중지 제한 시간(초)",
   "web_docker_stop_timeout_hint": "「docker stop」이 컨테이너가 스스로 종료되기를 기다리는 시간이며, 이후에는 강제로 종료합니다.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "모니터링",
   "web_monitor_enabled": "컨테이너 상태 모니터링",
   "web_monitor_hint": "실행 중인 컨테이너를 감시하고 컨테이너가 중지, 비정상 종료되거나 unhealthy 상태가 되면 알림을 보냅니다.",

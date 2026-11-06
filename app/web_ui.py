@@ -2368,6 +2368,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         config.docker_stop_timeout = max(1, min(v, 3600))
                     except (ValueError, IndexError):
                         pass
+                # The ceiling is a day, not an hour: a 19.2 GB image on a
+                # slow line takes longer than the other two timeouts are
+                # ever allowed to (#2).
+                if "pull_timeout" in params:
+                    try:
+                        v = int(params["pull_timeout"][0].strip())
+                        config.pull_timeout = max(60, min(v, 86400))
+                    except (ValueError, IndexError):
+                        pass
 
                 # Container-state monitoring (Notifications tab).
                 config.monitor_enabled = "monitor_enabled" in params
@@ -6103,6 +6112,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <div>
       <label>{t("web_docker_stop_timeout")} {help_(t("web_docker_stop_timeout_hint"))}{env_("docker_stop_timeout")}</label>
       <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600" form="settings-form">
+    </div>
+    <div>
+      <label>{t("web_pull_timeout")} {help_(t("web_pull_timeout_hint"))}{env_("pull_timeout")}</label>
+      <input type="number" name="pull_timeout" value="{_e(config.pull_timeout)}" min="60" max="86400" form="settings-form">
     </div>
   </div>
   <p class="form-help">{t("web_updates_tab_hint")}</p>

@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Maximum time an updated container has to report healthy before the update counts as failed and is rolled back.",
   "web_docker_stop_timeout": "Stop timeout (seconds)",
   "web_docker_stop_timeout_hint": "How long docker stop waits for a container to exit on its own before it is force-killed.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "Monitoring",
   "web_monitor_enabled": "Monitor container state",
   "web_monitor_hint": "Watch running containers and send an alert when one stops, dies or turns unhealthy.",

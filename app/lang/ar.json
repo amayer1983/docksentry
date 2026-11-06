@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "أقصى وقت يجب أن تبلغ خلاله الحاوية المُحدَّثة عن حالة «healthy» قبل اعتبار التحديث فاشلاً والتراجع عنه.",
   "web_docker_stop_timeout": "مهلة الإيقاف (بالثواني)",
   "web_docker_stop_timeout_hint": "المدة التي ينتظرها «docker stop» حتى تتوقف الحاوية من تلقاء نفسها قبل إنهائها قسراً.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "المراقبة",
   "web_monitor_enabled": "مراقبة حالة الحاويات",
   "web_monitor_hint": "يراقب الحاويات قيد التشغيل ويرسل تنبيهاً عند توقف إحداها أو تعطلها أو تحوّلها إلى حالة unhealthy.",

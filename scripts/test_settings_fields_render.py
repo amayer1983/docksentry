@@ -58,6 +58,7 @@ def _config():
         auto_selfupdate=False,
         healthcheck_max_starting=600,
         docker_stop_timeout=60,
+        pull_timeout=1800,
         auto_cleanup=False,
         cleanup_backup_local_only=False,
         cleanup_grace_hours=24,
@@ -181,6 +182,10 @@ def main():
         'name="docker_stop_timeout"' in updates)
     checks["docker_stop_timeout field shows the current value"] = (
         'name="docker_stop_timeout" value="60"' in updates)
+    checks["pull_timeout field is in the Updates tab"] = (
+        'name="pull_timeout"' in updates)
+    checks["pull_timeout field shows the current value"] = (
+        'name="pull_timeout" value="1800"' in updates)
 
     # ── Notifications tab: the Monitoring group ──────────────────────
     notifs = pane(html, "notifs")

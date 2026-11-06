@@ -485,7 +485,7 @@ class UpdateChecker:
         # nothing. The monitor has checked this since it was written; the
         # update path never did.
         if result.returncode != 0:
-            err = (getattr(result, "stderr", "") or "").strip()[:200]
+            err = clip(getattr(result, "stderr", "") or "")
             raise ContainerListUnavailable(
                 f"could not list containers (rc={result.returncode}): {err}")
         # Get own container name to exclude self. Robust detection: tries
@@ -1953,7 +1953,7 @@ class UpdateChecker:
                 all=True, force=True, until=f"{grace}h", timeout=180)
             if result.returncode != 0:
                 return False, self._t("cleanup_failed",
-                                      error=result.stderr.strip()[:200])
+                                      error=clip(result.stderr))
             lines = result.stdout.strip().split("\n")
             space_line = next((l for l in lines if "reclaimed" in l.lower()), "")
             untagged = sorted({l[len("Untagged: "):].split("@")[0]
@@ -1982,7 +1982,7 @@ class UpdateChecker:
                 msg += "\n" + self._t("cleanup_removed", images=preview)
             return True, msg
         except Exception as e:
-            return False, self._t("cleanup_error", error=str(e)[:200])
+            return False, self._t("cleanup_error", error=clip(e))
 
     def _backup_local_unused_images(self):
         """Save unused, locally-built images (no RepoDigests) as tarballs.
@@ -2041,7 +2041,7 @@ class UpdateChecker:
                 backed_up.append((img_id, tarball))
                 self._debug(f"  Backed up: {repo_tags[0]} → {tarball}")
             else:
-                self._debug(f"  Backup failed for {img_id}: {save.stderr[:200]}")
+                self._debug(f"  Backup failed for {img_id}: {clip(save.stderr)}")
         return backed_up
 
     def _prune_old_backups(self):
@@ -2690,7 +2690,7 @@ class UpdateChecker:
                     return True, (f"force-killed after {effective_stop}s "
                                   f"(exit 137 — did not stop on SIGTERM)")
                 return True, "stopped"
-            err = (r.stderr or "").strip()[:200]
+            err = clip(r.stderr or "")
             # Fall through to kill if the stop reported failure but the
             # container is still running.
             self._debug(f"  Stop failed (rc={r.returncode}): {err}")
@@ -3034,7 +3034,7 @@ class UpdateChecker:
         # (tests assert on it directly); the backend prepends its own → [1:].
         run = self.backend.run(cmd[1:], timeout=120)
         if run.returncode != 0:
-            err = run.stderr.strip()[:200]
+            err = clip(run.stderr)
             self._debug(f"  Dependent recreate failed for {name}: {err}")
             self._rollback_to_old(name, old_name)
             return False, err
@@ -3777,9 +3777,12 @@ class UpdateChecker:
         # compose_base still carries the leading CLI name so the debug line
         # above shows the full command; the backend prepends its own, hence
         # the [1:].
-        result = self.backend.run(pull_cmd[1:], timeout=1800)
+        # Settable since 2.19.0. It was a hardcoded 1800 from v1.7.0 on,
+        # which nobody could see and nobody could change (#2).
+        pull_grace = int(getattr(self.config, "pull_timeout", 1800) or 1800)
+        result = self.backend.run(pull_cmd[1:], timeout=pull_grace)
         if result.returncode != 0:
-            msg = f"Compose pull failed: {result.stderr[:200]}"
+            msg = f"Compose pull failed: {clip(result.stderr)}"
             self._save_history(name, image, False, msg)
             return False, msg
 
@@ -3819,7 +3822,7 @@ class UpdateChecker:
         # this reason. Granting more grace must never cost working time.
         result = self.backend.run(up_cmd[1:], timeout=stop_grace + 120)
         if result.returncode != 0:
-            msg = f"Compose up failed: {result.stderr[:200]}"
+            msg = f"Compose up failed: {clip(result.stderr)}"
             self._save_history(name, image, False, msg)
             return False, msg
 
@@ -4731,7 +4734,7 @@ class UpdateChecker:
                 r = self.backend.run(cmd[1:], timeout=15)
                 if r.returncode != 0:
                     self._debug(f"  Network connect to {net_name} failed: "
-                                f"{r.stderr[:200]}")
+                                f"{clip(r.stderr)}")
                 else:
                     self._debug(f"  Attached {container_name} to {net_name}")
             except subprocess.SubprocessError as e:
@@ -4975,13 +4978,14 @@ class UpdateChecker:
                 old_version = self._normalize_version_label(parts[1])
 
         # Pull new image
-        result = self.backend.pull(image, timeout=1800)
+        pull_grace = int(getattr(self.config, "pull_timeout", 1800) or 1800)
+        result = self.backend.pull(image, timeout=pull_grace)
         if result.returncode != 0:
             if "toomanyrequests" in result.stderr:
                 msg = "Rate limit erreicht"
                 self._save_history(name, image, False, msg)
                 return False, f"{msg}. `docker login` auf dem Host ausführen und Credentials mounten."
-            msg = f"Pull failed: {result.stderr[:200]}"
+            msg = f"Pull failed: {clip(result.stderr)}"
             self._save_history(name, image, False, msg)
             return False, msg
 
@@ -5086,7 +5090,7 @@ class UpdateChecker:
                 run = self.backend.run(cmd[1:], timeout=120)
                 if run.returncode != 0:
                     msg = (f"Container was auto-removed when stopped and the "
-                           f"recreate failed: {run.stderr[:200]}")
+                           f"recreate failed: {clip(run.stderr)}")
                     self._save_history(name, image, False, msg)
                     return False, msg
                 self._attach_extra_networks(name, config)
@@ -5155,7 +5159,7 @@ class UpdateChecker:
                 # and the rollback would restore something that is not this
                 # run's backup. Stopping here leaves the container stopped
                 # but intact and recoverable, which beats both.
-                err = (getattr(rename, "stderr", "") or "").strip()[:200]
+                err = clip(getattr(rename, "stderr", "") or "")
                 msg = f"Couldn't back up the container before recreating: {err}"
                 self._save_history(name, image, False, msg)
                 return False, msg
@@ -5182,7 +5186,7 @@ class UpdateChecker:
                 self._debug(f"  Run failed: {result.stderr[:300]}")
                 # Rollback: restore old container (safe — see _rollback_to_old)
                 self._rollback_to_old(name, old_name)
-                msg = f"Recreate failed: {result.stderr[:200]}"
+                msg = f"Recreate failed: {clip(result.stderr)}"
                 self._save_history(name, image, False, msg)
                 return False, msg
 
@@ -5306,7 +5310,7 @@ class UpdateChecker:
             return True, f"OK ({detail})"
 
         except Exception as e:
-            self._debug(f"  Error: {str(e)[:200]}")
+            self._debug(f"  Error: {clip(e)}")
             # Try to restore on any failure. Use the literal "<name>_old"
             # (not the `old_name` local, which may be undefined if the
             # exception fired before the rename step). _rollback_to_old
@@ -5314,6 +5318,6 @@ class UpdateChecker:
             # so if the exception happened before we ever stopped/renamed
             # the original, the user's still-running container is safe.
             self._rollback_to_old(name, f"{name}_old")
-            self._save_history(name, image, False, str(e)[:200])
+            self._save_history(name, image, False, clip(e))
             self._clear_inflight()
-            return False, f"Error: {str(e)[:200]}"
+            return False, f"Error: {clip(e)}"

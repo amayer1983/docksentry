@@ -177,7 +177,7 @@ PERSISTENT_KEYS = [
     "web_session_max_days", "discord_webhook", "webhook_url", "debug",
     "telegram_topic_id", "telegram_allowed_users",
     "healthcheck_max_starting",
-    "bot_label", "docker_stop_timeout",
+    "bot_label", "docker_stop_timeout", "pull_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "monitor_mass_stop_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
@@ -250,6 +250,7 @@ PERSISTENT_ENV_VARS = {
     "healthcheck_max_starting": "HEALTHCHECK_MAX_STARTING",
     "bot_label": "BOT_LABEL",
     "docker_stop_timeout": "DOCKER_STOP_TIMEOUT",
+    "pull_timeout": "PULL_TIMEOUT",
     "monitor_enabled": "MONITOR",
     "monitor_interval_seconds": "MONITOR_INTERVAL",
     "monitor_events_enabled": "MONITOR_EVENTS",
@@ -340,6 +341,7 @@ PERSISTENT_ENV_DEFAULTS = {
     "healthcheck_max_starting": 600,
     "bot_label": "",
     "docker_stop_timeout": 60,
+    "pull_timeout": 1800,
     "monitor_enabled": True,
     "monitor_interval_seconds": 60,
     "monitor_events_enabled": True,
@@ -402,6 +404,7 @@ LOGGABLE_PERSISTENT_KEYS = {
     "weekly_report_enabled", "weekly_report_weekday", "weekly_report_hour",
     "web_setup_done", "ui_mode", "status_view", "language", "debug",
     "healthcheck_max_starting", "bot_label", "docker_stop_timeout",
+    "pull_timeout",
     "monitor_enabled", "monitor_interval_seconds", "monitor_events_enabled",
     "monitor_mass_stop_enabled",
     "smtp_tls_verify", "monitor_only_containers", "insecure_registries",
@@ -442,6 +445,7 @@ PERSISTENT_SETTINGS_TAB = {
     "auto_selfupdate": "Updates",
     "healthcheck_max_starting": "Updates",
     "docker_stop_timeout": "Updates",
+    "pull_timeout": "Updates",
     "auto_cleanup": "Cleanup",
     "cleanup_grace_hours": "Cleanup",
     "cleanup_backup_days": "Cleanup",
@@ -515,6 +519,7 @@ class Config:
                  bot_label, docker_stop_timeout,
                  docker_username, docker_password,
                  docker_auth_config, docker_registry,
+                 pull_timeout=1800,
                  smtp_host="", smtp_port=587, smtp_user="", smtp_password="",
                  smtp_from="", smtp_to="", smtp_tls="starttls",
                  auto_update_all=False,
@@ -901,6 +906,13 @@ class Config:
         # legitimately flush state for longer on shutdown (some DBs,
         # log aggregators). See #11.
         self.docker_stop_timeout = docker_stop_timeout
+        # How long a single image pull may take. 1800s was hardcoded
+        # in update_checker from v1.7.0 until 2.19.0, undocumented and
+        # unreachable: @famewolf raised the two timeouts he COULD find
+        # to 180 for a 19.2 GB image and neither one went anywhere near
+        # the pull (#2). 1800s is ~11 MB/s sustained for that image, so
+        # the limit is real on a slow line — it has to be settable.
+        self.pull_timeout = pull_timeout
         # Docker registry authentication (#18). Three ways to supply
         # credentials, checked in priority order at startup:
         #   1. DOCKER_AUTH_CONFIG — path to an existing `config.json`
@@ -1484,6 +1496,7 @@ class Config:
             healthcheck_max_starting=int(_env("HEALTHCHECK_MAX_STARTING", "600")),
             bot_label=_env("BOT_LABEL").strip(),
             docker_stop_timeout=int(_env("DOCKER_STOP_TIMEOUT", "60")),
+            pull_timeout=int(_env("PULL_TIMEOUT", "1800")),
             docker_username=_env("DOCKER_USERNAME").strip(),
             # DOCKER_PASSWORD: NO .strip() — leading/trailing whitespace
             # can be a legitimate part of a password. We still strip

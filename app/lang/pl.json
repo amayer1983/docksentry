@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Maksymalny czas, w jakim zaktualizowany kontener musi zgłosić stan „healthy”, zanim aktualizacja zostanie uznana za nieudaną i wycofana.",
   "web_docker_stop_timeout": "Limit czasu zatrzymania (sekundy)",
   "web_docker_stop_timeout_hint": "Jak długo „docker stop” czeka na samodzielne zatrzymanie kontenera, zanim zostanie on przymusowo zabity.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "Monitorowanie",
   "web_monitor_enabled": "Monitoruj stan kontenerów",
   "web_monitor_hint": "Obserwuje działające kontenery i wysyła alert, gdy któryś się zatrzyma, ulegnie awarii lub stanie się unhealthy.",

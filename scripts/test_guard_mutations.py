@@ -877,6 +877,18 @@ GUARDED = [
      "        result = self.backend.run(up_cmd[1:], timeout=120)",
      "test_compose_recreate_budget.py"),
 
+    ("a failed pull reports the end of what the tool said",
+     "app/update_checker.py",
+     '            msg = f"Compose pull failed: {clip(result.stderr)}"',
+     '            msg = f"Compose pull failed: {result.stderr[:200]}"',
+     "test_pull_failure_report.py"),
+
+    ("…and the time a pull may take comes from the configuration",
+     "app/update_checker.py",
+     "        result = self.backend.run(pull_cmd[1:], timeout=pull_grace)",
+     "        result = self.backend.run(pull_cmd[1:], timeout=1800)",
+     "test_pull_failure_report.py"),
+
     ("…and still grants it",
      "app/update_checker.py",
      '                                 "--timeout", str(stop_grace), service]',

@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Tiempo máximo que un contenedor actualizado tiene para informar como «healthy» antes de que la actualización se considere fallida y se revierta.",
   "web_docker_stop_timeout": "Tiempo límite de parada (segundos)",
   "web_docker_stop_timeout_hint": "Cuánto espera «docker stop» a que un contenedor se detenga por sí solo antes de forzar su cierre.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "Monitorización",
   "web_monitor_enabled": "Monitorizar el estado de los contenedores",
   "web_monitor_hint": "Vigila los contenedores en ejecución y envía una alerta cuando uno se detiene, muere o pasa a estado unhealthy.",

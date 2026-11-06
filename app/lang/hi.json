@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "अपडेट किए गए कंटेनर को «healthy» रिपोर्ट करने के लिए अधिकतम समय, इससे पहले कि अपडेट विफल माना जाए और वापस रोल किया जाए।",
   "web_docker_stop_timeout": "स्टॉप समय-सीमा (सेकंड)",
   "web_docker_stop_timeout_hint": "«docker stop» किसी कंटेनर के स्वयं रुकने के लिए कितनी देर प्रतीक्षा करता है, उसके बाद उसे बलपूर्वक समाप्त कर देता है।",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "निगरानी",
   "web_monitor_enabled": "कंटेनर स्थिति की निगरानी करें",
   "web_monitor_hint": "चल रहे कंटेनरों पर नज़र रखता है और जब कोई रुकता है, क्रैश होता है या unhealthy हो जाता है तो अलर्ट भेजता है।",

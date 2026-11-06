@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Максимальное время, за которое обновлённый контейнер должен сообщить о состоянии «healthy», прежде чем обновление будет считаться неудачным и откатится.",
   "web_docker_stop_timeout": "Тайм-аут остановки (секунды)",
   "web_docker_stop_timeout_hint": "Сколько «docker stop» ждёт самостоятельной остановки контейнера, прежде чем принудительно завершить его.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "Мониторинг",
   "web_monitor_enabled": "Отслеживать состояние контейнеров",
   "web_monitor_hint": "Наблюдает за работающими контейнерами и присылает оповещение, когда один из них останавливается, падает или становится unhealthy.",

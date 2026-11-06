@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Güncellenen bir konteynerin, güncelleme başarısız sayılıp geri alınmadan önce «healthy» bildirmesi için gereken en fazla süre.",
   "web_docker_stop_timeout": "Durdurma zaman aşımı (saniye)",
   "web_docker_stop_timeout_hint": "«docker stop» komutunun, konteyner kendiliğinden durmadan önce onu beklediği süre; ardından zorla sonlandırılır.",
+  "web_pull_timeout": "Image pull timeout (seconds)",
+  "web_pull_timeout_hint": "How long a single image pull may take before the update is given up. Raise it for very large images on a slow line.",
   "web_monitor_title": "İzleme",
   "web_monitor_enabled": "Konteyner durumunu izle",
   "web_monitor_hint": "Çalışan konteynerleri izler ve biri durduğunda, çöktüğünde veya unhealthy olduğunda uyarı gönderir.",

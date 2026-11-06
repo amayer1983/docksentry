@@ -586,6 +586,8 @@
   "web_healthcheck_max_starting_hint": "Maximale Zeit, in der ein aktualisierter Container „healthy“ melden muss, bevor das Update als fehlgeschlagen gilt und zurückgerollt wird.",
   "web_docker_stop_timeout": "Stop-Zeitlimit (Sekunden)",
   "web_docker_stop_timeout_hint": "Wie lange „docker stop“ auf das eigenständige Beenden eines Containers wartet, bevor er hart beendet wird.",
+  "web_pull_timeout": "Pull-Zeitlimit (Sekunden)",
+  "web_pull_timeout_hint": "Wie lange ein einzelner Image-Pull dauern darf, bevor das Update aufgegeben wird. Für sehr große Images an langsamer Leitung erhöhen.",
   "web_monitor_title": "Überwachung",
   "web_monitor_enabled": "Container-Status überwachen",
   "web_monitor_hint": "Laufende Container beobachten und einen Alarm senden, wenn einer stoppt, abstürzt oder unhealthy wird.",
