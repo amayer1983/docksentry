@@ -1457,6 +1457,13 @@ checks["auth: an unauthorised interaction gets no reply at all"] = ub.rest.calls
 
 # Discord-side gating, as defence in depth.
 hardened = _harden_commands(COMMANDS)
+# First, that there is anything to be strict about. `all()` over an
+# empty list is True, so dropping the `out.append(c)` from
+# `_harden_commands` left both checks below green while the promise
+# "every command is admin-only" covered zero commands (audit,
+# 07.11.2026).
+checks["auth: hardening returns every command, not a shorter list"] = (
+    len(hardened) == len(COMMANDS) and len(COMMANDS) > 0)
 checks["auth: every command is admin-only by default"] = all(
     c["default_member_permissions"] == DEFAULT_PERMISSIONS for c in hardened)
 checks["auth: no command is usable in a DM"] = all(

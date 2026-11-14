@@ -49,14 +49,21 @@ Notes:
 
 ## When the network is down
 
-A notification that fails on a network error is not lost. It is held and
-tried again on the next scheduler pass — within 30 seconds of the connection
-coming back.
+Most notifications that fail on a network error are not lost. They are held
+and tried again on the next scheduler pass — within 30 seconds of the
+connection coming back.
 
-**Not every channel has this.** Telegram, the Discord bot, the Discord
-webhook and the generic webhook hold a failed message. ntfy, Gotify, Matrix,
-Apprise and SMTP do not — if you only run one of those, a network blip while
-an alert fires means that alert is gone.
+**It depends on the message, not on the channel.** All nine channels —
+Telegram, the Discord bot, the Discord webhook, the generic webhook, ntfy,
+Gotify, Matrix, Apprise and SMTP — hold a plain-text alert: a container that
+died, a disk warning, a host that went away, a rollback, a restart notice.
+
+The two richest messages are the exception. "Updates available" and the
+per-container update result are rendered as embeds and cards rather than
+text, and that path does not reach the retry queue — so on any of the eight
+notification channels, a network blip while one of those fires loses it.
+Telegram keeps them only because it receives them as text in the first
+place. That gap is known and not yet closed.
 
 Three limits keep the queue from becoming a second problem. Nothing is
 delivered more than 15 minutes late, because a crash alert arriving two hours

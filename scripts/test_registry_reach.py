@@ -6,6 +6,8 @@ Three gaps that each made a whole class of setup silently unusable while
 someone.
 """
 
+import contextlib
+import io
 import os
 import sys
 import types
@@ -119,10 +121,55 @@ def main():
     checks["no map, no change"] = mirror_host("ghcr.io", {}) == "ghcr.io"
 
     # Lookups only. Pulling still hands the container's own reference to
-    # the daemon — pulling from elsewhere would rewrite that reference and
-    # the container would stop matching its own compose file.
-    src3 = _i.getsource(UpdateChecker._effective_host)
-    checks["the pull side is explicitly out of scope"] = "daemon.json" in src3
+    # the daemon — pulling from elsewhere would rewrite that reference
+    # and the container would stop matching its own compose file.
+    #
+    # This used to read `"daemon.json" in _i.getsource(_effective_host)`,
+    # and that string occurs in the function's DOCSTRING and nowhere
+    # else: every statement in the body could be deleted with the check
+    # staying green, while rewording the docstring turned it red (audit,
+    # 07.11.2026). So the pull is driven instead, with mirrors
+    # configured, and the question is what reference reaches the daemon.
+    import tempfile as _tempfile
+
+    class _Daemon:
+        name = "local"
+
+        def __init__(self):
+            self.pulled = []
+
+        def pull(self, ref, timeout=None, **kw):
+            self.pulled.append(ref)
+            return types.SimpleNamespace(returncode=1, stdout="",
+                                         stderr="nope")
+
+        def run(self, args, timeout=None, **kw):
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+        def inspect(self, *a, **kw):
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    _daemon = _Daemon()
+    _cfg = types.SimpleNamespace(
+        debug=False, pull_timeout=60, docker_stop_timeout=60,
+        registry_mirrors=["docker.io=mirror.internal",
+                          "ghcr.io=ghcr.mirror"])
+    _chk = UpdateChecker(_cfg, backend=_daemon)
+    _chk._get_image_created = lambda *a, **kw: "?"
+    _chk._get_image_size = lambda *a, **kw: "?"
+    _chk._get_image_version_label = lambda *a, **kw: None
+    _chk._save_history = lambda *a, **kw: None
+    _chk._layer_farewell = lambda *a, **kw: ""
+    with contextlib.redirect_stdout(io.StringIO()):
+        _chk._update_standalone("app", "ghcr.io/owner/app:1.2.3")
+
+    checks["the pull really happens"] = len(_daemon.pulled) == 1
+    # The mirror is configured and reaches the lookup side (checked
+    # above). It must not reach this one.
+    checks["…and uses the container's own reference, not the mirror"] = (
+        _daemon.pulled == ["ghcr.io/owner/app:1.2.3"])
+    checks["…so the mirror host appears nowhere in it"] = (
+        "ghcr.mirror" not in "".join(_daemon.pulled))
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

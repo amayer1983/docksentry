@@ -604,7 +604,7 @@ def update_history(path, *, wanted="", limit=10):
     if not path or not _os.path.exists(path):
         return [], Reply("history_empty", ok=False)
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             history = _json.load(f)
     except (OSError, ValueError):
         return [], Reply("history_empty", ok=False)

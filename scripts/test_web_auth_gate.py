@@ -15,6 +15,11 @@ What it has to get right:
 * **no password set means open.** That is documented behaviour, and the
   failure direction matters: a fresh install with no `WEB_PASSWORD` must
   not lock the owner out of the page where the password is set.
+* **…unless the settings file was quarantined.** Then the empty password
+  is not a choice, it is a loss — the file went aside and took the
+  password with it, and `web_setup_done` is False again. The first
+  visitor would be handed the setup wizard on an instance running as
+  root on the Docker socket (audit, 07.11.2026).
 * **a password set means closed** until a session cookie or correct
   Basic Auth says otherwise. Basic Auth stays because `curl -u` and
   every existing script uses it; the login form exists because a
@@ -175,6 +180,31 @@ _h._send_auth_required = lambda path="": _posted.append("asked for a password")
 _h.do_POST()
 checks["an unauthenticated POST is asked for a password"] = (
     _posted == ["asked for a password"])
+
+# ── …except after the settings file was quarantined ──────────────────
+# An empty password reaches the gate from two completely different
+# situations and used to look the same from here. One Latin-1 byte in
+# settings.json was enough to get to the second one.
+_q = _Cfg(password="")
+_q.settings_quarantined = True
+checks["after a quarantine, an empty password is not an open door"] = (
+    _handler(_q)._check_auth() is False)
+# The way back in is the environment — `WEB_PASSWORD` never lived in
+# the file that was lost, so it survives the quarantine.
+_qp = _Cfg(password="hunter2")
+_qp.settings_quarantined = True
+checks["…but WEB_PASSWORD still gets the owner back in"] = (
+    _handler(_qp, headers=_basic("", "hunter2"))._check_auth() is True)
+checks["…and still keeps everyone else out"] = (
+    _handler(_qp, headers=_basic("", "nope"))._check_auth() is False)
+# The counter-direction, and the reason this is a flag and not simply
+# "an empty password is refused": that would pass the three checks
+# above and lock every fresh install out of the page where a password
+# is set in the first place.
+_fresh = _Cfg(password="")
+_fresh.settings_quarantined = False
+checks["…while an untouched install stays open"] = (
+    _handler(_fresh)._check_auth() is True)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

@@ -20,7 +20,7 @@ def _load_history(history_file):
     if not os.path.exists(history_file):
         return []
     try:
-        with open(history_file) as f:
+        with open(history_file, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
@@ -129,7 +129,7 @@ def _read_state(path):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}

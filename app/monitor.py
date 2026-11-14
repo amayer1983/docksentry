@@ -584,7 +584,7 @@ class ContainerMonitor:
             events = []
             if os.path.exists(path):
                 try:
-                    with open(path) as f:
+                    with open(path, encoding="utf-8") as f:
                         events = json.load(f) or []
                 except (ValueError, OSError):
                     events = []
@@ -644,7 +644,7 @@ class ContainerMonitor:
         """
         vals = {}
         try:
-            with open("/proc/meminfo") as f:
+            with open("/proc/meminfo", encoding="utf-8") as f:
                 for line in f:
                     key, _, rest = line.partition(":")
                     num = rest.strip().split(" ")[0]
@@ -724,7 +724,7 @@ class ContainerMonitor:
         if backend is None or getattr(backend, "endpoint", None):
             return ""
         try:
-            with open("/proc/loadavg") as f:
+            with open("/proc/loadavg", encoding="utf-8") as f:
                 one = float(f.read().split()[0])
         except (OSError, ValueError, IndexError):
             return ""

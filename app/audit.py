@@ -131,7 +131,7 @@ class AuditLog:
         if not os.path.exists(self.path):
             return []
         try:
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
             return data if isinstance(data, list) else []
         except (ValueError, OSError):

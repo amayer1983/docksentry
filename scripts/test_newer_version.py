@@ -154,12 +154,56 @@ def main():
         o._newer_version_available("r", "p", "1.0.0") == "")
 
     # ── it must never become a pending update ────────────────────
-    src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                            "update_checker.py"), encoding="utf-8").read()
-    seg = src[src.index("_newer_version_available(registry"):]
-    seg = seg[:seg.index("except Exception")]
-    checks["the advisory is not appended to updates"] = "updates.append" not in seg
-    checks["it goes to its own store"] = "advisories[" in seg
+    # This used to be two greps over the source: `"updates.append" not
+    # in seg`. Writing the same thing as `updates.extend([c])` has the
+    # identical effect and the grep cannot see it — measured, and
+    # nothing else went red either (audit, 07.11.2026). So the run
+    # itself decides, in both directions: a container that is up to
+    # date on a tag with a newer sibling gets an advisory and no
+    # pending entry, one with a real digest change gets the opposite.
+    # Without that second half, "not in pending" is also true of a
+    # check that finds nothing at all.
+    import contextlib as _ctx, io as _io, json as _json, tempfile as _tmpf
+
+    def _run(remote_digest):
+        tmp = _tmpf.mkdtemp()
+        pending = os.path.join(tmp, "pending.json")
+        adv = os.path.join(tmp, "advisories.json")
+        cfg = types.SimpleNamespace(
+            debug=False, pending_file=pending, advisories_file=adv,
+            exclude_containers=[], pinned_file=os.path.join(tmp, "pin.json"))
+        o = UpdateChecker(cfg)
+        o.get_running_containers = lambda: [
+            {"name": "db", "image": "reg/db:16.3"}]
+        o._parse_image = lambda img: ("reg", "db", "16.3")
+        o._container_image_id = lambda name: "sha256:RUN"
+        o._get_local_digests = lambda img: ["sha256:SAME"]
+        o._get_local_repo_digests = lambda img: ["db@sha256:SAME"]
+        o._get_remote_digest = lambda *a, **k: remote_digest
+        o._list_remote_tags = lambda reg, repo: ["16.3", "16.4"]
+        o._get_image_size = lambda img: "1 GB"
+        o._get_image_created = lambda img: "2026-01-01"
+        o._get_image_version_label = lambda img: ""
+        o.get_remote_image_meta = lambda *a, **k: {}
+        o._registry_environment = lambda: ""
+        with _ctx.redirect_stdout(_io.StringIO()):
+            o.check_all()
+        a = _json.load(open(adv)) if os.path.exists(adv) else {}
+        p = _json.load(open(pending)) if os.path.exists(pending) else []
+        flat = {}
+        for host_entries in (a.values() if isinstance(a, dict) else []):
+            if isinstance(host_entries, dict):
+                flat.update(host_entries)
+        return flat, [u.get("name") for u in p]
+
+    _adv, _pend = _run("sha256:SAME")        # digest unchanged = up to date
+    checks["an up-to-date tag with a newer sibling is advised on"] = (
+        _adv.get("db", {}).get("newer") == "16.4")
+    checks["…and the container is NOT queued for an update"] = _pend == []
+
+    _adv, _pend = _run("sha256:MOVED")       # digest changed = real update
+    checks["a real update IS queued"] = _pend == ["db"]
+    checks["…and carries no advisory"] = "db" not in _adv
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

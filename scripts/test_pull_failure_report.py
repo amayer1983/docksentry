@@ -155,7 +155,13 @@ checks["…and its message carries the reason as well"] = REASON in msg3
 # only — which is how 1800 stayed invisible for two years.
 checks["pull_timeout persists across a save"] = (
     "pull_timeout" in config_mod.PERSISTENT_KEYS)
-checks["…can be set from the environment"] = (
+# Named for what it actually asks. It reads the registry, which is
+# what puts the field on the page — it is not evidence that anything
+# reads the variable. Deleting the line in `from_env()` that reads
+# PULL_TIMEOUT at all left this green while `PULL_TIMEOUT=7200`
+# silently became 1800 (audit, 07.11.2026). That half is driven in
+# test_env_bounds.py, for this variable and the ten beside it.
+checks["…is registered as an environment variable"] = (
     config_mod.PERSISTENT_ENV_VARS.get("pull_timeout") == "PULL_TIMEOUT")
 checks["…has the 1800 default recorded"] = (
     config_mod.PERSISTENT_ENV_DEFAULTS.get("pull_timeout") == 1800)

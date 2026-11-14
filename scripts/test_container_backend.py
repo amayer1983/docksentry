@@ -303,10 +303,43 @@ def main():
             container_backend.resolve_cli("podman") == "podman")
         checks["resolve_cli('docker') → docker"] = (
             container_backend.resolve_cli("docker") == "docker")
-        checks["resolve_cli('auto') picks one of the two"] = (
-            container_backend.resolve_cli("auto") in ("docker", "podman"))
-        checks["resolve_cli(junk) falls back to auto"] = (
-            container_backend.resolve_cli("wat") in ("docker", "podman"))
+        # `resolve_cli` has four returns and every one of them is
+        # "docker" or "podman", so asking whether the answer is one of
+        # those two cannot fail — two checks that were green by
+        # construction (audit, 07.11.2026). What `docs/podman.md:20`
+        # actually promises is an ORDER: docker wins while it is on
+        # PATH, and podman only takes over when docker is genuinely
+        # absent. That needs both machines, so `which` is stood in for
+        # — the environment, not the decision.
+        _real_which = container_backend.shutil.which
+
+        def _have(*present):
+            container_backend.shutil.which = (
+                lambda cmd: f"/usr/bin/{cmd}" if cmd in present else None)
+
+        try:
+            _have("docker", "podman")
+            checks["with both installed, docker wins"] = (
+                container_backend.resolve_cli("auto") == "docker")
+            _have("podman")
+            checks["…and podman only takes over when docker is absent"] = (
+                container_backend.resolve_cli("auto") == "podman")
+            _have()
+            checks["…with neither present it still answers docker"] = (
+                container_backend.resolve_cli("auto") == "docker")
+            # Junk is `auto`, so it has to follow the same order rather
+            # than landing on a fixed answer.
+            _have("podman")
+            checks["junk is treated as auto, order and all"] = (
+                container_backend.resolve_cli("wat") == "podman")
+            # …while an explicit preference ignores what is installed.
+            checks["an explicit docker beats an absent docker"] = (
+                container_backend.resolve_cli("docker") == "docker")
+            _have("docker")
+            checks["…and an explicit podman beats a present docker"] = (
+                container_backend.resolve_cli("podman") == "podman")
+        finally:
+            container_backend.shutil.which = _real_which
         container_backend._default_backend = None
         checks["get_backend(container_cli='podman') → PodmanBackend"] = isinstance(
             get_backend(types.SimpleNamespace(container_cli="podman")),

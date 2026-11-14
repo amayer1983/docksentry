@@ -104,7 +104,7 @@ def build(config, store, version, when=None):
     settings_file = getattr(config, "settings_file", "")
     if settings_file and os.path.exists(settings_file):
         try:
-            with open(settings_file) as f:
+            with open(settings_file, encoding="utf-8") as f:
                 bundle["settings"] = json.load(f)
         except (IOError, ValueError):
             pass

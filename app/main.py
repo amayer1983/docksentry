@@ -247,7 +247,7 @@ def main():
     try:
         if os.path.exists(config.last_exit_file):
             import json as _json
-            with open(config.last_exit_file) as f:
+            with open(config.last_exit_file, encoding="utf-8") as f:
                 _exit = _json.load(f)
             if _exit.get("reason") == "signal":
                 restart_signal = _exit.get("signal", "signal")
@@ -281,7 +281,7 @@ def main():
     try:
         if os.path.exists(config.selfupdate_marker_file):
             import json as _json, time as _time
-            with open(config.selfupdate_marker_file) as f:
+            with open(config.selfupdate_marker_file, encoding="utf-8") as f:
                 _mark = _json.load(f)
             if _time.time() - float(_mark.get("ts", 0) or 0) < 3600:
                 selfupdate_restart = True
@@ -303,7 +303,7 @@ def main():
     try:
         if os.path.exists(config.restart_request_file):
             import json as _json, time as _time
-            with open(config.restart_request_file) as f:
+            with open(config.restart_request_file, encoding="utf-8") as f:
                 _req = _json.load(f)
             # Stale markers are ignored, same rule as the self-update one:
             # an abandoned request must not mask a genuine external stop
@@ -334,7 +334,7 @@ def main():
         import json as _json
         from version import VERSION as _NEW_VERSION
         if os.path.exists(config.history_file):
-            with open(config.history_file) as f:
+            with open(config.history_file, encoding="utf-8") as f:
                 _hist = _json.load(f)
             if _hist:
                 last = _hist[-1]
@@ -758,7 +758,7 @@ def main():
     try:
         _hlog = config.selfupdate_helper_log
         if os.path.exists(_hlog):
-            with open(_hlog) as f:
+            with open(_hlog, encoding="utf-8") as f:
                 _hcontent = f.read()
             os.unlink(_hlog)
             if "rolling back" in _hcontent:
@@ -796,7 +796,7 @@ def main():
         _prev = ""
         _vpath = getattr(config, "version_state_file", "")
         if _vpath and os.path.exists(_vpath):
-            with open(_vpath) as f:
+            with open(_vpath, encoding="utf-8") as f:
                 _prev = str((_json.load(f) or {}).get("version") or "")
         if _prev and _prev != VERSION:
             from whatsnew import summary as _whatsnew

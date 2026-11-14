@@ -48,9 +48,13 @@ class _Daemon:
     snapshots, so a crash loop can be described rather than asserted.
     """
 
-    def __init__(self, snapshots, restarts=None):
+    def __init__(self, snapshots, restarts=None, start_period_ns=""):
         self.snapshots = list(snapshots)
         self.restarts = list(restarts or [])
+        #: What `docker inspect` prints for
+        #: `.Config.Healthcheck.StartPeriod` — nanoseconds, or "" when
+        #: the image declares no healthcheck at all.
+        self.start_period_ns = start_period_ns
         self.i = -1
 
     def _now(self, which):
@@ -69,6 +73,10 @@ class _Daemon:
             if "State.Health.Status" in fmt:
                 return types.SimpleNamespace(
                     returncode=0, stdout=self._now("health") + "\n", stderr="")
+            if "StartPeriod" in fmt:
+                return types.SimpleNamespace(
+                    returncode=0, stdout=f"{self.start_period_ns}\n",
+                    stderr="")
             if "RestartCount" in fmt:
                 idx = min(max(self.i, 0), len(self.restarts) - 1) \
                     if self.restarts else 0
@@ -79,14 +87,19 @@ class _Daemon:
 
 
 def _outcome(snapshots, restarts=None, max_starting=30, trust=False,
-             stable=10, interval=10):
+             stable=10, interval=10, start_period_ns=""):
     """Drive the real `_wait_healthy`; return (outcome, state, health)."""
     c = UpdateChecker.__new__(UpdateChecker)
     c.config = types.SimpleNamespace(healthcheck_max_starting=max_starting,
                                      debug=False)
-    c._backend = _Daemon(snapshots, restarts)
+    c._backend = _Daemon(snapshots, restarts, start_period_ns)
     c._debug = lambda *a, **kw: None
-    c._get_start_period_seconds = lambda name: 0
+    # `_get_start_period_seconds` is NOT stood in for. It used to be
+    # (`lambda name: 0`), which made `max(max_starting, 0 * 1.5)` always
+    # the first term — so the whole start_period branch was dead and
+    # could be deleted with all 214 procedures staying green, and the
+    # nanosecond parser behind it had never run at all (audit,
+    # 07.11.2026). The daemon answers the inspect instead.
     c._is_trust_running = lambda name: trust
     c.CRASHLOOP_STABLE_SECONDS = stable
     # The clock is environment: a procedure that really waited 30 seconds
@@ -178,6 +191,65 @@ checks["…and so is one that was healthy when the wait ran out"] = (
 checks["…while one that never looked healthy is still 'starting'"] = (
     _outcome([STARTING, STARTING, STARTING], max_starting=30,
              stable=600)[0] == "starting")
+
+
+# ── the image's own start_period, which nothing used to drive ────────
+# `effective = max(max_starting, start_period * 1.5)` is promised in
+# README.md, docs/configuration.md and docs/updates.md. The fixture
+# above used to stand in for `_get_start_period_seconds` with
+# `lambda name: 0`, so the second term was always 0 and the branch was
+# dead: it could be deleted outright with every one of 214 procedures
+# staying green, and the nanosecond parser had never executed once
+# (audit, 07.11.2026). The cost of that is a real rollback — an image
+# declaring `start_period: 15m` judged unhealthy after 600s and
+# reverted while it was still coming up, exactly as designed to.
+#
+# `while elapsed < effective` steps by `interval`, so the number of
+# polls the daemon is asked for IS the effective timeout, divided.
+
+def _polls(start_period_ns, max_starting=30, interval=10):
+    """How many times a forever-starting container gets polled."""
+    c = UpdateChecker.__new__(UpdateChecker)
+    c.config = types.SimpleNamespace(healthcheck_max_starting=max_starting,
+                                     debug=False)
+    d = _Daemon([("running", "starting")] * 500, None, start_period_ns)
+    c._backend = d
+    c._debug = lambda *a, **kw: None
+    c._is_trust_running = lambda name: False
+    c.CRASHLOOP_STABLE_SECONDS = 10
+    real_sleep = uc.time.sleep
+    uc.time.sleep = lambda s: None
+    try:
+        c._wait_healthy("app", interval=interval)
+    finally:
+        uc.time.sleep = real_sleep
+    return d.i + 1
+
+
+# The parser first, on its own — nanoseconds in, seconds out.
+_p = UpdateChecker.__new__(UpdateChecker)
+_p.config = types.SimpleNamespace(debug=False)
+_p._debug = lambda *a, **kw: None
+for _label, _ns, _want in (("15 minutes", "900000000000", 900.0),
+                           ("30 seconds", "30000000000", 30.0),
+                           ("no healthcheck", "", 0.0),
+                           ("an explicit zero", "0", 0.0),
+                           ("something unparsable", "garbage", 0.0)):
+    _p._backend = _Daemon([("running", "healthy")], None, _ns)
+    checks[f"start_period: {_label} reads back correctly"] = (
+        _p._get_start_period_seconds("app") == _want)
+
+# …and the effect. Without a declared start_period the configured
+# maximum stands.
+checks["without a start_period the configured maximum applies"] = (
+    _polls("") == 3)                       # 30s / 10s
+# With one, it is the larger of the two, times 1.5.
+checks["a longer start_period extends the wait"] = (
+    _polls("60000000000") == 9)            # max(30, 60*1.5) = 90 → 9 polls
+# …and a shorter one does not shorten it, which is the other half of
+# `max()` and the direction that would cause the rollback.
+checks["…while a shorter one never shortens it"] = (
+    _polls("10000000000") == 3)            # max(30, 15) = 30 → 3 polls
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

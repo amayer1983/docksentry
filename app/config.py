@@ -1129,9 +1129,17 @@ class Config:
         # dead and unguardable — breaking it changed nothing and
         # no procedure went red. One binding, and the mutation
         # check can see it.
+        # Reset per load: the Web UI reads this to tell a genuinely
+        # unconfigured instance from one that just lost its password
+        # along with the file, and a later good load must not inherit
+        # an earlier quarantine's answer.
+        self.settings_quarantined = False
         saved = {}
         try:
-            with open(self.settings_file) as f:
+            # Explicit encoding: without it the decoder follows the
+            # process locale, so the same file loads on one host and
+            # raises on another. utf-8 is what we write.
+            with open(self.settings_file, encoding="utf-8") as f:
                 saved = json.load(f)
             # The shape check belongs HERE, before the first use, not
             # after the try. `null` parses fine and gives `None`, and
@@ -1149,7 +1157,12 @@ class Config:
             for key in PERSISTENT_KEYS:
                 if key in saved:
                     setattr(self, key, saved[key])
-        except (json.JSONDecodeError, _DamagedSettings) as e:
+        # UnicodeDecodeError is neither a JSONDecodeError nor an IOError,
+        # so it used to escape this method entirely — during __init__,
+        # which is the boot loop this whole block exists to prevent. One
+        # byte of Latin-1 in an otherwise valid file was enough.
+        except (json.JSONDecodeError, UnicodeDecodeError,
+                _DamagedSettings) as e:
             self._quarantine_settings(e)
         except IOError as e:
             # Could not read it at all — a permission problem or a
@@ -1199,6 +1212,11 @@ class Config:
         nothing further to do but say so — the start continues either way.
         """
         import time
+        # Say it out loud for the rest of the run. Everything the file
+        # carried is gone, the Web UI password included, and a caller
+        # that only sees an empty password cannot tell that apart from
+        # an instance nobody has configured yet.
+        self.settings_quarantined = True
         stamp = time.strftime("%Y%m%d-%H%M%S")
         kept = f"{self.settings_file}.corrupt-{stamp}"
         n = 1
@@ -1335,7 +1353,7 @@ class Config:
         """
         try:
             if not os.path.exists(self.settings_seen_file):
-                with open(self.settings_seen_file, "w") as f:
+                with open(self.settings_seen_file, "w", encoding="utf-8") as f:
                     f.write("settings.json has existed here\n")
         except OSError:
             pass
@@ -1465,21 +1483,39 @@ class Config:
             registry_mirrors=[x.strip() for x in _env("REGISTRY_MIRRORS", "").split(",") if x.strip()],
             min_image_age_days=_env("MIN_IMAGE_AGE_DAYS", "0"),
             api_tokens=[x.strip() for x in _env("API_TOKENS", "").split(",") if x.strip()],
-            monitor_interval_seconds=int(_env("MONITOR_INTERVAL", "60") or 60),
+            # From here on every numeric variable goes through _clamp_int.
+            # A bare `int()` turns a typo into a dead instance:
+            # `PULL_TIMEOUT=30m` raises ValueError straight out of
+            # `from_env()`, and `main()` calls that on its first line
+            # with nothing around it — so the container exits with a
+            # traceback and restarts into the same one. Measured on
+            # four variables, 07.11.2026. The bounds are the ones the
+            # Settings form has enforced all along; the environment
+            # simply never had them, so a value the form refuses could
+            # always be set by going around it.
+            monitor_interval_seconds=_clamp_int(
+                _env("MONITOR_INTERVAL", "60"), 15, 86400, 60),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
-            cleanup_grace_hours=int(_env("CLEANUP_GRACE_HOURS", "24")),
+            cleanup_grace_hours=_clamp_int(
+                _env("CLEANUP_GRACE_HOURS", "24"), 0, 8760, 24),
             cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
-            cleanup_backup_days=int(_env("CLEANUP_BACKUP_DAYS", "7")),
-            disk_warn_percent=int(_env("DISK_WARN_PERCENT", "85")),
+            cleanup_backup_days=_clamp_int(
+                _env("CLEANUP_BACKUP_DAYS", "7"), 1, 365, 7),
+            disk_warn_percent=_clamp_int(
+                _env("DISK_WARN_PERCENT", "85"), 50, 100, 85),
             disk_warn_auto_cleanup=_env("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             quiet_hours_start=_env("QUIET_HOURS_START"),
             quiet_hours_end=_env("QUIET_HOURS_END"),
             weekly_report_enabled=_env("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
-            weekly_report_weekday=int(_env("WEEKLY_REPORT_WEEKDAY", "0")),
-            weekly_report_hour=int(_env("WEEKLY_REPORT_HOUR", "9")),
+            weekly_report_weekday=_clamp_int(
+                _env("WEEKLY_REPORT_WEEKDAY", "0"), 0, 6, 0),
+            weekly_report_hour=_clamp_int(
+                _env("WEEKLY_REPORT_HOUR", "9"), 0, 23, 9),
             language=_env("LANGUAGE", "en"),
             web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
-            web_port=int(_env("WEB_PORT", "8080")),
+            # The one with no Settings field at all, so this is its only
+            # bound anywhere.
+            web_port=_clamp_int(_env("WEB_PORT", "8080"), 1, 65535, 8080),
             status_view=_env("STATUS_VIEW", "table").strip().lower(),
             web_password=_env("WEB_PASSWORD"),
             web_username=_env("WEB_USERNAME", ""),
@@ -1493,10 +1529,13 @@ class Config:
                 u.strip() for u in _env("TELEGRAM_ALLOWED_USERS").split(",")
                 if u.strip()
             ],
-            healthcheck_max_starting=int(_env("HEALTHCHECK_MAX_STARTING", "600")),
+            healthcheck_max_starting=_clamp_int(
+                _env("HEALTHCHECK_MAX_STARTING", "600"), 30, 3600, 600),
             bot_label=_env("BOT_LABEL").strip(),
-            docker_stop_timeout=int(_env("DOCKER_STOP_TIMEOUT", "60")),
-            pull_timeout=int(_env("PULL_TIMEOUT", "1800")),
+            docker_stop_timeout=_clamp_int(
+                _env("DOCKER_STOP_TIMEOUT", "60"), 1, 3600, 60),
+            pull_timeout=_clamp_int(
+                _env("PULL_TIMEOUT", "1800"), 60, 86400, 1800),
             docker_username=_env("DOCKER_USERNAME").strip(),
             # DOCKER_PASSWORD: NO .strip() — leading/trailing whitespace
             # can be a legitimate part of a password. We still strip
@@ -1506,7 +1545,7 @@ class Config:
             docker_auth_config=_env("DOCKER_AUTH_CONFIG").strip(),
             docker_registry=_env("DOCKER_REGISTRY").strip(),
             smtp_host=_env("SMTP_HOST").strip(),
-            smtp_port=int(_env("SMTP_PORT", "587") or "587"),
+            smtp_port=_clamp_int(_env("SMTP_PORT", "587"), 1, 65535, 587),
             smtp_user=_env("SMTP_USER").strip(),
             smtp_password=_env("SMTP_PASSWORD"),  # no strip — see DOCKER_PASSWORD
             smtp_from=_env("SMTP_FROM").strip(),

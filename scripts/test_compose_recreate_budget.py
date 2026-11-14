@@ -22,11 +22,17 @@ whatever grace we grant is added to the wait, never subtracted from the
 work.
 """
 import ast
+import contextlib
+import io
 import os
 import sys
+import tempfile
+import types
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
+
+from update_checker import UpdateChecker  # noqa: E402
 
 checks = {}
 
@@ -87,33 +93,100 @@ checks["…with a default rather than a crash when it is unset"] = (
 # beta.21 granted `--timeout 60` and left the wait at a flat 120s, so
 # the budget for pull, create and start fell from 110s to 60s and a
 # stack rejoining a VPN namespace ran out of it (#2, @famewolf).
-_waits = [kw.value for n in ast.walk(_FN)
-          if isinstance(n, ast.Call)
-          for kw in n.keywords
-          if kw.arg == "timeout"
-          and "stop_grace" in _seg(kw.value)]
-checks["the wait around the recreate contains the grace"] = bool(_waits)
-_budget = None
-if _waits:
-    w = _waits[0]
-    if (isinstance(w, ast.BinOp) and isinstance(w.op, ast.Add)
-            and isinstance(w.right, ast.Constant)):
-        _budget = w.right.value
-# Stated as the property, not the number: whatever grace is granted, the
-# working budget left for pull, create and start is what it was before
-# the grace existed.
-checks["…and leaves the working budget the path had before"] = (
-    _budget is not None and _budget >= 110)
-if _budget is not None and _budget < 110:
-    print(f"      → budget is {_budget}, was 110 before the grace existed")
+# Driven now, not read. Every check here used to be an AST shape, and a
+# shape is satisfiable without the property: `timeout=(stop_grace * 0)
+# + 120` keeps the BinOp, the Add, the constant 120 and the word
+# `stop_grace`, passes all four, and reinstates the exact #2 defect —
+# grace granted, working budget back down to 120 (audit, 07.11.2026).
+# The ratchet noticed only that the LINE had changed, which a harmless
+# rewording would have done too.
+#
+# The comment above says driving this end to end needs "a dozen backend
+# verbs". It needs three. `test_pull_failure_report.py` already reaches
+# `_update_compose` with a real compose file on disk, and carrying it
+# past a successful pull takes a stubbed health wait and nothing else.
 
-# …and nothing in the recreate is still waiting a flat 120.
-_flat = [n for n in ast.walk(_FN)
-         if isinstance(n, ast.Call)
-         for kw in n.keywords
-         if kw.arg == "timeout" and isinstance(kw.value, ast.Constant)
-         and kw.value.value == 120]
-checks["…and no call there waits a flat 120 any more"] = _flat == []
+
+class _Daemon:
+    """Answers every compose verb, remembers how it was asked."""
+
+    name = "local"
+
+    def __init__(self):
+        self.calls = []
+
+    def run(self, args, timeout=None, **kw):
+        self.calls.append((list(args), timeout))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def pull(self, ref, timeout=None, **kw):
+        self.calls.append((["pull", ref], timeout))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def inspect(self, *a, **kw):
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+
+def _recreate(stop_timeout):
+    """Run the real `_update_compose`; return (grace granted, wait given)."""
+    work = tempfile.mkdtemp(prefix="ds-budget-")
+    compose_file = os.path.join(work, "docker-compose.yml")
+    with open(compose_file, "w", encoding="utf-8") as f:
+        f.write("services:\n  app:\n    image: img:latest\n")
+    cfg = types.SimpleNamespace(debug=False, pull_timeout=240,
+                                docker_stop_timeout=stop_timeout)
+    daemon = _Daemon()
+    chk = UpdateChecker(cfg, backend=daemon)
+    # Environment, not decision: image metadata, history, and the health
+    # wait that would otherwise poll a container which does not exist.
+    chk._get_image_created = lambda *a, **kw: "?"
+    chk._get_image_size = lambda *a, **kw: "?"
+    chk._get_image_version_label = lambda *a, **kw: None
+    chk._save_history = lambda *a, **kw: None
+    chk._layer_farewell = lambda *a, **kw: ""
+    chk._wait_healthy = lambda *a, **kw: ("healthy", "running", "healthy")
+    with contextlib.redirect_stdout(io.StringIO()):
+        chk._update_compose("app", "img:latest", "stack", "app",
+                            compose_file, work)
+    for args, wait in daemon.calls:
+        if "up" in args:
+            # The grace may be absent — that is one of the ways this is
+            # allowed to fail, and it has to come back as a red check
+            # rather than a TypeError three lines down. A procedure that
+            # crashes under a mutation reports nothing, and the ratchet
+            # reads "did not finish" as caught when it is not.
+            if "--timeout" not in args:
+                return None, wait
+            return int(args[args.index("--timeout") + 1]), wait
+    return None, None
+
+
+_grace_60, _wait_60 = _recreate(60)
+_grace_300, _wait_300 = _recreate(300)
+
+_have_both = None not in (_grace_60, _grace_300, _wait_60, _wait_300)
+
+checks["the recreate grants the configured stop grace"] = (
+    _grace_60 == 60 and _grace_300 == 300)
+# The property, not the number: whatever grace is granted, what is left
+# for pull, create and start is what the path had before the grace
+# existed.
+checks["…and still leaves the working budget it had before"] = (
+    _have_both
+    and _wait_60 - _grace_60 >= 110
+    and _wait_300 - _grace_300 >= 110)
+# …and the wait really moves with the grace, so neither check above can
+# be satisfied by a constant.
+checks["…and the wait grows with the grace, not independently of it"] = (
+    _have_both and _wait_300 - _wait_60 == _grace_300 - _grace_60)
+if _have_both:
+    print(f"      grace {_grace_60}s → wait {_wait_60}s "
+          f"(budget {_wait_60 - _grace_60}s); "
+          f"grace {_grace_300}s → wait {_wait_300}s "
+          f"(budget {_wait_300 - _grace_300}s)")
+else:
+    print(f"      grace={_grace_60}/{_grace_300} wait={_wait_60}/{_wait_300}"
+          f" — the recreate did not grant a grace at all")
 
 # ── the standalone path is where the shape came from ─────────────────
 # It waits `effective_stop + 30` rather than a fixed number, for exactly

@@ -20,6 +20,50 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from web_ui import _metric_label
 
 
+
+def _handler_with(path, token=None, password="", method="GET"):
+    """One request against the real handler; returns what it served.
+
+    Separate from `_get` above because this half needs a POST and a
+    password, and widening that fixture would change what the checks
+    built on it are measuring.
+    """
+    import io as _io
+    import types as _ty
+    import web_ui
+    handler_cls = web_ui.create_handler(
+        _ty.SimpleNamespace(api_tokens=["prom:s3cret-token"], language="en",
+                            web_password=password, web_username=""),
+        checker=None, bot=_ty.SimpleNamespace(t=None), store=None)
+    h = handler_cls.__new__(handler_cls)
+    h.path = path
+    h.headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if method == "POST":
+        h.headers = dict(h.headers, **{"Content-Length": "0", "Host": "x",
+                                       "Origin": "http://x"})
+    h.client_address = ("127.0.0.1", 0)
+    h.rfile = _ty.SimpleNamespace(read=lambda n: b"")
+    h.wfile = _io.BytesIO()
+    seen = {}
+    h.send_response = lambda code: None
+    h.send_error = lambda code, msg="": seen.setdefault("served", f"error {code}")
+    h.send_header = lambda k, v: None
+    h.end_headers = lambda: None
+    h._session_user = lambda: None
+    h._audit = lambda *a, **k: None
+    # What was SERVED is the answer — a code alone cannot tell "metrics"
+    # from "the login page", and those are the two outcomes under test.
+    h._serve_metrics = lambda: seen.setdefault("served", "metrics")
+    h._serve_status_json = lambda: seen.setdefault("served", "status")
+    h._send_auth_required = lambda p="": seen.setdefault("served", "auth-required")
+    h._send_redirect = lambda loc: seen.setdefault("served", f"redirect {loc}")
+    h._api_update = lambda key: seen.setdefault("served", "UPDATE RAN")
+    try:
+        (h.do_POST if method == "POST" else h.do_GET)()
+    except Exception as e:                                  # noqa: BLE001
+        seen["served"] = f"raised {type(e).__name__}"
+    return seen.get("served", "nothing")
+
 def main():
     checks = {}
 
@@ -168,8 +212,29 @@ def main():
         _none.get("code") != 401)
     # Read-only: the token is checked only for these two paths, so it can
     # never reach an endpoint that changes anything.
-    checks["only the two read paths accept a token"] = (
-        'in ("/metrics", "/api/status")' in src)
+    # Driven, this time for real. The check that stood here read
+    # `'in ("/metrics", "/api/status")' in src` — and leaving that
+    # literal untouched while appending `or path == "/api/update"`
+    # satisfies it completely (audit, 07.11.2026). Bitter, because the
+    # comment fifteen lines above already said "driven, not grepped".
+    # A password is set here on purpose: without one every path answers
+    # anyway and the token proves nothing.
+    import webauth as _wa
+
+    def _as(path, method="GET"):
+        h = _handler_with(path, token="s3cret-token",
+                          password=_wa.hash_password("correct horse"),
+                          method=method)
+        return h
+
+    checks["a token opens /metrics"] = _as("/metrics") == "metrics"
+    checks["…and /api/status"] = _as("/api/status") == "status"
+    # …and nothing else. These are the paths a read-only scraper token
+    # must not reach, one of which changes containers.
+    checks["…but not the status page"] = _as("/") == "auth-required"
+    checks["…nor the logs"] = _as("/logs") == "auth-required"
+    checks["…and not the update endpoint, which is a write"] = (
+        _as("/api/update", method="POST") == "auth-required")
     checks["the token check is GET-only"] = "_api_token_name" not in _i.getsource(
         web_ui.create_handler).split("def do_POST")[-1]
 

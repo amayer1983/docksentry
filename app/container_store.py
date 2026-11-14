@@ -128,7 +128,7 @@ def atomic_write_json(path, data, **dump_kwargs):
     fd, tmp = tempfile.mkstemp(dir=d, prefix=os.path.basename(path) + ".",
                                suffix=".tmp")
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, **dump_kwargs)
             f.flush()
             os.fsync(f.fileno())
@@ -238,7 +238,13 @@ class ContainerStore:
             healthy   : is_pinned('db') -> True
             truncated : is_pinned('db') -> False
 
-        and `update_checker.py` skips pinned containers on that answer.
+        `update_checker.py` makes the same reversal on its own copy of
+        the read — it has never owned a store, so it reads
+        `pinned_containers.json` directly and returns `EVERYTHING_PINNED`
+        where this returns True. Until 07.11.2026 it returned `[]`
+        instead, so this guard protected the detail page while the code
+        that recreates containers failed open; see
+        `test_pin_fail_closed.py`.
         Treating "I cannot read the list" as "everything is protected"
         is the wrong answer in at most one direction: an update is
         delayed until somebody looks at the loud message `_load_checked`
@@ -595,7 +601,7 @@ class ContainerStore:
             return True, []
         with path_lock(path):
             try:
-                with open(path) as f:
+                with open(path, encoding="utf-8") as f:
                     data = json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Failed to read {path}: {e}")
@@ -629,7 +635,7 @@ class ContainerStore:
             return {}
         with path_lock(path):
             try:
-                with open(path) as f:
+                with open(path, encoding="utf-8") as f:
                     data = json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Failed to read {path}: {e}")

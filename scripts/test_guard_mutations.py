@@ -111,9 +111,29 @@ GUARDED = [
 
     ("a damaged settings file does not take the start down",
      "app/config.py",
-     "        saved = {}\n        try:\n            with open(self.settings_file) as f:",
-     "        try:\n            with open(self.settings_file) as f:",
+     "        saved = {}\n        try:",
+     "        try:",
      "test_config_damage.py"),
+
+    ("…including one that is damaged below the JSON layer",
+     "app/config.py",
+     "        except (json.JSONDecodeError, UnicodeDecodeError,\n"
+     "                _DamagedSettings) as e:",
+     "        except (json.JSONDecodeError,\n"
+     "                _DamagedSettings) as e:",
+     "test_config_damage.py"),
+
+    ("…and the rest of the process is told it happened",
+     "app/config.py",
+     "        self.settings_quarantined = True\n",
+     "        self.settings_quarantined = False\n",
+     "test_config_damage.py"),
+
+    ("losing the settings file does not open the Web UI",
+     "app/web_ui.py",
+     "                return not getattr(config, \"settings_quarantined\", False)",
+     "                return True",
+     "test_web_auth_gate.py"),
 
     ("a settings file of the wrong shape is damage, not a crash",
      "app/config.py",
@@ -121,6 +141,108 @@ GUARDED = [
      "                raise _DamagedSettings(",
      "            if False:\n                raise _DamagedSettings(",
      "test_config_damage.py"),
+
+    ("clicking Update in the Web UI is answered, not swallowed",
+     "app/web_ui.py",
+     "                    self._send_redirect(\"/?update=started\")",
+     "                    self._send_redirect(\"/\")",
+     "test_web_update_feedback.py"),
+
+    ("the image's own start_period extends the health wait",
+     "app/update_checker.py",
+     "        effective = max(int(max_starting), int(image_start * 1.5))",
+     "        effective = int(max_starting)",
+     "test_health_outcomes.py"),
+
+    ("a refused image lookup is a failed check, not a phantom update",
+     "app/update_checker.py",
+     "                    if run_id and self._digests_unreadable(run_id):",
+     "                    if False and self._digests_unreadable(run_id):",
+     "test_running_image_check.py"),
+
+    ("an unreadable pin list stops updates instead of waving them through",
+     "app/update_checker.py",
+     "                return EVERYTHING_PINNED\n        if not isinstance(raw, list):\n            return EVERYTHING_PINNED",
+     "                raw = []\n        if not isinstance(raw, list):\n            return []",
+     "test_pin_fail_closed.py"),
+
+    ("the one writer of every JSON file names its encoding",
+     "app/container_store.py",
+     "        with os.fdopen(fd, \"w\", encoding=\"utf-8\") as f:",
+     "        with os.fdopen(fd, \"w\") as f:",
+     "test_file_encoding.py"),
+
+    ("an API token reaches the two read endpoints and nothing else",
+     "app/web_ui.py",
+     "            if path.split(\"?\")[0] in (\"/metrics\", \"/api/status\"):",
+     "            if path.split(\"?\")[0] in (\"/metrics\", \"/api/status\", \"/logs\"):",
+     "test_metrics_api.py"),
+
+    ("an advisory never becomes a pending update",
+     "app/update_checker.py",
+     "                        advisories[c[\"name\"]] = {\"current\": tag, \"newer\": newer}",
+     "                        advisories[c[\"name\"]] = {\"current\": tag, \"newer\": newer}\n"
+     "                        updates.extend([c])",
+     "test_newer_version.py"),
+
+    ("docker wins over podman while it is on PATH",
+     "app/container_backend.py",
+     "    if shutil.which(\"docker\"):\n"
+     "        return \"docker\"\n"
+     "    if shutil.which(\"podman\"):\n"
+     "        return \"podman\"",
+     "    if shutil.which(\"podman\"):\n"
+     "        return \"podman\"\n"
+     "    if shutil.which(\"docker\"):\n"
+     "        return \"docker\"",
+     "test_container_backend.py"),
+
+    ("every Discord command is admin-only and unusable in a DM",
+     "app/discord_bot.py",
+     "        out.append(c)",
+     "        pass  # out.append(c)",
+     "test_discord_bot.py"),
+
+    ("every language file carries the same keys as English",
+     "app/lang/de.json",
+     '"status_queued"',
+     '"status_queued_BROKEN"',
+     "test_lang_parity.py"),
+
+    ("a cleanup grace of zero means none, not the default",
+     "app/update_checker.py",
+     "        grace = grace_hours(self.config.cleanup_grace_hours)",
+     "        try:\n"
+     "            grace = int(self.config.cleanup_grace_hours or 24)\n"
+     "        except (ValueError, TypeError):\n"
+     "            grace = 24",
+     "test_cleanup_rules.py"),
+
+    ("the cleanup preview counts against the configured grace",
+     "app/update_checker.py",
+     "        cutoff = datetime.now(timezone.utc) - timedelta(hours=grace)",
+     "        cutoff = datetime.now(timezone.utc) - timedelta(hours=999)",
+     "test_cleanup_rules.py"),
+
+    ("a maintenance file of the wrong shape does not stop the updates",
+     "app/maintenance.py",
+     "    return data if isinstance(data, dict) else {}",
+     "    return data",
+     "test_maintenance_damage.py"),
+
+    ("a typo in an environment variable does not kill the boot",
+     "app/config.py",
+     "            pull_timeout=_clamp_int(\n"
+     "                _env(\"PULL_TIMEOUT\", \"1800\"), 60, 86400, 1800),",
+     "            pull_timeout=int(_env(\"PULL_TIMEOUT\", \"1800\")),",
+     "test_env_bounds.py"),
+
+    ("…and the ranges the Settings form enforces hold for the environment too",
+     "app/config.py",
+     "            disk_warn_percent=_clamp_int(\n"
+     "                _env(\"DISK_WARN_PERCENT\", \"85\"), 50, 100, 85),",
+     "            disk_warn_percent=int(_env(\"DISK_WARN_PERCENT\", \"85\")),",
+     "test_env_bounds.py"),
 
     ("a damaged settings file is kept, not overwritten",
      "app/config.py",
@@ -807,8 +929,8 @@ GUARDED = [
 
     ("…and reads it fresh, so setting one takes effect at once",
      "app/web_ui.py",
-     '            current = getattr(config, "web_password", "") or ""\n            if not current:\n                return True',
-     '            current = ""\n            if not current:\n                return True',
+     '            current = getattr(config, "web_password", "") or ""\n            if not current:',
+     '            current = ""\n            if not current:',
      "test_web_auth_gate.py"),
 
     ("the weekly report fires on its day and hour, not every tick",

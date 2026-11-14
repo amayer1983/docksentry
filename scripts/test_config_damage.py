@@ -54,7 +54,9 @@ def _load(content):
     d = tempfile.mkdtemp(dir=root)
     path = os.path.join(d, "settings.json")
     if content is not None:
-        with open(path, "w") as f:
+        # bytes, not str, for the damage that only exists at the byte
+        # level — a decoder never gets to see it through a text write.
+        with open(path, "wb" if isinstance(content, bytes) else "w") as f:
             f.write(content)
 
     c = config_mod.Config.__new__(config_mod.Config)
@@ -83,6 +85,13 @@ DAMAGE = {
     "a list": '["de"]',
     "a bare string": '"de"',
     "null": "null",
+    # One Latin-1 byte in an otherwise valid file. Neither a
+    # JSONDecodeError nor an IOError, so UnicodeDecodeError escaped
+    # `_load_persistent` outright — during `__init__`, which is the
+    # boot loop everything else in this file exists to prevent. The
+    # `open()` carried no `encoding=` either, so whether it raised at
+    # all depended on the host's locale (audit, 07.11.2026).
+    "a latin-1 byte": b'{"bot_label": "M\xfcnster"}',
 }
 
 for label, content in DAMAGE.items():
@@ -100,12 +109,19 @@ for label, content in DAMAGE.items():
     checks[f"{label}: the damaged file is kept, not deleted"] = len(kept) == 1
     checks[f"{label}: …and moved out of the way"] = "settings.json" not in left
     if kept:
-        with open(os.path.join(d, kept[0])) as f:
+        with open(os.path.join(d, kept[0]),
+                  "rb" if isinstance(content, bytes) else "r") as f:
             checks[f"{label}: …with its contents intact"] = f.read() == content
     else:
         checks[f"{label}: …with its contents intact"] = False
     checks[f"{label}: the operator is told"] = "ERROR" in out and (
         "damaged" in out)
+    # Printing it is not enough. The rest of the process has to be able
+    # to ask, because "no Web UI password" now means two different
+    # things — an instance nobody configured, and one that just lost
+    # its password with the file. See test_web_auth_gate.py.
+    checks[f"{label}: …and the object knows it was quarantined"] = (
+        getattr(_c, "settings_quarantined", None) is True)
 
 # ── the counter-directions ───────────────────────────────────────────
 # Without these, every check above is satisfied by a method that
@@ -116,6 +132,10 @@ checks["a healthy file is read, not quarantined"] = (
     raised is None and os.listdir(d) == ["settings.json"])
 checks["…and its values are applied"] = c.language == "de"
 checks["…quietly"] = "ERROR" not in out
+# The counter-direction for the flag: a method that sets it
+# unconditionally would satisfy every check above.
+checks["…and nothing is flagged as quarantined"] = (
+    getattr(c, "settings_quarantined", None) is False)
 
 raised, out, d, c = _load(None)
 checks["a missing file is not damage"] = (

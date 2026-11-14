@@ -935,7 +935,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # documented "no password set → open" instead of crashing.
             current = getattr(config, "web_password", "") or ""
             if not current:
-                return True
+                # "No password set → open" is the documented behaviour, and
+                # it is right for an instance nobody has configured yet.
+                # It is wrong after a damaged settings.json was moved
+                # aside: the password went with the file and
+                # `web_setup_done` is back to False, so the first visitor
+                # walks into the setup wizard and sets their own password
+                # on an instance that runs as root on the Docker socket.
+                # Losing a file must not hand the instance over. The way
+                # back in is `WEB_PASSWORD` in the environment — it never
+                # lived in that file — or repairing the `.corrupt-…` copy.
+                return not getattr(config, "settings_quarantined", False)
             if self._session_user() is not None:
                 return True
             auth = self.headers.get("Authorization", "")
@@ -1361,7 +1371,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if not os.path.exists(config.pending_file):
                 return []
             try:
-                with open(config.pending_file) as f:
+                with open(config.pending_file, encoding="utf-8") as f:
                     data = json.load(f)
             except (OSError, json.JSONDecodeError):
                 return []
@@ -2643,9 +2653,26 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 body = self.rfile.read(length).decode()
                 params = parse_qs(body)
                 key = params.get("name", [""])[0].strip()
-                if key:
-                    threading.Thread(target=self._api_update, args=(key,)).start()
-                self._send_redirect("/")
+                # Answer the click here, before handing off. Everything
+                # the worker could say arrives after the redirect has
+                # already gone, and what it does say goes to Telegram
+                # — so a Web-UI-only install saw a 302 to "/" whether
+                # the update started, was refused because another one
+                # holds the lock, or had nothing to act on at all.
+                #
+                # Advisory, not the gate: the real claim is still the
+                # atomic `acquire(blocking=False)` in the worker, and a
+                # click that loses the race between here and there is
+                # reported by the history like any other.
+                if not key:
+                    self._send_redirect("/?update=gone")
+                elif (getattr(bot, "update_running", False)
+                      or self._update_lock_held(bot)):
+                    self._send_redirect("/?update=busy")
+                else:
+                    threading.Thread(target=self._api_update,
+                                     args=(key,)).start()
+                    self._send_redirect("/?update=started")
             elif path == "/api/check_one":
                 # Per-container update check from the Status table (#50).
                 # POST rather than GET so it inherits the auth + CSRF checks
@@ -4328,6 +4355,27 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                               if n.endswith("_old") and n[:-4] in _live
                               and n[:-4] not in _busy]
             leftovers = sorted(set(leftovers))
+
+            # What came of the last click on Update. The POST hands the
+            # work to a thread and redirects immediately, so the answer
+            # cannot ride on the response — and the worker's own "an
+            # update is already running" reply goes to Telegram, and
+            # only when the bot is enabled. On a Web-UI-only install the
+            # button therefore did nothing visible at all: a 302 back to
+            # this page and no sign that the click had been dropped
+            # (audit, 07.11.2026).
+            _upd = (parse_qs(urlparse(self.path).query).get("update")
+                    or [""])[0]
+            update_banner = ""
+            if _upd in ("started", "busy", "gone"):
+                _kind = "card-warn" if _upd != "started" else "card"
+                _icon = _ICONS["alert" if _upd != "started" else "arrow_up"]
+                update_banner = (
+                    f'<div class="card {_kind}">'
+                    f'<h2>{_icon} {t("web_update_" + _upd + "_title")}</h2>'
+                    f'<p class="card-intro">{t("web_update_" + _upd)}</p>'
+                    f'</div>')
+
             leftover_banner = ""
             if leftovers:
                 leftover_banner = f"""<div class="card card-warn">
@@ -4347,7 +4395,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             last_check_text = t("web_stat_last_check_never")
             try:
                 if os.path.exists(config.history_file):
-                    with open(config.history_file) as f:
+                    with open(config.history_file, encoding="utf-8") as f:
                         hist = json.load(f)
                     if hist:
                         last_ts_raw = hist[-1].get("timestamp", "")
@@ -4408,7 +4456,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 mem_stat = ""
 
             content = f"""
-{leftover_banner}{major_banner}
+{update_banner}{leftover_banner}{major_banner}
 <div class="stat-grid">
 <div class="card stat">
     <div class="num">{total_count}</div>
@@ -4800,7 +4848,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             history = []
             if os.path.exists(config.history_file):
                 try:
-                    with open(config.history_file) as f:
+                    with open(config.history_file, encoding="utf-8") as f:
                         all_h = json.load(f)
                     history = [h for h in all_h if h.get("container") == name]
                 except (json.JSONDecodeError, IOError):
@@ -5674,7 +5722,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             history = []
             if os.path.exists(config.history_file):
                 try:
-                    with open(config.history_file) as f:
+                    with open(config.history_file, encoding="utf-8") as f:
                         history = json.load(f)
                 except (json.JSONDecodeError, IOError):
                     pass
@@ -5772,7 +5820,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             ev_path = getattr(config, "monitor_events_file", None)
             if ev_path and os.path.exists(ev_path):
                 try:
-                    with open(ev_path) as f:
+                    with open(ev_path, encoding="utf-8") as f:
                         events = json.load(f) or []
                 except (json.JSONDecodeError, IOError):
                     events = []
@@ -7130,6 +7178,23 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             finally:
                 engine._update_lock.release()
                 bot._run_queued_selfupdate()
+
+        def _update_lock_held(self, _bot):
+            """True when the shared update mutex is taken right now.
+
+            Read-only and best-effort: the claim that matters is still
+            the atomic `acquire(blocking=False)` in
+            `_run_web_update_batch`. This only decides which of two
+            sentences the page shows, so a lost race costs a word, not
+            an update. Written defensively because `bot` can be a
+            Telegram-less stand-in with no engine at all.
+            """
+            eng = getattr(_bot, "engine", None)
+            lock = getattr(eng, "_update_lock", None)
+            try:
+                return bool(lock.locked())
+            except Exception:                               # noqa: BLE001
+                return False
 
         def _api_update(self, key):
             """Trigger update for a single container from Web UI. Runs through

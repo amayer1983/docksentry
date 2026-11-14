@@ -48,7 +48,11 @@ checks = {}
 class _Backend:
     """A daemon that answers, and remembers exactly how it was asked."""
 
-    def __init__(self, images=None, used=None, inspect=None, save_ok=True):
+    def __init__(self, images=None, used=None, inspect=None, save_ok=True,
+                 dangling=None):
+        #: `CreatedAt` lines, as `docker images --filter dangling=true`
+        #: prints them — what the cleanup preview counts.
+        self._dangling = dangling or []
         self.prunes = []
         self.saves = []
         #: Every daemon call that changes something, in the order it
@@ -84,6 +88,8 @@ class _Backend:
             out = "\n".join(self._used)
         elif args[:2] == ["image", "ls"]:
             out = "\n".join(self._images)
+        elif args[:1] == ["images"]:
+            out = "\n".join(self._dangling)
         elif args[:2] == ["image", "inspect"]:
             meta = self._inspect.get(args[2])
             if meta is None:
@@ -133,6 +139,49 @@ checks["…and an unreadable setting falls back to a day"] = (
 # deletes nothing.
 checks["…while still being an actual prune"] = (
     bool(_b.prunes) and _b.prunes[0]["all"] and _b.prunes[0]["force"])
+
+# Zero is a value, not an absence. The Settings form accepts it
+# (`max(0, min(v, 8760))`) and docs/configuration.md says "0 means no
+# grace at all" — but both call sites read `int(value or 24)`, and 0
+# is falsy, so the single setting that switches the grace off became
+# the default instead (audit, 07.11.2026).
+_b = _Backend()
+_checker(_b, cleanup_grace_hours=0).cleanup_images()
+checks["…and a grace of zero really means none"] = (
+    bool(_b.prunes) and _b.prunes[0]["until"] == "0h")
+
+# ── the preview that answers "why did cleanup free nothing?" ────────
+# `grace_holds_back` is what tells the owner, before running anything,
+# that all thirty-three unused images are younger than the grace (#63).
+# Nothing drove it: setting the grace to 999 inside it changed no
+# procedure's result (audit, 07.11.2026).
+_AGED = None
+
+
+def _ago(hours):
+    from datetime import datetime, timedelta, timezone
+    t = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return t.strftime("%Y-%m-%d %H:%M:%S %z")
+
+
+_AGED = [_ago(1), _ago(5), _ago(100), _ago(200)]
+
+_p, _h, _g = _checker(_Backend(dangling=_AGED),
+                      cleanup_grace_hours=24).grace_holds_back()
+checks["the preview counts what the grace holds back"] = (_h == 2)
+checks["…and what a cleanup would take right now"] = (_p == 2)
+checks["…and reports the grace it used"] = (_g == 24)
+
+# Both counter-directions, because a function returning a constant
+# would satisfy the three above.
+_p, _h, _g = _checker(_Backend(dangling=_AGED),
+                      cleanup_grace_hours=0).grace_holds_back()
+checks["…with no grace, nothing is held back"] = (_h == 0 and _p == 4)
+checks["…and zero is reported as zero, not as the default"] = (_g == 0)
+
+_p, _h, _g = _checker(_Backend(dangling=_AGED),
+                      cleanup_grace_hours=8760).grace_holds_back()
+checks["…while a long grace holds every one of them"] = (_h == 4 and _p == 0)
 
 # ── retention deletes the old and keeps the young ────────────────────
 # Both halves, because they fail in opposite and equally bad ways: no

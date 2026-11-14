@@ -165,6 +165,83 @@ def main():
     # Capture the divergence-case log so a human can read how it renders.
     log_divergence = log
 
+
+    # ── a daemon that will not answer, which is not the same as "no digests" ──
+    # A `docker-socket-proxy` answers an image lookup BY ID with HTTP 403
+    # while letting a lookup by tag through. The CLI exits non-zero, and
+    # `_get_local_repo_digests` returned `[]` for it — indistinguishable
+    # from a locally-built image. The fallback below then reported an update
+    # from two image IDs alone, without consulting the registry, and the
+    # update ran into `pull access denied` on a private registry that had
+    # refused the same sweep three times. Seen on a real host, 07.11.2026.
+    #
+    # The fixture above stands in for `_get_local_repo_digests` itself, so
+    # it cannot reach this: here the DAEMON is stood in for and that method
+    # runs for real.
+
+    class _Proxy:
+        """Answers `ps` and tag lookups; refuses lookups by image ID."""
+
+        name = "local"
+
+        def __init__(self, refuse_by_id=True):
+            self.refuse_by_id = refuse_by_id
+
+        def run(self, args, timeout=None, **kw):
+            ok = lambda out: types.SimpleNamespace(                  # noqa: E731
+                returncode=0, stdout=out, stderr="")
+            if args[:1] == ["ps"]:
+                return ok("app|reg/app:latest\n")
+            if args[:2] == ["inspect", "--format"]:
+                ref = args[-1]
+                if "RepoDigests" in args[2]:
+                    if ref.startswith("sha256:") and self.refuse_by_id:
+                        return types.SimpleNamespace(
+                            returncode=1, stdout="",
+                            stderr="Error response from daemon: 403 Forbidden")
+                    return ok('["reg/app@sha256:TAGDIGEST"]')
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+
+    def _proxy_checker(refuse_by_id):
+        tmp = tempfile.mkdtemp()
+        pending_file = os.path.join(tmp, "pending.json")
+        cfg = types.SimpleNamespace(debug=False, pending_file=pending_file,
+                                    exclude_containers=[],
+                                    pinned_file=os.path.join(tmp, "pin.json"),
+                                    advisories_file=os.path.join(tmp, "adv.json"))
+        chk = UpdateChecker(cfg, backend=_Proxy(refuse_by_id))
+        chk._own_container_name = lambda: ""
+        chk._labels_for = lambda names: {}
+        chk._parse_image = lambda img: ("reg", "app", "latest")
+        chk._container_image_id = lambda name: RUN_ID
+        chk._image_id = lambda ref: "sha256:TAGID"
+        chk._get_remote_digest = lambda *a, **k: "sha256:TAGDIGEST"
+        chk._get_image_size = lambda ref: 0
+        chk._get_image_created = lambda ref: ""
+        chk._get_image_version_label = lambda ref: ""
+        chk._parse_semver = lambda t: None
+        chk.get_remote_image_meta = lambda *a, **k: {}
+        chk._registry_environment = lambda: ""
+        return chk
+
+
+    _c = _proxy_checker(refuse_by_id=True)
+    checks["a refused image lookup is not read as 'no digests'"] = (
+        run(_c) == [])
+    checks["…it is recorded as a failed check instead"] = (
+        _c._digests_unreadable(RUN_ID) is True)
+
+    # The counter-direction, and the reason this is not simply "never report
+    # on a digestless image": when the daemon DOES answer, the same setup
+    # has to keep working. Here the running image answers with the tag's own
+    # digest, which matches the remote, so there is nothing pending — and
+    # crucially the check is not marked as failed.
+    _c = _proxy_checker(refuse_by_id=False)
+    checks["…while a daemon that answers is believed"] = run(_c) == []
+    checks["…and nothing is flagged unreadable"] = (
+        _c._digests_unreadable(RUN_ID) is False)
+
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
 

@@ -181,7 +181,7 @@ def read_pending(path):
     if not path or not os.path.exists(path):
         return []
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return []
@@ -1741,7 +1741,7 @@ class TelegramBot:
                 self.send_message(self.t("no_pending_updates"))
                 return
 
-            with open(self.config.pending_file) as f:
+            with open(self.config.pending_file, encoding="utf-8") as f:
                 updates = json.load(f)
 
             target = next((u for u in updates
@@ -2430,7 +2430,7 @@ class TelegramBot:
         path = getattr(self.config, "monitor_events_file", None)
         if path and os.path.exists(path):
             try:
-                with open(path) as f:
+                with open(path, encoding="utf-8") as f:
                     events = json.load(f) or []
             except (ValueError, OSError):
                 events = []
@@ -2874,7 +2874,7 @@ class TelegramBot:
                 if not os.path.exists(pending_file):
                     self.send_message(self.t("no_pending_updates"))
                     return
-                with open(pending_file) as f:
+                with open(pending_file, encoding="utf-8") as f:
                     updates = json.load(f)
 
             if not updates:
@@ -2935,7 +2935,7 @@ class TelegramBot:
         if not os.path.exists(pending_file):
             return
         try:
-            with open(pending_file) as f:
+            with open(pending_file, encoding="utf-8") as f:
                 pending = json.load(f)
         except (OSError, json.JSONDecodeError):
             return
@@ -4170,7 +4170,7 @@ class TelegramBot:
                 self.send_message(host_err)
                 return
             if os.path.exists(self.config.pending_file):
-                with open(self.config.pending_file) as f:
+                with open(self.config.pending_file, encoding="utf-8") as f:
                     pending = json.load(f)
                 if targets is not None:
                     # The pending file holds every host's entries (#7);

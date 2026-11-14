@@ -21,13 +21,32 @@ from datetime import datetime, timedelta
 
 
 def _read(path):
+    """The state as a dict — whatever is actually in the file.
+
+    Everything downstream does `state.get("until")`, and `null`, `[]`,
+    `"on"`, `5` and `[{"until": "forever"}]` all parse as valid JSON and
+    all answer `.get` with an AttributeError. The scheduler asks on
+    every tick (`scheduler.py:401`) and nothing there catches it, so a
+    file of the wrong shape stopped the updates — silently, because the
+    tick is the only thing that would have reported anything.
+
+    `UnicodeDecodeError` is neither a JSONDecodeError nor an OSError and
+    escaped the same way; the `open()` carried no `encoding=` either, so
+    whether it raised at all followed the host locale. Measured across
+    all six shapes on 07.11.2026.
+
+    Unreadable and wrong-shaped both mean the same thing here: no
+    maintenance. That is the safe direction — the alternative is an
+    instance that quietly stops updating anything.
+    """
     if not os.path.exists(path):
         return {}
     try:
-        with open(path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _write(path, data):

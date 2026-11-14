@@ -1557,7 +1557,7 @@ class DiscordBot:
         if not path or not os.path.exists(path):
             return self.t("no_pending_updates")
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 pending = json.load(f)
         except (OSError, ValueError):
             return self.t("no_pending_updates")
@@ -1757,7 +1757,7 @@ class DiscordBot:
         if not path or not os.path.exists(path):
             return self.t("events_empty")
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 events = json.load(f) or []
         except (OSError, ValueError):
             return self.t("events_empty")
@@ -2429,7 +2429,7 @@ class DiscordBot:
         if not path or not os.path.exists(path):
             return []
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError):
             return []
@@ -2448,7 +2448,7 @@ class DiscordBot:
         if not path or not os.path.exists(path):
             return
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError):
             return

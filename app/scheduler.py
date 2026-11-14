@@ -271,7 +271,7 @@ class Scheduler:
         if not os.path.exists(path):
             return
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             os.remove(path)
             ts = datetime.fromisoformat(data.get("trigger_time", ""))

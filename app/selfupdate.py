@@ -476,7 +476,7 @@ def save_history(ctx, container_name, image, old_created, new_created):
         history = []
         if os.path.exists(ctx.config.history_file):
             try:
-                with open(ctx.config.history_file) as f:
+                with open(ctx.config.history_file, encoding="utf-8") as f:
                     history = _json.load(f)
             except (_json.JSONDecodeError, IOError):
                 history = []

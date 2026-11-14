@@ -284,6 +284,54 @@ def name_matches(name, patterns):
     return False
 
 
+class _EverythingPinned(frozenset):
+    """The answer when the pin list cannot be read: treat all as pinned.
+
+    `_get_pinned` hands back a container of names and its one caller asks
+    `name in pinned`, so the safe answer to "I cannot read the list" is a
+    container that says yes to everything. Failing the other way loses a
+    database: the one case a pin exists to prevent is an unattended
+    update, and a damaged file would have started exactly that.
+
+    Wrong in at most one direction — an update waits until somebody looks
+    at the loud message the read already prints. Same reasoning, and the
+    same choice, as `ContainerStore.is_pinned`.
+    """
+
+    def __contains__(self, item):
+        return True
+
+    def __repr__(self):                                     # pragma: no cover
+        return "<all containers, pin list unreadable>"
+
+
+#: Singleton; identity is what makes it recognisable at a call site.
+EVERYTHING_PINNED = _EverythingPinned()
+
+
+def grace_hours(value, default=24):
+    """Cleanup grace in hours, where 0 means 0 and not the default.
+
+    Both call sites read `int(value or 24)`, which is natural to write
+    and wrong for exactly one input: 0 is falsy, so the single value
+    that switches the grace off became 24 hours instead. Meanwhile
+    `docs/configuration.md` promises "0 means no grace at all" and the
+    Settings form accepts 0 on purpose (`max(0, min(v, 8760))`), so
+    both doors offered something the code would not do — and the
+    preview said nothing either, because it used the same expression
+    (audit, 07.11.2026).
+
+    None and anything unparsable still fall back; a deliberate 0 does
+    not. Negative values clamp to 0, which is what they mean.
+    """
+    if value is None:
+        return default
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def merge_pending(prev, updates, failed_checks, host_name, host_of):
     """What the pending file should hold after a full scan of one host.
 
@@ -341,6 +389,7 @@ class UpdateChecker:
         # Per-run scratch state. Cleared at the top of check_all so a long
         # running process never serves stale data from an earlier sweep.
         self._repo_digest_cache = {}
+        self._digest_read_failed = set()
         self._tag_list_cache = {}
         self._token_cache = {}
         self._auth_kind = "anonymous"
@@ -665,7 +714,7 @@ class UpdateChecker:
         if not os.path.isfile(config_file):
             return None
         try:
-            with open(config_file) as f:
+            with open(config_file, encoding="utf-8") as f:
                 cfg = json.load(f)
             auths = cfg.get("auths", {}) or {}
             want = _auth_host(registry)
@@ -1462,7 +1511,7 @@ class UpdateChecker:
             data = {}
             if os.path.exists(path):
                 try:
-                    with open(path) as f:
+                    with open(path, encoding="utf-8") as f:
                         data = json.load(f) or {}
                 except (OSError, ValueError):
                     data = {}
@@ -1481,7 +1530,7 @@ class UpdateChecker:
         if not path or not os.path.exists(path):
             return {}
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f) or {}
         except (OSError, ValueError):
             return {}
@@ -1652,16 +1701,38 @@ class UpdateChecker:
         if cached is not None:
             return cached
         digests = []
+        answered = False
         try:
             result = self.backend.run(
                 ["inspect", "--format", "{{json .RepoDigests}}", image])
             if result.returncode == 0:
+                answered = True
                 digests = [d for d in json.loads(result.stdout.strip() or "[]")
                            if isinstance(d, str) and "@" in d]
         except (json.JSONDecodeError, TypeError, subprocess.SubprocessError, OSError):
             digests = []
+        # "No digests" and "could not ask" came back the same way, and
+        # they mean opposite things. Seen on a real host (07.11.2026): a
+        # `docker-socket-proxy` answers an image lookup by ID with HTTP
+        # 403, the CLI exits non-zero, and this returned `[]` — which
+        # reads as "locally built". The #53 branch below then reported an
+        # update without consulting the registry at all, and the update
+        # ran into `pull access denied` on a private registry it had
+        # already been refused by three times in the same sweep.
+        #
+        # Same rule the remote side has always had, in its own words:
+        # treat unknown as unknown.
+        if not answered:
+            self._digest_read_failed.add(image)
         self._repo_digest_cache[image] = digests
         return digests
+
+    def _digests_unreadable(self, image):
+        """True when the last look at this image's digests did not answer.
+
+        Separate from an empty list on purpose — see the note above.
+        """
+        return image in self._digest_read_failed
 
     def _get_local_digests(self, image):
         """Get all local image digests from RepoDigests (bare `sha256:…`).
@@ -1712,6 +1783,7 @@ class UpdateChecker:
             # the whole process — so drop the per-run RepoDigests cache
             # first, or a re-pull between two calls would go unnoticed.
             self._repo_digest_cache = {}
+            self._digest_read_failed = set()
             cfg = self.inspect_self()
             if not cfg:
                 return False
@@ -1842,7 +1914,7 @@ class UpdateChecker:
         lot, every one younger than the 72-hour CLEANUP_GRACE_HOURS
         (#63, owner-reported).
         """
-        grace = int(getattr(self.config, "cleanup_grace_hours", 24) or 24)
+        grace = grace_hours(getattr(self.config, "cleanup_grace_hours", 24))
         try:
             r = self.backend.run(
                 ["images", "--filter", "dangling=true", "--format",
@@ -1930,10 +2002,7 @@ class UpdateChecker:
         includes the reclaim total, list of removed image tags (truncated),
         and a note about backup activity if relevant.
         """
-        try:
-            grace = int(self.config.cleanup_grace_hours or 24)
-        except (ValueError, TypeError):
-            grace = 24
+        grace = grace_hours(self.config.cleanup_grace_hours)
 
         backup_msg = ""
         if self.config.cleanup_backup_local_only:
@@ -2099,7 +2168,7 @@ class UpdateChecker:
         state = {}
         try:
             if os.path.exists(self.config.disk_warn_state_file):
-                with open(self.config.disk_warn_state_file) as f:
+                with open(self.config.disk_warn_state_file, encoding="utf-8") as f:
                     state = json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
@@ -2172,12 +2241,21 @@ class UpdateChecker:
         raw = []
         if os.path.exists(self.config.pinned_file):
             try:
-                with open(self.config.pinned_file) as f:
+                with open(self.config.pinned_file, encoding="utf-8") as f:
                     raw = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                raw = []
+            except (json.JSONDecodeError, UnicodeDecodeError, IOError):
+                # Unreadable is not "nothing is pinned". `ContainerStore`
+                # made that reversal on 18.10.2026 and its docstring says
+                # "and update_checker.py skips pinned containers on that
+                # answer" — which was never true: this reads the file
+                # itself and came back with `[]`, so the store failed
+                # closed on the detail page while the thing that actually
+                # updates containers failed open (audit, 07.11.2026).
+                # A pin exists to stop an unattended update; a damaged
+                # pin file must not be what starts one.
+                return EVERYTHING_PINNED
         if not isinstance(raw, list):
-            return []
+            return EVERYTHING_PINNED
         mine = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
         out = []
         for key in raw:
@@ -2236,7 +2314,7 @@ class UpdateChecker:
         history = []
         if os.path.exists(self.config.history_file):
             try:
-                with open(self.config.history_file) as f:
+                with open(self.config.history_file, encoding="utf-8") as f:
                     history = json.load(f)
             except (json.JSONDecodeError, IOError):
                 pass
@@ -2255,7 +2333,7 @@ class UpdateChecker:
         if h:
             cands.append(h)
         try:
-            with open("/etc/hostname") as f:
+            with open("/etc/hostname", encoding="utf-8") as f:
                 hf = f.read().strip()
                 if hf and hf not in cands:
                     cands.append(hf)
@@ -2931,7 +3009,7 @@ class UpdateChecker:
         try:
             path = getattr(self.config, "trust_running_file", None)
             if path and os.path.exists(path):
-                with open(path) as f:
+                with open(path, encoding="utf-8") as f:
                     return name in json.load(f)
         except (ValueError, OSError):
             pass
@@ -3157,6 +3235,7 @@ class UpdateChecker:
         """
         self.debug_log = []
         self._repo_digest_cache = {}
+        self._digest_read_failed = set()
         self._tag_list_cache = {}
         self._token_cache = {}
         diag = self._diag_on()
@@ -3254,6 +3333,23 @@ class UpdateChecker:
                     # new side = the tag / remote.
                     tag_id = self._image_id(image)
                     tag_repo_digests = self._get_local_repo_digests(image)
+                    # …but only when that emptiness is an answer. If the
+                    # daemon refused the lookup, "no RepoDigests" is not
+                    # a fact about the image, and this branch would
+                    # report an update from two IDs alone, without ever
+                    # asking the registry. Measured on a real host: a
+                    # socket-proxy answers image-lookup-by-ID with HTTP
+                    # 403, and a container was reported as updatable
+                    # against a private registry that had refused us
+                    # three times in the same sweep (07.11.2026). Not
+                    # knowing is a failed check — which keeps whatever
+                    # pending entry already existed, rather than
+                    # inventing one.
+                    if run_id and self._digests_unreadable(run_id):
+                        self._debug("  → Check FAILED: could not read the "
+                                    "running image's digests")
+                        failed_checks.add(c["name"])
+                        continue
                     if tag_repo_digests and run_id and tag_id and run_id != tag_id:
                         local_ref = run_id
                         if self._diag_on():
@@ -3458,7 +3554,7 @@ class UpdateChecker:
             if not os.path.exists(self.config.pending_file):
                 return []
             try:
-                with open(self.config.pending_file) as f:
+                with open(self.config.pending_file, encoding="utf-8") as f:
                     data = json.load(f)
             except (OSError, json.JSONDecodeError):
                 return []
