@@ -156,9 +156,25 @@ def run_one(path):
     # tells nobody why. Keep the tail so the runner's log is diagnosable
     # from the outside: three procedures failed with 0 checks on a hosted
     # runner on 16.11.2026 and the log had nothing else to say about it.
+    # Two different things a failing procedure has to be able to say.
+    #
+    # Procedures write diagnostics as "      → …" beside a red check —
+    # what the list actually held, what the thing under test printed.
+    # Those are the explanation, and they were invisible here: the tail
+    # below only ran when there were no checks at all, so the moment a
+    # procedure stopped crashing and started reporting, its reasons
+    # disappeared again. Twice in one evening, 16.11.2026.
+    #
+    # The tail stays for the other case: no checks at all means it fell
+    # over before judging anything, and then the last lines are all
+    # there is.
     tail = ""
-    if status == "fail" and not checks:
-        tail = "\n".join(lines[-12:])
+    if status == "fail":
+        notes = [l for l in lines if l.lstrip().startswith("→")]
+        if notes:
+            tail = "\n".join(notes[:20])
+        elif not checks:
+            tail = "\n".join(lines[-12:])
     return status, checks, skipped, disagrees, tail
 
 
