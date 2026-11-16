@@ -293,9 +293,13 @@ class _EverythingPinned(frozenset):
     database: the one case a pin exists to prevent is an unattended
     update, and a damaged file would have started exactly that.
 
-    Wrong in at most one direction — an update waits until somebody looks
-    at the loud message the read already prints. Same reasoning, and the
-    same choice, as `ContainerStore.is_pinned`.
+    Wrong in at most one direction — an update waits until somebody
+    repairs the file, and `_pin_file_unreadable` says so in the log.
+    That sentence used to read "the loud message the read already
+    prints", which was false here: the only such print lives in
+    `ContainerStore._load_checked`, and this path never reaches it
+    (audit, 16.11.2026). Same reasoning, and the same choice, as
+    `ContainerStore.is_pinned`.
     """
 
     def __contains__(self, item):
@@ -2220,6 +2224,27 @@ class UpdateChecker:
             "compose_dir": working_dir,
         }
 
+    def _pin_file_unreadable(self, why):
+        """Say out loud that the pin list could not be read.
+
+        Fail-closed means every container is treated as pinned, which
+        stops every update on this host — the right direction, but it
+        used to happen in complete silence. Two docstrings claimed "an
+        update waits until somebody looks at the loud message the read
+        already prints"; the print they meant lives in `ContainerStore`,
+        on a path the checker never takes. It reads the file itself.
+
+        Measured 16.11.2026: a truncated pinned_containers.json made
+        `get_running_containers` skip every container, `check_all`
+        return `[]`, and `merge_pending` then drop this host's whole
+        pending list — with nothing in the log to explain any of it.
+        """
+        print(f"ERROR: {self.config.pinned_file} could not be read "
+              f"({why}).", flush=True)
+        print("ERROR: treating every container as pinned, so no update "
+              "will run on this host until the file is repaired or "
+              "removed.", flush=True)
+
     def _get_pinned(self):
         """Pinned (frozen) container names **on this checker's host**.
 
@@ -2243,7 +2268,7 @@ class UpdateChecker:
             try:
                 with open(self.config.pinned_file, encoding="utf-8") as f:
                     raw = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError, IOError):
+            except (json.JSONDecodeError, UnicodeDecodeError, IOError) as e:
                 # Unreadable is not "nothing is pinned". `ContainerStore`
                 # made that reversal on 18.10.2026 and its docstring says
                 # "and update_checker.py skips pinned containers on that
@@ -2253,8 +2278,10 @@ class UpdateChecker:
                 # updates containers failed open (audit, 07.11.2026).
                 # A pin exists to stop an unattended update; a damaged
                 # pin file must not be what starts one.
+                self._pin_file_unreadable(e)
                 return EVERYTHING_PINNED
         if not isinstance(raw, list):
+            self._pin_file_unreadable("it is not a list")
             return EVERYTHING_PINNED
         mine = getattr(self.backend, "name", LOCAL_HOST) or LOCAL_HOST
         out = []
@@ -5078,9 +5105,12 @@ class UpdateChecker:
         result = self.backend.pull(image, timeout=pull_grace)
         if result.returncode != 0:
             if "toomanyrequests" in result.stderr:
-                msg = "Rate limit erreicht"
+                # Was two hardcoded German sentences, served to all 16
+                # languages, since v1.7.0. The key has existed in every
+                # language file the whole time and had no caller.
+                msg = self._t("rate_limit")
                 self._save_history(name, image, False, msg)
-                return False, f"{msg}. `docker login` auf dem Host ausführen und Credentials mounten."
+                return False, msg
             msg = f"Pull failed: {clip(result.stderr)}"
             self._save_history(name, image, False, msg)
             return False, msg

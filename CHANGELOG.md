@@ -2,6 +2,36 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.19.0] - 2026-11-16
+
+The first stable since August. It carries nine betas, and most of what is
+in it came out of a security audit of the whole tree — the detail was held
+back until now, because everyone on `:latest` was still running the old
+code.
+
+### Fixed
+- **A pinned container could be updated anyway.** The pin list is one file, and when it could not be read, the part of Docksentry that actually updates containers decided nothing was pinned. The detail page failed the safe way, the updater failed the other way. An unreadable pin list now means everything is pinned, which is the direction that cannot cost you a database.
+- **A damaged settings file no longer opens the Web UI, kills the boot or stops the updates.** Three separate ways a single broken JSON file could hurt you: the container died at startup and restarted into the same file, forever; the Web UI let the next visitor in without a password; and a broken maintenance file quietly held every update back. All three are closed, and the damaged file is set aside rather than deleted — it is still there to recover by hand.
+- **Updates that were never available.** A container could be reported as updatable and then fail with `pull access denied`. The cause was not the registry: an image lookup refused by `docker-socket-proxy` came back looking exactly like "this image has no digests", and no digests reads as "the running image is unknown, so assume it changed". A lookup that was refused is now told apart from one that came back empty.
+- **A failed pull says why, and you can give it more time.** Compose writes its progress to stderr, so the one line that explains the failure sits at the end — and the end was the part that got cut off. You got 200 characters of layer IDs. The limit on a pull was also hardcoded at 1800 seconds since v1.7.0, in no document and on no page; for a 19 GB image that is about 10.5 MB/s sustained. It is `PULL_TIMEOUT` now, up to 24 hours.
+- **The update button in the Web UI answers.** It started the update and said nothing at all, so the honest reading was that the click had missed. It now says started, or that another update is already running, or that the container is no longer on the list.
+- **Eleven settings can no longer take the container down.** A typo in a number — `MONITOR_INTERVAL=30m` — raised a `ValueError` during startup, which is a boot loop on a value nobody would think twice about. Every numeric setting is now read with a range, and the ranges are written down in the configuration docs where there was nothing before.
+- **TLS on `tcp://…:2376` works, and the pre-flight no longer says it does not.**
+- **A rate limit can no longer put the scheduler to sleep.** It used to be able to block the thread for two minutes.
+- **Mail carries a `Message-ID`, and a rate-limited notification is no longer thrown away.** It is held and sent when the channel comes back.
+- **A restore asks who you are.** The backup bundles hold channel credentials; they were also world-readable on disk, and are not any more.
+- **Messages about one container name the host it is on.** On a multi-host setup "nginx was updated" is not enough to act on.
+- **Queued updates no longer wait for the right thread to finish.** An entry could sit in the queue for a day while eleven other code paths took and released the same lock. `/status` lists what is queued, and "already in the queue" says since when.
+- **A release tag that disagrees with the code is refused.** The build stops. This is how `v2.18.0` shipped reporting itself as a beta for two months.
+
+### Added
+- `/hosts check <endpoint>` — point it at a host and it tells you whether it would work, and what is wrong if not, instead of finding out when something fails.
+- `PULL_TIMEOUT`, on the Updates tab and in the environment.
+
+### Internal
+- 220 procedures, 5568 checks. The mutation ratchet is at 201 guarded promises with an empty debt list: for each one, breaking the line that enforces it must turn a named procedure red.
+- 45 places that read or write a file now say which encoding they mean. `UnicodeDecodeError` is a `ValueError`, so it slipped past every `except (json.JSONDecodeError, OSError)` in the tree.
+
 ## [2.18.0-beta.43] - 2026-10-23
 
 ### Fixed
@@ -789,6 +819,14 @@ the hint on a denied pull, the private reply route (which now travels
 - **A private self-update silenced unrelated start-up notices.** Every boot notice took the private route while a reply address was set, so a storage-misconfiguration warning went to one person's DMs instead of the channel the operator watches. Only the answer to the request does that now.
 - **A private self-update still narrated itself in the channel.** The ephemeral answer said "I'll send you a direct message", and the very next line — `🔄 Checking update for ghcr.io/…`, with the image id — went to the channel for everyone. Found by running one: we already keep the restart notice out of there for exactly this reason, and doing one without the other is half a promise. The running commentary now follows the request; a DM that cannot be opened falls back to the channel rather than losing the report.
 - **A Compose label naming both a manager's file and a host-side override produced an unusable mount line.** The exact lookup gave up on the whole set if any one path had no holder, and the fallback then offered to mount a container-internal path onto itself. Each path is answered on its own.
+
+## [2.18.0] - 2026-08-18
+
+Tagged on a commit whose version file still read `2.18.0-beta.35`, so
+`:latest` has been calling itself a beta ever since — spotted from the
+outside by @famewolf, who had never left the stable channel. The code was
+the released code; the name on it was wrong. This section exists so the
+version checks and `/selfupdate previous` can see this release at all.
 
 ## [2.17.7] - 2026-09-01
 

@@ -206,6 +206,79 @@ _fresh.settings_quarantined = False
 checks["…while an untouched install stays open"] = (
     _handler(_fresh)._check_auth() is True)
 
+# ── …and the quarantine has to survive the restart ───────────────────
+# `settings_quarantined` lives on the Config object and dies with the
+# process, and the quarantine MOVES the damaged file away. So the next
+# start finds no settings.json at all, `_load_persistent` returns at
+# its first line, the flag is never set — and the gate that had just
+# closed stood open again. One restart was enough; a host reboot or an
+# overnight self-update is a restart (audit, 16.11.2026).
+#
+# The durable half is `.settings_seen` on disk, which answers the
+# question the gate actually asks: has anybody ever configured this?
+_restarted = _Cfg(password="")
+_restarted.settings_ever_saved = lambda: True   # flag UNSET, as after a restart
+checks["an instance that was configured before is not an open door"] = (
+    _handler(_restarted)._check_auth() is False)
+_never = _Cfg(password="")
+_never.settings_ever_saved = lambda: False
+checks["…while one that never was stays open"] = (
+    _handler(_never)._check_auth() is True)
+_restarted_pw = _Cfg(password="hunter2")
+_restarted_pw.settings_ever_saved = lambda: True
+checks["…and WEB_PASSWORD still gets the owner back in after a restart"] = (
+    _handler(_restarted_pw, headers=_basic("", "hunter2"))._check_auth() is True)
+
+# ── the same promise end to end, on a real Config ────────────────────
+# The three above hand the gate a prepared answer. This one damages a
+# real settings.json and reloads the real Config twice, which is how
+# the hole was found: the first start looked right and the second did
+# not. A stand-in cannot show that, because the whole defect is what
+# `_load_persistent` does on its SECOND run.
+import tempfile  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+import config as _config_mod  # noqa: E402
+
+_work = tempfile.mkdtemp()
+_saved_env = {k: os.environ.get(k) for k in ("DATA_DIR", "WEB_PASSWORD")}
+os.environ["DATA_DIR"] = _work
+os.environ.pop("WEB_PASSWORD", None)
+try:
+    _real = _config_mod.Config.from_env()
+    _real.web_password = "irrelevant, it goes away with the file"
+    _real.save_persistent()
+    with open(os.path.join(_work, "settings.json"), "w") as _f:
+        _f.write("{ not json")
+    _gates = []
+    for _ in range(3):
+        _c = _config_mod.Config.from_env()
+        _gates.append(_handler(_c)._check_auth())
+    checks["a real damaged settings.json closes the gate"] = _gates[0] is False
+    checks["…and it is still closed after a restart"] = _gates[1] is False
+    checks["…and after another one"] = _gates[2] is False
+finally:
+    for _k, _v in _saved_env.items():
+        if _v is None:
+            os.environ.pop(_k, None)
+        else:
+            os.environ[_k] = _v
+
+# The counter-direction on the real object too: a genuinely fresh
+# install, no settings.json ever written, must still open — otherwise
+# nobody can reach the page where the first password is set.
+_work2 = tempfile.mkdtemp()
+os.environ["DATA_DIR"] = _work2
+os.environ.pop("WEB_PASSWORD", None)
+try:
+    checks["…while a real fresh install is still open"] = (
+        _handler(_config_mod.Config.from_env())._check_auth() is True)
+finally:
+    for _k, _v in _saved_env.items():
+        if _v is None:
+            os.environ.pop(_k, None)
+        else:
+            os.environ[_k] = _v
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

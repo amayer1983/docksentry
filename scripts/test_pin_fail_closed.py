@@ -144,6 +144,45 @@ o, cfg = _checker(b"[]")
 checks["an empty list is a legitimate file, not damage"] = (
     o._get_pinned() == [] and o._get_pinned() is not EVERYTHING_PINNED)
 
+# ── …and it has to SAY so ────────────────────────────────────────────
+# Fail-closed stops every update on this host. That is the right
+# direction and the wrong way to do it silently: the Web UI goes on
+# listing containers, the next run finds nothing, `merge_pending` then
+# drops the host's whole pending list, and the report says "all up to
+# date". Two docstrings claimed the read "already prints a loud
+# message" — it does, in ContainerStore, on a path the checker never
+# takes (audit, 16.11.2026).
+import contextlib  # noqa: E402
+import io as _io  # noqa: E402
+
+
+def _said(payload):
+    """What reading this pin file prints on stdout."""
+    o, _cfg = _checker(payload)
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        o._get_pinned()
+    return buf.getvalue()
+
+
+_damaged = _said(b'["db"')
+checks["an unreadable pin list says the file could not be read"] = (
+    "could not be read" in _damaged)
+checks["…and names the file, so it can be found"] = (
+    "pinned" in _damaged)
+checks["…and says what it means: no update will run"] = (
+    "no update will run" in _damaged)
+# The shape check is the other way into EVERYTHING_PINNED and was the
+# half with no `except` to hang a message on.
+checks["a pin list of the wrong shape says it too"] = (
+    "could not be read" in _said(b'{"db": true}'))
+# Counter-direction. Without this, a `print` on every read — or one
+# moved above the try — would pass everything above, and the log would
+# cry damage on every healthy run until nobody read it any more.
+checks["…while a healthy list says nothing at all"] = _said(b'["db"]') == ""
+checks["…and neither does a missing one"] = _said(None) == ""
+checks["…nor an empty one"] = _said(b"[]") == ""
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

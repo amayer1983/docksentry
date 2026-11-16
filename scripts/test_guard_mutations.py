@@ -131,7 +131,7 @@ GUARDED = [
 
     ("losing the settings file does not open the Web UI",
      "app/web_ui.py",
-     "                return not getattr(config, \"settings_quarantined\", False)",
+     "                return not (getattr(config, \"settings_quarantined\", False)\n                            or configured_before)",
      "                return True",
      "test_web_auth_gate.py"),
 
@@ -162,9 +162,33 @@ GUARDED = [
 
     ("an unreadable pin list stops updates instead of waving them through",
      "app/update_checker.py",
-     "                return EVERYTHING_PINNED\n        if not isinstance(raw, list):\n            return EVERYTHING_PINNED",
-     "                raw = []\n        if not isinstance(raw, list):\n            return []",
+     "                self._pin_file_unreadable(e)\n                return EVERYTHING_PINNED",
+     "                raw = []",
      "test_pin_fail_closed.py"),
+
+    ("…and says so, instead of stopping them in silence",
+     "app/update_checker.py",
+     '        print(f"ERROR: {self.config.pinned_file} could not be read "',
+     '        print(f"ERROR: {self.config.pinned_file} "',
+     "test_pin_fail_closed.py"),
+
+    ("a quarantined instance is still locked after a restart",
+     "app/web_ui.py",
+     "                return not (getattr(config, \"settings_quarantined\", False)\n                            or configured_before)",
+     "                return not getattr(config, \"settings_quarantined\", False)",
+     "test_web_auth_gate.py"),
+
+    ("a rate limit answers in the user's language, not in German",
+     "app/update_checker.py",
+     '                msg = self._t("rate_limit")',
+     '                msg = "Rate limit erreicht"',
+     "test_pull_failure_report.py"),
+
+    ("a key left on the English string is caught, not just a missing one",
+     "app/lang/ja.json",
+     '"web_update_busy": "別の更新がすでに実行中のため、これは開始されませんでした。完了してからもう一度お試しください。"',
+     '"web_update_busy": "Another update is already running, so this one was not started. Try again once it has finished."',
+     "test_lang_parity.py"),
 
     ("the one writer of every JSON file names its encoding",
      "app/container_store.py",

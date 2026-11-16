@@ -945,7 +945,27 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Losing a file must not hand the instance over. The way
                 # back in is `WEB_PASSWORD` in the environment — it never
                 # lived in that file — or repairing the `.corrupt-…` copy.
-                return not getattr(config, "settings_quarantined", False)
+                #
+                # `settings_quarantined` alone was not enough: it lives on
+                # the Config object and dies with the process, and the
+                # quarantine MOVES the file away. The next start finds no
+                # settings.json, `_load_persistent` returns at its first
+                # line, and the flag is never set — so a plain restart
+                # reopened the door the quarantine had just closed.
+                # Measured 16.11.2026, same instance, password set, file
+                # damaged:
+                #
+                #     start 1  quarantined=True   -> gate closed
+                #     start 2  quarantined=unset  -> gate OPEN
+                #
+                # `.settings_seen` is on disk and survives a restart, and
+                # it answers the question this gate actually asks: has
+                # anybody ever configured this instance? A never-saved
+                # instance is a genuine first run and still opens.
+                ever = getattr(config, "settings_ever_saved", None)
+                configured_before = bool(ever()) if callable(ever) else False
+                return not (getattr(config, "settings_quarantined", False)
+                            or configured_before)
             if self._session_user() is not None:
                 return True
             auth = self.headers.get("Authorization", "")

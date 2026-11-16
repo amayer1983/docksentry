@@ -233,10 +233,13 @@ class ContainerStore:
         not be parsed came back as `[]`, which reads as "nothing is
         pinned" — so the one thing a pin exists to prevent, an
         unattended update, is exactly what a damaged pin file caused.
+        The two lines below are what the code does NOW; the second one
+        answered False until that date, and this block printed the old
+        answer as a current measurement until 16.11.2026.
         Measured:
 
             healthy   : is_pinned('db') -> True
-            truncated : is_pinned('db') -> False
+            truncated : is_pinned('db') -> True
 
         `update_checker.py` makes the same reversal on its own copy of
         the read — it has never owned a store, so it reads
@@ -248,7 +251,9 @@ class ContainerStore:
         Treating "I cannot read the list" as "everything is protected"
         is the wrong answer in at most one direction: an update is
         delayed until somebody looks at the loud message `_load_checked`
-        prints. The other direction loses a database.
+        prints — and the checker's own copy of the read says so through
+        `_pin_file_unreadable`, which it did not until 16.11.2026. The
+        other direction loses a database.
 
         A *missing* file is not an error — nothing was ever pinned —
         and still answers no.

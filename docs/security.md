@@ -117,8 +117,16 @@ and name it as the endpoint:
 environment:
   - DOCKER_HOSTS=nas:context://nas
 volumes:
-  - ~/.docker:/root/.docker:ro
+  - ~/.docker:/.docker:ro
 ```
+
+The path is `/.docker`, not `/root/.docker`: the image sets
+`DOCKER_CONFIG=/.docker` (`Dockerfile`), and that is the only place the
+CLI looks for `contexts/`. This said `/root/.docker` until 16.11.2026,
+where nothing reads it — the context was simply never found. Note that
+this line **replaces** the default `config.json` mount in
+`docker-compose.yml`, which mounts a single file into the same
+directory; you cannot have both.
 
 This is the one that scales: a context carries its own `ca`, `cert` and
 `key`, so several TLS hosts can each have their own.

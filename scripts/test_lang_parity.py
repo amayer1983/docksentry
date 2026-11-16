@@ -80,6 +80,48 @@ for code in sorted(loaded):
         print(f"      → {code} has {len(blank)} blank: "
               f"{', '.join(sorted(blank)[:8])}")
 
+# ── the half parity cannot see: present, but still English ───────────
+# Key parity is a shape check. On 16.11.2026 all sixteen files carried
+# all 1028 keys and 126 of the values were the English sentence,
+# verbatim, in fourteen languages — including every one of the six new
+# Web UI banner texts. Nothing went red, because nothing asked.
+#
+# "No value may equal English" would be wrong: every file legitimately
+# shares some, and a short one ("OK", "Docker", a bare `{name}`) is
+# often right untranslated. So this is a ratchet instead — a recorded
+# count per language that may go DOWN and never up. A new key left in
+# English pushes its language over the line and names it.
+LEFTOVER_CAP = {
+    "ar": 15, "de": 43, "es": 27, "fr": 40, "hi": 26, "it": 40,
+    "ja": 27, "ko": 17, "nl": 48, "pl": 30, "pt": 36, "ru": 20,
+    "tr": 20, "uk": 17, "zh": 26,
+}
+
+_en = loaded.get("en", {})
+_leftover = {}
+for _code, _data in sorted(loaded.items()):
+    if _code == "en":
+        continue
+    _leftover[_code] = sum(1 for _k, _v in _en.items() if _data.get(_k) == _v)
+
+checks["every language is in the leftover ratchet"] = (
+    set(_leftover) == set(LEFTOVER_CAP))
+_over = {c: (n, LEFTOVER_CAP.get(c, 0))
+         for c, n in _leftover.items() if n > LEFTOVER_CAP.get(c, 0)}
+checks["no language has gained an untranslated string"] = not _over
+if _over:
+    for _c, (_now, _cap) in sorted(_over.items()):
+        print(f"    {_c}: {_now} English values, recorded cap {_cap} — "
+              f"{_now - _cap} new one(s) left untranslated")
+
+# The counter-direction. Without it the cap could be raised to anything
+# and this file would stay green while saying it holds the line; this
+# makes the ratchet's own promise — that the numbers are real counts,
+# not decoration — falsifiable.
+checks["…and the recorded caps are the real counts, not padding"] = all(
+    _leftover[_c] == _cap for _c, _cap in LEFTOVER_CAP.items()
+    if _c in _leftover)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

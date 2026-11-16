@@ -184,6 +184,55 @@ checks["…defaulting to the same 1800 the registry promises"] = (
 checks["…without becoming a required argument"] = (
     _param is not None and _param.default is not inspect.Parameter.empty)
 
+# ── 4b. a rate limit speaks the user's language ──────────────────────
+# From v1.7.0 to 2.18.0 this branch answered with two hardcoded German
+# sentences — to all sixteen languages. The `rate_limit` key existed in
+# every language file the whole time and had no caller at all, which is
+# why no parity check ever noticed (audit, 16.11.2026).
+import json as _json  # noqa: E402
+from i18n import get_translator  # noqa: E402
+
+
+class _RateLimited(FakeBackend):
+    """Docker Hub's answer when you have pulled too much."""
+
+    def pull(self, ref, timeout=None, **kw):
+        self.calls.append(("pull", [ref], timeout))
+        return types.SimpleNamespace(
+            returncode=1, stdout="",
+            stderr="toomanyrequests: You have reached your pull rate limit.")
+
+
+def _rate_limit_message(lang):
+    cfg = types.SimpleNamespace(debug=False, pull_timeout=1800,
+                                docker_stop_timeout=60, language=lang)
+    chk = UpdateChecker(cfg, backend=_RateLimited())
+    chk._get_image_created = lambda *a, **kw: "?"
+    chk._get_image_size = lambda *a, **kw: "?"
+    chk._get_image_version_label = lambda *a, **kw: None
+    chk._save_history = lambda *a, **kw: None
+    chk._layer_farewell = lambda *a, **kw: ""
+    _ok, msg = chk._update_standalone("db", "postgres:16")
+    return msg
+
+
+# Driven in three languages, each compared against that language's own
+# file — not against a literal here, which would just be a second copy
+# of the translation.
+for _lang in ("en", "de", "ja"):
+    _want = get_translator(_lang)("rate_limit")
+    checks[f"a rate limit answers in {_lang}"] = (
+        _rate_limit_message(_lang) == _want)
+
+# The counter-direction, and the actual defect: the German sentence must
+# not reach a reader who did not ask for German. A `return` of the plain
+# key, or of English for everyone, also fails the three above — this one
+# names the failure that really happened.
+_ja = _rate_limit_message("ja")
+checks["…and German does not leak into another language"] = (
+    "erreicht" not in _ja and "ausführen" not in _ja)
+checks["…and the key itself is not what comes out"] = _ja != "rate_limit"
+
 # ── 5. clip's own promise, both ends ─────────────────────────────────
 # Driven here because this is the helper the fix leans on, and it was
 # written for this same thread in September and then not used on this

@@ -490,7 +490,7 @@ Each entry is `name:endpoint`, and the endpoint is whatever the container CLI ta
 **A TLS-protected daemon works, and needs no flag from here.**
 Docksentry drives the container CLI, and the CLI takes the certificates
 from either a saved context (`context://nas`, with `~/.docker` mounted
-in) or from `DOCKER_TLS_VERIFY` plus `DOCKER_CERT_PATH` on the
+at `/.docker`) or from `DOCKER_TLS_VERIFY` plus `DOCKER_CERT_PATH` on the
 Docksentry container. Both measured against a TLS `docker:dind`; the
 recipes are in [docs/security.md](docs/security.md#tls-client-certificates-on-2376).
 What does *not* work is pointing a bare `tcp://host:2376` at it with no
