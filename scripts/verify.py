@@ -181,6 +181,14 @@ def collect(quiet=False):
         if not quiet:
             mark = {"pass": "ok  ", "skipped": "SKIP", "fail": "FAIL"}[status]
             print(f"  {mark} {f[5:-3]:<26} {len(checks):>3} checks")
+            if status == "fail":
+                # Name the checks that went red. Without this the log
+                # says "FAIL monitor  31 checks" and the reader has to
+                # re-run it somewhere else to learn which one — which is
+                # not possible when "somewhere else" is a hosted runner.
+                for ok, label in checks:
+                    if not ok:
+                        print(f"       ✗ {label}")
             if tail:
                 for line in tail.split("\n"):
                     print(f"       | {line}")

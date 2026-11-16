@@ -91,6 +91,24 @@ def all_exited(names, code=128):
     return {n: c(status="exited", code=code) for n in names}
 
 
+def at(seq, i=0, what="message"):
+    """`seq[i]`, or an empty stand-in plus a line saying it was missing.
+
+    Indexing a list the code under test was supposed to fill is how a
+    check turns into an IndexError, and a procedure that raises prints
+    no verdict at all: `verify.py` reports "FAIL … 0 checks" and the
+    mutation ratchet reads a crash as "the mutation was caught". It
+    also hides the actual question — nothing was sent — behind a
+    traceback about list indices. Measured on a hosted runner,
+    16.11.2026, where this file died at `m.sent[0]`.
+    """
+    try:
+        return seq[i]
+    except IndexError:
+        print(f"      → no {what} at index {i}; the list is {seq!r}")
+        return "" if not seq and isinstance(seq, list) else ""
+
+
 def main():
     checks = {}
 
@@ -104,12 +122,12 @@ def main():
     checks["a whole host stopping sends exactly one message"] = (
         len(m.sent) == 1)
     checks["…and it reads as the host going down"] = (
-        "appears to have gone down" in m.sent[0] and "12 of 12" in m.sent[0])
+        "appears to have gone down" in at(m.sent) and "12 of 12" in at(m.sent))
     checks["…with one attached log file"] = len(m.docs) == 1
-    checks["…named for the host"] = m.docs[0][0].startswith("dock8520-logs-")
+    checks["…named for the host"] = (at(m.docs, what="document") or ("",))[0].startswith("dock8520-logs-")
     checks["…carrying every container's section"] = (
-        m.docs[0][1].decode().count("(exit 128)") == 12)
-    checks["…and the actual log tails"] = b"log tail here" in m.docs[0][1]
+        (at(m.docs, what="document") or ("", b""))[1].decode().count("(exit 128)") == 12)
+    checks["…and the actual log tails"] = b"log tail here" in (at(m.docs, what="document") or ("", b""))[1]
     checks["the tick still reports all 12 events (for callers/tests)"] = (
         len(sent) == 12)
 
@@ -136,9 +154,9 @@ def main():
         status="exited", code=1)}
     m3.tick()
     checks["a single crash still fires its own 💥 alert"] = (
-        len(m3.sent) == 1 and "💥" in m3.sent[0])
+        len(m3.sent) == 1 and "💥" in at(m3.sent))
     checks["…and does not produce a host digest or file"] = (
-        "appears to have gone down" not in m3.sent[0] and len(m3.docs) == 0)
+        "appears to have gone down" not in at(m3.sent) and len(m3.docs) == 0)
 
     # ── a small burst (≤3) stays individual, logs inline ─────────────
     m4 = make_monitor()
@@ -163,7 +181,7 @@ def main():
     checks["four deaths coalesce into one digest"] = (
         len(m4b.sent) == 1 and len(m4b.docs) == 1)
     checks["…and 4 of 6 still reads as host-down"] = (
-        "appears to have gone down" in m4b.sent[0])
+        "appears to have gone down" in at(m4b.sent))
 
     # ── wording is honest: a cluster is not a claim of host-down ─────
     m5 = make_monitor()
@@ -176,9 +194,9 @@ def main():
                               for n in fifty[:5]}}
     m5.tick()
     checks["a minority cluster does not claim the host went down"] = (
-        len(m5.sent) == 1 and "appears to have gone down" not in m5.sent[0])
+        len(m5.sent) == 1 and "appears to have gone down" not in at(m5.sent))
     checks["…it says N stopped at once instead"] = (
-        "stopped at once" in m5.sent[0])
+        "stopped at once" in at(m5.sent))
 
     # ── split reboot: second wave records but sends no dup message ───
     m6 = make_monitor()
@@ -242,7 +260,7 @@ def main():
     m9.tick()
     m9.snapshot = lambda: all_exited(twelve)
     m9.tick()
-    body9 = m9.docs[0][1].decode()
+    body9 = (at(m9.docs, what="document") or ("", b""))[1].decode()
     checks["silent container reads as 'no output', not 'unreachable'"] = (
         "no log output" in body9 and "host unreachable" not in body9)
 
@@ -251,7 +269,7 @@ def main():
     m10.tick()
     m10.snapshot = lambda: all_exited(twelve)
     m10.tick()
-    body10 = m10.docs[0][1].decode()
+    body10 = (at(m10.docs, what="document") or ("", b""))[1].decode()
     checks["a failed log fetch still reads as unreachable/gone"] = (
         "host unreachable" in body10)
 
