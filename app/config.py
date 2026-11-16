@@ -99,17 +99,36 @@ class _DamagedSettings(Exception):
     """
 
 
-def _clamp_int(value, lo, hi, default):
+def _clamp_int(value, lo, hi, default, name=""):
     """`value` as an int within [lo, hi], or `default` if it isn't one.
 
     For settings read back from settings.json, where the value could be a
     string, None, or out of range if the file was edited by hand — and
     where the consumer does `int(x) * something`, so a bad value is a
-    crash rather than a wrong number."""
+    crash rather than a wrong number.
+
+    It SAYS so when it moves a value. That is the whole point of the
+    second half of this function: the reason it exists is that
+    `MONITOR_INTERVAL=30m` raised a ValueError during __init__ and turned
+    into a boot loop, and the ranges came along for the ride. A range
+    that silently rewrites a working configuration is a different thing
+    from one that stops a crash — somebody who had set
+    `DOCKER_STOP_TIMEOUT=5400`, which the documentation tells them to do
+    for slow databases, would have found their database killed half an
+    hour earlier with nothing anywhere saying why (audit, 16.11.2026).
+    """
     try:
-        return max(lo, min(int(value), hi))
+        want = int(value)
     except (TypeError, ValueError):
+        if value not in (None, ""):
+            print(f"WARNING: {name or 'setting'}={value!r} is not a number "
+                  f"— using {default}.", flush=True)
         return default
+    got = max(lo, min(want, hi))
+    if got != want:
+        print(f"WARNING: {name or 'setting'}={want} is outside the "
+              f"allowed range {lo}–{hi} — using {got}.", flush=True)
+    return got
 
 
 #: Host names we won't accept from config — `local` always means the
@@ -1494,28 +1513,35 @@ class Config:
             # simply never had them, so a value the form refuses could
             # always be set by going around it.
             monitor_interval_seconds=_clamp_int(
-                _env("MONITOR_INTERVAL", "60"), 15, 86400, 60),
+                _env("MONITOR_INTERVAL", "60"), 15, 86400, 60,
+                name="MONITOR_INTERVAL"),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=_clamp_int(
-                _env("CLEANUP_GRACE_HOURS", "24"), 0, 8760, 24),
+                _env("CLEANUP_GRACE_HOURS", "24"), 0, 8760, 24,
+                name="CLEANUP_GRACE_HOURS"),
             cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
             cleanup_backup_days=_clamp_int(
-                _env("CLEANUP_BACKUP_DAYS", "7"), 1, 365, 7),
+                _env("CLEANUP_BACKUP_DAYS", "7"), 1, 365, 7,
+                name="CLEANUP_BACKUP_DAYS"),
             disk_warn_percent=_clamp_int(
-                _env("DISK_WARN_PERCENT", "85"), 50, 100, 85),
+                _env("DISK_WARN_PERCENT", "85"), 1, 100, 85,
+                name="DISK_WARN_PERCENT"),
             disk_warn_auto_cleanup=_env("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             quiet_hours_start=_env("QUIET_HOURS_START"),
             quiet_hours_end=_env("QUIET_HOURS_END"),
             weekly_report_enabled=_env("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
             weekly_report_weekday=_clamp_int(
-                _env("WEEKLY_REPORT_WEEKDAY", "0"), 0, 6, 0),
+                _env("WEEKLY_REPORT_WEEKDAY", "0"), 0, 6, 0,
+                name="WEEKLY_REPORT_WEEKDAY"),
             weekly_report_hour=_clamp_int(
-                _env("WEEKLY_REPORT_HOUR", "9"), 0, 23, 9),
+                _env("WEEKLY_REPORT_HOUR", "9"), 0, 23, 9,
+                name="WEEKLY_REPORT_HOUR"),
             language=_env("LANGUAGE", "en"),
             web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
             # The one with no Settings field at all, so this is its only
             # bound anywhere.
-            web_port=_clamp_int(_env("WEB_PORT", "8080"), 1, 65535, 8080),
+            web_port=_clamp_int(_env("WEB_PORT", "8080"), 1, 65535, 8080,
+                                 name="WEB_PORT"),
             status_view=_env("STATUS_VIEW", "table").strip().lower(),
             web_password=_env("WEB_PASSWORD"),
             web_username=_env("WEB_USERNAME", ""),
@@ -1530,12 +1556,15 @@ class Config:
                 if u.strip()
             ],
             healthcheck_max_starting=_clamp_int(
-                _env("HEALTHCHECK_MAX_STARTING", "600"), 30, 3600, 600),
+                _env("HEALTHCHECK_MAX_STARTING", "600"), 30, 86400, 600,
+                name="HEALTHCHECK_MAX_STARTING"),
             bot_label=_env("BOT_LABEL").strip(),
             docker_stop_timeout=_clamp_int(
-                _env("DOCKER_STOP_TIMEOUT", "60"), 1, 3600, 60),
+                _env("DOCKER_STOP_TIMEOUT", "60"), 1, 86400, 60,
+                name="DOCKER_STOP_TIMEOUT"),
             pull_timeout=_clamp_int(
-                _env("PULL_TIMEOUT", "1800"), 60, 86400, 1800),
+                _env("PULL_TIMEOUT", "1800"), 60, 86400, 1800,
+                name="PULL_TIMEOUT"),
             docker_username=_env("DOCKER_USERNAME").strip(),
             # DOCKER_PASSWORD: NO .strip() — leading/trailing whitespace
             # can be a legitimate part of a password. We still strip
@@ -1545,7 +1574,8 @@ class Config:
             docker_auth_config=_env("DOCKER_AUTH_CONFIG").strip(),
             docker_registry=_env("DOCKER_REGISTRY").strip(),
             smtp_host=_env("SMTP_HOST").strip(),
-            smtp_port=_clamp_int(_env("SMTP_PORT", "587"), 1, 65535, 587),
+            smtp_port=_clamp_int(_env("SMTP_PORT", "587"), 1, 65535, 587,
+                                  name="SMTP_PORT"),
             smtp_user=_env("SMTP_USER").strip(),
             smtp_password=_env("SMTP_PASSWORD"),  # no strip — see DOCKER_PASSWORD
             smtp_from=_env("SMTP_FROM").strip(),

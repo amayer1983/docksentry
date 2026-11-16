@@ -394,6 +394,7 @@ class UpdateChecker:
         # running process never serves stale data from an earlier sweep.
         self._repo_digest_cache = {}
         self._digest_read_failed = set()
+        self._pin_unreadable = False
         self._tag_list_cache = {}
         self._token_cache = {}
         self._auth_kind = "anonymous"
@@ -1788,6 +1789,7 @@ class UpdateChecker:
             # first, or a re-pull between two calls would go unnoticed.
             self._repo_digest_cache = {}
             self._digest_read_failed = set()
+            self._pin_unreadable = False
             cfg = self.inspect_self()
             if not cfg:
                 return False
@@ -2239,6 +2241,7 @@ class UpdateChecker:
         return `[]`, and `merge_pending` then drop this host's whole
         pending list — with nothing in the log to explain any of it.
         """
+        self._pin_unreadable = True
         print(f"ERROR: {self.config.pinned_file} could not be read "
               f"({why}).", flush=True)
         print("ERROR: treating every container as pinned, so no update "
@@ -3263,6 +3266,7 @@ class UpdateChecker:
         self.debug_log = []
         self._repo_digest_cache = {}
         self._digest_read_failed = set()
+        self._pin_unreadable = False
         self._tag_list_cache = {}
         self._token_cache = {}
         diag = self._diag_on()
@@ -3593,6 +3597,18 @@ class UpdateChecker:
             # the whole file here would delete the other hosts' pending
             # updates — and with them their Web UI badges and buttons.
             prev = _read_pending()
+            # An unreadable pin list makes `get_running_containers` skip
+            # every container, so this run checked nothing and `updates`
+            # is empty — and an empty result from a full scan reads as
+            # "everything is up to date". That wiped this host's whole
+            # pending list, badges and buttons with it, on top of
+            # stopping the updates. Nothing here re-verified anything,
+            # so nothing here may drop an entry either.
+            if getattr(self, "_pin_unreadable", False):
+                failed_checks |= {u.get("name") for u in prev
+                                  if isinstance(u, dict)
+                                  and _host_of(u) == host_name
+                                  and u.get("name")}
             merged, carried = merge_pending(prev, updates, failed_checks,
                                             host_name, _host_of)
             if carried:

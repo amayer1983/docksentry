@@ -35,7 +35,10 @@ jobs:
       # beta.43 has a changelog section, which is exactly what that
       # procedure checks for. Nothing looked again afterwards, because
       # nothing here could.
+      # Not --quiet: when this goes red the log is the only thing
+      # anybody has, and the summary line names the procedure without
+      # saying which check inside it failed.
       - name: Run the verification suite
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python3 scripts/verify.py --quiet
+        run: python3 scripts/verify.py

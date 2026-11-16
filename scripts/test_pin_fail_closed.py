@@ -183,6 +183,57 @@ checks["…while a healthy list says nothing at all"] = _said(b'["db"]') == ""
 checks["…and neither does a missing one"] = _said(None) == ""
 checks["…nor an empty one"] = _said(b"[]") == ""
 
+# ── and it must not take the pending list down with it ──────────────
+# Fail-closed means `get_running_containers` skips every container, so
+# `check_all` returns [] with nothing marked as failed — and an empty
+# result from a full scan reads as "everything is up to date". The host
+# lost its entire pending list: badges, buttons, and the next report
+# saying all is well while no update could run at all. Measured
+# 16.11.2026 by driving merge_pending: of three entries, only the one
+# belonging to another host survived.
+
+
+def _pending_after(pin_bytes, seed):
+    """Run a full scan over `seed` with this pin file, return the names."""
+    o, cfg = _checker(pin_bytes)
+    with open(cfg.pending_file, "w", encoding="utf-8") as f:
+        json.dump(seed, f)
+    with contextlib.redirect_stdout(io.StringIO()):
+        o.check_all()
+    with open(cfg.pending_file, encoding="utf-8") as f:
+        return sorted(u.get("name") for u in json.load(f))
+
+
+_SEED = [{"name": "gitlab", "image": "gitlab/ce:17", "host": "local"},
+         {"name": "plex", "image": "plex:1", "host": "local"},
+         {"name": "nas-app", "image": "x:1", "host": "nas"}]
+
+_kept = _pending_after(b'["db"', _SEED)
+checks["a damaged pin list does not drop this host's pending updates"] = (
+    "gitlab" in _kept and "plex" in _kept)
+checks["…nor another host's"] = "nas-app" in _kept
+if not ("gitlab" in _kept and "plex" in _kept):
+    print(f"      → survived: {_kept}")
+
+# Same for the wrong-shape door into EVERYTHING_PINNED.
+_kept_shape = _pending_after(b'{"db": true}', _SEED)
+checks["…and neither does a pin list of the wrong shape"] = (
+    "gitlab" in _kept_shape and "plex" in _kept_shape)
+
+# The counter-direction, and the one that matters: a HEALTHY scan still
+# has to drop what it re-verified as gone. Without this the fix would be
+# "never remove anything", and a container that was updated would keep
+# its badge forever. `db` is the only container the daemon reports and
+# it has a real update, so it must come back — while `gitlab` and `plex`
+# were genuinely re-checked this run and are not running any more.
+_healthy = _pending_after(b'[]', _SEED)
+checks["…while a healthy scan still drops what it re-verified as gone"] = (
+    "gitlab" not in _healthy and "plex" not in _healthy)
+checks["…and still reports the update it found"] = "db" in _healthy
+checks["…and still leaves the other host alone"] = "nas-app" in _healthy
+if "gitlab" in _healthy or "db" not in _healthy:
+    print(f"      → healthy scan left: {_healthy}")
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

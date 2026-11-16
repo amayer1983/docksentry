@@ -39,8 +39,15 @@ import livefixture as lf  # noqa: E402
 
 from container_backend import PodmanBackend, RemoteBackend   # noqa: E402
 
-if not shutil.which("podman"):
-    print("SKIP: podman not installed")
+# Presence is not usability, and this asked only about presence. A
+# hosted runner HAS a podman binary and no working rootless setup, so
+# `shutil.which` said yes and every check below then failed against a
+# podman that cannot run anything — a red procedure that looks exactly
+# like a regression. Found by CI on 16.11.2026, the first run after the
+# suite was put there. `daemon_available` asks `podman info`, which is
+# the question this file actually depends on.
+if not lf.daemon_available("podman"):
+    print("SKIP: no usable podman here")
     sys.exit(0)
 
 checks = {}

@@ -42,6 +42,8 @@ anything where the mutated line is the only caller of itself. Those are
 unfalsifiable in a copy of the tree, and a check that cannot fail is
 what this file exists to find.
 """
+import ast
+import io
 import os
 import shutil
 import subprocess
@@ -166,6 +168,12 @@ GUARDED = [
      "                raw = []",
      "test_pin_fail_closed.py"),
 
+    ("…and does not take this host's pending list down with it",
+     "app/update_checker.py",
+     '            if getattr(self, "_pin_unreadable", False):',
+     "            if False:",
+     "test_pin_fail_closed.py"),
+
     ("…and says so, instead of stopping them in silence",
      "app/update_checker.py",
      '        print(f"ERROR: {self.config.pinned_file} could not be read "',
@@ -257,15 +265,17 @@ GUARDED = [
     ("a typo in an environment variable does not kill the boot",
      "app/config.py",
      "            pull_timeout=_clamp_int(\n"
-     "                _env(\"PULL_TIMEOUT\", \"1800\"), 60, 86400, 1800),",
-     "            pull_timeout=int(_env(\"PULL_TIMEOUT\", \"1800\")),",
+     "                _env(\"PULL_TIMEOUT\", \"1800\"), 60, 86400, 1800,\n"
+     "                name=\"PULL_TIMEOUT\")",
+     "            pull_timeout=int(_env(\"PULL_TIMEOUT\", \"1800\"))",
      "test_env_bounds.py"),
 
     ("…and the ranges the Settings form enforces hold for the environment too",
      "app/config.py",
      "            disk_warn_percent=_clamp_int(\n"
-     "                _env(\"DISK_WARN_PERCENT\", \"85\"), 50, 100, 85),",
-     "            disk_warn_percent=int(_env(\"DISK_WARN_PERCENT\", \"85\")),",
+     "                _env(\"DISK_WARN_PERCENT\", \"85\"), 1, 100, 85,\n"
+     "                name=\"DISK_WARN_PERCENT\")",
+     "            disk_warn_percent=int(_env(\"DISK_WARN_PERCENT\", \"85\"))",
      "test_env_bounds.py"),
 
     ("a damaged settings file is kept, not overwritten",
@@ -494,6 +504,18 @@ GUARDED = [
      "            if _maint_active(self.config):",
      "            if _maint_active(None):",
      "test_quiet_enforcement.py"),
+
+    ("a setting the range moves is reported, not silently rewritten",
+     "app/config.py",
+     "    got = max(lo, min(want, hi))\n    if got != want:",
+     "    got = max(lo, min(want, hi))\n    if False:",
+     "test_env_bounds.py"),
+
+    ("…and the range the code enforces is the one the docs print",
+     "docs/configuration.md",
+     "before falling back to `docker kill` (1\u201386400).",
+     "before falling back to `docker kill` (1\u20133600).",
+     "test_env_bounds.py"),
 
     ("a missing container CLI is a skip, not a crash that scores as a catch",
      "scripts/livefixture.py",
@@ -1437,6 +1459,36 @@ def _baseline(tree, procedure):
     return _BASE[procedure]
 
 
+def _mutation_still_parses(rel, anchor, repl):
+    """Does this mutation leave a file Python can still read?
+
+    A mutation that produces a SyntaxError does not test anything: every
+    import of that module dies, the procedure prints no verdict, and
+    `_red` reports None — which lands in `[unrunnable]`, several screens
+    away from the cause. That is exactly what two entries did on
+    16.11.2026, after their anchors were re-pointed at a changed call
+    and the replacement kept a trailing comma the anchor no longer
+    covered: `int(_env(...)),,`. Asked here, the message names the
+    entry and the syntax error instead.
+
+    Only for Python; a mutation in a .md or .json file has nothing to
+    parse.
+    """
+    if not rel.endswith(".py"):
+        return True, ""
+    try:
+        text = io.open(os.path.join(ROOT, rel), encoding="utf-8").read()
+    except OSError as e:
+        return False, str(e)
+    if text.count(anchor) != 1:
+        return True, ""          # the stale check below says it better
+    try:
+        ast.parse(text.replace(anchor, repl))
+    except SyntaxError as e:
+        return False, f"the mutation leaves invalid Python: {e.msg} (line {e.lineno})"
+    return True, ""
+
+
 def main():
     checks = {}
     tree = _tree()
@@ -1446,6 +1498,11 @@ def main():
                 checks[f"[cannot run] {promise}"] = False
                 print(f"      → {procedure} is not green on an untouched "
                       f"copy, so breaking things proves nothing")
+                continue
+            sane, why = _mutation_still_parses(rel, anchor, repl)
+            if not sane:
+                checks[f"[broken mutation] {promise}"] = False
+                print(f"      → {why}")
                 continue
             ok, note = _mutate(tree, rel, anchor, repl)
             if not ok:
