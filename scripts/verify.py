@@ -151,7 +151,15 @@ def run_one(path):
     # A procedure whose printed verdict and exit code disagree is reporting
     # something it does not mean; surface it rather than picking a winner.
     disagrees = (r.returncode == 0) != (not said_fail)
-    return status, checks, skipped, disagrees
+    # A procedure that failed without producing a single check did not
+    # fail a check — it fell over on the way there, and "FAIL … 0 checks"
+    # tells nobody why. Keep the tail so the runner's log is diagnosable
+    # from the outside: three procedures failed with 0 checks on a hosted
+    # runner on 16.11.2026 and the log had nothing else to say about it.
+    tail = ""
+    if status == "fail" and not checks:
+        tail = "\n".join(lines[-12:])
+    return status, checks, skipped, disagrees, tail
 
 
 def collect(quiet=False):
@@ -159,7 +167,8 @@ def collect(quiet=False):
                    if f.startswith("test_") and f.endswith(".py"))
     results = []
     for f in names:
-        status, checks, skipped, disagrees = run_one(os.path.join(SCRIPTS, f))
+        status, checks, skipped, disagrees, tail = run_one(
+            os.path.join(SCRIPTS, f))
         results.append({
             "disagrees": disagrees,
             "file": f,
@@ -172,6 +181,9 @@ def collect(quiet=False):
         if not quiet:
             mark = {"pass": "ok  ", "skipped": "SKIP", "fail": "FAIL"}[status]
             print(f"  {mark} {f[5:-3]:<26} {len(checks):>3} checks")
+            if tail:
+                for line in tail.split("\n"):
+                    print(f"       | {line}")
     return results
 
 
