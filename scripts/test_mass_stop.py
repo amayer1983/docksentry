@@ -27,6 +27,8 @@ Guard rails this pins:
 
 Pure logic; docker reads stubbed. Exits non-zero on any failure.
 """
+import contextlib
+import io
 import json as _json
 import os
 import sys
@@ -118,7 +120,19 @@ def main():
     m.snapshot = lambda: running(twelve)
     m.tick()                                   # silent baseline
     m.snapshot = lambda: all_exited(twelve)
-    sent = m.tick()
+    # Capture what the monitor says while it works. It prints its own
+    # failures — "Monitor mass notify error: …", "Monitor mass log-file
+    # error: …" — and on a hosted runner nothing was sent and those
+    # lines were the only explanation, going straight to a stdout
+    # nobody kept. Printed only when the message did not arrive, so a
+    # healthy run stays quiet.
+    _cap = io.StringIO()
+    with contextlib.redirect_stdout(_cap):
+        sent = m.tick()
+    if not m.sent:
+        print("      → tick() returned " + repr(sent)[:200])
+        for _l in _cap.getvalue().splitlines():
+            print(f"      → monitor said: {_l[:160]}")
     checks["a whole host stopping sends exactly one message"] = (
         len(m.sent) == 1)
     checks["…and it reads as the host going down"] = (
