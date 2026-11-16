@@ -30,6 +30,7 @@ Skips cleanly when podman isn't installed.
 import os
 import shutil
 import subprocess
+import types
 import sys
 import time
 
@@ -199,10 +200,31 @@ if _have_image:
         if made:
             uc = UpdateChecker.__new__(UpdateChecker)
             uc._backend = pb
+            # The rollback path below reads `self.config`, and a bare
+            # `__new__` has none — so the moment the rebuilt run failed,
+            # the recovery meant to handle that died with an
+            # AttributeError and took the procedure with it (hosted
+            # runner, 16.11.2026).
+            uc.config = types.SimpleNamespace(docker_stop_timeout=60,
+                                              debug=False)
             raw = pb.run(["inspect", CTR], timeout=30).stdout
             cfg = _json.loads(raw)[0]
             pod_id = cfg.get("Pod") or ""
-            cmd = uc._build_run_args(cfg, "alpine:3.19", CTR, None)
+            # Thread the daemon's real cgroup version through, which is
+            # what the production recreate paths do. Passing None means
+            # "could not detect — emit as for v1", and on a cgroup-v2
+            # host that emits `--memory-swappiness`, which crun rejects
+            # outright (#50, fixed in the code, re-introduced here by
+            # the caller). Both machines are cgroup v2 and podman reports
+            # MemorySwappiness: 0 on both — the difference is only that
+            # the crun here tolerated the flag and the runner's refused
+            # it outright. Measured, after a first version of this
+            # comment guessed at cgroup v1 and was wrong.
+            _cgv = UpdateChecker._cgroup_version(pb)
+            cmd = uc._build_run_args(cfg, "alpine:3.19", CTR, None,
+                                     cgroup_version=_cgv)
+            checks["the rebuilt command respects the host's cgroup version"] = (
+                _cgv != "2" or "--memory-swappiness" not in cmd)
 
             checks["the rebuilt command is argv, all strings"] = all(
                 isinstance(a, str) for a in cmd)

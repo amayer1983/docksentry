@@ -926,13 +926,30 @@ class UpdateChecker:
         cached = cls._cgroup_version_cache.get(key)
         if cached is None:
             version = "1"
-            try:
-                r = b.run(["info", "--format", "{{.CgroupVersion}}"], timeout=10)
-                out = r.stdout.strip()
-                if r.returncode == 0 and out in ("1", "2"):
+            # Two engines, two field names. `{{.CgroupVersion}}` is
+            # Docker's; Podman has no such field and answers with a
+            # template error — "can't evaluate field CgroupVersion in
+            # type *define.Info" — so this fell through to the "1"
+            # default on EVERY podman host. That is not a cosmetic
+            # mis-read: `_build_run_args` emits the cgroup-v1-only
+            # `--memory-swappiness` whenever it is told the host is not
+            # v2, and crun rejects that flag outright on a v2 host, so a
+            # recreate fails and rolls back (#50, which this is the
+            # podman half of). Measured 17.11.2026: podman reports `v2`
+            # under `{{.Host.CgroupsVersion}}` on a host where docker
+            # reports `2`, and the old probe returned "1" for both.
+            for fmt in ("{{.CgroupVersion}}", "{{.Host.CgroupsVersion}}"):
+                try:
+                    r = b.run(["info", "--format", fmt], timeout=10)
+                except (subprocess.SubprocessError, OSError):
+                    break
+                if r.returncode != 0:
+                    continue
+                # Podman writes "v2", Docker writes "2".
+                out = (r.stdout or "").strip().lstrip("vV")
+                if out in ("1", "2"):
                     version = out
-            except (subprocess.SubprocessError, OSError):
-                pass
+                    break
             cls._cgroup_version_cache[key] = version
             cached = version
         return cached

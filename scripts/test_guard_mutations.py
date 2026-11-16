@@ -505,6 +505,18 @@ GUARDED = [
      "            if _maint_active(None):",
      "test_quiet_enforcement.py"),
 
+    ("podman is asked for its cgroup version in podman's own words",
+     "app/update_checker.py",
+     '            for fmt in ("{{.CgroupVersion}}", "{{.Host.CgroupsVersion}}"):',
+     '            for fmt in ("{{.CgroupVersion}}",):',
+     "test_cgroup_probe.py"),
+
+    ("…and its leading v is not mistaken for a nonsense answer",
+     "app/update_checker.py",
+     '                out = (r.stdout or "").strip().lstrip("vV")',
+     '                out = (r.stdout or "").strip()',
+     "test_cgroup_probe.py"),
+
     ("a host that just booted still gets its first alert",
      "app/monitor.py",
      "            _last = self._last_sent.get((n, k))",
