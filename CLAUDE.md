@@ -18,8 +18,23 @@
    Discord. Die Uhr reicht da nicht; »he's got 3 people with totally
    different setups than what he's using«.
 3. Danach denselben Stand als `vX.Y.Z` taggen → `:latest` zieht nach.
-   **Genauer: den Beta-Baum plus eine Zeile — `app/version.py` auf die
-   Final-Nummer.** Kein neuer Code, nur der Name. Wörtlich „derselbe
+   **Genauer: den Beta-Baum plus zwei Dateien — `app/version.py` auf die
+   Final-Nummer und ein `## [X.Y.Z]`-Abschnitt in `CHANGELOG.md`.** Kein
+   neuer Code, nur der Name und die Release-Notes.
+   Der Changelog-Abschnitt ist nicht Kosmetik: die Was-ist-neu-Nachricht
+   nach dem Update wird daraus gebaut (`whatsnew.headlines`), und
+   `latest_released_version` liest die höchste Stable-Überschrift, um
+   jemanden auf einem festen `:X.Y.Z` auf eine neuere Version
+   hinzuweisen. Ohne Abschnitt geht die Final stumm raus und der Hinweis
+   zeigt auf die vorletzte Version. Genau so war es am 16.11.2026: der
+   Changelog hatte weder 2.18.0 noch 2.19.0, und `latest_released_version`
+   stand seit August auf 2.17.7.
+   **Versionszeile und Code gehören in denselben Commit.** Die Trennung
+   in Code-Commit plus Bump-Commit hat beta.44 mit einer roten Prozedur
+   rausgehen lassen: zum Zeitpunkt des Suite-Laufs stand noch `beta.43`
+   in `version.py`, und die hat einen Changelog-Abschnitt. Rot wurde
+   `test_whatsnew.py` erst durch den Bump — nach dem letzten Lauf.
+   Ein Commit heißt: der geprüfte Baum ist der getaggte Baum. Wörtlich „derselbe
    Commit" geht nicht: der trägt `2.18.0-beta.N`, und ein `v2.19.0`
    darauf veröffentlicht ein `:latest`, das sich selbst Beta nennt.
    Genau so ist `v2.18.0` entstanden — getaggt auf einem Commit mit
@@ -30,6 +45,13 @@
    beta.43 bricht der Build ab, wenn Tag und `version.py`
    auseinanderlaufen (`test_release_tag_guard.py`).
    Release-Notes des Finals verweisen auf die Beta-Notes.
+
+**Die Pipeline prüft die Suite nicht.** `ci.yml` hat einen einzigen
+Schritt, `scripts/pre-commit-check.py` — Sprachgleichstand und README.
+Die 220 Prozeduren laufen ausschließlich von Hand. Jedes Grün, das ich
+vor einem Tag behaupte, muss ich also selbst gefahren haben, und zwar
+auf dem Stand, der getaggt wird. Festgestellt am 16.11.2026, nachdem
+beta.44 mit `test_whatsnew.py` rot veröffentlicht worden war.
 
 **Einzige Ausnahme:** Fixes für akut Kaputtes (Beispiele: verklemmtes
 Update-Schloss 2.11.1, sterbende Selbst-Updates 2.14.2) dürfen direkt
