@@ -234,6 +234,22 @@ def _multi_host_checks(checks):
         b._prev is None and getattr(ContainerMonitor, "_prev", None) is None)
 
 
+def last(seq, what="message"):
+    """`seq[-1]`, or "" plus a line saying the list was empty.
+
+    Indexing a list the code under test was meant to fill turns a check
+    into an IndexError, and a procedure that raises prints no verdict:
+    `verify.py` reports "FAIL … 0 checks" and the mutation ratchet reads
+    a crash as a caught mutation. Measured on a hosted runner,
+    16.11.2026, where this file died at `m7.sent[-1]` and said nothing
+    about the alert that never came.
+    """
+    if not seq:
+        print(f"      → no {what} was sent at all")
+        return ""
+    return seq[-1]
+
+
 def main():
     checks = {}
     _mem_checks(checks)
@@ -568,7 +584,7 @@ def main():
     m7.tick()
     m7.snapshot = lambda: {"a": c(status="exited", code=137, oom=True)}
     m7.tick()
-    full = m7.sent[-1]
+    full = last(m7.sent)
     checks["oom msg carries memory snapshot"] = "monitor_top_memory" in full
     checks["oom msg carries log tail"] = "boom line 1" in full
     m7._last_sent = {}
@@ -581,14 +597,14 @@ def main():
     m7._alerted_unhealthy = set()
     m7.tick()
     checks["unhealthy msg carries tail, no snapshot"] = (
-        "boom line 1" in m7.sent[-1] and "monitor_top_memory" not in m7.sent[-1])
+        "boom line 1" in last(m7.sent) and "monitor_top_memory" not in last(m7.sent))
     # recovery of a confirmed unhealthy -> fires clean
     m7._prev = {"a": c(health="unhealthy")}
     m7._alerted_unhealthy = {"a"}
     m7.snapshot = lambda: {"a": c(health="healthy")}
     m7.tick()
-    checks["recovery msg stays clean"] = ("boom" not in m7.sent[-1]
-                                          and m7.sent[-1].startswith("monitor_recovered"))
+    checks["recovery msg stays clean"] = ("boom" not in last(m7.sent)
+                                          and last(m7.sent).startswith("monitor_recovered"))
     # tail failure must never break notify
     m8 = make_monitor()
     def _boom(name, lines=10):

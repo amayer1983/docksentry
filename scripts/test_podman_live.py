@@ -50,6 +50,21 @@ if not lf.daemon_available("podman"):
     print("SKIP: no usable podman here")
     sys.exit(0)
 
+# …and `info` answering is not the same as a container starting. The
+# same runner answered `podman info` and then refused every container
+# with `crun: cannot set memory swappiness with cgroupv2` — so the file
+# ran its real checks against a podman that cannot run anything, and
+# died in the rollback that handles a failed start. A smoke run is the
+# question this file actually depends on; it costs one `true`.
+_smoke = subprocess.run(
+    ["podman", "run", "--rm", "alpine:3.19", "true"],
+    capture_output=True, text=True)
+if _smoke.returncode != 0:
+    _why = (_smoke.stderr or _smoke.stdout or "").strip().splitlines()
+    print("SKIP: podman cannot start a container here — "
+          + (_why[-1][:160] if _why else "no reason given"))
+    sys.exit(0)
+
 checks = {}
 # Per-run, all of it. The port was a constant that this file binds, the
 # stored connection is per-user state in `containers.conf`, and the pod

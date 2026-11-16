@@ -139,7 +139,17 @@ def main():
         m2.tick()
         m2.snapshot = lambda: all_exited(twelve)
         m2.tick()
-        evs = _json.load(open(m2.config.monitor_events_file))
+        # The file is written best-effort by `_record`, so "it is not
+        # there" is an ANSWER — the audit trail was not kept — and has
+        # to read as a red check, not as a dead procedure. It was the
+        # latter on a hosted runner, 16.11.2026.
+        try:
+            with open(m2.config.monitor_events_file, encoding="utf-8") as _f:
+                evs = _json.load(_f)
+        except (OSError, ValueError) as _e:
+            print(f"      → no event log at "
+                  f"{m2.config.monitor_events_file}: {_e}")
+            evs = []
         kinds = [e["kind"] for e in evs]
         checks["audit log keeps all 12 deaths individually"] = (
             kinds.count("exited") == 12)
