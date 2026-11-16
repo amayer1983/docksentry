@@ -500,7 +500,19 @@ class ContainerMonitor:
         # backoff gives 5.
         fresh = []
         for k, n, d in deaths:
-            if now_ts - self._last_sent.get((n, k), 0) < self._cooldown_for((n, k)):
+            # "Never sent" is not "sent at zero". `time.monotonic()` on
+            # Linux counts from SYSTEM BOOT, so a default of 0 reads as
+            # "we alerted the moment this machine came up" — and for the
+            # whole first COOLDOWN_SECONDS of uptime every alert was
+            # dropped. Measured 16.11.2026 on a hosted runner, then
+            # driven with an injected clock: at an uptime of 1799 s the
+            # twelve-container host-down alert never fires, at 1801 s it
+            # does. The case it silences is precisely the one it exists
+            # for — a host that just rebooted, with Docksentry coming up
+            # alongside it.
+            _last = self._last_sent.get((n, k))
+            if (_last is not None
+                    and now_ts - _last < self._cooldown_for((n, k))):
                 continue
             fresh.append((k, n, d))
 
@@ -515,7 +527,9 @@ class ContainerMonitor:
                          getattr(self, "host_name", "") or "local",
                          {"count": len(fresh), "total": prev_running}, {})
             hkey = ("__host__", "mass_stop")
-            if now_ts - self._last_sent.get(hkey, 0) >= self.COOLDOWN_SECONDS:
+            _last_host = self._last_sent.get(hkey)
+            if (_last_host is None
+                    or now_ts - _last_host >= self.COOLDOWN_SECONDS):
                 self._last_sent[hkey] = now_ts
                 self._notify_mass_stop(fresh, prev_running)
             # A split reboot's second wave is recorded above but the host
@@ -537,8 +551,8 @@ class ContainerMonitor:
 
         for kind, name, detail in others:
             key = (name, kind)
-            last = self._last_sent.get(key, 0)
-            if now_ts - last < self._cooldown_for(key):
+            last = self._last_sent.get(key)
+            if last is not None and now_ts - last < self._cooldown_for(key):
                 continue
             # A container that keeps failing is reported less and less
             # often. Thirty minutes is right for the first few; it is
@@ -878,7 +892,13 @@ class ContainerMonitor:
         a container restarting every few minutes kept its thirty-minute
         cadence for as long as it looped.
         """
-        gap = now_ts - self._last_sent.get(key, 0)
+        _prev_sent = self._last_sent.get(key)
+        # Same reasoning as the cooldown itself: with a default of 0 the
+        # gap is the machine's uptime, so on a freshly booted host every
+        # first alert counted as a continuation of an incident that never
+        # happened, and started its backoff at streak 2.
+        gap = (self.MAX_COOLDOWN_SECONDS + 1 if _prev_sent is None
+               else now_ts - _prev_sent)
         if gap > self.MAX_COOLDOWN_SECONDS:
             # It went quiet for longer than we would ever have waited,
             # so whatever this is, it is a new incident.

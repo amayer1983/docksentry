@@ -325,6 +325,62 @@ def main():
     # default path unchanged for every other caller: failure still yields ""
     checks["_tail_logs default path: failure → '' (contract kept)"] = tl(1, "") == ""
 
+    # ── a freshly booted host still gets its alert ──────────────────
+    # `time.monotonic()` counts from SYSTEM BOOT on Linux, and the
+    # cooldown used `self._last_sent.get(key, 0)` — so "never sent"
+    # read as "sent the moment this machine came up", and for the whole
+    # first COOLDOWN_SECONDS of uptime every alert was dropped. The
+    # case it silenced is the one the mass-stop alert exists for: a
+    # host that just rebooted, with Docksentry coming up alongside it.
+    #
+    # Found by CI on a hosted runner, 16.11.2026, whose uptime was under
+    # a minute; this machine had been up 117 days and the arithmetic
+    # never came close. The clock is injected rather than read, so the
+    # answer does not depend on the box the suite runs on.
+    import monitor as _mon
+    _real_monotonic = _mon.time.monotonic
+    try:
+        for _uptime in (5.0, 40.0, 1799.0):
+            _mon.time.monotonic = lambda u=_uptime: u
+            mb = make_monitor()
+            mb.snapshot = lambda: running(twelve)
+            mb.tick()
+            mb.snapshot = lambda: all_exited(twelve)
+            mb.tick()
+            checks[f"a host booted {int(_uptime)}s ago still gets its alert"] = (
+                len(mb.sent) == 1)
+            if len(mb.sent) != 1:
+                print(f"      → uptime {_uptime}s sent "
+                      f"{len(mb.sent)} message(s)")
+
+        # The counter-direction, and the reason this is not simply
+        # "drop the cooldown": a repeat inside the window must still be
+        # held back, whatever the uptime says.
+        _clock = {"t": 50.0}
+        _mon.time.monotonic = lambda: _clock["t"]
+        mc = make_monitor()
+        mc.snapshot = lambda: running(twelve)
+        mc.tick()
+        mc.snapshot = lambda: all_exited(twelve)
+        mc.tick()
+        _first = len(mc.sent)
+        _clock["t"] = 50.0 + 60          # a minute later, inside the window
+        mc.snapshot = lambda: running(twelve)
+        mc.tick()
+        mc.snapshot = lambda: all_exited(twelve)
+        mc.tick()
+        checks["…and a repeat inside the window is still held back"] = (
+            _first == 1 and len(mc.sent) == 1)
+        _clock["t"] = 50.0 + 2000        # past the window
+        mc.snapshot = lambda: running(twelve)
+        mc.tick()
+        mc.snapshot = lambda: all_exited(twelve)
+        mc.tick()
+        checks["…and let through once the window has passed"] = (
+            len(mc.sent) == 2)
+    finally:
+        _mon.time.monotonic = _real_monotonic
+
     for k, v in checks.items():
         print(("  PASS" if v else "  FAIL"), k)
     if not all(checks.values()):

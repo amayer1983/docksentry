@@ -505,6 +505,12 @@ GUARDED = [
      "            if _maint_active(None):",
      "test_quiet_enforcement.py"),
 
+    ("a host that just booted still gets its first alert",
+     "app/monitor.py",
+     "            _last = self._last_sent.get((n, k))",
+     "            _last = self._last_sent.get((n, k), 0)",
+     "test_mass_stop.py"),
+
     ("a setting the range moves is reported, not silently rewritten",
      "app/config.py",
      "    got = max(lo, min(want, hi))\n    if got != want:",
