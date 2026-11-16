@@ -131,6 +131,19 @@ def main():
         sent = m.tick()
     if not m.sent:
         print("      → tick() returned " + repr(sent)[:200])
+        # Narrow it down to one of three: no baseline, no transitions,
+        # or transitions that were filtered away. All three look like
+        # "nothing happened" from outside and have different causes.
+        _before, _after = running(twelve), all_exited(twelve)
+        print(f"      → baseline held {len(m._prev or {})} entries")
+        try:
+            _raw = list(m.diff(_before, _after))
+        except Exception as _e:                               # noqa: BLE001
+            _raw = []
+            print(f"      → diff() raised {type(_e).__name__}: {_e}")
+        print(f"      → diff() on the same two snapshots: {len(_raw)} events")
+        print("      → monitored(svc0): "
+              f"{m._monitored('svc0', _after.get('svc0') or {})}")
         for _l in _cap.getvalue().splitlines():
             print(f"      → monitor said: {_l[:160]}")
     checks["a whole host stopping sends exactly one message"] = (
