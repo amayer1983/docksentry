@@ -129,14 +129,38 @@ def _through_gate(quiet, fn, maint=False):
     it at import, so patching `quiet_hours.is_quiet_now` leaves the gate
     talking to the real clock. `_suppressed` itself is the real method.
     """
-    import maintenance
+    import json
+    import tempfile
     real_q = notifier_mod.is_quiet_now
-    real_m = maintenance.is_active
-    notifier_mod.is_quiet_now = lambda cfg, now=None: quiet
-    maintenance.is_active = lambda cfg: maint
+
+    # Stand in for the CLOCK and the FILE, never for the decision.
+    #
+    # This used to be `lambda cfg, now=None: quiet` and
+    # `lambda cfg: maint` — two canned answers that threw their
+    # arguments away. So the gate could pass anything at all and still
+    # be told what the test wanted to hear. Measured 16.11.2026:
+    # changing the real call to `is_quiet_now(None)` kills quiet hours
+    # outright (02:00 answers False instead of True, because
+    # `getattr(None, "quiet_hours_start", "")` is empty and an empty
+    # window means "feature off") — and every one of the 220 procedures
+    # stayed green, this file included.
+    #
+    # Now the real `is_quiet_now` runs, against the real config the gate
+    # hands it, at a fixed hour: 02:00 is inside the 23:00–07:00 window
+    # in `_cfg`, 12:00 is outside it. Pass the wrong config and the
+    # answer collapses to False, which is what the checks below read.
+    when = _at(2) if quiet else _at(12)
+    notifier_mod.is_quiet_now = lambda cfg, now=None: real_q(cfg, when)
+
+    # Maintenance gets the same treatment, and needs no patch at all:
+    # `is_active` reads `config.maintenance_file`, so the stand-in is
+    # the file. "forever" has no expiry to race against.
+    _mfile = tempfile.mktemp(suffix=".json")
+    with open(_mfile, "w", encoding="utf-8") as _f:
+        json.dump({"until": "forever"} if maint else {}, _f)
     try:
         n = Notifier.__new__(Notifier)
-        n.config = _cfg()
+        n.config = _cfg(maintenance_file=_mfile)
         p = _Plugin()
         n._plugins = [p]
         n._by_name = {p.name: p}
@@ -144,7 +168,10 @@ def _through_gate(quiet, fn, maint=False):
         return p.sent
     finally:
         notifier_mod.is_quiet_now = real_q
-        maintenance.is_active = real_m
+        try:
+            os.unlink(_mfile)
+        except OSError:
+            pass
 
 
 _UPDATES = [{"name": "web", "image": "nginx:1.25"}]

@@ -81,9 +81,16 @@ def main():
     checks["platform is (os, arch) pair"] = (
         isinstance(plat, tuple) and len(plat) == 2 and all(plat))
     checks["platform cached (same object)"] = uc._host_platform() is plat
-    r = subprocess.run(["docker", "version", "--format",
-                        "{{.Server.Os}}/{{.Server.Arch}}"],
-                       capture_output=True, text=True)
+    # Guarded the same way as every other daemon question in the suite:
+    # with docker absent from PATH this raised FileNotFoundError and
+    # took the whole procedure down, including the three checks above
+    # that need no daemon at all.
+    try:
+        r = subprocess.run(["docker", "version", "--format",
+                            "{{.Server.Os}}/{{.Server.Arch}}"],
+                           capture_output=True, text=True)
+    except OSError:
+        r = types.SimpleNamespace(returncode=1, stdout="")
     if r.returncode == 0 and "/" in r.stdout:
         want = tuple(r.stdout.strip().split("/"))
         checks["platform matches daemon"] = plat == want

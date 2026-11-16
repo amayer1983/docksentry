@@ -201,7 +201,7 @@ def main():
     checks["None: replicates healthcheck"] = flags(c, "--health-cmd") != []
 
     # -- Part 2: verify against a real daemon that these ARE inherited --
-    have_docker = subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    have_docker = lf.daemon_available()
     if have_docker:
         d = tempfile.mkdtemp()
         with open(os.path.join(d, "Dockerfile"), "w") as f:

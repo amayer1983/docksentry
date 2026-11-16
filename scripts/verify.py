@@ -20,12 +20,26 @@ noticing. It compares *scope* — which procedures exist and what each one
 asserts — not the pass/skip column, because status is environment-dependent
 and a byte comparison would be permanently red for the wrong reason.
 
-This runs locally rather than in CI on purpose. Six procedures drive a real
-container runtime; on a hosted runner they skip, and a report generated
-there would show six blanks as though that were coverage. Measured before
-deciding: with the runtime taken away, those six went *red* rather than
-skipping, which is indistinguishable from a regression — they have guards
-now, but the report is only honest where the runtime is real.
+The REPORT is generated locally rather than in CI on purpose. Sixteen
+procedures drive a real container runtime — counted as "calls `lf.start`
+or `lf.daemon_available`", not estimated — and on a hosted runner the ones
+it cannot serve skip, so a report generated there would show blanks as
+though that were coverage. "Six" stood here until 16.11.2026 and was never
+a count.
+
+The same paragraph claimed those procedures "have guards now". They did
+not: the guard asked `subprocess.run([cli, "info"]).returncode`, which
+answers the daemon question and not the binary one, so with docker off
+PATH the call raised FileNotFoundError and the procedure died with a
+traceback instead of skipping — 8 of 10 of them, measured. That is worse
+than a wrong report: `test_guard_mutations.py` reads a crash as "the
+mutation was caught", so procedures that could not run were certifying
+promises. `lf.daemon_available` answers both questions now, and
+`test_live_fixtures.py` drives two real procedures on a PATH without
+docker to keep it that way.
+
+The RUN belongs in CI even though the report does not, and its absence
+cost: v2.18.0-beta.44 was published with `test_whatsnew.py` red.
 
 Deliberately no timestamp in the output: a generated date would make every
 run differ from the committed file and turn the freshness check into noise

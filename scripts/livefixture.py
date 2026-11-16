@@ -88,13 +88,54 @@ def skip(why, checks=None):
     sys.exit(code)
 
 
+def daemon_available(cli="docker"):
+    """Can we actually drive `cli` here? Never raises.
+
+    Twelve procedures asked this themselves, each with a bare
+    `subprocess.run([cli, "info"]).returncode == 0`. That answers the
+    daemon question and not the binary one: with `docker` absent from
+    PATH the call raises `FileNotFoundError` before any return code
+    exists, so the procedure died with a traceback and no verdict line.
+    `verify.py` scores that as FAIL and the mutation ratchet scores a
+    crash as "caught", which means a procedure that could not run was
+    certifying promises. Measured 16.11.2026 on a PATH without docker:
+    8 of 10 exited 1 with a traceback instead of skipping.
+
+    A daemon that is present but refusing is the same answer as no
+    daemon at all for every caller here, so both come back False.
+    """
+    try:
+        return subprocess.run([cli, "info"],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+def require_daemon(cli="docker", checks=None):
+    """Skip the procedure unless `cli` can be driven here."""
+    if not daemon_available(cli):
+        skip(f"no {cli} daemon available", checks)
+
+
 def start(args, cli="docker", checks=None):
     """Start a container; a refusal here is the environment's fault.
 
     `args` is everything after the binary, so `["run", "-d", …]`.
     Returns stdout stripped — the container id, for a `run -d`.
     """
-    r = subprocess.run([cli] + list(args), capture_output=True, text=True)
+    # A MISSING binary is the environment too, and it used to be the one
+    # case that was not handled: `subprocess.run` raises
+    # `FileNotFoundError`, which left the procedure to die with a
+    # traceback and no verdict line. `verify.py` reads that as FAIL, and
+    # `test_guard_mutations.py` reads a crash as "the mutation was
+    # caught" — a procedure that cannot run was certifying promises.
+    # Measured 16.11.2026 with `docker` taken off PATH: 8 of the 10
+    # daemon-driving procedures exited 1 with a traceback instead of
+    # skipping (audit).
+    try:
+        r = subprocess.run([cli] + list(args), capture_output=True, text=True)
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        skip(f"{cli} is not usable here — {e}", checks)
     if r.returncode != 0:
         detail = (r.stderr or r.stdout or "").strip().splitlines()
         skip(f"{cli} could not start the container — "
@@ -106,4 +147,8 @@ def rm(*names, cli="docker"):
     """Remove these, whether they exist or not."""
     for n in names:
         if n:
-            subprocess.run([cli, "rm", "-f", n], capture_output=True)
+            try:
+                subprocess.run([cli, "rm", "-f", n], capture_output=True)
+            except OSError:
+                # Tearing down what was never started is not a failure.
+                pass

@@ -414,6 +414,81 @@ checks["…and the shapes the suite uses are not flagged"] = not _false
 if _false:
     print(f"      → false positives: {_false}")
 
+# ── a daemon-driving procedure must SKIP, not die ───────────────────
+# The binary question and the daemon question are not the same, and
+# twelve procedures only asked the second: `subprocess.run(["docker",
+# "info"]).returncode` raises FileNotFoundError when docker is not on
+# PATH, so the procedure ended in a traceback with no verdict line.
+# `verify.py` scores that as FAIL, and `test_guard_mutations.py` scores
+# a crash as "the mutation was caught" — a procedure that could not run
+# was certifying promises for the whole ratchet.
+#
+# Driven, not grepped: two real procedures are run with a PATH that has
+# a python but no docker, and have to come back 0 with a SKIP line.
+import subprocess as _sp  # noqa: E402
+import tempfile as _tf  # noqa: E402
+
+_fakebin = _tf.mkdtemp()
+with open(os.path.join(_fakebin, "python3"), "w", encoding="utf-8") as _f:
+    _f.write("#!/bin/sh\nexec %s \"$@\"\n" % sys.executable)
+os.chmod(os.path.join(_fakebin, "python3"), 0o755)
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _without_docker(name):
+    """(exit code, first verdict-ish line) with docker off PATH."""
+    r = _sp.run([os.path.join(_fakebin, "python3"),
+                 os.path.join(_HERE, name)],
+                capture_output=True, text=True,
+                env={"PATH": _fakebin, "PYTHONDONTWRITEBYTECODE": "1",
+                     "HOME": os.environ.get("HOME", "/tmp")})
+    out = (r.stdout or "") + (r.stderr or "")
+    line = next((ln for ln in out.splitlines()
+                 if ln.startswith(("SKIP", "PASS", "FAIL", "Traceback"))), "")
+    # Classify rather than quote. `test_guard_mutations._red` decides a
+    # procedure "fell over" by looking for the literal phrase
+    # "Traceback (most recent call last)" in its output — so echoing a
+    # child's crash banner makes THIS procedure look crashed, its
+    # verdict gets thrown away, and the entry is scored [unrunnable]
+    # instead of as a caught mutation. Which is what happened on the
+    # first run of this check: the mutation was caught and reported as
+    # unrunnable, because of a diagnostic line. 16.11.2026.
+    if line.startswith("Traceback"):
+        line = "crashed instead of judging"
+    return r.returncode, line
+
+
+for _proc in ("test_glob.py", "test_protect_stop.py"):
+    _rc, _line = _without_docker(_proc)
+    checks[f"{_proc} skips when docker is missing, it does not crash"] = (
+        _rc == 0 and _line.startswith("SKIP"))
+    if _rc != 0 or not _line.startswith("SKIP"):
+        print(f"      → rc={_rc} first line: {_line!r}")
+
+# The counter-direction. Without it a procedure that always skipped —
+# or a `daemon_available` hardwired to False — would pass the two above,
+# and the suite would be green because it measures nothing. Asked
+# against an independent probe rather than against itself.
+import shutil as _sh  # noqa: E402
+import livefixture as _lf  # noqa: E402
+
+if _sh.which("docker"):
+    _probe = _sp.run(["docker", "info"], capture_output=True).returncode == 0
+    checks["…and it agrees with a plain `docker info` when one is here"] = (
+        _lf.daemon_available() is _probe)
+# Caught here on purpose. "without raising" is the whole claim, so if
+# it DOES raise the answer is a red check — never a traceback. A
+# procedure that crashes prints no verdict line, and the mutation
+# ratchet reads a missing verdict as "unrunnable", not as a catch:
+# the promise would look guarded while nothing held it.
+try:
+    _no_cli = (
+        _lf.daemon_available("definitely-not-a-container-cli") is False)
+except OSError:
+    _no_cli = False
+checks["a CLI that does not exist answers False, without raising"] = _no_cli
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

@@ -15,3 +15,27 @@ jobs:
 
       - name: Check language files and documentation
         run: python3 scripts/pre-commit-check.py
+
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The suite, not the report. `verify.py --check` compares
+      # VERIFICATION.md against a freshly generated one, and that stays
+      # local on purpose: wherever a procedure skips here the two differ,
+      # and a check that is permanently red for the wrong reason is one
+      # nobody reads.
+      #
+      # What belongs here is the other half — a procedure that FAILS has
+      # to stop the push. It was missing, and it cost: v2.18.0-beta.44
+      # went out with test_whatsnew.py red. The suite had been run before
+      # the version bump, when version.py still said beta.43 — and
+      # beta.43 has a changelog section, which is exactly what that
+      # procedure checks for. Nothing looked again afterwards, because
+      # nothing here could.
+      - name: Run the verification suite
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/verify.py --quiet

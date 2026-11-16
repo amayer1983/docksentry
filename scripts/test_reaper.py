@@ -101,7 +101,7 @@ for name in sorted(os.listdir(os.path.join(ROOT, "app"))):
 checks["no home-made SIGCHLD reaper anywhere"] = loose == []
 
 # ── the behaviour, as PID 1 in the real image ────────────────────────
-have_docker = subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+have_docker = lf.daemon_available()
 if not have_docker:
     print("SKIP: no Docker daemon available — behavioural half not run")
 else:

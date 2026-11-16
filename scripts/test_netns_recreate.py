@@ -28,8 +28,7 @@ from update_checker import UpdateChecker
 # indistinguishable from a real failure — measured: five procedures did
 # exactly that before the guard, while test_multihost_live skipped
 # cleanly. CI must be able to tell the two apart.
-if __import__("subprocess").run(["docker", "info"],
-                                capture_output=True).returncode != 0:
+if not lf.daemon_available():
     print("SKIP: no Docker daemon available")
     __import__("sys").exit(0)
 

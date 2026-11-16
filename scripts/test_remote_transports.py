@@ -49,7 +49,7 @@ NAME = lf.name("ds-tcp-transport-test")
 
 def docker_ok():
     return (shutil.which("docker")
-            and subprocess.run(["docker", "info"], capture_output=True).returncode == 0)
+            and lf.daemon_available())
 
 
 def main():

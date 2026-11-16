@@ -24,7 +24,7 @@ from hosts import build_hosts                  # noqa: E402
 
 SOCKET = "unix:///var/run/docker.sock"
 
-if subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
+if not lf.daemon_available():
     print("SKIP: no Docker daemon available")
     sys.exit(0)
 

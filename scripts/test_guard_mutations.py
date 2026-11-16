@@ -483,6 +483,24 @@ GUARDED = [
      "        if False:\n            return True",
      "test_quiet_enforcement.py"),
 
+    ("…and the gate really asks about THIS config, not some other",
+     "app/notifier.py",
+     "        if is_quiet_now(self.config):",
+     "        if is_quiet_now(None):",
+     "test_quiet_enforcement.py"),
+
+    ("…and so does the maintenance half of the same gate",
+     "app/notifier.py",
+     "            if _maint_active(self.config):",
+     "            if _maint_active(None):",
+     "test_quiet_enforcement.py"),
+
+    ("a missing container CLI is a skip, not a crash that scores as a catch",
+     "scripts/livefixture.py",
+     "    try:\n        return subprocess.run([cli, \"info\"],\n                              capture_output=True).returncode == 0\n    except OSError:\n        return False",
+     "    return subprocess.run([cli, \"info\"],\n                          capture_output=True).returncode == 0",
+     "test_live_fixtures.py"),
+
     ("…and a window across midnight really is two intervals",
      "app/quiet_hours.py",
      "    # Wrap around midnight\n    return current >= start or current < end",
