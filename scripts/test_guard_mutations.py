@@ -577,6 +577,18 @@ GUARDED = [
      "        return True",
      "test_channel_backoff.py"),
 
+    ("…and Telegram reads the same table, not only 429",
+     "app/telegram_bot.py",
+     "                temporary = retryable_status(e.code)",
+     "                temporary = e.code == 429",
+     "test_telegram_transient.py"),
+
+    ("…while a burst of them does not fill the log one line per poll",
+     "app/telegram_bot.py",
+     "                if quiet_timeout and (self._is_timeout(e) or temporary):",
+     "                if quiet_timeout and self._is_timeout(e):",
+     "test_telegram_transient.py"),
+
     ("the ssh hint is spoken in the reader's language",
      "app/hostdiag.py",
      "                return t(key, dir=ssh_dir)",

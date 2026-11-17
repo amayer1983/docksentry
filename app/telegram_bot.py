@@ -14,6 +14,7 @@ import urllib.request
 import urllib.parse
 import notify_retry
 import retry_after as _ra
+from notifiers.base import retryable_status
 from errfmt import clip, human
 import changelog
 import container_info
@@ -1056,17 +1057,46 @@ class TelegramBot:
                 # `parse_mode`, which does precisely nothing about a rate
                 # limit. So a rate-limited alert was thrown away at the one
                 # moment the chat was busiest (#66).
-                if e.code == 429 and attempt < attempts - 1:
-                    # The budget is for the whole call. Two answers of
-                    # `Retry-After: 60` used to mean two minutes here.
-                    wait = _ra.usable_wait(self._retry_after(body, e), _slept)
-                    if wait is not None:
-                        print(f"Telegram rate limited, waiting {wait:.1f}s")
-                        _t.sleep(wait)
-                        _slept += wait
+                # 429 says how long for; the rest of the gateway family
+                # does not, but asks for the same thing — come back. They
+                # are one table, `notifiers.base.TEMPORARY_STATUS`, which
+                # every other channel has used since #66; Telegram never
+                # learned it. Telegram's own edge answers 502 in bursts
+                # (#63, @NotRetarded: dozens of `Bad Gateway` lines in a
+                # row), and each one took the path meant for "Telegram
+                # refused this" — so a bad minute at Telegram threw an
+                # alert away, while a dead cable kept it and sent it
+                # later. Exactly backwards.
+                temporary = retryable_status(e.code)
+                if temporary and attempt < attempts - 1:
+                    if e.code == 429:
+                        # The budget is for the whole call. Two answers of
+                        # `Retry-After: 60` used to mean two minutes here.
+                        wait = _ra.usable_wait(self._retry_after(body, e), _slept)
+                        if wait is not None:
+                            print(f"Telegram rate limited, waiting {wait:.1f}s")
+                            _t.sleep(wait)
+                            _slept += wait
+                            continue
+                    else:
+                        _t.sleep(2 * (attempt + 1))  # 2s, then 4s
                         continue
-                if not (quiet_timeout and self._is_timeout(e)):
+                if quiet_timeout and (self._is_timeout(e) or temporary):
+                    # The long poll loops anyway and asks again with the
+                    # same offset, so nothing is lost here — but a burst
+                    # printed one line per cycle. Same treatment as the
+                    # reset connection above.
+                    self._note_poll_drop(e)
+                else:
                     print(f"Telegram API {e.code}: {body.get('description', body)}")
+                if temporary:
+                    # `None` means "nothing answered", and that is what the
+                    # caller has to act on: `send_message` holds it for
+                    # redelivery instead of filing it as refused. Same
+                    # trade-off as the read timeout above — if Telegram did
+                    # take the message after all, the redelivery is a
+                    # duplicate, and a duplicate beats a lost alert.
+                    return None
                 return body
             except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
                 if attempt < attempts - 1:
