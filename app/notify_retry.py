@@ -291,10 +291,15 @@ class RetryQueue:
         English and hard-coded, like the supergroup notice and the
         `Last logs:` header it will sit next to — it is delivery
         machinery talking about itself, not a translated message.
+
+        It says "could not be delivered", not "no network": the queue
+        also holds a message the service answered with a temporary status
+        (a 502 from Telegram's edge, an SMTP 4xx), and blaming the
+        reader's network for that sends them looking in the wrong place.
         """
         when = time.strftime("%H:%M:%S", time.localtime(held["wall"]))
-        return (f"⏳ Delayed {_ago(now - held['at'])} — no network when this "
-                f"fired. It happened at {when}.\n\n")
+        return (f"⏳ Delayed {_ago(now - held['at'])} — could not be "
+                f"delivered when this fired. It happened at {when}.\n\n")
 
 
 #: One queue for the whole process, so order is kept across channels and

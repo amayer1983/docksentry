@@ -975,13 +975,22 @@ class TelegramBot:
         if (now - since >= self.POLL_QUIET_SECONDS
                 and now - last >= self.POLL_REPEAT_SECONDS):
             setattr(self, "_poll_drop_said", now)
-            print(f"Telegram: no answer to the poll for "
-                  f"{int((now - since) / 60)} minute(s) — {exc}")
+            minutes = int((now - since) / 60)
+            # A 502 is an answer, just not a useful one. Saying "no
+            # answer" for it sends the reader to their own network when
+            # Telegram's edge is the one having the bad minute.
+            if isinstance(exc, urllib.error.HTTPError):
+                print(f"Telegram: the poll has been failing for {minutes} "
+                      f"minute(s) — Telegram answered {exc.code}")
+            else:
+                print(f"Telegram: no answer to the poll for "
+                      f"{minutes} minute(s) — {exc}")
 
     def _clear_poll_drops(self):
         setattr(self, "_poll_drop_since", None)
 
-    def api_call(self, method, data=None, timeout=60, quiet_timeout=False):
+    def api_call(self, method, data=None, timeout=60, quiet_timeout=False,
+                 once=False, answer=None):
         """Call Telegram Bot API.
 
         timeout         HTTP socket timeout in seconds.
@@ -989,9 +998,19 @@ class TelegramBot:
                         Used by the getUpdates long-poll loop where timeouts
                         are expected on flaky networks and don't indicate a
                         real problem.
-        Returns the parsed JSON response, or a sentinel-aware None on error.
-        Callers can distinguish "API responded with not-ok" (dict with
-        ok=False) from "request failed entirely" (None).
+        once            One HTTP attempt and no sleeping, whatever comes
+                        back. For the retry queue: it runs on the scheduler
+                        thread, and its next pass is the retry.
+        answer          A dict to fill in. When the call returns None because
+                        Telegram answered with a temporary status, its
+                        `code` is put here; it stays empty when nothing
+                        answered at all.
+
+        Returns the parsed JSON response, the body of a refusal (a dict with
+        ok=False, e.g. a 400 parse error), or None when it is worth trying
+        again later: no answer at all, or a temporary status
+        (`notifiers.base.TEMPORARY_STATUS`, 408/429/502/503/504). `answer`
+        says which of those two it was.
 
         When the bot is disabled (no BOT_TOKEN/CHAT_ID), this is a no-op.
         """
@@ -1020,11 +1039,12 @@ class TelegramBot:
         # (quiet_timeout=True) is exempt: its timeouts are normal and it loops
         # anyway. Trade-off: a read-timeout AFTER Telegram already processed a
         # send can yield a duplicate message — accepted on purpose, a dropped
-        # update/self-update notification is worse than a rare dupe. Only the
-        # network layer is retried; HTTP 4xx (parse/rate-limit bodies) is
-        # returned to the caller unchanged.
+        # update/self-update notification is worse than a rare dupe. The
+        # temporary statuses 408/429/502/503 are retried the same way (429
+        # waits its Retry-After instead); 504 is not, see below. Every other
+        # HTTP status is returned to the caller on the first answer.
         import time as _t
-        attempts = 1 if quiet_timeout else 3
+        attempts = 1 if (quiet_timeout or once) else 3
         _slept = 0.0
         for attempt in range(attempts):
             try:
@@ -1037,38 +1057,48 @@ class TelegramBot:
                 # Telegram returns 4xx with a JSON body for parse errors,
                 # rate-limit hints etc. Pass the parsed body to the caller so
                 # the markdown-retry path in send_message can act on it
-                # instead of treating it as a network failure. Not retried.
+                # instead of treating it as a network failure. A refusal is
+                # not retried here; the temporary statuses below are.
+                #
+                # 429 says how long for; the rest of the gateway family
+                # does not, but asks for the same thing — come back. They
+                # are one table, `notifiers.base.TEMPORARY_STATUS`, the one
+                # the Discord webhook, generic webhook, ntfy, Gotify, Matrix
+                # and Apprise channels read. Telegram's own edge answers 502
+                # in bursts (#63, @NotRetarded: dozens of `Bad Gateway`
+                # lines in a row), and each one took the path meant for
+                # "Telegram refused this" — so a bad minute at Telegram threw
+                # an alert away, while a dead cable kept it and sent it
+                # later. Exactly backwards.
+                temporary = retryable_status(e.code)
                 try:
                     body = json.loads(e.read())
                 except Exception:
-                    print(f"Telegram API error: {e}")
-                    return None
+                    if not temporary:
+                        print(f"Telegram API error: {e}")
+                        return None
+                    # A proxy or edge in front of Telegram answers with its
+                    # own HTML page, not Telegram's JSON. The status is
+                    # still the status: measured before this, a 502 page
+                    # got one attempt instead of three, and on the long
+                    # poll one log line per cycle.
+                    body = {"ok": False, "error_code": e.code,
+                            "description": str(e)}
                 # The group was renamed under us. Learn the new id, say so,
                 # and send the same thing again to where it now lives — the
                 # message that triggered this was on its way to the user and
                 # dropping it is how a whole evening goes missing.
                 if self._note_migration(body) and data:
                     return self.api_call(method, data, timeout=timeout,
-                                         quiet_timeout=quiet_timeout)
-                # 429 is the one status that IS transient, and it says how
-                # long for. `app/notifiers/base.py` has waited it out for
-                # Discord and the webhook since dc#255; Telegram never
-                # learned it, and `send_message`'s single retry drops
-                # `parse_mode`, which does precisely nothing about a rate
-                # limit. So a rate-limited alert was thrown away at the one
-                # moment the chat was busiest (#66).
-                # 429 says how long for; the rest of the gateway family
-                # does not, but asks for the same thing — come back. They
-                # are one table, `notifiers.base.TEMPORARY_STATUS`, which
-                # every other channel has used since #66; Telegram never
-                # learned it. Telegram's own edge answers 502 in bursts
-                # (#63, @NotRetarded: dozens of `Bad Gateway` lines in a
-                # row), and each one took the path meant for "Telegram
-                # refused this" — so a bad minute at Telegram threw an
-                # alert away, while a dead cable kept it and sent it
-                # later. Exactly backwards.
-                temporary = retryable_status(e.code)
-                if temporary and attempt < attempts - 1:
+                                         quiet_timeout=quiet_timeout,
+                                         once=once, answer=answer)
+                # 504 is "maybe taken": the gateway gave up waiting, and
+                # Telegram may have finished the request after it did. So
+                # it is not retried here; it is held, and a redelivery that
+                # is answered 504 as well is dropped (`_redeliver`) — the
+                # rule SMTP follows for a line that died after the body
+                # went out. 408/429/502/503 are "not now" and retried.
+                if temporary and e.code != 504 and attempt < attempts - 1:
                     if e.code == 429:
                         # The budget is for the whole call. Two answers of
                         # `Retry-After: 60` used to mean two minutes here.
@@ -1085,17 +1115,18 @@ class TelegramBot:
                     # The long poll loops anyway and asks again with the
                     # same offset, so nothing is lost here — but a burst
                     # printed one line per cycle. Same treatment as the
-                    # reset connection above.
+                    # reset connection in the URLError branch below.
                     self._note_poll_drop(e)
                 else:
                     print(f"Telegram API {e.code}: {body.get('description', body)}")
                 if temporary:
-                    # `None` means "nothing answered", and that is what the
+                    # `None` means "try again later", and that is what the
                     # caller has to act on: `send_message` holds it for
-                    # redelivery instead of filing it as refused. Same
-                    # trade-off as the read timeout above — if Telegram did
-                    # take the message after all, the redelivery is a
-                    # duplicate, and a duplicate beats a lost alert.
+                    # redelivery instead of filing it as refused. `answer`
+                    # carries the status, so the caller can tell a 504 from
+                    # silence and does not log a status as "no answer".
+                    if answer is not None:
+                        answer["code"] = e.code
                     return None
                 return body
             except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
@@ -1122,19 +1153,20 @@ class TelegramBot:
         Three answers, three different questions:
 
         API result  it went out,
-        `False`     it did not — refused, or nothing answered, in which
-                    case it is now held for redelivery,
+        `False`     it did not — refused, or "not now" (no answer, a
+                    temporary status), so held for redelivery,
         `None`      nothing was sent on purpose: channel off, quiet hours,
                     maintenance.
 
         The middle one is new; it used to be `None` too — how a crash
         alert could fail to arrive with nothing saying so (#66).
-        `_last_send_problem` says which: `"network"`, `"rejected"` or "".
+        `_last_send_problem` says which: `"network"` (try again),
+        `"rejected"`, `"taken"` (see `_redeliver`) or "".
 
-        `_held` is the retry queue coming back with a message it kept while
-        the network was down — quiet hours, the label and the supergroup
-        notice were settled when it was first raised, so they are not asked
-        again, and a second failure is left to the queue.
+        `_held` is the retry queue coming back with a message it kept —
+        quiet hours, the label and the supergroup notice were settled when
+        it was first raised, so they are not asked again, and a second
+        failure is left to the queue.
         """
         self._last_send_problem = ""
         # The channel switch, before anything else. Off means off: no
@@ -1197,7 +1229,9 @@ class TelegramBot:
         # A held message is retried inside the scheduler loop, so it gets a
         # shorter leash: a queue of them each waiting a full minute on a
         # network that is still down would stall the tick that drives the
-        # monitor.
+        # monitor. For the same reason it is one HTTP attempt with no
+        # sleeping (`once`): measured before that, a sustained 429 with
+        # `retry_after: 30` slept 60 s on the scheduler thread every pass.
         timeout = 15 if _held else 60
         for i, part in enumerate(parts):
             data = {
@@ -1213,16 +1247,19 @@ class TelegramBot:
             # above text they do not cover.
             if reply_markup and i == len(parts) - 1:
                 data["reply_markup"] = json.dumps(reply_markup)
-            result = self.api_call("sendMessage", data, timeout=timeout)
+            answer = {}
+            result = self.api_call("sendMessage", data, timeout=timeout,
+                                   once=_held, answer=answer)
             # Only retry without Markdown when Telegram actively rejected
             # the message (ok=False, typically a parse error). Don't retry
             # when the request itself failed (None) — that's a network or
             # timeout issue and retrying immediately won't help.
             if result and not result.get("ok"):
                 data.pop("parse_mode", None)
-                result = self.api_call("sendMessage", data, timeout=timeout)
+                result = self.api_call("sendMessage", data, timeout=timeout,
+                                       once=_held, answer=answer)
             if result is None:
-                unsent.append(part)
+                unsent.append((part, answer.get("code")))
             elif not result.get("ok"):
                 rejected.append(result.get("description") or result)
 
@@ -1231,28 +1268,56 @@ class TelegramBot:
         # `ok: false` returns quietly, and `monitor._notify` throws the
         # return value away — so afterwards there was no way to tell whether
         # an alert had gone out at all (#66, @NotRetarded).
-        self._last_send_problem = ("network" if unsent
+        # A held message answered 504 a second time is not sent again: one
+        # 504 may already be a copy in the chat, and the queue would keep
+        # going for fifteen minutes. Measured before this: 93 sendMessage
+        # attempts for one alert under 15 minutes of 504.
+        taken = _held and any(code == 504 for _p, code in unsent)
+        self._last_send_problem = ("taken" if taken
+                                   else "network" if unsent
                                    else "rejected" if rejected else "")
         for why in rejected:
             print(f"Telegram send failed: {why}")
+        if taken:
+            print("Telegram send failed: the redelivery was answered 504 "
+                  "too — it may have arrived already, so it is dropped "
+                  "rather than sent again")
         if unsent and not _held:
-            for part in unsent:
-                print("Telegram send failed: no answer from Telegram — "
-                      "holding the message for redelivery")
+            for part, code in unsent:
+                if code == 504:
+                    print("Telegram send failed: Telegram answered 504 "
+                          "(gateway timeout), so it may have arrived anyway "
+                          "— holding the message; if the redelivery is "
+                          "answered 504 too, it is dropped")
+                elif code:
+                    print(f"Telegram send failed: Telegram answered {code} "
+                          f"— holding the message for redelivery")
+                else:
+                    print("Telegram send failed: no answer from Telegram — "
+                          "holding the message for redelivery")
                 notify_retry.remember("telegram", part, self._redeliver)
         if rejected or unsent:
             return False
         return result
 
     def _redeliver(self, text):
-        """Send a message the queue held while the network was down.
+        """Send a message the queue held: no answer, or a temporary status.
 
         True means stop holding it — it landed, or Telegram refused it and
-        will refuse it again next time. False only while the network is
-        still the reason, which is the only reason the queue exists for.
+        will refuse it again next time. False while there is still no
+        answer or a "not now" status (408/429/502/503). `notify_retry.STOP`
+        for a 504 on this redelivery — the gateway gave up, Telegram may
+        have finished, and another attempt could be a second or third
+        copy. Same rule SMTP follows for a line that died after the body
+        went out (`notifiers/smtp.py`, TAKEN): the queue keeps trying
+        while nothing answers, and the first attempt that may have been
+        taken is the last.
         """
         self.send_message(text, _held=True)
-        return getattr(self, "_last_send_problem", "") != "network"
+        problem = getattr(self, "_last_send_problem", "")
+        if problem == "taken":
+            return notify_retry.STOP
+        return problem != "network"
 
     #: A backup bundle is small — a few dozen kB. Anything much larger is
     #: not one, and downloading it to find that out is somebody else's

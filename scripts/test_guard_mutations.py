@@ -591,6 +591,68 @@ GUARDED = [
      "                if quiet_timeout and self._is_timeout(e):",
      "test_telegram_transient.py"),
 
+    ("a held Telegram redelivery is one attempt, with no sleep on the scheduler thread",
+     "app/telegram_bot.py",
+     "        attempts = 1 if (quiet_timeout or once) else 3",
+     "        attempts = 1 if quiet_timeout else 3",
+     "test_telegram_transient.py"),
+
+    ("…and the redelivery asks for exactly that",
+     "app/telegram_bot.py",
+     "            result = self.api_call(\"sendMessage\", data, timeout=timeout,\n"
+     "                                   once=_held, answer=answer)",
+     "            result = self.api_call(\"sendMessage\", data, timeout=timeout,\n"
+     "                                   once=False, answer=answer)",
+     "test_telegram_transient.py"),
+
+    ("a 504 from Telegram is not retried inside the call",
+     "app/telegram_bot.py",
+     "                if temporary and e.code != 504 and attempt < attempts - 1:",
+     "                if temporary and attempt < attempts - 1:",
+     "test_telegram_transient.py"),
+
+    ("…and the caller learns which status it was",
+     "app/telegram_bot.py",
+     "                        answer[\"code\"] = e.code",
+     "                        pass",
+     "test_telegram_transient.py"),
+
+    ("…and a held message answered 504 again is not sent a third time",
+     "app/telegram_bot.py",
+     "        taken = _held and any(code == 504 for _p, code in unsent)",
+     "        taken = False",
+     "test_telegram_transient.py"),
+
+    ("…which the retry queue is told as STOP, not as 'still down'",
+     "app/telegram_bot.py",
+     "            return notify_retry.STOP",
+     "            return False",
+     "test_telegram_transient.py"),
+
+    ("a gateway's HTML error page is classified by its status",
+     "app/telegram_bot.py",
+     "                    if not temporary:",
+     "                    if True:",
+     "test_telegram_transient.py"),
+
+    ("the poll summary does not call a status answer 'no answer'",
+     "app/telegram_bot.py",
+     "            if isinstance(exc, urllib.error.HTTPError):",
+     "            if False:",
+     "test_telegram_transient.py"),
+
+    ("the send log does not call a status answer 'no answer from Telegram'",
+     "app/telegram_bot.py",
+     "                elif code:",
+     "                elif False:",
+     "test_telegram_transient.py"),
+
+    ("a redelivered message does not blame the network",
+     "app/notify_retry.py",
+     "        return (f\"⏳ Delayed {_ago(now - held['at'])} — could not be \"",
+     "        return (f\"⏳ Delayed {_ago(now - held['at'])} — no network, could not be \"",
+     "test_telegram_transient.py"),
+
     ("the ssh hint is spoken in the reader's language",
      "app/hostdiag.py",
      "                return t(key, dir=ssh_dir)",

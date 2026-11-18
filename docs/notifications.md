@@ -74,7 +74,7 @@ a lie anyway. Nothing is written to disk, so a restart clears the queue.
 A late message says so, above whatever it was going to say:
 
 ```
-⏳ Delayed 12m — no network when this fired. It happened at 15:35:03.
+⏳ Delayed 12m — could not be delivered when this fired. It happened at 15:35:03.
 ```
 
 This is not quiet hours. A quiet-hours drop is a decision you made and stays

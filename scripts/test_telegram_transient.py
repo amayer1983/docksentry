@@ -68,6 +68,41 @@ def _http(code, description, calls=None):
     return f
 
 
+class _Wire:
+    """An urlopen whose answer can be switched between calls.
+
+    `mode` is an HTTP status, "ok", "net" (nothing answers) or "reset"
+    (the connection is reset). `html` sends a gateway's HTML page in
+    place of Telegram's JSON. Every call and every sent text is kept.
+    """
+
+    def __init__(self):
+        self.mode, self.html = "ok", False
+        self.calls, self.texts = [], []
+
+    def __call__(self, req, timeout=None):
+        import json as _j
+        import urllib.parse as _p
+        self.calls.append(self.mode)
+        if req.data:
+            self.texts.extend(_p.parse_qs(req.data.decode()).get("text", []))
+        if self.mode == "ok":
+            return _Resp(_j.dumps({"ok": True, "result": {}}).encode())
+        if self.mode == "net":
+            raise urllib.error.URLError("connection refused")
+        if self.mode == "reset":
+            raise urllib.error.URLError(ConnectionResetError(104, "reset"))
+        code = self.mode
+        if self.html:
+            raw = (f"<html><body><h1>{code}</h1>nginx</body></html>").encode()
+        else:
+            body = {"ok": False, "error_code": code, "description": "x"}
+            if code == 429:
+                body["parameters"] = {"retry_after": 30}
+            raw = _j.dumps(body).encode()
+        raise urllib.error.HTTPError(req.full_url, code, "x", {}, io.BytesIO(raw))
+
+
 def _bot():
     """A real instance: `enabled` is a property and the methods are the
     ones under test. Only the config is made up."""
@@ -92,13 +127,22 @@ notify_retry.remember = lambda channel, text, send, still_wanted=None: held.appe
 
 try:
     # ── 1. api_call: a gateway error is retried and reported as silence ──
-    for code in (502, 503, 504, 408):
+    for code in (502, 503, 408):
         calls = []
         telegram_bot.urllib.request.urlopen = _http(code, "nope", calls)
         with contextlib.redirect_stdout(io.StringIO()):
             r = TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
         checks[f"{code} is retried to the end of the budget"] = len(calls) == 3
-        checks[f"{code} comes back as 'nothing answered', not as a body"] = r is None
+        checks[f"{code} comes back as 'try again later', not as a body"] = r is None
+
+    # 504 is the exception: the gateway gave up, Telegram may not have.
+    # Another attempt inside the call is a possible second copy.
+    calls = []
+    telegram_bot.urllib.request.urlopen = _http(504, "Gateway Timeout", calls)
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
+    checks["504 is not retried inside the call"] = len(calls) == 1
+    checks["504 comes back as 'try again later', not as a body"] = r is None
 
     # …and it is not silent about it in the log.
     telegram_bot.urllib.request.urlopen = _http(502, "Bad Gateway")
@@ -182,7 +226,12 @@ try:
         for _ in range(5):
             TelegramBot.api_call(b, "getUpdates", {}, quiet_timeout=True)
     checks["…a long one says so once"] = (
-        buf.getvalue().count("no answer to the poll") == 1)
+        buf.getvalue().count("the poll has been failing") == 1)
+    # Telegram did answer — with 502. "No answer" sends the reader to
+    # their own network.
+    checks["…and does not call a 502 'no answer'"] = (
+        "no answer" not in buf.getvalue()
+        and "Telegram answered 502" in buf.getvalue())
 
     # The counter-direction on the poll too: a 400 is not transient and
     # is not quietened, or a token that stopped working would look like
@@ -212,10 +261,181 @@ try:
         TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
     checks["429 still waits the time it was told"] = 5 in waits
     checks["…and not the plain 2s backoff"] = 2 not in waits
+
+    # ── 6. a held redelivery is one attempt and no sleeping ─────────────
+    # The queue resends on the scheduler thread, which also drives the
+    # monitor ticks. Measured before this: a sustained 429 with
+    # `retry_after: 30` slept 60 s there on every pass, a 502 six.
+    wire = _Wire()
+    telegram_bot.urllib.request.urlopen = wire
+    for code in TEMPORARY_STATUS:
+        wire.mode = code
+        wire.calls.clear()
+        waits.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = TelegramBot._redeliver(_bot(), "held")
+        checks[f"a held redelivery answered {code} is one attempt"] = (
+            len(wire.calls) == 1)
+        checks[f"…and sleeps nothing ({code})"] = waits == []
+        if code == 504:
+            checks["…and a 504 on it ends the holding"] = (
+                r is notify_retry.STOP)
+        else:
+            checks[f"…and a {code} on it stays held"] = (
+                r is False and r is not notify_retry.STOP)
+    # Counter-directions: a dead network on a redelivery is also one
+    # attempt and stays held; a refusal on one stops the holding.
+    # A 400 is two: `send_message` tries once more without Markdown,
+    # which is its answer to a parse error and not a retry of the same
+    # request.
+    for mode, want, tries in (("net", False, 1), (400, True, 2)):
+        wire.mode = mode
+        wire.calls.clear()
+        waits.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = TelegramBot._redeliver(_bot(), "held")
+        checks[f"a held redelivery with {mode} is {tries} attempt(s), no sleep"] = (
+            len(wire.calls) == tries and waits == [])
+        checks[f"…and {'stays held' if want is False else 'is let go'} ({mode})"] = (
+            r is want)
+
+    # ── 7. fifteen minutes on the real queue, the clock handed in ───────
+    notify_retry.remember = orig_remember
+    orig_queue = notify_retry.queue
+    clock = [0.0]
+    notify_retry.queue = notify_retry.RetryQueue(
+        clock=lambda: clock[0], wall=lambda: 1.7e9 + clock[0])
+
+    def fifteen(code, ok_from=None, html=False):
+        """One alert at t=0, then a scheduler pass every 30 s for 15 min
+        (31 passes: the one at 930 s finds it past the age limit)."""
+        notify_retry.queue.clear()
+        wire.mode, wire.html = code, html
+        wire.calls.clear()
+        clock[0] = 0.0
+        b = _bot()
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            TelegramBot.send_message(b, "ONE ALERT")
+            first = len(wire.calls)
+            delivered = 0
+            for i in range(1, 32):
+                clock[0] = 30.0 * i
+                if ok_from is not None and clock[0] >= ok_from:
+                    wire.mode = "ok"
+                sent, _d = notify_retry.flush()
+                delivered += sent
+        return first, len(wire.calls), delivered, log.getvalue()
+
+    first, total, delivered, log = fifteen(504)
+    checks["a 504 on the first send is held, not retried in the call"] = (
+        first == 1)
+    # Worst case two copies: the first 504 and the one redelivery. Before
+    # this it was 93 attempts — three per call, every pass.
+    checks["15 minutes of 504: at most 2 sendMessage attempts in total"] = (
+        total <= 2)
+    checks["…exactly one of them a redelivery"] = total == 2
+    checks["…and the drop says why"] = (
+        "answered 504 too" in log and notify_retry.pending() == 0)
+    # Counter-direction: a 504 then a clean answer is delivered.
+    first, total, delivered, log = fifteen(504, ok_from=30)
+    checks["a 504 then an ok redelivery is delivered once"] = (
+        delivered == 1 and total == 2)
+
+    # 502 is "not now": held to the age limit. Bound at one pass every
+    # 30 s: 3 attempts on the first send + 1 per pass for the 30 passes
+    # inside 900 s = 33. Before this: 93.
+    first, total, delivered, log = fifteen(502)
+    checks["15 minutes of 502: held the whole time, never delivered"] = (
+        delivered == 0 and first == 3)
+    checks["…in at most 33 sendMessage attempts"] = total <= 33
+    first, total, delivered, log = fifteen(502, ok_from=840)
+    checks["502 for 14 minutes, then ok: delivered once"] = delivered == 1
+    checks["…in at most 33 sendMessage attempts too"] = total <= 33
+
+    # A dead network over the same window still holds (counter-direction
+    # to "504 is dropped").
+    first, total, delivered, log = fifteen("net", ok_from=600)
+    checks["a dead network is held and delivered when it comes back"] = (
+        delivered == 1)
+
+    # ── 8. a 502 page without JSON is a 502 ─────────────────────────────
+    # A proxy or edge answers with its own HTML. Measured before this:
+    # one attempt instead of three, and a log line per poll cycle.
+    wire.mode, wire.html = 502, True
+    wire.calls.clear()
+    waits.clear()
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
+    checks["an HTML 502 is retried like a JSON 502"] = (
+        len(wire.calls) == 3 and r is None)
+    first, total, delivered, log = fifteen(502, ok_from=840, html=True)
+    checks["…held, and delivered when Telegram answers"] = (
+        delivered == 1 and total <= 33)
+    b = _bot()
+    wire.mode, wire.html = 502, True
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        for _ in range(5):
+            TelegramBot.api_call(b, "getUpdates", {}, quiet_timeout=True)
+    checks["…and a burst of HTML 502 polls says nothing"] = (
+        buf.getvalue() == "")
+    # Counter-direction: an HTML page with a status that is not
+    # temporary is still not dressed up as one.
+    wire.mode, wire.html = 404, True
+    wire.calls.clear()
+    with contextlib.redirect_stdout(io.StringIO()):
+        TelegramBot.api_call(_bot(), "sendMessage", {"x": "y"})
+    checks["…while an HTML 404 is not retried"] = len(wire.calls) == 1
+    wire.html = False
+
+    # ── 9. what the reader is told ──────────────────────────────────────
+    notify_retry.queue.clear()
+    wire.mode = 502
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        TelegramBot.send_message(_bot(), "the alert")
+    checks["a held 502 is not logged as 'no answer from Telegram'"] = (
+        "no answer" not in buf.getvalue()
+        and "Telegram answered 502" in buf.getvalue())
+    notify_retry.queue.clear()
+    wire.mode = "net"
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        TelegramBot.send_message(_bot(), "the alert")
+    checks["…while a dead network still is"] = (
+        "no answer from Telegram" in buf.getvalue())
+    # The redelivered text, through the real flush.
+    notify_retry.queue.clear()
+    clock[0] = 0.0
+    wire.mode = 502
+    with contextlib.redirect_stdout(io.StringIO()):
+        TelegramBot.send_message(_bot(), "the alert")
+    wire.mode = "ok"
+    wire.texts.clear()
+    clock[0] = 120.0
+    with contextlib.redirect_stdout(io.StringIO()):
+        notify_retry.flush()
+    landed = wire.texts[-1] if wire.texts else ""
+    checks["a redelivered message still says it is late"] = (
+        landed.startswith("⏳ Delayed 2m"))
+    checks["…without blaming the network for a 502"] = (
+        "no network" not in landed and "the alert" in landed)
+    # The long poll, counter-direction: a reset IS no answer.
+    b = _bot()
+    b._poll_drop_since = time.time() - 4 * 60
+    wire.mode = "reset"
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        TelegramBot.api_call(b, "getUpdates", {}, quiet_timeout=True)
+    checks["a poll that gets no answer for minutes still says 'no answer'"] = (
+        "no answer to the poll" in buf.getvalue())
 finally:
     telegram_bot.urllib.request.urlopen = orig_urlopen
     time.sleep = orig_sleep
     notify_retry.remember = orig_remember
+    if "orig_queue" in globals():
+        notify_retry.queue = orig_queue
 
 
 def main():

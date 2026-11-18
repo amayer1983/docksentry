@@ -134,8 +134,12 @@ try:
     (sent, dropped), log = quiet(notify_retry.flush)
     checks["a flush while still down delivers nothing"] = (
         (sent, dropped) == (0, 0))
+    # One HTTP request: a held redelivery makes a single attempt and
+    # never sleeps on the scheduler thread (it used to be one call of
+    # three attempts, 2 s and 4 s apart). Once per held message would
+    # be two.
     checks["…and tries the channel once, not once per held message"] = (
-        len(wire.seen) - before) == 3
+        len(wire.seen) - before) == 1
     checks["…and both messages are still held"] = notify_retry.pending() == 2
 
     wire.down = False
