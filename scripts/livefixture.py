@@ -91,15 +91,21 @@ def skip(why, checks=None):
 def daemon_available(cli="docker"):
     """Can we actually drive `cli` here? Never raises.
 
-    Twelve procedures asked this themselves, each with a bare
-    `subprocess.run([cli, "info"]).returncode == 0`. That answers the
-    daemon question and not the binary one: with `docker` absent from
-    PATH the call raises `FileNotFoundError` before any return code
-    exists, so the procedure died with a traceback and no verdict line.
-    `verify.py` scores that as FAIL and the mutation ratchet scores a
-    crash as "caught", which means a procedure that could not run was
-    certifying promises. Measured 16.11.2026 on a PATH without docker:
-    8 of 10 exited 1 with a traceback instead of skipping.
+    Nine procedures asked this themselves on v2.19.0, each with a bare
+    `subprocess.run(["docker", "info"]).returncode` (counted with
+    `git grep` on the tag: dependents_recreate, glob, image_inherit,
+    multihost_live, netns_recreate, protect_stop, reaper,
+    remote_transports, trust_running). That answers the daemon question
+    and not the binary one: with `docker` absent from PATH the call
+    raises `FileNotFoundError` before any return code exists, so the
+    procedure died with a traceback and no verdict line. `verify.py`
+    scores that as FAIL, and the mutation ratchet scores it
+    [unrunnable] — a crash at the top hides every check below it, and
+    the report lands far from the cause. Measured on a PATH without
+    docker, 16.11.2026 and again on the v2.19.0 tree on 18.11.2026:
+    8 of the 10 daemon-driving procedures (those nine plus
+    podman_live) exited 1 with a traceback; remote_transports and
+    podman_live skipped.
 
     A daemon that is present but refusing is the same answer as no
     daemon at all for every caller here, so both come back False.
@@ -127,11 +133,11 @@ def start(args, cli="docker", checks=None):
     # case that was not handled: `subprocess.run` raises
     # `FileNotFoundError`, which left the procedure to die with a
     # traceback and no verdict line. `verify.py` reads that as FAIL, and
-    # `test_guard_mutations.py` reads a crash as "the mutation was
-    # caught" — a procedure that cannot run was certifying promises.
-    # Measured 16.11.2026 with `docker` taken off PATH: 8 of the 10
-    # daemon-driving procedures exited 1 with a traceback instead of
-    # skipping (audit).
+    # `test_guard_mutations.py` reads it as [unrunnable]: every check
+    # after the crash never runs, and the report points nowhere near the
+    # missing binary. Measured 16.11.2026 with `docker` taken off PATH:
+    # 8 of the 10 daemon-driving procedures exited 1 with a traceback
+    # instead of skipping (audit).
     try:
         r = subprocess.run([cli] + list(args), capture_output=True, text=True)
     except (FileNotFoundError, PermissionError, OSError) as e:

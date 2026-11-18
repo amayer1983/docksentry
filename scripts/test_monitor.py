@@ -239,8 +239,9 @@ def last(seq, what="message"):
 
     Indexing a list the code under test was meant to fill turns a check
     into an IndexError, and a procedure that raises prints no verdict:
-    `verify.py` reports "FAIL … 0 checks" and the mutation ratchet reads
-    a crash as a caught mutation. Measured on a hosted runner,
+    every check after it never runs, `verify.py` reports "FAIL … 0
+    checks" and the mutation ratchet scores the entry [unrunnable], far
+    from the cause. Measured on a hosted runner,
     16.11.2026, where this file died at `m7.sent[-1]` and said nothing
     about the alert that never came.
     """

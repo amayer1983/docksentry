@@ -416,12 +416,13 @@ if _false:
 
 # ── a daemon-driving procedure must SKIP, not die ───────────────────
 # The binary question and the daemon question are not the same, and
-# twelve procedures only asked the second: `subprocess.run(["docker",
+# on v2.19.0 nine procedures only asked the second (the list is in
+# `livefixture.daemon_available`): `subprocess.run(["docker",
 # "info"]).returncode` raises FileNotFoundError when docker is not on
 # PATH, so the procedure ended in a traceback with no verdict line.
-# `verify.py` scores that as FAIL, and `test_guard_mutations.py` scores
-# a crash as "the mutation was caught" — a procedure that could not run
-# was certifying promises for the whole ratchet.
+# `verify.py` scores that as FAIL with 0 checks, and
+# `test_guard_mutations.py` as [unrunnable] — every check after the
+# crash never ran, and nothing pointed at the missing binary.
 #
 # Driven, not grepped: two real procedures are run with a PATH that has
 # a python but no docker, and have to come back 0 with a SKIP line.

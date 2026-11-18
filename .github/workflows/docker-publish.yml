@@ -11,7 +11,24 @@ env:
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/docksentry
 
 jobs:
+  # The whole suite, the same run as the `suite` job in ci.yml, and the
+  # build below waits for it. CI on main only marks a commit red after
+  # the push; a tag pushed onto that commit was built and published
+  # anyway, which is how v2.18.0-beta.44 went out with test_whatsnew.py
+  # red. With `needs`, a red suite means no image.
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run the verification suite
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/verify.py
+
   build-and-push:
+    needs: suite
     runs-on: ubuntu-latest
     permissions:
       contents: read

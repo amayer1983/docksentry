@@ -20,26 +20,34 @@ noticing. It compares *scope* — which procedures exist and what each one
 asserts — not the pass/skip column, because status is environment-dependent
 and a byte comparison would be permanently red for the wrong reason.
 
-The REPORT is generated locally rather than in CI on purpose. Sixteen
-procedures drive a real container runtime — counted as "calls `lf.start`
-or `lf.daemon_available`", not estimated — and on a hosted runner the ones
-it cannot serve skip, so a report generated there would show blanks as
-though that were coverage. "Six" stood here until 16.11.2026 and was never
-a count.
+Ten procedures drive a real container runtime: dependents_recreate,
+glob, image_inherit, multihost_live, netns_recreate, podman_live,
+protect_stop, reaper, remote_transports, trust_running — the files that
+call `lf.start(`, `lf.daemon_available(` or `lf.require_daemon(`,
+listed 18.11.2026, plus `test_live_fixtures.py`, which drives two of
+them. Where a runtime is missing they skip, and the report shows the
+skip rather than folding it into the total. "Six" stood here until
+16.11.2026 and was never a count; "sixteen" replaced it and came from a
+grep with an unescaped dot, which also matched `self.start…` in six
+files that drive no daemon.
 
 The same paragraph claimed those procedures "have guards now". They did
 not: the guard asked `subprocess.run([cli, "info"]).returncode`, which
 answers the daemon question and not the binary one, so with docker off
 PATH the call raised FileNotFoundError and the procedure died with a
-traceback instead of skipping — 8 of 10 of them, measured. That is worse
-than a wrong report: `test_guard_mutations.py` reads a crash as "the
-mutation was caught", so procedures that could not run were certifying
-promises. `lf.daemon_available` answers both questions now, and
-`test_live_fixtures.py` drives two real procedures on a PATH without
-docker to keep it that way.
+traceback instead of skipping — 8 of 10 of them, measured. A crash at
+the top of a procedure hides every check below it: here it reads as
+FAIL with 0 checks, and `test_guard_mutations.py` scores it
+[unrunnable], far from the cause. `lf.daemon_available` answers both
+questions now, and `test_live_fixtures.py` drives two real procedures
+on a PATH without docker to keep it that way.
 
-The RUN belongs in CI even though the report does not, and its absence
-cost: v2.18.0-beta.44 was published with `test_whatsnew.py` red.
+The run is in CI: `ci.yml` runs this file on every push to main, and
+`docker-publish.yml` runs it before an image is built from a tag, so a
+tag on a red tree is not published. Its absence cost:
+v2.18.0-beta.44 was published with `test_whatsnew.py` red. The CI run
+on 98344b5 (17.11.2026) reported 222 procedures ok and no SKIP line,
+read from its log.
 
 Deliberately no timestamp in the output: a generated date would make every
 run differ from the committed file and turn the freshness check into noise
@@ -48,6 +56,7 @@ that gets ignored.
 
 import os
 import re
+import signal
 import subprocess
 import sys
 
@@ -126,6 +135,18 @@ def summary_line(path):
     return first[:180]
 
 
+def _ended(code, lines):
+    """How a procedure ended, for a log line: exit code or signal."""
+    if code < 0:
+        try:
+            how = f"killed by {signal.Signals(-code).name}"
+        except ValueError:
+            how = f"killed by signal {-code}"
+    else:
+        how = f"exit code {code}"
+    return how + ("" if lines else ", no output at all")
+
+
 def run_one(path):
     """Run a procedure and return (status, checks, skipped)."""
     r = subprocess.run([sys.executable, path], capture_output=True, text=True,
@@ -151,30 +172,27 @@ def run_one(path):
     # A procedure whose printed verdict and exit code disagree is reporting
     # something it does not mean; surface it rather than picking a winner.
     disagrees = (r.returncode == 0) != (not said_fail)
-    # A procedure that failed without producing a single check did not
-    # fail a check — it fell over on the way there, and "FAIL … 0 checks"
-    # tells nobody why. Keep the tail so the runner's log is diagnosable
-    # from the outside: three procedures failed with 0 checks on a hosted
-    # runner on 16.11.2026 and the log had nothing else to say about it.
-    # Two different things a failing procedure has to be able to say.
+    # What a failing procedure gets to say in the run log, in order:
     #
-    # Procedures write diagnostics as "      → …" beside a red check —
-    # what the list actually held, what the thing under test printed.
-    # Those are the explanation, and they were invisible here: the tail
-    # below only ran when there were no checks at all, so the moment a
-    # procedure stopped crashing and started reporting, its reasons
-    # disappeared again. Twice in one evening, 16.11.2026.
-    #
-    # The tail stays for the other case: no checks at all means it fell
-    # over before judging anything, and then the last lines are all
-    # there is.
+    # - its "      → …" diagnostics, if it printed any. Procedures write
+    #   them beside a red check (what the list held, what the thing under
+    #   test printed), and they are the explanation.
+    # - otherwise, with no check at all, its last 12 lines: it fell over
+    #   before judging anything, and those lines are all there is.
+    #   Three procedures failed with 0 checks on a hosted runner on
+    #   16.11.2026 and the log had nothing else to say about it.
+    # - and with no check at all, always the exit code, or the signal
+    #   that ended it. A procedure that prints nothing has no last lines:
+    #   the audit run of 18.11.2026 logged "FAIL guard_mutations 0
+    #   checks" and not a word more, so whether it was killed or exited
+    #   could not be told afterwards.
     tail = ""
     if status == "fail":
         notes = [l for l in lines if l.lstrip().startswith("→")]
         if notes:
             tail = "\n".join(notes[:20])
         elif not checks:
-            tail = "\n".join(lines[-12:])
+            tail = "\n".join(lines[-12:] + [_ended(r.returncode, lines)])
     return status, checks, skipped, disagrees, tail
 
 
@@ -247,14 +265,13 @@ def render(results):
     L.append("")
     L.append("> Generated by `scripts/verify.py` from a real run of the "
              "suite — do not edit by hand.")
-    # No count. "Six" was wrong, "eleven" was wrong the other way, and
-    # the number depends on whether you ask who imports the fixture,
-    # who issues a daemon call, or who prints a skip when the daemon
-    # is taken away. The sentence is about the consequence, and the
-    # consequence does not need a number.
-    L.append("> The suite runs locally, not in CI: some procedures drive a "
-             "real container runtime, and a hosted runner without one would "
-             "report skips as if they were coverage. "
+    # No count of daemon-driving procedures: "six" and "sixteen" were
+    # both wrong, and the sentence does not need one.
+    L.append("> CI runs the suite on every push to main and before an "
+             "image is built from a tag, so a tag on a red tree is not "
+             "published. Procedures that need a container runtime skip "
+             "where there is none, and a skip is shown here, not counted "
+             "as a pass. "
              "`scripts/verify.py --check` re-runs it and fails if this file "
              "no longer describes what the suite does.")
     L.append("")
@@ -331,9 +348,11 @@ def _scope(text):
 
     The freshness check compares this rather than the file byte for byte,
     because status is environment-dependent and a byte comparison would be
-    permanently red for the wrong reason: CI has no Podman, so
-    `test_podman_live` skips there and passes here. Comparing the full text
-    would fail every run, and a check that always fails is one nobody reads.
+    permanently red for the wrong reason: a procedure that needs a
+    container runtime skips on a machine without one and passes on one
+    with it. Comparing the full text would fail on every machine that
+    differs from the one that wrote the file, and a check that always
+    fails is one nobody reads.
 
     What still gets caught is the thing that matters — a procedure or a
     named check added, removed or renamed without regenerating the report.

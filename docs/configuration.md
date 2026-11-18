@@ -141,7 +141,7 @@ Reclaiming space, and warning before it runs out.
 | `CLEANUP_BACKUP_LOCAL_ONLY` ⚙ | `false` | Before deletion, save unused locally-built images (no registry digest) to `cleanup-backups/` in the [data directory](#where-the-data-lives) |
 | `CLEANUP_GRACE_HOURS` ⚙ | `24` | Cleanup only removes images unused for at least this long (0–8760h; 0 means no grace at all) |
 | `DISK_WARN_AUTO_CLEANUP` ⚙ | `false` | Automatically run cleanup when disk warning fires |
-| `DISK_WARN_PERCENT` ⚙ | `85` | Notify when disk usage exceeds this percentage (1–100). A value outside the range is reported in the log and the nearest allowed one is used — it is not silently accepted. The Settings page takes the same range. |
+| `DISK_WARN_PERCENT` ⚙ | `85` | Notify when disk usage exceeds this percentage (1–100). A value outside the range is reported in the log and the nearest allowed one is used; a value that is not a number is reported too, and the default `85` is used. The Settings page takes the same range. |
 
 ### Notifications — Telegram
 

@@ -98,8 +98,9 @@ def at(seq, i=0, what="message"):
 
     Indexing a list the code under test was supposed to fill is how a
     check turns into an IndexError, and a procedure that raises prints
-    no verdict at all: `verify.py` reports "FAIL … 0 checks" and the
-    mutation ratchet reads a crash as "the mutation was caught". It
+    no verdict at all: every check after it never runs, `verify.py`
+    reports "FAIL … 0 checks" and the mutation ratchet scores the entry
+    [unrunnable], far from the cause. It
     also hides the actual question — nothing was sent — behind a
     traceback about list indices. Measured on a hosted runner,
     16.11.2026, where this file died at `m.sent[0]`.

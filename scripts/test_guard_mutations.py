@@ -569,7 +569,7 @@ GUARDED = [
      "exceeds this percentage (50\u2013100).",
      "test_env_bounds.py"),
 
-    ("a missing container CLI is a skip, not a crash that scores as a catch",
+    ("a missing container CLI is a skip, not a crash that hides every later check",
      "scripts/livefixture.py",
      "    try:\n        return subprocess.run([cli, \"info\"],\n                              capture_output=True).returncode == 0\n    except OSError:\n        return False",
      "    return subprocess.run([cli, \"info\"],\n                          capture_output=True).returncode == 0",
@@ -1548,18 +1548,14 @@ GUARDED = [
 
     ("Apprise does not send a temporary answer to the settings",
      "app/notifiers/apprise.py",
-     "            if retryable_status(e.code):\n"
-     "                hint = \" — a temporary answer, not a configuration problem\"",
-     "            if False:\n"
-     "                hint = \" — a temporary answer, not a configuration problem\"",
+     "                     if retryable_status(e.code)\n",
+     "                     if False\n",
      "test_channel_backoff.py"),
 
     ("…while a refusal still points at APPRISE_URL",
      "app/notifiers/apprise.py",
-     "            elif e.code < 500:\n"
-     "                hint = \" — check APPRISE_URL and APPRISE_URLS\"",
-     "            elif False:\n"
-     "                hint = \" — check APPRISE_URL and APPRISE_URLS\"",
+     "                     if e.code < 500 else \"\")",
+     "                     if False else \"\")",
      "test_channel_backoff.py"),
 
     ("a new channel cannot be added without its hold check",
@@ -1826,6 +1822,71 @@ GUARDED = [
      "            result = self.backend.image_prune(",
      "test_leftover_not_during_update.py"),
 
+    # ── the run log, the release gate, the ratchet's own copy ─────────
+    ("a procedure that fails without a word still shows its exit code",
+     "scripts/verify.py",
+     '            tail = "\\n".join(lines[-12:] + [_ended(r.returncode, lines)])',
+     '            tail = "\\n".join(lines[-12:])',
+     "test_suite_runner.py"),
+
+    ("the report does not say the suite stays out of CI",
+     "scripts/verify.py",
+     '    L.append("> CI runs the suite on every push to main and before an "',
+     '    L.append("> The suite runs locally, not in CI. "\n'
+     '             "CI runs the suite on every push to main and before an "',
+     "test_suite_runner.py"),
+
+    ("a tag on a red tree is not published",
+     ".github/workflows/docker-publish.yml",
+     "    needs: suite\n",
+     "",
+     "test_release_tag_guard.py"),
+
+    ("…and the job the build waits for really runs the suite",
+     ".github/workflows/docker-publish.yml",
+     "        run: python3 scripts/verify.py\n",
+     '        run: "true"\n',
+     "test_release_tag_guard.py"),
+
+    ("a hand-edited session length is named in the warning",
+     "app/config.py",
+     '            name="WEB_SESSION_HOURS")',
+     '            )',
+     "test_env_bounds.py"),
+
+    ("…and so is the session maximum",
+     "app/config.py",
+     '            name="WEB_SESSION_MAX_DAYS")',
+     '            )',
+     "test_env_bounds.py"),
+
+    # The anchors below are split into two literals on purpose: written
+    # in one piece they would occur here as well as at the code they
+    # point at, and every anchor has to occur exactly once in this file.
+    ("the ratchet's copy leaves out what the ignore rules leave out",
+     "scripts/test_guard_mutations.py",
+     '         "--exclude-' 'standard"],',
+     '         ],',
+     "test_ratchet_copy.py"),
+
+    ("…and still takes a new file nobody has committed yet",
+     "scripts/test_guard_mutations.py",
+     '        ["git", "-C", root, "ls-files", "-z", "--cached", ' '"--others",',
+     '        ["git", "-C", root, "ls-files", "-z", "--cached",',
+     "test_ratchet_copy.py"),
+
+    ("…and no stale bytecode rides along into the copy",
+     "scripts/test_guard_mutations.py",
+     "        if not os.path.isfile(src) or " "_cache(rel):\n",
+     "        if not os.path.isfile(src):\n",
+     "test_ratchet_copy.py"),
+
+    ("…and removes the directory it made, not only the copy in it",
+     "scripts/test_guard_mutations.py",
+     "    shutil.rmtree(os.path.dirname(tree), " "ignore_errors=True)\n",
+     "    shutil.rmtree(tree, ignore_errors=True)\n",
+     "test_ratchet_copy.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
@@ -1871,10 +1932,48 @@ def _tree():
     it.
     """
     d = tempfile.mkdtemp(prefix="guardmut-")
-    shutil.copytree(ROOT, os.path.join(d, "repo"),
-                    ignore=shutil.ignore_patterns(
-                        ".git", "__pycache__", "*.pyc", "data", "*.sock"))
-    return os.path.join(d, "repo")
+    repo = os.path.join(d, "repo")
+    for rel in _program_files(ROOT):
+        src = os.path.join(ROOT, rel)
+        if not os.path.isfile(src) or _cache(rel):
+            continue                        # deleted in the work tree
+        dst = os.path.join(repo, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+    return repo
+
+
+def _program_files(root):
+    """What git counts as the program: tracked files plus new ones that
+    no ignore rule covers.
+
+    The copy used to be the whole directory minus a list of names, and
+    that took everything local along: my notes, the audit reports, the
+    backups, whole worktrees and the dev compose file with its real
+    credentials. Eight full copies from interrupted runs sat in /tmp on
+    18.11.2026, seven of them with that file inside. A list of names to
+    leave out is a list that is always one name short; the ignore rules
+    already say what is not the program, so the copy reads them.
+    """
+    out = subprocess.run(
+        ["git", "-C", root, "ls-files", "-z", "--cached", "--others",
+         "--exclude-standard"],
+        capture_output=True, check=True).stdout
+    return sorted({p for p in out.decode("utf-8").split("\0") if p})
+
+
+def _cache(rel):
+    parts = rel.split("/")
+    return "__pycache__" in parts or rel.endswith(".pyc")
+
+
+def _drop(tree):
+    """Remove a copy made by `_tree`, the mkdtemp directory included.
+
+    Removing only `…/repo` left an empty `guardmut-*` behind on every
+    run: 68 of them were in /tmp on 18.11.2026.
+    """
+    shutil.rmtree(os.path.dirname(tree), ignore_errors=True)
 
 
 def _mutate(tree, rel, anchor, replacement):
@@ -2065,7 +2164,7 @@ def main():
             print(f"      → the control came back {_control!r}; every "
                   f"caught mutation above is in doubt")
     finally:
-        shutil.rmtree(tree, ignore_errors=True)
+        _drop(tree)
 
     bad = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

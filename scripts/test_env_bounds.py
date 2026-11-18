@@ -103,10 +103,12 @@ for name, attr, lo, hi, default, good in BOUNDS:
 # The ranges arrived to stop a crash: `MONITOR_INTERVAL=30m` raised a
 # ValueError during __init__, which is a boot loop. Enforcing policy
 # came along for the ride, and it was silent — somebody who had set
-# `DOCKER_STOP_TIMEOUT=5400`, which the documentation tells them to do
-# for a slow database, got 3600 with nothing anywhere saying why
-# (audit, 16.11.2026). Two of those ceilings contradicted our own
-# advice and have been raised; the rest now announce themselves.
+# `DOCKER_STOP_TIMEOUT=5400` for a slow database got 3600 with nothing
+# anywhere saying why (audit, 16.11.2026). The documentation did not
+# ask for 5400: on v2.19.0 it said "Raise for slow-shutdown apps" and
+# printed the range as (1–3600). Two ceilings, DOCKER_STOP_TIMEOUT and
+# HEALTHCHECK_MAX_STARTING, have been raised to 86400; every clamp now
+# announces itself.
 import contextlib  # noqa: E402
 import io as _io  # noqa: E402
 
@@ -120,10 +122,10 @@ def _load_saying(name, value):
     # A raise is an ANSWER here, not an accident: the whole reason the
     # ranges exist is that `int("30m")` threw during __init__ and turned
     # a typo into a boot loop. Letting it propagate would kill this
-    # procedure instead, and a procedure that dies prints no verdict —
-    # which `test_guard_mutations.py` reads as "the mutation was
-    # caught". Both entries that mutate `_clamp_int` back to `int()`
-    # scored [unrunnable] until this try was here.
+    # procedure instead: every check after it never runs, and
+    # `test_guard_mutations.py` scores a procedure that dies without a
+    # verdict as [unrunnable]. Both entries that mutate `_clamp_int`
+    # back to `int()` scored [unrunnable] until this try was here.
     try:
         with contextlib.redirect_stdout(buf):
             cfg = config_mod.Config.from_env()
@@ -154,6 +156,59 @@ for name, attr, lo, hi, default, good in BOUNDS:
     checks[f"{name}: …while a value inside it passes without a word"] = (
         _cfg is not None and _said.strip() == ""
         and getattr(_cfg, attr) == good)
+
+# ── the two session bounds read back from settings.json ─────────────
+# They are re-clamped on load, through the same `_clamp_int`, but the
+# two calls passed no name, so a hand-edited `"web_session_hours":
+# 100000` logged "WARNING: setting=100000 is outside…" and named
+# nothing anybody could search for (measured 18.11.2026). Driven
+# through a real settings.json in a scratch DATA_DIR.
+import json as _json  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+
+def _session_saying(saved):
+    d = _tempfile.mkdtemp(prefix="ds-env-session-")
+    old = os.environ.get("DATA_DIR")
+    try:
+        with open(os.path.join(d, "settings.json"), "w") as f:
+            _json.dump(saved, f)
+        os.environ["DATA_DIR"] = d
+        buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                cfg = config_mod.Config.from_env()
+        except Exception as exc:                              # noqa: BLE001
+            cfg = None
+            buf.write(f"RAISED {type(exc).__name__}")
+        return cfg, buf.getvalue()
+    finally:
+        if old is None:
+            os.environ.pop("DATA_DIR", None)
+        else:
+            os.environ["DATA_DIR"] = old
+        _shutil.rmtree(d, ignore_errors=True)
+
+
+for _key, _env_name, _good in (
+        ("web_session_hours", "WEB_SESSION_HOURS", 24),
+        ("web_session_max_days", "WEB_SESSION_MAX_DAYS", 30)):
+    _lo_hi = config_mod.INT_RANGES[_key]
+    _cfg, _said = _session_saying({_key: _lo_hi[1] + 1000})
+    checks[f"{_env_name} out of range in settings.json: the warning names it"] = (
+        _cfg is not None and f"{_env_name}=" in _said
+        and getattr(_cfg, _key) == _lo_hi[1])
+    if f"{_env_name}=" not in _said:
+        print(f"      → it said: {_said.strip()!r}")
+    _cfg, _said = _session_saying({_key: "x"})
+    checks[f"{_env_name} not a number in settings.json: named too"] = (
+        _cfg is not None and f"{_env_name}=" in _said)
+    # Counter-direction: a sane saved value loads in silence.
+    _cfg, _said = _session_saying({_key: _good})
+    checks[f"{_env_name}: a sane saved value loads without a word"] = (
+        _cfg is not None and _said.strip() == ""
+        and getattr(_cfg, _key) == _good)
 
 # ── and the documented range has to be the enforced one ─────────────
 # Three ranges changed in this commit. The table in docs/configuration.md

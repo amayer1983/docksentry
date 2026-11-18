@@ -163,6 +163,97 @@ else:
     print("  (übersprungen: keine git-Historie erreichbar — "
           "die synthetischen Fälle oben decken denselben Fehlschlag)")
 
+# ── a tag on a red tree is not published ─────────────────────────────
+# v2.18.0-beta.44 went out with test_whatsnew.py red. ci.yml ran the
+# suite on main by then, but CI only marks a commit red after the push;
+# this workflow builds on the tag and waited for nothing. So the publish
+# workflow runs the suite itself and the build job `needs` that job.
+# Read the same way as the guard above, by indentation and without a
+# YAML parser; the parser is fed a workflow without `needs` first, so a
+# reader that sees nothing cannot make these checks pass.
+
+
+def _jobs(text):
+    """{job name: [its lines]} for the top-level `jobs:` block."""
+    jobs, cur, inside = {}, None, False
+    for line in text.splitlines():
+        if re.match(r"^jobs:\s*$", line):
+            inside = True
+            continue
+        if not inside:
+            continue
+        if line and not line.startswith(" ") and not line.startswith("#"):
+            break                                  # next top-level key
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if m:
+            cur = m.group(1)
+            jobs[cur] = []
+        elif cur is not None:
+            jobs[cur].append(line)
+    return jobs
+
+
+def _job_key(body, key):
+    """The value of a job-level `key:` (four spaces in), or None."""
+    for line in body:
+        m = re.match(rf"^    {key}:\s*(.*?)\s*$", line)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _needs(body):
+    v = _job_key(body, "needs") or ""
+    return {n.strip() for n in v.strip("[]").split(",") if n.strip()}
+
+
+def _suite_gate(text):
+    """(suite job that runs verify.py, build job, what the build needs)."""
+    jobs = _jobs(text)
+    runs = {n for n, b in jobs.items()
+            if any(re.match(r"^(- )?run: python3 scripts/verify\.py$",
+                            l.strip()) for l in b)}
+    builds = [n for n, b in jobs.items()
+              if any("docker/build-push-action" in l for l in b)]
+    build = builds[0] if len(builds) == 1 else None
+    needs = _needs(jobs[build]) if build else set()
+    gated = bool(build) and bool(runs & needs) and build not in runs
+    # A suite that is allowed to fail, or a build that runs whatever its
+    # needs did, waits for nothing.
+    loose = any(_job_key(jobs[n], "continue-on-error") for n in runs & needs)
+    build_if = (_job_key(jobs[build], "if") or "") if build else ""
+    loose = loose or "always()" in build_if
+    return gated, loose, jobs
+
+
+_ungated = ("jobs:\n  suite:\n    runs-on: x\n    steps:\n"
+            "      - run: python3 scripts/verify.py\n"
+            "  build-and-push:\n    runs-on: x\n    steps:\n"
+            "      - uses: docker/build-push-action@v7\n")
+checks["the job reader sees a build that waits for nothing"] = (
+    _suite_gate(_ungated)[0] is False
+    and set(_suite_gate(_ungated)[2]) == {"suite", "build-and-push"})
+checks["…and one that waits for the suite"] = _suite_gate(
+    _ungated.replace("  build-and-push:\n",
+                     "  build-and-push:\n    needs: suite\n"))[0] is True
+
+_wf_text = "\n".join(lines)
+_gated, _loose, _wf_jobs = _suite_gate(_wf_text)
+checks["the publish workflow runs the suite and the image build needs it"] = (
+    _gated)
+checks["…and the suite job may not fail its way through"] = (
+    _gated and not _loose)
+if not _gated:
+    print(f"      → jobs read from docker-publish.yml: "
+          f"{ {n: sorted(_needs(b)) for n, b in _wf_jobs.items()} }")
+# The same command as ci.yml's suite job, so the two cannot drift into
+# running different things under the same name.
+_ci = os.path.join(ROOT, ".github", "workflows", "ci.yml")
+_ci_runs = [l.strip() for l in open(_ci, encoding="utf-8").read().splitlines()
+            if l.strip().startswith("run: python3 scripts/verify.py")]
+checks["…and it is the same run ci.yml makes"] = (
+    _ci_runs == ["run: python3 scripts/verify.py"])
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

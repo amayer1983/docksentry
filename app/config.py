@@ -113,9 +113,11 @@ def _clamp_int(value, lo, hi, default, name=""):
     into a boot loop, and the ranges came along for the ride. A range
     that silently rewrites a working configuration is a different thing
     from one that stops a crash — somebody who had set
-    `DOCKER_STOP_TIMEOUT=5400`, which the documentation tells them to do
-    for slow databases, would have found their database killed half an
-    hour earlier with nothing anywhere saying why (audit, 16.11.2026).
+    `DOCKER_STOP_TIMEOUT=5400` for a slow database would have found it
+    killed half an hour earlier with nothing anywhere saying why (audit,
+    16.11.2026). The documentation never asked for 5400; on v2.19.0 it
+    said "Raise for slow-shutdown apps" and printed (1–3600). The point
+    is that going above a range was silent.
     """
     try:
         want = int(value)
@@ -1227,10 +1229,12 @@ class Config:
         # value that ever reaches the session store is a sane one.
         self.web_session_hours = _clamp_int(
             getattr(self, "web_session_hours", 8),
-            *INT_RANGES["web_session_hours"], 8)
+            *INT_RANGES["web_session_hours"], 8,
+            name="WEB_SESSION_HOURS")
         self.web_session_max_days = _clamp_int(
             getattr(self, "web_session_max_days", 7),
-            *INT_RANGES["web_session_max_days"], 7)
+            *INT_RANGES["web_session_max_days"], 7,
+            name="WEB_SESSION_MAX_DAYS")
         # Tighten permissions on existing settings file (covers upgrade case
         # where the file was created with the umask default, typically 0644).
         self._restrict_settings_perms()

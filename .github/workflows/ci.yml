@@ -23,18 +23,18 @@ jobs:
         uses: actions/checkout@v4
 
       # The suite, not the report. `verify.py --check` compares
-      # VERIFICATION.md against a freshly generated one, and that stays
-      # local on purpose: wherever a procedure skips here the two differ,
-      # and a check that is permanently red for the wrong reason is one
-      # nobody reads.
+      # VERIFICATION.md against a freshly generated one; that stays a
+      # local step, because pass and skip depend on the machine.
       #
-      # What belongs here is the other half — a procedure that FAILS has
-      # to stop the push. It was missing, and it cost: v2.18.0-beta.44
-      # went out with test_whatsnew.py red. The suite had been run before
-      # the version bump, when version.py still said beta.43 — and
-      # beta.43 has a changelog section, which is exactly what that
-      # procedure checks for. Nothing looked again afterwards, because
-      # nothing here could.
+      # This job cannot stop a push — it runs after one and marks the
+      # commit red. What keeps a red tree from being published is the
+      # same run in docker-publish.yml, which the image build waits
+      # for. Both were missing, and it cost: v2.18.0-beta.44 went out
+      # with test_whatsnew.py red. The suite had been run before the
+      # version bump, when version.py still said beta.43 — and beta.43
+      # has a changelog section, which is exactly what that procedure
+      # checks for. Nothing looked again afterwards, because nothing
+      # here could.
       # Not --quiet: when this goes red the log is the only thing
       # anybody has, and the summary line names the procedure without
       # saying which check inside it failed.
