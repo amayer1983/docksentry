@@ -843,6 +843,7 @@ class TelegramBot:
         """
         self.send_message(self.t("checking_updates"))
         found = False
+        pins_said = False
         for host in (targets or [None]):
             try:
                 updates = self._checker_for(host, checker).check_all(bot=self)
@@ -863,6 +864,13 @@ class TelegramBot:
                 self.send_message(self.t("host_check_failed",
                                          host=host.name, error=_detail))
                 continue
+            # Nothing was checked, so neither "up to date" below may be
+            # said. Once: the pin list is one file for every host.
+            if getattr(updates, "pin_list_unreadable", False):
+                if not pins_said:
+                    self.send_message(self.t("check_pin_list_unreadable"))
+                    pins_said = True
+                continue
             if updates:
                 found = True
                 self.notify_updates(updates)
@@ -878,7 +886,7 @@ class TelegramBot:
                 # original single summary untouched.
                 self.send_message(self.t("host_check_uptodate",
                                          host=getattr(host, "name", "local")))
-        if not found and not self._multi():
+        if not found and not self._multi() and not pins_said:
             self.notify_no_updates()
         # Docksentry-selfupdate hint (#2, @famewolf): the regular
         # `check_all` filters us out (get_running_containers → "Skipped
@@ -1788,6 +1796,13 @@ class TelegramBot:
         host_name, container_name = split_host_key(container_key)
         host = self._host_by_name(host_name)
         checker = self._checker_for(host, checker)
+        # Before the lock and the queue: a tap that is refused must not
+        # come back later off the queue, and must leave the pending
+        # entry where it is (see `pin_list_unreadable`).
+        from update_checker import pin_list_unreadable
+        if pin_list_unreadable(checker):
+            self.send_message(self.t("update_refused_pin_list"))
+            return
         # Claim the shared update mutex — before v1.23.1 this path took
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
@@ -2077,6 +2092,10 @@ class TelegramBot:
         pending = store.get_pending_major().get(name)
         if not pending:
             self.send_message(self.t("major_none_pending", name=name))
+            return
+        from update_checker import pin_list_unreadable
+        if pin_list_unreadable(checker):
+            self.send_message(self.t("update_refused_pin_list"))
             return
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
@@ -2959,6 +2978,13 @@ class TelegramBot:
         # always release — the old `update_running = False` only ran at
         # the end, so an exception outside the inner loop would have left
         # the flag stuck True forever, blocking all future updates.
+        #
+        # The pin list first, before the lock and before the pending file
+        # is read or cleared (see `pin_list_unreadable`).
+        from update_checker import pin_list_unreadable
+        if pin_list_unreadable(updater):
+            self.send_message(self.t("update_refused_pin_list"))
+            return
         if not self._update_lock.acquire(blocking=False):
             self.send_message(self.t("update_already_running"))
             return
@@ -3963,6 +3989,7 @@ class TelegramBot:
             # estate is worse than none.
             _, targets, _ = self._resolve_targets("", write=False)
             found = False
+            pins_said = False
             for host in (targets or [None]):
                 host_checker = self._checker_for(host, checker)
                 try:
@@ -3976,11 +4003,17 @@ class TelegramBot:
                                              host=host.name,
                                              error=human(e, self.t)))
                     continue
+                if getattr(updates, "pin_list_unreadable", False):
+                    if not pins_said:
+                        self.send_message(
+                            self.t("check_pin_list_unreadable"))
+                        pins_said = True
+                    continue
                 if updates:
                     found = True
                     self.send_message(self._build_dry_run(updates,
                                                           host_checker))
-            if not found:
+            if not found and not pins_said:
                 self.notify_no_updates()
 
         elif text.startswith("/check ") and len(text.split(maxsplit=1)) > 1:
@@ -4019,6 +4052,7 @@ class TelegramBot:
             self.send_message(self.t("checking_updates"))
             matched = sum(len(n) for _, n in selections)
             found = False
+            pins_said = False
             for host, names in selections:
                 nameset = set(names)
                 # Scope the check to the matched containers via `only=` (#53,
@@ -4042,10 +4076,16 @@ class TelegramBot:
                     self.send_message(self.t("host_check_failed",
                                              host=host.name, error=human(e, self.t)))
                     continue
+                if getattr(updates, "pin_list_unreadable", False):
+                    if not pins_said:
+                        self.send_message(
+                            self.t("check_pin_list_unreadable"))
+                        pins_said = True
+                    continue
                 if updates:
                     found = True
                     self.notify_updates(updates)
-            if not found:
+            if not found and not pins_said:
                 self.send_message(self.t("check_scoped_uptodate",
                                          count=matched, pattern=arg))
 
@@ -4089,6 +4129,7 @@ class TelegramBot:
                 return
             self.send_message(self.t("checking_updates"))
             batches = []
+            pins_unreadable = False
             for host, names in selections:
                 nameset = set(names)
                 # Scope the check to the matched containers via `only=` (#53,
@@ -4111,8 +4152,16 @@ class TelegramBot:
                     self.send_message(self.t("host_check_failed",
                                              host=host.name, error=human(e, self.t)))
                     continue
+                if getattr(updates, "pin_list_unreadable", False):
+                    pins_unreadable = True
+                    continue
                 if updates:
                     batches.append((host_checker, updates))
+            if pins_unreadable:
+                # Not "no update matches": nothing could be checked, and
+                # nothing may run (see `pin_list_unreadable`).
+                self.send_message(self.t("update_refused_pin_list"))
+                return
             if not batches:
                 self.send_message(self.t("update_scoped_none", pattern=arg)
                                   + self._host_hint(raw_arg))

@@ -1533,6 +1533,7 @@ class DiscordBot:
         if self.engine.update_running:
             return self.t("web_check_one_busy")
         found = []
+        pins_unreadable = False
         for host in targets:
             checker = self._checker_for(host)
             if checker is None:
@@ -1544,8 +1545,17 @@ class DiscordBot:
                                     host=getattr(host, "name", "local"),
                                     error=str(e)[:80]))
                 continue
+            if getattr(updates, "pin_list_unreadable", False):
+                pins_unreadable = True
+                continue
             for u in updates:
                 found.append(f"• `{u['name']}`{self._label(host)} — {u['image']}")
+        # Nothing was checked, so "everything is up to date" would be the
+        # wrong answer. The pin list is one file for every host, so no
+        # host found anything either; what is left are failure lines.
+        if pins_unreadable:
+            return self._clip("\n".join(
+                [self.t("check_pin_list_unreadable")] + found))
         if not found:
             return self.t("chan_all_up_to_date")
         return self._clip("**Updates available**\n" + "\n".join(found))
@@ -2506,6 +2516,11 @@ class DiscordBot:
         if not jobs:
             return self._clip("\n".join(errors)
                               or self.t("chan_no_pending_for", name=arg))
+        # Before the lock and before the pending entry is dropped (see
+        # `update_checker.pin_list_unreadable`).
+        from update_checker import pin_list_unreadable
+        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):
+            return self.t("update_refused_pin_list")
         if not self._lock().acquire(blocking=False):
             return self.t("chan_update_busy")
         try:
@@ -2537,6 +2552,11 @@ class DiscordBot:
         targets = self._write_hosts_for(opts.get("host"))
         if targets is None:
             return self._unknown_host(opts.get("host"))
+        # Refused before the question, not after it: being asked "update
+        # these?" and then told no is the worse answer.
+        from update_checker import pin_list_unreadable
+        if any(pin_list_unreadable(self._checker_for(h)) for h in targets):
+            return self.t("update_refused_pin_list")
         preview, approved = [], []
         for host in targets:
             for u in self._pending_for(host):
@@ -2600,6 +2620,11 @@ class DiscordBot:
                                   total=len(approved_set))
         if skipped > 0:
             note += "\n" + self.t("chan_newly_pending", count=skipped)
+        # Asked again on the press: the pin list may have broken while
+        # the question was waiting.
+        from update_checker import pin_list_unreadable
+        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):
+            return self.t("update_refused_pin_list")
         if not self._lock().acquire(blocking=False):
             return self.t("chan_update_busy")
         try:

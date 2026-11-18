@@ -509,6 +509,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     # the comparisons below read as prose rather than as a string literal.
     from container_store import LOCAL_HOST as _LOCAL_HOST
 
+    def _pins_unreadable_for(keys):
+        """True when updating any of `keys` must be refused because its
+        host's checker cannot read the pin list (see
+        `update_checker.pin_list_unreadable`). Asked before a worker is
+        started, so the click is answered on the page that sent it."""
+        from container_store import split_host_key
+        from update_checker import pin_list_unreadable
+        for key in keys:
+            resolved = _resolve_host(split_host_key(key)[0])
+            if resolved is not None and pin_list_unreadable(resolved[2]):
+                return True
+        return False
+
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress default logging
@@ -2701,6 +2714,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # reported by the history like any other.
                 if not key:
                     self._send_redirect("/?update=gone")
+                elif _pins_unreadable_for([key]):
+                    self._send_redirect("/?update=pinlist")
                 elif (getattr(bot, "update_running", False)
                       or self._update_lock_held(bot)):
                     self._send_redirect("/?update=busy")
@@ -3484,6 +3499,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 raw = params.get("name", [""])[0].strip()
                 target = self._action_target(params)
                 action = params.get("action", [""])[0]
+                if (target is not None and action == "confirm"
+                        and _pins_unreadable_for([raw])):
+                    self._send_redirect("/?update=pinlist")
+                    return
                 if target is not None and action == "confirm":
                     # `_confirm_major_update` takes the host key itself and
                     # resolves the checker for that host — the same call the
@@ -3507,6 +3526,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if len(keys) == 1 and "," in keys[0]:
                     keys = [n.strip() for n in keys[0].split(",") if n.strip()]
                 keys = [n for n in keys if n.strip()]
+                if action == "update" and keys and _pins_unreadable_for(keys):
+                    self._send_redirect("/?update=pinlist")
+                    return
                 if action and keys:
                     threading.Thread(
                         target=self._api_bulk, args=(action, keys)
@@ -4402,7 +4424,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             _upd = (parse_qs(urlparse(self.path).query).get("update")
                     or [""])[0]
             update_banner = ""
-            if _upd in ("started", "busy", "gone"):
+            if _upd in ("started", "busy", "gone", "pinlist"):
                 _kind = "card-warn" if _upd != "started" else "card"
                 _icon = _ICONS["alert" if _upd != "started" else "arrow_up"]
                 update_banner = (
@@ -7180,6 +7202,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     targets.extend(entries)
             if not targets:
                 return
+            # The handlers refuse this before starting the worker; this is
+            # the same answer for anything that reaches the worker anyway.
+            from update_checker import pin_list_unreadable
+            if any(pin_list_unreadable(hc) for _h, hc, _e in batches):
+                print("Web UI update refused: the pin list could not be read")
+                if bot.enabled:
+                    bot.send_message(bot.t("update_refused_pin_list"))
+                return
             # Atomic claim of the shared update mutex — same one the bot's
             # run_updates / single-update / self-update flows use. Busy → bail.
             if not engine._update_lock.acquire(blocking=False):
@@ -7328,9 +7358,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                               "found": bool(found), "selfupdate": True}
                 else:
                     updates = hchecker.check_all(only={name})
-                    result = {"ok": True, "name": name,
-                              "found": any(u.get("name") == name for u in updates),
-                              "selfupdate": False}
+                    if getattr(updates, "pin_list_unreadable", False):
+                        # Not "up to date": nothing was checked. The page
+                        # shows `error` as "Check failed (…)".
+                        result = {"ok": False, "error": _web_translator(
+                            config.language)("web_check_one_pinlist")}
+                    else:
+                        result = {"ok": True, "name": name,
+                                  "found": any(u.get("name") == name
+                                               for u in updates),
+                                  "selfupdate": False}
             except Exception as e:
                 print(f"Web UI single check error: {e}")
                 return {"ok": False, "error": str(e)[:200]}

@@ -170,7 +170,7 @@ GUARDED = [
 
     ("…and does not take this host's pending list down with it",
      "app/update_checker.py",
-     '            if getattr(self, "_pin_unreadable", False):',
+     '            if pin_unreadable:',
      "            if False:",
      "test_pin_fail_closed.py"),
 
@@ -471,8 +471,8 @@ GUARDED = [
      "test_container_scope.py"),
     ("a pinned container is never listed and never updated",
      "app/update_checker.py",
-     '            if name in self._get_pinned():',
-     '            if False and name in self._get_pinned():',
+     '            if name in pinned:',
+     '            if False and name in pinned:',
      "test_container_scope.py"),
     ("docksentry.pin on the container does the same",
      "app/update_checker.py",
@@ -1567,6 +1567,124 @@ GUARDED = [
      '            if version is None:\n                return "1"',
      '            if version is None:\n                version = "1"',
      'test_cgroup_probe.py'),
+
+    # An unreadable pin list means every container is pinned, on every
+    # update path and not only in `check_all`; and a check that could not
+    # look says so instead of "up to date" (18.11.2026).
+
+    ('the container listing says when the pin list could not be read',
+     'app/update_checker.py',
+     '        containers.pin_list_unreadable = pinned is EVERYTHING_PINNED',
+     '        containers.pin_list_unreadable = False',
+     'test_pin_fail_closed.py'),
+
+    ('every manual update path reads the pin list the way the check does',
+     'app/update_checker.py',
+     '    return read() is EVERYTHING_PINNED',
+     '    return False',
+     'test_pin_unreadable_paths.py'),
+
+    ('the Telegram update button does nothing while the pin list is unreadable',
+     'app/telegram_bot.py',
+     '        # entry where it is (see `pin_list_unreadable`).\n        from update_checker import pin_list_unreadable\n        if pin_list_unreadable(checker):',
+     '        # entry where it is (see `pin_list_unreadable`).\n        from update_checker import pin_list_unreadable\n        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…and neither does the Telegram major confirmation',
+     'app/telegram_bot.py',
+     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if pin_list_unreadable(checker):',
+     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…nor Telegram "Update all"',
+     'app/telegram_bot.py',
+     '        if pin_list_unreadable(updater):',
+     '        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…nor Telegram /update <name>, which says why instead of "no match"',
+     'app/telegram_bot.py',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    pins_unreadable = True',
+     '                if False:\n                    pins_unreadable = True',
+     'test_pin_unreadable_paths.py'),
+
+    ('/check says nothing was checked when the pin list is unreadable',
+     'app/telegram_bot.py',
+     '            if getattr(updates, "pin_list_unreadable", False):\n                if not pins_said:\n                    self.send_message(self.t("check_pin_list_unreadable"))',
+     '            if False:\n                if not pins_said:\n                    self.send_message(self.t("check_pin_list_unreadable"))',
+     'test_pin_unreadable_paths.py'),
+
+    ('…and so does /check --dry-run',
+     'app/telegram_bot.py',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     'test_pin_unreadable_paths.py'),
+
+    ('…and /check <name>',
+     'app/telegram_bot.py',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
+     'test_pin_unreadable_paths.py'),
+
+    ('Discord /check says nothing was checked when the pin list is unreadable',
+     'app/discord_bot.py',
+     '            if getattr(updates, "pin_list_unreadable", False):\n                pins_unreadable = True',
+     '            if False:\n                pins_unreadable = True',
+     'test_pin_unreadable_paths.py'),
+
+    ('Discord /update does nothing while the pin list is unreadable',
+     'app/discord_bot.py',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):',
+     '        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…Discord /updateall does not even ask',
+     'app/discord_bot.py',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h in targets):',
+     '        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…and its press is refused if the list broke while it waited',
+     'app/discord_bot.py',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):',
+     '        if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('the Web UI update button starts nothing while the pin list is unreadable',
+     'app/web_ui.py',
+     '                elif _pins_unreadable_for([key]):',
+     '                elif False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…nor does the Web UI major confirmation',
+     'app/web_ui.py',
+     '                        and _pins_unreadable_for([raw])):',
+     '                        and False):',
+     'test_pin_unreadable_paths.py'),
+
+    ('…nor the Web UI bulk update',
+     'app/web_ui.py',
+     '                if action == "update" and keys and _pins_unreadable_for(keys):',
+     '                if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…nor the Web UI update worker behind them',
+     'app/web_ui.py',
+     '            if any(pin_list_unreadable(hc) for _h, hc, _e in batches):',
+     '            if False:',
+     'test_pin_unreadable_paths.py'),
+
+    ('…and the status page shows why',
+     'app/web_ui.py',
+     '            if _upd in ("started", "busy", "gone", "pinlist"):',
+     '            if _upd in ("started", "busy", "gone"):',
+     'test_pin_unreadable_paths.py'),
+
+    ('the Web UI row check is not "up to date" when nothing was checked',
+     'app/web_ui.py',
+     '                    if getattr(updates, "pin_list_unreadable", False):\n                        # Not "up to date": nothing was checked.',
+     '                    if False:\n                        # Not "up to date": nothing was checked.',
+     'test_pin_unreadable_paths.py'),
 
 ]
 

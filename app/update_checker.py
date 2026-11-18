@@ -313,6 +313,51 @@ class _EverythingPinned(frozenset):
 EVERYTHING_PINNED = _EverythingPinned()
 
 
+class ScanResult(list):
+    """A container listing, or what one `check_all` run found, plus
+    whether the pin list could be read while it was made.
+
+    Still a list, so every caller that iterates it, extends from it or
+    tests it for truth keeps working unchanged. `pin_list_unreadable` is
+    True when the pin list could not be read: every container then
+    counted as pinned, nothing was checked, and an empty list does not
+    mean "everything is up to date". /check said exactly that until
+    18.11.2026.
+
+    The flag rides on the result rather than on the checker. One checker
+    per host lives for the whole process and is shared by the scheduler,
+    the Web UI and the chat bots, and `has_selfupdate_available` reset
+    the old per-checker flag from another thread. Measured by driving
+    that call between the pin read and the pending merge of a run with a
+    damaged pin file: the host's pending list was wiped.
+    """
+
+    pin_list_unreadable = False
+
+
+def pin_list_unreadable(checker):
+    """Whether `checker` cannot read the pin list right now.
+
+    Every manual update path asks this before it touches the lock or the
+    pending file. None of them looked at pins; only `check_all` skips a
+    pinned container. That held while a damaged pin list also emptied
+    the pending list, and stopped holding when those entries started to
+    be carried over. Measured 18.11.2026: with `pinned_containers.json`
+    truncated to `["db"` and the carried `db` entry still pending, the
+    Telegram button and "Update all" both recreated `db`. An unreadable
+    pin list means every container is pinned, and a button is no
+    exception.
+
+    Same read as the check (`_get_pinned`), so the two cannot disagree on
+    what "unreadable" means. An object without that read has no pin list
+    to consult and answers False.
+    """
+    read = getattr(checker, "_get_pinned", None)
+    if not callable(read):
+        return False
+    return read() is EVERYTHING_PINNED
+
+
 def grace_hours(value, default=24):
     """Cleanup grace in hours, where 0 means 0 and not the default.
 
@@ -394,7 +439,6 @@ class UpdateChecker:
         # running process never serves stale data from an earlier sweep.
         self._repo_digest_cache = {}
         self._digest_read_failed = set()
-        self._pin_unreadable = False
         self._tag_list_cache = {}
         self._token_cache = {}
         self._auth_kind = "anonymous"
@@ -560,7 +604,14 @@ class UpdateChecker:
             rows.append((parts[0], parts[1]))
         all_labels = self._labels_for([n for n, _ in rows])
 
-        containers = []
+        # Read once per listing, not once per container: each read of a
+        # damaged file printed its two ERROR lines again. Still only when
+        # there is a container to compare, as before. The answer leaves
+        # with the listing (`ScanResult`), so `check_all` learns it from
+        # its own call and not from state on the shared checker.
+        pinned = self._get_pinned() if rows else ()
+        containers = ScanResult()
+        containers.pin_list_unreadable = pinned is EVERYTHING_PINNED
         for name, image in rows:
             labels = all_labels.get(name) or {}
             # Skip self — on the UPDATE path, where it protects PID 1
@@ -586,7 +637,7 @@ class UpdateChecker:
             if name_matches(name, self.config.exclude_containers):
                 self._trace(f"  Skipped (excluded): {name}")
                 continue
-            if name in self._get_pinned():
+            if name in pinned:
                 self._trace(f"  Skipped (pinned): {name}")
                 continue
             # GitOps twin of /pin (#42, @LeeNX): freeze a container from its
@@ -1817,7 +1868,6 @@ class UpdateChecker:
             # first, or a re-pull between two calls would go unnoticed.
             self._repo_digest_cache = {}
             self._digest_read_failed = set()
-            self._pin_unreadable = False
             cfg = self.inspect_self()
             if not cfg:
                 return False
@@ -2269,7 +2319,6 @@ class UpdateChecker:
         return `[]`, and `merge_pending` then drop this host's whole
         pending list — with nothing in the log to explain any of it.
         """
-        self._pin_unreadable = True
         print(f"ERROR: {self.config.pinned_file} could not be read "
               f"({why}).", flush=True)
         print("ERROR: treating every container as pinned, so no update "
@@ -3294,7 +3343,6 @@ class UpdateChecker:
         self.debug_log = []
         self._repo_digest_cache = {}
         self._digest_read_failed = set()
-        self._pin_unreadable = False
         self._tag_list_cache = {}
         self._token_cache = {}
         diag = self._diag_on()
@@ -3317,13 +3365,19 @@ class UpdateChecker:
         if diag:
             self._vdebug(f"Environment: {self._registry_environment()}")
         containers = self.get_running_containers()
+        # Kept in this run's own locals. It used to be a flag on the
+        # checker, set inside the listing and read back at the merge
+        # below, and another thread could reset it in between (see
+        # `ScanResult`).
+        pin_unreadable = getattr(containers, "pin_list_unreadable", False)
         if only is not None:
             wanted = set(only)
             containers = [c for c in containers if c["name"] in wanted]
             self._debug(f"Scoped check: {len(containers)} of {len(wanted)} "
                         f"requested container(s) are running")
         self._debug(f"Checking {len(containers)} containers for updates...")
-        updates = []
+        updates = ScanResult()
+        updates.pin_list_unreadable = pin_unreadable
         #: name -> {"current": tag, "newer": tag}. Advisory only: a pinned
         #: version tag is doing exactly what its compose file asks for, and
         #: nothing downstream may promote these into pending updates.
@@ -3632,7 +3686,7 @@ class UpdateChecker:
             # pending list, badges and buttons with it, on top of
             # stopping the updates. Nothing here re-verified anything,
             # so nothing here may drop an entry either.
-            if getattr(self, "_pin_unreadable", False):
+            if pin_unreadable:
                 failed_checks |= {u.get("name") for u in prev
                                   if isinstance(u, dict)
                                   and _host_of(u) == host_name

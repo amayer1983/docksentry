@@ -234,6 +234,55 @@ checks["…and still leaves the other host alone"] = "nas-app" in _healthy
 if "gitlab" in _healthy or "db" not in _healthy:
     print(f"      → healthy scan left: {_healthy}")
 
+# ── …even when another caller uses the same checker meanwhile ───────
+# The "nothing was checked" answer used to be a flag on the checker. One
+# checker per host lives for the whole process and is shared by the
+# scheduler, the Web UI and both chat bots, and `has_selfupdate_available`
+# (the selfupdate hint after /check, the Check button on Docksentry's own
+# row) reset that flag. Landing between the pin read and the pending
+# merge of a scheduled run, it wiped the host's pending list after all.
+# Measured 18.11.2026 by driving exactly that order.
+#
+# The order is driven, not raced: the run's own "Checking N containers"
+# debug line comes after the pin read and before the merge, and the
+# interleaved call is made from there. No threads, no sleeps.
+
+
+def _pending_with_interleave(pin_bytes, seed, interleave):
+    o, cfg = _checker(pin_bytes)
+    o.inspect_self = lambda: None
+    with open(cfg.pending_file, "w", encoding="utf-8") as f:
+        json.dump(seed, f)
+    real_debug = o._debug
+
+    def _debug(msg, *a, **k):
+        if msg.startswith("Checking ") and interleave:
+            o.has_selfupdate_available()
+        return real_debug(msg, *a, **k)
+    o._debug = _debug
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = o.check_all()
+    with open(cfg.pending_file, encoding="utf-8") as f:
+        return sorted(u.get("name") for u in json.load(f)), result
+
+
+_raced, _raced_result = _pending_with_interleave(b'["db"', _SEED, True)
+checks["a selfupdate probe in the middle of a damaged-pin run does not "
+       "wipe the pending list"] = "gitlab" in _raced and "plex" in _raced
+checks["…and the run still reports that nothing was checked"] = bool(
+    getattr(_raced_result, "pin_list_unreadable", False))
+if "gitlab" not in _raced:
+    print(f"      → after the interleave: {_raced}")
+# Counter-directions. The same interleave on a healthy run must not stop
+# it dropping what it re-verified as gone, or "never drop anything"
+# would pass; and the healthy run must not claim it could not look.
+_raced_ok, _raced_ok_result = _pending_with_interleave(b'[]', _SEED, True)
+checks["…while a healthy run with the same interleave still drops what "
+       "it re-verified as gone"] = (
+    "gitlab" not in _raced_ok and "db" in _raced_ok)
+checks["…and does not say the pin list was unreadable"] = not getattr(
+    _raced_ok_result, "pin_list_unreadable", True)
+
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")
