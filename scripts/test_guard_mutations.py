@@ -265,7 +265,8 @@ GUARDED = [
     ("a typo in an environment variable does not kill the boot",
      "app/config.py",
      "            pull_timeout=_clamp_int(\n"
-     "                _env(\"PULL_TIMEOUT\", \"1800\"), 60, 86400, 1800,\n"
+     "                _env(\"PULL_TIMEOUT\", \"1800\"),\n"
+     "                *INT_RANGES[\"pull_timeout\"], 1800,\n"
      "                name=\"PULL_TIMEOUT\")",
      "            pull_timeout=int(_env(\"PULL_TIMEOUT\", \"1800\"))",
      "test_env_bounds.py"),
@@ -273,7 +274,8 @@ GUARDED = [
     ("…and the ranges the Settings form enforces hold for the environment too",
      "app/config.py",
      "            disk_warn_percent=_clamp_int(\n"
-     "                _env(\"DISK_WARN_PERCENT\", \"85\"), 1, 100, 85,\n"
+     "                _env(\"DISK_WARN_PERCENT\", \"85\"),\n"
+     "                *INT_RANGES[\"disk_warn_percent\"], 85,\n"
      "                name=\"DISK_WARN_PERCENT\")",
      "            disk_warn_percent=int(_env(\"DISK_WARN_PERCENT\", \"85\"))",
      "test_env_bounds.py"),
@@ -1335,9 +1337,78 @@ GUARDED = [
 
     ("…and the settings page cannot store a threshold that never fires",
      "app/web_ui.py",
-     "                        config.disk_warn_percent = max(50, min(v, 100))",
+     "                        config.disk_warn_percent = _in_range(\"disk_warn_percent\", v)",
      "                        config.disk_warn_percent = v",
      "test_disk_warn_rules.py"),
+
+    # The Settings form against the environment (18.11.2026). from_env()
+    # had been widened, the form kept 3600 and 50, and a value the
+    # environment accepts made the whole form refuse to submit.
+    ("the Settings form admits every stop timeout the environment admits",
+     "app/web_ui.py",
+     'name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" {_range_attrs("docker_stop_timeout")}',
+     'name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600"',
+     "test_settings_ranges.py"),
+
+    ("…and every healthcheck grace",
+     "app/web_ui.py",
+     'name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" {_range_attrs("healthcheck_max_starting")}',
+     'name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" min="30" max="3600"',
+     "test_settings_ranges.py"),
+
+    ("…and every disk-warning threshold",
+     "app/web_ui.py",
+     'name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" {_range_attrs("disk_warn_percent")}',
+     'name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100"',
+     "test_settings_ranges.py"),
+
+    ("saving the Settings page keeps a long stop timeout as it is",
+     "app/web_ui.py",
+     '                        config.docker_stop_timeout = _in_range("docker_stop_timeout", v)',
+     "                        config.docker_stop_timeout = max(1, min(v, 3600))",
+     "test_settings_ranges.py"),
+
+    ("…and a long healthcheck grace",
+     "app/web_ui.py",
+     '                        config.healthcheck_max_starting = _in_range("healthcheck_max_starting", v)',
+     "                        config.healthcheck_max_starting = max(30, min(v, 3600))",
+     "test_settings_ranges.py"),
+
+    ("…and a disk-warning threshold below 50",
+     "app/web_ui.py",
+     '                        config.disk_warn_percent = _in_range("disk_warn_percent", v)',
+     "                        config.disk_warn_percent = max(50, min(v, 100))",
+     "test_settings_ranges.py"),
+
+    ("every number field on the settings pages has the environment's bounds",
+     "app/web_ui.py",
+     "    return f'min=\"{lo}\" max=\"{hi}\"'",
+     "    return f'min=\"{lo}\" max=\"{min(hi, 3600)}\"'",
+     "test_settings_ranges.py"),
+
+    ("…and every save of one is clamped to them, not tighter",
+     "app/web_ui.py",
+     "    return max(lo, min(v, hi))",
+     "    return max(lo, min(v, hi, 3600))",
+     "test_settings_ranges.py"),
+
+    ("the environment keeps the long stop timeout it documents",
+     "app/config.py",
+     '    "docker_stop_timeout": (1, 86400),',
+     '    "docker_stop_timeout": (1, 3600),',
+     "test_env_bounds.py"),
+
+    ("…and the long healthcheck grace",
+     "app/config.py",
+     '    "healthcheck_max_starting": (30, 86400),',
+     '    "healthcheck_max_starting": (30, 3600),',
+     "test_env_bounds.py"),
+
+    ("…and the disk-warning floor of 1",
+     "app/config.py",
+     '    "disk_warn_percent": (1, 100),',
+     '    "disk_warn_percent": (50, 100),',
+     "test_env_bounds.py"),
 
     ("a group pauses between its containers",
      "app/update_engine.py",

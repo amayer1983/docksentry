@@ -131,6 +131,32 @@ def _clamp_int(value, lo, hi, default, name=""):
     return got
 
 
+#: The allowed range of every numeric setting, kept in one place.
+#: `from_env()` clamps the environment to it, the constructor and the
+#: settings.json load clamp the two session lengths to it, and the
+#: Settings form in web_ui.py renders its min/max attributes and clamps a
+#: save with the same tuples. Until 18.11.2026 the form had copies of its
+#: own: when the environment ranges were widened on 16.11. the copies
+#: stayed at 3600 and 50, so `DOCKER_STOP_TIMEOUT=5400` rendered as
+#: `value="5400" max="3600"`, and the audit measured in headless Firefox
+#: that the browser then refuses to submit the whole Settings form.
+INT_RANGES = {
+    "monitor_interval_seconds": (15, 86400),
+    "cleanup_grace_hours": (0, 8760),
+    "cleanup_backup_days": (1, 365),
+    "disk_warn_percent": (1, 100),
+    "weekly_report_weekday": (0, 6),
+    "weekly_report_hour": (0, 23),
+    "web_port": (1, 65535),
+    "web_session_hours": (1, 720),
+    "web_session_max_days": (1, 365),
+    "healthcheck_max_starting": (30, 86400),
+    "docker_stop_timeout": (1, 86400),
+    "pull_timeout": (60, 86400),
+    "smtp_port": (1, 65535),
+}
+
+
 #: Host names we won't accept from config — `local` always means the
 #: machine Docksentry itself runs on and can't be reassigned.
 RESERVED_HOST_NAMES = ("local", "all")
@@ -870,11 +896,13 @@ class Config:
         # from, the absolute one ends a session a background tab has been
         # keeping alive, which no idle timeout ever catches.
         try:
-            self.web_session_hours = max(1, min(int(web_session_hours), 720))
+            lo, hi = INT_RANGES["web_session_hours"]
+            self.web_session_hours = max(lo, min(int(web_session_hours), hi))
         except (TypeError, ValueError):
             self.web_session_hours = 8
         try:
-            self.web_session_max_days = max(1, min(int(web_session_max_days), 365))
+            lo, hi = INT_RANGES["web_session_max_days"]
+            self.web_session_max_days = max(lo, min(int(web_session_max_days), hi))
         except (TypeError, ValueError):
             self.web_session_max_days = 7
         self.discord_webhook = discord_webhook
@@ -1198,9 +1226,11 @@ class Config:
         # 720-hour ceiling the form enforces. Re-clamp on load so the only
         # value that ever reaches the session store is a sane one.
         self.web_session_hours = _clamp_int(
-            getattr(self, "web_session_hours", 8), 1, 720, 8)
+            getattr(self, "web_session_hours", 8),
+            *INT_RANGES["web_session_hours"], 8)
         self.web_session_max_days = _clamp_int(
-            getattr(self, "web_session_max_days", 7), 1, 365, 7)
+            getattr(self, "web_session_max_days", 7),
+            *INT_RANGES["web_session_max_days"], 7)
         # Tighten permissions on existing settings file (covers upgrade case
         # where the file was created with the umask default, typically 0644).
         self._restrict_settings_perms()
@@ -1508,40 +1538,47 @@ class Config:
             # `from_env()`, and `main()` calls that on its first line
             # with nothing around it — so the container exits with a
             # traceback and restarts into the same one. Measured on
-            # four variables, 07.11.2026. The bounds are the ones the
-            # Settings form has enforced all along; the environment
-            # simply never had them, so a value the form refuses could
-            # always be set by going around it.
+            # four variables, 07.11.2026. The bounds come from
+            # INT_RANGES, the same table the Settings form renders and
+            # clamps with, so a value the environment accepts is one the
+            # form accepts too, and the other way round.
             monitor_interval_seconds=_clamp_int(
-                _env("MONITOR_INTERVAL", "60"), 15, 86400, 60,
+                _env("MONITOR_INTERVAL", "60"),
+                *INT_RANGES["monitor_interval_seconds"], 60,
                 name="MONITOR_INTERVAL"),
             auto_cleanup=_env("AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             cleanup_grace_hours=_clamp_int(
-                _env("CLEANUP_GRACE_HOURS", "24"), 0, 8760, 24,
+                _env("CLEANUP_GRACE_HOURS", "24"),
+                *INT_RANGES["cleanup_grace_hours"], 24,
                 name="CLEANUP_GRACE_HOURS"),
             cleanup_backup_local_only=_env("CLEANUP_BACKUP_LOCAL_ONLY", "false").lower() in ("true", "1", "yes"),
             cleanup_backup_days=_clamp_int(
-                _env("CLEANUP_BACKUP_DAYS", "7"), 1, 365, 7,
+                _env("CLEANUP_BACKUP_DAYS", "7"),
+                *INT_RANGES["cleanup_backup_days"], 7,
                 name="CLEANUP_BACKUP_DAYS"),
             disk_warn_percent=_clamp_int(
-                _env("DISK_WARN_PERCENT", "85"), 1, 100, 85,
+                _env("DISK_WARN_PERCENT", "85"),
+                *INT_RANGES["disk_warn_percent"], 85,
                 name="DISK_WARN_PERCENT"),
             disk_warn_auto_cleanup=_env("DISK_WARN_AUTO_CLEANUP", "false").lower() in ("true", "1", "yes"),
             quiet_hours_start=_env("QUIET_HOURS_START"),
             quiet_hours_end=_env("QUIET_HOURS_END"),
             weekly_report_enabled=_env("WEEKLY_REPORT_ENABLED", "false").lower() in ("true", "1", "yes"),
             weekly_report_weekday=_clamp_int(
-                _env("WEEKLY_REPORT_WEEKDAY", "0"), 0, 6, 0,
+                _env("WEEKLY_REPORT_WEEKDAY", "0"),
+                *INT_RANGES["weekly_report_weekday"], 0,
                 name="WEEKLY_REPORT_WEEKDAY"),
             weekly_report_hour=_clamp_int(
-                _env("WEEKLY_REPORT_HOUR", "9"), 0, 23, 9,
+                _env("WEEKLY_REPORT_HOUR", "9"),
+                *INT_RANGES["weekly_report_hour"], 9,
                 name="WEEKLY_REPORT_HOUR"),
             language=_env("LANGUAGE", "en"),
             web_ui=_env("WEB_UI", "false").lower() in ("true", "1", "yes"),
             # The one with no Settings field at all, so this is its only
             # bound anywhere.
-            web_port=_clamp_int(_env("WEB_PORT", "8080"), 1, 65535, 8080,
-                                 name="WEB_PORT"),
+            web_port=_clamp_int(_env("WEB_PORT", "8080"),
+                                *INT_RANGES["web_port"], 8080,
+                                name="WEB_PORT"),
             status_view=_env("STATUS_VIEW", "table").strip().lower(),
             web_password=_env("WEB_PASSWORD"),
             web_username=_env("WEB_USERNAME", ""),
@@ -1556,14 +1593,17 @@ class Config:
                 if u.strip()
             ],
             healthcheck_max_starting=_clamp_int(
-                _env("HEALTHCHECK_MAX_STARTING", "600"), 30, 86400, 600,
+                _env("HEALTHCHECK_MAX_STARTING", "600"),
+                *INT_RANGES["healthcheck_max_starting"], 600,
                 name="HEALTHCHECK_MAX_STARTING"),
             bot_label=_env("BOT_LABEL").strip(),
             docker_stop_timeout=_clamp_int(
-                _env("DOCKER_STOP_TIMEOUT", "60"), 1, 86400, 60,
+                _env("DOCKER_STOP_TIMEOUT", "60"),
+                *INT_RANGES["docker_stop_timeout"], 60,
                 name="DOCKER_STOP_TIMEOUT"),
             pull_timeout=_clamp_int(
-                _env("PULL_TIMEOUT", "1800"), 60, 86400, 1800,
+                _env("PULL_TIMEOUT", "1800"),
+                *INT_RANGES["pull_timeout"], 1800,
                 name="PULL_TIMEOUT"),
             docker_username=_env("DOCKER_USERNAME").strip(),
             # DOCKER_PASSWORD: NO .strip() — leading/trailing whitespace
@@ -1574,8 +1614,9 @@ class Config:
             docker_auth_config=_env("DOCKER_AUTH_CONFIG").strip(),
             docker_registry=_env("DOCKER_REGISTRY").strip(),
             smtp_host=_env("SMTP_HOST").strip(),
-            smtp_port=_clamp_int(_env("SMTP_PORT", "587"), 1, 65535, 587,
-                                  name="SMTP_PORT"),
+            smtp_port=_clamp_int(_env("SMTP_PORT", "587"),
+                                 *INT_RANGES["smtp_port"], 587,
+                                 name="SMTP_PORT"),
             smtp_user=_env("SMTP_USER").strip(),
             smtp_password=_env("SMTP_PASSWORD"),  # no strip — see DOCKER_PASSWORD
             smtp_from=_env("SMTP_FROM").strip(),

@@ -141,7 +141,7 @@ checks["…while still being an actual prune"] = (
     bool(_b.prunes) and _b.prunes[0]["all"] and _b.prunes[0]["force"])
 
 # Zero is a value, not an absence. The Settings form accepts it
-# (`max(0, min(v, 8760))`) and docs/configuration.md says "0 means no
+# (`config.INT_RANGES` gives 0–8760) and docs/configuration.md says "0 means no
 # grace at all" — but both call sites read `int(value or 24)`, and 0
 # is falsy, so the single setting that switches the grace off became
 # the default instead (audit, 07.11.2026).

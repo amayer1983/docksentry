@@ -82,7 +82,7 @@ dropped; only delivery failures are replayed.
 
 ## Disk Space Warning
 
-`DISK_WARN_PERCENT` (default `85`, range `50..100`) — when the data directory's filesystem usage exceeds this percentage, Docksentry sends a warning across all configured channels. Rate-limited to **one notification per 23-hour window** to prevent log floods.
+`DISK_WARN_PERCENT` (default `85`, range `1..100`) — when the data directory's filesystem usage exceeds this percentage, Docksentry sends a warning across all configured channels. Rate-limited to **one notification per 23-hour window** to prevent log floods.
 
 ```yaml
 environment:

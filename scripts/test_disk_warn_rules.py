@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """When the disk warning fires, and when it stays quiet.
 
-`docs/notifications.md:78`: warns above a threshold that defaults to
-85, accepts 50 to 100, and says it once per 23 hours rather than on
+`docs/notifications.md:85`: warns above a threshold that defaults to
+85, accepts 1 to 100, and says it once per 23 hours rather than on
 every scheduler pass (one every five minutes, not every thirty
 seconds — the comment here said the latter for a while). On 10.10.2026 a sweep found three reverts here that no
 procedure noticed — the threshold comparison, the 23-hour lock, and the
@@ -108,8 +108,9 @@ checks["the warning says how full the disk is"] = _pct == 93.5
 checks["…and how much is left, in gigabytes"] = round(_free_gb) == 10
 
 # ── what the settings page will accept ───────────────────────────────
-# Below 50 would warn on a healthy disk; above 100 can never fire. Both
-# turn the feature off in a way that looks like it is on.
+# The range is config.INT_RANGES, 1–100 since 16.11.2026 (the floor was
+# 50 before). Below 1 would warn on an empty disk; above 100 can never
+# fire. Both turn the feature off in a way that looks like it is on.
 import web_ui  # noqa: E402
 
 
@@ -158,10 +159,9 @@ def _save(value):
 
 
 checks["a threshold inside the range is stored as given"] = (
-    _save(70) == 70 and _save(50) == 50 and _save(100) == 100)
-# Below 50 would warn on a healthy disk; above 100 can never fire. Both
-# switch the feature off in a way that looks like it is on.
-checks["…one below the range is raised to 50"] = _save(5) == 50
+    _save(70) == 70 and _save(30) == 30 and _save(1) == 1
+    and _save(100) == 100)
+checks["…one below the range is raised to 1"] = _save(0) == 1
 checks["…one above it is lowered to 100"] = _save(900) == 100
 checks["…and something that is not a number leaves it alone"] = (
     _save("abc") == 85)

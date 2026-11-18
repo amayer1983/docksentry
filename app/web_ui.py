@@ -18,7 +18,7 @@ import webauth
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, urlparse
 
-from config import PERSISTENT_KEYS
+from config import INT_RANGES, PERSISTENT_KEYS
 from i18n import safe_language
 from link_resolver import LinkResolver
 
@@ -61,6 +61,20 @@ def _read_static(name):
         data = b""
     _STATIC_CACHE[name] = data
     return data
+
+
+def _in_range(key, v):
+    """`v` held inside `config.INT_RANGES[key]`, the range `from_env()`
+    clamps the environment to. Silent, like the clamps it replaced: the
+    form has already refused anything outside it in the browser."""
+    lo, hi = INT_RANGES[key]
+    return max(lo, min(v, hi))
+
+
+def _range_attrs(key):
+    """The `min`/`max` attributes of a number field, from the same table."""
+    lo, hi = INT_RANGES[key]
+    return f'min="{lo}" max="{hi}"'
 
 
 def _e(value):
@@ -2323,13 +2337,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if "cleanup_grace_hours" in params:
                     try:
                         v = int(params["cleanup_grace_hours"][0].strip())
-                        config.cleanup_grace_hours = max(0, min(v, 8760))  # ≤ 1 year
+                        config.cleanup_grace_hours = _in_range("cleanup_grace_hours", v)
                     except (ValueError, IndexError):
                         pass
                 if "cleanup_backup_days" in params:
                     try:
                         v = int(params["cleanup_backup_days"][0].strip())
-                        config.cleanup_backup_days = max(1, min(v, 365))
+                        config.cleanup_backup_days = _in_range("cleanup_backup_days", v)
                     except (ValueError, IndexError):
                         pass
 
@@ -2337,7 +2351,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if "disk_warn_percent" in params:
                     try:
                         v = int(params["disk_warn_percent"][0].strip())
-                        config.disk_warn_percent = max(50, min(v, 100))
+                        config.disk_warn_percent = _in_range("disk_warn_percent", v)
                     except (ValueError, IndexError):
                         pass
                 _sv = (params.get("status_view") or ["table"])[0].strip().lower()
@@ -2365,12 +2379,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 config.weekly_report_enabled = "weekly_report_enabled" in params
                 if "weekly_report_weekday" in params:
                     try:
-                        config.weekly_report_weekday = max(0, min(int(params["weekly_report_weekday"][0]), 6))
+                        config.weekly_report_weekday = _in_range(
+                            "weekly_report_weekday", int(params["weekly_report_weekday"][0]))
                     except (ValueError, IndexError):
                         pass
                 if "weekly_report_hour" in params:
                     try:
-                        config.weekly_report_hour = max(0, min(int(params["weekly_report_hour"][0]), 23))
+                        config.weekly_report_hour = _in_range(
+                            "weekly_report_hour", int(params["weekly_report_hour"][0]))
                     except (ValueError, IndexError):
                         pass
 
@@ -2389,22 +2405,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if "healthcheck_max_starting" in params:
                     try:
                         v = int(params["healthcheck_max_starting"][0].strip())
-                        config.healthcheck_max_starting = max(30, min(v, 3600))
+                        config.healthcheck_max_starting = _in_range("healthcheck_max_starting", v)
                     except (ValueError, IndexError):
                         pass
                 if "docker_stop_timeout" in params:
                     try:
                         v = int(params["docker_stop_timeout"][0].strip())
-                        config.docker_stop_timeout = max(1, min(v, 3600))
+                        config.docker_stop_timeout = _in_range("docker_stop_timeout", v)
                     except (ValueError, IndexError):
                         pass
-                # The ceiling is a day, not an hour: a 19.2 GB image on a
-                # slow line takes longer than the other two timeouts are
-                # ever allowed to (#2).
+                # The ceiling is a day: a 19.2 GB image on a slow line
+                # can take hours (#2).
                 if "pull_timeout" in params:
                     try:
                         v = int(params["pull_timeout"][0].strip())
-                        config.pull_timeout = max(60, min(v, 86400))
+                        config.pull_timeout = _in_range("pull_timeout", v)
                     except (ValueError, IndexError):
                         pass
 
@@ -2415,7 +2430,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         v = int(params["monitor_interval_seconds"][0].strip())
                         # Floor of 15s mirrors the Config constructor — the
                         # monitor loop refuses to poll tighter than that.
-                        config.monitor_interval_seconds = max(15, min(v, 86400))
+                        config.monitor_interval_seconds = _in_range("monitor_interval_seconds", v)
                     except (ValueError, IndexError):
                         pass
 
@@ -2436,14 +2451,14 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # send fields nothing was reading.
                 if "web_session_hours" in params and params["web_session_hours"][0].strip():
                     try:
-                        config.web_session_hours = max(
-                            1, min(int(params["web_session_hours"][0]), 720))
+                        config.web_session_hours = _in_range(
+                            "web_session_hours", int(params["web_session_hours"][0]))
                     except ValueError:
                         pass
                 if "web_session_max_days" in params and params["web_session_max_days"][0].strip():
                     try:
-                        config.web_session_max_days = max(
-                            1, min(int(params["web_session_max_days"][0]), 365))
+                        config.web_session_max_days = _in_range(
+                            "web_session_max_days", int(params["web_session_max_days"][0]))
                     except ValueError:
                         pass
                 if "web_password" in params:
@@ -2527,7 +2542,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if "smtp_port" in params:
                     try:
                         v = int(params["smtp_port"][0].strip())
-                        config.smtp_port = max(1, min(v, 65535))
+                        config.smtp_port = _in_range("smtp_port", v)
                     except (ValueError, IndexError):
                         pass
                 if "smtp_user" in params:
@@ -6123,10 +6138,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
   <div class="adv-only">
     <label>{t("web_session_hours")} {help_(t("web_session_hours_help"))}{env_("web_session_hours")}</label>
-    <input type="number" name="web_session_hours" min="1" max="720" value="{_e(getattr(config, 'web_session_hours', 8))}" form="settings-form">
+    <input type="number" name="web_session_hours" {_range_attrs("web_session_hours")} value="{_e(getattr(config, 'web_session_hours', 8))}" form="settings-form">
 
     <label>{t("web_session_max_days")} {help_(t("web_session_max_days_help"))}{env_("web_session_max_days")}</label>
-    <input type="number" name="web_session_max_days" min="1" max="365" value="{_e(getattr(config, 'web_session_max_days', 7))}" form="settings-form">
+    <input type="number" name="web_session_max_days" {_range_attrs("web_session_max_days")} value="{_e(getattr(config, 'web_session_max_days', 7))}" form="settings-form">
   </div>
   <!-- NOT adv-only. It used to be, and that closed the last door: DEBUG
        from the environment can be overruled by settings.json, and the
@@ -6175,15 +6190,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="grid adv-only">
     <div>
       <label>{t("web_healthcheck_max_starting")} {help_(t("web_healthcheck_max_starting_hint"))}{env_("healthcheck_max_starting")}</label>
-      <input type="number" name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" min="30" max="3600" form="settings-form">
+      <input type="number" name="healthcheck_max_starting" value="{_e(config.healthcheck_max_starting)}" {_range_attrs("healthcheck_max_starting")} form="settings-form">
     </div>
     <div>
       <label>{t("web_docker_stop_timeout")} {help_(t("web_docker_stop_timeout_hint"))}{env_("docker_stop_timeout")}</label>
-      <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" min="1" max="3600" form="settings-form">
+      <input type="number" name="docker_stop_timeout" value="{_e(config.docker_stop_timeout)}" {_range_attrs("docker_stop_timeout")} form="settings-form">
     </div>
     <div>
       <label>{t("web_pull_timeout")} {help_(t("web_pull_timeout_hint"))}{env_("pull_timeout")}</label>
-      <input type="number" name="pull_timeout" value="{_e(config.pull_timeout)}" min="60" max="86400" form="settings-form">
+      <input type="number" name="pull_timeout" value="{_e(config.pull_timeout)}" {_range_attrs("pull_timeout")} form="settings-form">
     </div>
   </div>
   <p class="form-help">{t("web_updates_tab_hint")}</p>
@@ -6206,11 +6221,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="grid adv-only">
     <div>
       <label>{t("web_cleanup_grace_hours")} {help_(t("web_cleanup_grace_hours_hint"))}{env_("cleanup_grace_hours")}</label>
-      <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" min="0" max="8760" form="settings-form">
+      <input type="number" name="cleanup_grace_hours" value="{_e(config.cleanup_grace_hours)}" {_range_attrs("cleanup_grace_hours")} form="settings-form">
     </div>
     <div>
       <label>{t("web_cleanup_backup_days")} {help_(t("web_cleanup_backup_days_hint"))}{env_("cleanup_backup_days")}</label>
-      <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" min="1" max="365" form="settings-form">
+      <input type="number" name="cleanup_backup_days" value="{_e(config.cleanup_backup_days)}" {_range_attrs("cleanup_backup_days")} form="settings-form">
     </div>
   </div>
   <div class="form-checkbox-row adv-only">
@@ -6252,7 +6267,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="grid adv-only">
     <div>
       <label>{t("web_disk_warn_percent")} {help_(t("web_disk_warn_percent_hint"))}{env_("disk_warn_percent")}</label>
-      <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" min="50" max="100" form="settings-form">
+      <input type="number" name="disk_warn_percent" value="{_e(config.disk_warn_percent)}" {_range_attrs("disk_warn_percent")} form="settings-form">
     </div>
     <div>
       <div class="form-checkbox-row" style="margin-top:24px">
@@ -6295,7 +6310,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     </div>
     <div>
       <label>{t("web_weekly_hour")}{env_("weekly_report_hour")}</label>
-      <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" min="0" max="23" form="settings-form">
+      <input type="number" name="weekly_report_hour" value="{_e(config.weekly_report_hour)}" {_range_attrs("weekly_report_hour")} form="settings-form">
     </div>
   </div>
   </div>
@@ -6310,7 +6325,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
   <div class="grid">
     <div>
       <label>{t("web_monitor_interval")} {help_(t("web_monitor_interval_hint"))}{env_("monitor_interval_seconds")}</label>
-      <input type="number" name="monitor_interval_seconds" value="{_e(config.monitor_interval_seconds)}" min="15" max="86400" form="settings-form">
+      <input type="number" name="monitor_interval_seconds" value="{_e(config.monitor_interval_seconds)}" {_range_attrs("monitor_interval_seconds")} form="settings-form">
     </div>
   </div>
 </div>
@@ -6705,7 +6720,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     </div>
     <div>
       <label>{t("web_smtp_port")} {help_(t("web_smtp_port_help"))}{env_("smtp_port")}</label>
-      <input type="number" name="smtp_port" value="{_e(config.smtp_port)}" min="1" max="65535" form="conn-form">
+      <input type="number" name="smtp_port" value="{_e(config.smtp_port)}" {_range_attrs("smtp_port")} form="conn-form">
     </div>
   </div>
 
