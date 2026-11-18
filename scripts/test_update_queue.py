@@ -44,6 +44,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_engine import UpdateEngine  # noqa: E402
@@ -175,19 +177,21 @@ checks["…leaving nothing queued to be lost by the restart"] = (
 # ── the source says what the docstring says ─────────────────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()
-i = src.index("def _drain_update_queue")
-drain = src[i:src.index("\n    @staticmethod", i)]
+drain = srcslice.section(src, "def _drain_update_queue", "\n    @staticmethod",
+                         label="telegram_bot.py: _drain_update_queue")
 checks["the drain re-takes the lock per entry"] = (
-    "_update_lock.acquire(blocking=False)" in drain)
+    drain is not None and "_update_lock.acquire(blocking=False)" in drain)
 checks["…and hands the entry back if it loses the race"] = (
-    "self.engine.enqueue_update(key)" in drain)
+    drain is not None and "self.engine.enqueue_update(key)" in drain)
 checks["…rather than holding it across the whole queue"] = (
-    drain.count("_update_lock.acquire") == 1)
+    drain is not None and drain.count("_update_lock.acquire") == 1)
 # The rejected tap is queued, not answered with the old brush-off.
-i = src.index("def _run_single_update")
-single = src[i:src.index("\n    def _drain_update_queue", i)]
+single = srcslice.section(src, "def _run_single_update",
+                          "\n    def _drain_update_queue",
+                          label="telegram_bot.py: _run_single_update")
 checks["a busy lock queues the tap instead of discarding it"] = (
-    "self.engine.enqueue_update(container_key)" in single
+    single is not None
+    and "self.engine.enqueue_update(container_key)" in single
     and "update_already_running" not in single)
 
 failed = [k for k, v in checks.items() if not v]

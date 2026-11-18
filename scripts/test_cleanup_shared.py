@@ -28,6 +28,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 import container_flags as cf                      # noqa: E402
@@ -165,15 +167,20 @@ checks["a host with no backend says so"] = (
 # ── both front ends go through it ────────────────────────────────────
 tb = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
 db = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = tb.index('elif text == "/cleanup"')
-tg_block = tb[i:tb.index("\n        elif text ==", i + 10)]
-checks["Telegram /cleanup calls the core"] = "container_flags.cleanup(" in tg_block
-checks["…and keeps no per-host loop of its own"] = "for host" not in tg_block
+tg_block = srcslice.section(tb, 'elif text == "/cleanup"',
+                            "\n        elif text ==",
+                            label="telegram_bot.py: /cleanup branch")
+checks["Telegram /cleanup calls the core"] = (
+    tg_block is not None and "container_flags.cleanup(" in tg_block)
+checks["…and keeps no per-host loop of its own"] = (
+    tg_block is not None and "for host" not in tg_block)
 
-j = db.index("def _cmd_cleanup")
-dc_block = db[j:db.index("\n    def ", j + 10)]
-checks["Discord /cleanup calls the core"] = "container_flags.cleanup(" in dc_block
-checks["…and no longer stops at the local host"] = "_hosts_for(" in dc_block
+dc_block = srcslice.section(db, "def _cmd_cleanup", "\n    def ",
+                            label="discord_bot.py: _cmd_cleanup")
+checks["Discord /cleanup calls the core"] = (
+    dc_block is not None and "container_flags.cleanup(" in dc_block)
+checks["…and no longer stops at the local host"] = (
+    dc_block is not None and "_hosts_for(" in dc_block)
 
 # The four new keys exist everywhere, with their placeholders intact —
 # a key that exists but drops {size} renders a sentence with a hole in it.

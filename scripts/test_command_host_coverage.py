@@ -31,6 +31,10 @@ checks = {}
 # Split the dispatcher into per-command blocks.
 pat = re.compile(r'(?:if|elif) text(?:\.startswith\(|\s*==)\s*"(/[a-z_]+) ?"')
 hits = [(m.group(1), m.start()) for m in pat.finditer(src)]
+if not hits:
+    # The dispatcher is no longer an if/elif chain on `text`. Every
+    # "exists" check below goes red; this says why.
+    print("  FAIL  telegram_bot.py: dispatcher: anchor not found")
 blocks = {}
 for i, (cmd, pos) in enumerate(hits):
     end = hits[i + 1][1] if i + 1 < len(hits) else pos + 4000
@@ -77,8 +81,10 @@ for cmd in ("/logs", "/audit"):
         "backend.run(" in body or "backend.logs(" in body
         or "container_flags." in body)
     # It must NOT fall back to the bot's own local backend for the action.
+    # An empty body would pass this on a branch that is gone.
     checks[f"{cmd} does not act through self.backend"] = (
-        "self.backend.run(" not in body and "self.backend.logs(" not in body)
+        bool(body)
+        and "self.backend.run(" not in body and "self.backend.logs(" not in body)
 
 # ── behavioural: /logs and /audit reach a remote container ───────────
 sys.path.insert(0, APP)

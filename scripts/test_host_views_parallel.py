@@ -23,6 +23,8 @@ import sys
 import time
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import hosts as hosts_mod                                    # noqa: E402
@@ -166,10 +168,10 @@ checks["a host that answers clears its failure memory"] = (
 # ── and the lister still works for callers with no ids to hand over ──
 _lister = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "web_ui.py"), encoding="utf-8").read()
-_lister = _lister[_lister.index("def _containers_on"):]
-_lister = _lister[:_lister.index("\n        def ", 10)]
+_lister = srcslice.section(_lister, "def _containers_on", "\n        def ",
+                           label="web_ui.py: _containers_on")
 checks["the lister still fetches ids when it is not given any"] = (
-    "if ids is None:" in _lister)
+    _lister is not None and "if ids is None:" in _lister)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

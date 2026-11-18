@@ -32,6 +32,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_engine import UpdateEngine  # noqa: E402
@@ -143,19 +145,21 @@ tsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "telegram_bot.py"), encoding="utf-8").read()
 dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "discord_bot.py"), encoding="utf-8").read()
-i = tsrc.index('elif text == "/cleanup"')
-block = tsrc[i:i + 1200]
-checks["/cleanup walks every managed host"] = (
+block = srcslice.section(tsrc, 'elif text == "/cleanup"', length=1200,
+                         label="telegram_bot.py: /cleanup branch")
+checks["/cleanup walks every managed host"] = block is not None and (
     "container_flags.cleanup(" in block or "host_checkers" in block)
 checks["…and hands it every host, not just the local one"] = (
-    "write=False" in block or "list(self.hosts)" in block
-    or "host_checkers" in block)
+    block is not None and (
+        "write=False" in block or "list(self.hosts)" in block
+        or "host_checkers" in block))
 # Discord did this locally-only until the walk was shared (#2, @famewolf:
 # the full box was dockmox, not the local one).
-j = dsrc.index("def _cmd_cleanup")
-dblock = dsrc[j:dsrc.index("\n    def ", j + 10)]
+dblock = srcslice.section(dsrc, "def _cmd_cleanup", "\n    def ",
+                          label="discord_bot.py: _cmd_cleanup")
 checks["…and Discord's /cleanup walks them too"] = (
-    "container_flags.cleanup(" in dblock and "_hosts_for(None)" in dblock)
+    dblock is not None
+    and "container_flags.cleanup(" in dblock and "_hosts_for(None)" in dblock)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

@@ -37,6 +37,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from hosts import HostRegistry, ManagedHost, host_checkers  # noqa: E402
@@ -135,12 +137,18 @@ def main():
     # does — those two together are the defect and the fix.
     src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "telegram_bot.py"), encoding="utf-8").read()
-    i = src.index('elif text in ("/check --dry-run"')
-    branch = src[i:src.index("\n        elif ", i + 10)]
-    checks["the dry run resolves host targets"] = "_resolve_targets" in branch
-    checks["…loops over them"] = "for host in (targets or [None])" in branch
-    checks["…and asks each host's own checker"] = "_checker_for" in branch
-    checks["…tolerating one unreachable host"] = "host_check_failed" in branch
+    branch = srcslice.section(src, 'elif text in ("/check --dry-run"',
+                              "\n        elif ",
+                              label="telegram_bot.py: /check --dry-run branch")
+    ok = branch is not None
+    checks["the dry run resolves host targets"] = (
+        ok and "_resolve_targets" in branch)
+    checks["…loops over them"] = (
+        ok and "for host in (targets or [None])" in branch)
+    checks["…and asks each host's own checker"] = (
+        ok and "_checker_for" in branch)
+    checks["…tolerating one unreachable host"] = (
+        ok and "host_check_failed" in branch)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

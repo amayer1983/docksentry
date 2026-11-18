@@ -13,6 +13,8 @@ Pure logic. Exits non-zero on any failure.
 """
 import sys, os, types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from telegram_bot import TelegramBot
 from i18n import get_translator
@@ -52,21 +54,21 @@ def main():
     import re
     tb = open(os.path.join(os.path.dirname(__file__), "..", "app",
                            "telegram_bot.py"), encoding="utf-8").read()
-    i = tb.index('elif text == "/checkimages"')
-    block = tb[i:i + 1400]
+    block = srcslice.section(tb, 'elif text == "/checkimages"', length=1400,
+                             label="telegram_bot.py: /checkimages branch")
     # Stated as the intent, not as one spelling of it: the per-host walk
     # moved into `container_flags.reclaimable`, and a check that insisted
     # on the old lines would have failed the extraction rather than the
     # behaviour (#63).
-    checks["/checkimages walks every managed host"] = (
+    checks["/checkimages walks every managed host"] = block is not None and (
         "container_flags.reclaimable(" in block or "host_checkers" in block)
     # A whole message that belongs to one host names that host —
     # including the local one, which used to go unlabelled and left you
     # guessing which of two messages was which (#63, owner-reported).
-    checks["…tags each answer with its host"] = (
+    checks["…tags each answer with its host"] = block is not None and (
         "_host_message_tag(" in block or "_host_tag(" in block
         or "@{host_name}" in block)
-    checks["…and measures on each host's own checker"] = (
+    checks["…and measures on each host's own checker"] = block is not None and (
         "checker_for=" in block or "host_checker.reclaimable_bytes()" in block)
 
     # Behaviourally: three hosts, one unreachable, all three answer.

@@ -22,6 +22,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import selfcheck                                           # noqa: E402
@@ -108,12 +110,14 @@ import re                                                    # noqa: E402
 # The LAST return block: the function opens with a bare `return {}` for
 # "not a compose container", and splitting on the first one yields
 # nothing at all — which would have made this check pass vacuously.
-_body = _uc.split("def _get_compose_info")[1].split("\n    def ")[0]
-_returns = _body.split("return {")[-1].split("}")[0]
+_body = srcslice.section(_uc, "def _get_compose_info", "\n    def ",
+                         label="update_checker.py: _get_compose_info")
+_returns = (_body or "").split("return {")[-1].split("}")[0]
 _real_keys = set(re.findall(r'"([a-z_]+)"\s*:', _returns))
 _sc = open(os.path.join(ROOT, "app", "selfcheck.py"), encoding="utf-8").read()
 checks["the report reads the keys the checker really returns"] = (
-    "compose_file" in _real_keys and "compose_dir" in _real_keys
+    _body is not None
+    and "compose_file" in _real_keys and "compose_dir" in _real_keys
     and 'info.get("compose_file")' in _sc
     and 'info.get("compose_dir")' in _sc)
 
@@ -410,35 +414,45 @@ _reads = [n.lineno for n in ast.walk(_tree)
 checks["no handler reaches for an attribute the class does not have"] = not _reads
 
 # The handler passes on what it was given, rather than finding its own.
-_branch = _tg_src.split(
-    'text.startswith("/audit")')[1].split("\n        elif ")[0]
+_branch = srcslice.section(_tg_src, 'text.startswith("/audit")',
+                           "\n        elif ",
+                           label="telegram_bot.py: /audit branch")
 checks["the bare branch hands the checker down"] = (
-    "_self_audit_text(checker)" in _branch)
+    _branch is not None and "_self_audit_text(checker)" in _branch)
 
 # ── both chats, one answer ───────────────────────────────────────────
 tg = open(os.path.join(ROOT, "app", "telegram_bot.py"), encoding="utf-8").read()
 dc = open(os.path.join(ROOT, "app", "discord_bot.py"), encoding="utf-8").read()
 for label, src in (("Telegram", tg), ("Discord", dc)):
-    body = src.split("def _self_audit_text")[1].split("\n    def ")[0]
+    body = srcslice.section(src, "def _self_audit_text", "\n    def ",
+                            label=f"{label}: _self_audit_text")
     checks[f"{label} asks the core for the findings"] = (
-        "selfcheck.collect(" in body and "selfcheck.findings(" in body)
+        body is not None
+        and "selfcheck.collect(" in body and "selfcheck.findings(" in body)
     checks[f"…{label} words them with its own translator"] = (
-        'self.t(f"selfaudit_{kind}"' in body)
+        body is not None and 'self.t(f"selfaudit_{kind}"' in body)
     checks[f"…{label} stays quiet about what is fine"] = (
-        'kind == "compose_ok"' in body)
+        body is not None and 'kind == "compose_ok"' in body)
 
 # Sliced at the function boundary rather than a character count — a
 # docstring long enough to push the call out of view would have made
 # this pass or fail for a reason that has nothing to do with the code.
+_tg_audit = srcslice.section(tg, 'startswith("/audit")', "\n        elif ",
+                             label="telegram_bot.py: /audit branch")
 checks["a bare /audit audits us, in Telegram"] = (
-    "self._self_audit_text(checker)"
-    in tg.split('startswith("/audit")')[1].split("\n        elif ")[0])
+    _tg_audit is not None
+    and "self._self_audit_text(checker)" in _tg_audit)
+_dc_audit = srcslice.section(dc, "def _cmd_audit", "\n    def ",
+                             label="discord_bot.py: _cmd_audit")
 checks["…and in Discord"] = (
-    "self._self_audit_text()"
-    in dc.split("def _cmd_audit")[1].split("\n    def ")[0])
+    _dc_audit is not None and "self._self_audit_text()" in _dc_audit)
+# The 400 characters behind the declaration's opening, as before.
+_decl_at = '{"name": "audit"'
+_decl = srcslice.section(dc, _decl_at, length=len(_decl_at) + 400,
+                         label="discord_bot.py: audit declaration")
 checks["Discord no longer demands a container name"] = (
-    '"name": "container",' in dc.split('{"name": "audit"')[1][:400]
-    and '"required": False' in dc.split('{"name": "audit"')[1][:400])
+    _decl is not None
+    and '"name": "container",' in _decl and '"required": False' in _decl)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

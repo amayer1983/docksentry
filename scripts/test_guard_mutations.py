@@ -1887,6 +1887,47 @@ GUARDED = [
      "    shutil.rmtree(tree, ignore_errors=True)\n",
      "test_ratchet_copy.py"),
 
+    # The source-reading procedures cut app/ code through srcslice so a
+    # moved anchor reads as a red check, not as a traceback this file
+    # can only score as [cannot run]. On an untouched tree no procedure
+    # takes the missing-anchor path, so test_srcslice drives it.
+    ("a source slice whose anchor is gone is None, not a ValueError",
+     "scripts/srcslice.py",
+     "    i = -1 if src is None else src.find(needle, start)",
+     "    i = src.index(needle, start)",
+     "test_srcslice.py"),
+
+    ("…and says which anchor it was, in a FAIL line",
+     "scripts/srcslice.py",
+     '    print(f"  FAIL  {label}: anchor not found")',
+     "    pass",
+     "test_srcslice.py"),
+
+    ("…and a missing end anchor is not read as 'to the end of the file'",
+     "scripts/srcslice.py",
+     "    j = position(src, end, i + len(start), label=label)\n"
+     "    if j is None:\n        return None\n",
+     "    j = src.find(end, i + len(start))\n",
+     "test_srcslice.py"),
+
+    ("…and the end anchor is looked for behind the start, not inside it",
+     "scripts/srcslice.py",
+     "i + len(start), label=label)",
+     "i, label=label)",
+     "test_srcslice.py"),
+
+    ("a method that has moved is None, not an AttributeError",
+     "scripts/srcslice.py",
+     "    except AttributeError:\n        _fail(label or",
+     "    except KeyError:\n        _fail(label or",
+     "test_srcslice.py"),
+
+    ("an order check over a missing needle is False, not a pass",
+     "scripts/srcslice.py",
+     "    return all(i >= 0 for i in at) and all(",
+     "    return all(",
+     "test_srcslice.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

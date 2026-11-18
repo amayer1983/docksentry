@@ -29,6 +29,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import update_engine  # noqa: E402
@@ -136,14 +138,26 @@ eng2 = _engine(clock)
 eng2._update_lock = lock
 bot = _bot(eng2)
 
+# The sweep itself, looked up once: if it has moved, every check that
+# drives it goes red with a FAIL line rather than an AttributeError.
+_sweep = srcslice.attr(bot, "_sweep_update_queue",
+                       label="TelegramBot._sweep_update_queue")
+
+
+def sweep(checker):
+    if _sweep is not None:
+        _sweep(checker)
+
+
 # Nothing queued: the sweep must not call the drain at all. A sweep
 # that always drains would pass every check below.
-bot._sweep_update_queue("checker-A")
-checks["an empty queue does not reach the drain"] = bot._drained == []
+sweep("checker-A")
+checks["an empty queue does not reach the drain"] = (
+    _sweep is not None and bot._drained == [])
 
 # Queued, lock free: this is the case that was being dropped.
 eng2.enqueue_update("srv40/portainer")
-bot._sweep_update_queue("checker-A")
+sweep("checker-A")
 checks["queued work with a free lock is drained"] = bot._drained == ["checker-A"]
 checks["…and the poll loop's checker is handed through"] = (
     bot._drained == ["checker-A"])
@@ -153,14 +167,15 @@ checks["…and the poll loop's checker is handed through"] = (
 bot._drained.clear()
 lock.acquire()
 try:
-    bot._sweep_update_queue("checker-B")
-    checks["a held lock is left alone"] = bot._drained == []
+    sweep("checker-B")
+    checks["a held lock is left alone"] = (
+        _sweep is not None and bot._drained == [])
 finally:
     lock.release()
 
 # …and the very next sweep picks it up, which is the whole point: the
 # wait is now one poll cycle rather than "until a Telegram update ends".
-bot._sweep_update_queue("checker-C")
+sweep("checker-C")
 checks["…and the next sweep takes it"] = bot._drained == ["checker-C"]
 
 # The sweep runs inside the listener loop. A failure there must not take
@@ -171,11 +186,15 @@ _broken.engine._update_lock = threading.Lock()
 _broken.engine.enqueue_update("x/y")
 _broken._drain_update_queue = lambda *a, **k: 1 / 0
 _raised = None
+_broken_sweep = srcslice.attr(_broken, "_sweep_update_queue",
+                              label="TelegramBot._sweep_update_queue")
 try:
-    _broken._sweep_update_queue("checker")
+    if _broken_sweep is not None:
+        _broken_sweep("checker")
 except Exception as e:
     _raised = e
-checks["a failing drain does not escape the sweep"] = _raised is None
+checks["a failing drain does not escape the sweep"] = (
+    _broken_sweep is not None and _raised is None)
 
 # ── it is actually wired into the poll loop ──────────────────────────
 # The two blocks above prove the sweep works. They say nothing about

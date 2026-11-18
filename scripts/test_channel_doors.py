@@ -16,6 +16,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import notify_retry                                          # noqa: E402
@@ -263,9 +265,11 @@ for _key, _door in (("window_skipped", "_say_once("),
                     ("policy_held", "_say_once("),
                     ("age_held", "_say_once("),
                     ("major_confirm_prompt", "self.announce(")):
-    _i = _tgsrc.index(f'self.t("{_key}"')
-    _before = _tgsrc[max(0, _i - 260):_i]
-    checks[f"'{_key}' goes out through the seam"] = _door in _before
+    _i = srcslice.position(_tgsrc, f'self.t("{_key}"',
+                           label=f"telegram_bot.py: the {_key} notice")
+    _before = None if _i is None else _tgsrc[max(0, _i - 260):_i]
+    checks[f"'{_key}' goes out through the seam"] = (
+        _before is not None and _door in _before)
 checks["…and _say_once is the seam with a memory in front"] = (
     "_held_seen[kind] = signature" in _tgsrc
     and "self.announce(text, **kw)" in _tgsrc)
@@ -365,17 +369,18 @@ checks["with the channel off a public request still answers the asker"] = (
 # remaining hand-written pairs so a new one cannot appear unnoticed.
 _sch = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "scheduler.py"), encoding="utf-8").read()
-_tellblk = _sch[_sch.index("    def _tell(self"):]
-_tellblk = _tellblk[:_tellblk.index("\n    def ", 10)]
+_tellblk = srcslice.section(_sch, "    def _tell(self", "\n    def ",
+                            label="scheduler.py: _tell")
 # The seam when one is wired in. The fallback below it is for bots
 # built outside main.py, and it has to do BOTH legs — a fallback that
 # only reaches Telegram is the very reporting this release removed.
 checks["the scheduler's host notice is the seam, not a pair"] = (
-    "seam.tell(text)" in _tellblk)
+    _tellblk is not None and "seam.tell(text)" in _tellblk)
 checks["…and its fallback still reaches the plugins"] = (
-    "notifier.send_message(text, urgent=True)" in _tellblk
-    and _tellblk.index("seam.tell(text)")
-    < _tellblk.index("notifier.send_message"))
+    _tellblk is not None
+    and "notifier.send_message(text, urgent=True)" in _tellblk
+    and srcslice.in_order(_tellblk, "seam.tell(text)",
+                          "notifier.send_message"))
 # Driven, not grepped. Both halves of the old check were satisfiable
 # by a comment, and an auditor emptied the method to `return` with the
 # whole suite staying green — so the auto-self-update notice could have

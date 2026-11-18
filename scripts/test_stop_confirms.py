@@ -25,6 +25,8 @@ import sys
 import threading
 import types
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 import lifecycle                                   # noqa: E402
@@ -309,11 +311,13 @@ checks["neither keeps its own protect check for it"] = (
 # of this took a fixed 1600-character window, and adding the TTL check
 # pushed `lifecycle.act` out of it — the test failed on its own arbitrary
 # number rather than on the behaviour it names.
-i = tb.index('if data.startswith("stop_go:")')
-block = tb[i:tb.index("\n        if data ==", i + 10)]
-checks["the press re-runs the guards"] = "lifecycle.act(" in block
+block = srcslice.section(tb, 'if data.startswith("stop_go:")',
+                         "\n        if data ==",
+                         label="telegram_bot.py: stop_go callback")
+checks["the press re-runs the guards"] = (
+    block is not None and "lifecycle.act(" in block)
 checks["…from the raw argument, not a captured name list"] = (
-    'rec["arg"]' in block)
+    block is not None and 'rec["arg"]' in block)
 
 # ── the new keys exist everywhere ────────────────────────────────────
 LANGS = sorted(_glob.glob(os.path.join(APP, "lang", "*.json")))

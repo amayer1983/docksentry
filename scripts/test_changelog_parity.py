@@ -26,6 +26,8 @@ Discord command, not this one, and is not what drifted here.
 import os
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 import changelog  # noqa: E402
@@ -80,12 +82,13 @@ checks["…and so does Discord"] = "changelog.render_body(" in dsrc
 
 # The three cases must all exist on the Discord side — the missing
 # "current" case is exactly what he photographed.
-i = dsrc.index("def _cmd_changelog")
-dbody = dsrc[i:dsrc.index("\n    def ", i + 10)]
+dbody = srcslice.section(dsrc, "def _cmd_changelog", "\n    def ",
+                         label="discord_bot.py: _cmd_changelog")
 for kind in ("unknown", "current"):
-    checks[f"Discord handles the '{kind}' case"] = f'"{kind}"' in dbody
+    checks[f"Discord handles the '{kind}' case"] = (
+        dbody is not None and f'"{kind}"' in dbody)
 checks["Discord names its truncation and links the file"] = (
-    "truncated" in dbody and "CHANGELOG.md" in dbody)
+    dbody is not None and "truncated" in dbody and "CHANGELOG.md" in dbody)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

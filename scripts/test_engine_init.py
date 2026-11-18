@@ -44,6 +44,8 @@ import tempfile
 import threading
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from config import Config  # noqa: E402
@@ -72,13 +74,15 @@ with tempfile.TemporaryDirectory() as tmp:
     checks["the queue still queues"] = engine.enqueue_update("a") == 1
     checks["…and hands entries back"] = engine.take_queued_update() == "a"
     engine.enqueue_update("x")
+    _drop = srcslice.attr(engine, "drop_queued_updates",
+                          label="UpdateEngine.drop_queued_updates")
     checks["…and drops them by predicate"] = (
-        engine.drop_queued_updates() == ["x"])
+        _drop is not None and _drop() == ["x"])
     # The orphaned lines must not have landed inside one of them.
-    import inspect  # noqa: E402
-    body = inspect.getsource(UpdateEngine.drop_queued_updates)
+    body = srcslice.method_source(UpdateEngine, "drop_queued_updates")
     checks["no constructor code is stranded after a return"] = (
-        "_swap_in_flight" not in body and "self.notifier" not in body)
+        body is not None
+        and "_swap_in_flight" not in body and "self.notifier" not in body)
 
 
 # ── the lock release cannot be stopped by anything ───────────────────

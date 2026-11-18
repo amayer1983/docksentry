@@ -13,6 +13,8 @@ minute. It is not a cache of the answer, only of "do not ask right now".
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import hosts  # noqa: E402
@@ -73,12 +75,14 @@ checks["a config reload can drop the whole memory"] = (
 # clear it when a host answers — a memory nothing reads is not a fix.
 _src = open(os.path.join(os.path.dirname(__file__), "..",
                          "app", "web_ui.py")).read()
-_view = _src[_src.index("def _host_views"):]
-_view = _view[:_view.index("\n        def ", 10)]
-checks["the page asks the memory before it probes"] = (
-    _view.index("unreachable_for") < _view.index("backend.ps"))
-checks["…and clears it when the host answers"] = ("mark_reachable" in _view)
-checks["…and records the failure it just had"] = ("mark_unreachable" in _view)
+_view = srcslice.section(_src, "def _host_views", "\n        def ",
+                         label="web_ui.py: _host_views")
+checks["the page asks the memory before it probes"] = srcslice.in_order(
+    _view, "unreachable_for", "backend.ps")
+checks["…and clears it when the host answers"] = (
+    _view is not None and "mark_reachable" in _view)
+checks["…and records the failure it just had"] = (
+    _view is not None and "mark_unreachable" in _view)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

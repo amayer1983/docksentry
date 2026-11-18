@@ -23,6 +23,7 @@ import types
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 from telegram_bot import TelegramBot                # noqa: E402
+import srcslice                                     # noqa: E402
 
 
 def datas(kb):
@@ -45,8 +46,13 @@ json.dump([
 ], _tmp)
 _tmp.close()
 
+checks = {}
+
 bot = TelegramBot.__new__(TelegramBot)
 bot.config = types.SimpleNamespace(pending_file=_tmp.name)
+rebuild = srcslice.attr(bot, "_rebuild_keyboard_without",
+                        label="TelegramBot._rebuild_keyboard_without")
+EMPTY = {"inline_keyboard": []}
 
 # ── 1) single srv30 button: tap it → scope kept, no global leak ───────────
 scoped = [
@@ -55,21 +61,24 @@ scoped = [
     [{"text": "🚀 Update all", "callback_data": "update_all:7"},
      {"text": "✋ Manual", "callback_data": "update_skip"}],
 ]
-out = bot._rebuild_keyboard_without("update_one:srv30/dsentry-web", scoped)
+out = (rebuild("update_one:srv30/dsentry-web", scoped)
+       if rebuild is not None else EMPTY)
 d, t = datas(out), texts(out)
 
 # no other host's container leaked in from the global pending file
-assert not any("gitlab" in x for x in t), t
-assert not any("paperless" in x for x in t), t
-assert not any("@srv40" in x for x in t), t
-assert "update_one:srv40/dsentry-web" not in d, d
+checks["a tap does not pull the local gitlab in"] = (
+    not any("gitlab" in x for x in t))
+checks["…nor the local paperless"] = not any("paperless" in x for x in t)
+checks["…nor another host's buttons"] = not any("@srv40" in x for x in t)
+checks["…nor another host's callback"] = "update_one:srv40/dsentry-web" not in d
 # the tapped container is marked done and de-activated (keeps its label)
-assert any(x.startswith("✅ dsentry-web @srv30") for x in t), t
-assert "noop" in d, d
+checks["the tapped button is marked done and keeps its label"] = any(
+    x.startswith("✅ dsentry-web @srv30") for x in t)
+checks["…and does nothing when tapped again"] = "noop" in d
 # it was the only container button → the all/manual control row is dropped
-assert not any(x.startswith("update_all") for x in d), d
-assert "update_skip" not in d, d
-print("OK: single scoped button — no cross-host leak, control row dropped")
+checks["the last button gone drops 'Update all'"] = not any(
+    x.startswith("update_all") for x in d)
+checks["…and 'Manual'"] = "update_skip" not in d
 
 # ── 2) two srv30 buttons: tap one → other stays, token survives ───────────
 scoped2 = [
@@ -80,19 +89,21 @@ scoped2 = [
     [{"text": "🚀 Update all", "callback_data": "update_all:7"},
      {"text": "✋ Manual", "callback_data": "update_skip"}],
 ]
-out2 = bot._rebuild_keyboard_without("update_one:srv30/dsentry-web", scoped2)
+out2 = (rebuild("update_one:srv30/dsentry-web", scoped2)
+        if rebuild is not None else EMPTY)
 d2, t2 = datas(out2), texts(out2)
 
-assert "update_one:srv30/dsentry-api" in d2, d2          # sibling kept
-assert any(x.startswith("✅ dsentry-web @srv30") for x in t2), t2
+checks["the sibling button is kept"] = "update_one:srv30/dsentry-api" in d2
+checks["…and the tapped one marked done"] = any(
+    x.startswith("✅ dsentry-web @srv30") for x in t2)
 # control row kept, and STILL carries its snapshot token — not the bare
 # global "update_all" the old rebuild degraded it to.
-assert "update_all:7" in d2, d2
-assert "update_all" not in d2, d2                        # never the bare form
-assert "update_skip" in d2, d2
+checks["'Update all' keeps its snapshot token"] = "update_all:7" in d2
+checks["…and is never the bare global form"] = "update_all" not in d2
+checks["'Manual' stays"] = "update_skip" in d2
 # still nothing from the global file
-assert not any("gitlab" in x for x in t2), t2
-print("OK: sibling button kept, update_all token preserved, no leak")
+checks["…and still nothing from the global file"] = not any(
+    "gitlab" in x for x in t2)
 
 # ── 3) the callback wiring passes the message's OWN keyboard ──────────────
 captured = {}
@@ -109,13 +120,25 @@ msg_kb = [
     [{"text": "🚀 Update all", "callback_data": "update_all:7"},
      {"text": "✋ Manual", "callback_data": "update_skip"}],
 ]
-TelegramBot._handle_callback(bot2, {
-    "data": "update_one:srv30/dsentry-web", "id": "c", "from": {"id": 1},
-    "message": {"message_id": 9, "chat": {"id": 1},
-                "reply_markup": {"inline_keyboard": msg_kb}},
-}, None)
-assert captured.get("kbd") == msg_kb, captured          # the message's own kb
-print("OK: callback forwards the message keyboard, not a global read")
+handle = srcslice.attr(TelegramBot, "_handle_callback",
+                       label="TelegramBot._handle_callback")
+if handle is not None:
+    handle(bot2, {
+        "data": "update_one:srv30/dsentry-web", "id": "c", "from": {"id": 1},
+        "message": {"message_id": 9, "chat": {"id": 1},
+                    "reply_markup": {"inline_keyboard": msg_kb}},
+    }, None)
+checks["the callback hands on the message's own keyboard"] = (
+    captured.get("kbd") == msg_kb)
 
 os.unlink(_tmp.name)
-print("All update-button-scope tests passed.")
+
+failed = [k for k, v in checks.items() if not v]
+for k, v in checks.items():
+    print(f"  {'PASS' if v else 'FAIL'} {k}")
+if failed:
+    print(f"      → first keyboard: {t}")
+    print(f"      → second keyboard: {d2}")
+    print(f"      → handed on: {captured}")
+print("FAIL" if failed else "PASS")
+sys.exit(1 if failed else 0)

@@ -15,6 +15,8 @@ import threading
 import time
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from discord_bot import DiscordBot, COMMANDS   # noqa: E402
@@ -301,9 +303,9 @@ def _await_calls(fake_rest, kind, count=1, timeout=5.0):
 acks = _await_calls(bot.rest, "ack")
 checks["interaction is acknowledged immediately"] = len(acks) == 1
 # …and the loop is free again straight away: the ack is not on it.
-import inspect as _inspect   # noqa: E402
+_on_event_src = srcslice.method_source(DiscordBot, "_on_event")
 checks["the ack is dispatched off the gateway loop"] = (
-    "_ack_then" in _inspect.getsource(DiscordBot._on_event))
+    _on_event_src is not None and "_ack_then" in _on_event_src)
 checks["acknowledgement is deferred (buys 15 minutes)"] = acks[0][2] is True
 
 # ── host resolution ──────────────────────────────────────────────────

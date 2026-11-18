@@ -22,6 +22,8 @@ import ast
 import os
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 from telegram_bot import TelegramBot          # noqa: E402
@@ -76,12 +78,12 @@ if invented:
     print("  erfunden:", "; ".join(invented))
 
 # The lifecycle path specifically: through the core, with the guards.
-i = src.index('action in ("start", "stop", "restart")')
-block = src[i:i + 2500]
+block = srcslice.section(src, 'action in ("start", "stop", "restart")',
+                         length=2500, label="web_ui.py: the lifecycle action")
 checks["Start/Stop/Restart goes through lifecycle.act"] = (
-    "lifecycle.act(" in block)
+    block is not None and "lifecycle.act(" in block)
 checks["…and hands it the update-running flag"] = (
-    "update_running=" in block)
+    block is not None and "update_running=" in block)
 # The two guards the Web UI never had: it only checked "would this stop
 # me?", so the button could stop a container both chats refuse to touch.
 # Anchored on the CALL, not on the word: the replacement comment
@@ -89,7 +91,7 @@ checks["…and hands it the update-running flag"] = (
 # across hosts, and a check that matched the word failed on its own
 # explanation.
 checks["…so stop-protection now applies here too"] = (
-    "_would_kill_self(" not in block)
+    block is not None and "_would_kill_self(" not in block)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
