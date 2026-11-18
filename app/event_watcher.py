@@ -128,7 +128,10 @@ class EventWatcher:
         self._evidence = {}
         #: (taken_at, snapshot) — shared across a burst of simultaneous
         #: deaths so one stack collapsing costs one `stats`, not twenty.
-        self._recent_snap = (0.0, "")
+        #: None means "none taken yet": `time.monotonic()` counts from
+        #: boot, and a 0.0 here served an empty cached picture to every
+        #: death in the first BURST_WINDOW seconds of uptime.
+        self._recent_snap = (None, "")
 
     # ── the half the monitor talks to ─────────────────────────────
     def evidence(self, name, *, ttl=EVIDENCE_TTL):
@@ -277,7 +280,7 @@ class EventWatcher:
         now = time.monotonic()
         with self._lock:
             taken_at, snap = self._recent_snap
-            if now - taken_at < BURST_WINDOW:
+            if taken_at is not None and now - taken_at < BURST_WINDOW:
                 return snap
         try:
             snap = self.snapshot_fn() or ""

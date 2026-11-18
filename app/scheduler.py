@@ -344,8 +344,15 @@ class Scheduler:
         # for the same minute the deferred-check is already handling.
         last_check = getattr(self, "_resumed_minute", None)
         last_weekly = None
-        last_disk_ts = 0.0  # monotonic; 0 → first disk check fires on startup
-        last_mon_ts = 0.0
+        # Monotonic timestamps of the last disk check and monitor pass;
+        # None means "never", so both run on the loop's first pass.
+        # `time.monotonic()` counts from system boot on Linux, and the
+        # 0.0 these started at read as "ran at boot": measured with an
+        # injected clock, a host up 5 s got its first disk check 300 s
+        # later and, at a 600 s monitor interval, its first monitor pass
+        # 600 s later. On a host up for days 0.0 happened to work.
+        last_disk_ts = None
+        last_mon_ts = None
         # Container state monitor (#2, @NotRetarded) — same own-cadence
         # pattern as the disk check. Constructed lazily so a disabled
         # monitor costs nothing.
@@ -481,7 +488,8 @@ class Scheduler:
             try:
                 from maintenance import is_active as _maint_active
                 disk_interval = int(getattr(self.config, "disk_check_interval_seconds", 300) or 300)
-                if (time.monotonic() - last_disk_ts >= disk_interval
+                if ((last_disk_ts is None
+                        or time.monotonic() - last_disk_ts >= disk_interval)
                         and not _maint_active(self.config)):
                     last_disk_ts = time.monotonic()
                     self._check_disk_space()
@@ -495,7 +503,8 @@ class Scheduler:
                 if monitors:
                     from maintenance import is_active as _maint_active2
                     mon_interval = int(getattr(self.config, "monitor_interval_seconds", 60) or 60)
-                    if (time.monotonic() - last_mon_ts >= mon_interval
+                    if ((last_mon_ts is None
+                            or time.monotonic() - last_mon_ts >= mon_interval)
                             and not _maint_active2(self.config)):
                         last_mon_ts = time.monotonic()
                         for mon in monitors:

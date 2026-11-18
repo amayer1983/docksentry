@@ -525,6 +525,30 @@ GUARDED = [
      "            _last = self._last_sent.get((n, k), 0)",
      "test_mass_stop.py"),
 
+    ("…and so does a container that turns unhealthy right after boot",
+     "app/monitor.py",
+     "            last = self._last_sent.get(key)",
+     "            last = self._last_sent.get(key, 0)",
+     "test_boot_clock.py"),
+
+    ("the first disk check runs on startup, however long the host has been up",
+     "app/scheduler.py",
+     "        last_disk_ts = None",
+     "        last_disk_ts = 0.0",
+     "test_boot_clock.py"),
+
+    ("…and so does the first monitor pass",
+     "app/scheduler.py",
+     "        last_mon_ts = None",
+     "        last_mon_ts = 0.0",
+     "test_boot_clock.py"),
+
+    ("a death right after boot still gets its memory picture taken",
+     "app/event_watcher.py",
+     '        self._recent_snap = (None, "")',
+     '        self._recent_snap = (0.0, "")',
+     "test_boot_clock.py"),
+
     ("a setting the range moves is reported, not silently rewritten",
      "app/config.py",
      "    got = max(lo, min(want, hi))\n    if got != want:",

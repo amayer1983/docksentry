@@ -893,10 +893,14 @@ class ContainerMonitor:
         cadence for as long as it looped.
         """
         _prev_sent = self._last_sent.get(key)
-        # Same reasoning as the cooldown itself: with a default of 0 the
-        # gap is the machine's uptime, so on a freshly booted host every
-        # first alert counted as a continuation of an incident that never
-        # happened, and started its backoff at streak 2.
+        # None for "never sent", like the gates that call this. Unlike
+        # them, a default of 0 here would change nothing: `_alert_streak`
+        # is only written in this method, and both callers stamp
+        # `_last_sent` right after, so a key with no `_last_sent` has no
+        # streak either and lands on 1 on both paths. Driven 18.11.2026
+        # at uptimes of 5, 40 and 1799 s, the alert sequence came out the
+        # same either way; the "streak 2" said about this in 16b84f1 did
+        # not hold.
         gap = (self.MAX_COOLDOWN_SECONDS + 1 if _prev_sent is None
                else now_ts - _prev_sent)
         if gap > self.MAX_COOLDOWN_SECONDS:
