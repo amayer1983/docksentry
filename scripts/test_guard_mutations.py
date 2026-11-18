@@ -1561,6 +1561,13 @@ GUARDED = [
      "class NtfyNotifier(BaseNotifier):",
      "test_channel_backoff.py"),
 
+    # A failed cgroup probe is not remembered as an answer (18.11.2026).
+    ('a cgroup probe that failed is asked again on the next recreate',
+     'app/update_checker.py',
+     '            if version is None:\n                return "1"',
+     '            if version is None:\n                version = "1"',
+     'test_cgroup_probe.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

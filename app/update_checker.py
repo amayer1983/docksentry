@@ -917,15 +917,24 @@ class UpdateChecker:
 
         On any error we assume "1" — the conservative choice, since
         over-suppressing v1-only knobs on a real v1 host would be the
-        regression. Still a classmethod so the self-update path in
-        telegram_bot can call it without an instance; that path is always
-        local, and omitting the argument keeps the local backend.
+        regression. Only a definite "1" or "2" is cached, though. The
+        fallback used to be cached too, so one `info` that timed out
+        during the first recreate marked a cgroup-v2 host as v1 until
+        Docksentry restarted, and every later recreate carried
+        `--memory-swappiness` again (#50). A failed probe is asked again
+        on the next call. By reading, each of the three recreate paths
+        (`recreate_dependent`, and the two arms of `_update_standalone`)
+        calls this once, so the cost stays one probe per recreate.
+
+        Still a classmethod so the self-update path in telegram_bot can
+        call it without an instance; that path is always local, and
+        omitting the argument keeps the local backend.
         """
         b = backend if backend is not None else _cb.default_backend()
         key = getattr(b, "name", "") or "local"
         cached = cls._cgroup_version_cache.get(key)
         if cached is None:
-            version = "1"
+            version = None
             # Two engines, two field names. `{{.CgroupVersion}}` is
             # Docker's; Podman has no such field and answers with a
             # template error — "can't evaluate field CgroupVersion in
@@ -950,6 +959,8 @@ class UpdateChecker:
                 if out in ("1", "2"):
                     version = out
                     break
+            if version is None:
+                return "1"
             cls._cgroup_version_cache[key] = version
             cached = version
         return cached
