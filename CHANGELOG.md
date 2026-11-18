@@ -2,6 +2,24 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.19.1-beta.1] - 2026-11-18
+
+Fixes for what 2.19.0 got wrong, found by a second audit of the tree
+before this tag.
+
+### Fixed
+- **The Settings page saves again with a long stop timeout.** 2.19.0 let `DOCKER_STOP_TIMEOUT` and `HEALTHCHECK_MAX_STARTING` go up to 24 hours and `DISK_WARN_PERCENT` down to 1, but the form kept the old limits. With `DOCKER_STOP_TIMEOUT=5400` the browser refused to submit the page at all, and a save cut 5400 back to 3600. Form, save and environment now read one table.
+- **A broken pin list stops manual updates too.** Since 2.19.0 the check treats an unreadable pin list as "everything pinned", but the update buttons, "Update all" and `/update` didn't ask. They refuse now and say why, and `/check` says it checked nothing instead of "all up to date".
+- **Telegram holds a 502 instead of losing it.** A 502, 503 or 408 is retried and the message is held until Telegram answers again. A 504 may already have been delivered, so it's resent at most once: two copies at worst, where I measured 93 before.
+- **The Discord bot channel holds a 502 or 429 too.** It only held a message when Discord didn't answer at all.
+- **Right after a reboot the disk check and the monitor start straight away.** On a host up for a few seconds the first monitor pass came one full interval late.
+- **One slow cgroup probe no longer marks a Podman host as v1 until restart.** Every recreate after that carried `--memory-swappiness` again (#50).
+
+### Internal
+- A tag on a red tree no longer publishes an image: the publish workflow runs the whole suite first.
+- Checks that could never go red now can, or say what they really hold. Maintenance mode, the update lock and the self-kill guard have procedures of their own.
+- 230 procedures, 6080 checks. The mutation ratchet is at 289 guarded promises, nothing unguarded, no debt.
+
 ## [2.19.0] - 2026-11-16
 
 The first stable since August. It carries nine betas, and most of what is
