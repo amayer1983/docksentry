@@ -1757,6 +1757,75 @@ GUARDED = [
      '        if status != 404:\n            return True',
      'test_discord_bot.py'),
 
+    ("maintenance mode stops the scheduled run: no self-update, no "
+     "auto-update",
+     "app/scheduler.py",
+     "                if _maint_active(self.config):",
+     "                if False:",
+     "test_scheduler_maintenance.py"),
+
+    ("…and keeps the monitor quiet while it lasts",
+     "app/scheduler.py",
+     "                            and not _maint_active2(self.config)):",
+     "                            ):",
+     "test_scheduler_maintenance.py"),
+
+    ("a scheduled auto-update touches nothing while a manual update holds "
+     "the lock",
+     "app/telegram_bot.py",
+     '                      "(will retry next tick)")\n'
+     '                auto_updates = []',
+     '                      "(will retry next tick)")',
+     "test_auto_update_lock.py"),
+
+    ("…because it claims the lock instead of assuming it is free",
+     "app/telegram_bot.py",
+     "            if self._update_lock.acquire(blocking=False):\n"
+     "                auto_lock_held = True",
+     "            if True:\n"
+     "                auto_lock_held = False",
+     "test_auto_update_lock.py"),
+
+    ("an update aimed at Docksentry's own container stops nothing, "
+     "whoever asks",
+     "app/update_checker.py",
+     "        if self._would_kill_self(name):",
+     "        if False:",
+     "test_self_kill_backstop.py"),
+
+    ("the weekly report reaches Telegram during quiet hours",
+     "app/weekly_report.py",
+     "            bot.send_message(text, auto=False)",
+     "            bot.send_message(text, auto=True)",
+     "test_weekly_report_channels.py"),
+
+    ("leftover _old containers are named on the Status page, with the "
+     "command to remove them",
+     "app/web_ui.py",
+     '<pre>docker rm {_e(" ".join(leftovers))}</pre>\n',
+     "",
+     "test_leftover_not_during_update.py"),
+
+    ("…and rendering that page removes none of them",
+     "app/web_ui.py",
+     "            leftovers = sorted(set(leftovers))",
+     "            leftovers = sorted(set(leftovers))\n"
+     "            for _v in views:\n"
+     '                if _v.get("backend") is not None and leftovers:\n'
+     '                    _v["backend"].rm(leftovers, force=True, timeout=10)',
+     "test_leftover_not_during_update.py"),
+
+    ("…and neither does a cleanup run",
+     "app/update_checker.py",
+     "            result = self.backend.image_prune(",
+     '            _ps = self.backend.ps(all=True, fmt="{{.Names}}", timeout=10)\n'
+     '            _stale = [n for n in (_ps.stdout or "").split()\n'
+     '                      if n.endswith("_old")]\n'
+     "            if _stale:\n"
+     "                self.backend.rm(_stale, force=True, timeout=30)\n"
+     "            result = self.backend.image_prune(",
+     "test_leftover_not_during_update.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

@@ -197,14 +197,96 @@ r = run_report(telegram_channel_on=False, other_channel_on=True)
 checks["Telegram off but another channel on: still marked"] = (
     r["telegram"] is False and r["marked"] is True)
 
-checks["the Telegram weekly copy ignores quiet hours (auto=False)"] = (
-    "auto=False" in src)
-
 weekly_report.should_send_now = _orig_now
 weekly_report.collect_stats = _orig_collect
 weekly_report.format_message_text = _orig_fmt
 weekly_report.format_discord_embed = _orig_embed
 weekly_report.mark_sent = _orig_mark
+
+# ── quiet hours do not drop the Telegram copy, driven for real ───────
+# This was `"auto=False" in src`, which the comment above the call
+# satisfies on its own: measured in the 2.19.1 audit, the call switched
+# to `auto=True` and this file stayed green. Now the real scheduler-side
+# entry point runs against a real TelegramBot whose quiet-hours gate is
+# armed for the handed-in hour. What stands in: the clock (a fixed
+# Monday 09:00 for `weekly_report` and `quiet_hours`) and the Telegram
+# transport (`api_call` records instead of sending). Schedule, stats,
+# the send and `mark_sent` are the program's own.
+import quiet_hours  # noqa: E402
+import tempfile  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+
+from container_store import ContainerStore  # noqa: E402
+from i18n import get_translator  # noqa: E402
+from telegram_bot import TelegramBot  # noqa: E402
+
+MONDAY_9 = _dt(2026, 11, 16, 9, 0, 0)
+
+
+def weekly_during_quiet_hours(now):
+    d = tempfile.mkdtemp()
+    cfg = _t.SimpleNamespace(
+        bot_token="x", chat_id="1", language="en", debug=False,
+        container_cli="docker", auto_update_all=False, update_policy="all",
+        channel_telegram_enabled=True, bot_label="", telegram_topic_id="",
+        quiet_hours_start="22:00", quiet_hours_end="10:00",
+        weekly_report_enabled=True, weekly_report_weekday=0,
+        weekly_report_hour=9,
+        weekly_report_state_file=os.path.join(d, "weekly.json"),
+        data_dir=d, pending_file=os.path.join(d, "p.json"),
+        history_file=os.path.join(d, "h.json"),
+        maintenance_file=os.path.join(d, "maintenance.json"))
+    for n in ("pinned", "autoupdate", "update_windows", "ask_before_major",
+              "trust_running", "cooldown", "protect_stop", "major_pending",
+              "groups", "notes", "links"):
+        setattr(cfg, f"{n}_file", os.path.join(d, f"{n}.json"))
+    bot = TelegramBot(cfg, ContainerStore(cfg))
+    bot.notifier = None
+    wire = []
+
+    def api_call(method, data=None, **kw):
+        wire.append((method, (data or {}).get("text", "")))
+        return {"ok": True, "result": {}}
+    bot.api_call = api_call
+
+    class Clock(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    saved = (weekly_report.datetime, quiet_hours.datetime)
+    weekly_report.datetime = quiet_hours.datetime = Clock
+    try:
+        quiet = quiet_hours.is_quiet_now(cfg)
+        sent = weekly_report.maybe_send_weekly_report(
+            cfg, bot, get_translator("en"))
+        report_wire = list(wire)
+        # The same hour, an ordinary unattended message: quiet hours
+        # must still hold it, or "arrived" above proves nothing.
+        bot.send_message("routine", auto=True)
+        routine_wire = wire[len(report_wire):]
+        state = weekly_report._read_state(cfg.weekly_report_state_file)
+    finally:
+        weekly_report.datetime, quiet_hours.datetime = saved
+    return quiet, sent, report_wire, routine_wire, state
+
+
+q, sent, report_wire, routine_wire, state = weekly_during_quiet_hours(
+    MONDAY_9)
+checks["setup: Monday 09:00 is inside the 22:00-10:00 quiet hours"] = q is True
+checks["the weekly report reaches Telegram during quiet hours"] = (
+    sent is True and len(report_wire) == 1
+    and report_wire[0][0] == "sendMessage"
+    and "Weekly report" in report_wire[0][1])
+checks["…and is marked sent for that day"] = (
+    state.get("last_sent") == "2026-11-16")
+# Counter-direction: the gate is armed, it just does not apply to this.
+checks["…while an ordinary unattended message that hour is held back"] = (
+    routine_wire == [])
+q2, sent2, wire2, _r2, state2 = weekly_during_quiet_hours(
+    _dt(2026, 11, 17, 9, 0, 0))
+checks["…and on the wrong weekday nothing is sent at all"] = (
+    sent2 is False and wire2 == [] and state2.get("last_sent") is None)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
