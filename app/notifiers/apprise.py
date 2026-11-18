@@ -122,13 +122,11 @@ class AppriseNotifier(BaseNotifier):
             # The config hint is for a refusal only. 408 and 429 are 4xx
             # too, and they used to get it as well, which sent the reader
             # to their settings for an answer that means "later".
-            if retryable_status(e.code):
-                hint = " — a temporary answer, not a configuration problem"
-            elif e.code < 500:
-                hint = " — check APPRISE_URL and APPRISE_URLS"
-            else:
-                hint = ""
-            print(f"Apprise notification failed: HTTP {e.code}" + hint
+            print(f"Apprise notification failed: HTTP {e.code}"
+                  + (" — a temporary answer, not a configuration problem"
+                     if retryable_status(e.code)
+                     else " — check APPRISE_URL and APPRISE_URLS"
+                     if e.code < 500 else "")
                   + " (response body withheld: it can echo APPRISE_URLS)")
             # A "not now" answer belongs in the retry queue, not in the
             # bin. Measured before this: a 429 and a 503 were both

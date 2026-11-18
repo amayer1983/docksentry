@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A connection carries no sentences of its own (#63).
 
-The owner drew the line: whatever goes in or out must be identical across
+I drew the line: whatever goes in or out must be identical across
 every connection — only presentation may differ. Discord broke it without
 anyone noticing, because it carried seventy-two hardcoded English replies
 while Telegram read the shared translations. One instance then answered
