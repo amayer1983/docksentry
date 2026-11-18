@@ -94,6 +94,28 @@ got, _, err = _try(srcslice.position, None, "x", label="p")
 checks["…also when the text itself is already None"] = (
     err is None and got is None)
 
+# ── last_position: walking back from a marker ────────────────────────
+# The marker is the `two` in `def two`; the `def` before it is the one
+# wanted, the one before that is not.
+_two = SRC.index("two(self)")
+got, _, err = _try(srcslice.last_position, SRC, "    def ", _two, label="lp")
+checks["last_position finds the nearest one before the end"] = (
+    err is None and got == SRC.index("    def two"))
+got, _, err = _try(srcslice.last_position, SRC, "    def ", _two - 1,
+                   label="lp")
+checks["…and only one that ends before it"] = (
+    err is None and got == SRC.index("    def one"))
+got, _, err = _try(srcslice.last_position, SRC, "    def ", label="lp")
+checks["…or the last one of all without an end"] = (
+    err is None and got == SRC.rindex("    def "))
+got, said, err = _try(srcslice.last_position, SRC, "def two",
+                      SRC.index("def one"), label="lp")
+checks["…and one that only comes later is None, not a ValueError"] = (
+    err is None and got is None and "FAIL  lp: anchor not found" in said)
+got, said, err = _try(srcslice.last_position, None, "x", label="lp")
+checks["…and walking back through a slice that was never found is None"] = (
+    err is None and got is None and "FAIL  lp" in said)
+
 
 # ── methods ──────────────────────────────────────────────────────────
 class B:

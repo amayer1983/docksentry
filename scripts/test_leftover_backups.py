@@ -45,6 +45,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
@@ -68,25 +70,28 @@ def main():
 
     # ── 2. recovery clears the backup it knows is stale ──────────
     rec = src("recovery.py")
-    i = rec.index("if live:")
-    branch = rec[i:rec.index("if not backup:", i)]
+    branch = srcslice.section(rec, "if live:", "if not backup:",
+                              label="recovery.py: the live branch")
     checks["recovery removes the backup once the swap is proven done"] = (
-        "backend.rm(old_name" in branch and "force=True" in branch)
+        branch is not None
+        and "backend.rm(old_name" in branch and "force=True" in branch)
     # …and only then. Removing it in the other branches would destroy the
     # copy the recovery itself is about to restore.
     checks["…and only in that branch"] = rec.count("backend.rm(old_name") == 1
     checks["…guarded on the backup actually existing"] = (
-        "if backup:" in branch)
+        branch is not None and "if backup:" in branch)
 
     # ── 3. the debris already out there is named, not deleted ────
     web = src("web_ui.py")
-    i = web.index("leftovers = []")
     # Bounded by the end of the block, not by a character count: a fixed
     # window silently stops covering the code as soon as someone adds a
     # comment, and the assertion then fails for a reason that has nothing
     # to do with what it is about.
-    seg = web[i:web.index("leftovers = sorted(set(leftovers))", i)]
-    checks["the page lists leftovers by name"] = '_old"' in seg
+    seg = srcslice.section(web, "leftovers = []",
+                           "leftovers = sorted(set(leftovers))",
+                           label="web_ui.py: the leftover loop")
+    checks["the page lists leftovers by name"] = (
+        seg is not None and '_old"' in seg)
     # Only where the live container is present too — otherwise a
     # container someone deliberately named `foo_old` gets accused of
     # being our debris.
@@ -94,22 +99,23 @@ def main():
     # unrelated, and pairing them would accuse an innocent container of
     # being our debris.
     checks["…only when the live container is there as well"] = (
-        "n[:-4] in _live" in seg)
+        seg is not None and "n[:-4] in _live" in seg)
     # And it looks at ALL containers, not the running ones: a leftover
     # backup is stopped, so the first version of this searched the table
     # above and could never have found one. Measured on the demo — the
     # notice stayed invisible with a leftover sitting right there.
     checks["…found among all containers, not just the running ones"] = (
-        "ps(all=True" in seg)
+        seg is not None and "ps(all=True" in seg)
     checks["…matched within one host, not across them"] = (
-        "for _v in views" in seg)
+        seg is not None and "for _v in views" in seg)
     checks["…and offers a command rather than removing anything"] = (
-        "docker rm" in seg)
+        seg is not None and "docker rm" in seg)
     # The Web UI must not grow a quiet delete for this. Removing a
     # container this process did not create is the operator's call.
     checks["nothing in the Web UI removes them for you"] = (
-        "_old" not in web.split("leftovers = []")[0]
-        or "rm(" not in seg)
+        seg is not None
+        and ("_old" not in web.split("leftovers = []")[0]
+             or "rm(" not in seg))
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

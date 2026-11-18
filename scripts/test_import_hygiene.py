@@ -28,6 +28,8 @@ import ast
 import os
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 
 #: The modules worth checking — the ones actually used in this codebase.
@@ -148,9 +150,10 @@ finally:
 # each function that needs it; a new function that forgot cost a tester
 # two rounds and me a wrong diagnosis in a changelog.
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = dsrc.index("def _cmd_restore")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
-checks["Discord's /restore imports the json it uses"] = "import json" in body
+body = srcslice.section(dsrc, "def _cmd_restore", "\n    def ",
+                        label="discord_bot.py: _cmd_restore")
+checks["Discord's /restore imports the json it uses"] = (
+    body is not None and "import json" in body)
 
 # ═══ a host that drops out is reported, not just logged ══════════════
 # @famewolf added two hosts, the SSH out of the container could not
@@ -200,14 +203,14 @@ checks["a host that never failed says nothing"] = s2.sent == []
 
 # It must reach every channel, not only Telegram.
 ssrc = open(os.path.join(APP, "scheduler.py"), encoding="utf-8").read()
-_tell = ssrc[ssrc.index("    def _tell(self"):]
-_tell = _tell[:_tell.index("\n    def ", 10)]
+_tell = srcslice.section(ssrc, "    def _tell(self", "\n    def ",
+                         label="scheduler.py: _tell")
 # It used to name the two legs separately, because `_tell` wrote the
 # fan-out out by hand. It is the seam now — one call, which is the
 # point: a hand-rolled pair is a place where the next line added forgets
 # its second half.
 checks["the report goes to every channel"] = (
-    "seam.tell(text)" in _tell and "broadcast" in _tell)
+    _tell is not None and "seam.tell(text)" in _tell and "broadcast" in _tell)
 # …and that the seam really carries both legs, which the grep above
 # cannot say. The fake bot in this file has no `broadcast`, so it runs
 # the fallback and never touches `Broadcast.tell` at all.
@@ -226,7 +229,7 @@ checks["…and the seam itself reaches both, the plugins urgently"] = (
     _legs["tg"] == ["nas stopped answering"]
     and _legs["plug"] == [("nas stopped answering", True)])
 checks["…and a failure to report cannot stop the check"] = (
-    "except Exception" in _tell)
+    _tell is not None and "except Exception" in _tell)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

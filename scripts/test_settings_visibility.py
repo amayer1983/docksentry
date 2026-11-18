@@ -32,6 +32,8 @@ import sys
 import tempfile
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import settings_notices  # noqa: E402
@@ -121,51 +123,55 @@ checks["an untouched install is told nothing"] = (
 # ═══ the page only discloses in simple mode ══════════════════════════
 web_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "web_ui.py"), encoding="utf-8").read()
-i = web_src.index("def _settings_notices")
-notices = web_src[i:web_src.index("\n        def ", i + 10)]
+notices = srcslice.section(web_src, "def _settings_notices", "\n        def ",
+                           label="web_ui.py: _settings_notices")
 checks["the disclosure is scoped to simple mode"] = (
-    'ui_mode", "advanced") == "simple"' in notices)
+    notices is not None and 'ui_mode", "advanced") == "simple"' in notices)
 checks["…and offers the switch that reveals them"] = (
-    'name="mode" value="advanced"' in notices)
+    notices is not None and 'name="mode" value="advanced"' in notices)
 checks["…reading it from the page that was just rendered"] = (
-    "page_html" in notices)
+    notices is not None and "page_html" in notices)
 # Secrets are named in the override table, never in the hidden-settings
 # list — that one prints values.
 checks["only loggable keys reach the hidden list"] = (
-    "LOGGABLE_PERSISTENT_KEYS" in notices)
+    notices is not None and "LOGGABLE_PERSISTENT_KEYS" in notices)
 
 # ═══ a way back from an overruled environment variable ═══════════════
 from config import Config, PERSISTENT_ENV_DEFAULTS, PERSISTENT_ENV_VARS  # noqa: E402
 
 cfg_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "config.py"), encoding="utf-8").read()
-i = cfg_src.index("def refresh_env_overrides")
-refresh = cfg_src[i:cfg_src.index("\n    def ", i + 10)]
+refresh = srcslice.section(cfg_src, "def refresh_env_overrides", "\n    def ",
+                           label="config.py: refresh_env_overrides")
 checks["adopting recomputes the list it came from"] = (
-    "_detect_env_overrides" in refresh)
+    refresh is not None and "_detect_env_overrides" in refresh)
 
-i = cfg_src.index("def adopt_env_value")
-adopt = cfg_src[i:cfg_src.index("\n    def ", i + 10)]
+adopt = srcslice.section(cfg_src, "def adopt_env_value", "\n    def ",
+                         label="config.py: adopt_env_value")
 checks["adopting refuses a key that is not being overruled"] = (
-    "self.env_override(key)" in adopt and "return False" in adopt)
+    adopt is not None
+    and "self.env_override(key)" in adopt and "return False" in adopt)
 checks["…writes the value in rather than deleting the key"] = (
-    "setattr(self, key, seeded[key])" in adopt
+    adopt is not None
+    and "setattr(self, key, seeded[key])" in adopt
     and "self.save_persistent()" in adopt)
 checks["…and refreshes, so the row does not survive its own click"] = (
-    "self.refresh_env_overrides()" in adopt)
+    adopt is not None and "self.refresh_env_overrides()" in adopt)
 
 # Deleting the key instead of adopting it would look like it worked and
 # come back on the next save, because save_persistent writes every key.
 checks["the reasoning is recorded where the next person will look"] = (
-    "writes *every* persistent key" in adopt)
+    adopt is not None and "writes *every* persistent key" in adopt)
 
 # The value must never ride along in the entries: those get iterated,
 # serialised and rendered, and half of these keys are secrets. An earlier
 # version of this carried it there and test_env_override.py caught it.
+_entry = srcslice.section(cfg_src, "overrides.append({", "})",
+                          label="config.py: the override entry")
 checks["raw values stay out of the override entries"] = (
-    '"raw"' not in cfg_src.split("overrides.append({")[1].split("})")[0])
+    _entry is not None and '"raw"' not in _entry)
 checks["…and are read from the private seed map instead"] = (
-    "_env_seeded" in adopt)
+    adopt is not None and "_env_seeded" in adopt)
 
 # End to end against a real Config: env sets a value, a saved file beats
 # it, adopting settles it.

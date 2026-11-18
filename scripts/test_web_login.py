@@ -32,6 +32,8 @@ import re
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import webauth  # noqa: E402
@@ -140,23 +142,23 @@ checks["a password change ends every session"] = full.validate(kept) is None
 # A browser gets the page; a script keeps the 401 it has always had.
 # Redirecting scripts to an HTML form would break every scraper silently,
 # which is worse than not having the form.
-i = src.index("def _send_auth_required")
-gate = src[i:src.index("\n        def ", i + 10)]
+gate = srcslice.section(src, "def _send_auth_required", "\n        def ",
+                        label="web_ui.py: _send_auth_required")
 checks["a browser is sent to the login page"] = (
-    "/login?next=" in gate and "302" in gate)
+    gate is not None and "/login?next=" in gate and "302" in gate)
 checks["…and a script still gets 401 with WWW-Authenticate"] = (
-    "WWW-Authenticate" in gate)
+    gate is not None and "WWW-Authenticate" in gate)
 checks["…and /api and /metrics are never redirected"] = (
-    '"/api/", "/metrics"' in gate)
+    gate is not None and '"/api/", "/metrics"' in gate)
 
 # Signing in cannot require being signed in, but must still be protected
 # against another site posting a login form at us.
-i = src.index("def do_POST")
-post = src[i:i + 1200]
+post = srcslice.section(src, "def do_POST", length=1200,
+                        label="web_ui.py: do_POST")
 checks["POST /login runs before the auth check"] = (
-    post.index('== "/login"') < post.index("_check_auth"))
+    srcslice.in_order(post, '== "/login"', "_check_auth"))
 checks["…but not before the CSRF check"] = (
-    post.index("_check_csrf") < post.index("_do_login"))
+    srcslice.in_order(post, "_check_csrf", "_do_login"))
 
 # `?next=` is attacker-controlled, so our own login page must not become
 # an open redirect — and the value goes into a `Location:` header, so it
@@ -183,12 +185,13 @@ checks["next= rejects a tab and a NUL"] = (
 checks["next= falls back to / on empty"] = safe("") == "/" and safe(None) == "/"
 
 # The one thing that must never appear on the login page.
-i = src.index("def _login_html")
-page = src[i:src.index("\n        def _page_login", i)]
+page = srcslice.section(src, "def _login_html", "\n        def _page_login",
+                        label="web_ui.py: _login_html")
 checks["the login page never renders the password"] = (
-    "web_password" not in page)
+    page is not None and "web_password" not in page)
 checks["…and marks the fields for password managers"] = (
-    'autocomplete="username"' in page
+    page is not None
+    and 'autocomplete="username"' in page
     and 'autocomplete="current-password"' in page)
 checks["…and is not cached"] = "no-store" in src
 # Rendered for real: a configured WEB_USERNAME must NOT appear on the page
@@ -272,36 +275,41 @@ checks["…and the token itself, or there is no session"] = (
     "a-session-token" in _cookie)
 
 # Saving a password stores a hash, never the password.
-i = src.index('if "web_password" in params:')
-save = src[i:i + 900]
+save = srcslice.section(src, 'if "web_password" in params:', length=900,
+                        label="web_ui.py: saving the password")
 checks["a password saved in the interface is hashed"] = (
-    "webauth.hash_password(new_pw)" in save)
+    save is not None and "webauth.hash_password(new_pw)" in save)
 checks["…and the plaintext is not stored anywhere"] = (
     "config.web_password = new_pw" not in src)
 
 # Basic Auth keeps working, and now honours the username too.
-i = src.index("def _check_auth")
-auth = src[i:src.index("\n        def ", i + 10)]
-checks["Basic Auth still authenticates"] = "Basic " in auth
+auth = srcslice.section(src, "def _check_auth", "\n        def ",
+                        label="web_ui.py: _check_auth")
+checks["Basic Auth still authenticates"] = (
+    auth is not None and "Basic " in auth)
 checks["…and now checks the username as well"] = (
-    "username_matches" in auth)
+    auth is not None and "username_matches" in auth)
 checks["…and verifies through webauth, so a hash works"] = (
-    "webauth.verify" in auth)
-checks["a session is accepted as well"] = "_session_user()" in auth
-checks["no password set still means open"] = "if not current:" in auth
+    auth is not None and "webauth.verify" in auth)
+checks["a session is accepted as well"] = (
+    auth is not None and "_session_user()" in auth)
+checks["no password set still means open"] = (
+    auth is not None and "if not current:" in auth)
 
 # ── migration off the plaintext on disk ──────────────────────────────
 cfg = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "config.py"), encoding="utf-8").read()
-i = cfg.index("def _migrate_web_password")
-mig = cfg[i:cfg.index("\n    def ", i + 10)]
+mig = srcslice.section(cfg, "def _migrate_web_password", "\n    def ",
+                       label="config.py: _migrate_web_password")
 checks["an existing plaintext password is migrated on start"] = (
-    "hash_password(stored)" in mig and "save_persistent()" in mig)
-checks["…once, not on every start"] = "is_hashed(stored)" in mig
+    mig is not None
+    and "hash_password(stored)" in mig and "save_persistent()" in mig)
+checks["…once, not on every start"] = (
+    mig is not None and "is_hashed(stored)" in mig)
 checks["…and not when an env var is overruling the file"] = (
-    'getattr(self, "web_password", "") != stored' in mig)
+    mig is not None and 'getattr(self, "web_password", "") != stored' in mig)
 checks["…and it keeps working if the migration fails"] = (
-    "self.web_password = stored" in mig)
+    mig is not None and "self.web_password = stored" in mig)
 
 # ── who gets WWW-Authenticate, and who must not ──────────────────────
 # The header is what makes a browser pop its own password box. Sending it

@@ -13,6 +13,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
@@ -34,18 +36,21 @@ checks["…and calls the core instead"] = (
 
 # ── Discord calls the core directly, not the Telegram bot ────────────
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = dsrc.index("def _cmd_changelog")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
+body = srcslice.section(dsrc, "def _cmd_changelog", "\n    def ",
+                        label="discord_bot.py: _cmd_changelog")
 checks["Discord's /changelog calls the core"] = (
-    "changelog.fetch()" in body and "changelog.report(" in body)
+    body is not None
+    and "changelog.fetch()" in body and "changelog.report(" in body)
 checks["…and stops borrowing it from the Telegram bot"] = (
-    "bot._fetch_changelog" not in body
+    body is not None
+    and "bot._fetch_changelog" not in body
     and "bot._parse_changelog_entries" not in body)
 # The crash was `"\n\n".join(entries)` over (version, date, body) TUPLES.
 # It renders each entry now — through the shared body renderer, so the two
 # front ends cannot word it differently (#63).
 checks["…and renders the entries instead of join-crashing on them"] = (
-    "changelog.render_body(" in body and "join(entries)" not in body)
+    body is not None
+    and "changelog.render_body(" in body and "join(entries)" not in body)
 
 # ── behavioural: the rendered Discord reply is a real string ─────────
 SAMPLE = ("# Changelog\n\n"

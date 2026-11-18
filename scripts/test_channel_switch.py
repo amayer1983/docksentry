@@ -31,6 +31,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from notifier import Notifier  # noqa: E402
@@ -159,10 +161,10 @@ def main():
     import web_ui  # noqa: E402
     src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "web_ui.py"), encoding="utf-8").read()
-    i = src.index("_tg_set = bool(")
-    seg = src[i:i + 300]
+    seg = srcslice.section(src, "_tg_set = bool(", length=300,
+                           label="web_ui.py: the Telegram summary")
     checks["the summary counts Telegram from its own two variables"] = (
-        "bot_token" in seg and "chat_id" in seg)
+        seg is not None and "bot_token" in seg and "chat_id" in seg)
 
     # ── Telegram's own switch ────────────────────────────────────
     # It is not a plugin, so its switch is enforced in telegram_bot
@@ -171,9 +173,10 @@ def main():
     # state. Asserted at the two places that make it true.
     tb = open(os.path.join(os.path.dirname(__file__), "..", "app",
                            "telegram_bot.py"), encoding="utf-8").read()
-    i = tb.index("def send_message(self, text")
+    _send = srcslice.section(tb, "def send_message(self, text", length=2000,
+                             label="telegram_bot.py: send_message")
     checks["send_message checks the Telegram switch"] = (
-        "channel_telegram_enabled" in tb[i:i + 2000])
+        _send is not None and "channel_telegram_enabled" in _send)
     checks["…and so does the command loop"] = (
         tb.count("channel_telegram_enabled") >= 2)
     # And it is a persistent setting, or the switch would not survive a

@@ -24,6 +24,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 checks = {}
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 css = open(os.path.join(ROOT, "app", "static", "app.css"), encoding="utf-8").read()
@@ -44,8 +46,12 @@ checks["the cards still appear in its place"] = (
 # ── exactly one table claims it, and that one has the cards ──────────
 marked = re.findall(r'class="table-scroll has-tiles"', web)
 checks["exactly one table steps aside on a phone"] = len(marked) == 1
-_after = web.split('class="table-scroll has-tiles"')[1][:3000]
-checks["…and its card list follows it"] = 'class="tile-list"' in _after
+# The 3000 characters behind the marked table, as before.
+_marked_at = 'class="table-scroll has-tiles"'
+_after = srcslice.section(web, _marked_at, length=len(_marked_at) + 3000,
+                          label="web_ui.py: the marked table")
+checks["…and its card list follows it"] = (
+    _after is not None and 'class="tile-list"' in _after)
 
 # ── every other table stays visible ──────────────────────────────────
 # Counted, not sampled: six tables, five of which have no card version
@@ -56,22 +62,30 @@ checks["all ten tables are accounted for"] = total == 10
 checks["…and the other nine keep rendering"] = plain == 9
 
 # ── and they are usable, not merely present ──────────────────────────
-base = css.split(".table-scroll {")[1].split("}")[0]
+base = srcslice.section(css, ".table-scroll {", "}",
+                        label="app.css: .table-scroll")
 checks["a wide table scrolls sideways instead of being cut off"] = (
-    "overflow-x: auto" in base and "max-width: 100%" in base)
+    base is not None
+    and "overflow-x: auto" in base and "max-width: 100%" in base)
 
 # ── and the row points at the page that has the answer ───────────────
 # The container page has carried the exact path and the missing mount
 # line since 01.09. @NotRetarded spent three weeks on that problem
 # without knowing the page had it — an answer nobody can find is not an
 # answer. A mark in the row says so from where the container is.
-row = web.split("def _status_row")[1].split("\n        def ")[0]
+row = srcslice.section(web, "def _status_row", "\n        def ",
+                       label="web_ui.py: _status_row")
 checks["a row whose Compose file is out of reach says so"] = (
-    "web_badge_compose_unreachable" in row)
+    row is not None and "web_badge_compose_unreachable" in row)
 checks["…worked out from labels already in hand"] = (
-    'c.get("labels")' in row and "self._compose_reach(" in row)
+    row is not None
+    and 'c.get("labels")' in row and "self._compose_reach(" in row)
+# The 600 characters behind the first labels read, as before.
+_labels_at = 'c.get("labels")'
+_near = srcslice.section(row, _labels_at, length=len(_labels_at) + 600,
+                         label="_status_row: the labels read")
 checks["…and not from a fresh daemon round trip per row"] = (
-    "inspect" not in row.split('c.get("labels")')[1][:600])
+    _near is not None and "inspect" not in _near)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

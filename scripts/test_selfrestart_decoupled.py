@@ -22,6 +22,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
@@ -46,20 +48,24 @@ checks["policy() demands a checker rather than defaulting"] = (
 tsrc = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
 checks["telegram_bot no longer defines the policy check"] = (
     "def _restart_policy" not in tsrc)
-i = tsrc.index("    def restart_self(self")
-tg = tsrc[i:tsrc.index("\n    def ", i + 10)]
+tg = srcslice.section(tsrc, "    def restart_self(self", "\n    def ",
+                      label="telegram_bot.py: restart_self")
 checks["…and its restart_self is the adapter onto the core"] = (
-    "selfrestart.policy(" in tg and "selfrestart.go_down()" in tg
+    tg is not None
+    and "selfrestart.policy(" in tg and "selfrestart.go_down()" in tg
     and "SIGTERM" not in tg)
 
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = dsrc.index("    def _cmd_restart_self(self):")
-dc = dsrc[i:dsrc.index("\n    def ", i + 10)]
-dc_code = dc.split('"""')[2] if dc.count('"""') >= 2 else dc
+dc = srcslice.section(dsrc, "    def _cmd_restart_self(self):", "\n    def ",
+                      label="discord_bot.py: _cmd_restart_self")
+dc_code = (None if dc is None else
+           dc.split('"""')[2] if dc.count('"""') >= 2 else dc)
 checks["Discord asks the core, with its own checker"] = (
-    "selfrestart.policy(" in dc_code and "self.checker" in dc_code)
+    dc_code is not None
+    and "selfrestart.policy(" in dc_code and "self.checker" in dc_code)
 checks["…and stops borrowing the restart from the Telegram bot"] = (
-    "bot._restart_policy" not in dc_code and "bot.restart_self" not in dc_code
+    dc_code is not None
+    and "bot._restart_policy" not in dc_code and "bot.restart_self" not in dc_code
     and "self.telegram" not in dc_code)
 
 # ── the bug itself, pinned ───────────────────────────────────────────

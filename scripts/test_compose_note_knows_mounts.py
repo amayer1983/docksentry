@@ -26,6 +26,8 @@ file is not in it, which leaves exactly one thing to check.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import compose_paths                                       # noqa: E402
@@ -58,13 +60,17 @@ checks["a mount without a destination is ignored"] = (
 # ── the note picks its words from that ───────────────────────────────
 src = open(os.path.join(ROOT, "app", "update_checker.py"),
            encoding="utf-8").read()
-_note = src.split("_owner = compose_paths.owner(config_file)")[1][:1400]
+# The 1400 characters behind the owner lookup, as before.
+_owner_at = "_owner = compose_paths.owner(config_file)"
+_note = srcslice.section(src, _owner_at, length=len(_owner_at) + 1400,
+                         label="update_checker.py: the compose note")
 checks["the note asks what we already mount"] = (
-    "compose_paths.covering_mount(" in _note and "self._own_mounts()" in _note)
+    _note is not None
+    and "compose_paths.covering_mount(" in _note and "self._own_mounts()" in _note)
 checks["…and says so instead of 'mount it'"] = (
-    'compose_fallback_mounted' in _note
-    and _note.index("compose_fallback_mounted")
-    < _note.index("compose_fallback_managed"))
+    _note is not None and 'compose_fallback_mounted' in _note
+    and srcslice.in_order(_note, "compose_fallback_mounted",
+                          "compose_fallback_managed"))
 
 # Our own mounts are read once, not per container in a batch.
 checks["our own mounts are asked once, not per update"] = (

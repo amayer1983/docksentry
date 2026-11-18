@@ -36,6 +36,8 @@ import subprocess
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_checker import UpdateChecker  # noqa: E402
@@ -124,12 +126,12 @@ checks["…they follow DOCKER_STOP_TIMEOUT like the rest"] = (
     src.count("rename(") <= src.count("_lifecycle_timeout()"))
 
 # ── the exception no longer escapes the recreate ────────────────────
-i = src.index("def recreate_dependent")
-body = src[i:src.index("\n    def ", i + 10)]
+body = srcslice.section(src, "def recreate_dependent", "\n    def ",
+                        label="update_checker.py: recreate_dependent")
 checks["recreate_dependent renames through the safe helper"] = (
-    "self._rename_container(name, old_name)" in body)
+    body is not None and "self._rename_container(name, old_name)" in body)
 checks["…and returns a reason instead of throwing"] = (
-    "could not rename to" in body)
+    body is not None and "could not rename to" in body)
 
 # ── a dependent left as <name>_old heals itself ─────────────────────
 d = Daemon(present={"gluetun-nzbhydra2_old"})
@@ -232,14 +234,14 @@ checks["…False for one that is not"] = (
 # ── the rollback path survives a timeout instead of escaping ────────
 src2 = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "update_checker.py"), encoding="utf-8").read()
-i = src2.index("def _rollback_to_old")
-rb = src2[i:src2.index("\n    def ", i + 10)]
+rb = srcslice.section(src2, "def _rollback_to_old", "\n    def ",
+                      label="update_checker.py: _rollback_to_old")
 checks["the rollback guards its remove"] = (
-    "except subprocess.SubprocessError" in rb)
+    rb is not None and "except subprocess.SubprocessError" in rb)
 checks["…renames through the timeout-tolerant helper"] = (
-    "self._rename_container(old_name, name)" in rb)
+    rb is not None and "self._rename_container(old_name, name)" in rb)
 checks["…and never raises out of the handler that called it"] = (
-    rb.count("except subprocess.SubprocessError") >= 2)
+    rb is not None and rb.count("except subprocess.SubprocessError") >= 2)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

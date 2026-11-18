@@ -20,6 +20,8 @@ is said to be unknown rather than printed as a zero.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import i18n  # noqa: E402
@@ -34,15 +36,20 @@ watch = open(os.path.join(os.path.dirname(__file__), "..",
 # ── the watcher now knows a clean exit happened ──────────────────────
 checks["a clean exit is recorded, not thrown away"] = (
     "_clean = action ==" in watch and 'snap = "" if _clean' in watch)
+_lbl = "event_watcher.py: the clean-exit branch"
+_clean_at = srcslice.position(watch, "_clean =", label=_lbl)
+_snap_at = (None if _clean_at is None else
+            srcslice.position(watch, "self._snapshot()", _clean_at, label=_lbl))
+_skip_at = srcslice.position(watch, 'snap = "" if _clean', label=_lbl)
 checks["…and still costs no snapshot"] = (
-    watch.index('snap = "" if _clean') < watch.index("self._snapshot()",
-                                                     watch.index("_clean =")))
+    _skip_at is not None and _snap_at is not None and _skip_at < _snap_at)
 
 # ── a known zero is silence ──────────────────────────────────────────
 checks["a crash-restart with a known exit 0 is dropped"] = (
     'e[0] == "crash_restart" and e[2].get("code") == 0' in src)
 checks["…after the real code has been resolved, not before"] = (
-    src.index("_with_real_exit_code(e) for e") < src.index('e[2].get("code") == 0'))
+    srcslice.in_order(src, "_with_real_exit_code(e) for e",
+                      'e[2].get("code") == 0'))
 
 # ── an unknown code is not a zero ────────────────────────────────────
 checks["an unresolved code becomes None, not 0"] = (
@@ -56,8 +63,8 @@ checks["a real snapshot code is not thrown away"] = (
 # this, every crash-restart on an install without the event stream would
 # have been silenced by the new filter.
 checks["an install without the event stream still gets its alert"] = (
-    src.index("watcher.exit_code(name) if watcher else None")
-    < src.index('detail["code"] = None'))
+    srcslice.in_order(src, "watcher.exit_code(name) if watcher else None",
+                      'detail["code"] = None'))
 checks["…and gets a wording that admits it"] = (
     "monitor_crash_restart_nocode" in src)
 

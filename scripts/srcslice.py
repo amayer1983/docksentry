@@ -37,6 +37,21 @@ def position(src, needle, start=0, *, label):
     return i
 
 
+def last_position(src, needle, end=None, *, label):
+    """Index of the last `needle` that ends at or before `end`, or None.
+
+    `src.rindex(needle, 0, end)` without the ValueError: for the cuts
+    that find a marker first and then walk back to the `def` or `if`
+    that holds it.
+    """
+    stop = (0 if src is None else len(src)) if end is None else end
+    i = -1 if src is None else src.rfind(needle, 0, stop)
+    if i < 0:
+        _fail(label, needle)
+        return None
+    return i
+
+
 def section(src, start, end=None, *, label, length=None):
     """The source from the first `start` up to the next `end` after it.
 

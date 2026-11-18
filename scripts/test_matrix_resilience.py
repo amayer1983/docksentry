@@ -33,6 +33,8 @@ import types
 import urllib.error
 from contextlib import redirect_stdout
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import notifiers.matrix as matrix_mod          # noqa: E402
@@ -254,12 +256,12 @@ finally:
 # fifteen minutes — invisible in a test that raises only one of the two.
 _src = open(matrix_mod.__file__, encoding="utf-8").read()
 checks["the HTTPError clause comes before the network one"] = (
-    _src.index("except urllib.error.HTTPError")
-    < _src.index("except (urllib.error.URLError"))
+    srcslice.in_order(_src, "except urllib.error.HTTPError",
+                      "except (urllib.error.URLError"))
 checks["ValueError is out of the network clause"] = (
     "OSError, ValueError" not in _src
-    and _src.index("except ValueError")
-    < _src.index("except (urllib.error.URLError"))
+    and srcslice.in_order(_src, "except ValueError",
+                          "except (urllib.error.URLError"))
 # The clause ORDER is what matters, and it has to stay this way:
 # `HTTPError` is a subclass of `URLError`, so moving the network clause
 # up would read every 403 as a dead network and repeat it for fifteen
@@ -268,8 +270,8 @@ checks["ValueError is out of the network clause"] = (
 # because a `429` signals the queue too, and counting call sites was
 # never what protected anything.
 checks["the clause order keeps a refusal out of the network path"] = (
-    _src.index("except urllib.error.HTTPError")
-    < _src.index("except (urllib.error.URLError"))
+    srcslice.in_order(_src, "except urllib.error.HTTPError",
+                      "except (urllib.error.URLError"))
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

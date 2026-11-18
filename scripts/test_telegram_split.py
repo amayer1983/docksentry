@@ -27,6 +27,8 @@ turn a truncation bug into a corruption bug.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from telegram_bot import split_for_telegram as split, TELEGRAM_LIMIT
@@ -84,15 +86,18 @@ def main():
     # ── the seam is where it belongs ─────────────────────────────
     src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "telegram_bot.py"), encoding="utf-8").read()
-    send = src[src.index("    def send_message("):]
-    send = send[:send.index("\n    def ", 10)]
-    checks["send_message does the splitting"] = "split_for_telegram(" in send
+    send = srcslice.section(src, "    def send_message(", "\n    def ",
+                            label="telegram_bot.py: send_message")
+    checks["send_message does the splitting"] = (
+        send is not None and "split_for_telegram(" in send)
     # Buttons act on the whole report; on a middle chunk they would sit
     # above text they do not describe.
-    checks["buttons ride on the last chunk"] = "i == len(parts) - 1" in send
+    checks["buttons ride on the last chunk"] = (
+        send is not None and "i == len(parts) - 1" in send)
     # The Markdown retry must survive — it exists for parse errors, which
     # are a different failure from length.
-    checks["the markdown retry is still there"] = 'data.pop("parse_mode"' in send
+    checks["the markdown retry is still there"] = (
+        send is not None and 'data.pop("parse_mode"' in send)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

@@ -102,9 +102,10 @@ def main():
         [u["name"] for u in m4] == ["kept"])
 
     # And the caller still goes through it.
-    import inspect as _i
+    import srcslice
+    _check_all = srcslice.method_source(UpdateChecker, "check_all")
     checks["check_all writes what the merge returns"] = (
-        "merge_pending(" in _i.getsource(UpdateChecker.check_all))
+        _check_all is not None and "merge_pending(" in _check_all)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

@@ -28,6 +28,8 @@ import re
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from hosts import _is_plaintext_remote as plaintext  # noqa: E402
@@ -68,12 +70,14 @@ checks["…and the comment says so rather than claiming otherwise"] = (
     "nothing here can tell `socket-proxy` from a LAN hostname" in _flat)
 
 # ── the warning itself ───────────────────────────────────────────────
-i = src.index("if plaintext:")
-warn = src[i:i + 1400]
-checks["the warning names the host"] = "{name!r}" in warn
-checks["…and the endpoint"] = "{endpoint}" in warn
-checks["…and says what the risk actually is"] = "root on it" in warn
-checks["…and what to do instead"] = "ssh://" in warn and "security.md" in warn
+warn = srcslice.section(src, "if plaintext:", length=1400,
+                        label="hosts.py: the plaintext warning")
+checks["the warning names the host"] = warn is not None and "{name!r}" in warn
+checks["…and the endpoint"] = warn is not None and "{endpoint}" in warn
+checks["…and says what the risk actually is"] = (
+    warn is not None and "root on it" in warn)
+checks["…and what to do instead"] = (
+    warn is not None and "ssh://" in warn and "security.md" in warn)
 # Once, at startup, not per check: an alert that repeats every cron run is
 # an alert people filter out.
 checks["it is emitted where the hosts are built, not per check"] = (

@@ -12,6 +12,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 checks = {}
@@ -20,15 +22,16 @@ src = open(os.path.join(os.path.dirname(__file__), "..",
                         "app", "web_ui.py")).read()
 
 # The gathering loop, isolated by the two lines that bound it.
-start = src.index('leftovers = []')
-block = src[start:src.index("leftovers = sorted(set(leftovers))", start)]
+block = srcslice.section(src, "leftovers = []",
+                         "leftovers = sorted(set(leftovers))",
+                         label="web_ui.py: the leftover loop")
 
 checks["a leftover is only counted when its live twin exists"] = (
-    'n[:-4] in _live' in block)
+    block is not None and 'n[:-4] in _live' in block)
 checks["…and not while that container is being updated"] = (
-    'not in _busy' in block)
+    block is not None and 'not in _busy' in block)
 checks["the busy set comes from the engine, not a second bookkeeping"] = (
-    '_updating_now(' in block)
+    block is not None and '_updating_now(' in block)
 
 # The engine is the one source: same call the badge uses. Slicing the
 # haystack to START at the needle made this true by construction, so
@@ -39,7 +42,8 @@ checks["the badge reads the same place"] = (
     and "_updating_here = self._updating_now" in src)
 
 # A stale suffix check would match `foo_older`; make sure it is exact.
-checks["only the exact _old suffix counts"] = ('endswith("_old")' in block)
+checks["only the exact _old suffix counts"] = (
+    block is not None and 'endswith("_old")' in block)
 
 # ── "nothing here removes them for you", driven ─────────────────────
 # This was `'docker rm' in src and 'leftover' in src`, which the comment

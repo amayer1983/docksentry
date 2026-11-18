@@ -33,6 +33,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "app", "web_ui.py")
 
 #: Fields attach to their page's (empty) form by id. A control without
@@ -108,15 +110,20 @@ def main():
         # reads and the page never sends, which was the test being
         # short-sighted rather than the page being wrong.
         i = src.index(empty_form)
-        top = src.rindex(method, 0, i)
+        top = srcslice.last_position(src, method, i,
+                                     label=f"web_ui.py: {page} page method")
         # …to where the method hands its page over, not to the first
         # closing triple-quote. The Connections page is assembled from
         # several f-strings now — one per card, so they can be ordered by
         # state — and a region that stopped at the first of them saw one
         # card and declared the other seven missing.
         slug = post_path.strip("/")
-        end_at = src.index(
-            f'self._send_html(self._render_page(content, "{slug}"))', i)
+        end_at = srcslice.position(
+            src, f'self._send_html(self._render_page(content, "{slug}"))', i,
+            label=f"web_ui.py: {page} page hand-over")
+        if top is None or end_at is None:
+            checks[f"{page}: the page's region can be found"] = False
+            continue
         region = src[top:end_at]
 
         # Controls belonging to one of the page's own small POST forms

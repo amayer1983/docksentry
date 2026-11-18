@@ -33,6 +33,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import storage_check  # noqa: E402
@@ -182,14 +184,15 @@ checks["…and none of them has a placeholder we do not pass"] = not [
 # startup path must tell that apart from a volume that lost everything.
 main_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                              "main.py"), encoding="utf-8").read()
-i = main_src.index("storage_msg = \"\"")
-block = main_src[i:i + 1600]
+block = srcslice.section(main_src, "storage_msg = \"\"", length=1600,
+                         label="main.py: the storage message")
 checks["a known cause is reported instead of the generic warning"] = (
-    "t(storage_key" in block)
+    block is not None and "t(storage_key" in block)
 checks["…the old warning survives for a volume that really lost it"] = (
-    "settings_ever_saved" in block and "data_loss_alert" in block)
+    block is not None
+    and "settings_ever_saved" in block and "data_loss_alert" in block)
 checks["…and a surviving volume with no settings.json is not an alarm"] = (
-    "No settings.json yet" in block)
+    block is not None and "No settings.json yet" in block)
 checks["loss is recorded, not inferred"] = (
     "config.settings_ever_saved()" in main_src)
 
@@ -236,14 +239,17 @@ with tempfile.TemporaryDirectory() as tmp:
 # precisely because that shape has bitten this project repeatedly.
 cfg_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "config.py"), encoding="utf-8").read()
+_keys = srcslice.section(cfg_src, "PERSISTENT_KEYS = [", "]",
+                         label="config.py: PERSISTENT_KEYS")
 checks["the marker is not a persistent setting"] = (
-    "settings_seen" not in cfg_src.split("PERSISTENT_KEYS = [")[1].split("]")[0])
+    _keys is not None and "settings_seen" not in _keys)
 # Scoped to the function, not to a fixed window — the first version
 # sliced 900 characters after the `def` and started failing the moment
 # save_persistent grew a comment explaining what it writes.
-_sp = cfg_src[cfg_src.index("    def save_persistent(self):"):]
-_sp = _sp[:_sp.index("\n    def ", 10)]
-checks["…and every save records it"] = "self.mark_settings_seen()" in _sp
+_sp = srcslice.section(cfg_src, "    def save_persistent(self):", "\n    def ",
+                       label="config.py: save_persistent")
+checks["…and every save records it"] = (
+    _sp is not None and "self.mark_settings_seen()" in _sp)
 
 # ═══ scan bookkeeping leaves the ordinary log ════════════════════════
 # @NotRetarded, same thread: "Any idea what the skipped self in the logs

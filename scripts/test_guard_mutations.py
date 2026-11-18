@@ -1928,6 +1928,18 @@ GUARDED = [
      "    return all(",
      "test_srcslice.py"),
 
+    ("walking back to a marker that is gone is None, not a ValueError",
+     "scripts/srcslice.py",
+     "    i = -1 if src is None else src.rfind(needle, 0, stop)",
+     "    i = src.rindex(needle, 0, stop)",
+     "test_srcslice.py"),
+
+    ("…and it only walks back from where it was told to start",
+     "scripts/srcslice.py",
+     "src.rfind(needle, 0, stop)",
+     "src.rfind(needle)",
+     "test_srcslice.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

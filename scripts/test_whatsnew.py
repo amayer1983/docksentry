@@ -20,6 +20,8 @@ untrue. Silence there, and the version recorded for next time.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import whatsnew
@@ -142,10 +144,13 @@ def main():
     # upgraded from nothing.
     main_src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                                  "main.py"), encoding="utf-8").read()
-    seg = main_src[main_src.index("whatsnew_msg = \"\""):]
-    seg = seg[:seg.index("if not post_selfupdate_restart")]
-    checks["a previous version is required"] = "if _prev and _prev !=" in seg
-    checks["the version is recorded for next time"] = "atomic_write_json" in seg
+    seg = srcslice.section(main_src, "whatsnew_msg = \"\"",
+                           "if not post_selfupdate_restart",
+                           label="main.py: the what's-new block")
+    checks["a previous version is required"] = (
+        seg is not None and "if _prev and _prev !=" in seg)
+    checks["the version is recorded for next time"] = (
+        seg is not None and "atomic_write_json" in seg)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

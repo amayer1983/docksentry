@@ -42,6 +42,8 @@ import re
 import subprocess
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
@@ -115,9 +117,10 @@ def main():
 
     # And the method they should call does ask for the merge.
     src = open(os.path.join(APP, "container_backend.py"), encoding="utf-8").read()
-    seg = src[src.index("def logs(self"):]
-    seg = seg[:seg.index("\n    def ", 1)]
-    checks["logs() asks for the merged pipe"] = "merge_stderr=True" in seg
+    seg = srcslice.section(src, "def logs(self", "\n    def ",
+                           label="container_backend.py: logs")
+    checks["logs() asks for the merged pipe"] = (
+        seg is not None and "merge_stderr=True" in seg)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():
