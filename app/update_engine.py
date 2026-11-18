@@ -230,7 +230,7 @@ class UpdateEngine:
             # since when. Without it that message reads as a correction
             # — "you already pressed this" — to somebody pressing a
             # button for the first time, which is how a queue entry
-            # stranded from the previous day looked on the maintainer's
+            # stranded from the previous day looked on my
             # own instance on 23.10.2026.
             self._queued_at[key] = time.time()
             return len(self._update_queue)

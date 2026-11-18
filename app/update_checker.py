@@ -115,7 +115,7 @@ def compose_fallback_losses(config, image_config=None):
     reproduces nearly all of it. Until now every Compose container whose
     file we could not read got the same note saying the rebuild "loses
     Compose metadata" — true in the abstract, wrong for most containers,
-    and the owner sees it on all of his. @LeeNX put the same thing from
+    and I see it on all of mine. @LeeNX put the same thing from
     the other side in #65: "Maybe just throw the warning when there are
     healthchecks, else the container is rebuilt fine, is it not?"
 
@@ -1861,7 +1861,7 @@ class UpdateChecker:
         optimistic in two directions we cannot correct for: it ignores
         the grace period, and on Podman it counted 112 MB on a host with
         exactly one unused image, where the prune then freed 8.5 MB
-        (#63, owner-reported, measured on his two hosts).
+        (#63, my own report, measured on my two hosts).
 
         IMAGES ONLY, because that is all `/cleanup` prunes. It used to sum
         every row `docker system df` prints, which on a real machine reads
@@ -1908,7 +1908,7 @@ class UpdateChecker:
         if n <= 0:
             return "0 B"
         # Whole numbers up to megabytes — a megabyte is not worth a
-        # decimal any more, as the owner put it. Gigabytes keep one,
+        # decimal any more, as I put it. Gigabytes keep one,
         # because 0.5 GB is half a gigabyte and rounding it to "0" or "1"
         # loses the half that matters.
         for unit in ("B", "kB", "MB"):
@@ -1935,7 +1935,7 @@ class UpdateChecker:
         This is what turned "224 MB reclaimable" into a cleanup that freed
         nothing: thirty-three unused images on a machine that builds a
         lot, every one younger than the 72-hour CLEANUP_GRACE_HOURS
-        (#63, owner-reported).
+        (#63, my own report).
         """
         grace = grace_hours(getattr(self.config, "cleanup_grace_hours", 24))
         try:
@@ -2058,8 +2058,8 @@ class UpdateChecker:
             # say the sentence ourselves (#63).
             # Reformatted rather than passed through. Docker writes
             # "8.534MB" — a dot as the decimal point and no space before
-            # the unit — which in German reads as 8534 MB, and did: the
-            # owner read a 8.5 MB cleanup as 8 GB (#63). One decimal, a
+            # the unit — which in German reads as 8534 MB, and did: I
+            # read a 8.5 MB cleanup as 8 GB (#63). One decimal, a
             # space, and the unit says the same thing unambiguously in
             # every language that uses a comma.
             raw = space_line.split(":", 1)[-1].strip() if ":" in space_line \
@@ -2874,7 +2874,7 @@ class UpdateChecker:
 
         A failed health check used to be reported with a tail of the
         container's stdout — and for a container that starts perfectly
-        and then fails its probe, that tail looks immaculate. The owner
+        and then fails its probe, that tail looks immaculate. I
         hit exactly that on `ollama`: rolled back for
         `health=unhealthy`, with ten lines of a textbook-clean startup
         underneath it and nothing to act on.
@@ -2965,7 +2965,7 @@ class UpdateChecker:
 
         A container without a health probe has no health to report, and
         the bare `health=` we used to print read like a broken template
-        rather than like "there is nothing here" (#63, the owner's tika
+        rather than like "there is nothing here" (#63, my own tika
         rollback, which is exactly that case).
         """
         return f"state={state}" + (f", health={health}" if health else "")
@@ -2976,7 +2976,7 @@ class UpdateChecker:
 
         A crash-restart loop writes the same thing on every attempt, so
         the log tail is one stack trace five times over — which is how
-        the owner's `tika` rollback filled a phone screen with a single
+        my own `tika` rollback filled a phone screen with a single
         error (#63). Folding it keeps the whole diagnostic and leaves
         room for the lines that differ, which are the ones worth reading.
 
@@ -3654,7 +3654,7 @@ class UpdateChecker:
         # Send the debug trace to Telegram ONLY when a check actually
         # failed (#63). With debug on, dumping the full registry HTTP trace
         # of every container on every check turned a routine /check into
-        # pages of code blocks — the owner hit exactly that on an instance
+        # pages of code blocks — I hit exactly that on an instance
         # with debug left on, 21 containers deep. A local-only image with
         # no registry is a clean "Skipped (no local digest)", NOT a
         # failure (measured), so a normal check stays silent; the trace
@@ -4230,12 +4230,12 @@ class UpdateChecker:
             args.extend(["--cgroupns", "host"])
 
         # ── GPU (DeviceRequests → --gpus) ──────────────────────
-        # The one field whose loss the owner measured on his own server:
-        # his ollama was recreated without its GPU, the NVIDIA runtime
-        # therefore never injected `nvidia-smi`, his healthcheck probes
+        # The one field whose loss I measured on my own server:
+        # my ollama was recreated without its GPU, the NVIDIA runtime
+        # therefore never injected `nvidia-smi`, my healthcheck probes
         # exactly that binary, and every update rolled back forever.
         # The old comment here said "may add in a future release if
-        # requested" — his server requested.
+        # requested" — my server requested.
         args.extend(UpdateChecker._gpus_args(host.get("DeviceRequests")))
 
         # ── Sysctls ────────────────────────────────────────────
@@ -4929,7 +4929,7 @@ class UpdateChecker:
         # carry — so on the recreated container Docker recomputes the
         # same values. Reporting them as "would be lost" was wrong
         # twice over: they are on EVERY container, and they are not
-        # lost. The owner's first /audit of a stock ollama listed four
+        # lost. My first /audit of a stock ollama listed four
         # findings, all four of them Docker's own defaults.
         "MaskedPaths", "ReadonlyPaths",
     })
@@ -4944,7 +4944,7 @@ class UpdateChecker:
         "BlkioDeviceReadIOps", "BlkioDeviceWriteIOps",
         # Device-cgroup-rules: still out of scope. DeviceRequests left
         # this list when the GPU flag started being carried — see
-        # _gpus_args, and #62's neighbour on the owner's own server.
+        # _gpus_args, and #62's neighbour on my own server.
         "DeviceCgroupRules",
         # Storage opts (rare, driver-specific)
         "StorageOpt",
@@ -5079,7 +5079,7 @@ class UpdateChecker:
         # …and the fields we skip KNOWINGLY are reported too, when they
         # are actually set. "Deliberately not carried" and "the user
         # knows it is not carried" are different things: DeviceRequests
-        # sat in the skip list while the owner's GPU container failed
+        # sat in the skip list while my GPU container failed
         # every update, and /audit — the command built to find exactly
         # such gaps — stayed silent about the one field that mattered.
         dropped_host = sorted(
@@ -5375,7 +5375,7 @@ class UpdateChecker:
                 # would be quoting the restored old container's health
                 # log and calling it the reason the new one failed.
                 #
-                # The owner hit this on `ollama`: rolled back for
+                # I hit this on `ollama`: rolled back for
                 # health=unhealthy, with ten lines of a textbook-clean
                 # startup underneath and nothing to act on.
                 probe = self._health_output(name)
@@ -5388,8 +5388,8 @@ class UpdateChecker:
                 # An empty health value renders as a bare `health=`, which
                 # reads like a broken template rather than "this container
                 # has no health probe" — which is what it means, and which
-                # is the common case for the crash-loop path (#63, the
-                # owner's tika rollback).
+                # is the common case for the crash-loop path (#63, my
+                # own tika rollback).
                 if outcome == "crashloop":
                     msg = (f"Update produced a crash-restart loop "
                            f"({self._state_note(state, health)}) "

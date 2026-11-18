@@ -2,10 +2,10 @@
 
 @NotRetarded compared `/status` on Discord and Telegram and found them
 disagreeing — Discord missing Docksentry itself, missing health, missing
-uptime, showing `:latest` where a version would mean something. The
-owner's diagnosis of the *cause* was sharper than the report: he assumed
+uptime, showing `:latest` where a version would mean something. My
+own diagnosis of the *cause* was sharper than the report: I assumed
 a reply was generated once and then sent per connection, and for
-notifications he is right — that is what `announce()` does. Command
+notifications I was right — that is what `announce()` does. Command
 replies were the exception: each front end assembled its own, which is
 two assemblies, which is drift. This module ends the exception for the
 detail view: the fields are collected once, and each front end only
@@ -100,9 +100,9 @@ def lines(info, *, bold="*", host_tag=""):
     Telegram wants `*x*`, Discord `**x**`. Everything else is identical
     by construction, which is the point.
 
-    Grouped into stanzas rather than a flat label list — the owner's
+    Grouped into stanzas rather than a flat label list — my own
     reaction to the first version was "können wir das übersichtlicher
-    darstellen?", and he was right: eleven `Label: value` lines carry no
+    darstellen?", and rightly so: eleven `Label: value` lines carry no
     hierarchy, so nothing leads. Now: who and how it is, what it runs,
     what it costs, how it is wired — with a blank line between, because
     a gap is the cheapest heading there is.
@@ -169,7 +169,7 @@ def lines(info, *, bold="*", host_tag=""):
         cost.append(f"📡 net {_updown(info.get('net_io'))} · "
                     f"disk {_rw(info.get('block_io'))}")
     # A blank line before each cost line, not just before the block —
-    # the owner found the paired lines (CPU next to net/disk) read as
+    # I found the paired lines (CPU next to net/disk) read as
     # "gedrückt" against the airy header and image blocks above. One
     # rhythm for the whole detail: every fact gets its own breathing
     # room rather than the lower half clumping into dense pairs.
@@ -248,7 +248,7 @@ def _rw(block):
 def _dedupe_ports(ports):
     """`53→53, 53→53` → `53→53` — the same mapping over tcp and udp
     renders as the same text, and one line saying a thing twice reads
-    like a mistake (the owner's adguardhome showed exactly that)."""
+    like a mistake (my adguardhome showed exactly that)."""
     if not ports or ports == "—":
         return ""
     seen, out = set(), []

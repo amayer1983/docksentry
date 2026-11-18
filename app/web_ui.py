@@ -1512,7 +1512,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # room to spare. V2's list has no such problem, and inheriting
             # the exception meant the header, the nav and the content all
             # jumped between two widths as you moved between pages — which
-            # the owner spotted straight away. So it is a parameter now,
+            # I spotted straight away. So it is a parameter now,
             # defaulting to the old behaviour, and V2 opts out.
             if wide is None:
                 wide = (active == "status")

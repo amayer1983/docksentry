@@ -784,7 +784,7 @@ def main():
     # The self-update path already announces itself, but that is the
     # minority route: most people run `docker pull` + `up -d`, and that
     # was completely silent. Features shipped and sat unused because
-    # nobody was told they existed (#2 — the maintainer's own point).
+    # nobody was told they existed (#2 — my own point).
     #
     # Read BEFORE the marker is written, and only announced when a
     # PREVIOUS version was recorded. On a first-ever boot there is

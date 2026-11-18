@@ -827,7 +827,7 @@ class TelegramBot:
         The local host is named here, unlike in `_host_tag`. `/checkimages`
         on two hosts sent one message tagged `@podman` and one tagged
         nothing at all, and the unlabelled one is exactly the one you have
-        to guess about (owner-reported). `/check` already named it
+        to guess about (I ran into it myself). `/check` already named it
         `local`; this makes the rest agree.
         """
         return "" if host is None else f" @{host.name}"
@@ -1860,7 +1860,7 @@ class TelegramBot:
         for the next Telegram single update to finish, however long that
         takes.
 
-        Measured on the maintainer's own instance, 23.10.2026: three
+        Measured on my own instance, 23.10.2026: three
         buttons pressed at 19:15:17, :21 and :22 (audit log). The second
         came back "queued — position 2" and the third "already in the
         queue", neither of which made sense for a first press. The queue
@@ -3311,7 +3311,7 @@ class TelegramBot:
             self.answer_callback(callback["id"], self.t("restore_running"))
             text, ok = self._do_restore(_rtok)
             # "Some settings only take effect after a restart" is a thing
-            # to *do*, not a thing to read — the owner's point when he
+            # to *do*, not a thing to read — my own point when I
             # tested this. So offer the restart rather than describing
             # it. Only after a restore that actually applied something.
             self.send_message(
@@ -3622,8 +3622,8 @@ class TelegramBot:
                                                         name=resolved)
                         continue
                     shown = True
-                    # Assembled ONCE, rendered per front end (#2). The
-                    # owner assumed replies were generated once and sent
+                    # Assembled ONCE, rendered per front end (#2). I
+                    # assumed replies were generated once and sent
                     # per connection — true for notifications since
                     # announce(), and now true here: Discord's detail
                     # calls this same collector and renderer, so the two
@@ -4328,7 +4328,7 @@ class TelegramBot:
         # Exact match here, so `/restart web` and `/restartx` still go
         # exactly where they went before.
         elif text == "/restart":
-            # Asked for by the owner after the restore button shipped: a
+            # Something I asked for after the restore button shipped: a
             # restart you can only reach by restoring something first is
             # a restart you cannot reach.
             self.restart_self(checker)
@@ -4710,7 +4710,7 @@ class TelegramBot:
             lines = [self.t("audit_findings_header", name=name) + tag]
             if dropped:
                 # The fields we skip on purpose, said out loud. This list
-                # existed silently while the owner's GPU container failed
+                # existed silently while my GPU container failed
                 # every update on a field sitting in it (#62's neighbour).
                 lines.append(self.t("audit_section_dropped"))
                 lines.extend(f"  • `HostConfig.{k}`" for k in dropped)

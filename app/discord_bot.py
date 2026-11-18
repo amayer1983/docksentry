@@ -465,7 +465,7 @@ class DiscordBot:
         # same ones Telegram reads (#63). Discord used to carry its own
         # hardcoded English: one instance then answered German in Telegram
         # and English here, for the same question — a difference in
-        # CONTENT, not in presentation, which is the line the owner drew.
+        # CONTENT, not in presentation, which is the line I drew.
         # Resolved per call rather than held, so /lang applies at once.
         #: The Telegram bot, when one is running. What is still borrowed
         #: from it, counted rather than remembered — `test_discord_borrows
@@ -1447,7 +1447,7 @@ class DiscordBot:
     def _cmd_status(self, opts):
         """Overview, or a single container's detail.
 
-        Both halves are the owner's "one assembly" rule made real (#2):
+        Both halves are my "one assembly" rule made real (#2):
         the detail is collected and rendered by the same code Telegram's
         `/status <name>` uses — `status_render` — so the two front ends
         cannot drift apart field by field, which is exactly what
@@ -2345,7 +2345,7 @@ class DiscordBot:
             return self.t("restore_failed", error=str(e)[:150])
         note = ("\n⚠️ " + "; ".join(errors)) if errors else ""
         # Offer the restart rather than describing it — the same point
-        # the owner made about Telegram's wording. `/restart` with no
+        # I made about Telegram's wording. `/restart` with no
         # container is the button here.
         return (self.t("restore_done",
                        parts=", ".join(restored) or "—", errors=note)

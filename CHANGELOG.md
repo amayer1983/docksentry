@@ -757,7 +757,7 @@ The multi-host pass, tested end to end on a real five-host bed — local Docker,
 ## [2.18.0-beta.2] - 2026-08-18
 
 ### Changed
-- **The `/status` detail reads in stanzas instead of a label list.** Eleven `Label: value` lines carry no hierarchy, so nothing leads — the owner's reaction to beta.1 was "übersichtlicher?" and he was right. Now: who and how it is doing (header with state and uptime), what it runs, what it costs right now, how it is wired, what Docksentry knows about it — a blank line between each, because a gap is the cheapest heading there is. Net I/O carries direction arrows (`↓11MB ↑7.15MB` — docker reports received/sent in that order), disk says `R`/`W`, and a port mapped identically over tcp and udp shows once instead of twice.
+- **The `/status` detail reads in stanzas instead of a label list.** Eleven `Label: value` lines carry no hierarchy, so nothing leads — my own reaction to beta.1 was "übersichtlicher?", and rightly so. Now: who and how it is doing (header with state and uptime), what it runs, what it costs right now, how it is wired, what Docksentry knows about it — a blank line between each, because a gap is the cheapest heading there is. Net I/O carries direction arrows (`↓11MB ↑7.15MB` — docker reports received/sent in that order), disk says `R`/`W`, and a port mapped identically over tcp and udp shows once instead of twice.
 
 ## [2.18.0-beta.1] - 2026-08-18
 
@@ -921,7 +921,7 @@ One fix, reported by @famewolf in #2.
 - **`/status` on Discord no longer hides Docksentry itself (#2, @NotRetarded).** It listed everything except the one container answering the question. The self-filter exists for the *update* path, where it protects PID 1 (#16) — Discord's status borrowed that listing and inherited a filter that makes no sense for a read. Readers now ask for the whole truth; the update path keeps its guard.
 
 ### Added
-- **One `/status` detail, assembled once, rendered per front end.** The owner's diagnosis of the drift was better than the report that prompted it: he assumed a reply was generated once and then sent per connection — which has been true for notifications since `announce()`, and was false for command replies, where each front end kept its own assembly. Two assemblies is drift by construction. The detail view is now one collector and one renderer (`status_render`), and the only thing a front end may choose is its bold marker. Verified live: both outputs are identical to the byte once markdown is stripped.
+- **One `/status` detail, assembled once, rendered per front end.** My own diagnosis of the drift was better than the report that prompted it: I assumed a reply was generated once and then sent per connection — which has been true for notifications since `announce()`, and was false for command replies, where each front end kept its own assembly. Two assemblies is drift by construction. The detail view is now one collector and one renderer (`status_render`), and the only thing a front end may choose is its bold marker. Verified live: both outputs are identical to the byte once markdown is stripped.
 
   What the detail shows now — the questions you actually have when a container misbehaves: state, health and uptime; the **exit code** when it is not running (the field #62 was diagnosed from); **live CPU and memory**; **what the health probe said** when unhealthy (the 2.15.0 lesson — the probe's words, not the container's); image, **version label** and image ID; ports, volumes, restart policy; and Docksentry's own knowledge — pinned, auto-update, protected, trust-running, ask-major, group, note, pending update.
 
@@ -930,7 +930,7 @@ One fix, reported by @famewolf in #2.
 ## [2.16.1] - 2026-08-18
 
 ### Fixed
-- **`/audit` no longer reports what Docker does to every container.** The owner ran the new audit against a stock `ollama` and got four findings — all four of them values Docker writes into every container unasked: `CgroupnsMode "private"`, `ConsoleSize [0,0]`, and the standard `MaskedPaths`/`ReadonlyPaths` lists. Measured against a plain nginx here: the same four. An audit that flags the baseline is an audit people learn to ignore, which is precisely the defect the section was built to fix — one release earlier.
+- **`/audit` no longer reports what Docker does to every container.** I ran the new audit against a stock `ollama` and got four findings — all four of them values Docker writes into every container unasked: `CgroupnsMode "private"`, `ConsoleSize [0,0]`, and the standard `MaskedPaths`/`ReadonlyPaths` lists. Measured against a plain nginx here: the same four. An audit that flags the baseline is an audit people learn to ignore, which is precisely the defect the section was built to fix — one release earlier.
 
   Three different truths, now separated. `MaskedPaths` and `ReadonlyPaths` are **derived**: Docker computes them from `--privileged` and `--security-opt`, both of which the recreate carries, so the recreated container gets the same values recomputed — they were never lost, and saying they would be was wrong. `ConsoleSize [0,0]` and `CgroupnsMode "private"` are **defaults** and no longer count as findings. And an explicit `--cgroupns host` turned out to be **genuinely dropped** on recreate — it is carried now, which the audit rework surfaced by accident.
 
@@ -939,18 +939,18 @@ One fix, reported by @famewolf in #2.
 ## [2.16.0] - 2026-08-18
 
 ### Fixed
-- **A recreated container keeps its GPU.** The owner's `ollama`, deployed from a Portainer stack with a GPU, was updated by Docksentry — and the recreate dropped `HostConfig.DeviceRequests`. The NVIDIA runtime therefore never injected `nvidia-smi` into the new container, his healthcheck probes exactly that binary, and every update failed and rolled back, forever. The rollback was the only thing keeping him off CPU inference — and the skip list's comment literally said *"may add in a future release if requested"*. His server requested.
+- **A recreated container keeps its GPU.** My own `ollama`, deployed from a Portainer stack with a GPU, was updated by Docksentry — and the recreate dropped `HostConfig.DeviceRequests`. The NVIDIA runtime therefore never injected `nvidia-smi` into the new container, my healthcheck probes exactly that binary, and every update failed and rolled back, forever. The rollback was the only thing keeping it off CPU inference — and the skip list's comment literally said *"may add in a future release if requested"*. My server requested.
 
   All four shapes `docker run --gpus` produces round-trip now: `all`, a count, a device list (as a quoted CSV field — the quotes are part of the value, not shell quoting), and extra capabilities. Two `DeviceRequests` entries have no CLI spelling, so that case emits nothing and the audit reports it instead — carrying half a GPU config silently would be this bug all over again.
 
-  Said plainly: this was built against Docker's documented shapes, not a live NVIDIA box — this development machine has none. The owner's ollama is the live verification, with the rollback as the net.
+  Said plainly: this was built against Docker's documented shapes, not a live NVIDIA box — this development machine has none. My own ollama is the live verification, with the rollback as the net.
 
 - **`/audit` no longer keeps the skip list to itself.** Fields we deliberately do not carry (`DeviceCgroupRules`, `StorageOpt`, …) were invisible to the one command built to find recreate gaps — `DeviceRequests` sat in that silence while the ollama failed every update. A field that is *set* on the container and *knowingly skipped* now shows up in `/audit` under its own heading, on both Telegram and Discord. Unset skip-fields stay quiet; the section is for what would actually be lost.
 
 ## [2.15.0] - 2026-08-18
 
 ### Fixed
-- **A failed health check now shows what the health check said.** The owner's `ollama` was rolled back with `health=unhealthy`, and underneath it ten lines of a textbook-clean startup — listening on its port, discovering GPUs, model cache hydrated. Nothing to act on, because those were the wrong lines. What failed was the **probe**, and a probe's output does not go to the container's stdout: it goes to `.State.Health.Log[].Output`, with the exit code of the command Docker ran, and we were not looking there.
+- **A failed health check now shows what the health check said.** My `ollama` was rolled back with `health=unhealthy`, and underneath it ten lines of a textbook-clean startup — listening on its port, discovering GPUs, model cache hydrated. Nothing to act on, because those were the wrong lines. What failed was the **probe**, and a probe's output does not go to the container's stdout: it goes to `.State.Health.Log[].Output`, with the exit code of the command Docker ran, and we were not looking there.
 
   Both failure paths report it now, above the container log rather than instead of it — the two answer different questions. On the rollback path it is read *before* the rollback, because restoring the previous container under the same name would otherwise have us quoting the old container's health log as the reason the new one failed.
 
@@ -1054,7 +1054,7 @@ One fix, reported by @famewolf in #2.
 
   Discord keeps the real `.json` name. Both of them expected it would need a `.txt` rename or a zip; the documented API has no extension whitelist for bot uploads. **That part is not verified against the live API** — no bot of my own, and somebody else's channel is not mine to test in. If Discord does refuse it, the answer is a zip, not a rename: disguising a file only moves the problem to whatever opens it later.
 
-- **A restart you can ask for, and that refuses when it would not come back.** Restoring a backup ends with settings that only apply at boot, so the reply now offers the restart instead of describing it — the owner's point on seeing the message. There is a `/restart` command too, because a restart you can only reach by restoring something first is a restart you cannot reach.
+- **A restart you can ask for, and that refuses when it would not come back.** Restoring a backup ends with settings that only apply at boot, so the reply now offers the restart instead of describing it — my own point on seeing the message. There is a `/restart` command too, because a restart you can only reach by restoring something first is a restart you cannot reach.
 
   It checks the container's restart policy first. Without one, stopping would leave the container down and you without the bot you would have used to bring it back — so it stays up and says so. If the check itself cannot be answered, that counts as no: going down with no way back is the worse mistake. And it is our own `SIGTERM` rather than `docker restart` on ourselves, which would ask the daemon to stop the process making the request and kill the answer mid-sentence.
 
@@ -1177,7 +1177,7 @@ One fix, reported by @famewolf in #2.
 ## [2.8.1] - 2026-08-11
 
 ### Added
-- **First-run setup now makes you set a password (#60, @NotRetarded and the owner).** Two people asked for the same thing from opposite ends: @NotRetarded went looking for an initial "create a username and password" screen and there wasn't one, and the request was to build exactly that — a fresh boot with no password where the first thing you do is set one. The setup wizard has a password step now, and it is the first step: you leave it either with a password (typed twice, stored as a scrypt hash, never in the clear) or by deliberately ticking a "run without a password" box for the reverse-proxy or trusted-LAN case. Enforced on the server, not just in the browser — a missing or mismatched password sends you back to the wizard rather than into an accidentally-open dashboard, and the endpoint that used to skip the whole wizard now refuses to open a passwordless one. Not retroactive: an existing install has already been through setup and is left alone, so upgrading does not suddenly demand a password from anyone running open on purpose.
+- **First-run setup now makes you set a password (#60, @NotRetarded and me).** Two people asked for the same thing from opposite ends: @NotRetarded went looking for an initial "create a username and password" screen and there wasn't one, and the request was to build exactly that — a fresh boot with no password where the first thing you do is set one. The setup wizard has a password step now, and it is the first step: you leave it either with a password (typed twice, stored as a scrypt hash, never in the clear) or by deliberately ticking a "run without a password" box for the reverse-proxy or trusted-LAN case. Enforced on the server, not just in the browser — a missing or mismatched password sends you back to the wizard rather than into an accidentally-open dashboard, and the endpoint that used to skip the whole wizard now refuses to open a passwordless one. Not retroactive: an existing install has already been through setup and is left alone, so upgrading does not suddenly demand a password from anyone running open on purpose.
 
 ### Fixed
 - **The logout button rendered as an empty box (#60, @NotRetarded).** It used the U+23FB power symbol, which a lot of system fonts do not have, so it showed as a tofu box rather than an icon. It is an inline SVG now, like the theme toggle beside it that was already one for the same reason.
@@ -2351,7 +2351,7 @@ v1.22.0 was rushed — the diagnosis was correct but the audit was shallow. Less
   - **See conflict / status badges**: `↻ <group>` when a container is already in another Docksentry group (will be moved on import), `netns` when a container shares a network namespace (VPN-sidecar hint), `already imported` when a same-named group exists
   - **Click "Import selected"** to bulk-create groups via the new `/api/groups_import_batch` POST endpoint
 
-  Smoke-tested on the maintainer's own host: 9 stacks detected (Nextcloud's 3-container set, Paperless-NGX's 3-container set, an InfluxDB+NodeRed pair, plus 6 single-container Compose projects) — all rendered correctly with proper head detection.
+  Smoke-tested on my own host: 9 stacks detected (Nextcloud's 3-container set, Paperless-NGX's 3-container set, an InfluxDB+NodeRed pair, plus 6 single-container Compose projects) — all rendered correctly with proper head detection.
 
 ### Changed
 - **Legacy Settings → Groups card is now a thin redirect banner.** The card stays for users who bookmarked `/settings#groups` or follow status-page links pointing there, but the duplicated CRUD UI is gone — clicking the banner button takes you to the new `/groups` page where all the actual functionality lives. Removes code duplication; the v1.21.0 `_groups_html` helper is now dead code (kept as-is for one release to surface any forgotten callers, removal slated for v1.22.0).

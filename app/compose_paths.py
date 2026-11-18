@@ -28,7 +28,7 @@ Pure standard library, like the rest of the project.
 #: a more specific prefix wins if one is ever nested inside another.
 #:
 #: Every entry here is one somebody has actually shown us. `/data/compose`
-#: was measured on four containers of the owner's own hosts;
+#: was measured on four containers of my own hosts;
 #: `/app/data/stacks` came out of @NotRetarded's label in #2. Nothing is
 #: in here from memory.
 #:

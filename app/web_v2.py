@@ -1,7 +1,7 @@
 """The rebuilt interface: data first, controls on demand.
 
 Started from the question "what is this page for?" rather than from the
-existing markup, after the owner said it had become hard to read. The
+existing markup, after I found it had become hard to read. The
 measurements agreed: 25 containers produced 236 forms, 380 fields and
 289 buttons, and 426 of the page's explanations sat in `title` tooltips
 that a phone cannot show at all.
