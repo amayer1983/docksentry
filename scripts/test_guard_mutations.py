@@ -561,6 +561,14 @@ GUARDED = [
      "before falling back to `docker kill` (1\u20133600).",
      "test_env_bounds.py"),
 
+    # A floor is a number too. `str(lo) in row` found the "1" of a new
+    # floor inside the "100" of the old range, so this stayed green.
+    ("\u2026including a floor, not only a ceiling",
+     "docs/configuration.md",
+     "exceeds this percentage (1\u2013100).",
+     "exceeds this percentage (50\u2013100).",
+     "test_env_bounds.py"),
+
     ("a missing container CLI is a skip, not a crash that scores as a catch",
      "scripts/livefixture.py",
      "    try:\n        return subprocess.run([cli, \"info\"],\n                              capture_output=True).returncode == 0\n    except OSError:\n        return False",
@@ -1685,6 +1693,69 @@ GUARDED = [
      '                    if getattr(updates, "pin_list_unreadable", False):\n                        # Not "up to date": nothing was checked.',
      '                    if False:\n                        # Not "up to date": nothing was checked.',
      'test_pin_unreadable_paths.py'),
+
+    # The three recreate paths hand the probe's answer to
+    # `_build_run_args`. Each of these went green with `None` in its
+    # place until test_cgroup_probe drove the paths themselves.
+    ('a dependent recreate is built for the host\'s cgroup version',
+     'app/update_checker.py',
+     '                                   inherited=self._image_config(config.get("Image")),\n'
+     '                                   cgroup_version=self._cgroup_version(self.backend))',
+     '                                   inherited=self._image_config(config.get("Image")),\n'
+     '                                   cgroup_version=None)',
+     'test_cgroup_probe.py'),
+
+    ('…and so is a standalone recreate',
+     'app/update_checker.py',
+     '                                       inherited=self._image_config(config.get("Image")),\n'
+     '                                       cgroup_version=self._cgroup_version(self.backend))',
+     '                                       inherited=self._image_config(config.get("Image")),\n'
+     '                                       cgroup_version=None)',
+     'test_cgroup_probe.py'),
+
+    ('…and one whose container vanished when it stopped',
+     'app/update_checker.py',
+     '                    cgroup_version=self._cgroup_version(self.backend),\n',
+     '                    cgroup_version=None,\n',
+     'test_cgroup_probe.py'),
+
+    ('a backend that raises during the cgroup probe does not take the '
+     'recreate down',
+     'app/update_checker.py',
+     '                except (subprocess.SubprocessError, OSError):\n'
+     '                    break\n'
+     '                if r.returncode != 0:',
+     '                except ():\n'
+     '                    break\n'
+     '                if r.returncode != 0:',
+     'test_cgroup_probe.py'),
+
+    ('another host\'s pending updates survive this host\'s scan',
+     'app/update_checker.py',
+     '    others = [u for u in prev if host_of(u) != host_name]',
+     '    others = []',
+     'test_pin_fail_closed.py'),
+
+    ('/stop on Telegram asks before it stops anything',
+     'app/telegram_bot.py',
+     '            if action != "stop":\n'
+     '                self._emit(lifecycle.act(action, targets, partial=arg,',
+     '            if True:\n'
+     '                self._emit(lifecycle.act(action, targets, partial=arg,',
+     'test_stop_confirms.py'),
+
+    ('a Discord 404 that is not the webhook being gone keeps a private '
+     'answer private',
+     'app/discord_bot.py',
+     '        return code in (10015, 50027)',
+     '        return True',
+     'test_discord_bot.py'),
+
+    ('…and so does a 429 or a 500',
+     'app/discord_bot.py',
+     '        if status != 404:\n            return False',
+     '        if status != 404:\n            return True',
+     'test_discord_bot.py'),
 
 ]
 

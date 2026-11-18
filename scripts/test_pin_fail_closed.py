@@ -211,7 +211,15 @@ _SEED = [{"name": "gitlab", "image": "gitlab/ce:17", "host": "local"},
 _kept = _pending_after(b'["db"', _SEED)
 checks["a damaged pin list does not drop this host's pending updates"] = (
     "gitlab" in _kept and "plex" in _kept)
-checks["…nor another host's"] = "nas-app" in _kept
+# Not a guard of the fix above, and named so it does not read like one.
+# Measured 18.11.2026: with `if pin_unreadable:` turned into `if False:`
+# this stays ✅, because another host's entries never depended on it —
+# `merge_pending` leaves them alone in every run. What it does hold is
+# that rule: with `others = []` in `merge_pending` it goes red, and the
+# ratchet entry "another host's pending updates survive this host's
+# scan" points here.
+checks["…and another host's entries are still there "
+       "(merge_pending's host rule, not the pin fix)"] = "nas-app" in _kept
 if not ("gitlab" in _kept and "plex" in _kept):
     print(f"      → survived: {_kept}")
 

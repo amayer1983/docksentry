@@ -40,23 +40,34 @@ import livefixture as lf  # noqa: E402
 
 from container_backend import PodmanBackend, RemoteBackend   # noqa: E402
 
-# Presence is not usability, and this asked only about presence. A
-# hosted runner HAS a podman binary and no working rootless setup, so
-# `shutil.which` said yes and every check below then failed against a
-# podman that cannot run anything — a red procedure that looks exactly
-# like a regression. Found by CI on 16.11.2026, the first run after the
-# suite was put there. `daemon_available` asks `podman info`, which is
-# the question this file actually depends on.
+# Presence is not usability, and this asked only about presence:
+# `shutil.which` says yes for a binary that cannot reach its service.
+# `daemon_available` asks `podman info`, which is closer to the question
+# this file depends on.
+#
+# An earlier version of this comment said a hosted runner has "no
+# working rootless setup". That was a reading of the red CI run on
+# 16.11.2026, not a measurement, and the measurement since says
+# otherwise: the CI run of 17.11.2026 (20:37 UTC) reports podman_live
+# "ok, 16 checks" on ubuntu-latest, so podman there answers, starts
+# containers and accepts the rebuilt command. What made 16.11. red is
+# below.
 if not lf.daemon_available("podman"):
     print("SKIP: no usable podman here")
     sys.exit(0)
 
-# …and `info` answering is not the same as a container starting. The
-# same runner answered `podman info` and then refused every container
-# with `crun: cannot set memory swappiness with cgroupv2` — so the file
-# ran its real checks against a podman that cannot run anything, and
-# died in the rollback that handles a failed start. A smoke run is the
-# question this file actually depends on; it costs one `true`.
+# …and `info` answering is not the same as a container starting, so a
+# smoke run asks that directly; it costs one `true`.
+#
+# This used to say the runner "refused every container with `crun:
+# cannot set memory swappiness with cgroupv2`". It did not refuse every
+# container. The flag in that message is one Docksentry emits, not one
+# `podman run … true` carries: the rebuilt command in the recreate below
+# had it, because the cgroup probe read every podman host as v1 (fixed
+# in cd8f6b6). The run that died there was that recreate, in the
+# rollback after it. Measured: after that fix, the same runner passes
+# all 16 checks including the smoke run. Inferred, not measured: the
+# smoke run was never what failed on 16.11.
 _smoke = subprocess.run(
     ["podman", "run", "--rm", "alpine:3.19", "true"],
     capture_output=True, text=True)
@@ -177,6 +188,24 @@ finally:
 
 
 
+def _kernel_cgroup_version():
+    """"2" or "1" from the filesystem type at /sys/fs/cgroup, None if unread.
+
+    `cgroup2` there is the unified hierarchy; `tmpfs` is the v1 (or
+    hybrid) layout, which podman reports as v1. The podman under test is
+    local, so its kernel is this one. Here, 18.11.2026: `stat -f -c %T
+    /sys/fs/cgroup` says cgroup2fs and podman says v2."""
+    try:
+        with open("/proc/self/mounts", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3 and parts[1] == "/sys/fs/cgroup":
+                    return {"cgroup2": "2", "tmpfs": "1"}.get(parts[2])
+    except OSError:
+        pass
+    return None
+
+
 # ── a real recreate, in a real pod ───────────────────────────────────
 # The shapes are pinned in test_podman_recreate.py without needing a
 # runtime; this is the half that only a real Podman can answer. A pod,
@@ -216,15 +245,35 @@ if _have_image:
             # host that emits `--memory-swappiness`, which crun rejects
             # outright (#50, fixed in the code, re-introduced here by
             # the caller). Both machines are cgroup v2 and podman reports
-            # MemorySwappiness: 0 on both — the difference is only that
-            # the crun here tolerated the flag and the runner's refused
-            # it outright. Measured, after a first version of this
-            # comment guessed at cgroup v1 and was wrong.
+            # MemorySwappiness: 0 on both. Why the flag went through
+            # here and not on the runner: measured 18.11.2026 with
+            # `podman info --format '{{.Host.OCIRuntime.Name}}'`, the
+            # podman 4.9.3 here runs runc 1.3.5 and crun is not
+            # installed. The runner's runtime was not measured; that it
+            # is crun is a reading of its error message ("crun: …").
+            # An earlier version of this comment said "the crun here
+            # tolerated the flag", which was a guess.
             _cgv = UpdateChecker._cgroup_version(pb)
             cmd = uc._build_run_args(cfg, "alpine:3.19", CTR, None,
                                      cgroup_version=_cgv)
+            # The host's cgroup version is read independently of the
+            # probe under test: from the kernel, as the filesystem type
+            # mounted at /sys/fs/cgroup. The check used to ask the
+            # probe's own answer (`_cgv != "2" or …`), and the bug it is
+            # named after made the probe say "1" on every podman host —
+            # which made the check true. Measured 18.11.2026: with the
+            # probe put back to the docker field only, it stayed green.
+            _host_cgv = _kernel_cgroup_version()
+            checks["the cgroup version can be read from the kernel here"] = (
+                _host_cgv is not None)
+            checks["the probe reads the cgroup version the kernel mounts"] = (
+                _cgv == _host_cgv)
+            if _cgv != _host_cgv:
+                print(f"      → probe said {_cgv!r}, the kernel mounts "
+                      f"cgroup v{_host_cgv}")
             checks["the rebuilt command respects the host's cgroup version"] = (
-                _cgv != "2" or "--memory-swappiness" not in cmd)
+                _host_cgv is not None
+                and (_host_cgv != "2" or "--memory-swappiness" not in cmd))
 
             checks["the rebuilt command is argv, all strings"] = all(
                 isinstance(a, str) for a in cmd)

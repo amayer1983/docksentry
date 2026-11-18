@@ -24,6 +24,7 @@ including Podman's leading `v`, and including the failure shapes, where
 the safe answer is the conservative "1" rather than a guess.
 """
 
+import json
 import os
 import sys
 import types
@@ -115,8 +116,18 @@ class _Explodes:
         raise OSError("socket is gone")
 
 
+# Inside a try, because what is under test here is exactly whether the
+# probe raises. Bare, a probe without its `except` took this procedure
+# down with a traceback and no verdict line (audit, 18.11.2026), which
+# `test_guard_mutations.py` scores [unrunnable], not caught.
+try:
+    _exploded = _probe(_Explodes())
+except Exception as exc:                                      # noqa: BLE001
+    _exploded = f"raised {type(exc).__name__}: {exc}"
 checks["…and a backend that raises does not take the caller down"] = (
-    _probe(_Explodes()) == "1")
+    _exploded == "1")
+if _exploded != "1":
+    print(f"      → a backend that raises: {_exploded}")
 
 # ── a failed probe is not remembered ─────────────────────────────────
 # The fallback "1" used to be cached for the host like a real answer, so
@@ -161,7 +172,12 @@ def _recreates(engine, n):
         for i in range(n):
             engine.down = i == 0
             before = len(engine.asked)
-            seen.append(UpdateChecker._cgroup_version(engine))
+            # Same reason as above: a probe that raises is a red check
+            # here, not the end of the procedure.
+            try:
+                seen.append(UpdateChecker._cgroup_version(engine))
+            except Exception as exc:                          # noqa: BLE001
+                seen.append(f"raised {type(exc).__name__}")
             asked.append(len(engine.asked) - before)
     finally:
         UpdateChecker._cgroup_version_cache.clear()
@@ -217,6 +233,106 @@ for version, want_flag in (("1", True), ("2", False)):
     checks[f"with cgroup {version}, --memory-swappiness is "
            f"{'kept' if want_flag else 'left out'}"] = (
         ("--memory-swappiness" in _cmd) is want_flag)
+
+# ── …and the recreate paths actually hand the probe's answer in ──────
+# The block above passes `cgroup_version` itself, so it says nothing
+# about whether production does. Measured 18.11.2026: with all three
+# `cgroup_version=self._cgroup_version(self.backend)` in
+# update_checker.py replaced by `None`, this file stayed green. So each
+# of the three paths is driven here, with the real probe: the daemon is
+# a stand-in that answers `info` the way podman does and records the
+# `run` it is handed. Nothing on the path from the probe to the `run`
+# argv is replaced.
+_INSPECT = json.dumps([{
+    "Name": "/web", "Config": {"Image": "nginx:1.25", "Env": [],
+                               "Labels": {}},
+    "HostConfig": {"RestartPolicy": {"Name": "no"}, "Binds": [],
+                   "PortBindings": {}, "MemorySwappiness": 0},
+    "Mounts": []}])
+
+
+class _Daemon(_Engine):
+    """A podman that answers `info` like `_Engine`, `inspect` with one
+    container, and records each `run`. Every other verb succeeds."""
+
+    def __init__(self, name, answers):
+        super().__init__(name, answers)
+        self.runs = []
+
+    def run(self, args, timeout=None, **kw):
+        if args[:2] == ["info", "--format"]:
+            return super().run(args, timeout=timeout, **kw)
+        if args[:1] == ["run"]:
+            self.runs.append(list(args))
+        out = _INSPECT if args == ["inspect", "web"] else ""
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    def __getattr__(self, verb):
+        if verb.startswith("_"):
+            raise AttributeError(verb)
+        return lambda *a, **kw: types.SimpleNamespace(
+            returncode=0, stdout="", stderr="")
+
+
+def _recreate_on(path, daemon):
+    """Drive one production recreate path; return the `run` argv seen."""
+    UpdateChecker._cgroup_version_cache.clear()
+    c = UpdateChecker.__new__(UpdateChecker)
+    c.config = types.SimpleNamespace(docker_stop_timeout=10,
+                                     container_cli="podman", debug=False)
+    c._backend = daemon
+    exists = {"web": True}
+    for _n in ("_debug", "_trace", "_save_history", "_mark_inflight",
+               "_clear_inflight", "_attach_extra_networks",
+               "_audit_inspect_coverage"):
+        setattr(c, _n, lambda *a, **kw: None)
+    c._lifecycle_timeout = lambda: 30
+    c._container_exists = lambda n: exists.get(n, False)
+
+    def _stop(n, inspect_config=None):
+        # The vanished arm is the AutoRemove container that is gone the
+        # moment it stops; that is the environment, not a decision.
+        if path == "standalone, vanished after stop":
+            exists[n] = False
+        return True, ""
+    c._stop_container = _stop
+    c._rename_container = lambda src, dst: True
+    c._get_image_defaults = lambda img: {}
+    c._image_config = lambda img: {}
+    c._layer_farewell = lambda n: ""
+    c._format_version_arrow = lambda a, b: ""
+    c._wait_healthy = lambda name, **kw: ("healthy", "running", "healthy")
+    c._verify_running_image = lambda n, i: (True, "")
+    c._rollback_to_old = lambda name, old: True
+    c._tail_logs = lambda n, lines=10: ""
+    try:
+        if path == "the dependent recreate":
+            c.recreate_dependent("web", "gluetun")
+        else:
+            c._update_standalone("web", "nginx:1.26")
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"      → {path}: {type(exc).__name__}: {exc}")
+    finally:
+        UpdateChecker._cgroup_version_cache.clear()
+    return daemon.runs
+
+
+for _path in ("the dependent recreate", "standalone, container still there",
+              "standalone, vanished after stop"):
+    for _label, _answer, _want in (("v2", "v2\n", False), ("v1", "v1\n", True)):
+        _d = _Daemon("podman", {_DOCKER_FIELD: (125, _PODMAN_TEMPLATE_ERROR),
+                                _PODMAN_FIELD: (0, _answer)})
+        _runs = _recreate_on(_path, _d)
+        # Counter-direction first: without a `run` at all, "the flag is
+        # not in it" would be true of nothing.
+        checks[f"{_path} on a podman {_label} host runs the container"] = (
+            len(_runs) == 1)
+        checks[f"…and asks the daemon for its cgroup version "
+               f"({_path}, {_label})"] = _PODMAN_FIELD in _d.asked
+        _has = bool(_runs) and "--memory-swappiness" in _runs[0]
+        checks[f"…and --memory-swappiness is "
+               f"{'kept' if _want else 'left out'} ({_path}, {_label})"] = (
+            bool(_runs) and _has is _want)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

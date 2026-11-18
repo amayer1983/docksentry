@@ -46,6 +46,12 @@ class FakeREST:
         if self.edit_fails:
             from discord_rest import DiscordRESTError
             status, body = self.edit_error or (401, "Invalid Webhook Token")
+            # Recorded, so a check that nothing reached the channel can
+            # also see that a delivery was attempted at all. Without it
+            # `calls` stayed empty on a refused edit, and "not any(…)"
+            # over an empty list is true of a `_deliver` that does
+            # nothing (audit, 18.11.2026).
+            self.calls.append(("edit_refused", status, content))
             raise DiscordRESTError(status, body)
         self.calls.append(("edit", content, kw.get("components")))
 
@@ -1237,6 +1243,11 @@ lbot.rest.edit_error = (429, "rate limited")
 lbot._deliver(leak_inter, lbot._now(), "PRIVATE rate-limited answer")
 checks["a 429 does not publish one either"] = not any(
     c[0] == "channel" for c in lbot.rest.calls)
+# The counter-direction: the private edit was tried, and the drop logged.
+checks["…though it did try the private edit first (429)"] = any(
+    c[0] == "edit_refused" and c[1] == 429 for c in lbot.rest.calls)
+checks["…and logged that it dropped the answer (429)"] = any(
+    "could not deliver" in m and "429" in m for m in _leaklog)
 
 # An expired token is the one case that does fall back — that is what the
 # whole channel-fallback path exists for.
@@ -1257,6 +1268,10 @@ lbot.rest.edit_error = (404, '{"code": 10002, "message": "Unknown Application"}'
 lbot._deliver(leak_inter, lbot._now(), "PRIVATE misrouted answer")
 checks["a 404 for anything else is not treated as an expiry"] = not any(
     c[0] == "channel" for c in lbot.rest.calls)
+checks["…though it did try the private edit first (404)"] = any(
+    c[0] == "edit_refused" and c[1] == 404 for c in lbot.rest.calls)
+checks["…and logged that it dropped the answer (404)"] = any(
+    "could not deliver" in m and "404" in m for m in _leaklog)
 lbot.rest.edit_fails = False
 
 

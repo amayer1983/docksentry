@@ -161,12 +161,35 @@ for name, attr, lo, hi, default, good in BOUNDS:
 _doc = _io.open(os.path.join(os.path.dirname(__file__), "..", "docs",
                              "configuration.md"), encoding="utf-8").read()
 _missing = []
+
+
+def _doc_ranges(row):
+    """Every (lo, hi) pair a table row prints, as integers."""
+    import re
+    pairs = re.findall(r"(?<![\d.])(\d+)\s*[–-]\s*(\d+)(?![\d.])", row)
+    pairs += re.findall(r"(?<![\d.])(\d+)=[A-Za-z]+,\s*(\d+)=[A-Za-z]+", row)
+    return {(int(a), int(b)) for a, b in pairs}
+
+
+# The parser itself, so a parser that finds nothing cannot make the
+# check below fail for the wrong reason or pass for one.
+checks["the range parser reads the spellings the table uses"] = (
+    _doc_ranges("| x (1–100). y") == {(1, 100)}
+    and _doc_ranges("(0-23, local time)") == {(0, 23)}
+    and _doc_ranges("(0=Mon, 6=Sun)") == {(0, 6)}
+    and _doc_ranges("(0–8760h; 0 means)") == {(0, 8760)})
+checks["…and does not find a floor of 1 inside a range of 50–100"] = (
+    (1, 100) not in _doc_ranges("(50–100)"))
 for name, attr, lo, hi, default, good in BOUNDS:
     _row = next((ln for ln in _doc.splitlines()
                  if ln.startswith(f"| `{name}`")), "")
-    # Written variously as "(1–100)", "0-23", "1–65535" or "0–8760h",
-    # so this asks for both numbers rather than for one spelling.
-    if not _row or str(lo) not in _row or str(hi) not in _row:
+    # Written variously as "(1–100)", "0-23", "1–65535", "0–8760h" or
+    # "0=Mon, 6=Sun", so the row is parsed into the ranges it prints and
+    # the enforced pair has to be one of them. The first version asked
+    # `str(lo) in row`, which "1" satisfies inside "100": with the
+    # DISK_WARN_PERCENT row put back to "(50–100)" it stayed green
+    # (audit, 18.11.2026).
+    if not _row or (lo, hi) not in _doc_ranges(_row):
         _missing.append(name)
 checks["every range the code enforces is in the documentation"] = not _missing
 if _missing:

@@ -134,6 +134,24 @@ def press(bot, data):
 
 EN = json.load(open(os.path.join(APP, "lang", "en.json"), encoding="utf-8"))
 
+
+# When the question is never asked — which is what these checks exist
+# to notice — there is no button, no pending record and no answer to
+# index into. Without these the first `btns[0]` raised IndexError and
+# the procedure died with no verdict instead of going red (measured
+# 18.11.2026 with `/stop` acting at once).
+def _go(btns):
+    return btns[0] if btns else "stop_go:no-button-was-offered"
+
+
+def _record(bot, btns):
+    token = _go(btns).split(":", 1)[1]
+    return (getattr(bot, "_pending_stops", None) or {}).get(token, {})
+
+
+def _said(out):
+    return str(out[-1][0]) if out else ""
+
 # ── a single stop asks ───────────────────────────────────────────────
 bot, ck = make_bot()
 rows = cmd(bot, "/stop web")
@@ -145,22 +163,22 @@ checks["…offering a confirm and a cancel"] = (
     len(btns) == 2 and btns[0].startswith("stop_go:")
     and btns[1] == "stop_cancel")
 
-out = press(bot, btns[0])
+out = press(bot, _go(btns))
 checks["the press is what stops it"] = ck.stopped == ["web"]
-checks["…and it says so"] = "web" in str(out[-1][0])
+checks["…and it says so"] = "web" in _said(out)
 
 # One press only: the token is spent, so a double tap cannot run twice.
-out = press(bot, btns[0])
+out = press(bot, _go(btns))
 checks["a second press does nothing"] = ck.stopped == ["web"]
 checks["…and says the confirmation is gone"] = (
-    EN["chan_confirm_expired"].split("—")[0].strip() in str(out[-1][0]))
+    EN["chan_confirm_expired"].split("—")[0].strip() in _said(out))
 
 # Cancel means cancel.
 bot, ck = make_bot()
 btns = buttons(cmd(bot, "/stop web"))
 press(bot, "stop_cancel")
 checks["cancelling stops nothing"] = ck.stopped == []
-press(bot, btns[0])
+press(bot, _go(btns))
 checks["…and the token is dead afterwards"] = ck.stopped == []
 
 # ── refusals come before the question, not after ─────────────────────
@@ -190,8 +208,12 @@ rows = cmd(bot, "/stop web*")
 checks["a glob asks once, for the whole set"] = len(buttons(rows)) == 2
 checks["…naming what it would stop"] = (
     "web" in rows[-1][0] and "web-db" in rows[-1][0])
-checks["…and stops nothing yet"] = ck.stopped == []
-press(bot, buttons(rows)[0])
+# Its own name. It used to share "…and stops nothing yet" with the
+# single-stop check above, and a dict keeps the last value under a key,
+# so that one was never counted: forced to False, the procedure still
+# said PASS (audit, 18.11.2026).
+checks["…and the glob stops nothing yet either"] = ck.stopped == []
+press(bot, _go(buttons(rows)))
 checks["…until the press"] = sorted(ck.stopped) == ["web", "web-db"]
 
 # `/stop *` must not ask about the two it is going to refuse.
@@ -204,7 +226,7 @@ checks["`/stop *` says up front what it will skip"] = (
 checks["…and asks only about the rest"] = (
     "2" in question and "docksentry" not in question
     and "gluetun" not in question)
-press(bot, buttons(rows)[0])
+press(bot, _go(buttons(rows)))
 checks["…and the press honours that"] = sorted(ck.stopped) == ["web", "web-db"]
 
 bot, ck = make_bot()
@@ -221,12 +243,12 @@ import time as _time  # noqa: E402
 
 bot, ck = make_bot()
 btns = buttons(cmd(bot, "/stop web"))
-press_as(bot, btns[0], user="999")
+press_as(bot, _go(btns), user="999")
 checks["another user cannot press your confirmation"] = ck.stopped == []
 checks["…and is told why, in a toast rather than in the chat"] = (
     any(EN["chan_confirm_not_yours"].split(".")[0] in t
         for t in bot.toasts) and bot.sent == [])
-press(bot, btns[0])
+press(bot, _go(btns))
 checks["…and the button still works for the person who asked"] = (
     ck.stopped == ["web"])
 
@@ -234,25 +256,25 @@ checks["…and the button still works for the person who asked"] = (
 # Discord's own check be bypassed before it was tightened.
 bot, ck = make_bot()
 btns = buttons(cmd(bot, "/stop web"))
-bot._pending_stops[btns[0].split(":", 1)[1]]["user"] = ""
-press(bot, btns[0])
+_record(bot, btns)["user"] = ""
+press(bot, _go(btns))
 checks["a record with no asker is refused, not waved through"] = (
     ck.stopped == [])
 
 bot, ck = make_bot()
 btns = buttons(cmd(bot, "/stop web"))
-rec = bot._pending_stops[btns[0].split(":", 1)[1]]
+rec = _record(bot, btns)
 rec["created"] = _time.time() - (bot.STOP_CONFIRM_TTL + 1)
-out = press(bot, btns[0])
+out = press(bot, _go(btns))
 checks["a confirmation older than the TTL is dead"] = ck.stopped == []
 checks["…and says so"] = (
-    EN["chan_confirm_expired"].split("—")[0].strip() in str(out[-1][0]))
+    EN["chan_confirm_expired"].split("—")[0].strip() in _said(out))
 
 bot, ck = make_bot()
 btns = buttons(cmd(bot, "/stop web"))
-bot._pending_stops[btns[0].split(":", 1)[1]]["created"] = (
+_record(bot, btns)["created"] = (
     _time.time() - (bot.STOP_CONFIRM_TTL - 60))
-press(bot, btns[0])
+press(bot, _go(btns))
 checks["…but one just inside it still works"] = ck.stopped == ["web"]
 
 checks["the TTL matches Discord's"] = (
