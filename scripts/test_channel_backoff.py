@@ -16,7 +16,11 @@ HTTP family was right about refusals — a 401 must not be retried for
 fifteen minutes — and wrong about the two statuses whose whole meaning
 is "ask again".
 
-One procedure for all six channels rather than six copies in six files.
+One procedure for every channel rather than a copy in each file — and
+"every" is what `notifiers.discover()` finds plus Telegram, not a list
+typed out here. The typed list had six names on it and the Discord bot
+channel was not one of them; measured on 18.11.2026, it dropped every
+"not now" status.
 The `*_resilience.py` files repeat assertion expressions between
 them, and the identical check copied four times is how a rule drifts
 in one place and nobody notices. No number here any more: "twenty-five"
@@ -115,38 +119,154 @@ def _webhook():
                                 channel_webhook_enabled=True))
 
 
-CHANNELS = [("ntfy", _ntfy), ("gotify", _gotify), ("apprise", _apprise),
-            ("matrix", _matrix), ("discord", _discord), ("webhook", _webhook)]
+def _discordbot():
+    from notifiers.discordbot import DiscordBotNotifier
+    return DiscordBotNotifier(_cfg(discord_bot_token="tok",
+                                   discord_bot_channel="123",
+                                   channel_discordbot_enabled=True))
 
 
-def _queued_after(build, status):
-    """Send one message into an HTTP `status`; is it waiting afterwards?"""
+def _telegram():
+    """A real `TelegramBot`, built without its constructor (which starts
+    nothing useful here and needs a token check). The methods are the
+    ones under test; only the config is made up — the same build
+    `test_telegram_transient.py` uses."""
+    import telegram_bot
+    b = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
+    b.config = types.SimpleNamespace(
+        bot_token="t", chat_id="-1", telegram_topic_id=None, bot_label="",
+        channel_telegram_enabled=True)
+    b._migrated_chat_id = None
+    b._migration_notice_pending = False
+    b.t = lambda k, **kw: k
+    return b
+
+
+def _smtp():
+    from notifiers.smtp import SmtpNotifier
+    return SmtpNotifier(_cfg(smtp_host="mail.example", smtp_port=25,
+                             smtp_user="", smtp_password="",
+                             smtp_from="ds@example.test",
+                             smtp_to="me@example.test", smtp_tls="none",
+                             smtp_tls_verify=True,
+                             channel_smtp_enabled=True))
+
+
+#: One builder per channel name. The list of channels is NOT this dict:
+#: it is whatever `notifiers.discover()` finds, plus Telegram, which is
+#: not a plugin. A channel file dropped into `app/notifiers/` without a
+#: row here fails the parity check below by name — it cannot be added
+#: unseen. Before this, the list was typed out by hand, and the Discord
+#: bot channel was not on it: measured on 18.11.2026, it dropped 408,
+#: 429, 502, 503 and 504 while every listed channel held them.
+HTTP_DRIVERS = {"ntfy": _ntfy, "gotify": _gotify, "apprise": _apprise,
+                "matrix": _matrix, "discord": _discord, "webhook": _webhook,
+                "discordbot": _discordbot, "telegram": _telegram}
+
+#: The one channel that does not speak HTTP. Its answers are SMTP reply
+#: codes, so it is driven with those (below) instead of the HTTP table;
+#: it is named here so that "no HTTP driver" is a decision on record
+#: rather than an omission.
+SMTP_DRIVERS = {"smtp": _smtp}
+
+
+class _Recorder:
+    """Every sleep anyone asked for, so nothing waits on the clock."""
+
+    def __init__(self):
+        self.slept = []
+
+    def __call__(self, s=0, *_a, **_kw):
+        self.slept.append(s)
+
+
+def _queued_after(build, status, headers=None):
+    """Send one message into an HTTP `status` through the channel's real
+    `send_message`; how many are waiting afterwards, what did it log, and
+    what did it sleep?
+
+    `status` "net" is nothing answering at all. Stand-ins are the
+    network (`urlopen`), the clock (`time.sleep`, and the `sleep`
+    `DiscordREST` is built with — its default is bound when the module
+    loads, so patching `time.sleep` does not reach it) and the queue's
+    clock. The classification is never stood in for.
+    """
+    import contextlib
+    import time as _time
+
+    import discord_rest
     q = notify_retry.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
     real_queue, notify_retry.queue = notify_retry.queue, q
     real_open = urllib.request.urlopen
-    real_sleep = None
+    rec = _Recorder()
 
     def _raise(*_a, **_kw):
+        if status == "net":
+            raise urllib.error.URLError("connection refused")
         raise urllib.error.HTTPError("https://example/x", status, "nope",
-                                     {}, io.BytesIO(b"{}"))
+                                     dict(headers or {}), io.BytesIO(b"{}"))
+
+    real_rest = discord_rest.DiscordREST
+
+    class _Clocked(real_rest):
+        def __init__(self, token, **kw):
+            kw["sleep"] = rec
+            super().__init__(token, **kw)
 
     urllib.request.urlopen = _raise
-    # `post_json_with_retry` sleeps between attempts; not here.
-    import time as _time
-    real_sleep, _time.sleep = _time.sleep, lambda *_a: None
+    real_sleep, _time.sleep = _time.sleep, rec
+    discord_rest.DiscordREST = _Clocked
+    log = io.StringIO()
     try:
-        build().send_message("three containers failed to update")
-        return q.pending()
+        with contextlib.redirect_stdout(log):
+            build().send_message("three containers failed to update")
+        return q.pending(), log.getvalue(), rec.slept
     finally:
         urllib.request.urlopen = real_open
         _time.sleep = real_sleep
+        discord_rest.DiscordREST = real_rest
         notify_retry.queue = real_queue
 
 
-for name, build in CHANNELS:
+# ── parity: every channel there is, not the ones somebody listed ─────
+import notifiers                                              # noqa: E402
+
+_discovered = {c.name: c for c in notifiers.discover()}
+import telegram_bot as _tgmod                                 # noqa: E402
+_discovered["telegram"] = _tgmod.TelegramBot
+
+_no_driver = sorted(n for n in _discovered
+                    if n not in HTTP_DRIVERS and n not in SMTP_DRIVERS)
+checks["every discovered channel, and Telegram, is driven here"] = (
+    not _no_driver)
+if _no_driver:
+    print(f"      → no driver for: {_no_driver} — add one to HTTP_DRIVERS "
+          f"(or SMTP_DRIVERS) in this file")
+# A builder that hands back some other class would make the row a
+# formality. `type(...) is`, not `isinstance`: the bot channel IS a
+# subclass of the webhook channel, and building the webhook for it
+# would pass an isinstance check while testing the wrong pipe.
+_wrong = sorted(n for n, b in {**HTTP_DRIVERS, **SMTP_DRIVERS}.items()
+                if n in _discovered and type(b()) is not _discovered[n])
+checks["…each by its own class, not a stand-in"] = not _wrong
+if _wrong:
+    print(f"      → builder returns another class for: {_wrong}")
+# And configured, or every status reads as "dropped" because nothing
+# was sent — how Matrix once looked broken here when it was not.
+_unconf = sorted(n for n, b in {**HTTP_DRIVERS, **SMTP_DRIVERS}.items()
+                 if n != "telegram" and not b().configured())
+checks["…and each builder is a configured channel"] = not _unconf
+if _unconf:
+    print(f"      → not configured: {_unconf}")
+
+_expected_held = sorted(TEMPORARY_STATUS)
+for name in sorted(_discovered):
+    build = HTTP_DRIVERS.get(name)
+    if build is None:
+        continue
     held, dropped = [], []
     for status, retryable in STATUS:
-        waiting = _queued_after(build, status) > 0
+        waiting = _queued_after(build, status)[0] > 0
         (held if waiting else dropped).append(status)
         if waiting != retryable:
             print(f"      → {name}: HTTP {status} "
@@ -159,6 +279,91 @@ for name, build in CHANNELS:
     # every thirty seconds for a quarter of an hour.
     checks[f"{name}: …and a refusal is not asked again"] = (
         dropped == [s for s, r in STATUS if not r])
+    # Exactly the shared table — not a superset that also happens to
+    # cover this file's sample of refusals.
+    checks[f"{name}: …it holds exactly TEMPORARY_STATUS"] = (
+        sorted(held) == _expected_held)
+    # The case every channel had before #66: nothing answers.
+    checks[f"{name}: …and a dead network is held too"] = (
+        _queued_after(build, "net")[0] == 1)
+
+# ── SMTP: the same split, in its own language ───────────────────────
+# Not HTTP, so not the table above. A reply code decides: 4xx is "come
+# back later" (greylisting, #66), 5xx is "no". Driven through the real
+# `send_message` with only the relay stood in for.
+import smtplib                                                # noqa: E402
+
+SMTP_STATUS = [(421, True), (450, True), (451, True), (452, True),
+               (550, False), (553, False), (554, False)]
+
+
+def _smtp_queued_after(build, code):
+    import contextlib
+
+    class _Relay:
+        def __init__(self, *_a, **_kw):
+            if code == "net":
+                raise ConnectionRefusedError(111, "connection refused")
+
+        def send_message(self, *_a, **_kw):
+            raise smtplib.SMTPSenderRefused(code, b"x", "ds@example.test")
+
+        def quit(self):
+            pass
+
+    q = notify_retry.RetryQueue(clock=lambda: 0.0, wall=lambda: 0.0)
+    real_queue, notify_retry.queue = notify_retry.queue, q
+    real_smtp, smtplib.SMTP = smtplib.SMTP, _Relay
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            build().send_message("three containers failed to update")
+        return q.pending()
+    finally:
+        smtplib.SMTP = real_smtp
+        notify_retry.queue = real_queue
+
+
+for name, build in SMTP_DRIVERS.items():
+    _held = [c for c, _r in SMTP_STATUS if _smtp_queued_after(build, c) > 0]
+    checks[f"{name}: a 4xx reply is held, a 5xx is not"] = (
+        _held == [c for c, r in SMTP_STATUS if r])
+    if _held != [c for c, r in SMTP_STATUS if r]:
+        print(f"      → {name}: held {_held}")
+    checks[f"{name}: …and a dead network is held too"] = (
+        _smtp_queued_after(build, "net") == 1)
+
+# ── the Discord bot channel and a 429 that names its wait ────────────
+# Same shape as the webhook path: a short `Retry-After` is waited out in
+# place (so it is tried again, and nothing waits on the queue for it),
+# one longer than the budget is not slept on and goes to the queue.
+# `DiscordREST` does the waiting; this checks that what reaches the
+# channel afterwards is held rather than dropped.
+_n, _log, _slept = _queued_after(_discordbot, 429, {"Retry-After": "2"})
+checks["discordbot: a short Retry-After is waited out in place"] = (
+    2.0 in _slept)
+checks["discordbot: …and a 429 that outlasts the attempts is held"] = _n == 1
+_n, _log, _slept = _queued_after(_discordbot, 429, {"Retry-After": "3600"})
+checks["discordbot: an hour-long Retry-After is not slept through"] = (
+    not any(s >= 3600 for s in _slept))
+checks["discordbot: …and the alert is held instead"] = _n == 1
+# The counter-direction through the same pipe: a 403 (missing channel
+# permission) is a no, and says so without the holding line.
+_n, _log, _slept = _queued_after(_discordbot, 403)
+checks["discordbot: a 403 is not held and does not claim to be"] = (
+    _n == 0 and "holding" not in _log)
+
+# ── Apprise: a temporary answer does not send anyone to the config ───
+# 408 and 429 are 4xx, and the hint for 4xx was "check APPRISE_URL and
+# APPRISE_URLS" — measured printed for both, for an answer that means
+# "later".
+for _code in TEMPORARY_STATUS:
+    _n, _log, _s = _queued_after(_apprise, _code)
+    checks[f"apprise: HTTP {_code} does not point at the settings"] = (
+        "check APPRISE_URL" not in _log and _n == 1)
+for _code in (400, 401, 404):
+    _n, _log, _s = _queued_after(_apprise, _code)
+    checks[f"apprise: …while HTTP {_code} still does"] = (
+        "check APPRISE_URL and APPRISE_URLS" in _log and _n == 0)
 
 # The table itself has to match what the shared helper believes, or two
 # ideas of "temporary" drift apart in two files.

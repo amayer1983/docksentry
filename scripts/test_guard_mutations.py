@@ -1496,6 +1496,47 @@ GUARDED = [
      "            wait = int(wait_seconds)",
      "test_group_rules.py"),
 
+    ("the Discord bot channel holds a 'not now' like every other channel",
+     "app/notifiers/discordbot.py",
+     "            temporary = e.status == 0 or retryable_status(e.status)",
+     "            temporary = e.status == 0",
+     "test_channel_backoff.py"),
+
+    ("…and still holds when nothing answered at all",
+     "app/notifiers/discordbot.py",
+     "            temporary = e.status == 0 or retryable_status(e.status)",
+     "            temporary = retryable_status(e.status)",
+     "test_channel_backoff.py"),
+
+    ("…and does not hold a refusal",
+     "app/notifiers/discordbot.py",
+     "            temporary = e.status == 0 or retryable_status(e.status)",
+     "            temporary = True",
+     "test_channel_backoff.py"),
+
+    ("Apprise does not send a temporary answer to the settings",
+     "app/notifiers/apprise.py",
+     "            if retryable_status(e.code):\n"
+     "                hint = \" — a temporary answer, not a configuration problem\"",
+     "            if False:\n"
+     "                hint = \" — a temporary answer, not a configuration problem\"",
+     "test_channel_backoff.py"),
+
+    ("…while a refusal still points at APPRISE_URL",
+     "app/notifiers/apprise.py",
+     "            elif e.code < 500:\n"
+     "                hint = \" — check APPRISE_URL and APPRISE_URLS\"",
+     "            elif False:\n"
+     "                hint = \" — check APPRISE_URL and APPRISE_URLS\"",
+     "test_channel_backoff.py"),
+
+    ("a new channel cannot be added without its hold check",
+     "app/notifiers/ntfy.py",
+     "class NtfyNotifier(BaseNotifier):",
+     'class PagerNotifier(BaseNotifier):\n    name = "pager"\n\n\n'
+     "class NtfyNotifier(BaseNotifier):",
+     "test_channel_backoff.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

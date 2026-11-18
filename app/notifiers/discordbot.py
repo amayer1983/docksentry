@@ -28,6 +28,7 @@ running bot to be useful — configure it and it works, whether or not the
 gateway happens to be connected.
 """
 
+from .base import retryable_status
 from .discord import DiscordNotifier
 
 
@@ -85,10 +86,21 @@ class DiscordBotNotifier(DiscordNotifier):
         except DiscordRESTError as e:
             print(f"Discord bot channel error: {e}")
             # `DiscordREST` uses status 0 for "the request never got an
-            # answer at all" — its own word for a network failure, and the
-            # same line the webhook path draws: a 403 is a no, an
-            # unreachable host is a not-yet (#66).
-            if e.status == 0 and on_network_failure is not None:
+            # answer at all" — its own word for a network failure. The
+            # rest is the table every other HTTP channel reads
+            # (`base.TEMPORARY_STATUS`): a 403 is a no, an unreachable
+            # host or a 502 from Discord's edge is a not-yet (#66).
+            # Measured before this: 408, 429, 502, 503 and 504 were all
+            # logged and dropped here, while the webhook channel held
+            # the same alert. A 429 has already been waited out in place
+            # by `DiscordREST.request` where that was allowed (the shared
+            # `Retry-After` budget); one that reaches this line had no
+            # usable `Retry-After`, asked for more than the budget, or
+            # came back on the last attempt.
+            temporary = e.status == 0 or retryable_status(e.status)
+            if temporary and on_network_failure is not None:
+                print("Discord bot channel: holding it — that is a "
+                      "'not now', not a 'no'")
                 on_network_failure()
         except Exception as e:                                # pragma: no cover
             print(f"Discord bot channel error: {e}")
