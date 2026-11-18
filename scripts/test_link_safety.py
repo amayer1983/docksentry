@@ -66,7 +66,7 @@ def main():
 
     # ── Legitimate links stay usable ───────────────────────────
     checks["accept: plain https URL"] = is_safe_link(
-        "https://github.com/castus-pro/docksentry") is True
+        "https://github.com/example-org/docksentry") is True
     checks["accept: http URL"] = is_safe_link("http://example.com/changelog") is True
     checks["accept: URL with port"] = is_safe_link(
         "https://git.example.com:8443/owner/repo/-/releases") is True

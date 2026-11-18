@@ -128,11 +128,11 @@ class Bot(telegram_bot.TelegramBot):
 
 eng = engine()
 b = Bot(eng)
-for k in ("paperless-ngx-db-1", "aktien-tool-db-1", "paperless-ngx-webserver-1"):
+for k in ("paperless-ngx-db-1", "notes-app-db-1", "paperless-ngx-webserver-1"):
     eng.enqueue_update(k)
 b._drain_update_queue(checker=None)
 checks["every queued tap actually runs"] = b.updated == [
-    "paperless-ngx-db-1", "aktien-tool-db-1", "paperless-ngx-webserver-1"]
+    "paperless-ngx-db-1", "notes-app-db-1", "paperless-ngx-webserver-1"]
 checks["…and the queue ends up empty"] = eng._update_queue == []
 
 # ── a failure carries on, unless there are dependencies ─────────────

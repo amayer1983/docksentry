@@ -69,7 +69,7 @@ def _per_run_names(tree):
     This is the half the first version of this file was missing
     entirely. It looked only at bare string literals sitting next to
     `--name`, so against the pre-change `test_glob.py` it flagged two
-    of the fifteen fixed names `OPEN.md` enumerates: the other thirteen
+    of the fifteen fixed names the audit enumerated: the other thirteen
     reached argv through a module constant or an f-string and were
     invisible. An audit reverted the file's own headline example and
     the guard stayed green.

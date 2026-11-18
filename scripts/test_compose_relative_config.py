@@ -7,8 +7,8 @@ up in the wild, and @LeeNX's is exactly that — his log says
 
     Compose file not found: compose.yml — falling back to standalone
 
-with no path in front of it, where this machine's own containers carry
-`/home/amayer/docksentry/docker-compose.dev.yml`.
+with no path in front of it, where my own dev containers carry an
+absolute `<repo>/docker-compose.dev.yml`.
 
 Relative to what? Not to our own working directory — Docksentry runs in
 a container, where that is `/app` — but to

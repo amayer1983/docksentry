@@ -1372,7 +1372,7 @@ GUARDED = [
 #: `watchers` are the procedures that would plausibly notice, and the
 #: only ones run here: proving "nothing in 181 catches it" takes two
 #: minutes per entry, which is not a price a pre-commit run can pay. The
-#: full sweep is the audit's job (AUDIT.md); this keeps the finding from
+#: full sweep is the pre-tag audit's job; this keeps the finding from
 #: rotting away between audits.
 #: Promises measured to have no guard at all. The list may only get
 #: shorter — an entry that starts failing means somebody wrote a real
@@ -1390,7 +1390,7 @@ UNGUARDED = []
 #:
 #: The sweep found more than these — `/metrics` content, the group
 #: wait, the disk-warning threshold, the self-update chain, the Discord
-#: restore parity. They are in OPEN.md with their measurements; an
+#: restore parity. They are in my audit notes with their measurements; an
 #: entry only comes in here once its anchor is pinned down, because a
 #: stale anchor is a check that passed without running.
 DEBT = 0

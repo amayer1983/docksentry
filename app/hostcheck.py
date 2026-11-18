@@ -244,8 +244,8 @@ def _refused(text):
 #:
 #: The cost is the other way round: four questions at 30 seconds is two
 #: minutes in the worst case, and on Telegram that blocks the poller.
-#: See OPEN.md — the fix for that is to take the check off the listening
-#: thread, not to make it lie faster.
+#: The fix for that is to take the check off the listening thread, not
+#: to make it lie faster.
 PROBE_TIMEOUT = 30
 
 

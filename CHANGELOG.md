@@ -59,7 +59,7 @@ code.
   refused, and it is that one.
 
 ### Internal
-- The release rule in CLAUDE.md said "tag the same commit", which
+- My release rule said "tag the same commit", which
   cannot carry the right version number and is how the above happened.
   A final is now the beta tree plus one line: the version string.
 

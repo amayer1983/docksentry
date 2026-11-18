@@ -72,8 +72,8 @@ checks["a recognised manager gets its root, not one mount per stack"] = (
 checks["anything else gets the file's own directory"] = (
     _targets(["/opt/stacks/plex/compose.yaml"], "plex") == ["/opt/stacks/plex"])
 checks["a plain project is mounted onto itself, not its parent"] = (
-    _targets(["/home/you/vereinskasse/docker-compose.yml"], "vereinskasse")
-    == ["/home/you/vereinskasse"])
+    _targets(["/home/you/myproject/docker-compose.yml"], "myproject")
+    == ["/home/you/myproject"])
 checks["two files in one directory make one mount, not two"] = (
     _targets(["/a/b/compose.yml", "/a/b/override.yml"], "b") == ["/a/b"])
 checks["two directories make two mounts"] = (

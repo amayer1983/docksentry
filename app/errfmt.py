@@ -40,7 +40,7 @@ def clip(err, limit=400, head=140):
 
 #: `subprocess.TimeoutExpired` stringifies as the whole command line:
 #:
-#:     Command ''docker', '-H', 'tcp://10.10.10.20:2375', 'ps',
+#:     Command ''docker', '-H', 'tcp://192.0.2.20:2375', 'ps',
 #:     '--format', '{{.Names}}|{{.Image}}'' timed out after 30 seconds
 #:
 #: Technically true and useless to read. The argv is ours, not the

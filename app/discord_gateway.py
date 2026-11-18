@@ -445,9 +445,10 @@ class DiscordGateway:
 
         Believed twice on a reading and dropped once on a bad
         observation before it was measured properly. What settled it was
-        a forced disconnect — `ss -K` on the gateway socket, see
-        CLAUDE.md — run as a control: bare URL → invalidated, query
-        carried over → `session resumed`, three times.
+        a forced disconnect — `ss -K` on the gateway socket from inside
+        the container's network namespace — run as a control: bare URL
+        → invalidated, query carried over → `session resumed`, three
+        times.
 
         A resume URL that brought its own query is left alone.
         """

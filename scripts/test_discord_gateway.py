@@ -677,7 +677,7 @@ _r._handle({"op": OP_DISPATCH, "t": "READY", "s": 3,
 # …and it arrives bare. Discord sends the host and nothing else, while
 # the gateway wants the API version and encoding on every connection, so
 # the RESUME went out over a connection Discord would not recognise.
-# Settled by a forced disconnect used as a control (`ss -K`, CLAUDE.md),
+# Settled by a forced disconnect used as a control (`ss -K`),
 # not by the logs that started the question: bare URL → invalidated,
 # query carried over → `session resumed` (#63).
 checks["a wss:// resume URL is honoured"] = (

@@ -273,7 +273,7 @@ def main():
     # The REAL page is rendered and the real `<select>` read out. The
     # first version of this block rebuilt the dropdown's logic here and
     # asserted against its own copy, so mutating `web_ui.py` changed
-    # nothing — which is the mistake CLAUDE.md has a rule about, made
+    # nothing — a test checking a copy of the code it guards, made
     # in the file that was fixing a different one.
     import re as _re
     import web_ui as _wu

@@ -414,7 +414,7 @@ _alive = ManagedHost("local", FakeBackend("local", ["web", "db"]),
                      FakeChecker("local", []), FakeStore(), is_local=True)
 _dead = ManagedHost("srv20", DeadBackend("srv20"),
                     FakeChecker("srv20", []), FakeStore(),
-                    endpoint="tcp://10.10.10.20:2375")
+                    endpoint="tcp://192.0.2.20:2375")
 _hosts = _Reg([_alive, _dead])
 _bot, _chk, _cfg = make_bot(_hosts)
 

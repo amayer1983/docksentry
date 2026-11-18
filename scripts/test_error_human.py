@@ -3,7 +3,7 @@
 
 `subprocess.TimeoutExpired` stringifies as the whole command line:
 
-    Command ''docker', '-H', 'tcp://10.10.10.20:2375', 'ps', '--format',
+    Command ''docker', '-H', 'tcp://192.0.2.20:2375', 'ps', '--format',
     '{{.Names}}|{{.Image}}'' timed out after 30 seconds
 
 Technically true and useless to read — the argv is ours, the reader knows
@@ -24,7 +24,7 @@ import i18n  # noqa: E402
 checks = {}
 
 TIMEOUT = subprocess.TimeoutExpired(
-    ["docker", "-H", "tcp://10.10.10.20:2375", "ps",
+    ["docker", "-H", "tcp://192.0.2.20:2375", "ps",
      "--format", "{{.Names}}|{{.Image}}"], 30)
 
 line = errfmt.human(TIMEOUT)
