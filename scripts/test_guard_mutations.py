@@ -2967,19 +2967,62 @@ GUARDED = [
 
     ("a host that checked fine is forgotten",
      'app/container_flags.py',
-     '        if use_cache and error is None:\n'
+     '        if error is None:\n'
      '            _hosts.remember(host, None)\n',
      '        if False:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_check_on_hosts.py'),
+
+    # Review of W7: a host that answers a walk without the cache (every
+    # write, Discord, the Web's check) is forgotten too — /update reached
+    # nas and the next /status still skipped it as dead.
+    ("a host that checked fine without the cache is forgotten too",
+     'app/container_flags.py',
+     '        if error is None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        if use_cache and error is None:\n'
      '            _hosts.remember(host, None)\n',
      'test_check_on_hosts.py'),
 
     ("a skipped check says the remembered words and the seconds left",
      'app/container_flags.py',
      '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
-     '                _hosts.skipped_words(*dead, t=t), *dead), "", None)\n',
+     '                _hosts.skipped_words(*dead, t=t), *dead),\n',
      '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
-     '                dead[0], *dead), "", None)\n',
+     '                dead[0], *dead),\n',
      'test_check_on_hosts.py'),
+
+    # Review of W7: hostdiag's hint is a check of the remembered words
+    # and of this container's ~/.ssh, so a skipped host keeps it.
+    ("a skipped check keeps hostdiag's hint when hints are asked for",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                "",\n',
+     'test_check_on_hosts.py'),
+
+    ("…and /status then /check on Telegram shows it under the refused host",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                "",\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and only when hints are asked for",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                _hosts.skipped_hint(host, dead[0], t=t),\n',
+     'test_check_on_hosts.py'),
+
+    ("a skipped lookup keeps hostdiag's hint",
+     'app/container_flags.py',
+     '                               _hosts.skipped_hint(host, dead[0], t=t))\n',
+     '                               "")\n',
+     'test_find_on_hosts.py'),
+
+    ("…and /status then /status web on Telegram shows it",
+     'app/container_flags.py',
+     '                               _hosts.skipped_hint(host, dead[0], t=t))\n',
+     '                               "")\n',
+     'test_telegram_dispatch_matrix.py'),
 
     ("a skipped check still reaches on_host, in its place",
      'app/container_flags.py',
@@ -3043,20 +3086,43 @@ GUARDED = [
 
     ("a lookup leaves what it learnt for the next read",
      'app/container_flags.py',
-     '        if use_cache and (gone is not None or backend is not None):\n',
-     '        if False:\n',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, gone.error)\n',
+     '            if False:\n'
+     '                _hosts.remember(host, gone.error)\n',
      'test_find_on_hosts.py'),
 
     ("…so /status after /status web skips the dead host (T2)",
      'app/container_flags.py',
-     '        if use_cache and (gone is not None or backend is not None):\n',
-     '        if False:\n',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, gone.error)\n',
+     '            if False:\n'
+     '                _hosts.remember(host, gone.error)\n',
      'test_telegram_dispatch_matrix.py'),
+
+    ("a lookup without the cache marks no host dead",
+     'app/container_flags.py',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, gone.error)\n',
+     '            if True:\n'
+     '                _hosts.remember(host, gone.error)\n',
+     'test_find_on_hosts.py'),
 
     ("a host without a backend is not remembered as answered or dead",
      'app/container_flags.py',
-     '        if use_cache and (gone is not None or backend is not None):\n',
-     '        if use_cache:\n',
+     '        elif backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        else:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_find_on_hosts.py'),
+
+    ("a host that answers a lookup without the cache (/update's) is "
+     "forgotten",
+     'app/container_flags.py',
+     '        elif backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        elif use_cache and backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
      'test_find_on_hosts.py'),
 
     ("a remote lookup gets the short probe, the local one does not",
@@ -3086,7 +3152,7 @@ GUARDED = [
      '        _dead = None\n',
      'test_telegram_dispatch_matrix.py'),
 
-    ("the overview without the cache neither skips nor remembers",
+    ("the overview without the cache skips nobody",
      'app/status_render.py',
      '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
      '        _dead = _hosts.remembered_dead(_host)\n',
@@ -3094,9 +3160,39 @@ GUARDED = [
 
     ("a skipped overview host is listed with its words and the seconds left",
      'app/status_render.py',
-     '                                _hosts.skipped_words(*_dead, t=t)))\n',
-     '                                _dead[0]))\n',
+     '            _skip = _hosts.skipped_words(*_dead, t=t)\n',
+     '            _skip = _dead[0]\n',
      'test_status_overview_core.py'),
+
+    ("a skipped overview host keeps its SSH hint under the words",
+     'app/status_render.py',
+     '            _h = _hosts.skipped_hint(_host, _dead[0], t=t)\n',
+     '            _h = ""\n',
+     'test_status_overview_core.py'),
+
+    ("…and /status then /status on Telegram shows it",
+     'app/status_render.py',
+     '            _h = _hosts.skipped_hint(_host, _dead[0], t=t)\n',
+     '            _h = ""\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("hostdiag's hint for a skipped host is in the reader's language",
+     'app/hosts.py',
+     '        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",\n'
+     '                             t=t) or ""\n',
+     '        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",\n'
+     '                             t=None) or ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a hint that throws costs a skipped host the hint, not the walk",
+     'app/hosts.py',
+     '                             t=t) or ""\n'
+     '    except Exception:                                       # noqa: BLE001\n'
+     '        return ""\n',
+     '                             t=t) or ""\n'
+     '    except LookupError:\n'
+     '        return ""\n',
+     'test_find_on_hosts.py'),
 
     ("the overview remembers a host that did not answer, without its hint",
      'app/status_render.py',
@@ -3136,19 +3232,39 @@ GUARDED = [
     ("the overview forgets a host with nothing running: it answered",
      'app/status_render.py',
      '        if not ids:\n'
-     '            if use_cache:\n'
-     '                _hosts.remember(_host, None)\n'
+     '            _hosts.remember(_host, None)\n'
      '            continue\n',
      '        if not ids:\n'
      '            continue\n',
      'test_status_overview_core.py'),
 
+    ("…without the cache too",
+     'app/status_render.py',
+     '        if not ids:\n'
+     '            _hosts.remember(_host, None)\n'
+     '            continue\n',
+     '        if not ids:\n'
+     '            if use_cache:\n'
+     '                _hosts.remember(_host, None)\n'
+     '            continue\n',
+     'test_status_overview_core.py'),
+
     ("the overview forgets a host that answered",
      'app/status_render.py',
-     '        if use_cache:\n'
-     '            _hosts.remember(_host, None)\n'
+     '        _hosts.remember(_host, None)\n'
      '        try:\n'
      '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     'test_status_overview_core.py'),
+
+    ("the overview without the cache forgets a host that answered",
+     'app/status_render.py',
+     '        _hosts.remember(_host, None)\n'
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, None)\n'
      '        try:\n'
      '            _cfgs = json.loads(ins_p.stdout) or []\n',
      'test_status_overview_core.py'),
@@ -3213,9 +3329,17 @@ GUARDED = [
 
     ("the remembered words come first in the skipped line",
      'app/lang/de.json',
-     '"host_skipped_retry": "{error} (von gerade eben, wird {seconds} s lang nicht erneut gefragt)"',
-     '"host_skipped_retry": "(von gerade eben, wird {seconds} s lang nicht erneut gefragt) {error}"',
+     '"host_skipped_retry": "{error} (vom letzten Versuch, wird {seconds} s lang nicht erneut gefragt)"',
+     '"host_skipped_retry": "(vom letzten Versuch, wird {seconds} s lang nicht erneut gefragt) {error}"',
      'test_check_on_hosts.py'),
+
+    # Review of W7: with the backoff a host is skipped up to 900 s, so
+    # the clause claims nothing about the words' age.
+    ("a skipped host's line does not claim its words are a moment old",
+     'app/lang/en.json',
+     '"host_skipped_retry": "{error} (from the last try, not asked again for {seconds}s)"',
+     '"host_skipped_retry": "{error} (from a moment ago, not asked again for {seconds}s)"',
+     'test_telegram_dispatch_matrix.py'),
 
     ("Telegram /status takes the cache",
      'app/telegram_bot.py',

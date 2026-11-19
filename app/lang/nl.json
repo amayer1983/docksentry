@@ -930,7 +930,7 @@
   "chan_autocleanup_on": "Automatisch opruimen staat **aan** — dat gebeurt vanzelf.",
   "chan_run_cleanup_hint": "Voer `/cleanup` uit om het vrij te maken.",
   "host_unreachable_short": "⚠ `{host}` onbereikbaar: {error}",
-  "host_skipped_retry": "{error} (van zojuist, {seconds} s lang niet opnieuw gevraagd)",
+  "host_skipped_retry": "{error} (van de laatste poging, {seconds} s lang niet opnieuw gevraagd)",
   "logs_failed": "Kon logboek van `{name}` niet lezen: {error}",
   "chan_maintenance_line": "🔧 Onderhoud: {state}",
   "chan_audit_header": "🔍 `{name}` — velden die we niet zouden overnemen:",

@@ -339,13 +339,15 @@ def forget_unreachable():
 # must always ask — a host that came back a second ago is exactly the one
 # somebody is trying to update. And only for remote hosts, like the page:
 # the cooldown is for a machine at the far end of a wire, not for our own
-# daemon, which nothing marks. Unlike `walk`, whose use_cache=False still
-# writes, a chat walk without the cache touches the memory not at all, so
-# a caller that has not moved over (Discord, the Web's check) does not
-# read it or add to it. It is still one memory: a host a Telegram read
-# found dead is skipped by the Web status page's `walk` too, with the
-# words that read remembered, and each such failure moves the same
-# backoff (test_status_overview_core pins it).
+# daemon, which nothing marks. A chat walk without the cache (every
+# write, and the callers that have not moved over: Discord, the Web's
+# check) never skips a host and never marks one dead, but a host that
+# answers it is forgotten all the same: an /update that just reached nas
+# must not leave the next /status calling nas unreachable for the rest
+# of its cooldown. It is one memory: a host a Telegram read found dead is
+# skipped by the Web status page's `walk` too, with the words that read
+# remembered, and each such failure moves the same backoff
+# (test_status_overview_core pins it).
 
 def _remote_name(host):
     if host is None or getattr(host, "is_local", False):
@@ -380,8 +382,10 @@ def remember(host, failed_with):
 
 
 def skipped_words(reason, retry_in, t=None):
-    """What to say for a host skipped because it failed a moment ago: its
+    """What to say for a host skipped because its last try failed: its
     remembered words, and that it is not asked again for `retry_in` s.
+    Nothing about how old the words are: with the backoff a host can be
+    skipped for fifteen minutes, so "a moment ago" was not always true.
 
     The words go through errfmt.human first. The memory holds whatever
     the walk that failed kept — the overview and the Web page keep the
@@ -401,12 +405,27 @@ def skipped_words(reason, retry_in, t=None):
             return t("host_skipped_retry", error=reason, seconds=retry_in)
         except Exception:                                   # noqa: BLE001
             pass
-    return f"{reason} (from a moment ago, not asked again for {retry_in}s)"
+    return f"{reason} (from the last try, not asked again for {retry_in}s)"
+
+
+def skipped_hint(host, reason, t=None):
+    """hostdiag's sentence for a skipped `host`, from the words it failed
+    with — the one a fresh failure with those words gets. The hint only
+    looks at the words and at this container's ~/.ssh, so a host nobody
+    asked still gets it. "" when there is none; a hint that throws costs
+    the hint, never the walk."""
+    try:
+        import hostdiag
+        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",
+                             t=t) or ""
+    except Exception:                                       # noqa: BLE001
+        return ""
 
 
 class StillUnreachable(Exception):
-    """A host a read did not ask, because it failed a moment ago. `str()`
-    is `skipped_words`; `reason` and `retry_in` are its parts."""
+    """A host a read did not ask, because its last try failed and it is
+    still in its cooldown. `str()` is `skipped_words`; `reason` and
+    `retry_in` are its parts."""
 
     def __init__(self, words, reason="", retry_in=0):
         super().__init__(words)

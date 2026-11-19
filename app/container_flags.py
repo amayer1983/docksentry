@@ -366,12 +366,13 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
     `remote_timeout`, when given, replaces it for every host that is not
     the local one — the short probe a chat read uses (W7).
 
-    `use_cache=True` is for reads only (W7): a remote host that failed a
-    moment ago (`hosts.remembered_dead`) is not asked and comes back as
-    unreachable with its remembered words and the seconds until it is
-    asked again, and every remote host that is asked leaves its outcome
-    in the memory. The default neither reads nor writes it — every
-    write, and every caller that has not moved yet.
+    `use_cache=True` is for reads only (W7): a remote host still in its
+    cooldown (`hosts.remembered_dead`) is not asked and comes back as
+    unreachable with its remembered words, the seconds until it is asked
+    again and the hint those words get, and every remote host that is
+    asked leaves its outcome in the memory. The default — every write,
+    and every caller that has not moved yet — skips nobody and marks
+    nobody dead, but a host that answers is forgotten either way.
     """
     import hosts as _hosts
     import lifecycle
@@ -381,7 +382,8 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
         names, reply, failure = [], None, None
         dead = _hosts.remembered_dead(host) if use_cache else None
         if dead is not None:
-            gone = Unreachable(host, _hosts.skipped_words(*dead, t=t), "")
+            gone = Unreachable(host, _hosts.skipped_words(*dead, t=t),
+                               _hosts.skipped_hint(host, dead[0], t=t))
             unreachable.append(gone)
             if on_host is not None:
                 on_host(HostFind(host, (), None, gone))
@@ -432,8 +434,13 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
             reply = replace(reply, host=host, host_is_local=_is_local(host))
             errors.append(reply)
         # A host without a backend was never asked: nothing to remember.
-        if use_cache and (gone is not None or backend is not None):
-            _hosts.remember(host, gone.error if gone is not None else None)
+        # Only a read marks a host dead; an answer clears the mark for
+        # every caller (a write that reached it, too).
+        if gone is not None:
+            if use_cache:
+                _hosts.remember(host, gone.error)
+        elif backend is not None:
+            _hosts.remember(host, None)
         if on_host is not None:
             on_host(HostFind(host, tuple(names), reply, gone))
     return FindResult(tuple(found), tuple(errors), tuple(unreachable))
@@ -485,16 +492,17 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
     hint that throws costs the hint, never the walk. An exception from
     `on_host` is the caller's and is not swallowed.
 
-    `use_cache=True` is for reads only (W7): a remote host that failed a
-    moment ago is not asked — no checker, no `check_all`, no hint — and
-    comes back as a failure whose `error` is a `hosts.StillUnreachable`
-    saying its remembered words and the seconds until it is asked again.
-    After a check, a host that could not list its containers (a timeout,
+    `use_cache=True` is for reads only (W7): a remote host still in its
+    cooldown is not asked — no checker, no `check_all` — and comes back
+    as a failure whose `error` is a `hosts.StillUnreachable` saying its
+    remembered words and the seconds until it is asked again; with
+    `hint=True` its hint is the one those words get. After a check, a
+    host that could not list its containers (a timeout,
     `ContainerListUnavailable`) is remembered with `errfmt.human`'s words
-    for it, and one that checked fine is forgotten. A check that failed
-    for any other reason is left out of the memory: that daemon answered,
-    and a /status a moment later must still ask it. The default neither
-    reads nor writes the memory.
+    for it. A check that failed for any other reason is left out of the
+    memory: that daemon answered, and a /status a moment later must still
+    ask it. Without the cache nobody is skipped or marked dead. A host
+    that checked fine is forgotten either way.
     """
     import hosts as _hosts
     walk = list(targets) if targets else [None]
@@ -504,7 +512,9 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
         dead = _hosts.remembered_dead(host) if use_cache else None
         if dead is not None:
             answer = HostCheck(host, None, _hosts.StillUnreachable(
-                _hosts.skipped_words(*dead, t=t), *dead), "", None)
+                _hosts.skipped_words(*dead, t=t), *dead),
+                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",
+                None)
             out.append(answer)
             if on_host is not None:
                 on_host(answer)
@@ -530,7 +540,7 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
                                     t=t) or ""
             except Exception:                               # noqa: BLE001
                 why = ""
-        if use_cache and error is None:
+        if error is None:
             _hosts.remember(host, None)
         elif use_cache and _lost_host(error):
             _hosts.remember(host, _human(error, t))

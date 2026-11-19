@@ -591,12 +591,14 @@ def run_row(setup, text):
     return record, escapes
 
 
-def run_seq(setup, texts, short=None):
+def run_seq(setup, texts, short=None, prime=None):
     """Drive several typed commands one after the other on ONE bot, with
     the dead-host memory left as each one leaves it (W7). Returns one
     record per command — its own messages, backend calls and events
     only — and the escapes of the whole sequence. `short` replaces the
-    clip of long messages (`str` keeps them whole)."""
+    clip of long messages (`str` keeps them whole). `prime()` runs once
+    the bot is built, before the first command — to put a host in the
+    memory that is not dead in this world."""
     import hosts as hostslib
     hostslib.forget_unreachable()
     EVENTS.clear()
@@ -604,6 +606,8 @@ def run_seq(setup, texts, short=None):
     del STARTED[:]
     del THREAD_ERRORS[:]
     bot, checker, backends, log, data = build(setup)
+    if prime is not None:
+        prime()
     records = [_drive(bot, checker, backends, log, data, text, short=short)
                for text in texts]
     escapes = list(ESCAPES)
@@ -962,11 +966,15 @@ def w4_extra_checks():
 #: cooldown does not ask it again — not its `ps`, not its check — but
 #: names it with the words it gave and how long until it is asked again.
 #: The clock is frozen, so a first failure's cooldown is the full 60 s.
-#: A WRITE (/update) neither skips a remembered host nor leaves anything
-#: in the memory. A check that failed although the daemon answered
+#: A WRITE (/update) neither skips a remembered host nor marks one dead;
+#: a host it reaches is forgotten (the nas row below). A check that
+#: failed although the daemon answered
 #: (flaky: its registry) is not remembered, so /status still asks flaky.
 #: The local host is never skipped, not even on its own.
-_W7_LATER = " (from a moment ago, not asked again for 60s)"
+#: The clause makes no claim about the words' age: with the backoff a
+#: host can be skipped for 900 s, and "from a moment ago" was then up to
+#: fifteen minutes wrong (review of W7).
+_W7_LATER = " (from the last try, not asked again for 60s)"
 _W7_DEAD_PS = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
                "timed out after 10 seconds")
 #: …and what a skipped host says of that, later: errfmt.human's words,
@@ -983,8 +991,9 @@ def _w7_status_line(host, words):
     return f"⚠️ `{host}` unreachable — not counted above: {words}"
 
 
-def _w7_seq(texts, setup="multi", modes=None):
-    """`run_seq` on a frozen clock, long messages whole."""
+def _w7_seq(texts, setup="multi", modes=None, refused=None, prime=None):
+    """`run_seq` on a frozen clock, long messages whole; `refused` is what
+    the refused host prints (put back afterwards), `prime` as run_seq's."""
     import hosts as hostslib
 
     class _Frozen:
@@ -992,12 +1001,16 @@ def _w7_seq(texts, setup="multi", modes=None):
         def monotonic():
             return 4242.0
     real = hostslib.time
+    real_stderr = MatrixBackend.refused_stderr
     hostslib.time = _Frozen
     MODE_OVERRIDE.update(modes or {})
+    if refused is not None:
+        MatrixBackend.refused_stderr = refused
     try:
-        return run_seq(setup, texts, short=str)
+        return run_seq(setup, texts, short=str, prime=prime)
     finally:
         MODE_OVERRIDE.clear()
+        MatrixBackend.refused_stderr = real_stderr
         hostslib.time = real
 
 
@@ -1039,8 +1052,8 @@ def w7_checks():
             else ("⚠️ Host `refused` could not be checked: " + _W7_REFUSED
                   + _W7_LATER) if o.startswith("⚠️ Host `refused`")
             else o for o in fresh[0]["out"]]
-    add("/status then /check: dead and refused say the remembered words, "
-        "no hint, the rest as a fresh /check",
+    add("/status then /check: dead and refused say the remembered words "
+        "(neither has a hint), the rest as a fresh /check",
         second["out"] == want and not esc,
         f"got {second['out']!r}, want {want!r}")
     add("/status then /check: …neither host is asked or checked",
@@ -1103,7 +1116,7 @@ def w7_checks():
         second["out"] == want and "dead" not in second["hosts"] and not esc,
         f"got {second['out']!r}, want {want!r}")
 
-    # A write asks anew, and leaves nothing behind.
+    # A write asks anew, and marks no host dead.
     (first, second), esc = _w7_seq(["/status", "/update web @all"])
     fresh, _e = _w7_seq(["/update web @all"])
     add("/status then /update web @all: a write asks dead and refused "
@@ -1115,6 +1128,69 @@ def w7_checks():
     add("/update web @all then /status: the write left nothing to skip",
         second == plain[0] and second["hosts"].get("dead") == "ps -q t=10"
         and not esc, f"got {second!r}")
+
+    # A host that answers a write is not called dead by the next read
+    # (review of W7: /update asked nas and found web there, and the next
+    # /status still skipped nas as unreachable for its whole cooldown).
+    # nas is put in the memory as if an earlier read had found it dead.
+    import hosts as hostslib
+
+    def _nas_was_dead():
+        hostslib.mark_unreachable("nas", "no answer within 10 seconds")
+    (first, second), esc = _w7_seq(["/update web @nas", "/status"],
+                                   prime=_nas_was_dead)
+    add("nas remembered dead, /update web @nas, then /status: the update "
+        "asked nas and the overview asks it again",
+        first["hosts"].get("nas", "").startswith("ps -a --format")
+        and second == plain[0]
+        and second["hosts"].get("nas") == "ps -q t=10, inspect t=10"
+        and not esc, f"got {first!r} / {second!r}")
+
+    # hostdiag's hint stays under a skipped host's line: it is a check of
+    # the words and of this container's ~/.ssh, and both are still here
+    # (review of W7: the first /status had the sentence, every repeat in
+    # the cooldown lost it). ~/.ssh pointed at a fixed missing directory,
+    # as in W3's hint row.
+    import hostdiag
+    from i18n import get_translator
+    en = get_translator("en")
+    denied = "user@192.0.2.30: Permission denied (publickey)."
+    hint = en("hostdiag_ssh_no_dir", dir=_NO_SSH_DIR)
+    real_home = hostdiag._home_ssh
+    hostdiag._home_ssh = lambda: _NO_SSH_DIR
+    try:
+        (first, second), esc = _w7_seq(["/status", "/status"],
+                                       refused=denied)
+        (_f, check), esc2 = _w7_seq(["/status", "/check"], refused=denied)
+        fresh_check, esc3 = _w7_seq(["/check"], refused=denied)
+        (_f, lookup), esc4 = _w7_seq(["/status", "/status web"],
+                                     refused=denied)
+    finally:
+        hostdiag._home_ssh = real_home
+    line = _w7_status_line("refused", denied + "\n" + hint)
+    later = _w7_status_line("refused", denied + _W7_LATER + "\n" + hint)
+    add("/status then /status, SSH key refused: the repeat keeps the hint "
+        "under the remembered words",
+        any(line in o for o in first["out"])
+        and any(later in o for o in second["out"])
+        and not esc, f"got {second['out']!r}")
+    fresh_line = [o for o in fresh_check[0]["out"]
+                  if o.startswith("⚠️ Host `refused`")]
+    skipped_line = [o for o in check["out"]
+                    if o.startswith("⚠️ Host `refused`")]
+    add("/status then /check, SSH key refused: the skipped host says the "
+        "same hint a fresh /check does",
+        len(fresh_line) == 1 and fresh_line[0].endswith("\n\n" + hint)
+        and skipped_line == ["⚠️ Host `refused` could not be checked: "
+                             + denied + _W7_LATER + "\n\n" + hint]
+        and "refused" not in check["hosts"] and not esc2 and not esc3,
+        f"got {skipped_line!r}, fresh {fresh_line!r}")
+    add("/status then /status web, SSH key refused: the lookup's line "
+        "keeps the hint too",
+        any(("⚠ `refused` unreachable: " + denied + _W7_LATER + "\n"
+             + hint) in o for o in lookup["out"])
+        and "refused" not in lookup["hosts"] and not esc4,
+        f"got {lookup['out']!r}")
 
     # One host on its own is never skipped.
     (first, second), esc = _w7_seq(["/status web", "/status web"],

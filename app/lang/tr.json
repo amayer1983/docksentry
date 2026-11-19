@@ -930,7 +930,7 @@
   "chan_autocleanup_on": "Otomatik temizleme **açık** — bu kendiliğinden olur.",
   "chan_run_cleanup_hint": "Boşaltmak için `/cleanup` çalıştırın.",
   "host_unreachable_short": "⚠ `{host}` erişilemiyor: {error}",
-  "host_skipped_retry": "{error} (az önce; {seconds} sn boyunca yeniden sorulmayacak)",
+  "host_skipped_retry": "{error} (son denemeden; {seconds} sn boyunca yeniden sorulmayacak)",
   "logs_failed": "`{name}` günlükleri okunamadı: {error}",
   "chan_maintenance_line": "🔧 Bakım: {state}",
   "chan_audit_header": "🔍 `{name}` — taşımayacağımız alanlar:",

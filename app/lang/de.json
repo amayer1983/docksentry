@@ -930,7 +930,7 @@
   "chan_autocleanup_on": "Automatisches Aufräumen ist **an** — das passiert von selbst.",
   "chan_run_cleanup_hint": "`/cleanup` ausführen, um es freizugeben.",
   "host_unreachable_short": "⚠ `{host}` nicht erreichbar: {error}",
-  "host_skipped_retry": "{error} (von gerade eben, wird {seconds} s lang nicht erneut gefragt)",
+  "host_skipped_retry": "{error} (vom letzten Versuch, wird {seconds} s lang nicht erneut gefragt)",
   "logs_failed": "Logs von `{name}` nicht lesbar: {error}",
   "chan_maintenance_line": "🔧 Wartung: {state}",
   "chan_audit_header": "🔍 `{name}` — Felder, die wir nicht übernehmen würden:",

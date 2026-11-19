@@ -29,7 +29,8 @@ Since W7 a read passes `use_cache=True` and `remote_timeout=10`: a
 remote host found dead a moment ago is not asked but named with its
 remembered words and the seconds left, every remote host that is asked
 leaves its outcome in hosts' dead-host memory, and a remote listing gets
-ten seconds. Without them (every write) nothing changes. Those checks
+ten seconds. Without them (every write) nobody is skipped or marked
+dead, but a host that answers is forgotten. Those checks
 run on hosts' clock, replaced.
 
 `--app DIR` runs it against another tree's app/ (that is how it was
@@ -513,7 +514,8 @@ if callable(glob_checked):
 # comes back as unreachable with the words it gave last time and how long
 # until the next try, and every host that IS asked leaves its outcome in
 # the memory. Without it (the default, and every write) the memory is
-# neither read nor written. The local host is never skipped or marked:
+# not read and no failure is written, but a host that answers is
+# forgotten. The local host is never skipped or marked:
 # the cooldown is for machines on the other end of a wire. The clock is
 # hosts' own `time`, replaced, so the seconds do not depend on how fast
 # this machine is.
@@ -603,17 +605,69 @@ if callable(find_on_hosts):
             == ["local", "nas", "refused"]
             and seen[1].unreachable is not None and seen[1].names == ())
         # Without use_cache (every write, and Discord until W7d): the
-        # remembered host is asked and nothing is written.
+        # remembered host is asked and no failure is written.
         hostslib.forget_unreachable()
         hostslib.mark_unreachable("dead", "no answer earlier", cooldown=30.5)
         bk = backends()
         res, raised = run_find("web", bk=bk)
         checks["W7 no cache: a remembered dead host is asked anyway"] = (
             len(bk["dead"].calls) == 1)
-        checks["W7 no cache: …and nothing is written: refused stays "
+        checks["W7 no cache: …and no failure is written: refused stays "
                "unknown, dead keeps its old mark"] = (
             _memory("refused") == (0.0, "")
             and _memory("dead") == (30.5, "no answer earlier"))
+        # …but an answer is: /update's lookup asked nas and found web
+        # there, so the next read must not skip nas as dead for the rest
+        # of its cooldown (review of W7). Its backoff goes with it.
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "nas earlier")
+        hostslib.mark_unreachable("nas", "nas earlier")
+        res, raised = run_find("web", targets=[NAS])
+        after = _memory("nas")
+        hostslib.mark_unreachable("nas", "nas again")
+        checks["W7 no cache: a remembered host that answers is forgotten, "
+               "backoff included"] = (
+            res is not None and names_of(res) == [("nas", ["web"])]
+            and after == (0.0, "") and _memory("nas")[0] == 60.0)
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "nas earlier", cooldown=30)
+        run_find("zz", targets=[NAS])
+        checks["W7 no cache: …\"not found\" is an answer too"] = (
+            _memory("nas") == (0.0, ""))
+        # A skipped host keeps hostdiag's hint: it is a check of the
+        # remembered words and of this container's ~/.ssh, and both are
+        # still here (review of W7: the first /status <name> had the
+        # sentence, every repeat in the cooldown lost it).
+        hostslib.forget_unreachable()
+        fresh, _r = run_find("web", targets=[LOCKED], use_cache=True)
+        bk = backends()
+        res, raised = run_find("web", targets=[LOCKED], bk=bk,
+                               use_cache=True)
+        want = hostdiag.hint(LOCKED.endpoint, LOCKED_ERR, t=t)
+        got = res.unreachable[0] if res is not None and res.unreachable \
+            else None
+        checks["W7 cache: a skipped host whose words have an SSH hint keeps "
+               "the hint a fresh failure gets"] = (
+            bool(want) and bk["locked"].calls == [] and got is not None
+            and fresh is not None and fresh.unreachable[0][2] == want
+            and got[2] == want
+            and got[1] == hostslib.skipped_words(
+                errfmt.clip(LOCKED_ERR), 60, t=t))
+        _orig_hint = hostdiag.hint
+
+        def _boom_hint(*_a, **_k):
+            raise RuntimeError("the hint blew up")
+        hostdiag.hint = _boom_hint
+        try:
+            res, raised = run_find("web", targets=[LOCKED], use_cache=True)
+        finally:
+            hostdiag.hint = _orig_hint
+        checks["W7 cache: …a hint that throws costs a skipped host the hint, "
+               "not the answer"] = (
+            raised is None and res is not None
+            and [tuple(u)[1:] for u in res.unreachable]
+            == [(hostslib.skipped_words(errfmt.clip(LOCKED_ERR), 60, t=t),
+                 "")])
         # A host without a backend never answered: no mark either way.
         # nas failed once and is past its first minute; had the lookup
         # counted it as answering, its next failure would be a first one

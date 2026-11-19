@@ -309,11 +309,12 @@ def collect_overview(targets, *, backend_for, t, use_cache=False):
     given. `t` translates the SSH hint.
 
     `use_cache=True` is for reads (W7; Telegram's /status): a remote host
-    that failed a moment ago gets no `ps -q` and is listed with its
-    remembered words and the seconds until it is asked again; every
-    remote host that is asked leaves its outcome in the memory — the
-    words of its line, without the hint under them. The default neither
-    reads nor writes the memory.
+    still in its cooldown gets no `ps -q` and is listed with its
+    remembered words, the seconds until it is asked again and, under
+    them, the hint those words get; every remote host that is asked
+    leaves its outcome in the memory — the words of its line, without
+    the hint under them. The default skips nobody and marks nobody dead,
+    but a host that answers is forgotten either way.
 
     Use docker inspect (not docker ps Status-string parsing) so health
     detection works on both Docker and Podman. Podman's REST API does
@@ -355,8 +356,10 @@ def collect_overview(targets, *, backend_for, t, use_cache=False):
     for _host in (targets or [None]):
         _dead = _hosts.remembered_dead(_host) if use_cache else None
         if _dead is not None:
+            _skip = _hosts.skipped_words(*_dead, t=t)
+            _h = _hosts.skipped_hint(_host, _dead[0], t=t)
             unreachable.append((getattr(_host, "name", "") or LOCAL_HOST,
-                                _hosts.skipped_words(*_dead, t=t)))
+                                _skip + ("\n" + _h if _h else "")))
             continue
         _b = backend_for(_host)
         # A dead host does not answer at all: `ps` runs into its
@@ -383,16 +386,14 @@ def collect_overview(targets, *, backend_for, t, use_cache=False):
             continue
         ids = [i for i in ids_p.stdout.strip().split("\n") if i]
         if not ids:
-            if use_cache:
-                _hosts.remember(_host, None)
+            _hosts.remember(_host, None)
             continue
         try:
             ins_p = _b.run(["inspect", *ids], timeout=10)
         except Exception as _e:
             _mark_unreachable(_host, clip(str(_e)))
             continue
-        if use_cache:
-            _hosts.remember(_host, None)
+        _hosts.remember(_host, None)
         try:
             _cfgs = json.loads(ins_p.stdout) or []
         except (json.JSONDecodeError, ValueError):

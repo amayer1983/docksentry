@@ -25,8 +25,9 @@ the core hands back.
 
 Since W7 Telegram passes `use_cache=True`: a remote host found dead a
 moment ago gets no `ps -q` and is listed with its remembered words and
-the seconds left, and each host asked leaves its outcome in hosts'
-dead-host memory (without the hint). Discord does not, yet (W7d).
+the seconds left (and the SSH hint those words get), and each host
+asked leaves its outcome in hosts' dead-host memory (without the hint).
+Discord does not, yet (W7d), but a host that answers it is forgotten.
 
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
@@ -255,8 +256,10 @@ try:
         # the words it gave last time and how long until the next try;
         # every host that is asked leaves its outcome in the memory (the
         # words without the hint — the hint is said under the line, not
-        # remembered). The local host is never skipped or marked. Without
-        # use_cache (Discord until W7d) nothing is read or written.
+        # remembered, and rebuilt from the words when the host is skipped).
+        # The local host is never skipped or marked. Without use_cache
+        # (Discord until W7d) nobody is skipped or marked dead, but a host
+        # that answers is forgotten.
         import hosts as hostslib
         _clock = [9000.0]
 
@@ -355,9 +358,46 @@ try:
             checks["W7 no cache: a remembered host is asked anyway"] = (
                 [c for c in order if c[0] == "dead"]
                 == [("dead", ["ps", "-q"], 10)])
-            checks["W7 no cache: …and nothing is written"] = (
+            checks["W7 no cache: …and no failure is written"] = (
                 _mem("dead") == (30.5, "no answer earlier")
                 and _mem("refused") == (0.0, ""))
+            # An answer is written without the cache too: a host that
+            # answered somebody must not be called dead by the next read
+            # (review of W7). Nothing running counts as an answer.
+            for label, ps in (("that answers", cp(0, "abc\n")),
+                              ("with nothing running", cp(0, "\n"))):
+                hostslib.forget_unreachable()
+                hostslib.mark_unreachable("x", "earlier", cooldown=30)
+                run, calls = by(ps=ps, inspect=cp(0, "[]"))
+                collect([Host("x", run)], backend_for=lambda h: h.backend,
+                        t=en)
+                checks[f"W7 no cache: a remembered host {label} is "
+                       f"forgotten"] = (
+                    calls[:1] == ["ps"] and _mem("x") == (0.0, ""))
+            # A skipped host keeps hostdiag's hint under its line: it is a
+            # check of the remembered words and this container's ~/.ssh,
+            # and both are still here (review of W7: the first /status had
+            # the sentence, every repeat in the cooldown lost it).
+            hostslib.forget_unreachable()
+            real_home = hostdiag._home_ssh
+            hostdiag._home_ssh = lambda: no_dir
+            try:
+                registry, backends, order = world("multi", refused=denied)
+                collect(list(registry), backend_for=backend_for_of(backends),
+                        t=en, use_cache=True)
+                registry, backends, order = world("multi", refused=denied)
+                ov = collect(list(registry),
+                             backend_for=backend_for_of(backends), t=en,
+                             use_cache=True)
+            finally:
+                hostdiag._home_ssh = real_home
+            checks["W7 cache: a skipped host keeps its SSH hint under the "
+                   "remembered words"] = (
+                not [c for c in order if c[0] == "refused"]
+                and ("refused", en("host_skipped_retry", error=denied,
+                                   seconds=60)
+                     + "\n" + en("hostdiag_ssh_no_dir", dir=no_dir))
+                in ov.unreachable)
             # In its last second a host is still skipped, so it says 1s,
             # not "not asked again for 0s" (review of W7: int() said 0).
             hostslib.forget_unreachable()

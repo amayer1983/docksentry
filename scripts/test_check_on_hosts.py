@@ -37,8 +37,9 @@ without a registry and on one and two hosts.
 
 Since W7 Telegram's /check, /check --dry-run and /check <name> pass
 `use_cache=True`: a remote host found dead a moment ago is not checked
-again, only a host that could not list its containers is remembered,
-and /update never takes the memory. The core is driven on hosts' clock,
+again (its SSH hint is rebuilt from the remembered words), only a host
+that could not list its containers is remembered, and /update never
+skips a host or marks one dead — a host it reaches is forgotten. The core is driven on hosts' clock,
 replaced; the Telegram sites are held to which of them pass it.
 
 `--app DIR` runs it against another tree's app/ (that is how it was
@@ -270,7 +271,8 @@ if callable(check_on_hosts):
     # failed for any other reason is not, because its daemon answered
     # and a /status a moment later must still ask it. A host that
     # checked fine is forgotten. Without use_cache (/update, Discord and
-    # the Web until W7d/W7w) the memory is neither read nor written. The
+    # the Web until W7d/W7w) nobody is skipped or marked dead, but a host
+    # that checked fine is forgotten (review of W7). The
     # local host is never skipped or marked. hosts' clock is replaced so
     # the seconds do not depend on this machine's speed.
     import subprocess
@@ -321,8 +323,8 @@ if callable(check_on_hosts):
                "seconds left, rounded up"] = (
             ok and str(skipped.error) == en(
                 "host_skipped_retry", error="no answer earlier", seconds=31))
-        checks["W7 cache: …and no hint is asked for a host nobody asked"] = (
-            ok and skipped.hint == "")
+        checks["W7 cache: …and a remembered timeout has no hint, as a "
+               "fresh one has none"] = (ok and skipped.hint == "")
         checks["W7 cache: the local host is checked even when it is in the "
                "memory, and its entry is left alone"] = (
             ok and len(ck7["local"].calls) == 1
@@ -363,7 +365,36 @@ if callable(check_on_hosts):
         checks["W7 cache: …and checking fine reset its backoff"] = (
             _mem("nas")[0] == 60.0)
 
-        # Without use_cache nothing is read or written.
+        # A skipped host keeps hostdiag's hint when the caller asks for
+        # hints: it is a check of the remembered words and of this
+        # container's ~/.ssh, and both are still here (review of W7: the
+        # first /status had the sentence, /check in its cooldown lost it).
+        denied = ("could not list containers (rc=255): user@192.0.2.30: "
+                  "Permission denied (publickey).")
+        want_hint = hostdiag.hint(b.endpoint, denied, t=en)
+        for asked_hint in (True, False):
+            hostslib.forget_unreachable()
+            hostslib.mark_unreachable("nas", denied, cooldown=30)
+            ck7 = {"local": Checker("local"), "nas": Checker("nas"),
+                   "pve": Checker("pve")}
+            got = _try(check_on_hosts, [a, b, c],
+                       checker_for=lambda h: ck7[h.name], hint=asked_hint,
+                       use_cache=True, t=en)
+            ok = isinstance(got, list) and len(got) == 3
+            if asked_hint:
+                checks["W7 cache: a skipped host with an SSH failure keeps "
+                       "hostdiag's hint, in the reader's language"] = (
+                    ok and bool(want_hint) and ck7["nas"].calls == []
+                    and got[1].hint == want_hint
+                    and str(got[1].error) == en(
+                        "host_skipped_retry", error=denied, seconds=30))
+            else:
+                checks["W7 cache: …and only when the caller asks for "
+                       "hints"] = ok and got[1].hint == ""
+
+        # Without use_cache no failure is read or written — but an answer
+        # is: a write that reached a host must not leave it marked dead
+        # for the next read (review of W7).
         hostslib.forget_unreachable()
         hostslib.mark_unreachable("nas", "no answer earlier", cooldown=30.5)
         ck7 = {"local": Checker("local"), "nas": Checker("nas"),
@@ -372,9 +403,10 @@ if callable(check_on_hosts):
                    checker_for=lambda h: ck7[h.name], t=en)
         checks["W7 no cache: a remembered host is checked anyway"] = (
             len(ck7["nas"].calls) == 1)
-        checks["W7 no cache: …and nothing is written"] = (
-            _mem("nas") == (30.5, "no answer earlier")
-            and _mem("pve") == (0.0, ""))
+        checks["W7 no cache: …a failure is not written"] = (
+            _mem("pve") == (0.0, ""))
+        checks["W7 no cache: …but a host that checked fine is forgotten"] = (
+            _mem("nas") == (0.0, ""))
 
         # A single-host install has no name to remember: it raises as
         # before, cache or not.
