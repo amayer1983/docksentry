@@ -2413,6 +2413,19 @@ GUARDED = [
      "                    return err\n",
      "test_discord_dispatch_matrix.py"),
 
+    # The handler raising there is caught by the dispatcher and still
+    # makes one edit ("Something went wrong"), so the W3d "nothing
+    # raised" check has to look at the log line, not only at `raised`.
+    ("Discord /status <container>: a lookup error never ends in "
+     "\"Something went wrong\"",
+     "app/discord_bot.py",
+     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                if err:\n",
+     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                if err:\n"
+     "                    raise RuntimeError(err)\n",
+     "test_discord_dispatch_matrix.py"),
+
     ("Discord /status: a host that does not answer the overview is named "
      "unreachable",
      "app/discord_bot.py",

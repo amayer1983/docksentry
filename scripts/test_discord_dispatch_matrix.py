@@ -959,6 +959,15 @@ def _w3d_run(setup, opts, modes=None, refused=None):
         m.MatrixBackend.refused_stderr = real
 
 
+def _w3d_handler_failed(out):
+    """True when the handler raised and the dispatcher caught it. That
+    still makes exactly one edit ("Something went wrong: …") and leaves
+    `raised` unset, so `raised` alone does not see it."""
+    return any(o.startswith("<log> Discord command error") for o in out) \
+        or any(o.startswith("<edit> ") and "Something went wrong" in o
+               for o in out)
+
+
 def w3d_checks():
     """W3d: what /status <container> says about a dead or refused host."""
     for label, setup, modes, refused, opts, named in W3D_ROWS:
@@ -968,7 +977,8 @@ def w3d_checks():
         edits = [o for o in out if o.startswith("<edit> ")]
         text = "\n".join(edits)
         clean = not esc and not step.get("raised") \
-            and not step.get("events") and len(edits) == 1
+            and not step.get("events") and len(edits) == 1 \
+            and not _w3d_handler_failed(out)
         yield (f"[{setup}] W3d /status {label}: one answer, nothing raised "
                f"or escaped", clean)
         yield (f"[{setup}] W3d /status {label}: names "
@@ -992,6 +1002,7 @@ def w3d_checks():
     yield ("[multi] W3d /status cache (only on flaky): flaky's detail, the "
            "dead and refused hosts before it unmentioned (pinned as measured)",
            not esc and len(edits) == 1
+           and not _w3d_handler_failed(step.get("out", []))
            and edits[0].startswith("<edit> 🔎 **cache** @flaky")
            and "unreachable" not in edits[0]
            and step.get("hosts", {}).get("dead") == "ps -a --format"
