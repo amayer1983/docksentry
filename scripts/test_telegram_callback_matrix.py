@@ -171,6 +171,13 @@ KNOWN_DEFECTS = {
         "Q7b: the queued local `db` is updated through nas's checker",
     ("multi", "update_one gone host"):
         "Q11b: a host that left the registry falls back to the local checker",
+    # Single does the same: no registry there knows `gone` either, and
+    # the tap updates the local `web`. A button from before DOCKER_HOSTS
+    # was dropped lands exactly here, so Q11b's refusal flips these too.
+    ("none", "update_one gone host"):
+        "Q11b: a host that is in no registry falls back to the local checker",
+    ("one", "update_one gone host"):
+        "Q11b: a host that is in no registry falls back to the local checker",
     ("multi", "update_all bare"):
         "Q12: the netns snapshot for nas's `web` asks the local backend",
     ("multi", "update_all:<tok> mixed"):
@@ -210,7 +217,11 @@ BRANCH_NOTES = {
     "restart_self": ":3416 `restart_self` with the caller's checker.",
     "update_all": ":3423 token → snapshot (stale answers and stops), bare "
         "→ the whole pending file; `run_updates` on a thread with the "
-        "caller's (local) checker for every entry.",
+        "caller's (local) checker. Each entry's `update_container` already "
+        "runs on its own host's checker (`update_container@nas:web`); what "
+        "still goes through the local one is the netns snapshot (the extra "
+        "`inspect --format` on local) and a group head's cascade (its "
+        "wait_healthy and the dependents' restart) — the Q12 rows.",
     "update_skip": ":3451 multi keeps the other hosts' entries, single "
         "deletes the file.",
     "update_one": ":3479 rebuilds the keyboard without the tapped button "
@@ -1300,7 +1311,11 @@ EXPECTED = {
     # ── update_all ──────────────────────────────────────────────────
     # :3423 token → snapshot (stale answers and stops), bare → the whole
     # pending file; `run_updates` on a thread with the caller's (local)
-    # checker for every entry.
+    # checker. Each entry's `update_container` already runs on its own
+    # host's checker (`update_container@nas:web`); what still goes through
+    # the local one is the netns snapshot (the extra `inspect --format` on
+    # local) and a group head's cascade (its wait_healthy and the
+    # dependents' restart) — the Q12 rows.
     ('multi', 'update_all bare'): {'steps': [{'do': 'tap update_all',
                 'out': ['<unbutton>',
                         '<toast> Updates are starting...',

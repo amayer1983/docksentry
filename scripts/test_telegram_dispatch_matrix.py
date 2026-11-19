@@ -54,11 +54,14 @@ Environment stand-ins, and only these:
     of asking a registry, `update_container` records instead of
     recreating, `has_selfupdate_available` answers False.
 
-`subprocess.run`, `subprocess.Popen` and `urllib.request.urlopen` are
-patched to raise and to record the call, so anything that gets past the
-stand-ins turns its row red — whatever the code around it does with the
-exception. The first three checks drive that trap on purpose, with the
-exception swallowed, so a trap gone blind is red too.
+`subprocess.run`, `subprocess.Popen`, `urllib.request.urlopen`,
+`socket.create_connection` and `socket.socket.connect` / `connect_ex`
+are patched to raise and to record the call, so any of these that gets
+past the stand-ins turns its row red — whatever the code around it does
+with the exception. Those are the only exits trapped: `os.kill`,
+`os.exec*`, `os.system` and DNS lookups are not. The first checks drive
+the trap on purpose, one per patched call, with the exception
+swallowed, so a trap gone blind is red too.
 
 `none` and `one` share one `single` entry per row while they agree,
 which they do on main; each still gets its own PASS line.
@@ -76,6 +79,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -104,7 +108,7 @@ ESCAPES = []
 
 
 class Escape(Exception):
-    """Raised by the patched subprocess / urlopen."""
+    """Raised by the patched subprocess / urlopen / socket connect."""
 
 
 def _escape(kind):
@@ -115,6 +119,16 @@ def _escape(kind):
         ESCAPES.append(f"{kind}({what!r})"[:200])
         raise Escape(f"{kind} escaped the matrix: {what!r}"[:200])
     return _f
+
+
+def _escape_method(kind):
+    """The same trap for a method (`socket.socket.connect`): the
+    address is the first argument after the socket itself."""
+    trap = _escape(kind)
+
+    def _m(self, *a, **kw):
+        return trap(*a, **kw)
+    return _m
 
 
 # ── threads: started for real, joined after the row ────────────────────
@@ -371,6 +385,11 @@ def _patch_environment():
     subprocess.run = _escape("subprocess.run")
     subprocess.Popen = _escape("subprocess.Popen")
     urllib.request.urlopen = _escape("urlopen")
+    # hostcheck.speaks_tls, websocket_client and smtplib dial through
+    # these; http.client and ssl end up in socket.connect as well.
+    socket.create_connection = _escape("socket.create_connection")
+    socket.socket.connect = _escape_method("socket.connect")
+    socket.socket.connect_ex = _escape_method("socket.connect_ex")
     threading.Thread = _TrackedThread
     threading.excepthook = _excepthook
 
@@ -798,6 +817,12 @@ def main():
         shutil.rmtree(_TMP_ROOT, ignore_errors=True)
 
 
+def _connect_raw(how):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.2)
+        return getattr(s, how)(("127.0.0.1", 1))
+
+
 def trap_checks():
     """The trap itself, driven: a call past the stand-ins has to land in
     ESCAPES even when the code around it swallows the exception. On an
@@ -809,7 +834,11 @@ def trap_checks():
     for kind, call in (
             ("subprocess.run", lambda: subprocess.run(["docker", "info"])),
             ("subprocess.Popen", lambda: subprocess.Popen(["docker"])),
-            ("urlopen", lambda: urllib.request.urlopen("https://x.invalid"))):
+            ("urlopen", lambda: urllib.request.urlopen("https://x.invalid")),
+            ("socket.create_connection",
+             lambda: socket.create_connection(("127.0.0.1", 1), timeout=0.2)),
+            ("socket.connect", lambda: _connect_raw("connect")),
+            ("socket.connect_ex", lambda: _connect_raw("connect_ex"))):
         def leaky(self, *a, _call=call, **k):
             try:
                 _call()

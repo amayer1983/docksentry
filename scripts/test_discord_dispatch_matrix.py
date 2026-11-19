@@ -60,9 +60,10 @@ Stand-ins, on top of the Telegram matrices' (their header lists them):
   * the bot's clock (`_now`), so an `age` step can move past the
     15-minute confirmation TTL without waiting.
 
-`subprocess.run`, `Popen` and `urlopen` stay the Telegram matrices'
-trap: anything past the stand-ins turns its row red. The first checks
-drive that trap on purpose through this entry path.
+`subprocess.run`, `Popen`, `urlopen` and the socket connects stay the
+Telegram matrices' trap: any of those past the stand-ins turns its row
+red (the list is in test_telegram_dispatch_matrix's docstring). The
+first checks drive that trap on purpose through this entry path.
 
 `python3 scripts/test_discord_dispatch_matrix.py --snapshot [--app DIR]`
 prints a fresh expectation table from DIR's app code (default this

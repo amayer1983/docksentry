@@ -69,9 +69,10 @@ Stand-ins, on top of the Telegram matrices' (their header lists them):
     the running one, so the answer is "already up to date";
   * the socket: `rfile`/`wfile` are byte buffers.
 
-`subprocess.run`, `Popen` and `urlopen` stay the Telegram matrices'
-trap: anything past the stand-ins turns its row red. The first checks
-drive that trap on purpose through this entry path.
+`subprocess.run`, `Popen`, `urlopen` and the socket connects stay the
+Telegram matrices' trap: any of those past the stand-ins turns its row
+red (the list is in test_telegram_dispatch_matrix's docstring). The
+first checks drive that trap on purpose through this entry path.
 
 `python3 scripts/test_web_action_matrix.py --snapshot [--app DIR]`
 prints a fresh expectation table from DIR's app code (default this
@@ -701,6 +702,11 @@ def _rows():
         P("/api/update", ("name", "web")))
     add("update: twice", P("/api/update", ("name", "web")),
         P("/api/update", ("name", "web")))
+    # A self-update queued while the lock was held is handed over by the
+    # next update that releases it — here the Web worker. The raw unlock
+    # in between drains nothing, so only the worker's hand-over can run it.
+    add("update: hands over a queued self-update", ("lock",),
+        P("/api/selfupdate"), ("unlock",), P("/api/update", ("name", "web")))
     # ── /api/bulk ──
     for a in ("pin", "unpin", "autoupdate_on", "autoupdate_off"):
         add(f"bulk: {a} web,nas/web,zzz/web", P(
@@ -1047,6 +1053,11 @@ _mark(PINNED_FOR, ["major: confirm web, lock held"],
       "Q16 (decided): confirming a major stays 'busy', it is not queued")
 _mark(PINNED_FOR, ["selfupdate: lock held"],
       "T6: selfupdate.start queues itself behind a held lock")
+# Headless queues nothing (the self-update check just skips), so there
+# the row only shows that the update itself still runs.
+_mark(PINNED_FOR, ["update: hands over a queued self-update"],
+      "Q14: the Web worker releases the lock, then runs the queued "
+      "self-update", ("multi", "one"))
 
 #: Where each request lands, read against main at 8a74ba7
 #: (app/web_ui.py unless named). Printed above its rows by --snapshot,
@@ -2313,6 +2324,83 @@ EXPECTED = {
      'state': {'pending': None,
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}',
+                         '{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('multi', 'update: hands over a queued self-update'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/selfupdate',
+                'http': '303 | Location: /settings?saved=1',
+                'out': ['<telegram> ⏳ Container updates in progress — self-update queued, '
+                        'it will start automatically once they finish.']},
+               {'do': 'unlock'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> *Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> 🚀 Container updates finished — starting the queued '
+                        'self-update...',
+                        '<webhook ok> {"event": "message", "text": "🚀 Container updates '
+                        'finished — starting the queued self-update..."}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web', 'selfupdate.run target=None']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/api/selfupdate", "actor": "admin", "source": "web"}',
+                         '{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('one', 'update: hands over a queued self-update'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/selfupdate',
+                'http': '303 | Location: /settings?saved=1',
+                'out': ['<telegram> ⏳ Container updates in progress — self-update queued, '
+                        'it will start automatically once they finish.']},
+               {'do': 'unlock'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> *Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> 🚀 Container updates finished — starting the queued '
+                        'self-update...',
+                        '<webhook ok> {"event": "message", "text": "🚀 Container updates '
+                        'finished — starting the queued self-update..."}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web', 'selfupdate.run target=None']}],
+     'state': {'pending': None,
+               'audit': ['{"action": "/api/selfupdate", "actor": "admin", "source": "web"}',
+                         '{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('headless', 'update: hands over a queued self-update'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/selfupdate',
+                'http': '303 | Location: /settings?saved=1',
+                'out': ['<log> Selfupdate check: skipped — another update flow is running.',
+                        '<log> Web UI selfupdate (headless): no update applied — see lines '
+                        'above for the reason']},
+               {'do': 'unlock'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': None,
+               'audit': ['{"action": "/api/selfupdate", "actor": "admin", "source": "web"}',
                          '{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},

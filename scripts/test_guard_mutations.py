@@ -1956,6 +1956,20 @@ GUARDED = [
      "        pass",
      "test_telegram_dispatch_matrix.py"),
 
+    # The trap covers raw sockets too (follow-up to T2): hostcheck's TLS
+    # probe, the websocket client and smtplib dial past urlopen.
+    ("…and so does a raw socket.create_connection",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    socket.create_connection = _escape("socket.create_connection")\n',
+     "    pass\n",
+     "test_telegram_dispatch_matrix.py"),
+
+    ("…and a bare socket.connect",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    socket.socket.connect = _escape_method("socket.connect")\n',
+     "    pass\n",
+     "test_telegram_dispatch_matrix.py"),
+
     # The Telegram callback matrix (core split, T3). With `stop_cancel`
     # switched off the press falls through every branch and nothing
     # answers — only that family's rows go red, measured.
@@ -2021,6 +2035,18 @@ GUARDED = [
      "                pass",
      "test_web_action_matrix.py"),
 
+    # Follow-up to T5: a self-update queued behind the lock is handed
+    # over by the Web worker once it releases. Dropping the hand-over or
+    # running it before the release both turn the two "hands over" rows
+    # red, measured. Q14 rewrites this claim and release — re-point the
+    # anchor there.
+    ("…and a Web update hands a queued self-update over after its release",
+     "app/web_ui.py",
+     "                engine._update_lock.release()\n"
+     "                bot._run_queued_selfupdate()\n",
+     "                engine._update_lock.release()\n",
+     "test_web_action_matrix.py"),
+
     # The update-lock sites (core split, T6). A claim added anywhere in
     # app/ shows up as an unlisted function in the AST enumeration; the
     # construction line is the anchor because the claim/release slices
@@ -2031,6 +2057,16 @@ GUARDED = [
      "        self._update_lock = threading.Lock()\n"
      "        self._update_lock.acquire(blocking=False)\n"
      "        self._update_lock.release()\n",
+     "test_update_lock_sites.py"),
+
+    # Follow-up to T6: asking the lock through the Web helper is counted
+    # per caller, so a new `_update_lock_held(bot)` is a new entry. The
+    # counter is the anchor; the one caller today sits in a pre-gate
+    # that Q14 rewrites.
+    ("…and so is a new place that asks it through a reader helper",
+     "scripts/test_update_lock_sites.py",
+     "                        helpers[(rel, qual, c)] += 1\n",
+     "                        pass\n",
      "test_update_lock_sites.py"),
 
     # selfupdate.start stays a raw claim by design (Q3), so this anchor

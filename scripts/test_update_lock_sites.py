@@ -26,6 +26,9 @@ lists below:
   * every function that mentions the lock at all (the accessors too, so
     a new alias is a new entry);
   * every read of `update_running` (the pre-gates);
+  * every call to a helper that only looks at the lock (a READER or
+    PROBE below that is neither `update_running` nor a queue call —
+    today `WebHandler._update_lock_held`);
   * every call that feeds or works off the container queue;
   * every busy sentence: a string constant that names a busy or queue
     key, a `t()` built from a prefix of one (the Web banner's
@@ -186,6 +189,22 @@ QUEUE_CALLS = {
 }
 QUEUE_CALLEES = ("enqueue_update", "take_queued_update",
                  "_drain_update_queue", "_sweep_update_queue")
+
+#: (file, qualname, callee) → (count, why). Who asks the lock through a
+#: helper that only looks at it. The callees are the READER and PROBE
+#: names in LOCK_OPS that are counted nowhere else (`update_running` has
+#: its own table, the queue helpers are in QUEUE_CALLS), so a new reader
+#: listed there brings its callers along.
+LOCK_HELPER_CALLS = {
+    ("web_ui.py", "create_handler.WebHandler.do_POST", "_update_lock_held"):
+        (1, "pre-gate for /api/update"),
+}
+
+
+def _helper_callees():
+    return sorted({q.rsplit(".", 1)[-1] for (_f, q), (role, _o)
+                   in LOCK_OPS.items() if role in ("READER", "PROBE")}
+                  - set(QUEUE_CALLEES) - {"update_running"})
 
 #: (file, qualname, key) → (count, label). `key` is the string constant,
 #: or `t(<prefix>…)` for a key built at run time. Labels: claim = the
@@ -394,7 +413,9 @@ def enumerate_sites(app=None):
     mentions = set()
     running = collections.Counter()
     queue = collections.Counter()
+    helpers = collections.Counter()
     busy = collections.Counter()
+    helper_callees = set(_helper_callees())
     for rel, src in _sources(app):
         tree = ast.parse(src)
         docstrings = {id(b.value) for _q, s in _scopes(tree)
@@ -419,6 +440,8 @@ def enumerate_sites(app=None):
                         ops[(rel, qual)].append(c + "()")
                     if c in QUEUE_CALLEES:
                         queue[(rel, qual, c)] += 1
+                    if c in helper_callees:
+                        helpers[(rel, qual, c)] += 1
                 if isinstance(n, (ast.With, ast.AsyncWith)):
                     for item in n.items:
                         if _is_lock(item.context_expr, aliases):
@@ -433,11 +456,11 @@ def enumerate_sites(app=None):
                     if key is not None:
                         busy[(rel, qual, key)] += 1
     ops = {k: sorted(v) for k, v in ops.items()}
-    return ops, mentions, running, queue, busy
+    return ops, mentions, running, queue, busy, helpers
 
 
 def enumeration_checks(found):
-    ops, mentions, running, queue, busy = found
+    ops, mentions, running, queue, busy, helpers = found
     out = []
 
     want_ops = {k: v[1] for k, v in LOCK_OPS.items()}
@@ -469,6 +492,17 @@ def enumeration_checks(found):
         out.append((f"queue call {k[0]}:{k[1]} → {k[2]} ×{queue.get(k, 0)}",
                     queue.get(k, 0) == QUEUE_CALLS.get(k, 0),
                     f"expected ×{QUEUE_CALLS.get(k, 0)}"))
+    want_h = {k: v[0] for k, v in LOCK_HELPER_CALLS.items()}
+    for k in sorted(set(helpers) | set(want_h)):
+        out.append((f"asks the lock through {k[2]}: {k[0]}:{k[1]} "
+                    f"×{helpers.get(k, 0)}",
+                    helpers.get(k, 0) == want_h.get(k, 0),
+                    f"expected ×{want_h.get(k, 0)}"))
+    out.append((f"the lock-helper callees are {_helper_callees()}",
+                _helper_callees() == ["_update_lock_held"],
+                "a READER/PROBE was added or renamed in LOCK_OPS; "
+                "check LOCK_HELPER_CALLS"))
+
     drains = {k[0] for k in queue if k[2] != "enqueue_update"}
     out.append((f"only these files work the queue off: {sorted(drains)}",
                 drains == {"telegram_bot.py"}, "Q13: today Telegram only"))
@@ -795,11 +829,12 @@ def drive_checks():
 # ═══════════════════════════════════════════════════════════════════════
 def snapshot():
     found = enumerate_sites()
-    ops, mentions, running, queue, busy = found
+    ops, mentions, running, queue, busy, helpers = found
     print("# lock ops");  pprint.pprint(ops, width=100)
     print("# mentions");  pprint.pprint(sorted(mentions), width=100)
     print("# update_running"); pprint.pprint(dict(running), width=100)
     print("# queue");     pprint.pprint(dict(queue), width=100)
+    print("# lock helpers"); pprint.pprint(dict(helpers), width=100)
     print("# busy");      pprint.pprint(dict(busy), width=100)
     print("EXPECTED_BUSY = {")
     for site, label, prepare, call in DRIVES:
