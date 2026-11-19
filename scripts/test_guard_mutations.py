@@ -2021,6 +2021,48 @@ GUARDED = [
      "                pass",
      "test_web_action_matrix.py"),
 
+    # The update-lock sites (core split, T6). A claim added anywhere in
+    # app/ shows up as an unlisted function in the AST enumeration; the
+    # construction line is the anchor because the claim/release slices
+    # replace every site but keep the one lock.
+    ("a new place that takes the update lock is noticed",
+     "app/update_engine.py",
+     "        self._update_lock = threading.Lock()\n",
+     "        self._update_lock = threading.Lock()\n"
+     "        self._update_lock.acquire(blocking=False)\n"
+     "        self._update_lock.release()\n",
+     "test_update_lock_sites.py"),
+
+    # selfupdate.start stays a raw claim by design (Q3), so this anchor
+    # survives the split. Dropping the queue turns QUEUE_SELF into REJECT.
+    ("a self-update asked for while the lock is held is remembered",
+     "app/selfupdate.py",
+     "        ctx._queued_selfupdate = (target, reply_to) if reply_to else (target,)\n",
+     "        ctx._queued_selfupdate = None\n",
+     "test_update_lock_sites.py"),
+
+    # Discord's worker-pool refusal: not the update lock, and nothing in
+    # the split moves it. Swapping the key is a busy sentence the list
+    # does not know.
+    ("a new busy sentence anywhere in app/ is noticed",
+     "app/discord_bot.py",
+     'self.t("chan_busy_capacity")',
+     'self.t("chan_update_busy")',
+     "test_update_lock_sites.py"),
+
+    ("…the lock-site drive still sees the work a claim does",
+     "scripts/test_update_lock_sites.py",
+     '            WORK.append((f"update_container@{host}:{name}",\n'
+     "                         self.lock.locked()))\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
+    ("…and which sentence a busy site picked",
+     "scripts/test_update_lock_sites.py",
+     "            KEYS.append(key)\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
