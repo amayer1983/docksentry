@@ -669,23 +669,23 @@ class TelegramBot:
             back to "all" or to local would act on the wrong box.
 
         `write=True` marks the intervening commands, whose no-token
-        default is the local host; reads default to every host.
+        default is the local host; reads default to every host. That
+        rule is the core's (`container_flags.targets_for`); this method
+        only parses the `@host` token and renders the answer.
         """
+        # Single-host first, before any parsing: the `@host` token stays
+        # in the text untouched, so these installs keep their pre-#7 path
+        # and their output verbatim.
         if not self._multi():
             return arg_text, None, None
-        from hosts import ALL_HOSTS, split_host_target
+        import container_flags
+        from hosts import split_host_target
         cleaned, target = split_host_target(arg_text)
-        if target is None:
-            return cleaned, ([self.hosts.local] if write
-                             else list(self.hosts)), None
-        if target == ALL_HOSTS:
-            return cleaned, list(self.hosts), None
-        host = self.hosts.get(target)
-        if host is None:
-            return cleaned, None, self.t(
-                "host_unknown", name=target,
-                hosts=", ".join(f"`{n}`" for n in self.hosts.names))
-        return cleaned, [host], None
+        targets, fatal = container_flags.targets_for(
+            "write" if write else "read", self.hosts, target)
+        if fatal is not None:
+            return cleaned, None, self.t(fatal.key, **fatal.params)
+        return cleaned, targets, None
 
     def _host_hint(self, arg_text):
         """The line appended to a *write* command's reply when it defaulted

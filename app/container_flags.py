@@ -144,24 +144,40 @@ def _is_local(host):
     return host is None or bool(getattr(host, "is_local", False))
 
 
-def targets_for_write(registry, host_token):
-    """Which hosts a state-changing command acts on.
+#: What a command does to the hosts it reaches — the one thing that picks
+#: the default when nobody named a host.
+TARGET_MODES = ("read", "write")
+
+
+def targets_for(mode, registry, host_token):
+    """Which hosts a command acts on — the one place that decides it.
 
     `host_token` is already parsed — `@nas` on Telegram, a `host:` option
     on Discord, both arriving here as a name, `hosts.ALL_HOSTS`, or None.
     Parsing the syntax is the connection's job; deciding what the answer
     MEANS is not, which is why Discord had no `@all` until this moved.
 
+    `mode` picks the no-token default, and that is the whole rule: a
+    command that only LOOKS ("read") defaults to every host, one that
+    CHANGES something ("write") stays on the local one. Turning
+    auto-update on for `nginx` because no host was named must not turn it
+    on for every host's `nginx` — the #7 state collision.
+
     Returns `(targets, fatal)`. `targets` is `[None]` on a single-host
     install — the pseudo-host every call site already walks, and what
-    keeps single-host replies byte-for-byte what they were.
+    keeps single-host replies byte-for-byte what they were. `fatal` is a
+    `Reply` when the named host isn't one we manage, with `targets == []`;
+    callers send it and do nothing else, because falling back to "all" or
+    to local would act on the wrong box.
     """
+    if mode not in TARGET_MODES:
+        raise ValueError(f"unknown target mode {mode!r}")
     multi = registry is not None and getattr(registry, "is_multi", False)
     if not multi:
         return [None], None
     from hosts import ALL_HOSTS
     if host_token is None:
-        return [registry.local], None
+        return (list(registry) if mode == "read" else [registry.local]), None
     if host_token == ALL_HOSTS:
         return list(registry), None
     host = registry.get(host_token)
@@ -170,6 +186,18 @@ def targets_for_write(registry, host_token):
         return [], Reply("host_unknown", {"name": host_token, "hosts": names},
                          ok=False)
     return [host], None
+
+
+def targets_for_read(registry, host_token):
+    """`targets_for` for a command that only looks: no host named means
+    every host."""
+    return targets_for("read", registry, host_token)
+
+
+def targets_for_write(registry, host_token):
+    """`targets_for` for a command that changes something: no host named
+    means the local one."""
+    return targets_for("write", registry, host_token)
 
 
 def resolve_container(partial, *, backend=None, names=None):

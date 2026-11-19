@@ -2099,6 +2099,39 @@ GUARDED = [
      "            pass\n",
      "test_update_lock_sites.py"),
 
+    # A1: which hosts a command reaches is decided once, in the core, and
+    # Telegram only parses and renders. Both halves of the no-host rule
+    # sit on one line of targets_for, so each gets its own mutation.
+    ("a read with no host named reaches every host",
+     "app/container_flags.py",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else [registry.local]), None\n",
+     "    if host_token is None:\n"
+     "        return ([registry.local] if mode == \"read\" else [registry.local]), None\n",
+     "test_target_resolution_shared.py"),
+
+    ("…and a write with no host named stays on the local one",
+     "app/container_flags.py",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else [registry.local]), None\n",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else list(registry)), None\n",
+     "test_target_resolution_shared.py"),
+
+    ("a target mode the core does not know is refused, not read as a write",
+     "app/container_flags.py",
+     "    if mode not in TARGET_MODES:\n",
+     "    if False:\n",
+     "test_target_resolution_shared.py"),
+
+    ("a one-host install's @-token stays in the text, unparsed",
+     "app/telegram_bot.py",
+     "        if not self._multi():\n"
+     "            return arg_text, None, None\n"
+     "        import container_flags\n",
+     "        import container_flags\n",
+     "test_target_resolution_shared.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
