@@ -2273,8 +2273,26 @@ GUARDED = [
 
     ('find_on_hosts never raises for a host, whatever it throws',
      'app/container_flags.py',
-     '        except Exception as e:                              # noqa: BLE001\n            names, reply, failure = [], None, e\n',
-     '        except ZeroDivisionError as e:                      # noqa: BLE001\n            names, reply, failure = [], None, e\n',
+     '        except Exception as e:                              # noqa: BLE001\n            backend, failure = None, e\n',
+     '        except ZeroDivisionError as e:                      # noqa: BLE001\n            backend, failure = None, e\n',
+     'test_find_on_hosts.py'),
+
+    ("a host with no backend is chan_no_backend, not unreachable",
+     'app/container_flags.py',
+     '        elif backend is None:\n            reply = Reply("chan_no_backend", ok=False)\n',
+     '        elif False:\n            reply = Reply("chan_no_backend", ok=False)\n',
+     'test_find_on_hosts.py'),
+
+    ("a caller's mistake raises from find_on_hosts, it is no dead host",
+     'app/container_flags.py',
+     '            name, reply, failure = resolve_container_checked(\n                arg, backend=backend, timeout=timeout)\n',
+     '            try:\n                name, reply, failure = resolve_container_checked(\n                    arg, backend=backend, timeout=timeout)\n            except Exception as e:                          # noqa: BLE001\n                name, reply, failure = None, None, e\n',
+     'test_find_on_hosts.py'),
+
+    ("a bare non-zero exit is named in the reader's language",
+     'app/container_flags.py',
+     '                        else _exit_text(rc, t))\n',
+     '                        else _exit_text(rc, None))\n',
      'test_find_on_hosts.py'),
 
     ('find_on_hosts hands every host to on_host',

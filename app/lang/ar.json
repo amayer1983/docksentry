@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "لا يحتوي السجل على `{image}`. إمّا أنها بُنيت هنا — الصورة المبنية محليًا ليس لها مصدر للسحب، والتحديث الذاتي يحتاج صورة من سجل — أو أن السجل خاص ويطلب بيانات اعتماد (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ بدأ التحديث الذاتي — سأرسل لك رسالة مباشرة عند الانتهاء، وسأعيد التشغيل إن كان هناك ما يُطبَّق.",
   "error_timed_out": "لا استجابة خلال {seconds} ثانية",
+  "error_exit_code": "رمز الخروج {code}",
   "monitor_crash_restart_nocode": "🔁 أُعيد تشغيل {name} بواسطة سياسة إعادة التشغيل عند {when} (إعادة التشغيل رقم {count}). رمز الخروج غير معروف — لم يرصد تدفق الأحداث هذه الحالة.",
   "selfaudit_head": "🔍 *Docksentry ينظر إلى نفسه*\n{total} حاوية Compose: {ok} مقروءة، {wrong} خلف تركيب خاطئ، {missing} بلا تركيب.",
   "selfaudit_self_name": "• أنا الحاوية `{name}`",

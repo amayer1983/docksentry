@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "Die Registry kennt kein `{image}`. Entweder wurde es hier gebaut — ein lokal gebautes Image hat nichts zum Ziehen, und ein Selbstupdate braucht eines aus einer Registry — oder die Registry ist privat und will Zugangsdaten (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Selbst-Update gestartet — ich schicke dir eine Direktnachricht, wenn es fertig ist, und starte neu, falls es etwas anzuwenden gibt.",
   "error_timed_out": "keine Antwort innerhalb von {seconds} Sekunden",
+  "error_exit_code": "Exit-Code {code}",
   "monitor_crash_restart_nocode": "🔁 {name} wurde um {when} von seiner Restart-Policy neu gestartet (Neustart #{count}). Der Exit-Code ist nicht bekannt — der Ereignisstrom hat diesen Fall nicht gesehen.",
   "selfaudit_head": "🔍 *Docksentry, auf sich selbst geschaut*\n{total} Compose-Container: {ok} lesbar, {wrong} hinter einem falschen Mount, {missing} ohne Mount.",
   "selfaudit_self_name": "• Ich bin Container `{name}`",

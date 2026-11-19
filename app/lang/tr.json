@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "Kayıt defterinde `{image}` yok. Ya burada derlendi — yerel olarak derlenmiş bir imajın çekilecek bir yeri yoktur ve kendini güncelleme bir kayıt defterinden gelen imaj ister — ya da kayıt defteri özeldir ve kimlik bilgisi ister (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Kendini güncelleme başladı — bitince sana özel mesaj göndereceğim ve uygulanacak bir şey varsa yeniden başlayacağım.",
   "error_timed_out": "{seconds} saniye içinde yanıt yok",
+  "error_exit_code": "çıkış kodu {code}",
   "monitor_crash_restart_nocode": "🔁 {name}, yeniden başlatma politikası tarafından {when} saatinde yeniden başlatıldı (yeniden başlatma #{count}). Çıkış kodu bilinmiyor — olay akışı bunu görmedi.",
   "selfaudit_head": "🔍 *Docksentry kendine bakıyor*\n{total} Compose kapsayıcısı: {ok} okunabilir, {wrong} yanlış bağlama arkasında, {missing} bağlama yok.",
   "selfaudit_self_name": "• Ben `{name}` kapsayıcısıyım",

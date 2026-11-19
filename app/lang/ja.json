@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "レジストリに `{image}` がありません。ここでビルドされた（ローカルビルドのイメージには取得元がなく、自己更新にはレジストリ上のイメージが必要です）か、レジストリが非公開で認証情報を求めています（`DOCKER_USERNAME` / `DOCKER_PASSWORD`）。",
   "chan_selfupdate_started_private": "⬆️ 自己更新を開始しました — 完了したらダイレクトメッセージでお知らせし、適用するものがあれば再起動します。",
   "error_timed_out": "{seconds} 秒以内に応答なし",
+  "error_exit_code": "終了コード {code}",
   "monitor_crash_restart_nocode": "🔁 {name} は {when} に restart policy によって再起動されました（再起動 #{count}）。終了コードは不明です — イベントストリームがこの回を捉えませんでした。",
   "selfaudit_head": "🔍 *Docksentry の自己点検*\nCompose コンテナ {total} 件: 読める {ok}、マウント違い {wrong}、マウントなし {missing}。",
   "selfaudit_self_name": "• 自分はコンテナ `{name}` です",

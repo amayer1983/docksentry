@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "O registry não tem `{image}`. Ou foi construída aqui — uma imagem construída localmente não tem de onde ser puxada, e um self-update precisa de uma vinda de um registry — ou o registry é privado e quer credenciais (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Autoatualização iniciada — enviarei uma mensagem direta ao terminar e reiniciarei se houver algo a aplicar.",
   "error_timed_out": "sem resposta em {seconds} segundos",
+  "error_exit_code": "código de saída {code}",
   "monitor_crash_restart_nocode": "🔁 {name} foi reiniciado pela sua restart policy às {when} (reinício #{count}). O código de saída não é conhecido — o fluxo de eventos não viu este caso.",
   "selfaudit_head": "🔍 *Docksentry, a olhar para si próprio*\n{total} contentor(es) Compose: {ok} legíveis, {wrong} atrás de uma montagem errada, {missing} sem montagem.",
   "selfaudit_self_name": "• Sou o contentor `{name}`",

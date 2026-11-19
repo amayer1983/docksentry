@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "El registro no tiene `{image}`. O se construyó aquí — una imagen construida localmente no tiene de dónde descargarse, y una autoactualización necesita una de un registro — o el registro es privado y pide credenciales (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Autoactualización iniciada: te enviaré un mensaje directo cuando termine y reiniciaré si hay algo que aplicar.",
   "error_timed_out": "sin respuesta en {seconds} segundos",
+  "error_exit_code": "código de salida {code}",
   "monitor_crash_restart_nocode": "🔁 {name} fue reiniciado por su política de reinicio a las {when} (reinicio #{count}). El código de salida no se conoce: el flujo de eventos no vio este caso.",
   "selfaudit_head": "🔍 *Docksentry, mirándose a sí mismo*\n{total} contenedor(es) Compose: {ok} legibles, {wrong} tras un montaje equivocado, {missing} sin montaje.",
   "selfaudit_self_name": "• Soy el contenedor `{name}`",

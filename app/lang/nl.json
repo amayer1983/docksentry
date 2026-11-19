@@ -992,6 +992,7 @@
   "selfupdate_pull_denied_hint": "Het register heeft geen `{image}`. Of hij is hier gebouwd — een lokaal gebouwde image heeft niets om op te halen, en een self-update heeft er een uit een register nodig — of het register is privé en wil inloggegevens (`DOCKER_USERNAME` / `DOCKER_PASSWORD`).",
   "chan_selfupdate_started_private": "⬆️ Zelfupdate gestart — ik stuur je een direct bericht als het klaar is en herstart als er iets toe te passen valt.",
   "error_timed_out": "geen antwoord binnen {seconds} seconden",
+  "error_exit_code": "exitcode {code}",
   "monitor_crash_restart_nocode": "🔁 {name} is om {when} opnieuw gestart door zijn restart policy (herstart #{count}). De exitcode is niet bekend — de eventstroom heeft deze niet gezien.",
   "selfaudit_head": "🔍 *Docksentry, naar zichzelf kijkend*\n{total} Compose-container(s): {ok} leesbaar, {wrong} achter een verkeerde koppeling, {missing} zonder koppeling.",
   "selfaudit_self_name": "• Ik ben container `{name}`",

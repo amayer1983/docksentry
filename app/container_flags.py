@@ -275,7 +275,8 @@ class Unreachable(namedtuple("Unreachable", "host error hint")):
 
     `error` is meant for a person (a timeout says how long we waited);
     `hint` is hostdiag's sentence for an SSH host, or "". `reply()` is
-    the shared one-liner both chats render, the hint goes underneath.
+    the `host_unreachable_short` one-liner Discord renders today, the
+    hint goes underneath. Telegram still says `status_host_unreachable`.
     """
     __slots__ = ()
 
@@ -298,7 +299,8 @@ HostFind = namedtuple("HostFind", "host names error unreachable")
 class FindResult:
     #: `(host, names)` for every host with a match, in walk order.
     found: tuple = ()
-    #: One Reply per host that answered without a match, `host` set.
+    #: One Reply per host that answered without a match, `host` set —
+    #: or that has no backend at all (`chan_no_backend`).
     errors: tuple = ()
     #: One `Unreachable` per host that did not answer.
     unreachable: tuple = ()
@@ -309,6 +311,16 @@ class FindResult:
         answering host's Reply. None when every host was unreachable —
         then there is nothing to call "not found"."""
         return self.errors[0] if self.errors else None
+
+
+def _exit_text(rc, t):
+    """A non-zero exit that said nothing on stderr, for a person."""
+    if t is not None:
+        try:
+            return t("error_exit_code", code=rc)
+        except Exception:                                   # noqa: BLE001
+            pass
+    return f"exit code {rc}"
 
 
 def _human(err, t):
@@ -331,7 +343,12 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
     Unreachable is an exception from the backend OR a CLI exit ≠ 0: a
     dead host raises its timeout, a refused SSH returns 255 with empty
     output, and neither may come back as "not found" or take the whole
-    command down. Nothing from a host is raised from here.
+    command down. Nothing a host does is raised from here — but a bad
+    argument from the caller is: only `backend_for` and the backend's
+    own `run` are treated as the host's doing.
+
+    `backend_for` answering None is "no backend", like the old
+    resolvers say it (`chan_no_backend` in `errors`), not unreachable.
 
     `include_stopped` applies to a glob; a plain name always looks at
     stopped containers too (`resolve_container_checked`). `t` translates
@@ -344,25 +361,29 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
         names, reply, failure = [], None, None
         try:
             backend = backend_for(host)
-            if is_glob:
-                names, failure = lifecycle.match_glob_checked(
-                    arg, backend=backend, include_stopped=include_stopped,
-                    timeout=timeout)
-                if failure is None and not names:
-                    reply = Reply("glob_no_match", {"pattern": arg},
-                                  ok=False)
-            else:
-                name, reply, failure = resolve_container_checked(
-                    arg, backend=backend, timeout=timeout)
-                names = [name] if name else []
         except Exception as e:                              # noqa: BLE001
-            names, reply, failure = [], None, e
+            backend, failure = None, e
+        if failure is not None:
+            pass
+        elif backend is None:
+            reply = Reply("chan_no_backend", ok=False)
+        elif is_glob:
+            names, failure = lifecycle.match_glob_checked(
+                arg, backend=backend, include_stopped=include_stopped,
+                timeout=timeout)
+            if failure is None and not names:
+                reply = Reply("glob_no_match", {"pattern": arg}, ok=False)
+        else:
+            name, reply, failure = resolve_container_checked(
+                arg, backend=backend, timeout=timeout)
+            names = [name] if name else []
         gone = None
         if failure is not None:
             if isinstance(failure, tuple):
                 rc, stderr = failure
                 raw = stderr
-                text = _human(stderr, t) if stderr.strip() else f"exit {rc}"
+                text = (_human(stderr, t) if stderr.strip()
+                        else _exit_text(rc, t))
             else:
                 raw = str(failure)
                 text = _human(failure, t)

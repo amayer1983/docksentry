@@ -324,9 +324,9 @@ if callable(find_on_hosts):
     bk = backends()
     bk["refused"].stderr = ""
     res, raised = run_find("web", targets=[REFUSED], bk=bk)
-    checks["a non-zero exit with no stderr says the exit code"] = (
+    checks["a non-zero exit with no stderr says the exit code, translated"] = (
         raised is None and len(res.unreachable) == 1
-        and res.unreachable[0][1] == "exit 255")
+        and res.unreachable[0][1] == "<error_exit_code|code=255>")
 
     def _no_backend(h):
         raise RuntimeError("no backend for nas")
@@ -340,6 +340,28 @@ if callable(find_on_hosts):
     checks["a host whose backend cannot be built is unreachable"] = (
         raised is None and unreachable_of(res) == ["nas"]
         and res.unreachable[0][1] == "no backend for nas")
+
+    # ── backend_for that answers None: no backend, as the old resolvers
+    # say it — never "unreachable" quoting Python's NoneType ───────────
+    for _arg in ("web", "web*"):
+        EVENTS.clear()
+        try:
+            res = find_on_hosts([NAS], backend_for=lambda h: None, arg=_arg,
+                                t=t)
+            raised = None
+        except Exception as e:                          # noqa: BLE001
+            res, raised = None, e
+        checks[f"backend_for None is chan_no_backend for {_arg!r}, "
+               f"on that host"] = (
+            raised is None and res.unreachable == () and res.found == ()
+            and errors_of(res) == [("nas", "chan_no_backend", {})]
+            and res.errors[0].host is NAS and res.first_error is res.errors[0])
+
+    # ── a caller's mistake raises; it is not a dead host ──────────────
+    bk = backends()
+    res, raised = run_find(None, targets=[NAS], bk=bk)
+    checks["a bad argument from the caller raises, not 'unreachable'"] = (
+        res is None and raised is not None and bk["nas"].calls != [])
 
     # ── single-host install: the pseudo-host None ─────────────────────
     bk = backends()
