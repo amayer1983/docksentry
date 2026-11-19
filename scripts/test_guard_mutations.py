@@ -2892,14 +2892,25 @@ GUARDED = [
 
     ("…and cuts the skipped host's words to 80, as a fresh failure's",
      'app/discord_bot.py',
-     '            words = errfmt.human(error.reason or "", self.t)[:80]\n',
-     '            words = errfmt.human(error.reason or "", self.t)\n',
+     '            if len(words) > 80:\n'
+     '                words = words[:79].rstrip() + "…"\n',
+     '            if False:\n'
+     '                words = words[:79].rstrip() + "…"\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…with an ellipsis at the cut, so the stub before the clause is not "
+     "read as a word",
+     'app/discord_bot.py',
+     '                words = words[:79].rstrip() + "…"\n',
+     '                words = words[:80]\n',
      'test_discord_dispatch_matrix.py'),
 
     ("…after making them a person's, so the cut cannot leave the argv",
      'app/discord_bot.py',
-     '            words = errfmt.human(error.reason or "", self.t)[:80]\n',
-     '            words = (error.reason or "")[:80]\n',
+     '            words = errfmt.human(error.reason or "", self.t)\n'
+     '            if len(words) > 80:\n',
+     '            words = error.reason or ""\n'
+     '            if len(words) > 80:\n',
      'test_discord_dispatch_matrix.py'),
 
     ("Discord /status <container> does not ask a remembered host for the name",

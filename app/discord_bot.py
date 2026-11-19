@@ -1654,11 +1654,15 @@ class DiscordBot:
         words and the clause saying so comes after whole: cut at 80, the
         seconds until the next try would be the part that goes. The
         words are made a person's first, so the cut cannot hide that
-        Python's argv was a timeout."""
+        Python's argv was a timeout. A cut there ends in an ellipsis:
+        with the clause behind it, "…port 22: Con (from the last try…"
+        read the stub as a word."""
         import errfmt
         import hosts as hostslib
         if isinstance(error, hostslib.StillUnreachable):
-            words = errfmt.human(error.reason or "", self.t)[:80]
+            words = errfmt.human(error.reason or "", self.t)
+            if len(words) > 80:
+                words = words[:79].rstrip() + "…"
             return hostslib.skipped_words(words, error.retry_in, t=self.t)
         return str(error)[:80]
 

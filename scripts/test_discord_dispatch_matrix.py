@@ -1314,12 +1314,14 @@ def w7d_checks():
     lines = texts[1].split("\n") if ok else []
     flaky = [ln for ln in (texts[0].split("\n") if ok else [])
              if ln.startswith("⚠️ Host `flaky`")]
-    yield ("[multi] W7d /check then /check: the words cut to 80 as a fresh "
-           "failure is, then the clause whole",
+    # The cut is marked: "…port 22: Con (from the last try…" read the
+    # stub as a word, since the clause follows it.
+    yield ("[multi] W7d /check then /check: the words cut to 80 with an "
+           "ellipsis at the cut, then the clause whole",
            ok and _w7d_failed("dead", "no answer within 30 seconds"
                               + _W7D_LATER) in lines
-           and _w7d_failed("refused", _W7D_REFUSED_CHECK[:80] + _W7D_LATER)
-           in lines)
+           and _w7d_failed("refused", _W7D_REFUSED_CHECK[:79] + "…"
+                           + _W7D_LATER) in lines)
     yield ("[multi] W7d /check then /check: …dead and refused not asked, "
            "flaky checked again and said as the first time",
            ok and asked(steps[1], "dead") is None
@@ -7513,8 +7515,8 @@ EXPECTED = {
                         '⚠️ Host `dead` could not be checked: no answer within 30 seconds '
                         '(from the last try, not asked again for 60s)\n'
                         '⚠️ Host `refused` could not be checked: could not list containers '
-                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Con '
-                        '…#faba9bd3f6  []'],
+                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Co… '
+                        '…#3c4ace7fa8  []'],
                 'hosts': {'local': 'ps --format, inspect t=60, inspect --format ×2',
                           'nas': 'ps --format, inspect t=60, inspect --format ×2'},
                 'events': ['check_all@local', 'check_all@nas', 'check_all@flaky']}],
