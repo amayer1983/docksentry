@@ -2557,6 +2557,32 @@ GUARDED = [
      '                (getattr(ids_p, "stderr", "") or "")\n',
      'test_status_overview_core.py'),
 
+    ("…and so are a raising ps's",
+     'app/status_render.py',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, str(_e))\n',
+     'test_status_overview_core.py'),
+
+    ("…and a raising inspect's",
+     'app/status_render.py',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, str(_e))\n',
+     'test_status_overview_core.py'),
+
+    ("an inspect that answers null leaves the overview standing",
+     'app/status_render.py',
+     '_cfgs = json.loads(ins_p.stdout) or []',
+     '_cfgs = json.loads(ins_p.stdout)',
+     'test_status_overview_core.py'),
+
     ("the /status overview walks the hosts in registry order",
      'app/status_render.py',
      '    for _host in (targets or [None]):\n',

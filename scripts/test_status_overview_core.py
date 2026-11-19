@@ -212,6 +212,24 @@ try:
         ov = collect([Host("x", run)], backend_for=lambda h: h.backend, t=en)
         checks["the error is clipped like every other host line"] = (
             len(ov.unreachable) == 1 and len(ov.unreachable[0][1]) == 400)
+        # The two raise paths clip as well: a dead host's timeout text and
+        # a broken socket's are no shorter than a refused host's stderr.
+        run, calls = by(ps=OSError(long_err))
+        ov = collect([Host("x", run)], backend_for=lambda h: h.backend, t=en)
+        checks["…and so is a raising ps's"] = (
+            len(ov.unreachable) == 1 and len(ov.unreachable[0][1]) == 400)
+        run, calls = by(ps=cp(0, "abc\n"), inspect=OSError(long_err))
+        ov = collect([Host("x", run)], backend_for=lambda h: h.backend, t=en)
+        checks["…and a raising inspect's"] = (
+            len(ov.unreachable) == 1 and len(ov.unreachable[0][1]) == 400)
+        # `inspect` answering `null` is valid JSON with nothing in it; it
+        # must read as no rows, not raise out of the walk.
+        before = len(raised)
+        run, calls = by(ps=cp(0, "abc\n"), inspect=cp(0, "null"))
+        ov = collect([Host("x", run)], backend_for=lambda h: h.backend, t=en)
+        checks["inspect answering null: no rows, no raise"] = (
+            len(raised) == before
+            and ov.inspected == [] and ov.unreachable == [])
 
         # Measured on the old handler and kept: a backend that cannot be
         # had at all is the caller's error, not an unreachable host.
