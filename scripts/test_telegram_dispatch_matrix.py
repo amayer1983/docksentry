@@ -761,6 +761,9 @@ def _w3_row(setup, text, *, modes=None, refused=None):
         MatrixBackend.refused_stderr = real
 
 
+_NO_SSH_DIR = "/docksentry-test/no-ssh-here"
+
+
 def w3_extra_checks():
     """What the table cannot show with its fixed hosts: the SSH hint
     under an unreachable line, and a single-host install whose own
@@ -771,8 +774,10 @@ def w3_extra_checks():
     results = []
     # The hint: hostdiag reads the container's ~/.ssh, which is this
     # machine's — pointed at a directory that does not exist, so the
-    # sentence is the same everywhere.
-    no_dir = os.path.join(_TMP_ROOT or tempfile.gettempdir(), "no-ssh-here")
+    # sentence is the same everywhere. A fixed short path, not one under
+    # the temp dir: a long TMPDIR made the line long enough for Telegram's
+    # clip to cut it, and the check failed for the path's sake alone.
+    no_dir = _NO_SSH_DIR
     real_home = hostdiag._home_ssh
     hostdiag._home_ssh = lambda: no_dir
     try:
@@ -874,7 +879,7 @@ def w4_extra_checks():
     from i18n import get_translator
     en = get_translator("en")
     results = []
-    no_dir = os.path.join(_TMP_ROOT or tempfile.gettempdir(), "no-ssh-here")
+    no_dir = _NO_SSH_DIR
     real_home = hostdiag._home_ssh
     hostdiag._home_ssh = lambda: no_dir
     try:
