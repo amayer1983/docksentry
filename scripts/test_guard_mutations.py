@@ -1971,6 +1971,28 @@ GUARDED = [
      "    pass",
      "test_telegram_callback_matrix.py"),
 
+    # The Discord matrix (core split, T4). Without the action check a
+    # stop token pressed as "updateall" runs an update with the stop's
+    # parameters — exactly the two "pressed as updateall" rows go red,
+    # measured. Inside `_on_component`, which D11 does not move.
+    ("a Discord confirmation only answers the action it was issued for",
+     "app/discord_bot.py",
+     '        if rec is None or rec["action"] != action:\n',
+     "        if rec is None:\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("…the restore fetch's stand-in still hands everything else to the trap",
+     "scripts/test_discord_dispatch_matrix.py",
+     "        return trap(req, *a, **kw)",
+     '        return _Body(b"")',
+     "test_discord_dispatch_matrix.py"),
+
+    ("…and what the bot sends to Discord is what the matrix compares",
+     "scripts/test_discord_dispatch_matrix.py",
+     '            LOG.append(("rest", (self.who, method, path,\n',
+     '            (("rest", (self.who, method, path,\n',
+     "test_discord_dispatch_matrix.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

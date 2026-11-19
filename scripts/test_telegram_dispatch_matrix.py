@@ -421,17 +421,22 @@ def _seed_pending(cfg, setup):
         json.dump(rows, f)
 
 
-def build(setup):
-    """A real bot for `setup`. Returns (bot, local_checker, backends, log)."""
+def build_world(setup, env=None):
+    """Config, store and host registry for `setup`, with no bot yet.
+
+    Returns (cfg, store, managed, registry, backends, data). `env` is laid
+    over the scrubbed environment before Config reads it — the Discord
+    matrix needs its credentials in there. Shared with the Discord
+    matrix, so both drive the same hosts."""
     _patch_environment()
     from config import Config
     from container_store import ContainerStore, HostScopedStore
     from hosts import HostRegistry, ManagedHost
     import container_backend
-    from telegram_bot import TelegramBot
 
     data = tempfile.mkdtemp(dir=_TMP_ROOT)
     _scrub_env(data)
+    os.environ.update(env or {})
     cfg = Config.from_env()
     store = ContainerStore(cfg)
     checker_cls = _make_checker_class()
@@ -456,9 +461,16 @@ def build(setup):
             endpoint="" if n == "local" else f"ssh://{n}",
             is_local=n == "local"))
     registry = None if setup == "none" else HostRegistry(managed)
+    container_backend._default_backend = backends["local"]
+    return cfg, store, managed, registry, backends, data
+
+
+def build(setup):
+    """A real bot for `setup`. Returns (bot, local_checker, backends, log)."""
+    from telegram_bot import TelegramBot
+    cfg, store, managed, registry, backends, data = build_world(setup)
     bot = TelegramBot(cfg, store, hosts=registry)
     bot.backend = backends["local"]
-    container_backend._default_backend = backends["local"]
     bot.start_time = time.time()
     bot.bot_username = "dsbot"
     log = []
@@ -491,7 +503,9 @@ def _short(text):
     return text[:300] + "…#" + hashlib.sha1(text.encode()).hexdigest()[:10]
 
 
-def _call_str(argv, timeout):
+def _call_str(argv, timeout, keep=()):
+    """argv as verb plus flags; a flag's value is dropped unless the flag
+    is in `keep` (the Discord matrix keeps `--tail`)."""
     parts, skip = [], False
     for i, x in enumerate(argv):
         if skip:
@@ -502,7 +516,9 @@ def _call_str(argv, timeout):
         elif x.startswith("-"):
             parts.append(x)
             skip = x in ("--format", "--tail", "--filter", "-f", "-t",
-                         "--time")
+                         "--time") and x not in keep
+        elif argv[i - 1] in keep:
+            parts.append(x)
         elif i == 1 and argv[0] in ("image", "system"):
             parts.append(x)
     if timeout is not None:
@@ -510,10 +526,10 @@ def _call_str(argv, timeout):
     return " ".join(parts)
 
 
-def _calls_summary(calls):
+def _calls_summary(calls, keep=()):
     out, prev, n = [], None, 0
     for argv, timeout in calls:
-        s = _call_str(argv, timeout)
+        s = _call_str(argv, timeout, keep)
         if s == prev:
             n += 1
             continue
