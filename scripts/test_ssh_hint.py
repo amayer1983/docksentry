@@ -212,6 +212,8 @@ with tempfile.TemporaryDirectory() as _d:
 import ast  # noqa: E402
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
+# status_render's one is the /status overview walk, which Telegram and,
+# since W5d, Discord both take; discord_bot's one is /hosts check.
 SITES = {"scheduler.py": 1, "telegram_bot.py": 2, "discord_bot.py": 1,
          "container_flags.py": 1, "status_render.py": 1}
 _found, _untranslated = {}, []

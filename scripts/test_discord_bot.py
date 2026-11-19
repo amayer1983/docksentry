@@ -75,15 +75,36 @@ class FakeBackend(ContainerBackend):
     seven `/logs` checks failed on a stub gap rather than on anything
     about Discord. Inheriting means the argv these checks assert on is
     built by the same code the real bot builds it with, and a fake that
-    is missing a method now cannot pass by accident."""
+    is missing a method now cannot pass by accident.
 
-    def __init__(self, names, log_text=None):
+    `ps -q` and a plain `inspect` answer too, since the /status overview
+    walks `status_render.collect_overview` like Telegram's (W5d); a
+    `fail` host raises on every call, the way a dead one times out."""
+
+    def __init__(self, names, log_text=None, images=None, fail=False):
         self.names = list(names)
         self.log_text = log_text
+        self.images = dict(images or {})
+        self.fail = fail
         self.calls = []
 
     def run(self, args, **kw):
         self.calls.append(list(args))
+        if self.fail:
+            raise OSError("host down")
+        if args[:2] == ["ps", "-q"]:
+            return types.SimpleNamespace(
+                returncode=0, stdout="\n".join(self.names) + "\n", stderr="")
+        refs = [a for a in args[1:] if not a.startswith("-")]
+        if args and args[0] == "inspect" and "--format" not in args \
+                and refs and all(r in self.names for r in refs):
+            import json as _json
+            return types.SimpleNamespace(returncode=0, stderr="",
+                stdout=_json.dumps([{
+                    "Name": "/" + r,
+                    "Config": {"Image": self.images.get(r, "?")},
+                    "State": {"Status": "running", "Running": True}}
+                    for r in refs]))
         if args and args[0] == "ps":
             return types.SimpleNamespace(
                 returncode=0, stdout="\n".join(self.names) + "\n", stderr="")
@@ -101,7 +122,10 @@ class FakeChecker:
     def __init__(self, containers, fail=False):
         self._c = containers
         self.fail = fail
-        self.backend = FakeBackend([c["name"] for c in containers])
+        self.backend = FakeBackend(
+            [c["name"] for c in containers],
+            images={c["name"]: c.get("image", "?") for c in containers},
+            fail=fail)
         # Lifecycle / cleanup bookkeeping for the stage-2 checks.
         self.stopped = []
         self.cleanups = 0

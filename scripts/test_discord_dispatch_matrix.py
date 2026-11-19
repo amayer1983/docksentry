@@ -225,6 +225,7 @@ class Row:
         # As main.py wires them.
         engine = UpdateEngine(cfg, store, hosts=registry)
         tg = TelegramBot(cfg, store, engine, hosts=registry)
+        self.tg = tg                # W5d asks it for its own /status
         tg.backend = self.backends["local"]
         tg.send_message = lambda text, reply_markup=None, auto=False, \
             _held=False: (LOG.append(("telegram", text)), True)[1]
@@ -844,12 +845,14 @@ for _r_ in ("/status container:web host:dead",
             "/status container:web host:refused",
             "/status container:nosuch", "/status container:web*"):
     PINNED_FOR[("multi", _r_)] = (
-        "W5d/W7d: an unresolved name falls into the narrowed overview; "
+        "W7d: an unresolved name falls into the narrowed overview; "
         "W3d measured that it names the dead and refused host, never "
         "'not found'")
 for _r_ in ("/status", "/status host:dead", "/status host:refused",
             "/status twice"):
-    PINNED_FOR[("multi", _r_)] = "W5d/W7d: the overview walk, no hint"
+    PINNED_FOR[("multi", _r_)] = (
+        "W7d: the overview walk, `collect_overview` since W5d, serial and "
+        "without the dead-host memory")
 for _r_ in ("/check", "/check twice"):
     PINNED_FOR[("multi", _r_)] = "W6d/W7d: the check walk"
 for _r_ in ("auto container host:dead", "auto container host:refused",
@@ -1009,6 +1012,153 @@ def w3d_checks():
            and step.get("hosts", {}).get("refused") == "ps -a --format")
 
 
+#: W5d: Discord's bare /status listed through `get_running_containers`
+#: — the update path's list, which leaves out pinned, excluded and
+#: label-opted-out containers — and named a dead or refused host without
+#: the SSH hint. Telegram's overview lists every running container and
+#: carries the hint. Checked against Telegram's own /status in the same
+#: world, not against a list written down here.
+#: (label, setup, what `_w5d_world` lays over it, a container that must
+#: be listed)
+W5D_ROWS = [
+    ("as built", "multi", {}, "docksentry"),
+    ("as built", "one", {}, "docksentry"),
+    ("db pinned", "multi", {"pin": "db"}, "db"),
+    ("db pinned", "one", {"pin": "db"}, "db"),
+    ("db excluded", "one", {"env": {"EXCLUDE_CONTAINERS": "db"}}, "db"),
+    ("nas refused, flaky dead", "multi",
+     {"modes": {"nas": "refused", "flaky": "dead"}}, "web"),
+]
+_W5D_LINE = re.compile(r"^(?:🟢|🔴|🟡|⚪|⏹) `([^`]+)`((?: @[\w.-]+)?)",
+                       re.M)
+_W5D_GONE = re.compile(r"`([\w.-]+)` unreachable")
+
+
+def _w5d_edit_text():
+    """The raw content of the last edit of the original response."""
+    texts = [(b[3] or {}).get("content", "") for k, b in LOG
+             if k == "rest" and b[1] == "PATCH"
+             and b[2].endswith("/messages/@original")]
+    return texts[-1] if texts else ""
+
+
+def _w5d_world(setup, *, env=None, modes=None, refused=None, pin=None,
+               version=None):
+    """Discord's and Telegram's bare /status, raw, in one world.
+
+    `env` is laid over the matrix's env, `modes` and `refused` over the
+    hosts as in W3d, `pin` is pinned through Discord first, `version` is
+    what `image inspect` answers for the version label. Everything put
+    back afterwards. Returns (discord text, telegram text, escapes,
+    discord's recorded lines). A raise anywhere comes back as an empty
+    answer with the exception in the escapes, so a check goes red
+    instead of the procedure dying."""
+    try:
+        return _w5d_world_inner(setup, env=env, modes=modes,
+                                refused=refused, pin=pin, version=version)
+    except Exception as e:                              # noqa: BLE001
+        return "", "", [f"raised {type(e).__name__}: {e}"], []
+
+
+def _w5d_world_inner(setup, *, env, modes, refused, pin, version):
+    import hosts as hostslib
+    real_refused = m.MatrixBackend.refused_stderr
+    real_answer = m.MatrixBackend._answer
+    saved_env = dict(ENV)
+    m.MODE_OVERRIDE.update(modes or {})
+    if refused is not None:
+        m.MatrixBackend.refused_stderr = refused
+    if version is not None:
+        def _answer(self, a, _real=real_answer):
+            if a[:2] == ["image", "inspect"] and "--format" in a:
+                return m._CP(a, 0, version + "\n", "")
+            return _real(self, a)
+        m.MatrixBackend._answer = _answer
+    ENV.update(env or {})
+    row = None
+    sink = io.StringIO()
+    try:
+        hostslib.forget_unreachable()
+        del m.ESCAPES[:]
+        del LOG[:]
+        with contextlib.redirect_stdout(sink), \
+                contextlib.redirect_stderr(sink):
+            row = Row(setup)
+            if pin:
+                row.do(_c("pin", ("container", pin)))
+                _join()
+            del LOG[:]
+            row.tg.start_time = CLOCK[0]    # set by run(), which never runs
+            row.tg._handle_message(
+                {"message_id": 1, "text": "/status",
+                 "from": {"id": int(m.USER)}, "chat": {"id": int(m.CHAT)}},
+                row.bot.checker, None)
+            _join()
+            tg = "\n".join(b for k, b in LOG if k == "telegram")
+            hostslib.forget_unreachable()
+            del LOG[:]
+            row.cur = {}
+            row.do(_c("status"))
+            _join()
+        dc = _w5d_edit_text()
+        out = [row.line(e) for e in LOG]
+        return dc, tg, list(m.ESCAPES), out
+    finally:
+        m.MODE_OVERRIDE.clear()
+        m.MatrixBackend.refused_stderr = real_refused
+        m.MatrixBackend._answer = real_answer
+        ENV.clear()
+        ENV.update(saved_env)
+        if row is not None:
+            if row.engine._update_lock.locked():
+                row.engine._update_lock.release()
+            shutil.rmtree(row.data, ignore_errors=True)
+
+
+def w5d_checks():
+    """W5d: both chats list the same containers and name the same hosts
+    unreachable, with the SSH hint under the line."""
+    for label, setup, lay, must in W5D_ROWS:
+        dc, tg, esc, out = _w5d_world(setup, **lay)
+        listed = _W5D_LINE.findall(dc)
+        yield (f"[{setup}] W5d /status, {label}: one answer, nothing "
+               f"raised or escaped",
+               bool(dc) and not esc and not _w3d_handler_failed(out))
+        yield (f"[{setup}] W5d /status, {label}: Discord lists the "
+               f"containers Telegram lists, host by host",
+               bool(listed) and listed == _W5D_LINE.findall(tg))
+        yield (f"[{setup}] W5d /status, {label}: `{must}` is among them",
+               (must, "") in listed)
+        yield (f"[{setup}] W5d /status, {label}: the same hosts named "
+               f"unreachable as on Telegram",
+               _W5D_GONE.findall(dc) == _W5D_GONE.findall(tg))
+    # The hint, as W3 checks it on Telegram: hostdiag reads this
+    # machine's ~/.ssh, pointed at a fixed directory that does not exist.
+    import hostdiag
+    from i18n import get_translator
+    denied = "user@192.0.2.30: Permission denied (publickey)."
+    real_home = hostdiag._home_ssh
+    hostdiag._home_ssh = lambda: m._NO_SSH_DIR
+    try:
+        dc, tg, esc, out = _w5d_world("multi", refused=denied)
+    finally:
+        hostdiag._home_ssh = real_home
+    hint = get_translator("en")("hostdiag_ssh_no_dir", dir=m._NO_SSH_DIR)
+    yield ("[multi] W5d /status: the SSH hint stands under the refused "
+           "host's line", f"⚠ `refused` unreachable: {denied}\n{hint}" in dc)
+    yield ("[multi] W5d /status: …the hint Telegram shows for it",
+           hint in tg and dc.count(hint) == 1)
+    yield ("[multi] W5d /status: the dead host is named once, without a "
+           "hint of its own", dc.count("⚠ `dead` unreachable: ") == 1
+           and dc.count(hint) == 1)
+    # The version label (@NotRetarded's ollama) stays on every line now
+    # that the inspect comes from the shared walk.
+    dc, tg, esc, out = _w5d_world("multi", version="v9.9")
+    listed = _W5D_LINE.findall(dc)
+    yield ("[multi] W5d /status: every line still carries the image's "
+           "version label", bool(listed) and dc.count(" (v9.9)") == len(listed))
+
+
 #: Where each command lands, read against main at 8a74ba7
 #: (app/discord_bot.py, `_dispatch` from :1344). Printed above its rows
 #: by --snapshot, so a regenerated table keeps the review notes.
@@ -1019,7 +1169,10 @@ BRANCH_NOTES = {
                "resolves per host through `_resolve_container` (`ps -a`, no "
                "timeout of its own), first host that resolves wins; "
                "ambiguous or not found falls through to the overview "
-               "narrowed by substring (`get_running_containers(timeout=10)`).",
+               "narrowed by substring. The overview is "
+               "`status_render.collect_overview` since W5d, the walk "
+               "Telegram's /status takes (`ps -q`, `inspect`, 10 s each), "
+               "plus `image inspect` per listed container for the version.",
     "/check": ":1363 → :1529. Read targeting; busy lock → web_check_one_busy; "
               "`check_all()` per host, a raise is a 'could not be checked' "
               "line under the same heading.",
@@ -1159,6 +1312,9 @@ def check():
     for label, ok in w3d_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
+    for label, ok in w5d_checks():
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
     rows = set(all_rows())
     for key in sorted(k for k in EXPECTED if k not in rows):
         print(f"  FAIL  expectation without a row: {key!r}")
@@ -1218,7 +1374,8 @@ def main():
 
 
 # ── expected, generated by --snapshot from main (8a74ba7); the 16 A2
-# ── rows from core-split after A2, reviewed ──
+# ── rows from core-split after A2, the 22 /status overview rows after
+# ── W5d, reviewed ──
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
     # :1361 → :1447. `_hosts_for` (:1172, read: no host = every host, `all`
@@ -1226,7 +1383,10 @@ EXPECTED = {
     # unknown = 'unknown host'). A name resolves per host through
     # `_resolve_container` (`ps -a`, no timeout of its own), first host that
     # resolves wins; ambiguous or not found falls through to the overview
-    # narrowed by substring (`get_running_containers(timeout=10)`).
+    # narrowed by substring. The overview is
+    # `status_render.collect_overview` since W5d, the walk Telegram's
+    # /status takes (`ps -q`, `inspect`, 10 s each), plus `image inspect`
+    # per listed container for the version.
     ('multi', '/status'): {'steps': [{'do': 'cmd /status',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
@@ -1236,21 +1396,14 @@ EXPECTED = {
                         '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
                         "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
-                        "'ps', '--format', '{{.Names}}|{{.Image}…#a371cf4aa4  []"],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10, '
-                                   'inspect --format t=5 ×2',
-                          'nas': 'ps --format t=10, inspect --format t=5 ×2, inspect t=60, '
-                                 'inspect --format ×2, inspect t=10, image inspect '
-                                 '--format t=10, inspect t=10, image inspect --format t=10',
-                          'dead': 'ps --format t=10',
-                          'refused': 'ps --format t=10',
-                          'flaky': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×2, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10'}}],
+                        "'ps', '-q']' timed out after 10 seconds…#20d73b0bc5  []"],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3',
+                          'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 ×2',
+                          'dead': 'ps -q t=10',
+                          'refused': 'ps -q t=10',
+                          'flaky': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "source": "discord"}']}},
     ('one', '/status'): {'steps': [{'do': 'cmd /status',
@@ -1259,21 +1412,16 @@ EXPECTED = {
                         '?\n'
                         '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `db` — `postgres:16` — ⏱ ?  []'],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10'}}],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "source": "discord"}']}},
     ('multi', '/status host:nas'): {'steps': [{'do': "cmd /status host:'nas'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> 🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?  []'],
-                'hosts': {'local': 'inspect --format t=5',
-                          'nas': 'ps --format t=10, inspect --format t=5 ×2, inspect t=60, '
-                                 'inspect --format ×2, inspect t=10, image inspect '
-                                 '--format t=10, inspect t=10, image inspect --format '
-                                 't=10'}}],
+                'hosts': {'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                 '×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": "nas"}, '
                          '"source": "discord"}']}},
@@ -1292,21 +1440,14 @@ EXPECTED = {
                         '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
                         "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
-                        "'ps', '--format', '{{.Names}}|{{.Image}…#a371cf4aa4  []"],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10, '
-                                   'inspect --format t=5 ×2',
-                          'nas': 'ps --format t=10, inspect --format t=5 ×2, inspect t=60, '
-                                 'inspect --format ×2, inspect t=10, image inspect '
-                                 '--format t=10, inspect t=10, image inspect --format t=10',
-                          'dead': 'ps --format t=10',
-                          'refused': 'ps --format t=10',
-                          'flaky': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×2, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10'}}],
+                        "'ps', '-q']' timed out after 10 seconds…#20d73b0bc5  []"],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3',
+                          'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 ×2',
+                          'dead': 'ps -q t=10',
+                          'refused': 'ps -q t=10',
+                          'flaky': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -1413,34 +1554,26 @@ EXPECTED = {
     ('multi', '/status container:web*'): {'steps': [{'do': "cmd /status container:'web*'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds\n'
-                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
-                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3, inspect '
-                                   '--format t=5 ×2',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2',
-                          'dead': 'ps -a --format, ps --format t=10',
-                          'refused': 'ps -a --format, ps --format t=10',
-                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×2'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
+                        'Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format, ps -q t=10',
+                          'refused': 'ps -a --format, ps -q t=10',
+                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*"}, "source": "discord"}']}},
     ('one', '/status container:web*'): {'steps': [{'do': "cmd /status container:'web*'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3'}}],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*"}, "source": "discord"}']}},
     ('multi', '/status container:web* host:nas'): {'steps': [{'do': "cmd /status container:'web*' host:'nas'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'local': 'inspect --format t=5',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2'}}],
+                'hosts': {'nas': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "nas"}, "source": "discord"}']}},
@@ -1453,19 +1586,14 @@ EXPECTED = {
     ('multi', '/status container:web* host:all'): {'steps': [{'do': "cmd /status container:'web*' host:'all'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds\n'
-                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
-                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3, inspect '
-                                   '--format t=5 ×2',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2',
-                          'dead': 'ps -a --format, ps --format t=10',
-                          'refused': 'ps -a --format, ps --format t=10',
-                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×2'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
+                        'Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format, ps -q t=10',
+                          'refused': 'ps -a --format, ps -q t=10',
+                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "all"}, "source": "discord"}']}},
@@ -1491,34 +1619,26 @@ EXPECTED = {
     ('multi', '/status container:nosuch'): {'steps': [{'do': "cmd /status container:'nosuch'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds\n'
-                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
-                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3, inspect '
-                                   '--format t=5 ×2',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2',
-                          'dead': 'ps -a --format, ps --format t=10',
-                          'refused': 'ps -a --format, ps --format t=10',
-                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×2'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
+                        'Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format, ps -q t=10',
+                          'refused': 'ps -a --format, ps -q t=10',
+                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch"}, "source": "discord"}']}},
     ('one', '/status container:nosuch'): {'steps': [{'do': "cmd /status container:'nosuch'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3'}}],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch"}, "source": "discord"}']}},
     ('multi', '/status container:nosuch host:nas'): {'steps': [{'do': "cmd /status container:'nosuch' host:'nas'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'local': 'inspect --format t=5',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2'}}],
+                'hosts': {'nas': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "nas"}, "source": "discord"}']}},
@@ -1531,19 +1651,14 @@ EXPECTED = {
     ('multi', '/status container:nosuch host:all'): {'steps': [{'do': "cmd /status container:'nosuch' host:'all'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds\n'
-                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
-                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3, inspect '
-                                   '--format t=5 ×2',
-                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                 '×2, inspect t=60, inspect --format ×2',
-                          'dead': 'ps -a --format, ps --format t=10',
-                          'refused': 'ps -a --format, ps --format t=10',
-                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×2'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
+                        'Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format, ps -q t=10',
+                          'refused': 'ps -a --format, ps -q t=10',
+                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "all"}, "source": "discord"}']}},
@@ -6297,10 +6412,8 @@ EXPECTED = {
                         '?\n'
                         '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `db` — `postgres:16` — ⏱ ?  []'],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10'}}],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": '
                          '"local"}, "source": "discord"}']}},
@@ -6310,10 +6423,8 @@ EXPECTED = {
                         '?\n'
                         '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `db` — `postgres:16` — ⏱ ?  []'],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10'}}],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": '
                          '"local"}, "source": "discord"}']}},
@@ -6362,8 +6473,7 @@ EXPECTED = {
                          '"media"}, "source": "discord"}']}},
     ('one', '/status container:media'): {'steps': [{'do': "cmd /status container:'media'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3'}}],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"media"}, "source": "discord"}']}},
@@ -6385,18 +6495,16 @@ EXPECTED = {
     ('one', '/status container:we'): {'steps': [{'do': "cmd /status container:'we'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> 🟢 `web` — `nginx:1.25` — ⏱ ?  []'],
-                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
-                                   '×2, inspect t=60, inspect --format ×3, inspect t=10, '
-                                   'image inspect --format t=10'}}],
+                'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10, image '
+                                   'inspect --format t=10'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"we"}, "source": "discord"}']}},
     ('multi', '/status host:dead'): {'steps': [{'do': "cmd /status host:'dead'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds  []'],
-                'hosts': {'dead': 'ps --format t=10'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds  []"],
+                'hosts': {'dead': 'ps -q t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": "dead"}, '
                          '"source": "discord"}']}},
@@ -6408,10 +6516,9 @@ EXPECTED = {
                          '"source": "discord"}']}},
     ('multi', '/status host:refused'): {'steps': [{'do': "cmd /status host:'refused'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ⚠ `refused` unreachable: could not list containers '
-                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Connection '
-                        'refused  []'],
-                'hosts': {'refused': 'ps --format t=10'}}],
+                        '<edit> ⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 '
+                        'port 22: Connection refused  []'],
+                'hosts': {'refused': 'ps -q t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": '
                          '"refused"}, "source": "discord"}']}},
@@ -6424,9 +6531,8 @@ EXPECTED = {
     ('multi', '/status container:web host:dead'): {'steps': [{'do': "cmd /status container:'web' host:'dead'",
                 'out': ['<ack deferred ephemeral>',
                         "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 10 seconds  []'],
-                'hosts': {'dead': 'ps -a --format, ps --format t=10'}}],
+                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds  []"],
+                'hosts': {'dead': 'ps -a --format, ps -q t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "dead"}, "source": "discord"}']}},
@@ -6438,10 +6544,9 @@ EXPECTED = {
                          '"web", "host": "dead"}, "source": "discord"}']}},
     ('multi', '/status container:web host:refused'): {'steps': [{'do': "cmd /status container:'web' host:'refused'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ⚠ `refused` unreachable: could not list containers '
-                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Connection '
-                        'refused  []'],
-                'hosts': {'refused': 'ps -a --format, ps --format t=10'}}],
+                        '<edit> ⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 '
+                        'port 22: Connection refused  []'],
+                'hosts': {'refused': 'ps -a --format, ps -q t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "refused"}, "source": "discord"}']}},
@@ -7018,21 +7123,14 @@ EXPECTED = {
                         '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
                         "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
-                        "'ps', '--format', '{{.Names}}|{{.Image}…#a371cf4aa4  []"],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10, '
-                                   'inspect --format t=5 ×2',
-                          'nas': 'ps --format t=10, inspect --format t=5 ×2, inspect t=60, '
-                                 'inspect --format ×2, inspect t=10, image inspect '
-                                 '--format t=10, inspect t=10, image inspect --format t=10',
-                          'dead': 'ps --format t=10',
-                          'refused': 'ps --format t=10',
-                          'flaky': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×2, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10'}},
+                        "'ps', '-q']' timed out after 10 seconds…#20d73b0bc5  []"],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3',
+                          'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 ×2',
+                          'dead': 'ps -q t=10',
+                          'refused': 'ps -q t=10',
+                          'flaky': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×2'}},
                {'do': 'cmd /status',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
@@ -7042,19 +7140,14 @@ EXPECTED = {
                         '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
                         "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
-                        "'ps', '--format', '{{.Names}}|{{.Image}…#a371cf4aa4  []"],
-                'hosts': {'local': 'ps --format t=10, inspect t=60, inspect --format ×3, '
-                                   'inspect t=10, image inspect --format t=10, inspect '
-                                   't=10, image inspect --format t=10, inspect t=10, image '
-                                   'inspect --format t=10',
-                          'nas': 'ps --format t=10, inspect t=60, inspect --format ×2, '
-                                 'inspect t=10, image inspect --format t=10, inspect t=10, '
-                                 'image inspect --format t=10',
-                          'dead': 'ps --format t=10',
-                          'refused': 'ps --format t=10',
-                          'flaky': 'ps --format t=10, inspect t=60, inspect --format ×2, '
-                                   'inspect t=10, image inspect --format t=10, inspect '
-                                   't=10, image inspect --format t=10'}}],
+                        "'ps', '-q']' timed out after 10 seconds…#20d73b0bc5  []"],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3',
+                          'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 ×2',
+                          'dead': 'ps -q t=10',
+                          'refused': 'ps -q t=10',
+                          'flaky': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "source": "discord"}',
                          '{"action": "/status", "actor": "u7", "source": "discord"}']}},
@@ -7064,20 +7157,16 @@ EXPECTED = {
                         '?\n'
                         '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `db` — `postgres:16` — ⏱ ?  []'],
-                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
-                                   't=60, inspect --format ×3, inspect t=10, image inspect '
-                                   '--format t=10, inspect t=10, image inspect --format '
-                                   't=10, inspect t=10, image inspect --format t=10'}},
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3'}},
                {'do': 'cmd /status',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
                         '?\n'
                         '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `db` — `postgres:16` — ⏱ ?  []'],
-                'hosts': {'local': 'ps --format t=10, inspect t=60, inspect --format ×3, '
-                                   'inspect t=10, image inspect --format t=10, inspect '
-                                   't=10, image inspect --format t=10, inspect t=10, image '
-                                   'inspect --format t=10'}}],
+                'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
+                                   '×3'}}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/status", "actor": "u7", "source": "discord"}',
                          '{"action": "/status", "actor": "u7", "source": "discord"}']}},

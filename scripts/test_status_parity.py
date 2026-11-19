@@ -153,9 +153,65 @@ dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
 checks["Telegram renders through status_render"] = (
     "status_render.lines(detail" in tsrc)
 checks["…and Discord too"] = "status_render.lines(" in dsrc
+
+
+# Discord's overview, driven. These were greps for `include_self=True`
+# and `overview_line` in discord_bot.py; since W5d the overview walks
+# `status_render.collect_overview` like Telegram's, and what has to hold
+# is the answer: the container answering /status is in it, and each line
+# is the shared overview line. The checker's own list hides us, as the
+# update path's does, so a Discord that went back to it shows up here.
+import json  # noqa: E402
+
+import container_info  # noqa: E402
+from discord_bot import DiscordBot  # noqa: E402
+
+_OV = [{"Id": "a" * 64, "Name": "/docksentry",
+        "Image": "sha256:" + "1" * 64,
+        "Config": {"Image": "ghcr.io/x/docksentry:latest", "Labels": {}},
+        "State": {"Status": "running", "Running": True,
+                  "Health": {"Status": "healthy"}}},
+       {"Id": "b" * 64, "Name": "/ollama", "Image": "sha256:" + "2" * 64,
+        "Config": {"Image": "ollama/ollama:latest", "Labels": {}},
+        "State": {"Status": "running", "Running": True}}]
+
+
+class _OvBackend:
+    def run(self, args, timeout=None, **kw):
+        ok = lambda out: types.SimpleNamespace(  # noqa: E731
+            returncode=0, stdout=out, stderr="")
+        if args[:2] == ["ps", "-q"]:
+            return ok("\n".join(c["Id"][:12] for c in _OV))
+        if args[:2] == ["image", "inspect"]:
+            return ok("v0.32.14\n")
+        if args[:1] == ["inspect"]:
+            return ok(json.dumps(_OV))
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="no")
+
+
+_ovb = _OvBackend()
+_ovbot = DiscordBot.__new__(DiscordBot)
+_ovbot.hosts = None
+_ovbot.checker = types.SimpleNamespace(
+    backend=_ovb, get_running_containers=lambda include_self=False,
+    timeout=None: [{"name": "ollama", "image": "ollama/ollama:latest"}]
+    + ([{"name": "docksentry", "image": "x"}] if include_self else []))
+_ovbot.config = types.SimpleNamespace(language="en")
+try:
+    _ov_out = _ovbot._cmd_status({})
+except Exception as _e:                                 # noqa: BLE001
+    _ov_out = f"raised {type(_e).__name__}: {_e}"
 checks["Discord's overview includes ourselves"] = (
-    "include_self=True" in dsrc)
-checks["…via the shared overview line"] = "overview_line" in dsrc
+    "`docksentry`" in _ov_out)
+try:
+    _ov_want = [status_render.overview_line(
+        c["Name"][1:], container_info.state_of(_ovb, c)) for c in _OV]
+except Exception as _e:                                 # noqa: BLE001
+    _ov_want = [f"raised {type(_e).__name__}: {_e}"]
+checks["…via the shared overview line"] = (
+    bool(_ov_out) and _ov_out.split("\n") == _ov_want)
+checks["…which carries the version label"] = (
+    _ov_out.count("(v0.32.14)") == 2)
 
 # Port dedupe and the I/O direction markers.
 dup = status_render.collect("x", dict(STATE,

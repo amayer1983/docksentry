@@ -1483,7 +1483,9 @@ class DiscordBot:
         `/status <name>` uses — `status_render` — so the two front ends
         cannot drift apart field by field, which is exactly what
         @NotRetarded photographed. The only difference either is allowed
-        is the bold marker.
+        is the bold marker. The overview walks the hosts with Telegram's
+        walk, `status_render.collect_overview`, so both chats list the
+        same containers; the line is `status_render.overview_line`.
         """
         import status_render
         wanted = (opts.get("container") or "").strip()
@@ -1528,36 +1530,35 @@ class DiscordBot:
             # Not resolved anywhere: the overview below, narrowed.
 
         # ── everyone: the overview ──────────────────────────────────
+        # The walk is the one Telegram's /status takes (W5d):
+        # `status_render.collect_overview`, `ps -q` and one `inspect` per
+        # host at ten seconds each. That lists every running container —
+        # ourselves included, and pinned or excluded ones too: this is a
+        # read, not the update list, and a status that hides containers
+        # confused its reporter twice over (#2). The update path keeps
+        # its filters, PID 1 among them (#16). A dead or refused host is
+        # one line, with the SSH hint under it when hostdiag has one.
+        from container_store import LOCAL_HOST
+        overview = status_render.collect_overview(
+            targets, backend_for=self._backend_for, t=self.t)
+        gone = dict(overview.unreachable)
         lines = []
         for host in targets:
-            checker = self._checker_for(host)
-            if checker is None:
-                continue
-            try:
-                # include_self: /status is a read, and a status that
-                # hides the very container answering it confused its
-                # reporter twice over. The update path keeps the filter
-                # that protects PID 1 (#16).
-                # 10s like the Web UI and Telegram overview — a dead
-                # host is caught below, but must not cost 30s first.
-                containers = checker.get_running_containers(
-                    include_self=True, timeout=10)
-            except Exception as e:
+            host_name = getattr(host, "name", "") or LOCAL_HOST
+            if host_name in gone:
                 lines.append(self.t("host_unreachable_short",
-                                    host=getattr(host, "name", "local"),
-                                    error=clip(e)))
+                                    host=host_name, error=gone[host_name]))
                 continue
             tag = self._label(host)
-            for c in containers:
-                nm = c["name"]
+            for seen_on, cfg in overview.inspected:
+                if seen_on is not host:
+                    continue
+                nm = (cfg.get("Name") or "?").lstrip("/")
                 if wanted and wanted.lower() not in nm.lower():
                     continue
-                si = container_info.state(self._backend_for(host), nm)
-                if si:
-                    lines.append(status_render.overview_line(
-                        nm, si, host_tag=tag))
-                else:
-                    lines.append(f"⚪ `{nm}`{tag} — `{c.get('image', '?')}`")
+                lines.append(status_render.overview_line(
+                    nm, container_info.state_of(self._backend_for(host), cfg),
+                    host_tag=tag))
         if not lines:
             return self.t("chan_no_containers")
         return self._clip("\n".join(lines))

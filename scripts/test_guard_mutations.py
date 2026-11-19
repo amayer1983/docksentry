@@ -2429,10 +2429,11 @@ GUARDED = [
     ("Discord /status: a host that does not answer the overview is named "
      "unreachable",
      "app/discord_bot.py",
+     "            if host_name in gone:\n"
      "                lines.append(self.t(\"host_unreachable_short\",\n"
-     "                                    host=getattr(host, \"name\", \"local\"),\n"
-     "                                    error=clip(e)))\n"
+     "                                    host=host_name, error=gone[host_name]))\n"
      "                continue\n",
+     "            if host_name in gone:\n"
      "                continue\n",
      "test_discord_dispatch_matrix.py"),
 
@@ -2602,6 +2603,61 @@ GUARDED = [
      '                status_targets, backend_for=self._backend_for, t=self.t)\n',
      '            inspected, unreachable = [], []\n',
      'test_telegram_dispatch_matrix.py'),
+
+    # W5d: Discord's /status overview walks collect_overview too, so both
+    # chats list the same containers and a dead or refused host carries
+    # its SSH hint. T4's W5d checks compare Discord's answer with
+    # Telegram's own /status in the same world.
+    ("Discord /status lists pinned and excluded containers, like Telegram",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm not in {c["name"] for c in self._checker_for(host)\n'
+     '                              .get_running_containers(include_self=True)}:\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status lists the container that answers it",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if cfg.get("Id", "")[:12] == __import__("os").environ.get("HOSTNAME"):\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status puts the SSH hint under an unreachable host's line",
+     'app/discord_bot.py',
+     'host=host_name, error=gone[host_name]))',
+     'host=host_name, error=gone[host_name].split("\\n")[0]))',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <name> that does not resolve still narrows the overview",
+     'app/discord_bot.py',
+     '                if wanted and wanted.lower() not in nm.lower():\n'
+     '                    continue\n'
+     '                lines.append(status_render.overview_line(\n',
+     '                lines.append(status_render.overview_line(\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status overview keeps the image's version label",
+     'app/discord_bot.py',
+     'nm, container_info.state_of(self._backend_for(host), cfg),',
+     'nm, dict(container_info.state_of(self._backend_for(host), cfg), version=""),',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and test_status_parity drives that label through Discord too",
+     'app/discord_bot.py',
+     'nm, container_info.state_of(self._backend_for(host), cfg),',
+     'nm, dict(container_info.state_of(self._backend_for(host), cfg), version=""),',
+     'test_status_parity.py'),
+
+    ("…and each line is the shared overview line",
+     'app/discord_bot.py',
+     '                lines.append(status_render.overview_line(\n'
+     '                    nm, container_info.state_of(self._backend_for(host), cfg),\n'
+     '                    host_tag=tag))\n',
+     '                lines.append(f"{nm}{tag}")\n',
+     'test_status_parity.py'),
 
 ]
 
