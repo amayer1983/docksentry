@@ -374,6 +374,7 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
     and every caller that has not moved yet — skips nobody and marks
     nobody dead, but a host that answers is forgotten either way.
     """
+    import errfmt
     import hosts as _hosts
     import lifecycle
     is_glob = lifecycle.is_glob(arg)
@@ -415,9 +416,11 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
                 raw = stderr
                 text = (_human(stderr, t) if stderr.strip()
                         else _exit_text(rc, t))
+                kept = stderr if stderr.strip() else _exit_text(rc, None)
             else:
                 raw = str(failure)
                 text = _human(failure, t)
+                kept = raw
             hint = ""
             try:
                 import hostdiag
@@ -435,10 +438,11 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
             errors.append(reply)
         # A host without a backend was never asked: nothing to remember.
         # Only a read marks a host dead; an answer clears the mark for
-        # every caller (a write that reached it, too).
+        # every caller (a write that reached it, too). What is kept is
+        # the CLI's words, in no language: see check_on_hosts.
         if gone is not None:
             if use_cache:
-                _hosts.remember(host, gone.error)
+                _hosts.remember(host, errfmt.clip(kept))
         elif backend is not None:
             _hosts.remember(host, None)
         if on_host is not None:
@@ -498,8 +502,10 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
     remembered words and the seconds until it is asked again; with
     `hint=True` its hint is the one those words get. After a check, a
     host that could not list its containers (a timeout,
-    `ContainerListUnavailable`) is remembered with `errfmt.human`'s words
-    for it. A check that failed for any other reason is left out of the
+    `ContainerListUnavailable`) is remembered with the CLI's words
+    for it — `errfmt.clip`, in no language, because the Web and the chats
+    share the memory and each says it in its own (review of W7w). A
+    check that failed for any other reason is left out of the
     memory: that daemon answered, and a /status a moment later must still
     ask it. Without the cache nobody is skipped or marked dead. A host
     that checked fine is forgotten either way.
@@ -543,7 +549,11 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
         if error is None:
             _hosts.remember(host, None)
         elif use_cache and _lost_host(error):
-            _hosts.remember(host, _human(error, t))
+            # The CLI's words, not a reader's: the memory is shared by
+            # readers in different languages (the Web passes t=None), and
+            # `skipped_words` says them in each one's own.
+            import errfmt
+            _hosts.remember(host, errfmt.clip(error))
         answer = HostCheck(host, updates, error, why, checker)
         out.append(answer)
         if on_host is not None:

@@ -21,6 +21,7 @@ Pure standard library, like the rest of the project.
 
 import collections
 import math
+import re
 import threading
 import time
 
@@ -349,8 +350,12 @@ def forget_unreachable():
 # one memory: a host a Telegram, Discord or Web Check read found dead is
 # skipped by the other two and by the Web status page's `walk` too, with
 # the words that read remembered, and each such failure moves the same
-# backoff (test_status_overview_core pins it). The Web Check remembers
-# its words in English (it has no `t`), the chats in the bot's language.
+# backoff (test_status_overview_core pins it). So the words are kept in
+# no language — the CLI's own line, clipped — and every reader says them
+# in its own through `skipped_words`; the status page shows them as the
+# CLI said them. (Until the review of W7w the check and the lookup kept a
+# reader's words: a Web click, then a German /check said "no answer
+# within 30 seconds (vom letzten Versuch, …)".)
 
 def _remote_name(host):
     if host is None or getattr(host, "is_local", False):
@@ -384,25 +389,38 @@ def remember(host, failed_with):
         mark_unreachable(name, failed_with)
 
 
+#: A lookup that exited ≠ 0 with nothing on stderr is remembered as
+#: `container_flags._exit_text(rc, None)`: these words, untranslated.
+_EXIT_CODE = re.compile(r"exit code (\d+)")
+
+
 def skipped_words(reason, retry_in, t=None):
     """What to say for a host skipped because its last try failed: its
     remembered words, and that it is not asked again for `retry_in` s.
     Nothing about how old the words are: with the backoff a host can be
     skipped for fifteen minutes, so "a moment ago" was not always true.
 
-    The words go through errfmt.human first. The memory holds whatever
-    the walk that failed kept — the overview and the Web page keep the
-    CLI's raw line, which for a timeout is Python's argv — and once the
-    seconds clause is behind it, errfmt.human can no longer tell it is a
-    timeout and would quote the argv at the reader. Words that already
-    are a person's pass through unchanged. They come first in every
-    language for the same reason: a line that ENDS in "timed out after
-    N seconds" reads as a bare timeout."""
+    The words go through errfmt.human first, in `t`'s language. The
+    memory holds the CLI's raw line in no language — every walk keeps it
+    that way, because the Web (English) and the chats (their bot's
+    language) read the same memory — and for a timeout that line is
+    Python's argv; once the seconds clause is behind it, errfmt.human
+    can no longer tell it is a timeout and would quote the argv at the
+    reader. A lookup's bare "exit code N" is said in `t`'s language too.
+    Words that already are a person's pass through unchanged. They come
+    first in every language for the same reason: a line that ENDS in
+    "timed out after N seconds" reads as a bare timeout."""
     import errfmt
     try:
         reason = errfmt.human(reason or "", t)
     except Exception:                                       # noqa: BLE001
         reason = errfmt.human(reason or "")
+    code = _EXIT_CODE.fullmatch(reason)
+    if code and t is not None:
+        try:
+            reason = t("error_exit_code", code=int(code.group(1)))
+        except Exception:                                   # noqa: BLE001
+            pass
     if t is not None:
         try:
             return t("host_skipped_retry", error=reason, seconds=retry_in)

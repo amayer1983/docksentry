@@ -585,7 +585,8 @@ if callable(find_on_hosts):
         bk["dead"] = Backend("dead", ["web"])
         res, raised = run_find("web", targets=[DEAD], bk=bk, use_cache=True)
         checks["W7 cache: a dead host asked just now is remembered for the "
-               "first minute"] = first == (60.0, errfmt.human(DEAD_ERR, t=t))
+               "first minute, with the CLI's words, clipped, in no "
+               "language"] = first == (60.0, errfmt.clip(DEAD_ERR))
         checks["W7 cache: past its cooldown the host is asked again"] = (
             len(bk["dead"].calls) == 1 and res is not None
             and names_of(res) == [("dead", ["web"])])
@@ -683,6 +684,25 @@ if callable(find_on_hosts):
         checks["W7 cache: a host without a backend leaves the memory "
                "alone"] = (nas_after == (0.0, "")
                            and _memory("nas") == (120.0, "nas again"))
+        # A non-zero exit with nothing on stderr: remembered as the
+        # untranslated "exit code N", said in the reader's language when
+        # the host is skipped (review of W7w: the memory is shared by
+        # readers in different languages, so it holds no language).
+        hostslib.forget_unreachable()
+        bk = backends()
+        bk["refused"].stderr = ""
+        run_find("web", targets=[REFUSED], bk=bk, use_cache=True)
+        mem = _memory("refused")
+        bk = backends()
+        res, raised = run_find("web", targets=[REFUSED], bk=bk,
+                               use_cache=True)
+        checks["W7w cache: an exit with no stderr is remembered as \"exit "
+               "code N\", in no language"] = mem == (60.0, "exit code 255")
+        checks["W7w cache: …and a skipped read says it translated"] = (
+            res is not None and bk["refused"].calls == []
+            and [tuple(u)[1] for u in res.unreachable]
+            == [t("host_skipped_retry",
+                  error=t("error_exit_code", code=255), seconds=60)])
         # A glob takes the same memory.
         hostslib.forget_unreachable()
         hostslib.mark_unreachable("refused", "refused earlier", cooldown=5)

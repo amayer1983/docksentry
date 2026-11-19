@@ -276,6 +276,7 @@ if callable(check_on_hosts):
     # local host is never skipped or marked. hosts' clock is replaced so
     # the seconds do not depend on this machine's speed.
     import subprocess
+    import errfmt
     import hosts as hostslib
     from update_checker import ContainerListUnavailable
 
@@ -341,9 +342,9 @@ if callable(check_on_hosts):
         fl = Host("flaky")
         got = _try(check_on_hosts, [a, b, c, fl],
                    checker_for=lambda h: ck7[h.name], use_cache=True, t=en)
-        checks["W7 cache: a host whose check timed out is remembered, with "
-               "the words a reader got"] = (
-            _mem("nas") == (60.0, "no answer within 30 seconds"))
+        checks["W7 cache: a host whose check timed out is remembered with "
+               "the CLI's words, clipped, in no language"] = (
+            _mem("nas") == (60.0, errfmt.clip(timeout)))
         checks["W7 cache: a host that could not list its containers is "
                "remembered"] = (
             _mem("pve") == (60.0, "could not list containers (rc=255): "
@@ -407,6 +408,63 @@ if callable(check_on_hosts):
             _mem("pve") == (0.0, ""))
         checks["W7 no cache: …but a host that checked fine is forgotten"] = (
             _mem("nas") == (0.0, ""))
+
+        # The memory is shared and the readers speak different languages:
+        # the Web's Check Updates passes t=None (English), the chats their
+        # bot's language. So what is remembered is the CLI's words, and
+        # each reader puts them in its own language when it skips the
+        # host (review of W7w: a Web click, then a German /check said
+        # "no answer within 30 seconds (vom letzten Versuch, …)", and a
+        # German /check, then the Web's log said "keine Antwort … (from
+        # the last try, …)").
+        de = get_translator("de")
+        dead_ck = {"nas": Checker("nas", raises=timeout),
+                   "pve": Checker("pve", raises=ContainerListUnavailable(
+                       "could not list containers (rc=255): ssh: refused"))}
+        de_nas = de("host_skipped_retry",
+                    error=de("error_timed_out", seconds="30"), seconds=60)
+        en_nas = ("no answer within 30 seconds (from the last try, not "
+                  "asked again for 60s)")
+        de_pve = de("host_skipped_retry", error="could not list containers "
+                    "(rc=255): ssh: refused", seconds=60)
+        for first, then, want_nas, want_pve, label in (
+                (None, de, de_nas, de_pve, "a Web click, then a German chat"),
+                (de, None, en_nas, None, "a German chat, then a Web click"),
+                (de, de, de_nas, de_pve, "a German chat, then a German chat"),
+                (None, None, en_nas, None, "a Web click, then a Web click")):
+            hostslib.forget_unreachable()
+            _try(check_on_hosts, [b, c], checker_for=lambda h: dead_ck[h.name],
+                 hint=False, raise_alone=False, use_cache=True, t=first)
+            mem = (_mem("nas"), _mem("pve"))
+            got = _try(check_on_hosts, [b, c],
+                       checker_for=lambda h: dead_ck[h.name], hint=False,
+                       raise_alone=False, use_cache=True, t=then)
+            ok = isinstance(got, list) and len(got) == 2
+            checks[f"W7w: {label}: the skipped host's line is in the "
+                   f"reader's language only"] = (
+                ok and str(got[0].error) == want_nas
+                and (want_pve is None or str(got[1].error) == want_pve)
+                and isinstance(got[1].error, hostslib.StillUnreachable))
+            checks[f"W7w: {label}: what was remembered does not depend on "
+                   f"who asked"] = mem == ((60.0, errfmt.clip(timeout)),
+                                           (60.0, "could not list containers "
+                                                  "(rc=255): ssh: refused"))
+        # A German lookup (Telegram's /status <name>) then a Web click:
+        # the lookup's memory is language-free too.
+        hostslib.forget_unreachable()
+
+        class _DeadBackend:
+            def run(self, cmd, **kw):
+                raise subprocess.TimeoutExpired(cmd, 10)
+        cf.find_on_hosts([b], backend_for=lambda h: _DeadBackend(),
+                         arg="web", use_cache=True, remote_timeout=10, t=de)
+        got = _try(check_on_hosts, [b], checker_for=lambda h: dead_ck["nas"],
+                   hint=False, raise_alone=False, use_cache=True, t=None)
+        checks["W7w: a German lookup, then a Web click: the Web's line is "
+               "English only"] = (
+            isinstance(got, list) and str(got[0].error) == (
+                "no answer within 10 seconds (from the last try, not asked "
+                "again for 60s)"))
 
         # A single-host install has no name to remember: it raises as
         # before, cache or not.

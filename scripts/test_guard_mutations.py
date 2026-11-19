@@ -3059,6 +3059,33 @@ GUARDED = [
      '        dead = None\n',
      'test_telegram_dispatch_matrix.py'),
 
+    # Review of W7w: the memory is shared by readers in different
+    # languages (the Web's check passes t=None, the chats their bot's), so
+    # every walk keeps the CLI's words and `skipped_words` translates.
+    ("a check remembers the CLI's words, not a reader's (Web, then German chat)",
+     'app/container_flags.py',
+     '            _hosts.remember(host, errfmt.clip(error))\n',
+     '            _hosts.remember(host, _human(error, t))\n',
+     'test_check_on_hosts.py'),
+
+    ("a lookup remembers the CLI's words, not a reader's",
+     'app/container_flags.py',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     '                _hosts.remember(host, gone.error)\n',
+     'test_find_on_hosts.py'),
+
+    ("a lookup's bare exit is remembered as \"exit code N\", untranslated",
+     'app/container_flags.py',
+     '                kept = stderr if stderr.strip() else _exit_text(rc, None)\n',
+     '                kept = stderr if stderr.strip() else _exit_text(rc, t)\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's remembered \"exit code N\" is said in the reader's language",
+     'app/hosts.py',
+     '    if code and t is not None:\n',
+     '    if False:\n',
+     'test_find_on_hosts.py'),
+
     ("a check that failed with its daemon answering is not remembered as dead",
      'app/container_flags.py',
      '        elif use_cache and _lost_host(error):\n',
@@ -3200,25 +3227,25 @@ GUARDED = [
     ("a lookup leaves what it learnt for the next read",
      'app/container_flags.py',
      '            if use_cache:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      '            if False:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      'test_find_on_hosts.py'),
 
     ("…so /status after /status web skips the dead host (T2)",
      'app/container_flags.py',
      '            if use_cache:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      '            if False:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      'test_telegram_dispatch_matrix.py'),
 
     ("a lookup without the cache marks no host dead",
      'app/container_flags.py',
      '            if use_cache:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      '            if True:\n'
-     '                _hosts.remember(host, gone.error)\n',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
      'test_find_on_hosts.py'),
 
     ("a host without a backend is not remembered as answered or dead",
