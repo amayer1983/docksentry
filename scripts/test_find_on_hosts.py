@@ -25,6 +25,13 @@ Pinned alongside: the old `resolve_container` and `match_glob` still
 read a refused host as "not found" / no match. They have callers that
 have not moved, and this slice adds without changing them.
 
+Since W7 a read passes `use_cache=True` and `remote_timeout=10`: a
+remote host found dead a moment ago is not asked but named with its
+remembered words and the seconds left, every remote host that is asked
+leaves its outcome in hosts' dead-host memory, and a remote listing gets
+ten seconds. Without them (every write) nothing changes. Those checks
+run on hosts' clock, replaced.
+
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the functions existed).
 """
@@ -499,6 +506,161 @@ if callable(glob_checked):
             checks[f"checked glob agrees with match_glob on {pat!r} "
                    f"(include_stopped={stopped})"] = (
                 new == (old, None) and ob.calls == nb.calls)
+
+# ── W7: a read skips a remote host found dead a moment ago ────────────
+# `use_cache=True` is what a read passes (Telegram's /status <name> and
+# /check <name>): a remote host still in its cooldown is not asked, it
+# comes back as unreachable with the words it gave last time and how long
+# until the next try, and every host that IS asked leaves its outcome in
+# the memory. Without it (the default, and every write) the memory is
+# neither read nor written. The local host is never skipped or marked:
+# the cooldown is for machines on the other end of a wire. The clock is
+# hosts' own `time`, replaced, so the seconds do not depend on how fast
+# this machine is.
+import hosts as hostslib                           # noqa: E402
+
+_CLOCK = [1000.0]
+
+
+class _Time:
+    @staticmethod
+    def monotonic():
+        return _CLOCK[0]
+
+
+def _first_kw(backend):
+    """The keywords of a backend's first `run`, or None if it was not
+    asked — a check that reads FAIL instead of an IndexError."""
+    return backend.calls[0][1] if backend.calls else None
+
+
+def _memory(name):
+    left, why = hostslib.unreachable_for(name)
+    return (round(left, 3), why)
+
+
+if callable(find_on_hosts):
+    _real_time = hostslib.time
+    hostslib.time = _Time
+    try:
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("dead", "no answer earlier", cooldown=30.5)
+        hostslib.mark_unreachable("local", "local once", cooldown=30.5)
+        bk = backends()
+        res, raised = run_find("web", bk=bk, use_cache=True)
+        checks["W7 cache: a remembered dead host is not asked"] = (
+            raised is None and bk["dead"].calls == [])
+        u = {getattr(x[0], "name", ""): x for x in
+             (res.unreachable if res is not None else ())}
+        checks["W7 cache: …it is unreachable with its remembered words and "
+               "the whole seconds left"] = (
+            "dead" in u and u["dead"][1] == t(
+                "host_skipped_retry", error="no answer earlier", seconds=30)
+            and u["dead"][2] == "")
+        checks["W7 cache: …and renders as host_unreachable_short like any "
+               "unreachable host"] = (
+            "dead" in u and u["dead"].reply().key == "host_unreachable_short"
+            and u["dead"].reply().params["error"] == u["dead"][1])
+        checks["W7 cache: the local host is asked even when it is in the "
+               "memory"] = (raised is None and len(bk["local"].calls) == 1)
+        checks["W7 cache: …and its entry is neither cleared nor renewed"] = (
+            _memory("local") == (30.5, "local once"))
+        checks["W7 cache: a refused host asked just now is remembered with "
+               "the words it gave"] = (
+            _memory("refused")[1] == errfmt.clip(REFUSED_ERR)
+            and _memory("refused")[0] == 60.0)
+        checks["W7 cache: the walk order is kept with a skipped host in it"] = (
+            res is not None and unreachable_of(res) == ["dead", "refused"]
+            and names_of(res) == [("nas", ["web"])])
+        # A host that answers clears its own mark once the cooldown is up,
+        # backoff included: its next failure is a first one again (60 s),
+        # not the second (120 s).
+        hostslib.forget_unreachable()
+        run_find("web", targets=[DEAD], use_cache=True)
+        first = _memory("dead")
+        _CLOCK[0] += 61
+        bk = backends()
+        bk["dead"] = Backend("dead", ["web"])
+        res, raised = run_find("web", targets=[DEAD], bk=bk, use_cache=True)
+        checks["W7 cache: a dead host asked just now is remembered for the "
+               "first minute"] = first == (60.0, errfmt.human(DEAD_ERR, t=t))
+        checks["W7 cache: past its cooldown the host is asked again"] = (
+            len(bk["dead"].calls) == 1 and res is not None
+            and names_of(res) == [("dead", ["web"])])
+        hostslib.mark_unreachable("dead", "x")
+        checks["W7 cache: …and answering reset its backoff to the first "
+               "minute"] = first[0] == 60.0 and _memory("dead")[0] == 60.0
+        # The order is in the calls: each skipped host costs nothing, so
+        # on_host still sees every host, and in the order given.
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "nas earlier", cooldown=10)
+        seen = []
+        res, raised = run_find("web", targets=[LOCAL, NAS, REFUSED],
+                               use_cache=True,
+                               on_host=lambda one: seen.append(one))
+        checks["W7 cache: on_host sees a skipped host in its place"] = (
+            [getattr(s.host, "name", "") for s in seen]
+            == ["local", "nas", "refused"]
+            and seen[1].unreachable is not None and seen[1].names == ())
+        # Without use_cache (every write, and Discord until W7d): the
+        # remembered host is asked and nothing is written.
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("dead", "no answer earlier", cooldown=30.5)
+        bk = backends()
+        res, raised = run_find("web", bk=bk)
+        checks["W7 no cache: a remembered dead host is asked anyway"] = (
+            len(bk["dead"].calls) == 1)
+        checks["W7 no cache: …and nothing is written: refused stays "
+               "unknown, dead keeps its old mark"] = (
+            _memory("refused") == (0.0, "")
+            and _memory("dead") == (30.5, "no answer earlier"))
+        # A host without a backend never answered: no mark either way.
+        # nas failed once and is past its first minute; had the lookup
+        # counted it as answering, its next failure would be a first one
+        # (60 s) again instead of the second (120 s).
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "nas earlier")
+        _CLOCK[0] += 61
+        res, raised = run_find(
+            "web", targets=[NAS], use_cache=True,
+            bk={"nas": None, "local": backends()["local"]})
+        nas_after = _memory("nas")
+        hostslib.mark_unreachable("nas", "nas again")
+        checks["W7 cache: a host without a backend leaves the memory "
+               "alone"] = (nas_after == (0.0, "")
+                           and _memory("nas") == (120.0, "nas again"))
+        # A glob takes the same memory.
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("refused", "refused earlier", cooldown=5)
+        bk = backends()
+        res, raised = run_find("web*", bk=bk, use_cache=True)
+        checks["W7 cache: a glob skips a remembered host too"] = (
+            bk["refused"].calls == [] and res is not None
+            and unreachable_of(res) == ["dead", "refused"])
+    finally:
+        hostslib.time = _real_time
+        hostslib.forget_unreachable()
+
+    # The short probe: `remote_timeout` goes to every host that is not
+    # the local one, `timeout` to the local one (None passes nothing).
+    bk = backends()
+    run_find("web", bk=bk, remote_timeout=10)
+    checks["W7 probe: remote_timeout reaches each remote host's ps -a"] = all(
+        bk[n].calls and all(kw == {"timeout": 10} for _a, kw in bk[n].calls)
+        for n in ("nas", "dead", "refused"))
+    checks["W7 probe: …the local host still passes no timeout"] = (
+        _first_kw(bk["local"]) == {})
+    bk = backends()
+    run_find("web*", bk=bk, timeout=5, remote_timeout=10)
+    checks["W7 probe: a glob too; `timeout` stays the local one's"] = (
+        _first_kw(bk["local"]) == {"timeout": 5}
+        and _first_kw(bk["nas"]) == {"timeout": 10})
+    bk = backends()
+    run_find("web", bk=bk, timeout=7)
+    checks["W7 probe: without remote_timeout, `timeout` reaches every "
+           "host as before"] = all(
+        _first_kw(bk[n]) == {"timeout": 7}
+        for n in ("local", "nas", "dead", "refused"))
 
 # ── the old ones are unchanged: a refused host still reads as empty ───
 b = backends()

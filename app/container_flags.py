@@ -339,7 +339,8 @@ def _human(err, t):
 
 
 def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
-                  on_host=None, timeout=None, t):
+                  on_host=None, timeout=None, remote_timeout=None,
+                  use_cache=False, t):
     """Find `arg` — a plain partial name or a glob — on each of `targets`.
 
     The hosts are asked one after the other, in the order given, and
@@ -360,12 +361,33 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
     `include_stopped` applies to a glob; a plain name always looks at
     stopped containers too (`resolve_container_checked`). `t` translates
     the timeout line and hostdiag's hint.
+
+    `timeout` goes to every host's listing (None passes nothing);
+    `remote_timeout`, when given, replaces it for every host that is not
+    the local one — the short probe a chat read uses (W7).
+
+    `use_cache=True` is for reads only (W7): a remote host that failed a
+    moment ago (`hosts.remembered_dead`) is not asked and comes back as
+    unreachable with its remembered words and the seconds until it is
+    asked again, and every remote host that is asked leaves its outcome
+    in the memory. The default neither reads nor writes it — every
+    write, and every caller that has not moved yet.
     """
+    import hosts as _hosts
     import lifecycle
     is_glob = lifecycle.is_glob(arg)
     found, errors, unreachable = [], [], []
     for host in targets:
         names, reply, failure = [], None, None
+        dead = _hosts.remembered_dead(host) if use_cache else None
+        if dead is not None:
+            gone = Unreachable(host, _hosts.skipped_words(*dead, t=t), "")
+            unreachable.append(gone)
+            if on_host is not None:
+                on_host(HostFind(host, (), None, gone))
+            continue
+        probe = (remote_timeout if remote_timeout is not None
+                 and not _is_local(host) else timeout)
         try:
             backend = backend_for(host)
         except Exception as e:                              # noqa: BLE001
@@ -377,12 +399,12 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
         elif is_glob:
             names, failure = lifecycle.match_glob_checked(
                 arg, backend=backend, include_stopped=include_stopped,
-                timeout=timeout)
+                timeout=probe)
             if failure is None and not names:
                 reply = Reply("glob_no_match", {"pattern": arg}, ok=False)
         else:
             name, reply, failure = resolve_container_checked(
-                arg, backend=backend, timeout=timeout)
+                arg, backend=backend, timeout=probe)
             names = [name] if name else []
         gone = None
         if failure is not None:
@@ -409,9 +431,22 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
         else:
             reply = replace(reply, host=host, host_is_local=_is_local(host))
             errors.append(reply)
+        # A host without a backend was never asked: nothing to remember.
+        if use_cache and (gone is not None or backend is not None):
+            _hosts.remember(host, gone.error if gone is not None else None)
         if on_host is not None:
             on_host(HostFind(host, tuple(names), reply, gone))
     return FindResult(tuple(found), tuple(errors), tuple(unreachable))
+
+
+def _lost_host(error):
+    """True when `error` says the host itself did not answer: its listing
+    timed out or failed (`ContainerListUnavailable`). Anything else came
+    from a daemon that answered."""
+    import subprocess
+    from update_checker import ContainerListUnavailable
+    return isinstance(error, (subprocess.TimeoutExpired,
+                              ContainerListUnavailable))
 
 
 #: One host's update check, as `on_host` sees it and `check_on_hosts`
@@ -422,7 +457,8 @@ HostCheck = namedtuple("HostCheck", "host updates error hint checker")
 
 
 def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
-                   hint=False, on_host=None, raise_alone=True, t):
+                   hint=False, on_host=None, raise_alone=True,
+                   use_cache=False, t):
     """`check_all` on each of `targets`, one after the other, in order.
 
     `on_host(HostCheck)` runs for each host before the next host's
@@ -448,11 +484,31 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
     hostdiag for a sentence under each failure, in `t`'s language; a
     hint that throws costs the hint, never the walk. An exception from
     `on_host` is the caller's and is not swallowed.
+
+    `use_cache=True` is for reads only (W7): a remote host that failed a
+    moment ago is not asked — no checker, no `check_all`, no hint — and
+    comes back as a failure whose `error` is a `hosts.StillUnreachable`
+    saying its remembered words and the seconds until it is asked again.
+    After a check, a host that could not list its containers (a timeout,
+    `ContainerListUnavailable`) is remembered with `errfmt.human`'s words
+    for it, and one that checked fine is forgotten. A check that failed
+    for any other reason is left out of the memory: that daemon answered,
+    and a /status a moment later must still ask it. The default neither
+    reads nor writes the memory.
     """
+    import hosts as _hosts
     walk = list(targets) if targets else [None]
     alone = len(walk) == 1 and walk[0] is None
     out = []
     for host in walk:
+        dead = _hosts.remembered_dead(host) if use_cache else None
+        if dead is not None:
+            answer = HostCheck(host, None, _hosts.StillUnreachable(
+                _hosts.skipped_words(*dead, t=t), *dead), "", None)
+            out.append(answer)
+            if on_host is not None:
+                on_host(answer)
+            continue
         kw = {}
         if debug_sink is not None:
             kw["bot"] = debug_sink
@@ -474,6 +530,10 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
                                     t=t) or ""
             except Exception:                               # noqa: BLE001
                 why = ""
+        if use_cache and error is None:
+            _hosts.remember(host, None)
+        elif use_cache and _lost_host(error):
+            _hosts.remember(host, _human(error, t))
         answer = HostCheck(host, updates, error, why, checker)
         out.append(answer)
         if on_host is not None:

@@ -930,6 +930,7 @@
   "chan_autocleanup_on": "التنظيف التلقائي **مُفعَّل** — يحدث من تلقاء نفسه.",
   "chan_run_cleanup_hint": "شغّل `/cleanup` لتحريرها.",
   "host_unreachable_short": "⚠ `{host}` غير قابل للوصول: {error}",
+  "host_skipped_retry": "{error} (منذ لحظات، لن يُسأل مجددًا قبل {seconds} ث)",
   "logs_failed": "تعذّرت قراءة سجلات `{name}`: {error}",
   "chan_maintenance_line": "🔧 الصيانة: {state}",
   "chan_audit_header": "🔍 `{name}` — الحقول التي لن ننقلها:",

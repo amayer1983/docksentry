@@ -930,6 +930,7 @@
   "chan_autocleanup_on": "La pulizia automatica è **attiva** — avviene da sola.",
   "chan_run_cleanup_hint": "Esegui `/cleanup` per liberarlo.",
   "host_unreachable_short": "⚠ `{host}` irraggiungibile: {error}",
+  "host_skipped_retry": "{error} (di poco fa, non verrà richiesto per {seconds} s)",
   "logs_failed": "Impossibile leggere i log di `{name}`: {error}",
   "chan_maintenance_line": "🔧 Manutenzione: {state}",
   "chan_audit_header": "🔍 `{name}` — campi che non riporteremmo:",

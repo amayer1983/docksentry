@@ -2286,8 +2286,8 @@ GUARDED = [
 
     ("a caller's mistake raises from find_on_hosts, it is no dead host",
      'app/container_flags.py',
-     '            name, reply, failure = resolve_container_checked(\n                arg, backend=backend, timeout=timeout)\n',
-     '            try:\n                name, reply, failure = resolve_container_checked(\n                    arg, backend=backend, timeout=timeout)\n            except Exception as e:                          # noqa: BLE001\n                name, reply, failure = None, None, e\n',
+     '            name, reply, failure = resolve_container_checked(\n                arg, backend=backend, timeout=probe)\n',
+     '            try:\n                name, reply, failure = resolve_container_checked(\n                    arg, backend=backend, timeout=probe)\n            except Exception as e:                          # noqa: BLE001\n                name, reply, failure = None, None, e\n',
      'test_find_on_hosts.py'),
 
     ("a bare non-zero exit is named in the reader's language",
@@ -2458,9 +2458,9 @@ GUARDED = [
 
     ("Telegram /check and /update <glob> keep an unreachable host apart from 'no match'",
      'app/telegram_bot.py',
-     '        containers match" (W4)."""\n'
+     '        /update leaves it False: a write always asks."""\n'
      '        import container_flags\n',
-     '        containers match" (W4)."""\n'
+     '        /update leaves it False: a write always asks."""\n'
      '        if self._is_glob(arg):\n'
      '            import lifecycle\n'
      '            names = lifecycle.match_glob(arg, backend=backend or self.backend)\n'
@@ -2593,14 +2593,16 @@ GUARDED = [
     ("Telegram /status renders what the core walk found",
      'app/telegram_bot.py',
      '            inspected, unreachable = status_render.collect_overview(\n'
-     '                status_targets, backend_for=self._backend_for, t=self.t)\n',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
      '            inspected, unreachable = [], []\n',
      'test_status_overview_core.py'),
 
     ("…and so do T2's /status rows",
      'app/telegram_bot.py',
      '            inspected, unreachable = status_render.collect_overview(\n'
-     '                status_targets, backend_for=self._backend_for, t=self.t)\n',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
      '            inspected, unreachable = [], []\n',
      'test_telegram_dispatch_matrix.py'),
 
@@ -2922,6 +2924,343 @@ GUARDED = [
      '                        found.extend(hc.updates)\n',
      '                        found.extend(hc.updates[:0])\n',
      'test_web_action_matrix.py'),
+
+    # W7: Telegram's reads (/status, /status <name>, /check, /check
+    # --dry-run, /check <name>) take the dead-host memory and give a
+    # remote lookup ten seconds; /update never does. Every mutation was
+    # applied by hand in a scratch copy and turned its procedure red
+    # without a traceback.
+    ("a chat command does not wait 30 s on a host found dead a moment ago",
+     'app/container_flags.py',
+     '    for host in walk:\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in walk:\n'
+     '        dead = None\n',
+     'test_check_on_hosts.py'),
+
+    ("…and /status then /check on Telegram does not ask the dead host again",
+     'app/container_flags.py',
+     '    for host in walk:\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in walk:\n'
+     '        dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a check that failed with its daemon answering is not remembered as dead",
+     'app/container_flags.py',
+     '        elif use_cache and _lost_host(error):\n',
+     '        elif use_cache:\n',
+     'test_check_on_hosts.py'),
+
+    ("…so /status after /check still asks that host (T2)",
+     'app/container_flags.py',
+     '        elif use_cache and _lost_host(error):\n',
+     '        elif use_cache:\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a host that could not list its containers is remembered after a check",
+     'app/container_flags.py',
+     '    return isinstance(error, (subprocess.TimeoutExpired,\n'
+     '                              ContainerListUnavailable))\n',
+     '    return isinstance(error, (subprocess.TimeoutExpired,))\n',
+     'test_check_on_hosts.py'),
+
+    ("a host that checked fine is forgotten",
+     'app/container_flags.py',
+     '        if use_cache and error is None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        if False:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_check_on_hosts.py'),
+
+    ("a skipped check says the remembered words and the seconds left",
+     'app/container_flags.py',
+     '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
+     '                _hosts.skipped_words(*dead, t=t), *dead), "", None)\n',
+     '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
+     '                dead[0], *dead), "", None)\n',
+     'test_check_on_hosts.py'),
+
+    ("a skipped check still reaches on_host, in its place",
+     'app/container_flags.py',
+     '            out.append(answer)\n'
+     '            if on_host is not None:\n'
+     '                on_host(answer)\n'
+     '            continue\n',
+     '            out.append(answer)\n'
+     '            continue\n',
+     'test_check_on_hosts.py'),
+
+    ("a lookup skips a remote host found dead a moment ago",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = None\n',
+     'test_find_on_hosts.py'),
+
+    ("…and /status then /status web on Telegram names it without asking",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a lookup without the cache (every write) asks a remembered host",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host)\n',
+     'test_find_on_hosts.py'),
+
+    ("…so /update right after /status asks the dead host again (T2)",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a skipped lookup still reaches on_host, in its place",
+     'app/container_flags.py',
+     '            unreachable.append(gone)\n'
+     '            if on_host is not None:\n'
+     '                on_host(HostFind(host, (), None, gone))\n'
+     '            continue\n',
+     '            unreachable.append(gone)\n'
+     '            continue\n',
+     'test_find_on_hosts.py'),
+
+    ("a lookup leaves what it learnt for the next read",
+     'app/container_flags.py',
+     '        if use_cache and (gone is not None or backend is not None):\n',
+     '        if False:\n',
+     'test_find_on_hosts.py'),
+
+    ("…so /status after /status web skips the dead host (T2)",
+     'app/container_flags.py',
+     '        if use_cache and (gone is not None or backend is not None):\n',
+     '        if False:\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a host without a backend is not remembered as answered or dead",
+     'app/container_flags.py',
+     '        if use_cache and (gone is not None or backend is not None):\n',
+     '        if use_cache:\n',
+     'test_find_on_hosts.py'),
+
+    ("a remote lookup gets the short probe, the local one does not",
+     'app/container_flags.py',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 and not _is_local(host) else timeout)\n',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 else timeout)\n',
+     'test_find_on_hosts.py'),
+
+    ("Telegram's read lookups ask a remote host with ten seconds (T2 rows)",
+     'app/container_flags.py',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 and not _is_local(host) else timeout)\n',
+     '        probe = timeout\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the /status overview skips a remote host found dead a moment ago",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = None\n',
+     'test_status_overview_core.py'),
+
+    ("…and /status then /status on Telegram does not ask it again",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the overview without the cache neither skips nor remembers",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = _hosts.remembered_dead(_host)\n',
+     'test_status_overview_core.py'),
+
+    ("a skipped overview host is listed with its words and the seconds left",
+     'app/status_render.py',
+     '                                _hosts.skipped_words(*_dead, t=t)))\n',
+     '                                _dead[0]))\n',
+     'test_status_overview_core.py'),
+
+    ("the overview remembers a host that did not answer, without its hint",
+     'app/status_render.py',
+     '    def _mark_unreachable(_host, _why):\n'
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n',
+     '    def _mark_unreachable(_host, _why):\n'
+     '        pass\n',
+     'test_status_overview_core.py'),
+
+    ("…the words of its line, not the hint under them",
+     'app/status_render.py',
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n'
+     '        # The host\'s own diagnostic hint (SSH auth, wrong socket …)\n'
+     '        # appended when hostdiag has one.\n'
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n',
+     '        # The host\'s own diagnostic hint (SSH auth, wrong socket …)\n'
+     '        # appended when hostdiag has one.\n'
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n'
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n',
+     'test_status_overview_core.py'),
+
+    ("the overview forgets a host with nothing running: it answered",
+     'app/status_render.py',
+     '        if not ids:\n'
+     '            if use_cache:\n'
+     '                _hosts.remember(_host, None)\n'
+     '            continue\n',
+     '        if not ids:\n'
+     '            continue\n',
+     'test_status_overview_core.py'),
+
+    ("the overview forgets a host that answered",
+     'app/status_render.py',
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, None)\n'
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     'test_status_overview_core.py'),
+
+    ("the local host is never skipped or marked",
+     'app/hosts.py',
+     '    if host is None or getattr(host, "is_local", False):\n'
+     '        return ""\n',
+     '    if host is None:\n'
+     '        return ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's seconds are whole",
+     'app/hosts.py',
+     '        return reason, int(left)\n',
+     '        return reason, left\n',
+     'test_find_on_hosts.py'),
+
+    ("answering clears a host's mark and its backoff",
+     'app/hosts.py',
+     '    if failed_with is None:\n'
+     '        mark_reachable(name)\n',
+     '    if failed_with is None:\n'
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("failing marks a host with the words it gave",
+     'app/hosts.py',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with)\n',
+     '    else:\n'
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's line is in the reader's language",
+     'app/hosts.py',
+     '            return t("host_skipped_retry", error=reason, seconds=retry_in)\n',
+     '            raise LookupError("no translation")\n',
+     'test_find_on_hosts.py'),
+
+    ("the remembered words come first in the skipped line",
+     'app/lang/de.json',
+     '"host_skipped_retry": "{error} (von gerade eben, wird {seconds} s lang nicht erneut gefragt)"',
+     '"host_skipped_retry": "(von gerade eben, wird {seconds} s lang nicht erneut gefragt) {error}"',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /status takes the cache",
+     'app/telegram_bot.py',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=False)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check takes the cache",
+     'app/telegram_bot.py',
+     '            use_cache=True,\n'
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            use_cache=False,\n'
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check --dry-run takes the cache",
+     'app/telegram_bot.py',
+     '                use_cache=True,\n'
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     '                use_cache=False,\n'
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check <name>'s check takes the cache",
+     'app/telegram_bot.py',
+     '                use_cache=True,\n'
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                use_cache=False,\n'
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /update <name>'s check never takes the cache",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                use_cache=True, on_host=_batch, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check <name>'s lookup is a read",
+     'app/telegram_bot.py',
+     '                    arg, backend=self._backend_for(host), host=host,\n'
+     '                    read=True)\n',
+     '                    arg, backend=self._backend_for(host), host=host)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> takes the cache",
+     'app/telegram_bot.py',
+     '                    use_cache=True, remote_timeout=10,\n',
+     '                    use_cache=False, remote_timeout=10,\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> asks a remote host with ten seconds",
+     'app/telegram_bot.py',
+     '                    use_cache=True, remote_timeout=10,\n',
+     '                    use_cache=True,\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /update <name>'s lookup is a write: no cache, no short probe",
+     'app/telegram_bot.py',
+     '            arg=arg, use_cache=read, remote_timeout=10 if read else None,\n',
+     '            arg=arg, use_cache=True, remote_timeout=10,\n',
+     'test_telegram_dispatch_matrix.py'),
 
 ]
 

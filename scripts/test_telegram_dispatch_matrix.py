@@ -75,7 +75,13 @@ come from core-split after W3, as do the four `/check web @dead` and
 `/update web @dead` rows added with it; W3_SPEC states by hand what
 they say. The seven glob rows W4 flipped, and `/update web* @dead` and
 `/update web* @all` added with it, come from core-split after W4 and
-are checked against W4_SPEC.
+are checked against W4_SPEC. W7 gave a read's lookup (/status and
+/check with a name or glob) a ten-second probe on remote hosts: the 18
+rows where that shows (`ps -a --format t=10`, and "no answer within 10
+seconds" where dead is named) come from core-split after W7, and
+nothing else in the table moved. Each row starts with an empty
+dead-host memory; what a read leaves in it for the next command is
+the business of `w7_checks` — two commands on one bot, written by hand.
 """
 
 import contextlib
@@ -573,13 +579,46 @@ def _calls_summary(calls, keep=()):
 def run_row(setup, text):
     """Drive one typed command; return its observed record."""
     import hosts as hostslib
-    from version import VERSION
     hostslib.forget_unreachable()
     EVENTS.clear()
     del ESCAPES[:]
     del STARTED[:]
     del THREAD_ERRORS[:]
     bot, checker, backends, log, data = build(setup)
+    record = _drive(bot, checker, backends, log, data, text)
+    escapes = list(ESCAPES)
+    shutil.rmtree(data, ignore_errors=True)
+    return record, escapes
+
+
+def run_seq(setup, texts, short=None):
+    """Drive several typed commands one after the other on ONE bot, with
+    the dead-host memory left as each one leaves it (W7). Returns one
+    record per command — its own messages, backend calls and events
+    only — and the escapes of the whole sequence. `short` replaces the
+    clip of long messages (`str` keeps them whole)."""
+    import hosts as hostslib
+    hostslib.forget_unreachable()
+    EVENTS.clear()
+    del ESCAPES[:]
+    del STARTED[:]
+    del THREAD_ERRORS[:]
+    bot, checker, backends, log, data = build(setup)
+    records = [_drive(bot, checker, backends, log, data, text, short=short)
+               for text in texts]
+    escapes = list(ESCAPES)
+    shutil.rmtree(data, ignore_errors=True)
+    hostslib.forget_unreachable()
+    return records, escapes
+
+
+def _drive(bot, checker, backends, log, data, text, short=None):
+    """One command on a built bot: what it sent, which backends it asked
+    and the events, counted from where the previous command left off."""
+    from version import VERSION
+    short = short or _short
+    marks = (len(log), {n: len(b.calls) for n, b in backends.items()},
+             len(EVENTS), len(THREAD_ERRORS), len(STARTED))
     raised = None
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
@@ -590,7 +629,7 @@ def run_row(setup, text):
         except Exception as e:                          # noqa: BLE001
             raised = type(e).__name__
         hung = []
-        i = 0
+        i = marks[4]
         while i < len(STARTED):                         # threads may start threads
             STARTED[i].join(20)
             if STARTED[i].is_alive():
@@ -598,24 +637,22 @@ def run_row(setup, text):
             i += 1
 
     def norm(s):
-        return _short(str(s).replace(data, "{DATA}")
-                      .replace(VERSION, "{VERSION}"))
+        return short(str(s).replace(data, "{DATA}")
+                     .replace(VERSION, "{VERSION}"))
 
     out = []
-    for kind, body, kb in log:
+    for kind, body, kb in log[marks[0]:]:
         line = norm(body) if kind == "send" else f"<{kind}> {norm(body)}".rstrip()
         if kb:
             line += f"  [{kb} buttons]"
         out.append(line)
-    touched = {n: _calls_summary(b.calls) for n, b in backends.items()
-               if b.calls}
-    events = [norm(e) for e in EVENTS] + list(THREAD_ERRORS) \
+    touched = {n: _calls_summary(b.calls[marks[1][n]:])
+               for n, b in backends.items() if b.calls[marks[1][n]:]}
+    events = [norm(e) for e in EVENTS[marks[2]:]] \
+        + list(THREAD_ERRORS[marks[3]:]) \
         + [f"thread did not finish: {h}" for h in hung]
-    record = {"out": out, "hosts": touched, "events": events,
-              "raised": raised}
-    escapes = list(ESCAPES)
-    shutil.rmtree(data, ignore_errors=True)
-    return record, escapes
+    return {"out": out, "hosts": touched, "events": events,
+            "raised": raised}
 
 
 # ── the rows ───────────────────────────────────────────────────────────
@@ -680,6 +717,10 @@ _W3_DEAD = "⚠ `dead` unreachable: no answer within 30 seconds"
 _W3_REFUSED = ("⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 "
                "port 22: Connection refused")
 _W3_BOTH = _W3_DEAD + "\n" + _W3_REFUSED
+#: A read's lookup (/status, /check) gives a remote host ten seconds
+#: since W7; /update keeps the backend's thirty.
+_W3_DEAD_READ = "⚠ `dead` unreachable: no answer within 10 seconds"
+_W3_BOTH_READ = _W3_DEAD_READ + "\n" + _W3_REFUSED
 _W3_DETAIL = ("🔎 *web*{tag} — ✅ running{health} · ⏱ ?\n\n📦 `nginx:1.25`\n"
               "     `251ad31786ba`\n\n🔁 unless-stopped\n\n"
               "🔄 *Update available*")
@@ -694,19 +735,19 @@ _W3_RESULT = ("*Update Result:*\n\n✅ [web](https://github.com/example/web/"
 _W3_FLAKY = "⚠️ Host `flaky` could not be checked: registry did not answer in 15s"
 _W3_CHECKED = ["check_all@local only=['web']", "check_all@nas only=['web']",
                "check_all@flaky only=['web']"]
-_W3_CHECK_OUT = [_W3_BOTH, "🔍 Checking for updates...",
+_W3_CHECK_OUT = [_W3_BOTH_READ, "🔍 Checking for updates...",
                  _W3_AVAIL.format(tag=""), _W3_AVAIL.format(tag=" @nas"),
                  _W3_FLAKY]
 W3_SPEC = {
-    "/status web": (list(_W3_FOUND) + [_W3_BOTH], []),
-    "/status web @all": (list(_W3_FOUND) + [_W3_BOTH], []),
-    "/status nosuch": (["Container `nosuch` not found.\n" + _W3_BOTH], []),
-    "/status web @dead": ([_W3_DEAD], []),
+    "/status web": (list(_W3_FOUND) + [_W3_BOTH_READ], []),
+    "/status web @all": (list(_W3_FOUND) + [_W3_BOTH_READ], []),
+    "/status nosuch": (["Container `nosuch` not found.\n" + _W3_BOTH_READ], []),
+    "/status web @dead": ([_W3_DEAD_READ], []),
     "/status web @refused": ([_W3_REFUSED], []),
     "/check web": (_W3_CHECK_OUT, _W3_CHECKED),
     "/check web @all": (_W3_CHECK_OUT, _W3_CHECKED),
     "/check web @refused": ([_W3_REFUSED], []),
-    "/check web @dead": ([_W3_DEAD], []),
+    "/check web @dead": ([_W3_DEAD_READ], []),
     "/update web @refused": ([_W3_REFUSED], []),
     "/update web @dead": ([_W3_DEAD], []),
     "/update web @all": (
@@ -718,6 +759,12 @@ W3_SPEC = {
         _W3_CHECKED + ["update_container@local:web",
                        "update_container@nas:web"]),
 }
+
+
+def _w7_probe(text):
+    """How an unreachable host's lookup was asked: a read with the ten
+    second probe since W7, /update with the backend's own default."""
+    return "ps -a --format" + ("" if text.startswith("/update") else " t=10")
 
 
 def w3_checks():
@@ -738,7 +785,7 @@ def w3_checks():
                  if "@" not in text or text.endswith(("@all", "@" + h))]
         if text.endswith("@refused"):
             named = ["refused"]
-        asked = all(rec["hosts"].get(h) == "ps -a --format" for h in named)
+        asked = all(rec["hosts"].get(h) == _w7_probe(text) for h in named)
         if "@" not in text or text.endswith("@all"):
             asked = asked and "flaky" in rec["hosts"]
         results.append((f"W3 {text!r}: every unreachable host asked once, "
@@ -822,19 +869,19 @@ _W4_OVERVIEW = (
 _W4_CHECKED = ["check_all@local only=['web', 'webdav']",
                "check_all@nas only=['web']", "check_all@flaky only=['web']"]
 W4_SPEC = {
-    "/status web*": (list(_W4_OVERVIEW) + [_W3_BOTH], []),
+    "/status web*": (list(_W4_OVERVIEW) + [_W3_BOTH_READ], []),
     "/status web* @refused": ([_W3_REFUSED], []),
-    "/status web* @dead": ([_W3_DEAD], []),
+    "/status web* @dead": ([_W3_DEAD_READ], []),
     "/check web*": (_W3_CHECK_OUT, _W4_CHECKED),
     "/check web* @refused": ([_W3_REFUSED], []),
-    "/check web* @dead": ([_W3_DEAD], []),
+    "/check web* @dead": ([_W3_DEAD_READ], []),
     "/update web* @refused": ([_W3_REFUSED], []),
     "/update web* @dead": ([_W3_DEAD], []),
     # Nothing matches on the hosts that answered: "no match" leads, the
     # hosts nobody could ask follow in the same message.
-    "/check nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH],
+    "/check nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH_READ],
                        []),
-    "/status nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH],
+    "/status nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH_READ],
                         []),
     "/update web* @all": (
         [_W3_BOTH, "🔍 Checking for updates...", _W3_FLAKY,
@@ -863,7 +910,7 @@ def w4_checks():
                         f"raised {rec['raised']!r}, events {rec['events']!r}"))
         named = [h for h in ("dead", "refused")
                  if "@" not in text or text.endswith(("@all", "@" + h))]
-        asked = all(rec["hosts"].get(h) == "ps -a --format" for h in named)
+        asked = all(rec["hosts"].get(h) == _w7_probe(text) for h in named)
         if "@" not in text or text.endswith("@all"):
             asked = asked and "flaky" in rec["hosts"]
         results.append((f"W4 {text!r}: every unreachable host asked once, "
@@ -906,6 +953,170 @@ def w4_extra_checks():
     results.append(("W4 single host, daemon dead: /status web* says so",
                     rec["out"] == want and rec["raised"] is None and not esc,
                     f"got {rec['out']!r}, raised {rec['raised']!r}"))
+    return results
+
+
+#: W7, written by hand before the change: two commands on one bot, the
+#: second right after the first. A READ that finds a remote host dead
+#: leaves it in the dead-host memory, and the next read within its
+#: cooldown does not ask it again — not its `ps`, not its check — but
+#: names it with the words it gave and how long until it is asked again.
+#: The clock is frozen, so a first failure's cooldown is the full 60 s.
+#: A WRITE (/update) neither skips a remembered host nor leaves anything
+#: in the memory. A check that failed although the daemon answered
+#: (flaky: its registry) is not remembered, so /status still asks flaky.
+#: The local host is never skipped, not even on its own.
+_W7_LATER = " (from a moment ago, not asked again for 60s)"
+_W7_DEAD_PS = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
+               "timed out after 10 seconds")
+_W7_REFUSED = ("ssh: connect to host 192.0.2.30 port 22: Connection "
+               "refused")
+_W7_REFUSED_CHECK = "could not list containers (rc=255): " + _W7_REFUSED
+
+
+def _w7_status_line(host, words):
+    return f"⚠️ `{host}` unreachable — not counted above: {words}"
+
+
+def _w7_seq(texts, setup="multi", modes=None):
+    """`run_seq` on a frozen clock, long messages whole."""
+    import hosts as hostslib
+
+    class _Frozen:
+        @staticmethod
+        def monotonic():
+            return 4242.0
+    real = hostslib.time
+    hostslib.time = _Frozen
+    MODE_OVERRIDE.update(modes or {})
+    try:
+        return run_seq(setup, texts, short=str)
+    finally:
+        MODE_OVERRIDE.clear()
+        hostslib.time = real
+
+
+def w7_checks():
+    results = []
+
+    def add(label, ok, detail=""):
+        results.append((f"W7 {label}", bool(ok), detail))
+
+    def swap(lines, old, new):
+        return [o.replace(old, new) for o in lines]
+
+    # /status, then /status: dead and refused are not asked again.
+    (first, second), esc = _w7_seq(["/status", "/status"])
+    want = swap(swap(first["out"],
+                     _w7_status_line("dead", _W7_DEAD_PS),
+                     _w7_status_line("dead", _W7_DEAD_PS + _W7_LATER)),
+                _w7_status_line("refused", _W7_REFUSED),
+                _w7_status_line("refused", _W7_REFUSED + _W7_LATER))
+    add("/status then /status: the first is T2's /status row",
+        _short(first["out"][0]) == EXPECTED[("multi", "/status")]["out"][0]
+        and first["hosts"] == EXPECTED[("multi", "/status")]["hosts"],
+        f"got {first!r}")
+    add("/status then /status: dead and refused are named with their "
+        "words and the seconds left", second["out"] == want
+        and want != first["out"] and not esc,
+        f"got {second['out']!r}, want {want!r}")
+    add("/status then /status: …and neither is asked, the others are",
+        second["hosts"] == {"local": "ps -q t=10, inspect t=10",
+                            "nas": "ps -q t=10, inspect t=10",
+                            "flaky": "ps -q t=10, inspect t=10"},
+        f"hosts {second['hosts']!r}")
+
+    # /status, then /check: the check does not wait on them either.
+    (first, second), esc = _w7_seq(["/status", "/check"])
+    fresh, _e = _w7_seq(["/check"])
+    want = [("⚠️ Host `dead` could not be checked: " + _W7_DEAD_PS
+             + _W7_LATER) if o.startswith("⚠️ Host `dead`")
+            else ("⚠️ Host `refused` could not be checked: " + _W7_REFUSED
+                  + _W7_LATER) if o.startswith("⚠️ Host `refused`")
+            else o for o in fresh[0]["out"]]
+    add("/status then /check: dead and refused say the remembered words, "
+        "no hint, the rest as a fresh /check",
+        second["out"] == want and not esc,
+        f"got {second['out']!r}, want {want!r}")
+    add("/status then /check: …neither host is asked or checked",
+        "dead" not in second["hosts"] and "refused" not in second["hosts"]
+        and second["events"] == ["check_all@local", "check_all@nas",
+                                 "check_all@flaky"],
+        f"hosts {second['hosts']!r}, events {second['events']!r}")
+
+    # /check, then /status: what /check learnt is what /status says, and
+    # flaky (registry trouble, daemon fine) is asked as usual.
+    (first, second), esc = _w7_seq(["/check", "/status"])
+    plain, _e = _w7_seq(["/status"])
+    want = swap(swap(plain[0]["out"],
+                     _w7_status_line("dead", _W7_DEAD_PS),
+                     _w7_status_line("dead", "no answer within 30 seconds"
+                                     + _W7_LATER)),
+                _w7_status_line("refused", _W7_REFUSED),
+                _w7_status_line("refused", _W7_REFUSED_CHECK + _W7_LATER))
+    add("/check then /status: the check's words, remembered",
+        second["out"] == want and not esc,
+        f"got {second['out']!r}, want {want!r}")
+    add("/check then /status: …dead and refused not asked, flaky asked",
+        "dead" not in second["hosts"] and "refused" not in second["hosts"]
+        and second["hosts"].get("flaky") == "ps -q t=10, inspect t=10",
+        f"hosts {second['hosts']!r}")
+
+    # /status, then a lookup: /status web, /check web, /check --dry-run.
+    (first, second), esc = _w7_seq(["/status", "/status web"])
+    tail = ("⚠ `dead` unreachable: " + _W7_DEAD_PS + _W7_LATER + "\n"
+            "⚠ `refused` unreachable: " + _W7_REFUSED + _W7_LATER)
+    want = list(_W3_FOUND) + [tail]
+    add("/status then /status web: the lookup names both without asking",
+        second["out"] == want and "dead" not in second["hosts"]
+        and "refused" not in second["hosts"] and not esc,
+        f"got {second['out']!r}, hosts {second['hosts']!r}")
+    (first, second), esc = _w7_seq(["/status", "/check web"])
+    want = [tail] + _W3_CHECK_OUT[1:]
+    add("/status then /check web: the same, then the check on the rest",
+        second["out"] == want and second["events"] == _W3_CHECKED
+        and "dead" not in second["hosts"]
+        and "refused" not in second["hosts"] and not esc,
+        f"got {second['out']!r}, events {second['events']!r}")
+    (first, second), esc = _w7_seq(["/status", "/check --dry-run"])
+    add("/status then /check --dry-run: dead and refused not asked",
+        "dead" not in second["hosts"] and "refused" not in second["hosts"]
+        and "check_all@dead" not in second["events"]
+        and any(o.startswith("⚠️ Host `dead` could not be checked: ")
+                and o.endswith(_W7_LATER) for o in second["out"])
+        and not esc, f"got {second!r}")
+
+    # A lookup leaves its words too: ten seconds is its probe.
+    (first, second), esc = _w7_seq(["/status web", "/status"])
+    want = swap(swap(plain[0]["out"],
+                     _w7_status_line("dead", _W7_DEAD_PS),
+                     _w7_status_line("dead", "no answer within 10 seconds"
+                                     + _W7_LATER)),
+                _w7_status_line("refused", _W7_REFUSED),
+                _w7_status_line("refused", _W7_REFUSED + _W7_LATER))
+    add("/status web then /status: the lookup's words, remembered",
+        second["out"] == want and "dead" not in second["hosts"] and not esc,
+        f"got {second['out']!r}, want {want!r}")
+
+    # A write asks anew, and leaves nothing behind.
+    (first, second), esc = _w7_seq(["/status", "/update web @all"])
+    fresh, _e = _w7_seq(["/update web @all"])
+    add("/status then /update web @all: a write asks dead and refused "
+        "again and answers like a fresh one",
+        second == fresh[0] and second["hosts"].get("dead")
+        == "ps -a --format" and not esc,
+        f"got {second!r}, want {fresh[0]!r}")
+    (first, second), esc = _w7_seq(["/update web @all", "/status"])
+    add("/update web @all then /status: the write left nothing to skip",
+        second == plain[0] and second["hosts"].get("dead") == "ps -q t=10"
+        and not esc, f"got {second!r}")
+
+    # One host on its own is never skipped.
+    (first, second), esc = _w7_seq(["/status web", "/status web"],
+                                   setup="none", modes={"local": "dead"})
+    add("single host, daemon dead: the second lookup asks it again",
+        first == second and second["hosts"].get("local") == "ps -a --format"
+        and not esc, f"got {first!r} / {second!r}")
     return results
 
 
@@ -1096,7 +1307,7 @@ def check():
     for label, ok in trap_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
-    for label, ok, detail in w3_checks() + w4_checks():
+    for label, ok, detail in w3_checks() + w4_checks() + w7_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         if not ok:
             print(f"      → {detail}")
@@ -1134,6 +1345,7 @@ def check():
 # ── expected, generated by --snapshot from main (8a74ba7), reviewed; ──
 # ── the W3 rows from core-split after W3, checked against W3_SPEC ──────
 # ── the W4 glob rows from core-split after W4, against W4_SPEC ─────────
+# ── the 18 read-lookup rows W7 gave the ten-second probe, after W7 ─────
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
     # :3661 `startswith('/status ')` for a name or glob, :3776 `==
@@ -1157,12 +1369,12 @@ EXPECTED = {
         out=['🔎 *web* — ✅ running (healthy) · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*  [2 buttons]',
              '🔎 *web* @nas — ✅ running (healthy) · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*',
              '🔎 *web* @flaky — ✅ running · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*',
-             '⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
+             '⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'local': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15, inspect --format t=10',
-               'nas': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
+               'nas': 'ps -a --format t=10, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
         events=[],
         raised=None),
     ('single', '/status web'): dict(
@@ -1174,12 +1386,12 @@ EXPECTED = {
         out=['*Status — 2 match(es) for* `web*`*:*\n🟢 `web` — running (healthy)\n⏹ `webdav` — exited',
              '*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @nas — running (healthy)',
              '*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @flaky — running',
-             '⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
+             '⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'local': 'ps -a --format, inspect t=10, image inspect --format t=10, inspect t=10, image inspect --format t=10',
-               'nas': 'ps -a --format, inspect t=10, image inspect --format t=10',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format, inspect t=10, image inspect --format t=10'},
+               'nas': 'ps -a --format t=10, inspect t=10, image inspect --format t=10',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10, inspect t=10, image inspect --format t=10'},
         events=[],
         raised=None),
     ('single', '/status web*'): dict(
@@ -1189,7 +1401,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/status web @nas'): dict(
         out=['🔎 *web* @nas — ✅ running (healthy) · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*'],
-        hosts={'nas': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
+        hosts={'nas': 'ps -a --format t=10, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
         events=[],
         raised=None),
     ('single', '/status web @nas'): dict(
@@ -1201,12 +1413,12 @@ EXPECTED = {
         out=['🔎 *web* — ✅ running (healthy) · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*  [2 buttons]',
              '🔎 *web* @nas — ✅ running (healthy) · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*',
              '🔎 *web* @flaky — ✅ running · ⏱ ?\n\n📦 `nginx:1.25`\n     `251ad31786ba`\n\n🔁 unless-stopped\n\n🔄 *Update available*',
-             '⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
+             '⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'local': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15, inspect --format t=10',
-               'nas': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
+               'nas': 'ps -a --format t=10, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10, inspect t=10, image inspect --format t=10, stats --no-stream --format t=20, inspect --size --format t=15, image inspect --format t=15'},
         events=[],
         raised=None),
     ('single', '/status web @all'): dict(
@@ -1259,12 +1471,12 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/status nosuch'): dict(
-        out=['Container `nosuch` not found.\n⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
+        out=['Container `nosuch` not found.\n⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'local': 'ps -a --format',
-               'nas': 'ps -a --format',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format'},
+               'nas': 'ps -a --format t=10',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/status nosuch'): dict(
@@ -1274,7 +1486,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/status web @refused'): dict(
         out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
-        hosts={'refused': 'ps -a --format'},
+        hosts={'refused': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/status web @refused'): dict(
@@ -1284,7 +1496,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/status web* @refused'): dict(
         out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
-        hosts={'refused': 'ps -a --format'},
+        hosts={'refused': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/status web* @refused'): dict(
@@ -1293,8 +1505,8 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/status web @dead'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
-        hosts={'dead': 'ps -a --format'},
+        out=['⚠ `dead` unreachable: no answer within 10 seconds'],
+        hosts={'dead': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/status web @dead'): dict(
@@ -1303,8 +1515,8 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/status web* @dead'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
-        hosts={'dead': 'ps -a --format'},
+        out=['⚠ `dead` unreachable: no answer within 10 seconds'],
+        hosts={'dead': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/status web* @dead'): dict(
@@ -1336,16 +1548,16 @@ EXPECTED = {
         events=['check_all@local'],
         raised=None),
     ('multi', '/check web'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
+        out=['⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
              '🔍 Checking for updates...',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) @nas (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '⚠️ Host `flaky` could not be checked: registry did not answer in 15s'],
         hosts={'local': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5 ×2',
-               'nas': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format'},
+               'nas': 'ps -a --format t=10, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10'},
         events=["check_all@local only=['web']", "check_all@nas only=['web']", "check_all@flaky only=['web']"],
         raised=None),
     ('single', '/check web'): dict(
@@ -1355,16 +1567,16 @@ EXPECTED = {
         events=["check_all@local only=['web']"],
         raised=None),
     ('multi', '/check web*'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
+        out=['⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
              '🔍 Checking for updates...',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) @nas (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '⚠️ Host `flaky` could not be checked: registry did not answer in 15s'],
         hosts={'local': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5 ×2',
-               'nas': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format'},
+               'nas': 'ps -a --format t=10, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10'},
         events=["check_all@local only=['web', 'webdav']", "check_all@nas only=['web']", "check_all@flaky only=['web']"],
         raised=None),
     ('single', '/check web*'): dict(
@@ -1377,7 +1589,7 @@ EXPECTED = {
         out=['🔍 Checking for updates...',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) @nas (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]'],
         hosts={'local': 'inspect --format t=5',
-               'nas': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5'},
+               'nas': 'ps -a --format t=10, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5'},
         events=["check_all@nas only=['web']"],
         raised=None),
     ('single', '/check web @nas'): dict(
@@ -1386,16 +1598,16 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/check web @all'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
+        out=['⚠ `dead` unreachable: no answer within 10 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
              '🔍 Checking for updates...',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) @nas (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '⚠️ Host `flaky` could not be checked: registry did not answer in 15s'],
         hosts={'local': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5 ×2',
-               'nas': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
-               'dead': 'ps -a --format',
-               'refused': 'ps -a --format',
-               'flaky': 'ps -a --format'},
+               'nas': 'ps -a --format t=10, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5',
+               'dead': 'ps -a --format t=10',
+               'refused': 'ps -a --format t=10',
+               'flaky': 'ps -a --format t=10'},
         events=["check_all@local only=['web']", "check_all@nas only=['web']", "check_all@flaky only=['web']"],
         raised=None),
     ('single', '/check web @all'): dict(
@@ -1453,7 +1665,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/check --dry-run @nas'): dict(
         out=['Container `--dry-run` not found.'],
-        hosts={'nas': 'ps -a --format'},
+        hosts={'nas': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/check --dry-run @nas'): dict(
@@ -1463,7 +1675,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/check web @refused'): dict(
         out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
-        hosts={'refused': 'ps -a --format'},
+        hosts={'refused': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/check web @refused'): dict(
@@ -1473,7 +1685,7 @@ EXPECTED = {
         raised=None),
     ('multi', '/check web* @refused'): dict(
         out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
-        hosts={'refused': 'ps -a --format'},
+        hosts={'refused': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/check web* @refused'): dict(
@@ -1482,8 +1694,8 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/check web* @dead'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
-        hosts={'dead': 'ps -a --format'},
+        out=['⚠ `dead` unreachable: no answer within 10 seconds'],
+        hosts={'dead': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/check web* @dead'): dict(
@@ -1492,8 +1704,8 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/check web @dead'): dict(
-        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
-        hosts={'dead': 'ps -a --format'},
+        out=['⚠ `dead` unreachable: no answer within 10 seconds'],
+        hosts={'dead': 'ps -a --format t=10'},
         events=[],
         raised=None),
     ('single', '/check web @dead'): dict(

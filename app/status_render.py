@@ -300,13 +300,20 @@ def overview_line(name, state_info, *, host_tag="", version=""):
 OverviewData = namedtuple("OverviewData", "inspected unreachable")
 
 
-def collect_overview(targets, *, backend_for, t):
+def collect_overview(targets, *, backend_for, t, use_cache=False):
     """Walk `targets` for the /status overview: `ps -q`, then `inspect`.
 
     `targets` None is a single-host install: exactly one pseudo-host
     whose backend is `backend_for(None)` and whose tag is empty, i.e.
     the original two calls. One host after the other, in the order
     given. `t` translates the SSH hint.
+
+    `use_cache=True` is for reads (W7; Telegram's /status): a remote host
+    that failed a moment ago gets no `ps -q` and is listed with its
+    remembered words and the seconds until it is asked again; every
+    remote host that is asked leaves its outcome in the memory — the
+    words of its line, without the hint under them. The default neither
+    reads nor writes the memory.
 
     Use docker inspect (not docker ps Status-string parsing) so health
     detection works on both Docker and Podman. Podman's REST API does
@@ -315,6 +322,7 @@ def collect_overview(targets, *, backend_for, t):
     both. Reported by LeeNX in #28 for podman-compose containers.
     """
     import json
+    import hosts as _hosts
     from container_store import LOCAL_HOST
     from errfmt import clip
 
@@ -330,6 +338,8 @@ def collect_overview(targets, *, backend_for, t):
     unreachable = []
 
     def _mark_unreachable(_host, _why):
+        if use_cache:
+            _hosts.remember(_host, _why)
         # The host's own diagnostic hint (SSH auth, wrong socket …)
         # appended when hostdiag has one.
         try:
@@ -343,6 +353,11 @@ def collect_overview(targets, *, backend_for, t):
             (getattr(_host, "name", "") or LOCAL_HOST, _why))
 
     for _host in (targets or [None]):
+        _dead = _hosts.remembered_dead(_host) if use_cache else None
+        if _dead is not None:
+            unreachable.append((getattr(_host, "name", "") or LOCAL_HOST,
+                                _hosts.skipped_words(*_dead, t=t)))
+            continue
         _b = backend_for(_host)
         # A dead host does not answer at all: `ps` runs into its
         # timeout and RAISES, where an SSH-auth failure merely
@@ -368,12 +383,16 @@ def collect_overview(targets, *, backend_for, t):
             continue
         ids = [i for i in ids_p.stdout.strip().split("\n") if i]
         if not ids:
+            if use_cache:
+                _hosts.remember(_host, None)
             continue
         try:
             ins_p = _b.run(["inspect", *ids], timeout=10)
         except Exception as _e:
             _mark_unreachable(_host, clip(str(_e)))
             continue
+        if use_cache:
+            _hosts.remember(_host, None)
         try:
             _cfgs = json.loads(ins_p.stdout) or []
         except (json.JSONDecodeError, ValueError):

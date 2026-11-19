@@ -930,6 +930,7 @@
   "chan_autocleanup_on": "자동 정리가 **켜져** 있습니다 — 저절로 수행됩니다.",
   "chan_run_cleanup_hint": "확보하려면 `/cleanup`을 실행하세요.",
   "host_unreachable_short": "⚠ `{host}`에 연결할 수 없습니다: {error}",
+  "host_skipped_retry": "{error} (조금 전 결과, {seconds}초 동안 다시 확인하지 않음)",
   "logs_failed": "`{name}`의 로그를 읽지 못했습니다: {error}",
   "chan_maintenance_line": "🔧 유지 보수: {state}",
   "chan_audit_header": "🔍 `{name}` — 이전하지 않는 필드:",

@@ -930,6 +930,7 @@
   "chan_autocleanup_on": "स्वतः सफ़ाई **चालू** है — यह अपने आप होता है।",
   "chan_run_cleanup_hint": "इसे मुक्त करने के लिए `/cleanup` चलाएँ।",
   "host_unreachable_short": "⚠ `{host}` अनुपलब्ध: {error}",
+  "host_skipped_retry": "{error} (अभी कुछ देर पहले का, {seconds} सेकंड तक दोबारा नहीं पूछा जाएगा)",
   "logs_failed": "`{name}` के लॉग नहीं पढ़ सके: {error}",
   "chan_maintenance_line": "🔧 रखरखाव: {state}",
   "chan_audit_header": "🔍 `{name}` — वे फ़ील्ड जो हम नहीं ले जाएँगे:",

@@ -619,7 +619,7 @@ class TelegramBot:
         import lifecycle
         return lifecycle.is_glob(s)
 
-    def _select_containers(self, arg, backend=None, host=None):
+    def _select_containers(self, arg, backend=None, host=None, read=False):
         """Resolve a /check or /update argument to a list of container names.
         Glob (`*?[`) → all matches; plain → single partial-resolved name.
         Returns (names, error_msg, unreachable): error_msg is None on
@@ -631,11 +631,16 @@ class TelegramBot:
         A plain name and a glob both go through `find_on_hosts`, so a
         dead or refused host is said to be unreachable instead of raising
         its timeout through the dispatch or reading as "not found" or "no
-        containers match" (W4)."""
+        containers match" (W4).
+
+        `read=True` is /check's lookup (W7): a remote host gets the short
+        probe and a host found dead a moment ago is not asked again.
+        /update leaves it False: a write always asks."""
         import container_flags
         found = container_flags.find_on_hosts(
             [host], backend_for=lambda _h: backend or self.backend,
-            arg=arg, t=self.t)
+            arg=arg, use_cache=read, remote_timeout=10 if read else None,
+            t=self.t)
         if found.unreachable:
             return [], None, found.unreachable[0]
         if found.found:
@@ -907,8 +912,10 @@ class TelegramBot:
         # The only one of the four walks that puts hostdiag's hint under
         # a failed host; /check <name>, /update <name> and the dry run
         # never had it.
+        # A read (W7): a host found dead a moment ago is not waited on.
         container_flags.check_on_hosts(
             targets, checker_for=lambda h: self._checker_for(h, checker),
+            use_cache=True,
             debug_sink=self, hint=True, on_host=_report, t=self.t)
         if not found and not self._multi() and not pins_said:
             self.notify_no_updates()
@@ -3820,9 +3827,12 @@ class TelegramBot:
                 # `unreachable` instead of raising out of here or reading
                 # as "not found" / "no containers match" (W3, W4); the
                 # walk goes on to the next host either way.
+                # A read (W7): ten seconds for a remote host's listing, and
+                # a host found dead a moment ago is named, not waited on.
                 unreachable = container_flags.find_on_hosts(
                     status_targets or [None],
                     backend_for=self._backend_for, arg=partial,
+                    use_cache=True, remote_timeout=10,
                     on_host=_show, t=self.t).unreachable
                 tail = self._lookup_tail(shown, first_err, unreachable)
                 if tail:
@@ -3843,7 +3853,8 @@ class TelegramBot:
             # chunking.
             import status_render
             inspected, unreachable = status_render.collect_overview(
-                status_targets, backend_for=self._backend_for, t=self.t)
+                status_targets, backend_for=self._backend_for, t=self.t,
+                use_cache=True)
             total = len(inspected)
             healthy = 0
             unhealthy = 0
@@ -4008,6 +4019,7 @@ class TelegramBot:
                                                           hc.checker))
             container_flags.check_on_hosts(
                 targets, checker_for=lambda h: self._checker_for(h, checker),
+                use_cache=True,
                 debug_sink=self, on_host=_dry, t=self.t)
             if not found and not pins_said:
                 self.notify_no_updates()
@@ -4039,7 +4051,8 @@ class TelegramBot:
             unreachable = []
             for host in (targets or [None]):
                 names, err, gone = self._select_containers(
-                    arg, backend=self._backend_for(host), host=host)
+                    arg, backend=self._backend_for(host), host=host,
+                    read=True)
                 if gone is not None:
                     unreachable.append(gone)
                     continue
@@ -4093,6 +4106,7 @@ class TelegramBot:
             container_flags.check_on_hosts(
                 [host for host, _ in selections],
                 checker_for=lambda h: self._checker_for(h, checker),
+                use_cache=True,
                 only_for=scoped.__getitem__, debug_sink=self,
                 on_host=_scoped_check, t=self.t)
             if not found and not pins_said:

@@ -332,6 +332,71 @@ def forget_unreachable():
         _failures.clear()
 
 
+# The chat walks (find_on_hosts, check_on_hosts, collect_overview) take
+# the same memory, but only for READS: a /status or a /check right after
+# a host failed should not wait out its timeout again, while an /update
+# must always ask — a host that came back a second ago is exactly the one
+# somebody is trying to update. And only for remote hosts, like the page:
+# the cooldown is for a machine at the far end of a wire, not for our own
+# daemon, which nothing marks. Unlike `walk`, whose use_cache=False still
+# writes, a chat walk without the cache touches the memory not at all, so
+# a caller that has not moved over (Discord, the Web's check) behaves
+# exactly as before.
+
+def _remote_name(host):
+    if host is None or getattr(host, "is_local", False):
+        return ""
+    return getattr(host, "name", "") or ""
+
+
+def remembered_dead(host):
+    """`(reason, retry_in)` while a remote `host` is still in its cooldown
+    — the words it failed with and the whole seconds left — else None.
+    The local host and the single-host pseudo-host None never are."""
+    name = _remote_name(host)
+    if not name:
+        return None
+    left, reason = unreachable_for(name)
+    if left > 0:
+        return reason, int(left)
+    return None
+
+
+def remember(host, failed_with):
+    """A read's outcome for a remote `host`: the words it failed with, or
+    None when it answered. The local host is left alone."""
+    name = _remote_name(host)
+    if not name:
+        return
+    if failed_with is None:
+        mark_reachable(name)
+    else:
+        mark_unreachable(name, failed_with)
+
+
+def skipped_words(reason, retry_in, t=None):
+    """What to say for a host skipped because it failed a moment ago: its
+    remembered words, and that it is not asked again for `retry_in` s.
+    The words come first in every language — errfmt.human reads a line
+    that ENDS in "timed out after N seconds" as a bare timeout."""
+    if t is not None:
+        try:
+            return t("host_skipped_retry", error=reason, seconds=retry_in)
+        except Exception:                                   # noqa: BLE001
+            pass
+    return f"{reason} (from a moment ago, not asked again for {retry_in}s)"
+
+
+class StillUnreachable(Exception):
+    """A host a read did not ask, because it failed a moment ago. `str()`
+    is `skipped_words`; `reason` and `retry_in` are its parts."""
+
+    def __init__(self, words, reason="", retry_in=0):
+        super().__init__(words)
+        self.reason = reason
+        self.retry_in = retry_in
+
+
 #: One host's part of a `walk`, as data — no wording, no markup.
 #:
 #: `result` is what `fetch` returned for a host that answered. A host

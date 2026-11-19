@@ -930,6 +930,7 @@
   "chan_autocleanup_on": "Автоочистка **включена** — это происходит само.",
   "chan_run_cleanup_hint": "Запустите `/cleanup`, чтобы освободить.",
   "host_unreachable_short": "⚠ `{host}` недоступен: {error}",
+  "host_skipped_retry": "{error} (только что, повторный запрос не раньше чем через {seconds} с)",
   "logs_failed": "Не удалось прочитать логи `{name}`: {error}",
   "chan_maintenance_line": "🔧 Обслуживание: {state}",
   "chan_audit_header": "🔍 `{name}` — поля, которые мы не перенесём:",

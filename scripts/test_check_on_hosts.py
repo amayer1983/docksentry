@@ -35,6 +35,12 @@ raise printed per host, the findings notified once at the end. Its rows
 are held to T5 (the Web matrix), and the handler is driven directly
 without a registry and on one and two hosts.
 
+Since W7 Telegram's /check, /check --dry-run and /check <name> pass
+`use_cache=True`: a remote host found dead a moment ago is not checked
+again, only a host that could not list its containers is remembered,
+and /update never takes the memory. The core is driven on hosts' clock,
+replaced; the Telegram sites are held to which of them pass it.
+
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
 """
@@ -254,6 +260,158 @@ if callable(check_on_hosts):
     got, _seen = _walk([a], {"local": Checker("local")}, on_host=None)
     checks["on_host is optional"] = isinstance(got, list) and len(got) == 1
 
+    # ── W7: a read skips a remote host found dead a moment ago ───────
+    # `use_cache=True` is what Telegram's /check, /check --dry-run and
+    # /check <name> pass. A remote host still in its cooldown is not
+    # asked — no checker, no check_all, no hint — and comes back as a
+    # failure whose words are the remembered ones plus how long until
+    # the next try. A host that could not LIST its containers (a
+    # timeout, ContainerListUnavailable) is remembered; one whose check
+    # failed for any other reason is not, because its daemon answered
+    # and a /status a moment later must still ask it. A host that
+    # checked fine is forgotten. Without use_cache (/update, Discord and
+    # the Web until W7d/W7w) the memory is neither read nor written. The
+    # local host is never skipped or marked. hosts' clock is replaced so
+    # the seconds do not depend on this machine's speed.
+    import subprocess
+    import hosts as hostslib
+    from update_checker import ContainerListUnavailable
+
+    _clock = [5000.0]
+
+    class _Time:
+        @staticmethod
+        def monotonic():
+            return _clock[0]
+
+    def _mem(name):
+        left, why = hostslib.unreachable_for(name)
+        return (round(left, 3), why)
+
+    en = get_translator("en")
+    timeout = subprocess.TimeoutExpired(["docker", "ps"], 30)
+    _real_time = hostslib.time
+    hostslib.time = _Time
+    try:
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "no answer earlier", cooldown=30.5)
+        hostslib.mark_unreachable("local", "local once", cooldown=30.5)
+        ck7 = {"local": Checker("local"), "nas": Checker("nas"),
+               "pve": Checker("pve")}
+        asked = []
+
+        def _checker_for7(h):
+            asked.append(h.name)
+            return ck7[h.name]
+        del EVENTS[:]
+        seen7 = []
+        got = _try(check_on_hosts, [a, b, c], checker_for=_checker_for7,
+                   hint=True, use_cache=True, t=en,
+                   on_host=lambda hc: seen7.append(hc))
+        ok = isinstance(got, list) and len(got) == 3
+        checks["W7 cache: a remembered remote host is not asked: no "
+               "checker, no check_all"] = (
+            ok and "nas" not in asked and ck7["nas"].calls == [])
+        skipped = got[1] if ok else None
+        checks["W7 cache: …it is that host's failure, in its place"] = (
+            ok and skipped.host is b and skipped.updates is None
+            and skipped.error is not None and skipped.checker is None
+            and [hc.host for hc in seen7] == [a, b, c])
+        checks["W7 cache: …its words are the remembered ones and the whole "
+               "seconds left"] = (
+            ok and str(skipped.error) == en(
+                "host_skipped_retry", error="no answer earlier", seconds=30))
+        checks["W7 cache: …and no hint is asked for a host nobody asked"] = (
+            ok and skipped.hint == "")
+        checks["W7 cache: the local host is checked even when it is in the "
+               "memory, and its entry is left alone"] = (
+            ok and len(ck7["local"].calls) == 1
+            and _mem("local") == (30.5, "local once"))
+
+        # What is remembered after a walk, per kind of failure.
+        hostslib.forget_unreachable()
+        ck7 = {"local": Checker("local"),
+               "nas": Checker("nas", raises=timeout),
+               "pve": Checker("pve", raises=ContainerListUnavailable(
+                   "could not list containers (rc=255): ssh: refused")),
+               "flaky": Checker("flaky", raises=RuntimeError(
+                   "registry did not answer in 15s"))}
+        fl = Host("flaky")
+        got = _try(check_on_hosts, [a, b, c, fl],
+                   checker_for=lambda h: ck7[h.name], use_cache=True, t=en)
+        checks["W7 cache: a host whose check timed out is remembered, with "
+               "the words a reader got"] = (
+            _mem("nas") == (60.0, "no answer within 30 seconds"))
+        checks["W7 cache: a host that could not list its containers is "
+               "remembered"] = (
+            _mem("pve") == (60.0, "could not list containers (rc=255): "
+                                  "ssh: refused"))
+        checks["W7 cache: a host whose daemon answered but whose check "
+               "failed is NOT remembered"] = _mem("flaky") == (0.0, "")
+        checks["W7 cache: …and the local host is never marked"] = (
+            _mem("local") == (0.0, ""))
+
+        # Answering forgets, backoff included: past nas' first minute it
+        # checks fine, and its next failure is a first one (60 s) again.
+        _clock[0] += 61
+        ck7["nas"] = Checker("nas")
+        got = _try(check_on_hosts, [b], checker_for=lambda h: ck7[h.name],
+                   use_cache=True, t=en)
+        checks["W7 cache: past its cooldown the host is checked again"] = (
+            len(ck7["nas"].calls) == 1)
+        hostslib.mark_unreachable("nas", "x")
+        checks["W7 cache: …and checking fine reset its backoff"] = (
+            _mem("nas")[0] == 60.0)
+
+        # Without use_cache nothing is read or written.
+        hostslib.forget_unreachable()
+        hostslib.mark_unreachable("nas", "no answer earlier", cooldown=30.5)
+        ck7 = {"local": Checker("local"), "nas": Checker("nas"),
+               "pve": Checker("pve", raises=timeout)}
+        got = _try(check_on_hosts, [a, b, c],
+                   checker_for=lambda h: ck7[h.name], t=en)
+        checks["W7 no cache: a remembered host is checked anyway"] = (
+            len(ck7["nas"].calls) == 1)
+        checks["W7 no cache: …and nothing is written"] = (
+            _mem("nas") == (30.5, "no answer earlier")
+            and _mem("pve") == (0.0, ""))
+
+        # A single-host install has no name to remember: it raises as
+        # before, cache or not.
+        hostslib.forget_unreachable()
+        got = _try(check_on_hosts, None,
+                   checker_for=lambda h: Checker("solo", raises=timeout),
+                   use_cache=True, t=en)
+        checks["W7 cache: a single-host install still raises"] = (
+            isinstance(got, _Raised) and got.exc is timeout)
+
+        # Telegram says a skipped host's failure through errfmt.human,
+        # which turns a line ENDING in "timed out after N seconds" into a
+        # bare timeout. Remembered words often end like that, so in every
+        # language the seconds clause has to come after them.
+        import errfmt
+        import i18n
+        raw = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
+               "timed out after 10 seconds")
+        langs = sorted(f[:-5] for f in os.listdir(
+            os.path.join(os.path.dirname(cf.__file__), "lang"))
+            if f.endswith(".json"))
+        kept = {}
+        for lang in langs:
+            tr = i18n.get_translator(lang)
+            words = hostslib.skipped_words(raw, 42, t=tr)
+            kept[lang] = (errfmt.human(hostslib.StillUnreachable(words), tr)
+                          == words and raw in words and "42" in words
+                          and words != tr("host_skipped_retry"))
+        checks[f"W7: in all {len(langs)} languages a skipped host's line "
+               f"keeps its words and its seconds through errfmt.human"] = (
+            len(langs) == 16 and all(kept.values()))
+        if not all(kept.values()):
+            print(f"      → {[k for k, v in kept.items() if not v]}")
+    finally:
+        hostslib.time = _real_time
+        hostslib.forget_unreachable()
+
 
 # ═════════════════════════════════════════════════════════════════════
 # Telegram, through the real dispatcher on T2's hosts
@@ -324,6 +482,10 @@ try:
             and sinks == ["TelegramBot"])
         if not one:
             print(f"      → check_on_hosts calls: {calls}")
+        # W7: a read takes the dead-host memory, /update never does.
+        read = not text.startswith("/update")
+        checks[f"…with use_cache={read} ({text}, {setup})"] = (
+            one and calls[0][1].get("use_cache", False) is read)
 
     # Where the hint shows. hostdiag is the stand-in here, so the check
     # sees whether a site ASKS for one, whatever hostdiag would say.

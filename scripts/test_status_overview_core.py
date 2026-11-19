@@ -23,6 +23,11 @@ is a stand-in; the walk, the classification and the hint are real.
 T2's /status rows pin the rendered output byte for byte; this pins what
 the core hands back.
 
+Since W7 Telegram passes `use_cache=True`: a remote host found dead a
+moment ago gets no `ps -q` and is listed with its remembered words and
+the seconds left, and each host asked leaves its outcome in hosts'
+dead-host memory (without the hint). Discord does not, yet (W7d).
+
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
 """
@@ -244,11 +249,127 @@ try:
         if raised:
             print(f"      → {raised}")
 
+        # ── W7: a read skips a remote host found dead a moment ago ──────
+        # `use_cache=True` is what Telegram's /status passes: a remote
+        # host still in its cooldown gets no `ps -q`, and is listed with
+        # the words it gave last time and how long until the next try;
+        # every host that is asked leaves its outcome in the memory (the
+        # words without the hint — the hint is said under the line, not
+        # remembered). The local host is never skipped or marked. Without
+        # use_cache (Discord until W7d) nothing is read or written.
+        import hosts as hostslib
+        _clock = [9000.0]
+
+        class _Time:
+            @staticmethod
+            def monotonic():
+                return _clock[0]
+
+        def _mem(name):
+            left, why = hostslib.unreachable_for(name)
+            return (round(left, 3), why)
+
+        _real_time = hostslib.time
+        hostslib.time = _Time
+        before = len(raised)
+        try:
+            hostslib.forget_unreachable()
+            hostslib.mark_unreachable("dead", "no answer earlier",
+                                      cooldown=30.5)
+            hostslib.mark_unreachable("local", "local once", cooldown=30.5)
+            registry, backends, order = world("multi")
+            ov = collect(list(registry), backend_for=backend_for_of(backends),
+                         t=en, use_cache=True)
+            checks["W7 cache: a remembered dead host gets no ps -q"] = (
+                len(raised) == before
+                and not [c for c in order if c[0] == "dead"])
+            checks["W7 cache: …it is listed in its place with its remembered "
+                   "words and the whole seconds left"] = (
+                ov.unreachable == [
+                    ("dead", en("host_skipped_retry",
+                                error="no answer earlier", seconds=30)),
+                    ("refused", m.MatrixBackend.refused_stderr)])
+            checks["W7 cache: the hosts that answered are listed as before"] = (
+                len(ov.inspected) == 7)
+            checks["W7 cache: the local host is asked even when it is in the "
+                   "memory, and its entry is left alone"] = (
+                [c for c in order if c[0] == "local"][:1]
+                == [("local", ["ps", "-q"], 10)]
+                and _mem("local") == (30.5, "local once"))
+            checks["W7 cache: the refused host asked just now is remembered "
+                   "with its words"] = (
+                _mem("refused") == (60.0, m.MatrixBackend.refused_stderr))
+            # A raise is remembered with the line's words, and the hint
+            # under a line is not part of what is remembered.
+            hostslib.forget_unreachable()
+            real_home = hostdiag._home_ssh
+            hostdiag._home_ssh = lambda: no_dir
+            try:
+                registry, backends, order = world("multi", refused=denied)
+                ov = collect(list(registry),
+                             backend_for=backend_for_of(backends), t=en,
+                             use_cache=True)
+            finally:
+                hostdiag._home_ssh = real_home
+            checks["W7 cache: a dead host asked just now is remembered with "
+                   "its line's words"] = _mem("dead") == (60.0, dead_why)
+            checks["W7 cache: …a refused one without the hint under its "
+                   "line"] = (
+                _mem("refused") == (60.0, denied)
+                and ("refused", denied + "\n" + en("hostdiag_ssh_no_dir",
+                                                   dir=no_dir))
+                in ov.unreachable)
+            # An inspect that raises counts as a failure of that host; a
+            # host that answers both forgets its mark, backoff included.
+            hostslib.forget_unreachable()
+            run, calls = by(ps=cp(0, "abc\n"), inspect=OSError("socket closed"))
+            collect([Host("x", run)], backend_for=lambda h: h.backend, t=en,
+                    use_cache=True)
+            checks["W7 cache: a raising inspect is remembered too"] = (
+                _mem("x") == (60.0, "socket closed"))
+            _clock[0] += 61
+            run, calls = by(ps=cp(0, "abc\n"), inspect=cp(0, "[]"))
+            collect([Host("x", run)], backend_for=lambda h: h.backend, t=en,
+                    use_cache=True)
+            hostslib.mark_unreachable("x", "again")
+            checks["W7 cache: past its cooldown it is asked, and answering "
+                   "reset its backoff"] = (
+                calls == ["ps", "inspect"] and _mem("x")[0] == 60.0)
+            # Nothing running is an answer too.
+            _clock[0] += 61
+            hostslib.mark_unreachable("x", "again")
+            _clock[0] += 121
+            run, calls = by(ps=cp(0, "\n"))
+            collect([Host("x", run)], backend_for=lambda h: h.backend, t=en,
+                    use_cache=True)
+            hostslib.mark_unreachable("x", "once more")
+            checks["W7 cache: a host with nothing running answered, and is "
+                   "forgotten"] = calls == ["ps"] and _mem("x")[0] == 60.0
+            # Without use_cache: asked anyway, nothing written.
+            hostslib.forget_unreachable()
+            hostslib.mark_unreachable("dead", "no answer earlier",
+                                      cooldown=30.5)
+            registry, backends, order = world("multi")
+            ov = collect(list(registry), backend_for=backend_for_of(backends),
+                         t=en)
+            checks["W7 no cache: a remembered host is asked anyway"] = (
+                [c for c in order if c[0] == "dead"]
+                == [("dead", ["ps", "-q"], 10)])
+            checks["W7 no cache: …and nothing is written"] = (
+                _mem("dead") == (30.5, "no answer earlier")
+                and _mem("refused") == (0.0, ""))
+            checks["W7: nothing in the cache checks raised out of the walk"] = (
+                len(raised) == before)
+        finally:
+            hostslib.time = _real_time
+            hostslib.forget_unreachable()
+
     # ── Telegram asks the core, and renders what it gets ───────────────
     calls = []
 
     def recording(targets, **k):
-        calls.append((targets, sorted(k)))
+        calls.append((targets, sorted(k) if k.get("use_cache") is True
+                      else ["use_cache is not True"]))
         return real_collect(targets, **k)
     if callable(real_collect):
         status_render.collect_overview = recording
@@ -257,8 +378,10 @@ try:
     finally:
         if callable(real_collect):
             status_render.collect_overview = real_collect
-    checks["Telegram /status asks status_render.collect_overview once"] = (
-        len(calls) == 1 and calls[0][1] == ["backend_for", "t"]
+    # With the dead-host memory (W7): bare /status is a read.
+    checks["Telegram /status asks status_render.collect_overview once, "
+           "with the cache"] = (
+        len(calls) == 1 and calls[0][1] == ["backend_for", "t", "use_cache"]
         and [h.name for h in calls[0][0]]
         == ["local", "nas", "dead", "refused", "flaky"])
     checks["…and the overview it sends is T2's, byte for byte"] = (
