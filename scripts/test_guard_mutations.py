@@ -1776,7 +1776,7 @@ GUARDED = [
 
     ("…because it claims the lock instead of assuming it is free",
      "app/telegram_bot.py",
-     "            if self._update_lock.acquire(blocking=False):\n"
+     "            if self.engine.claim_update():\n"
      "                auto_lock_held = True",
      "            if True:\n"
      "                auto_lock_held = False",
@@ -2091,6 +2091,69 @@ GUARDED = [
      '            WORK.append((f"update_container@{host}:{name}",\n'
      "                         self.lock.locked()))\n",
      "            pass\n",
+     "test_update_lock_sites.py"),
+
+    # Q1: the engine's door to the update lock. Telegram's six claims go
+    # through it; the promises are the door's own.
+    ("the update lock stays held while the self-update swaps",
+     "app/update_engine.py",
+     "        if not swap:\n"
+     "            try:\n"
+     "                self._update_lock.release()\n",
+     "        if True:\n"
+     "            try:\n"
+     "                self._update_lock.release()\n",
+     "test_update_lock_door.py"),
+
+    ("…and a swap flag that raises does not keep it held instead",
+     "app/update_engine.py",
+     "        try:\n"
+     '            swap = bool(getattr(self, "_swap_in_flight", False))\n'
+     "        except Exception:\n"
+     "            swap = False\n",
+     "        swap = bool(self._swap_in_flight)\n",
+     "test_update_lock_door.py"),
+
+    ("giving back a lock nobody holds never raises out of a finally",
+     "app/update_engine.py",
+     "            except RuntimeError:\n"
+     '                print("release_update: the update lock was not held "\n',
+     "            except ZeroDivisionError:\n"
+     '                print("release_update: the update lock was not held "\n',
+     "test_update_lock_door.py"),
+
+    ("…what comes after a flow runs once it has given the lock back",
+     "app/update_engine.py",
+     "        if after is not None:\n"
+     "            after()\n",
+     "        pass\n",
+     "test_update_lock_door.py"),
+
+    ("a claim on the update lock never waits",
+     "app/update_engine.py",
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "        return self._update_lock.acquire(timeout=1)\n",
+     "test_update_lock_door.py"),
+
+    ("…and a `with update_claim()` that lost gives back nobody's lock",
+     "app/update_engine.py",
+     "            if claimed:\n"
+     "                self.release_update(after=after)\n",
+     "            if True:\n"
+     "                self.release_update(after=after)\n",
+     "test_update_lock_door.py"),
+
+    ("a new caller of the update-lock door is noticed",
+     "scripts/test_update_lock_sites.py",
+     "                    elif c in (DOOR_CLAIM, DOOR_RELEASE):\n",
+     "                    elif False:\n",
+     "test_update_lock_sites.py"),
+
+    ("…including one that spells it as a with block",
+     "scripts/test_update_lock_sites.py",
+     "                        if isinstance(e, ast.Call) \\\n"
+     "                                and _callee(e) == DOOR_WITH:\n",
+     "                        if False:\n",
      "test_update_lock_sites.py"),
 
     ("…and which sentence a busy site picked",

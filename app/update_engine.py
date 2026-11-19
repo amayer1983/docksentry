@@ -20,6 +20,7 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 (double-recreate), so identity here is load-bearing.
 """
 
+import contextlib
 import subprocess
 import threading
 import time
@@ -320,6 +321,73 @@ class UpdateEngine:
             self._update_lock.release()
             return False
         return True
+
+    # ── The one door to the update lock ────────────────────────────────
+    def claim_update(self):
+        """Take the update lock, or return False. Never waits.
+
+        Everything that changes containers goes through this one lock:
+        the scheduler's unattended batch, a single tap, "Update all", a
+        confirmed major, a cleanup, the scheduled self-update. Before the
+        lock reached all of them, a cron tick could recreate the very
+        container somebody was mid-updating from a chat (v1.23.1).
+
+        Never waiting is the rule, not an optimisation: a flow that
+        blocked here would sit on a cron thread for as long as somebody's
+        update takes, and every caller has something better to do with a
+        "no" — queue the tap, skip the tick, say "busy". What they say
+        stays with them.
+        """
+        return self._update_lock.acquire(blocking=False)
+
+    def release_update(self, *, after=None):
+        """Give the update lock back, then run `after` (if given).
+
+        Kept held while the self-update's helper is swapping the
+        container: this process is about to be stopped and nothing may
+        start an update in its last seconds.
+
+        Nothing in here may raise before or instead of the release. The
+        swap flag is read defensively because a bare read once raised
+        inside a `finally` — `_swap_in_flight` had been orphaned out of
+        `__init__` by an unrelated edit, the lock stayed held for the life
+        of the process, and every later update queued behind a batch that
+        had finished 40 minutes earlier. A release of a lock nobody holds
+        is a bug somewhere else; it goes to the log instead of raising out
+        of the caller's `finally` over whatever it was about to report.
+
+        `after` runs outside any handler here, so when the release happens
+        in an exception unwind it still sees `sys.exc_info()`.
+        `selfupdate.run_queued` needs that: after a crashed batch it
+        cancels the queued self-update instead of restarting on top of it.
+        """
+        try:
+            swap = bool(getattr(self, "_swap_in_flight", False))
+        except Exception:
+            swap = False
+        if not swap:
+            try:
+                self._update_lock.release()
+            except RuntimeError:
+                print("release_update: the update lock was not held "
+                      "— nothing to give back")
+        if after is not None:
+            after()
+
+    @contextlib.contextmanager
+    def update_claim(self, after=None):
+        """`claim_update` / `release_update` as a `with` block.
+
+        Yields whether the lock was claimed. Only a claim that won is
+        released (and only then does `after` run); a crash inside gives
+        the lock back and goes on.
+        """
+        claimed = self.claim_update()
+        try:
+            yield claimed
+        finally:
+            if claimed:
+                self.release_update(after=after)
 
     # ── Neutral orchestration helpers ──────────────────────────────────
     # Telegram-agnostic building blocks (no send_message, no inline

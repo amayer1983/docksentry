@@ -1837,7 +1837,7 @@ class TelegramBot:
         # Claim the shared update mutex — before v1.23.1 this path took
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             # Tapping the SAME container again while it is running is not
             # a second piece of work — it is the same one. Queueing it
             # meant the drain picked it up after the update had finished
@@ -1948,8 +1948,7 @@ class TelegramBot:
                 self.send_message(self.t("update_all_done"))
         finally:
             self.engine.clear_updating(container_key)
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
         # Only after the lock is back: whoever ran gets to work off what
         # arrived while they held it. Re-acquired per entry rather than
         # held across the whole queue, so the scheduler and a queued
@@ -2131,7 +2130,7 @@ class TelegramBot:
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
         # a concurrent "Update all" or scheduler auto-update pass.
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             self.send_message(self.t("update_already_running"))
             return
         try:
@@ -2153,8 +2152,7 @@ class TelegramBot:
             if success:
                 store.remove_pending_major(name)
         finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
     def _restart_group_dependents(self, *a, **k):
         return self.engine._restart_group_dependents(*a, **k)
@@ -2278,7 +2276,7 @@ class TelegramBot:
         # containers.
         auto_lock_held = False
         if auto_updates:
-            if self._update_lock.acquire(blocking=False):
+            if self.engine.claim_update():
                 auto_lock_held = True
             else:
                 print("Auto-update skipped: another update flow is running "
@@ -2369,8 +2367,7 @@ class TelegramBot:
             # atomic_write above raised — otherwise the lock would leak and
             # block every future update.
             if auto_lock_held:
-                self._update_lock.release()
-                self._run_queued_selfupdate()
+                self.engine.release_update(after=self._run_queued_selfupdate)
 
         # Said once per state, not once per run. `policy_blocked`,
         # `age_blocked` and `skipped_window` are recomputed from the
@@ -2819,13 +2816,12 @@ class TelegramBot:
         report the skip. A skipped cleanup is never dangerous: the next
         trigger simply runs it.
         """
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             return None, self.t("cleanup_busy")
         try:
             return checker.cleanup_images()
         finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
     def _run_queued_selfupdate(self):
         """Run a self-update that queued behind a container batch.
@@ -2851,27 +2847,18 @@ class TelegramBot:
         the next scheduled tick simply retries. Holds the lock through
         its own pull+swap so no batch can start mid-self-update.
         """
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             print("Selfupdate check: skipped — another update flow is running.")
             return False
         try:
             return self._check_selfupdate_auto_locked(defer_check)
         finally:
-            # Nothing in here may stop the release. This block raised
-            # once — `_swap_in_flight` had been orphaned out of
-            # UpdateEngine.__init__ by an unrelated edit, so reading it
-            # threw AttributeError *before* release() was reached, and
-            # the update lock stayed held for the life of the process.
-            # Every later update on that instance answered "an update is
-            # already running" and queued behind a batch that had
-            # finished 40 minutes earlier. One attribute wedged the whole
-            # machine, silently.
-            try:
-                swap = bool(getattr(self, "_swap_in_flight", False))
-            except Exception:
-                swap = False
-            if not swap:
-                self._update_lock.release()
+            # Kept held once the helper is swapping the container, and
+            # nothing in the release may raise — both live in the door
+            # now (see UpdateEngine.release_update for why). No `after`,
+            # as before: this path has never handed a queued self-update
+            # on.
+            self.engine.release_update()
 
     def _check_selfupdate_auto_locked(self, defer_check=False):
         """Body of check_selfupdate_auto; only ever called with the
@@ -3016,7 +3003,7 @@ class TelegramBot:
         if pin_list_unreadable(updater):
             self.send_message(self.t("update_refused_pin_list"))
             return
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             self.send_message(self.t("update_already_running"))
             return
         try:
@@ -3056,8 +3043,7 @@ class TelegramBot:
 
             self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
     # ── pending_updates.json, keyed by (host, container) ───────────────
     # The file holds EVERY managed host's pending updates in one flat list

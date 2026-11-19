@@ -86,11 +86,18 @@ with tempfile.TemporaryDirectory() as tmp:
 
 
 # ── the lock release cannot be stopped by anything ───────────────────
-class Boom:
-    """An engine whose `_swap_in_flight` raises, like the broken one did."""
+class Boom(UpdateEngine):
+    """An engine whose `_swap_in_flight` raises, like the broken one did.
+
+    A real UpdateEngine underneath, because the scheduled path takes the
+    lock through the engine's door (`claim_update`/`release_update`).
+    A bare object here made that path raise AttributeError before it
+    claimed anything, and the check below passed on a lock nobody took.
+    """
 
     def __init__(self):
         self._update_lock = threading.Lock()
+        self._queued_selfupdate = None
 
     @property
     def _swap_in_flight(self):
@@ -148,15 +155,18 @@ checks["…and so does the scheduled one"] = (
     eng2._update_lock.acquire(blocking=False))
 
 # The self-update coordination moved into the neutral module (#63); the
-# auto path is still on the bot. Both guards are checked where they live.
+# auto path takes the lock through the engine's door, so its guard lives
+# in `UpdateEngine.release_update`. Both are checked where they live.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                        "telegram_bot.py"), encoding="utf-8").read()
+                        "update_engine.py"), encoding="utf-8").read()
 susrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                           "selfupdate.py"), encoding="utf-8").read()
+tgsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                          "telegram_bot.py"), encoding="utf-8").read()
 checks["no release is guarded by a bare attribute read"] = (
-    "if not self._swap_in_flight:\n                self._update_lock.release()"
-    not in src
-    and "if not ctx._swap_in_flight:" not in susrc)
+    "if not self._swap_in_flight:\n" not in src
+    and "if not ctx._swap_in_flight:" not in susrc
+    and "_swap_in_flight:" not in tgsrc)
 checks["…they read it defensively instead"] = (
     src.count('swap = bool(getattr(self, "_swap_in_flight", False))')
     + susrc.count('swap = bool(getattr(ctx, "_swap_in_flight", False))') == 2)

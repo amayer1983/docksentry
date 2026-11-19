@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Every place that takes, gives back or looks at the update lock, listed and driven.
 
-There is one update lock, `UpdateEngine._update_lock`, and eleven
-functions claim it by hand with `acquire(blocking=False)`. Each one has
+There is one update lock, `UpdateEngine._update_lock`. Eleven functions
+claim it: Telegram's six through the engine's door
+(`claim_update()` / `release_update(after=...)`, Q1), the other five
+still by hand with `acquire(blocking=False)`. Each one has
 its own answer for "somebody else holds it": Telegram's per-container
 tap queues, `/update all` and a confirmed major refuse, the scheduler
 skips its pass, a cleanup hands its caller a busy sentence, a
@@ -22,9 +24,13 @@ lists below:
     on the update lock, whether it is spelled `self._update_lock`,
     `engine._update_lock`, `ctx._update_lock`, Discord's `self._lock()`,
     a local name assigned from one of those, or `getattr(x,
-    "_update_lock")`; plus calls to Discord's `_release_lock()`;
-  * every function that mentions the lock at all (the accessors too, so
-    a new alias is a new entry);
+    "_update_lock")`; plus calls to Discord's `_release_lock()`, and
+    every call to the engine's door — `claim_update()`,
+    `release_update(...)` with what it hands `after`, and `with
+    update_claim(...)` — recorded under the caller's qualified name;
+  * every function that mentions the lock at all (the accessors and
+    every caller of the door too, so a new alias or a new door user is
+    a new entry);
   * every read of `update_running` (the pre-gates);
   * every call to a helper that only looks at the lock (a READER or
     PROBE below that is neither `update_running` nor a queue call —
@@ -90,21 +96,30 @@ APP = m.APP
 #: (file, qualname) → (role, lock operations in that function, sorted).
 #: Roles: CLAIM takes the lock to do work under it; PROBE takes it and
 #: gives it straight back to learn whether it was free; READER only
-#: looks (`.locked()`); RELEASE gives back a lock somebody else took.
+#: looks (`.locked()`); RELEASE gives back a lock somebody else took;
+#: DOOR is the engine's claim/release pair everybody else goes through
+#: (driven by test_update_lock_door.py, not here).
 LOCK_OPS = {
     # ── claims ──
     ("telegram_bot.py", "TelegramBot._run_single_update"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
     ("telegram_bot.py", "TelegramBot._confirm_major_update"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
     ("telegram_bot.py", "TelegramBot.handle_autoupdates"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
     ("telegram_bot.py", "TelegramBot.cleanup_guarded"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
+    # No `after` here, as before Q1: this path never handed a queued
+    # self-update on.
     ("telegram_bot.py", "TelegramBot.check_selfupdate_auto"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()", "release_update()"]),
     ("telegram_bot.py", "TelegramBot.run_updates"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
     ("discord_bot.py", "DiscordBot._cmd_update"):
         ("CLAIM", ["_release_lock()", "acquire(blocking=False)"]),
     ("discord_bot.py", "DiscordBot._do_updateall"):
@@ -133,6 +148,13 @@ LOCK_OPS = {
     # give the lock back only through here.
     ("discord_bot.py", "DiscordBot._release_lock"):
         ("RELEASE", ["release"]),
+    # ── the door ──
+    ("update_engine.py", "UpdateEngine.claim_update"):
+        ("DOOR", ["acquire(blocking=False)"]),
+    ("update_engine.py", "UpdateEngine.release_update"):
+        ("DOOR", ["release"]),
+    ("update_engine.py", "UpdateEngine.update_claim"):
+        ("DOOR", ["claim_update()", "release_update(after=after)"]),
 }
 
 #: Functions that mention the lock without operating on it.
@@ -280,6 +302,11 @@ BUSY_RE = re.compile(r"busy|already_running|same_running|_queued|_queue_")
 LOCK = "_update_lock"
 ACCESSORS = ("_lock",)             # DiscordBot._lock() → engine._update_lock
 RELEASE_HELPERS = ("_release_lock",)
+#: The engine's door (Q1). A call to any of these is a lock operation of
+#: the caller, whatever object it is spelled on.
+DOOR_CLAIM = "claim_update"
+DOOR_RELEASE = "release_update"
+DOOR_WITH = "update_claim"
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -373,6 +400,17 @@ def _acquire_form(call):
         f"acquire({ast.unparse(blocking)})"
 
 
+def _door_form(call):
+    """How a call to the door is recorded: what it hands over, spelled out."""
+    c = _callee(call)
+    if c == DOOR_CLAIM:
+        return "claim_update()"
+    args = [ast.unparse(a) for a in call.args] + [
+        f"{k.arg}={ast.unparse(k.value)}" if k.arg else
+        f"**{ast.unparse(k.value)}" for k in call.keywords]
+    return f"{c}({', '.join(args)})"
+
+
 def _busy_sites(node):
     """The busy-sentence key `node` stands for, or None."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -438,13 +476,22 @@ def enumerate_sites(app=None):
                             _acquire_form(n) if c == "acquire" else c)
                     elif c in RELEASE_HELPERS:
                         ops[(rel, qual)].append(c + "()")
+                    elif c in (DOOR_CLAIM, DOOR_RELEASE):
+                        ops[(rel, qual)].append(_door_form(n))
+                        mentions.add((rel, qual))
                     if c in QUEUE_CALLEES:
                         queue[(rel, qual, c)] += 1
                     if c in helper_callees:
                         helpers[(rel, qual, c)] += 1
                 if isinstance(n, (ast.With, ast.AsyncWith)):
                     for item in n.items:
-                        if _is_lock(item.context_expr, aliases):
+                        e = item.context_expr
+                        if isinstance(e, ast.Call) \
+                                and _callee(e) == DOOR_WITH:
+                            ops[(rel, qual)].append(
+                                "with " + _door_form(e))
+                            mentions.add((rel, qual))
+                        elif _is_lock(e, aliases):
                             ops[(rel, qual)].append("with")
                 if (isinstance(n, ast.Attribute)
                         and n.attr == "update_running") or (
@@ -502,6 +549,28 @@ def enumeration_checks(found):
                 _helper_callees() == ["_update_lock_held"],
                 "a READER/PROBE was added or renamed in LOCK_OPS; "
                 "check LOCK_HELPER_CALLS"))
+
+    # The door's three spellings, on a snippet: today no app code uses
+    # `with update_claim(...)`, so without this nothing would notice the
+    # enumeration going blind to it.
+    tmp = tempfile.mkdtemp(prefix="lock-door-")
+    try:
+        with open(os.path.join(tmp, "door.py"), "w", encoding="utf-8") as f:
+            f.write("def a(engine, f):\n"
+                    "    with engine.update_claim(after=f) as ok:\n"
+                    "        pass\n"
+                    "def b(self):\n"
+                    "    if self.engine.claim_update():\n"
+                    "        self.engine.release_update(after=self.g)\n")
+        d_ops, d_mentions, *_ = enumerate_sites(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    want_d = {("door.py", "a"): ["with update_claim(after=f)"],
+              ("door.py", "b"): ["claim_update()",
+                                 "release_update(after=self.g)"]}
+    out.append(("the enumeration sees every spelling of the door, "
+                "by caller", d_ops == want_d and d_mentions == set(want_d),
+                f"ops {d_ops}, mentions {sorted(d_mentions)}"))
 
     drains = {k[0] for k in queue if k[2] != "enqueue_update"}
     out.append((f"only these files work the queue off: {sorted(drains)}",
@@ -816,7 +885,7 @@ def drive_checks():
                             f"lock {rec['lock_after']}, work {rec['work']}"))
 
     for site, (role, _ops) in sorted(LOCK_OPS.items()):
-        if role == "RELEASE":
+        if role in ("RELEASE", "DOOR"):
             continue
         out.append((f"driven: {site[0]}:{site[1]}", site in driven,
                     "a listed site has no drive"))
