@@ -2135,6 +2135,22 @@ GUARDED = [
      "        return self._update_lock.acquire(timeout=1)\n",
      "test_update_lock_door.py"),
 
+    ("giving back a lock nobody holds leaves it free for the next claim",
+     "app/update_engine.py",
+     "                print(\"release_update: the update lock was not held \"\n"
+     "                      \"— nothing to give back\")\n",
+     "                print(\"release_update: the update lock was not held \"\n"
+     "                      \"— nothing to give back\")\n"
+     "                self._update_lock.acquire()\n",
+     "test_update_lock_door.py"),
+
+    ("the door keeps no state of its own next to the lock",
+     "app/update_engine.py",
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "        self._door_claims = 1\n"
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "test_update_lock_door.py"),
+
     ("…and a `with update_claim()` that lost gives back nobody's lock",
      "app/update_engine.py",
      "            if claimed:\n"

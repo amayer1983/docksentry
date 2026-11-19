@@ -113,8 +113,10 @@ if release is not None and eng._update_lock.locked():
 else:
     checks["release_update gives it back"] = False
 
+# Gated on the door like its neighbours: without one there is nothing
+# that could have added state, and a PASS here would only pad the count.
 checks["the door adds no state of its own to the engine"] = (
-    set(vars(eng)) == attrs_before)
+    have and set(vars(eng)) == attrs_before)
 
 # ── after ────────────────────────────────────────────────────────────
 eng = fresh()
@@ -187,7 +189,12 @@ if have:
 checks["releasing a free lock does not raise"] = have and raised is None
 checks["…it says so in the log"] = (
     "release_update" in log and "not held" in log)
-checks["…leaves the lock free"] = not eng._update_lock.locked()
+# Nothing in this block took the lock, so "still free" alone says little;
+# the claim afterwards shows the free release left a lock that works.
+checks["…leaves the lock free, and the next claim wins it"] = (
+    have and not eng._update_lock.locked() and claim() is True)
+if have and eng._update_lock.locked():
+    eng._update_lock.release()
 checks["…and still runs after()"] = seen == [1]
 
 # ── after() in an exception unwind ───────────────────────────────────
