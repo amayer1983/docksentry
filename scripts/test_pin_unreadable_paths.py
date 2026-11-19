@@ -356,7 +356,12 @@ for label, text in (("/check", "/check"),
 # Discord
 # ═════════════════════════════════════════════════════════════════════
 class _Engine:
-    """The real lock; the batch is recorded instead of run."""
+    """The real lock and the engine's real door onto it; the batch is
+    recorded instead of run."""
+
+    claim_update = UpdateEngine.claim_update
+    release_update = UpdateEngine.release_update
+    cleanup_guarded = UpdateEngine.cleanup_guarded
 
     def __init__(self):
         self._update_lock = threading.Lock()

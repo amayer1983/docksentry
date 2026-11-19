@@ -20,6 +20,7 @@ import srcslice
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from discord_bot import DiscordBot, COMMANDS   # noqa: E402
+from update_engine import UpdateEngine   # noqa: E402
 from container_backend import ContainerBackend   # noqa: E402
 
 checks = {}
@@ -180,6 +181,14 @@ class FakeEngine:
     refuses when it can't — a stub that always said yes would prove
     nothing at all.
     """
+
+    # The engine's own door, run on this real lock: the claims and the
+    # cleanup guard the Discord bot goes through are the production
+    # code, not a copy of it.
+    claim_update = UpdateEngine.claim_update
+    release_update = UpdateEngine.release_update
+    update_claim = UpdateEngine.update_claim
+    cleanup_guarded = UpdateEngine.cleanup_guarded
 
     def __init__(self):
         self._update_lock = threading.Lock()

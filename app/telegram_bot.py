@@ -2802,26 +2802,18 @@ class TelegramBot:
                          reply=self.send_message, reply_to=reply_to)
 
     def cleanup_guarded(self, checker):
-        """Run image cleanup under the shared update mutex (#2 follow-up,
-        @famewolf). `docker image prune -a` filters on image CREATION
-        time, so an image built upstream days ago but pulled seconds ago
-        is fair game — pruning during an update's pull→run window would
-        delete the image the update is about to run. Serializing through
-        the same lock closes that window for every trigger (Telegram
-        /cleanup, Web UI button, disk-warning auto-cleanup, post-update
-        auto-cleanup).
+        """Image cleanup under the update lock — `UpdateEngine.cleanup_guarded`
+        with Telegram's words and Telegram's self-update handoff.
 
-        Returns (ok, msg) from cleanup_images, or (None, busy-msg) when
-        an update flow holds the lock — callers decide how loudly to
-        report the skip. A skipped cleanup is never dangerous: the next
-        trigger simply runs it.
+        Kept here because the scheduler and the Web UI reach it through
+        the bot. Returns (ok, msg) from cleanup_images, or (None,
+        busy sentence) when an update flow holds the lock.
         """
-        if not self.engine.claim_update():
-            return None, self.t("cleanup_busy")
-        try:
-            return checker.cleanup_images()
-        finally:
-            self.engine.release_update(after=self._run_queued_selfupdate)
+        ok, msg = self.engine.cleanup_guarded(
+            checker, after=self._run_queued_selfupdate)
+        if ok is None:
+            return None, self.t(msg)
+        return ok, msg
 
     def _run_queued_selfupdate(self):
         """Run a self-update that queued behind a container batch.

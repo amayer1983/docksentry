@@ -2504,17 +2504,15 @@ class DiscordBot:
     # works, or refuses to work because something else holds it. There is
     # exactly ONE such lock in the process — `UpdateEngine._update_lock`,
     # the same object `TelegramBot.run_updates` and the Web UI's update
-    # button claim — and nothing in this file ever constructs another. A
-    # second lock would put a Discord `/update` and a scheduled
-    # auto-update inside the same container's recreate at the same time,
-    # which is the #53 window all over again.
+    # button claim — and this file only ever reaches it through the
+    # engine's door (`claim_update` / `release_update`). A second lock
+    # would put a Discord `/update` and a scheduled auto-update inside the
+    # same container's recreate at the same time, which is the #53 window
+    # all over again.
     #
     # And when the lock is held we say so and stop. No queue, no wait: a
     # slash command that silently sits on a mutex for six minutes and
     # then acts is worse than one that tells you to try again.
-
-    def _lock(self):
-        return self.engine._update_lock
 
     def _release_lock(self):
         """Release the shared mutex, then hand on any self-update that
@@ -2523,7 +2521,12 @@ class DiscordBot:
         Without the handoff a `/selfupdate` queued behind a
         Discord-triggered update would sit there until some other
         front-end happened to release the lock next."""
-        self._lock().release()
+        self.engine.release_update(after=self._hand_on_selfupdate)
+
+    def _hand_on_selfupdate(self):
+        """Start a self-update that queued behind our update or cleanup.
+        It is `release_update`'s `after`, so it runs once the lock has
+        been given back."""
         ctx = getattr(self, "selfupdate_ctx", None)
         if ctx is None:
             return
@@ -2627,7 +2630,7 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):
             return self.t("update_refused_pin_list")
-        if not self._lock().acquire(blocking=False):
+        if not self.engine.claim_update():
             return self.t("chan_update_busy")
         try:
             lines = list(errors)
@@ -2731,7 +2734,7 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):
             return self.t("update_refused_pin_list")
-        if not self._lock().acquire(blocking=False):
+        if not self.engine.claim_update():
             return self.t("chan_update_busy")
         try:
             lines = []
@@ -2857,14 +2860,14 @@ class DiscordBot:
 
     def _cleanup_guarded(self, checker):
         """`(ok, message)` from a prune, or `(None, busy)` if an update
-        flow holds the mutex — the same contract as the Telegram bot's
-        `cleanup_guarded`, which the scheduler and the Web UI also use."""
-        if not self._lock().acquire(blocking=False):
-            return None, self.t("cleanup_busy")
-        try:
-            return checker.cleanup_images()
-        finally:
-            self._release_lock()
+        flow holds the mutex — the engine's `cleanup_guarded`, the same
+        guard the Telegram bot, the scheduler and the Web UI go through,
+        with our own words and our own self-update handoff."""
+        ok, msg = self.engine.cleanup_guarded(
+            checker, after=self._hand_on_selfupdate)
+        if ok is None:
+            return None, self.t(msg)
+        return ok, msg
 
     @staticmethod
     def _human_size(num):

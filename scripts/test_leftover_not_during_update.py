@@ -55,10 +55,11 @@ checks["only the exact _old suffix counts"] = (
 # DockerBackend whose `run()` records every argv and keeps its own list
 # of containers, from which an `rm` really removes them. Then the same
 # for `cleanup_images`. Its callers, listed from a grep of app/ and
-# each opened: Telegram's `cleanup_guarded` (behind /cleanup, the Web UI
-# button, the scheduler's auto-cleanup and its disk-warning cleanup),
-# Discord's `_cleanup_guarded`, and the two in-batch cleanups in
-# update_engine.py. It is the only `image_prune` caller, and the likeliest
+# each opened: the engine's `cleanup_guarded` (which Telegram's
+# `cleanup_guarded` — behind /cleanup, the Web UI button, the
+# scheduler's auto-cleanup and its disk-warning cleanup — and Discord's
+# `_cleanup_guarded` hand their cleanup to), and the two in-batch
+# cleanups in update_engine.py. It is the only `image_prune` caller, and the likeliest
 # place for someone to add "and the _old containers too".
 #
 # What this does NOT cover, said plainly: a removal added in some other

@@ -62,8 +62,133 @@ def make_bot():
     return bot
 
 
+def make_engine():
+    engine = UpdateEngine.__new__(UpdateEngine)
+    engine._update_lock = threading.Lock()
+    engine._queued_selfupdate = None
+    engine._swap_in_flight = False
+    return engine
+
+
+def engine_guard_checks(checks):
+    """The guard itself, on the engine, with no chat in sight.
+
+    The scheduler and the Web UI reach the guard through the Telegram
+    bot and Discord has its own entry, but the rule is one rule: take the
+    lock without waiting, prune under it, give it back, then let the
+    caller hand on a queued self-update. What the engine hands back when
+    the lock is taken is the KEY — each chat says it in its own language.
+    """
+    guard = getattr(UpdateEngine, "cleanup_guarded", None)
+    checks["engine: the cleanup guard lives on the engine"] = callable(guard)
+    if not callable(guard):
+        return
+    eng = make_engine()
+    afters = []
+
+    def after():
+        afters.append(eng._update_lock.locked())
+
+    ck = FakeChecker()
+    eng._update_lock.acquire()
+    res = eng.cleanup_guarded(ck, after=after)
+    checks["engine: busy -> (None, 'cleanup_busy'), the key, not a sentence"] = (
+        res == (None, "cleanup_busy"))
+    checks["engine: busy prunes nothing and hands nothing on"] = (
+        ck.cleaned == 0 and afters == [])
+    checks["engine: busy leaves the holder's lock held"] = eng._update_lock.locked()
+    if eng._update_lock.locked():       # a broken guard may have given it back
+        eng._update_lock.release()
+
+    seen = []
+
+    class Seeing(FakeChecker):
+        def cleanup_images(self):
+            seen.append(eng._update_lock.locked())
+            return super().cleanup_images()
+    res = eng.cleanup_guarded(Seeing(), after=after)
+    checks["engine: free -> the prune's own answer"] = (
+        res == (True, "Reclaimed 1.2 GB"))
+    checks["engine: the prune runs under the lock"] = seen == [True]
+    checks["engine: after() runs once, with the lock already back"] = (
+        afters == [False])
+    checks["engine: the lock is free afterwards"] = not eng._update_lock.locked()
+
+    class Crashing:
+        def cleanup_images(self):
+            raise RuntimeError("prune died")
+    try:
+        eng.cleanup_guarded(Crashing(), after=after)
+        raised = False
+    except RuntimeError:
+        raised = True
+    checks["engine: a crashing prune still gives the lock back and runs after()"] = (
+        raised and not eng._update_lock.locked() and afters == [False, False])
+    checks["engine: after is optional"] = (
+        eng.cleanup_guarded(FakeChecker()) == (True, "Reclaimed 1.2 GB")
+        and not eng._update_lock.locked())
+
+
+def delegator_language_checks(checks):
+    """Telegram and Discord each turn the engine's key into a sentence,
+    in their own language. One engine, one lock; Telegram set to German,
+    Discord to French, so a delegator that borrowed the other's
+    translator — or forgot to translate — shows up as the wrong text."""
+    from discord_bot import DiscordBot
+    from i18n import get_translator
+    import types as _t
+
+    tg = make_bot()
+    tg.t = get_translator("de")
+    eng = tg.engine
+    dcfg = _t.SimpleNamespace(discord_bot_token="t", discord_app_id="app",
+                              discord_guild_id="g", pending_file="",
+                              discord_allowed_users=[], debug=False,
+                              language="fr")
+    marker = object()
+    dc = DiscordBot(dcfg, None, eng, log=lambda *_: None,
+                    selfupdate_ctx=marker)
+    handed = []
+    real_run_queued = selfupdate.run_queued
+    selfupdate.run_queued = lambda ctx: handed.append(
+        (ctx, eng._update_lock.locked()))
+    try:
+        de = get_translator("de")("cleanup_busy")
+        fr = DiscordBot._tg_bold_to_discord(get_translator("fr")("cleanup_busy"))
+        checks["languages: the two sentences really differ"] = (
+            de != fr and "cleanup_busy" not in (de, fr))
+
+        eng._update_lock.acquire()
+        ck = FakeChecker()
+        t_res = tg.cleanup_guarded(ck)
+        d_res = dc._cleanup_guarded(ck)
+        checks["languages: Telegram says busy in German"] = t_res == (None, de)
+        checks["languages: Discord says busy in French"] = d_res == (None, fr)
+        checks["languages: neither pruned, the holder still holds"] = (
+            ck.cleaned == 0 and eng._update_lock.locked())
+        checks["languages: a busy Discord cleanup hands nothing on"] = handed == []
+        if eng._update_lock.locked():
+            eng._update_lock.release()
+        del handed[:]
+
+        d_res = dc._cleanup_guarded(ck)
+        checks["languages: Discord's free cleanup prunes once"] = (
+            d_res == (True, "Reclaimed 1.2 GB") and ck.cleaned == 1)
+        checks["languages: …then hands on its own queued self-update, "
+               "lock already back"] = handed == [(marker, False)]
+        checks["languages: …and the lock is free"] = not eng._update_lock.locked()
+    finally:
+        selfupdate.run_queued = real_run_queued
+        if eng._update_lock.locked():
+            eng._update_lock.release()
+
+
 def main():
     checks = {}
+
+    # ── 0. the guard on the engine, and each chat's own words ──
+    engine_guard_checks(checks)
+    delegator_language_checks(checks)
 
     # ── 1. cleanup vs updates ──
     bot = make_bot()
@@ -73,7 +198,8 @@ def main():
     checks["cleanup: busy -> (None, busy-msg)"] = ok is None and msg == "cleanup_busy"
     checks["cleanup: prune NOT run while busy"] = ck.cleaned == 0
     checks["cleanup: batch lock untouched"] = bot._update_lock.locked()
-    bot._update_lock.release()
+    if bot._update_lock.locked():
+        bot._update_lock.release()
     ok, msg = bot.cleanup_guarded(ck)
     checks["cleanup: runs when free"] = ok is True and "Reclaimed" in msg
     checks["cleanup: exactly one prune"] = ck.cleaned == 1

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Every place that takes, gives back or looks at the update lock, listed and driven.
 
-There is one update lock, `UpdateEngine._update_lock`. Eleven functions
-claim it: Telegram's six through the engine's door
-(`claim_update()` / `release_update(after=...)`, Q1), the other five
-still by hand with `acquire(blocking=False)`. Each one has
+There is one update lock, `UpdateEngine._update_lock`. Twelve functions
+claim it. Ten go through the engine's door (`claim_update()` /
+`release_update(after=...)`, Q1/Q2): Telegram's four update flows and
+its scheduled self-update check, Discord's two update commands, and the
+engine's own `cleanup_guarded`, which Telegram's and Discord's cleanup
+guards hand their work to (`engine.cleanup_guarded(...)`, counted as
+their claim). The Web worker and `selfupdate.start` still claim by hand
+with `acquire(blocking=False)`. Each one has
 its own answer for "somebody else holds it": Telegram's per-container
 tap queues, `/update all` and a confirmed major refuse, the scheduler
 skips its pass, a cleanup hands its caller a busy sentence, a
@@ -26,8 +30,9 @@ lists below:
     a local name assigned from one of those, or `getattr(x,
     "_update_lock")`; plus calls to Discord's `_release_lock()`, and
     every call to the engine's door — `claim_update()`,
-    `release_update(...)` with what it hands `after`, and `with
-    update_claim(...)` — recorded under the caller's qualified name;
+    `release_update(...)` with what it hands `after`, `with
+    update_claim(...)`, and `cleanup_guarded(...)` called on an engine
+    — recorded under the caller's qualified name;
   * every function that mentions the lock at all (the accessors and
     every caller of the door too, so a new alias or a new door user is
     a new entry);
@@ -110,9 +115,11 @@ LOCK_OPS = {
     ("telegram_bot.py", "TelegramBot.handle_autoupdates"):
         ("CLAIM", ["claim_update()",
                    "release_update(after=self._run_queued_selfupdate)"]),
+    # The two chats' cleanup guards claim through the engine's guard
+    # and only translate its key (Q2).
     ("telegram_bot.py", "TelegramBot.cleanup_guarded"):
-        ("CLAIM", ["claim_update()",
-                   "release_update(after=self._run_queued_selfupdate)"]),
+        ("CLAIM", ["cleanup_guarded(checker, "
+                   "after=self._run_queued_selfupdate)"]),
     # No `after` here, as before Q1: this path never handed a queued
     # self-update on.
     ("telegram_bot.py", "TelegramBot.check_selfupdate_auto"):
@@ -121,11 +128,16 @@ LOCK_OPS = {
         ("CLAIM", ["claim_update()",
                    "release_update(after=self._run_queued_selfupdate)"]),
     ("discord_bot.py", "DiscordBot._cmd_update"):
-        ("CLAIM", ["_release_lock()", "acquire(blocking=False)"]),
+        ("CLAIM", ["_release_lock()", "claim_update()"]),
     ("discord_bot.py", "DiscordBot._do_updateall"):
-        ("CLAIM", ["_release_lock()", "acquire(blocking=False)"]),
+        ("CLAIM", ["_release_lock()", "claim_update()"]),
     ("discord_bot.py", "DiscordBot._cleanup_guarded"):
-        ("CLAIM", ["_release_lock()", "acquire(blocking=False)"]),
+        ("CLAIM", ["cleanup_guarded(checker, "
+                   "after=self._hand_on_selfupdate)"]),
+    # The guard both chats hand their cleanup to. Its busy answer is the
+    # key `cleanup_busy`; each chat says it in its own language.
+    ("update_engine.py", "UpdateEngine.cleanup_guarded"):
+        ("CLAIM", ["claim_update()", "release_update(after=after)"]),
     ("web_ui.py", "create_handler.WebHandler._run_web_update_batch"):
         ("CLAIM", ["acquire(blocking=False)", "release"]),
     # Sanctioned raw site (Q3): the self-update keeps its own raw claim by
@@ -144,10 +156,10 @@ LOCK_OPS = {
     ("telegram_bot.py", "TelegramBot._sweep_update_queue"):
         ("READER", ["locked"]),
     # ── release helper ──
-    # Release, then hand on a queued self-update. Discord's three claims
-    # give the lock back only through here.
+    # Release through the door, then hand on a queued self-update.
+    # Discord's two update commands give the lock back only through here.
     ("discord_bot.py", "DiscordBot._release_lock"):
-        ("RELEASE", ["release"]),
+        ("RELEASE", ["release_update(after=self._hand_on_selfupdate)"]),
     # ── the door ──
     ("update_engine.py", "UpdateEngine.claim_update"):
         ("DOOR", ["acquire(blocking=False)"]),
@@ -164,7 +176,6 @@ LOCK_MENTIONS = {
         "read-only property onto engine._update_lock",
     ("selfupdate.py", "Context._update_lock"):
         "read-only property onto engine._update_lock",
-    ("discord_bot.py", "DiscordBot._lock"): "returns engine._update_lock",
 }
 
 #: (file, qualname) → how often it reads `update_running`, and why.
@@ -250,8 +261,6 @@ BUSY_MESSAGES = {
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
     ("telegram_bot.py", "TelegramBot._confirm_major_update",
      "update_already_running"): (1, "claim"),
-    ("telegram_bot.py", "TelegramBot.cleanup_guarded",
-     "cleanup_busy"): (1, "claim"),
     ("telegram_bot.py", "TelegramBot.run_updates",
      "update_already_running"): (1, "claim"),
     ("telegram_bot.py", "TelegramBot._handle_message",
@@ -266,8 +275,6 @@ BUSY_MESSAGES = {
      "chan_update_busy"): (1, "claim"),
     ("discord_bot.py", "DiscordBot._do_updateall",
      "chan_update_busy"): (1, "claim"),
-    ("discord_bot.py", "DiscordBot._cleanup_guarded",
-     "cleanup_busy"): (1, "claim"),
     ("discord_bot.py", "DiscordBot._refuse_busy._say",
      "chan_busy_capacity"): (1, "other lock: the worker pool is full"),
     # Web
@@ -283,6 +290,9 @@ BUSY_MESSAGES = {
      "busy"): (2, "other lock: _CHECK_LOCK's JSON answer"),
     ("web_ui.py", "create_handler.WebHandler._run_web_update_batch",
      "update_already_running"): (1, "claim"),
+    # The engine
+    ("update_engine.py", "UpdateEngine.cleanup_guarded",
+     "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle
     ("selfupdate.py", "start", "selfupdate_queued"): (1, "claim: queued"),
     ("selfupdate.py", "run_queued", "selfupdate_queue_cancelled"):
@@ -300,13 +310,20 @@ BUSY_RE = re.compile(r"busy|already_running|same_running|_queued|_queue_")
 # Enumeration
 # ═══════════════════════════════════════════════════════════════════════
 LOCK = "_update_lock"
-ACCESSORS = ("_lock",)             # DiscordBot._lock() → engine._update_lock
+# DiscordBot._lock() used to return engine._update_lock (gone in Q2);
+# still recognised, so it cannot come back unnoticed.
+ACCESSORS = ("_lock",)
 RELEASE_HELPERS = ("_release_lock",)
 #: The engine's door (Q1). A call to any of these is a lock operation of
 #: the caller, whatever object it is spelled on.
 DOOR_CLAIM = "claim_update"
 DOOR_RELEASE = "release_update"
 DOOR_WITH = "update_claim"
+#: The engine's cleanup guard: a claim of the caller's when it is called
+#: on an engine (`self.engine.cleanup_guarded(...)`). Calls on the bot —
+#: the scheduler's and the Web UI's — go through the bot's delegator,
+#: which is counted there.
+DOOR_GUARDED = "cleanup_guarded"
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -400,6 +417,13 @@ def _acquire_form(call):
         f"acquire({ast.unparse(blocking)})"
 
 
+def _on_engine(func):
+    """`engine.x` or `<anything>.engine.x`."""
+    v = func.value if isinstance(func, ast.Attribute) else None
+    return (isinstance(v, ast.Name) and v.id == "engine") or (
+        isinstance(v, ast.Attribute) and v.attr == "engine")
+
+
 def _door_form(call):
     """How a call to the door is recorded: what it hands over, spelled out."""
     c = _callee(call)
@@ -476,7 +500,8 @@ def enumerate_sites(app=None):
                             _acquire_form(n) if c == "acquire" else c)
                     elif c in RELEASE_HELPERS:
                         ops[(rel, qual)].append(c + "()")
-                    elif c in (DOOR_CLAIM, DOOR_RELEASE):
+                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (
+                            c == DOOR_GUARDED and _on_engine(f)):
                         ops[(rel, qual)].append(_door_form(n))
                         mentions.add((rel, qual))
                     if c in QUEUE_CALLEES:
@@ -561,13 +586,21 @@ def enumeration_checks(found):
                     "        pass\n"
                     "def b(self):\n"
                     "    if self.engine.claim_update():\n"
-                    "        self.engine.release_update(after=self.g)\n")
+                    "        self.engine.release_update(after=self.g)\n"
+                    "def c(self, ck):\n"
+                    "    return self.engine.cleanup_guarded(ck, after=self.g)\n"
+                    "def d(engine, ck):\n"
+                    "    return engine.cleanup_guarded(ck)\n"
+                    "def e(self, ck):\n"
+                    "    return self.bot.cleanup_guarded(ck)\n")
         d_ops, d_mentions, *_ = enumerate_sites(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     want_d = {("door.py", "a"): ["with update_claim(after=f)"],
               ("door.py", "b"): ["claim_update()",
-                                 "release_update(after=self.g)"]}
+                                 "release_update(after=self.g)"],
+              ("door.py", "c"): ["cleanup_guarded(ck, after=self.g)"],
+              ("door.py", "d"): ["cleanup_guarded(ck)"]}
     out.append(("the enumeration sees every spelling of the door, "
                 "by caller", d_ops == want_d and d_mentions == set(want_d),
                 f"ops {d_ops}, mentions {sorted(d_mentions)}"))
@@ -719,6 +752,9 @@ DRIVES = [
     (("discord_bot.py", "DiscordBot._cleanup_guarded"),
      "image cleanup", None,
      lambda w: w.discord._cleanup_guarded(w.local)),
+    (("update_engine.py", "UpdateEngine.cleanup_guarded"),
+     "image cleanup, the engine's own answer", None,
+     lambda w: w.engine.cleanup_guarded(w.local)),
     (("web_ui.py", "create_handler.WebHandler._run_web_update_batch"),
      "worker for nas/web, Telegram on", None,
      lambda w: w.web()._run_web_update_batch(["nas/web"])),
@@ -1009,6 +1045,9 @@ EXPECTED_BUSY = {
          'returned': (None,
                       "⏳ Updates in progress — cleanup skipped so it can't delete a freshly "
                       'pulled image. Try aga…')},
+    (('update_engine.py', 'UpdateEngine.cleanup_guarded'),
+     "image cleanup, the engine's own answer"):
+        {'kind': 'SKIP_MSG', 'lock_after': 'held', 'returned': (None, 'cleanup_busy')},
     (('web_ui.py', 'create_handler.WebHandler._run_web_update_batch'),
      'worker for nas/web, Telegram on'):
         {'keys': ['update_already_running'],

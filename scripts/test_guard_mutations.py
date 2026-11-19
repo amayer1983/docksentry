@@ -2173,8 +2173,8 @@ GUARDED = [
 
     ("a new caller of the update-lock door is noticed",
      "scripts/test_update_lock_sites.py",
-     "                    elif c in (DOOR_CLAIM, DOOR_RELEASE):\n",
-     "                    elif False:\n",
+     "                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (\n",
+     "                    elif False and (\n",
      "test_update_lock_sites.py"),
 
     ("…including one that spells it as a with block",
@@ -3638,6 +3638,115 @@ GUARDED = [
      '            arg=arg, use_cache=read, remote_timeout=10 if read else None,\n',
      '            arg=arg, use_cache=True, remote_timeout=10,\n',
      'test_telegram_dispatch_matrix.py'),
+
+
+    # Q2: Discord's claims and both cleanup guards go through the engine's
+    # door; the engine's guard answers busy with the key, each chat says
+    # it in its own language and hands on its own queued self-update.
+    ('a cleanup never prunes while an update holds the lock',
+     'app/update_engine.py',
+     '        if not self.claim_update():\n'
+     '            return None, "cleanup_busy"\n',
+     '        if not self.claim_update():\n'
+     '            pass\n',
+     'test_op_coordination.py'),
+
+    ('…and the busy answer is the key, each chat says it itself',
+     'app/update_engine.py',
+     '            return None, "cleanup_busy"\n',
+     '            return None, "⏳ Updates in progress — cleanup skipped."\n',
+     'test_op_coordination.py'),
+
+    ('a cleanup hands on a queued self-update once the lock is back',
+     'app/update_engine.py',
+     '        finally:\n'
+     '            self.release_update(after=after)\n',
+     '        finally:\n'
+     '            self.release_update()\n',
+     'test_op_coordination.py'),
+
+    ('a crashing prune still gives the update lock back',
+     'app/update_engine.py',
+     '            return checker.cleanup_images()\n'
+     '        finally:\n'
+     '            self.release_update(after=after)\n',
+     '            res = checker.cleanup_images()\n'
+     '            self.release_update(after=after)\n'
+     '            return res\n'
+     '        finally:\n'
+     '            pass\n',
+     'test_op_coordination.py'),
+
+    ("Telegram's cleanup says busy in Telegram's language",
+     'app/telegram_bot.py',
+     '        if ok is None:\n'
+     '            return None, self.t(msg)\n'
+     '        return ok, msg\n',
+     '        if ok is None:\n'
+     '            return None, msg\n'
+     '        return ok, msg\n',
+     'test_op_coordination.py'),
+
+    ("…and hands on Telegram's queued self-update",
+     'app/telegram_bot.py',
+     '            checker, after=self._run_queued_selfupdate)\n',
+     '            checker)\n',
+     'test_op_coordination.py'),
+
+    ("Discord's cleanup says busy in Discord's language",
+     'app/discord_bot.py',
+     '        if ok is None:\n'
+     '            return None, self.t(msg)\n'
+     '        return ok, msg\n',
+     '        if ok is None:\n'
+     '            return None, msg\n'
+     '        return ok, msg\n',
+     'test_op_coordination.py'),
+
+    ("…and hands on Discord's queued self-update",
+     'app/discord_bot.py',
+     '            checker, after=self._hand_on_selfupdate)\n',
+     '            checker)\n',
+     'test_op_coordination.py'),
+
+    ('a Discord update hands a queued self-update on through the door',
+     'app/discord_bot.py',
+     '        self.engine.release_update(after=self._hand_on_selfupdate)\n',
+     '        self.engine.release_update()\n',
+     'test_discord_bot.py'),
+
+    ('Discord /update refuses while the update lock is held',
+     'app/discord_bot.py',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):\n'
+     '            return self.t("update_refused_pin_list")\n'
+     '        if not self.engine.claim_update():\n',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):\n'
+     '            return self.t("update_refused_pin_list")\n'
+     '        if False:\n',
+     'test_update_lock_sites.py'),
+
+    ('…and so does a confirmed Discord /updateall',
+     'app/discord_bot.py',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):\n'
+     '            return self.t("update_refused_pin_list")\n'
+     '        if not self.engine.claim_update():\n',
+     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):\n'
+     '            return self.t("update_refused_pin_list")\n'
+     '        if False:\n',
+     'test_update_lock_sites.py'),
+
+    ("the lock-site list sees a claim through the engine's cleanup guard",
+     'scripts/test_update_lock_sites.py',
+     '                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (\n'
+     '                            c == DOOR_GUARDED and _on_engine(f)):\n',
+     '                    elif c in (DOOR_CLAIM, DOOR_RELEASE):\n',
+     'test_update_lock_sites.py'),
+
+    ("…but not the bot's delegator called by the scheduler and the Web UI",
+     'scripts/test_update_lock_sites.py',
+     '                            c == DOOR_GUARDED and _on_engine(f)):\n',
+     '                            c == DOOR_GUARDED):\n',
+     'test_update_lock_sites.py'),
 
 ]
 

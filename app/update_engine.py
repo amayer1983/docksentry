@@ -389,6 +389,34 @@ class UpdateEngine:
             if claimed:
                 self.release_update(after=after)
 
+    def cleanup_guarded(self, checker, *, after=None):
+        """Image cleanup under the update lock (#2 follow-up, @famewolf).
+
+        `docker image prune -a` filters on image CREATION time, so an
+        image built upstream days ago but pulled seconds ago is fair
+        game — pruning during an update's pull→run window would delete
+        the image the update is about to run. Going through the same
+        lock closes that window for every trigger: Telegram /cleanup,
+        Discord /cleanup, the Web UI button, the disk-warning cleanup and
+        the post-update one.
+
+        Returns `(ok, msg)` from `cleanup_images`, or `(None,
+        "cleanup_busy")` when an update flow holds the lock. That second
+        one is the KEY, not the sentence: each chat says it in its own
+        language. A skipped cleanup is never dangerous — the next trigger
+        simply runs it — so the lock is not waited for, and callers
+        decide how loudly to report the skip.
+
+        `after` is the caller's self-update handoff; it runs once the
+        lock is back, and only when this cleanup had it.
+        """
+        if not self.claim_update():
+            return None, "cleanup_busy"
+        try:
+            return checker.cleanup_images()
+        finally:
+            self.release_update(after=after)
+
     # ── Neutral orchestration helpers ──────────────────────────────────
     # Telegram-agnostic building blocks (no send_message, no inline
     # keyboards) moved off TelegramBot (v2 groundwork). The bot keeps a
