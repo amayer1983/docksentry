@@ -854,7 +854,9 @@ for _r_ in ("/status", "/status host:dead", "/status host:refused",
         "W7d: the overview walk, `collect_overview` since W5d, serial and "
         "without the dead-host memory")
 for _r_ in ("/check", "/check twice"):
-    PINNED_FOR[("multi", _r_)] = "W6d/W7d: the check walk"
+    PINNED_FOR[("multi", _r_)] = (
+        "W7d: the check walk, `check_on_hosts` since W6d, serial and "
+        "without the dead-host memory")
 for _r_ in ("auto container host:dead", "auto container host:refused",
             "auto container host:dead twice"):
     PINNED_FOR[("multi", _r_)] = (

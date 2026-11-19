@@ -1569,24 +1569,34 @@ class DiscordBot:
             return self._unknown_host(opts.get("host"))
         if self.engine.update_running:
             return self.t("web_check_one_busy")
+        import container_flags
         found = []
         pins_unreadable = False
-        for host in targets:
-            checker = self._checker_for(host)
-            if checker is None:
-                continue
-            try:
-                updates = checker.check_all()
-            except Exception as e:
+        # The same walk as Telegram's /check. Discord asks for no hint and
+        # never lets a failure out of the handler, not even on a
+        # single-host install: a failed host is one line, cut to 80
+        # characters, under the same heading.
+        #
+        # A host without a checker is skipped, as the old loop did. Only a
+        # bot built without one gets here (main.py always passes it), and
+        # it then still says "up to date" without having checked anything
+        # — kept as measured, not endorsed. With nothing left the walk is
+        # not started at all: check_on_hosts would turn [] into the
+        # single pseudo-host and check that instead.
+        walk = [h for h in targets if self._checker_for(h) is not None]
+        for hc in container_flags.check_on_hosts(
+                walk, checker_for=self._checker_for, hint=False,
+                raise_alone=False, t=self.t) if walk else ():
+            if hc.error is not None:
                 found.append(self.t("host_check_failed",
-                                    host=getattr(host, "name", "local"),
-                                    error=str(e)[:80]))
+                                    host=getattr(hc.host, "name", "local"),
+                                    error=str(hc.error)[:80]))
                 continue
-            if getattr(updates, "pin_list_unreadable", False):
+            if getattr(hc.updates, "pin_list_unreadable", False):
                 pins_unreadable = True
                 continue
-            for u in updates:
-                found.append(f"• `{u['name']}`{self._label(host)} — {u['image']}")
+            for u in hc.updates:
+                found.append(f"• `{u['name']}`{self._label(hc.host)} — {u['image']}")
         # Nothing was checked, so "everything is up to date" would be the
         # wrong answer. The pin list is one file for every host, so no
         # host found anything either; what is left are failure lines.

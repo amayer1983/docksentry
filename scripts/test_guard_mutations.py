@@ -1632,7 +1632,7 @@ GUARDED = [
 
     ('Discord /check says nothing was checked when the pin list is unreadable',
      'app/discord_bot.py',
-     '            if getattr(updates, "pin_list_unreadable", False):\n                pins_unreadable = True',
+     '            if getattr(hc.updates, "pin_list_unreadable", False):\n                pins_unreadable = True',
      '            if False:\n                pins_unreadable = True',
      'test_pin_unreadable_paths.py'),
 
@@ -2688,7 +2688,7 @@ GUARDED = [
     # W6: Telegram's four check walks are container_flags.check_on_hosts.
     ("a single-host install's check still raises as it always did",
      'app/container_flags.py',
-     '            if alone:\n                raise\n',
+     '            if alone and raise_alone:\n                raise\n',
      '            if False:\n                raise\n',
      'test_check_on_hosts.py'),
 
@@ -2803,6 +2803,55 @@ GUARDED = [
      '                only_for=None, debug_sink=self,\n'
      '                on_host=_batch, t=self.t)\n',
      'test_telegram_dispatch_matrix.py'),
+
+    # W6d: Discord's /check walk is check_on_hosts too.
+    ("raise_alone=False reports a single-host install's failed check",
+     'app/container_flags.py',
+     '            if alone and raise_alone:\n                raise\n',
+     '            if alone:\n                raise\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check never raises out of the handler, not even alone",
+     'app/discord_bot.py',
+     '                raise_alone=False, t=self.t) if walk else ():\n',
+     '                raise_alone=True, t=self.t) if walk else ():\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check asks for no SSH hint",
+     'app/discord_bot.py',
+     '                walk, checker_for=self._checker_for, hint=False,\n',
+     '                walk, checker_for=self._checker_for, hint=True,\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check lists the hosts in the order they were asked",
+     'app/discord_bot.py',
+     '                walk, checker_for=self._checker_for, hint=False,\n',
+     '                walk[::-1], checker_for=self._checker_for, hint=False,\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check skips a host without a checker, as it always did",
+     'app/discord_bot.py',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]\n',
+     '        walk = list(targets)\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check cuts a host's error to 80 characters",
+     'app/discord_bot.py',
+     '                                    error=str(hc.error)[:80]))\n',
+     '                                    error=str(hc.error)))\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check names the host that could not be checked",
+     'app/discord_bot.py',
+     '                                    host=getattr(hc.host, "name", "local"),\n',
+     '                                    host="local",\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check tags an update with its host",
+     'app/discord_bot.py',
+     '{self._label(hc.host)} — ',
+     '{self._label(None)} — ',
+     'test_discord_dispatch_matrix.py'),
 
 ]
 

@@ -10,7 +10,8 @@ reported as "could not be checked" and the walk goes on (#7). Only the
 arg-less `/check` put hostdiag's SSH hint under the failure.
 
 `container_flags.check_on_hosts(targets, *, checker_for, only_for=None,
-debug_sink=None, hint=False, on_host=None, t)` is that loop. It hands
+debug_sink=None, hint=False, on_host=None, raise_alone=True, t)` is that
+loop. It hands
 `on_host(HostCheck)` each host's answer before the next host's
 `check_all` starts, which is what lets a chat say "nas: up to date" the
 moment nas is done (#2, @famewolf), and it returns the same answers as
@@ -22,6 +23,12 @@ matrix's hosts (T2: local, nas, dead, refused, flaky) and holds each of
 the four commands to its T2 row, byte for byte, plus where the SSH hint
 appears and where it does not. Only hostdiag's view of `~/.ssh` (and,
 once, the hint itself) is replaced, never the decision whether to ask.
+
+Discord's /check had a fifth copy (W6d): no hint, `check_all()` bare,
+the error cut to 80 characters, and it never raised, not even without a
+registry. It walks through check_on_hosts now with `raise_alone=False`;
+the last part holds its rows to T4 (the Discord matrix) and drives the
+no-registry case directly.
 
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
@@ -203,6 +210,13 @@ if callable(check_on_hosts):
         got, seen = _walk(targets, cks)
         checks[f"single host (targets={label}): the exception goes up"] = (
             isinstance(got, _Raised) and got.exc is solo_boom and not seen)
+        # Discord never raised out of /check, not even alone (W6d).
+        got, seen = _walk(targets, cks, raise_alone=False)
+        checks[f"…unless raise_alone=False (targets={label}): reported, "
+               f"for the pseudo-host None"] = (
+            isinstance(got, list) and len(got) == 1 and got[0].host is None
+            and got[0].error is solo_boom and got[0].updates is None
+            and seen == got)
     cks = {None: Checker("solo", found)}
     got, seen = _walk(None, cks, debug_sink=sink)
     checks["single host: one answer, for the pseudo-host None"] = (
@@ -344,6 +358,126 @@ try:
         and line[0].endswith("\n\n" + hint_en) and not esc)
     if len(line) != 1 or not line[0].endswith(hint_en):
         print(f"      → {line!r}")
+
+    # ═════════════════════════════════════════════════════════════════
+    # Discord, through the real _on_event on T4's hosts (W6d)
+    # ═════════════════════════════════════════════════════════════════
+    # Discord's /check walked its hosts in a loop of its own: never
+    # raised, said a failure as `host_check_failed` with the error cut to
+    # 80 characters, no hint, `check_all()` with no arguments. Each row
+    # is held to its T4 entry, byte for byte, and the walk to
+    # check_on_hosts asked once, without a hint, a sink or a scope, and
+    # told not to raise on a single-host install.
+    import test_discord_dispatch_matrix as d
+    steps_of = dict(d.all_scenarios())
+
+    def dc_row(setup, name):
+        del calls[:]
+        del sinks[:]
+        if callable(real_walk):
+            cf.check_on_hosts = recording
+        try:
+            return d.run_scenario(setup, steps_of[name])
+        finally:
+            if callable(real_walk):
+                cf.check_on_hosts = real_walk
+
+    DC_SITES = [
+        ("multi", "/check", [ALL]),
+        ("one", "/check", [["local"]]),
+        ("multi", "/check host:nas", [["nas"]]),
+        ("multi", "/check host:all", [ALL]),
+        ("multi", "/check host:dead", [["dead"]]),
+        ("multi", "/check host:refused", [["refused"]]),
+        ("multi", "/check host:flaky", [["flaky"]]),
+        ("multi", "/check twice", [ALL, ALL]),
+        ("multi", "lock: /check", []),          # the busy gate comes first
+        ("one", "lock: /check", []),
+    ]
+    for setup, name, walks in DC_SITES:
+        rec, esc = dc_row(setup, name)
+        want = d.EXPECTED.get((setup, name))
+        checks[f"Discord {name} ({setup}) still answers as its T4 row"] = (
+            want is not None and rec == want and not esc)
+        if rec != want:
+            print(f"      → got {rec!r}")
+        asked = [c[0] for c in calls]
+        quiet = all(not c[1].get("hint", False)
+                    and c[1].get("debug_sink") is None
+                    and c[1].get("only_for") is None
+                    and c[1].get("raise_alone", True) is False
+                    for c in calls)
+        checks[f"…and asks check_on_hosts {len(walks)}× on {walks}, no "
+               f"hint, sink or scope, never raising ({name}, {setup})"] = (
+            asked == walks and quiet)
+        if asked != walks or not quiet:
+            print(f"      → check_on_hosts calls: {calls}")
+
+    # No registry at all (`hosts=None`, the constructor's default): the
+    # walk is the single pseudo-host, and Discord still says a failed
+    # check instead of raising out of the handler.
+    import types
+    from discord_bot import DiscordBot
+
+    class _SoloChecker:
+        def __init__(self, result=None, raises=None):
+            self.result, self.raises, self.calls = result, raises, []
+
+        def check_all(self, **kw):
+            self.calls.append(dict(kw))
+            if self.raises is not None:
+                raise self.raises
+            return self.result
+
+    def _solo(checker):
+        cfg = types.SimpleNamespace(discord_bot_token="t",
+                                    discord_app_id="app",
+                                    discord_guild_id="g", pending_file="",
+                                    discord_allowed_users=[], debug=False)
+        bot = DiscordBot(cfg, None, types.SimpleNamespace(
+            update_running=False), checker=checker, log=lambda *_: None)
+        del calls[:]
+        if callable(real_walk):
+            cf.check_on_hosts = recording
+        try:
+            return _try(bot._cmd_check, {})
+        finally:
+            if callable(real_walk):
+                cf.check_on_hosts = real_walk
+
+    long_err = "daemon gone: " + "x" * 120
+    solo = _SoloChecker(raises=RuntimeError(long_err))
+    out = _solo(solo)
+    want = ("**Updates available**\n⚠️ Host `local` could not be checked: "
+            + long_err[:80])
+    checks["Discord without a registry: a failed check is a line, not a "
+           "raise"] = out == want
+    if out != want:
+        print(f"      → got {out!r}")
+    checks["…and that walk is check_on_hosts on the pseudo-host, told "
+           "not to raise"] = (
+        [c[0] for c in calls] == [[None]]
+        and [c[1].get("raise_alone", True) for c in calls] == [False])
+    solo = _SoloChecker([{"name": "web", "image": "nginx:1.25"}])
+    out = _solo(solo)
+    checks["Discord without a registry: an update is listed without a "
+           "host tag"] = (
+        out == "**Updates available**\n• `web` — nginx:1.25"
+        and solo.calls == [{}])
+    if out != "**Updates available**\n• `web` — nginx:1.25":
+        print(f"      → got {out!r}")
+
+    # A bot built without a checker (the constructor's default; main.py
+    # always passes one). The old loop skipped such a host, so the answer
+    # was "up to date" with nothing checked. Pinned as measured on the
+    # tree before W6d, not as what it should say.
+    out = _solo(None)
+    up_to_date = get_translator("en")("chan_all_up_to_date")
+    checks["Discord without a checker: still \"up to date\", as before "
+           "W6d"] = out == up_to_date
+    if out != up_to_date:
+        print(f"      → got {out!r}")
+    checks["…and no walk is started for it"] = calls == []
 finally:
     shutil.rmtree(m._TMP_ROOT, ignore_errors=True)
 
