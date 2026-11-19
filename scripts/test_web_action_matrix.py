@@ -506,8 +506,34 @@ def _join():
     return hung
 
 
+#: The dead-host memory's clock while a row runs.
+HOSTS_CLOCK = [4242.0]
+
+
+class _FrozenClock:
+    """`hosts.time` while a row runs: the dead-host memory's cooldown
+    does not tick, so "not asked again for 60s" is 60 whatever the
+    machine's load (W7w, as T4 since W7d)."""
+
+    @staticmethod
+    def monotonic():
+        return HOSTS_CLOCK[0]
+
+
 def run_scenario(setup, steps):
-    """Drive one row; return (record, escapes)."""
+    """Drive one row; return (record, escapes). The dead-host memory
+    starts empty and its clock stands still for the whole row."""
+    import hosts as hostslib
+    real = hostslib.time
+    hostslib.time = _FrozenClock
+    HOSTS_CLOCK[0] = 4242.0
+    try:
+        return _run_scenario(setup, steps)
+    finally:
+        hostslib.time = real
+
+
+def _run_scenario(setup, steps):
     import hosts as hostslib
     import web_ui
     hostslib.forget_unreachable()
@@ -1035,11 +1061,6 @@ _mark(KNOWN_DEFECTS, ["cooldown: name=web seconds=abc",
 _mark(KNOWN_DEFECTS, ["selfupdate", "selfupdate: lock held"],
       "no slice yet: the page says 'Settings saved.' whatever happened")
 
-_mark(PINNED_FOR, ["GET /api/check", "GET /api/check: update lock held",
-                   "GET /api/check: check lock held"],
-      "W7w: the check walk, `check_on_hosts` since W6w", ("multi",))
-_mark(PINNED_FOR, ["GET /api/check twice"],
-      "W7w: the second click asks the dead host again", ("multi",))
 _mark(PINNED_FOR, ["GET /api/check: cross-origin"],
       "WB1: the POST it adds goes behind the CSRF check; this GET stays")
 _mark(PINNED_FOR, ["update: name=zzz/web"],
@@ -1144,7 +1165,9 @@ BRANCH_NOTES = {
     "GET /api/check": ":2172 → `_api_check` (:7270) on a thread: skipped "
                       "while updating or checking, else every host's "
                       "check_all, a raise printed per host, then "
-                      "notify_updates. No CSRF check on a GET.",
+                      "notify_updates. A remote host found dead a moment "
+                      "ago is skipped with its remembered words (W7w). No "
+                      "CSRF check on a GET.",
     "GET /api/wizard_skip": ":2175, only with a password set.",
 }
 
@@ -6952,12 +6975,11 @@ EXPECTED = {
                            'check_all@flaky']},
                {'do': 'GET /api/check',
                 'http': '303 | Location: /',
-                'out': ["<log> Web UI check error on dead: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
-                        'out after 30 seconds',
+                'out': ['<log> Web UI check error on dead: no answer within 30 seconds '
+                        '(from the last try, not asked again for 60s)',
                         '<log> Web UI check error on refused: could not list containers '
                         '(rc=255): ssh: connect to host 192.0.2.30 port 22: Connection '
-                        'refused',
+                        'refused (from the last try, not asked again for 60s)',
                         '<log> Web UI check error on flaky: registry did not answer in 15s',
                         '<telegram> 🔄 *Docker Updates Available*\n'
                         '\n'
@@ -6977,14 +6999,8 @@ EXPECTED = {
                 'hosts': {'local': 'ps --format, inspect t=60, inspect --format ×2, '
                                    'inspect --format t=10, inspect --format t=5',
                           'nas': 'ps --format, inspect t=60, inspect --format ×2, inspect '
-                                 '--format t=10, inspect --format t=5',
-                          'dead': 'ps --format',
-                          'refused': 'ps --format'},
-                'events': ['check_all@local',
-                           'check_all@nas',
-                           'check_all@dead',
-                           'check_all@refused',
-                           'check_all@flaky']}],
+                                 '--format t=10, inspect --format t=5'},
+                'events': ['check_all@local', 'check_all@nas', 'check_all@flaky']}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'GET /api/check twice'): {'steps': [{'do': 'GET /api/check',
                 'http': '303 | Location: /',

@@ -2990,22 +2990,27 @@ GUARDED = [
 
     ("Web Check Updates asks for no SSH hint",
      'app/web_ui.py',
-     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
-     '                    hint=True, raise_alone=False, on_host=_report, t=None)\n',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=True, raise_alone=False, use_cache=True,\n',
      'test_check_on_hosts.py'),
 
     ("…hands check_all no bot, so DEBUG does not send a click's trace",
      'app/web_ui.py',
-     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
-     '                    hint=False, raise_alone=False, on_host=_report, t=None,\n'
-     '                    debug_sink=bot)\n',
+     '                    on_host=_report, t=None)\n',
+     '                    on_host=_report, t=None, debug_sink=bot)\n',
      'test_check_on_hosts.py'),
 
     ("…and never raises, not even without a registry",
      'app/web_ui.py',
-     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
-     '                    hint=False, raise_alone=True, on_host=_report, t=None)\n',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=False, raise_alone=True, use_cache=True,\n',
      'test_check_on_hosts.py'),
+
+    ("…and skips a remote host found dead a moment ago (W7w)",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=False, raise_alone=False, use_cache=False,\n',
+     'test_web_action_matrix.py'),
 
     ("Web Check Updates logs a host's failure on one host too",
      'app/web_ui.py',

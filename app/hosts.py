@@ -339,17 +339,18 @@ def forget_unreachable():
 # must always ask — a host that came back a second ago is exactly the one
 # somebody is trying to update. And only for remote hosts, like the page:
 # the cooldown is for a machine at the far end of a wire, not for our own
-# daemon, which nothing marks. A chat walk without the cache (every
-# write, and the caller that has not moved over: the Web's check) never
-# skips a host and never marks one dead, but a host that answers it is
-# forgotten all the same: an /update that just reached nas must not
-# leave the next /status calling nas unreachable for the rest of its
-# cooldown. Discord's reads take the cache since W7d, and its name lookup
-# and container autocomplete read the memory directly (the autocomplete
-# never writes to it). It is one memory: a host a Telegram or Discord
-# read found dead is skipped by the other chat and by the Web status
-# page's `walk` too, with the words that read remembered, and each such
-# failure moves the same backoff (test_status_overview_core pins it).
+# daemon, which nothing marks. A walk without the cache (every write)
+# never skips a host and never marks one dead, but a host that answers
+# it is forgotten all the same: an /update that just reached nas must
+# not leave the next /status calling nas unreachable for the rest of its
+# cooldown. Discord's reads take the cache since W7d, the Web's Check
+# Updates since W7w; Discord's name lookup and container autocomplete
+# read the memory directly (the autocomplete never writes to it). It is
+# one memory: a host a Telegram, Discord or Web Check read found dead is
+# skipped by the other two and by the Web status page's `walk` too, with
+# the words that read remembered, and each such failure moves the same
+# backoff (test_status_overview_core pins it). The Web Check remembers
+# its words in English (it has no `t`), the chats in the bot's language.
 
 def _remote_name(host):
     if host is None or getattr(host, "is_local", False):

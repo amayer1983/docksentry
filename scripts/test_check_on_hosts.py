@@ -270,8 +270,8 @@ if callable(check_on_hosts):
     # timeout, ContainerListUnavailable) is remembered; one whose check
     # failed for any other reason is not, because its daemon answered
     # and a /status a moment later must still ask it. A host that
-    # checked fine is forgotten. Without use_cache (/update, and the Web
-    # until W7w) nobody is skipped or marked dead, but a host
+    # checked fine is forgotten. Without use_cache (/update, the only
+    # write here) nobody is skipped or marked dead, but a host
     # that checked fine is forgotten (review of W7). The
     # local host is never skipped or marked. hosts' clock is replaced so
     # the seconds do not depend on this machine's speed.
@@ -700,7 +700,9 @@ try:
     # to notify_updates once at the end. Each row is held to its T5
     # entry, byte for byte, and the walk to check_on_hosts asked as often
     # as the row clicks past the two busy gates, without a hint, a sink
-    # or a scope, and told not to raise.
+    # or a scope, told not to raise, and with the dead-host memory (W7w:
+    # a click is a read, so a remote host found dead a moment ago is
+    # skipped — T5's "GET /api/check twice" shows the second click).
     import test_web_action_matrix as w
     web_steps = dict(w.all_scenarios())
 
@@ -740,9 +742,11 @@ try:
                     and c[1].get("debug_sink") is None
                     and c[1].get("only_for") is None
                     and c[1].get("raise_alone", True) is False
+                    and c[1].get("use_cache", False) is True
                     for c in calls)
         checks[f"…and asks check_on_hosts {len(walks)}× on {walks}, no "
-               f"hint, sink or scope, never raising ({name}, {setup})"] = (
+               f"hint, sink or scope, never raising, with the cache "
+               f"({name}, {setup})"] = (
             asked == walks and quiet)
         if asked != walks or not quiet:
             print(f"      → check_on_hosts calls: {calls}")
