@@ -7277,17 +7277,30 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # Telegram /check command, spam for a Web UI click (the log
                 # is on the /logs page anyway). Found-updates notifications
                 # below are unaffected. (#35 feedback, @NotRetarded)
-                from hosts import host_checkers
+                #
+                # The walk is the one Telegram and Discord use
+                # (container_flags.check_on_hosts): no `debug_sink`, so
+                # `check_all()` still gets no arguments, and no hint —
+                # the Web only logs the error. One unreachable host must
+                # not cost the others their check, and with no registry
+                # the Web never raised either, hence `raise_alone=False`.
+                # The host name stays blank on one host, as
+                # `HostRegistry.checkers` keeps it.
+                import container_flags
                 found = []
-                for host_checker, host_name in host_checkers(hosts, checker):
-                    try:
-                        found.extend(host_checker.check_all())
-                    except Exception as e:
-                        # One unreachable host must not cost the others
-                        # their check — the same rule the scheduler
-                        # follows, and the reason it reports per host.
-                        where = f" on {host_name}" if host_name else ""
-                        print(f"Web UI check error{where}: {e}")
+                named = bool(hosts) and hosts.is_multi
+
+                def _report(hc):
+                    if hc.error is not None:
+                        where = f" on {hc.host.name}" if named else ""
+                        print(f"Web UI check error{where}: {hc.error}")
+                    else:
+                        found.extend(hc.updates)
+
+                container_flags.check_on_hosts(
+                    list(hosts) if hosts else None,
+                    checker_for=lambda h: checker if h is None else h.checker,
+                    hint=False, raise_alone=False, on_host=_report, t=None)
                 if found:
                     bot.notify_updates(found)
             except Exception as e:

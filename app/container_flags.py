@@ -435,9 +435,9 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
     rule). Except on a single-host install — `targets` None (or empty,
     or just the pseudo-host None): there the exception goes up exactly
     as it did before there were hosts; `raise_alone=False` reports it
-    there too, as the pseudo-host None's failure (Discord's /check never
-    raised, not even alone). A host whose `checker_for` raises counts as
-    that host's failure.
+    there too, as the pseudo-host None's failure (Discord's /check and
+    the Web's Check Updates never raised, not even alone). A host whose
+    `checker_for` raises counts as that host's failure.
 
     `only_for(host)` is the set of names to scope that host's check to
     (`/check web*` matches different containers on different hosts);

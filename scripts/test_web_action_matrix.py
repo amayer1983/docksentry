@@ -1037,7 +1037,7 @@ _mark(KNOWN_DEFECTS, ["selfupdate", "selfupdate: lock held"],
 
 _mark(PINNED_FOR, ["GET /api/check", "GET /api/check: update lock held",
                    "GET /api/check: check lock held"],
-      "W6w: the check walk over hosts.host_checkers", ("multi",))
+      "W7w: the check walk, `check_on_hosts` since W6w", ("multi",))
 _mark(PINNED_FOR, ["GET /api/check twice"],
       "W7w: the second click asks the dead host again", ("multi",))
 _mark(PINNED_FOR, ["GET /api/check: cross-origin"],

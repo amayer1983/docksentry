@@ -30,6 +30,11 @@ registry. It walks through check_on_hosts now with `raise_alone=False`;
 the last part holds its rows to T4 (the Discord matrix) and drives the
 no-registry case directly.
 
+The Web UI's "Check Updates" had a sixth (W6w): `check_all()` bare, a
+raise printed per host, the findings notified once at the end. Its rows
+are held to T5 (the Web matrix), and the handler is driven directly
+without a registry and on one and two hosts.
+
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
 """
@@ -478,6 +483,147 @@ try:
     if out != up_to_date:
         print(f"      → got {out!r}")
     checks["…and no walk is started for it"] = calls == []
+
+    # ═════════════════════════════════════════════════════════════════
+    # Web, through the real do_GET on T5's hosts (W6w)
+    # ═════════════════════════════════════════════════════════════════
+    # The Web UI's "Check Updates" (GET /api/check) walked
+    # hosts.host_checkers in a loop of its own: `check_all()` with no
+    # arguments (no `bot=`, so DEBUG does not push the trace to Telegram
+    # for a click), a raise printed as "Web UI check error on <host>"
+    # with the name only on a multi-host install, everything found handed
+    # to notify_updates once at the end. Each row is held to its T5
+    # entry, byte for byte, and the walk to check_on_hosts asked as often
+    # as the row clicks past the two busy gates, without a hint, a sink
+    # or a scope, and told not to raise.
+    import test_web_action_matrix as w
+    web_steps = dict(w.all_scenarios())
+
+    def web_row(setup, name):
+        del calls[:]
+        del sinks[:]
+        if callable(real_walk):
+            cf.check_on_hosts = recording
+        try:
+            return w.run_scenario(setup, web_steps[name])
+        finally:
+            if callable(real_walk):
+                cf.check_on_hosts = real_walk
+
+    WEB_SITES = [
+        ("multi", "GET /api/check", [ALL]),
+        ("one", "GET /api/check", [["local"]]),
+        ("headless", "GET /api/check", [["local"]]),
+        ("multi", "GET /api/check twice", [ALL, ALL]),
+        ("one", "GET /api/check twice", [["local"], ["local"]]),
+        ("multi", "GET /api/check: cross-origin", [ALL]),
+        ("multi", "GET /api/check: update lock held", []),
+        ("one", "GET /api/check: update lock held", []),
+        ("multi", "GET /api/check: check lock held", []),
+        ("headless", "GET /api/check: check lock held", []),
+        ("multi", "gate: GET /api/check, no credentials", []),
+    ]
+    for setup, name, walks in WEB_SITES:
+        rec, esc = web_row(setup, name)
+        want = w.EXPECTED.get((setup, name))
+        checks[f"Web {name} ({setup}) still answers as its T5 row"] = (
+            want is not None and rec == want and not esc)
+        if rec != want:
+            print(f"      → got {rec!r}")
+        asked = [c[0] for c in calls]
+        quiet = all(not c[1].get("hint", False)
+                    and c[1].get("debug_sink") is None
+                    and c[1].get("only_for") is None
+                    and c[1].get("raise_alone", True) is False
+                    for c in calls)
+        checks[f"…and asks check_on_hosts {len(walks)}× on {walks}, no "
+               f"hint, sink or scope, never raising ({name}, {setup})"] = (
+            asked == walks and quiet)
+        if asked != walks or not quiet:
+            print(f"      → check_on_hosts calls: {calls}")
+
+    # Straight onto the handler, the way test_manual_check_hosts builds
+    # it: no registry (`hosts=None`), a one-host and a two-host registry.
+    # What a click leaves behind is the log line and what reaches
+    # notify_updates; both are read off here.
+    import contextlib
+    import io
+    import web_ui
+    from hosts import HostRegistry, ManagedHost
+
+    def _click(hosts, checker):
+        notified = []
+        bot = types.SimpleNamespace(update_running=False,
+                                    notify_updates=notified.extend)
+        handler_cls = web_ui.create_handler(
+            types.SimpleNamespace(), checker=checker, bot=bot, store=None,
+            backend=object(), hosts=hosts)
+        h = handler_cls.__new__(handler_cls)
+        del calls[:]
+        out = io.StringIO()
+        if callable(real_walk):
+            cf.check_on_hosts = recording
+        try:
+            with contextlib.redirect_stdout(out):
+                raised = _try(h._api_check)
+        finally:
+            if callable(real_walk):
+                cf.check_on_hosts = real_walk
+        locked = web_ui._CHECK_LOCK.locked()
+        if locked:
+            web_ui._CHECK_LOCK.release()
+        return {"log": out.getvalue(), "notified": notified,
+                "raised": isinstance(raised, _Raised), "locked": locked}
+
+    def _reg(*pairs):
+        return HostRegistry([ManagedHost(n, None, c, None,
+                                         is_local=(i == 0))
+                             for i, (n, c) in enumerate(pairs)])
+
+    upd = {"name": "web", "image": "nginx:1.25"}
+    solo = _SoloChecker(raises=RuntimeError("daemon gone"))
+    got = _click(None, solo)
+    checks["Web without a registry: a failed check is one log line "
+           "without a host name, nothing notified"] = got == {
+        "log": "Web UI check error: daemon gone\n", "notified": [],
+        "raised": False, "locked": False}
+    if got["log"] != "Web UI check error: daemon gone\n":
+        print(f"      → got {got!r}")
+    checks["…through one check_on_hosts walk, told not to raise"] = (
+        len(calls) == 1 and calls[0][1].get("raise_alone", True) is False)
+
+    solo = _SoloChecker([upd])
+    got = _click(None, solo)
+    checks["Web without a registry: what it found is notified, "
+           "check_all asked with no arguments"] = (
+        got == {"log": "", "notified": [upd], "raised": False,
+                "locked": False} and solo.calls == [{}])
+
+    one = _SoloChecker(raises=RuntimeError("boom"))
+    got = _click(_reg(("local", one)), _SoloChecker([upd]))
+    checks["Web on one host: the registry's checker is asked, the error "
+           "line has no \"on local\""] = got == {
+        "log": "Web UI check error: boom\n", "notified": [],
+        "raised": False, "locked": False}
+    if got["log"] != "Web UI check error: boom\n":
+        print(f"      → got {got!r}")
+
+    a = _SoloChecker(raises=RuntimeError("boom"))
+    b = _SoloChecker([upd])
+    got = _click(_reg(("local", a), ("nas", b)), a)
+    checks["Web on two hosts: the failing one is named, the other's "
+           "update still notified"] = got == {
+        "log": "Web UI check error on local: boom\n", "notified": [upd],
+        "raised": False, "locked": False} and b.calls == [{}]
+    if got["log"] != "Web UI check error on local: boom\n":
+        print(f"      → got {got!r}")
+    a = _SoloChecker([dict(upd, host="local")])
+    b = _SoloChecker([dict(upd, host="nas")])
+    got = _click(_reg(("local", a), ("nas", b)), a)
+    checks["Web on two hosts: both hosts' updates in one "
+           "notify_updates, local first"] = (
+        got["notified"] == [dict(upd, host="local"), dict(upd, host="nas")]
+        and got["log"] == "")
 finally:
     shutil.rmtree(m._TMP_ROOT, ignore_errors=True)
 

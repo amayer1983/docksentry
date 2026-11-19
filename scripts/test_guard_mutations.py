@@ -2866,6 +2866,63 @@ GUARDED = [
      '{self._label(None)} — ',
      'test_discord_dispatch_matrix.py'),
 
+    ("Web Check Updates walks every host, not only the first",
+     'app/web_ui.py',
+     '                    list(hosts) if hosts else None,\n',
+     '                    list(hosts)[:1] if hosts else None,\n',
+     'test_web_action_matrix.py'),
+
+    ("…each host with its own checker",
+     'app/web_ui.py',
+     '                    checker_for=lambda h: checker if h is None else h.checker,\n',
+     '                    checker_for=lambda h: checker,\n',
+     'test_manual_check_hosts.py'),
+
+    ("Web Check Updates asks for no SSH hint",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
+     '                    hint=True, raise_alone=False, on_host=_report, t=None)\n',
+     'test_check_on_hosts.py'),
+
+    ("…hands check_all no bot, so DEBUG does not send a click's trace",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
+     '                    hint=False, raise_alone=False, on_host=_report, t=None,\n'
+     '                    debug_sink=bot)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and never raises, not even without a registry",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, on_host=_report, t=None)\n',
+     '                    hint=False, raise_alone=True, on_host=_report, t=None)\n',
+     'test_check_on_hosts.py'),
+
+    ("Web Check Updates logs a host's failure on one host too",
+     'app/web_ui.py',
+     '                    if hc.error is not None:\n'
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     '                    if hc.error is not None and named:\n'
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     'test_check_on_hosts.py'),
+
+    ("…naming the host only on a multi-host install",
+     'app/web_ui.py',
+     '                named = bool(hosts) and hosts.is_multi\n',
+     '                named = bool(hosts)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and naming the host that failed",
+     'app/web_ui.py',
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     '                        where = f" on {hosts.local.name}" if named else ""\n',
+     'test_web_action_matrix.py'),
+
+    ("Web Check Updates notifies what the hosts found",
+     'app/web_ui.py',
+     '                        found.extend(hc.updates)\n',
+     '                        found.extend(hc.updates[:0])\n',
+     'test_web_action_matrix.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
