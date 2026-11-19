@@ -212,7 +212,8 @@ with tempfile.TemporaryDirectory() as _d:
 import ast  # noqa: E402
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
-SITES = {"scheduler.py": 1, "telegram_bot.py": 3, "discord_bot.py": 1}
+SITES = {"scheduler.py": 1, "telegram_bot.py": 3, "discord_bot.py": 1,
+         "container_flags.py": 1}
 _found, _untranslated = {}, []
 for _file in SITES:
     _src = open(os.path.join(APP, _file), encoding="utf-8").read()

@@ -28,7 +28,8 @@ answer per host while Discord joins into one clipped blob, and what keeps
 the shared translations the single source of wording.
 """
 
-from dataclasses import dataclass, field
+from collections import namedtuple
+from dataclasses import dataclass, field, replace
 
 
 #: How a name is matched. `/unpin` matches against the stored list; the
@@ -230,6 +231,159 @@ def resolve_container(partial, *, backend=None, names=None):
                            {"names": ", ".join(f"`{m}`" for m in matches)},
                            ok=False)
     return None, Reply("resolve_not_found", {"name": partial}, ok=False)
+
+
+def _listed_names(result):
+    """The names a `ps --format {{.Names}}` printed, minus our own `_old`
+    rollback leftovers — an implementation detail of the update path."""
+    return [n.strip() for n in (getattr(result, "stdout", "") or "").strip().split("\n")
+            if n.strip() and not n.strip().endswith("_old")]
+
+
+def resolve_container_checked(partial, *, backend, timeout=None):
+    """`resolve_container`, but a host that did not answer says so.
+
+    Returns `(name, reply, failure)`. `failure` is set when the listing
+    itself failed — the exception the backend raised, or `(returncode,
+    stderr)` when the CLI exited non-zero — and then `name` and `reply`
+    are both None: nothing was looked at, so nothing is "not found".
+
+    `resolve_container` reads a non-zero exit as an empty host, so a host
+    whose SSH refuses answers "Container `web` not found." — measured in
+    test_find_on_hosts, where it stays pinned, because that function
+    keeps its callers until they move here.
+
+    A plain name always looks at stopped containers too, like every
+    partial-name lookup in both chats. `timeout` None leaves the CLI's
+    own default and passes nothing.
+    """
+    cmd = ["ps", "-a", "--format", "{{.Names}}"]
+    try:
+        result = (backend.run(cmd) if timeout is None
+                  else backend.run(cmd, timeout=timeout))
+    except Exception as e:                                  # noqa: BLE001
+        return None, None, e
+    rc = getattr(result, "returncode", 0)
+    if rc != 0:
+        return None, None, (rc, getattr(result, "stderr", "") or "")
+    name, reply = resolve_container(partial, names=_listed_names(result))
+    return name, reply, None
+
+
+class Unreachable(namedtuple("Unreachable", "host error hint")):
+    """A host that did not answer: `(host, error_text, hint)`.
+
+    `error` is meant for a person (a timeout says how long we waited);
+    `hint` is hostdiag's sentence for an SSH host, or "". `reply()` is
+    the shared one-liner both chats render, the hint goes underneath.
+    """
+    __slots__ = ()
+
+    def reply(self):
+        from container_store import LOCAL_HOST
+        return Reply("host_unreachable_short",
+                     {"host": getattr(self.host, "name", "") or LOCAL_HOST,
+                      "error": self.error},
+                     host=self.host, host_is_local=_is_local(self.host),
+                     ok=False)
+
+
+#: One host's answer, as `on_host` sees it: exactly one of `names`
+#: (non-empty), `error` (a Reply: none there, or ambiguous) and
+#: `unreachable` is set.
+HostFind = namedtuple("HostFind", "host names error unreachable")
+
+
+@dataclass(frozen=True)
+class FindResult:
+    #: `(host, names)` for every host with a match, in walk order.
+    found: tuple = ()
+    #: One Reply per host that answered without a match, `host` set.
+    errors: tuple = ()
+    #: One `Unreachable` per host that did not answer.
+    unreachable: tuple = ()
+
+    @property
+    def first_error(self):
+        """What to say when nothing was found anywhere: the first
+        answering host's Reply. None when every host was unreachable —
+        then there is nothing to call "not found"."""
+        return self.errors[0] if self.errors else None
+
+
+def _human(err, t):
+    import errfmt
+    try:
+        return errfmt.human(err, t=t)
+    except Exception:                                       # noqa: BLE001
+        return errfmt.human(err)
+
+
+def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
+                  on_host=None, timeout=None, t):
+    """Find `arg` — a plain partial name or a glob — on each of `targets`.
+
+    The hosts are asked one after the other, in the order given, and
+    `on_host(HostFind)` runs for each before the next one is touched, so
+    a chat can send a host's answer as soon as it has it. An exception
+    from `on_host` is the caller's and is not swallowed.
+
+    Unreachable is an exception from the backend OR a CLI exit ≠ 0: a
+    dead host raises its timeout, a refused SSH returns 255 with empty
+    output, and neither may come back as "not found" or take the whole
+    command down. Nothing from a host is raised from here.
+
+    `include_stopped` applies to a glob; a plain name always looks at
+    stopped containers too (`resolve_container_checked`). `t` translates
+    the timeout line and hostdiag's hint.
+    """
+    import lifecycle
+    is_glob = lifecycle.is_glob(arg)
+    found, errors, unreachable = [], [], []
+    for host in targets:
+        names, reply, failure = [], None, None
+        try:
+            backend = backend_for(host)
+            if is_glob:
+                names, failure = lifecycle.match_glob_checked(
+                    arg, backend=backend, include_stopped=include_stopped,
+                    timeout=timeout)
+                if failure is None and not names:
+                    reply = Reply("glob_no_match", {"pattern": arg},
+                                  ok=False)
+            else:
+                name, reply, failure = resolve_container_checked(
+                    arg, backend=backend, timeout=timeout)
+                names = [name] if name else []
+        except Exception as e:                              # noqa: BLE001
+            names, reply, failure = [], None, e
+        gone = None
+        if failure is not None:
+            if isinstance(failure, tuple):
+                rc, stderr = failure
+                raw = stderr
+                text = _human(stderr, t) if stderr.strip() else f"exit {rc}"
+            else:
+                raw = str(failure)
+                text = _human(failure, t)
+            hint = ""
+            try:
+                import hostdiag
+                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,
+                                     t=t) or ""
+            except Exception:                               # noqa: BLE001
+                hint = ""
+            gone = Unreachable(host, text, hint)
+            unreachable.append(gone)
+            names, reply = [], None
+        elif names:
+            found.append((host, tuple(names)))
+        else:
+            reply = replace(reply, host=host, host_is_local=_is_local(host))
+            errors.append(reply)
+        if on_host is not None:
+            on_host(HostFind(host, tuple(names), reply, gone))
+    return FindResult(tuple(found), tuple(errors), tuple(unreachable))
 
 
 def apply_flag(spec, targets, *, store_for, backend_for=None, partial=None,

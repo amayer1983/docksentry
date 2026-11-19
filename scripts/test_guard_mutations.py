@@ -2251,6 +2251,62 @@ GUARDED = [
      "                    describe=str):\n",
      "test_dead_host_memory.py"),
 
+    # Finding a container across hosts (W2): unreachable is named, never
+    # folded into "not found". No callers yet; test_find_on_hosts drives it.
+    ('a host that does not answer is named, not called empty',
+     'app/container_flags.py',
+     '    if rc != 0:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     'test_find_on_hosts.py'),
+
+    ("a glob on a host that does not answer is unreachable, not 'no match'",
+     'app/lifecycle.py',
+     '    if rc != 0:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     'test_find_on_hosts.py'),
+
+    ("a backend that raises is the checked resolver's failure, not a crash",
+     'app/container_flags.py',
+     '    except Exception as e:                                  # noqa: BLE001\n        return None, None, e\n',
+     '    except ZeroDivisionError as e:                          # noqa: BLE001\n        return None, None, e\n',
+     'test_find_on_hosts.py'),
+
+    ('find_on_hosts never raises for a host, whatever it throws',
+     'app/container_flags.py',
+     '        except Exception as e:                              # noqa: BLE001\n            names, reply, failure = [], None, e\n',
+     '        except ZeroDivisionError as e:                      # noqa: BLE001\n            names, reply, failure = [], None, e\n',
+     'test_find_on_hosts.py'),
+
+    ('find_on_hosts hands every host to on_host',
+     'app/container_flags.py',
+     '        if on_host is not None:\n            on_host(HostFind(host, tuple(names), reply, gone))\n',
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("an unreachable host's SSH hint is in the reader's language",
+     'app/container_flags.py',
+     '                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,\n                                     t=t) or ""\n',
+     '                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,\n                                     t=None) or ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a dead host's error says how long we waited, not the argv",
+     'app/container_flags.py',
+     '                text = _human(failure, t)\n',
+     '                text = str(failure)\n',
+     'test_find_on_hosts.py'),
+
+    ("nothing found anywhere answers with the first host's Reply",
+     'app/container_flags.py',
+     '        return self.errors[0] if self.errors else None\n',
+     '        return None\n',
+     'test_find_on_hosts.py'),
+
+    ("a per-host 'not found' says which host it is about",
+     'app/container_flags.py',
+     '            reply = replace(reply, host=host, host_is_local=_is_local(host))\n',
+     '            reply = reply\n',
+     'test_find_on_hosts.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
