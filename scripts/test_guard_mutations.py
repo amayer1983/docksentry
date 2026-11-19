@@ -2252,7 +2252,8 @@ GUARDED = [
      "test_dead_host_memory.py"),
 
     # Finding a container across hosts (W2): unreachable is named, never
-    # folded into "not found". No callers yet; test_find_on_hosts drives it.
+    # folded into "not found". test_find_on_hosts drives the core; since
+    # W3 Telegram's /status, /check and /update <name> call it too.
     ('a host that does not answer is named, not called empty',
      'app/container_flags.py',
      '    if rc != 0:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',

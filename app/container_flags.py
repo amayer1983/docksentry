@@ -275,8 +275,10 @@ class Unreachable(namedtuple("Unreachable", "host error hint")):
 
     `error` is meant for a person (a timeout says how long we waited);
     `hint` is hostdiag's sentence for an SSH host, or "". `reply()` is
-    the `host_unreachable_short` one-liner Discord renders today, the
-    hint goes underneath. Telegram still says `status_host_unreachable`.
+    the `host_unreachable_short` one-liner Discord builds by hand; since
+    W3 Telegram's `/status`, `/check` and `/update <name>` render it, the
+    hint goes underneath. Only Telegram's plain `/status` overview still
+    says `status_host_unreachable`.
     """
     __slots__ = ()
 
