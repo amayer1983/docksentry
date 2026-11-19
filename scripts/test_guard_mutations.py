@@ -2132,6 +2132,51 @@ GUARDED = [
      "        import container_flags\n",
      "test_target_resolution_shared.py"),
 
+    # A2: Discord reads go through the same core on multi, and `all` is
+    # the every-host sentinel there. Handing the core the raw name makes
+    # `host: all` an unknown host again.
+    ("Discord `host: all` on a read reaches every host (multi-host)",
+     "app/discord_bot.py",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, self._host_token(name))\n",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, name)\n",
+     "test_target_resolution_shared.py"),
+
+    ("…and the Discord matrix sees it: `host: all` rows equal the no-host rows",
+     "app/discord_bot.py",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, self._host_token(name))\n",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, name)\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("Discord's `all` is `all` in any case, for reads and writes",
+     "app/discord_bot.py",
+     '        return ALL_HOSTS if name.strip().lower() == "all" else name\n',
+     '        return ALL_HOSTS if name == "all" else name\n',
+     "test_target_resolution_shared.py"),
+
+    ("a one-host Discord read keeps its own path; `all` stays unknown there",
+     "app/discord_bot.py",
+     '        if not getattr(self.hosts, "is_multi", False):\n',
+     "        if False:\n",
+     "test_target_resolution_shared.py"),
+
+    ("Discord autocomplete with `host: all` asks the local host only",
+     "app/discord_bot.py",
+     "        named = self._host_token(host_name) not in (None, ALL_HOSTS)\n",
+     "        named = bool(host_name)\n",
+     "test_target_resolution_shared.py"),
+
+    # …which only holds while no host can be called `all`. The host list
+    # drops one at load and says so in the log.
+    ("the log says why a host named `all` was dropped at load",
+     "app/config.py",
+     '            print(f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "\n',
+     '            (f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "\n',
+     "test_docker_hosts.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

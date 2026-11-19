@@ -1169,16 +1169,36 @@ class DiscordBot:
         opts = (data.get("data") or {}).get("options") or []
         return {o["name"]: o.get("value") for o in opts}
 
+    @staticmethod
+    def _host_token(name):
+        """A `host` option as the core reads it: nothing named is None,
+        `all` in any case is `hosts.ALL_HOSTS`, anything else a name."""
+        from hosts import ALL_HOSTS
+        if not name:
+            return None
+        return ALL_HOSTS if name.strip().lower() == "all" else name
+
     def _hosts_for(self, name):
         """Resolve a host option to a list of hosts, or None when the
         name isn't one we manage. Mirrors the Telegram rule: no host
         given means every host for read commands."""
         if not self.hosts:
             return [None]
-        if not name:
-            return list(self.hosts)
-        host = self.hosts.get(name)
-        return [host] if host else None
+        if not getattr(self.hosts, "is_multi", False):
+            # One host: its own path, kept as it was — the registry's one
+            # host rather than the core's `[None]`, and `all` is not a
+            # name there.
+            if not name:
+                return list(self.hosts)
+            host = self.hosts.get(name)
+            return [host] if host else None
+        # Through the core, like `_write_hosts_for`: before, `host: all`
+        # on /status, /check, /logs and friends was looked up as a name
+        # and answered "unknown host `all`".
+        import container_flags
+        targets, fatal = container_flags.targets_for_read(
+            self.hosts, self._host_token(name))
+        return None if fatal else targets
 
     def _write_hosts_for(self, name):
         """`_hosts_for` for a command that CHANGES something.
@@ -1193,11 +1213,8 @@ class DiscordBot:
         # this used to look the name up directly and had no branch for the
         # sentinel, so `host: all` came back as an unknown host (#63).
         import container_flags
-        from hosts import ALL_HOSTS
-        token = None
-        if name:
-            token = ALL_HOSTS if name.strip().lower() == "all" else name
-        targets, fatal = container_flags.targets_for_write(self.hosts, token)
+        targets, fatal = container_flags.targets_for_write(
+            self.hosts, self._host_token(name))
         return None if fatal else targets
 
     def _checker_for(self, host):
@@ -1331,8 +1348,13 @@ class DiscordBot:
         Not every host: this runs while someone is typing, and walking
         five hosts' container lists inside three seconds is a race we
         would lose. Fill the host in first and the list follows it.
+        `all` counts as not filled in: it would otherwise hand us every
+        host, and this asks for the local one by name instead of trusting
+        that it comes first.
         """
-        hosts = self._hosts_for(host_name) if host_name else None
+        from hosts import ALL_HOSTS
+        named = self._host_token(host_name) not in (None, ALL_HOSTS)
+        hosts = self._hosts_for(host_name) if named else None
         host = hosts[0] if hosts else (self.hosts.local if self.hosts else None)
         backend = self._backend_for(host)
         if backend is None:

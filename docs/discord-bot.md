@@ -195,7 +195,9 @@ and it lands in the channel instead, with a line saying why.
 Discord's commands don't work like Telegram's. `/status docksentry` isn't a
 thing; it's `/status container:docksentry`, and for a host, `/status host:local`
 — the machine Docksentry itself runs on is called `local`, and `/hosts` lists
-the others.
+the others. With more than one host, `host:all` means every host: on a command that only looks, that's
+the same as leaving the field empty, and on one that changes something it's
+how you reach more than `local`.
 
 You don't have to remember any of it. Both fields suggest real names while you
 type, and the container list follows whichever host you filled in first.

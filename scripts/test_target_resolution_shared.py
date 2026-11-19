@@ -24,13 +24,20 @@ What this pins, over tokens {None, nas, NAS, @all, typo} × {read, write}
     text byte for byte (an `@nas` token and double spaces kept) and
     never parses it: that early return is what keeps one-host installs
     on their pre-#7 path;
-  * `_resolve_targets` keeps no private copy of the rule.
+  * `_resolve_targets` keeps no private copy of the rule;
+  * Discord's `_hosts_for` / `_write_hosts_for` give the core's targets
+    on multi for every spelling of the `host` option, `all` included
+    (A2: reads used to answer 'unknown host' to it), with None for an
+    unknown host; on one host `_hosts_for` keeps its own path and `all`
+    stays unknown there; autocomplete with `host: all` asks the local
+    host only.
 
 `--app DIR` runs it against another tree's app/ (that is how the
 Telegram half was measured on main before the core function existed).
 """
 import os
 import sys
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -218,6 +225,109 @@ checks["TG _resolve_targets does not resolve hosts itself"] = (
 checks["TG _resolve_targets returns early on one host, before parsing"] = (
     srcslice.in_order(body, "if not self._multi():",
                       "return arg_text, None, None", "split_host_target("))
+
+# ── Discord: the same core, the `host` option as typed ────────────────
+# Discord has no `@` to parse: the option holds a bare name, and `all`
+# (any case) is the sentinel. `_hosts_for` answers None for "no such
+# host", where the core answers ([], Reply).
+import discord_bot                                 # noqa: E402
+
+
+def dc_on(registry, checker=None):
+    bot = discord_bot.DiscordBot.__new__(discord_bot.DiscordBot)
+    bot.hosts = registry
+    bot.checker = checker
+    return bot
+
+
+def names_of(targets):
+    if not isinstance(targets, list):
+        return targets
+    return [getattr(h, "name", h) for h in targets]
+
+
+#: The option value → the token the core gets.
+DC_TOKEN = {None: None, "": None, "nas": "nas", "NAS": "NAS",
+            " nas ": " nas ", "all": ALL_HOSTS, "ALL": ALL_HOSTS,
+            " All ": ALL_HOSTS, "typo": "typo"}
+EVERY = ["local", "nas", "pve1"]
+#: Multi-host, by hand: what a read and a write reach (None = unknown).
+DC_MULTI = {
+    None: (EVERY, ["local"]), "": (EVERY, ["local"]),
+    "nas": (["nas"], ["nas"]), "NAS": (["nas"], ["nas"]),
+    " nas ": (["nas"], ["nas"]),
+    "all": (EVERY, EVERY), "ALL": (EVERY, EVERY), " All ": (EVERY, EVERY),
+    "typo": (None, None),
+}
+dc = dc_on(REGISTRIES["multi"])
+for opt, (want_read, want_write) in DC_MULTI.items():
+    for mode, fn, want in (("read", "_hosts_for", want_read),
+                           ("write", "_write_hosts_for", want_write)):
+        cell = f"multi/{mode}/host:{opt!r}"
+        got = call(getattr(dc, fn, None), opt)
+        checks[f"DC {cell} → {want}"] = names_of(got) == want
+        core = call(by_mode[mode], REGISTRIES["multi"], DC_TOKEN[opt])
+        same = (isinstance(core, tuple) and len(core) == 2
+                and got == (None if core[1] is not None else core[0]))
+        checks[f"DC {cell}: same targets as the core"] = same
+
+# One host: `_hosts_for` keeps its own path — the registry's one host,
+# not the core's `[None]` — and `all` stays an unknown host there, as
+# today. Writes ignore the option on one host (the core's `[None]`).
+DC_ONE_READ = {None: ["local"], "": ["local"], "local": ["local"],
+               "LOCAL": ["local"], "nas": None, "all": None, "ALL": None,
+               "zzz": None}
+dc = dc_on(REGISTRIES["one"])
+for opt, want in DC_ONE_READ.items():
+    checks[f"DC one/read/host:{opt!r} → {want}"] = (
+        names_of(call(dc._hosts_for, opt)) == want)
+    checks[f"DC one/write/host:{opt!r} → [None]"] = (
+        call(dc._write_hosts_for, opt) == [None])
+dc = dc_on(None)
+for opt in DC_ONE_READ:
+    checks[f"DC none/read/host:{opt!r} → [None]"] = (
+        call(dc._hosts_for, opt) == [None])
+
+_dc_body = srcslice.method_source(discord_bot.DiscordBot, "_hosts_for")
+checks["DC _hosts_for routes multi-host reads through "
+       "container_flags.targets_for_read"] = (
+    _dc_body is not None and "container_flags.targets_for_read(" in _dc_body)
+
+# Autocomplete with `host: all` lists the LOCAL host's containers — it
+# does not walk every host while someone is typing, and it does not take
+# whichever host happens to come first. `build_hosts` always puts local
+# first, so the second registry below is hand-built with local second:
+# it pins that the local host is asked for, not the order relied on.
+
+
+class _Backend:
+    def __init__(self, names):
+        self.names, self.calls = names, 0
+
+    def run(self, args, **_kw):
+        self.calls += 1
+        return types.SimpleNamespace(stdout="\n".join(self.names) + "\n",
+                                     returncode=0)
+
+
+def _autocomplete(order, opt):
+    local_be, nas_be = _Backend(["web", "db"]), _Backend(["plex"])
+    hs = {"local": ManagedHost("local", local_be, None, None, is_local=True),
+          "nas": ManagedHost("nas", nas_be, None, None)}
+    bot = dc_on(HostRegistry([hs[n] for n in order]),
+                checker=types.SimpleNamespace(backend=local_be))
+    got = call(bot._container_names, opt)
+    return got, (local_be.calls, nas_be.calls)
+
+
+for order in (("local", "nas"), ("nas", "local")):
+    for opt in ("all", "ALL", " all "):
+        got, calls = _autocomplete(order, opt)
+        checks[f"DC autocomplete host:{opt!r} (registry {'/'.join(order)}) "
+               f"lists local only"] = got == ["web", "db"] and calls == (1, 0)
+    got, calls = _autocomplete(order, "nas")
+    checks[f"DC autocomplete host:'nas' (registry {'/'.join(order)}) "
+           f"lists nas"] = got == ["plex"] and calls == (0, 1)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

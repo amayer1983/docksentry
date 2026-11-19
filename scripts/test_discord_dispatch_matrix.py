@@ -793,15 +793,6 @@ def all_rows():
 #: Rows that are wrong today and pinned as they are, with the slice
 #: meant to change them. Read off the generated table by hand.
 KNOWN_DEFECTS = {}
-_A2 = "A2: `host: all` on a read command answers 'unknown host'"
-for _c_ in (None, "web", "web*", "nosuch"):
-    _o = f" container:{_c_}" if _c_ else ""
-    KNOWN_DEFECTS[("multi", f"/status{_o} host:all")] = _A2
-    if _c_:
-        KNOWN_DEFECTS[("multi", f"/logs{_o} host:all")] = _A2
-for _cmd_ in ("check", "cleanup", "checkimages", "pin", "autoupdate",
-              "protect", "cooldown", "trustrunning", "askmajor"):
-    KNOWN_DEFECTS[("multi", f"/{_cmd_} host:all")] = _A2
 _WHERE = ("no slice yet: the question over several hosts says 'on this "
           "host' (`where` is the first target's label, :2574)")
 for _r_ in ("/updateall host:all", "updateall host:all: press",
@@ -879,12 +870,56 @@ for _r_ in ("/status host:all", "/status container:web host:all",
         "A2: on one host `all` stays an unknown host"
         if "all" in _r_ else "A2: one-host rows stay as they are"))
 
+#: A2: on multi, `host: all` on a read reaches exactly what no host
+#: reaches. On main these rows answered "Unknown host `all`"; now each
+#: must equal its no-host twin, apart from the step's label and the
+#: `host` the audit entry records. Checked on top of the table, so a
+#: regenerated table cannot quietly take the old answer back.
+A2_TWINS = []
+for _c_ in (None, "web", "web*", "nosuch"):
+    _o = f" container:{_c_}" if _c_ else ""
+    A2_TWINS.append(f"/status{_o} host:all")
+    if _c_:
+        A2_TWINS.append(f"/logs{_o} host:all")
+for _cmd_ in ("check", "cleanup", "checkimages", "pin", "autoupdate",
+              "protect", "cooldown", "trustrunning", "askmajor"):
+    A2_TWINS.append(f"/{_cmd_} host:all")
+
+
+def _sans_host(rec):
+    """`rec` without what naming `host: all` legitimately changes."""
+    rec = copy.deepcopy(rec)
+    for step in rec.get("steps", []):
+        step.pop("do", None)
+    audit = []
+    for line in rec.get("state", {}).get("audit", []):
+        e = json.loads(line)
+        (e.get("detail") or {}).pop("host", None)
+        if e.get("detail") == {}:
+            e.pop("detail")
+        audit.append(json.dumps(e, sort_keys=True))
+    if audit:
+        rec["state"]["audit"] = audit
+    return rec
+
+
+def twin_checks(recs):
+    """A2: each `host: all` read row against its no-host twin."""
+    for name in A2_TWINS:
+        twin = name[:-len(" host:all")]
+        a, b = recs.get(("multi", name)), recs.get(("multi", twin))
+        yield (f"[multi] {name} reaches what {twin or 'no host'} reaches",
+               a is not None and b is not None
+               and _sans_host(a) == _sans_host(b))
+
+
 #: Where each command lands, read against main at 8a74ba7
 #: (app/discord_bot.py, `_dispatch` from :1344). Printed above its rows
 #: by --snapshot, so a regenerated table keeps the review notes.
 BRANCH_NOTES = {
     "/status": ":1361 → :1447. `_hosts_for` (:1172, read: no host = every "
-               "host, `all` and anything unknown = 'unknown host'). A name "
+               "host, `all` = every host on multi since A2 and unknown on "
+               "one host, anything else unknown = 'unknown host'). A name "
                "resolves per host through `_resolve_container` (`ps -a`, no "
                "timeout of its own), first host that resolves wins; "
                "ambiguous or not found falls through to the overview "
@@ -933,7 +968,8 @@ BRANCH_NOTES = {
              "two-part id is 'unknown button'.",
     "autocomplete": ":836 authorised, then `_autocomplete` (:1282) on a "
                     "worker: host → registry names, container → `ps -a` on "
-                    "the named host or local (`_hosts_for` None → local).",
+                    "the named host or local (nothing or `all` named → "
+                    "local, since A2 by name rather than registry order).",
     "lock": "the update lock held from outside for one command.",
 }
 
@@ -987,8 +1023,10 @@ def check():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
     steps_of = dict(all_scenarios())
+    recs = {}
     for setup, name in all_rows():
         rec, esc = run_scenario(setup, steps_of[name])
+        recs[(setup, name)] = rec
         want = _expected_for(setup, name)
         label = f"[{setup}] {name}"
         if (setup, name) in KNOWN_DEFECTS:
@@ -1019,6 +1057,9 @@ def check():
                 if got.get(k) != exp.get(k):
                     print(f"      →   {k}: expected {exp.get(k)!r}")
                     print(f"      →   {k}: got      {got.get(k)!r}")
+    for label, ok in twin_checks(recs):
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
     rows = set(all_rows())
     for key in sorted(k for k in EXPECTED if k not in rows):
         print(f"  FAIL  expectation without a row: {key!r}")
@@ -1028,6 +1069,11 @@ def check():
         for key in sorted(k for k in table if k not in rows):
             print(f"  FAIL  {what} names no row: {key!r}")
             failed += 1
+    for name in A2_TWINS:
+        for row in (name, name[:-len(" host:all")]):
+            if ("multi", row) not in rows:
+                print(f"  FAIL  A2 twin names no row: {row!r}")
+                failed += 1
     print("FAIL" if failed else "PASS")
     return 1 if failed else 0
 
@@ -1072,14 +1118,16 @@ def main():
         shutil.rmtree(m._TMP_ROOT, ignore_errors=True)
 
 
-# ── expected, generated by --snapshot from main (8a74ba7), reviewed ──
+# ── expected, generated by --snapshot from main (8a74ba7); the 16 A2
+# ── rows from core-split after A2, reviewed ──
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
     # :1361 → :1447. `_hosts_for` (:1172, read: no host = every host, `all`
-    # and anything unknown = 'unknown host'). A name resolves per host
-    # through `_resolve_container` (`ps -a`, no timeout of its own), first
-    # host that resolves wins; ambiguous or not found falls through to the
-    # overview narrowed by substring (`get_running_containers(timeout=10)`).
+    # = every host on multi since A2 and unknown on one host, anything else
+    # unknown = 'unknown host'). A name resolves per host through
+    # `_resolve_container` (`ps -a`, no timeout of its own), first host that
+    # resolves wins; ambiguous or not found falls through to the overview
+    # narrowed by substring (`get_running_containers(timeout=10)`).
     ('multi', '/status'): {'steps': [{'do': 'cmd /status',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
@@ -1138,8 +1186,28 @@ EXPECTED = {
                          '"source": "discord"}']}},
     ('multi', '/status host:all'): {'steps': [{'do': "cmd /status host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
+                        '?\n'
+                        '🟢 `web` — `nginx:1.25` — ⏱ ?\n'
+                        '⚪ `db` — `postgres:16` — ⏱ ?\n'
+                        '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
+                        '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
+                        "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
+                        "'ps', '--format', '{{.Names}}|{{.Image}…#a371cf4aa4  []"],
+                'hosts': {'local': 'ps --format t=10, inspect --format t=5 ×2, inspect '
+                                   't=60, inspect --format ×3, inspect t=10, image inspect '
+                                   '--format t=10, inspect t=10, image inspect --format '
+                                   't=10, inspect t=10, image inspect --format t=10, '
+                                   'inspect --format t=5 ×2',
+                          'nas': 'ps --format t=10, inspect --format t=5 ×2, inspect t=60, '
+                                 'inspect --format ×2, inspect t=10, image inspect '
+                                 '--format t=10, inspect t=10, image inspect --format t=10',
+                          'dead': 'ps --format t=10',
+                          'refused': 'ps --format t=10',
+                          'flaky': 'ps --format t=10, inspect --format t=5 ×2, inspect '
+                                   't=60, inspect --format ×2, inspect t=10, image inspect '
+                                   '--format t=10, inspect t=10, image inspect --format '
+                                   't=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -1212,8 +1280,15 @@ EXPECTED = {
                          '"web", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/status container:web host:all'): {'steps': [{'do': "cmd /status container:'web' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> 🔎 **web** — ✅ running (healthy) · ⏱ ?\n'
+                        '\n'
+                        '📦 `nginx:1.25`\n'
+                        '     `251ad31786ba`\n'
+                        '\n'
+                        '🔁 unless-stopped  []'],
+                'hosts': {'local': 'ps -a --format, inspect t=10, image inspect --format '
+                                   't=10, stats --no-stream --format t=20, inspect --size '
+                                   '--format t=15, image inspect --format t=15'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "all"}, "source": "discord"}']}},
@@ -1278,8 +1353,20 @@ EXPECTED = {
                          '"web*", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/status container:web* host:all'): {'steps': [{'do': "cmd /status container:'web*' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
+                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
+                        'out after 10 seconds\n'
+                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
+                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                   '×2, inspect t=60, inspect --format ×3, inspect '
+                                   '--format t=5 ×2',
+                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                 '×2, inspect t=60, inspect --format ×2',
+                          'dead': 'ps -a --format, ps --format t=10',
+                          'refused': 'ps -a --format, ps --format t=10',
+                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                   '×2, inspect t=60, inspect --format ×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "all"}, "source": "discord"}']}},
@@ -1344,8 +1431,20 @@ EXPECTED = {
                          '"nosuch", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/status container:nosuch host:all'): {'steps': [{'do': "cmd /status container:'nosuch' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
+                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
+                        'out after 10 seconds\n'
+                        '⚠ `refused` unreachable: could not list containers (rc=255): ssh: '
+                        'connect to host 192.0.2.30 port 22: Connection refused  []'],
+                'hosts': {'local': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                   '×2, inspect t=60, inspect --format ×3, inspect '
+                                   '--format t=5 ×2',
+                          'nas': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                 '×2, inspect t=60, inspect --format ×2',
+                          'dead': 'ps -a --format, ps --format t=10',
+                          'refused': 'ps -a --format, ps --format t=10',
+                          'flaky': 'ps -a --format, ps --format t=10, inspect --format t=5 '
+                                   '×2, inspect t=60, inspect --format ×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "all"}, "source": "discord"}']}},
@@ -1721,8 +1820,7 @@ EXPECTED = {
                          '"nas"}, "source": "discord"}']}},
     ('multi', '/trustrunning host:all'): {'steps': [{'do': "cmd /trustrunning host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> 🩺 Nothing is set to accept running-but-unhealthy.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/trustrunning", "actor": "u7", "detail": {"host": '
                          '"all"}, "source": "discord"}']}},
@@ -1982,8 +2080,7 @@ EXPECTED = {
                          '"nas"}, "source": "discord"}']}},
     ('multi', '/askmajor host:all'): {'steps': [{'do': "cmd /askmajor host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> ⚠️ No container asks before a major update.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/askmajor", "actor": "u7", "detail": {"host": '
                          '"all"}, "source": "discord"}']}},
@@ -2696,8 +2793,26 @@ EXPECTED = {
                          '"source": "discord"}']}},
     ('multi', '/check host:all'): {'steps': [{'do': "cmd /check host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> **Updates available**\n'
+                        '• `web` — nginx:1.25\n'
+                        '• `web` @nas — nginx:1.25\n'
+                        "⚠️ Host `dead` could not be checked: Command '['docker', '-H', "
+                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}\n"
+                        '⚠️ Host `refused` could not be checked: could not list containers '
+                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Con\n'
+                        '⚠️ Host `flaky` could not be checked: registry did not answer in '
+                        '15s  []'],
+                'hosts': {'local': 'ps --format, inspect --format t=5 ×2, inspect t=60, '
+                                   'inspect --format ×2, inspect --format t=5',
+                          'nas': 'ps --format, inspect --format t=5 ×2, inspect t=60, '
+                                 'inspect --format ×2',
+                          'dead': 'ps --format',
+                          'refused': 'ps --format'},
+                'events': ['check_all@local',
+                           'check_all@nas',
+                           'check_all@dead',
+                           'check_all@refused',
+                           'check_all@flaky']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/check", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -2775,9 +2890,7 @@ EXPECTED = {
                'audit': ['{"action": "/pin", "actor": "u7", "detail": {"host": "nas"}, '
                          '"source": "discord"}']}},
     ('multi', '/pin host:all'): {'steps': [{'do': "cmd /pin host:'all'",
-                'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                'out': ['<ack deferred ephemeral>', '<edit> 📌 No pinned containers.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/pin", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -3224,8 +3337,7 @@ EXPECTED = {
                          '"nas"}, "source": "discord"}']}},
     ('multi', '/autoupdate host:all'): {'steps': [{'do': "cmd /autoupdate host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> ⚡ No containers set to auto-update.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/autoupdate", "actor": "u7", "detail": {"host": '
                          '"all"}, "source": "discord"}']}},
@@ -3478,8 +3590,8 @@ EXPECTED = {
                          '"source": "discord"}']}},
     ('multi', '/protect host:all'): {'steps': [{'do': "cmd /protect host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> No stop-protected containers. `/protect <name>` to add '
+                        'one.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/protect", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -3742,8 +3854,8 @@ EXPECTED = {
                          '"nas"}, "source": "discord"}']}},
     ('multi', '/cooldown host:all'): {'steps': [{'do': "cmd /cooldown host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> No per-container update cooldowns set. `/cooldown <name> '
+                        '<seconds>` to add one.  []']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/cooldown", "actor": "u7", "detail": {"host": '
                          '"all"}, "source": "discord"}']}},
@@ -4133,8 +4245,12 @@ EXPECTED = {
                          '"web", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/logs container:web host:all'): {'steps': [{'do': "cmd /logs container:'web' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> 📋 **Logs for** `web` (last 30 lines):\n'
+                        '```\n'
+                        'line one\n'
+                        'line two\n'
+                        '```  []'],
+                'hosts': {'local': 'ps -a --format, logs --tail 30 t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/logs", "actor": "u7", "detail": {"container": '
                          '"web", "host": "all"}, "source": "discord"}']}},
@@ -4190,8 +4306,12 @@ EXPECTED = {
                          '"web*", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/logs container:web* host:all'): {'steps': [{'do': "cmd /logs container:'web*' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> Container `web*` not found.  []'],
+                'hosts': {'local': 'ps -a --format',
+                          'nas': 'ps -a --format',
+                          'dead': 'ps -a --format',
+                          'refused': 'ps -a --format',
+                          'flaky': 'ps -a --format'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/logs", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "all"}, "source": "discord"}']}},
@@ -4247,8 +4367,12 @@ EXPECTED = {
                          '"nosuch", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/logs container:nosuch host:all'): {'steps': [{'do': "cmd /logs container:'nosuch' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> Container `nosuch` not found.  []'],
+                'hosts': {'local': 'ps -a --format',
+                          'nas': 'ps -a --format',
+                          'dead': 'ps -a --format',
+                          'refused': 'ps -a --format',
+                          'flaky': 'ps -a --format'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/logs", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "all"}, "source": "discord"}']}},
@@ -5718,8 +5842,19 @@ EXPECTED = {
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> ✅ Total reclaimed space: 0 B\n'
+                        '✅ Total reclaimed space: 0 B @nas\n'
+                        "❌ Cleanup error: Command '['docker', '-H', 'ssh://dead', 'image', "
+                        "'prune', '-a', '--force', '--filter', 'until=24h']' timed out "
+                        'after 180 seconds @dead\n'
+                        '❌ Cleanup failed: ssh: connect to host 192.0.2.30 port 22: '
+                        'Connection refused @refused\n'
+                        '✅ Total reclaimed space: 0 B @flaky  []'],
+                'hosts': {'local': 'image prune -a --force --filter t=180',
+                          'nas': 'image prune -a --force --filter t=180',
+                          'dead': 'image prune -a --force --filter t=180',
+                          'refused': 'image prune -a --force --filter t=180',
+                          'flaky': 'image prune -a --force --filter t=180'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/cleanup", "actor": "u7", "detail": {"host": "all"}, '
                          '"source": "discord"}']}},
@@ -5795,8 +5930,20 @@ EXPECTED = {
                          '"nas"}, "source": "discord"}']}},
     ('multi', '/checkimages host:all'): {'steps': [{'do': "cmd /checkimages host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        '<edit> ❌ Unknown host `all`. Managed hosts: `local`, `nas`, '
-                        '`dead`, `refused`, `flaky`  []']}],
+                        '<edit> **Reclaimable image space**\n'
+                        '🧹 @local — nothing to reclaim.\n'
+                        '🧹 @nas — nothing to reclaim.\n'
+                        "⚠️ Host `dead` could not be checked: Command '['docker', '-H', "
+                        "'ssh://dead', 'system', 'df', '--format', '{{json .}}'\n"
+                        '⚠️ Host `refused` could not be checked: ssh: connect to host '
+                        '192.0.2.30 port 22: Connection refused\n'
+                        '🧹 @flaky — nothing to reclaim.  []'],
+                'hosts': {'local': 'system df --format t=15, images --filter --format t=20',
+                          'nas': 'system df --format t=15, images --filter --format t=20',
+                          'dead': 'system df --format t=15',
+                          'refused': 'system df --format t=15',
+                          'flaky': 'system df --format t=15, images --filter --format '
+                                   't=20'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/checkimages", "actor": "u7", "detail": {"host": '
                          '"all"}, "source": "discord"}']}},
@@ -8070,7 +8217,8 @@ EXPECTED = {
     # ── autocomplete ────────────────────────────────────────────────
     # :836 authorised, then `_autocomplete` (:1282) on a worker: host →
     # registry names, container → `ps -a` on the named host or local
-    # (`_hosts_for` None → local).
+    # (nothing or `all` named → local, since A2 by name rather than registry
+    # order).
     ('multi', "auto host ''"): {'steps': [{'do': "auto /status host:''*",
                 'out': ['<autocomplete> local, nas, dead, refused, flaky']}],
      'state': {'pending': ['web@local', 'web@nas']}},
