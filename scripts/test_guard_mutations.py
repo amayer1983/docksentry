@@ -2159,6 +2159,18 @@ GUARDED = [
      "                self.release_update(after=after)\n",
      "test_update_lock_door.py"),
 
+    ("the bot's update lock is the engine's, not one of its own",
+     "app/telegram_bot.py",
+     "        return self.engine._update_lock\n",
+     "        return threading.Lock()\n",
+     "test_update_lock_door.py"),
+
+    ("…and the bot's update_running reads the engine's",
+     "app/telegram_bot.py",
+     "        return self.engine.update_running\n",
+     "        return False\n",
+     "test_update_lock_door.py"),
+
     ("a new caller of the update-lock door is noticed",
      "scripts/test_update_lock_sites.py",
      "                    elif c in (DOOR_CLAIM, DOOR_RELEASE):\n",

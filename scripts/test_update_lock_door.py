@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from config import Config  # noqa: E402
 from container_store import ContainerStore  # noqa: E402
+from telegram_bot import TelegramBot  # noqa: E402
 from update_engine import UpdateEngine  # noqa: E402
 import selfupdate  # noqa: E402
 
@@ -88,6 +89,13 @@ if claim is not None:
     checks["a free lock is claimed"] = claim() is True
     checks["…and it is THE update lock, not a second one"] = (
         eng._update_lock.locked() and eng.update_running is True)
+    # The bot's views forward to the engine: a claim made at the door is
+    # what every `self._update_lock` / `update_running` in the bot reads.
+    bot = TelegramBot.__new__(TelegramBot)
+    bot.engine = eng
+    checks["…and the bot sees the same claim"] = (
+        bot._update_lock is eng._update_lock
+        and bot._update_lock.locked() and bot.update_running is True)
     # A held lock: answered at once, and the holder keeps it. Asked from
     # another thread, like the scheduler asking while a tap holds it; a
     # daemon, so a claim that blocks shows up red instead of hanging us.
