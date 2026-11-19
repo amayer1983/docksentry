@@ -623,7 +623,11 @@ class TelegramBot:
         """Sorted container names matching a glob (#40, @LeeNX).
         `backend` picks the host to match on (#7); default is the local
         one. The matching is `lifecycle.match_glob` — shared, so `/stop
-        web*` means the same set of containers in either chat."""
+        web*` means the same set of containers in either chat.
+
+        Nothing in the bot calls this since W4 — /status, /check and
+        /update match a glob through `find_on_hosts`, which can tell an
+        unreachable host from no match. Only test_glob still drives it."""
         import lifecycle
         return lifecycle.match_glob(pattern, backend=backend or self.backend,
                                     include_stopped=include_stopped)
@@ -633,20 +637,14 @@ class TelegramBot:
         Glob (`*?[`) → all matches; plain → single partial-resolved name.
         Returns (names, error_msg, unreachable): error_msg is None on
         success (#40); `unreachable` is the `container_flags.Unreachable`
-        of a host that did not answer a plain-name lookup, else None.
+        of a host that did not answer the lookup, else None.
         `host` is the host asked (None on a single-host install) and
         `backend` its backend; default is the local one (#7).
 
-        A plain name goes through `find_on_hosts`, so a dead or refused
-        host is said to be unreachable instead of raising its timeout
-        through the dispatch or reading as "not found". The glob branch
-        still matches through `_match_glob`, where an unreachable host
-        reads as no match."""
-        if self._is_glob(arg):
-            names = self._match_glob(arg, backend=backend)
-            if not names:
-                return [], self.t("glob_no_match", pattern=arg), None
-            return names, None, None
+        A plain name and a glob both go through `find_on_hosts`, so a
+        dead or refused host is said to be unreachable instead of raising
+        its timeout through the dispatch or reading as "not found" or "no
+        containers match" (W4)."""
         import container_flags
         found = container_flags.find_on_hosts(
             [host], backend_for=lambda _h: backend or self.backend,
@@ -3623,6 +3621,25 @@ class TelegramBot:
                 return edited
         return {}
 
+    def _send_glob_status(self, host, pattern, names):
+        """`/status <glob>`: one line per match on `host`, in one message.
+
+        Called per host while `find_on_hosts` is still walking, like
+        `_send_status_detail`. A match whose inspect comes back empty
+        (gone since the listing) is left out; the header still counts it,
+        as it always has."""
+        backend = self._backend_for(host)
+        tag = self._host_tag(host)
+        lines = [self.t("glob_status_header", count=len(names), pattern=pattern)]
+        for nm in names:
+            si = container_info.state(backend, nm)
+            if not si:
+                continue
+            icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
+            health = f" ({si['health']})" if si["health"] else ""
+            lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
+        self.send_message("\n".join(lines))
+
     def _send_status_detail(self, host, resolved, checker):
         """`/status <name>`: send one container's detail on `host`.
 
@@ -3787,53 +3804,37 @@ class TelegramBot:
                 # behind it (#7).
                 shown = False
                 first_err = None
-                unreachable = ()
+                import container_flags
                 # Glob → a compact one-line-per-match overview (#40, @LeeNX).
                 # Read-only, so no action buttons; use /status <name> for the
                 # full single-container detail.
-                if self._is_glob(partial):
-                    for host in (status_targets or [None]):
-                        backend = self._backend_for(host)
-                        tag = self._host_tag(host)
-                        names = self._match_glob(partial, backend=backend)
-                        if not names:
-                            first_err = first_err or self.t("glob_no_match",
-                                                            pattern=partial)
-                            continue
-                        shown = True
-                        lines = [self.t("glob_status_header", count=len(names), pattern=partial)]
-                        for nm in names:
-                            si = container_info.state(backend, nm)
-                            if not si:
-                                continue
-                            icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
-                            health = f" ({si['health']})" if si["health"] else ""
-                            lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
-                        self.send_message("\n".join(lines))
-                else:
-                    import container_flags
+                glob = self._is_glob(partial)
 
-                    def _show(one):
-                        nonlocal shown, first_err
-                        if one.error is not None:
-                            first_err = first_err or self.t(
-                                one.error.key, **one.error.params)
-                        if not one.names:
-                            return
-                        gone = self._send_status_detail(
-                            one.host, one.names[0], checker)
-                        if gone:
-                            first_err = first_err or gone
-                        else:
-                            shown = True
-                    # A dead host's timeout and a refused SSH come back
-                    # as `unreachable` instead of raising out of here or
-                    # reading as "not found"; the walk goes on to the
-                    # next host either way.
-                    unreachable = container_flags.find_on_hosts(
-                        status_targets or [None],
-                        backend_for=self._backend_for, arg=partial,
-                        on_host=_show, t=self.t).unreachable
+                def _show(one):
+                    nonlocal shown, first_err
+                    if one.error is not None:
+                        first_err = first_err or self.t(
+                            one.error.key, **one.error.params)
+                    if not one.names:
+                        return
+                    if glob:
+                        self._send_glob_status(one.host, partial, one.names)
+                        shown = True
+                        return
+                    gone = self._send_status_detail(
+                        one.host, one.names[0], checker)
+                    if gone:
+                        first_err = first_err or gone
+                    else:
+                        shown = True
+                # A dead host's timeout and a refused SSH come back as
+                # `unreachable` instead of raising out of here or reading
+                # as "not found" / "no containers match" (W3, W4); the
+                # walk goes on to the next host either way.
+                unreachable = container_flags.find_on_hosts(
+                    status_targets or [None],
+                    backend_for=self._backend_for, arg=partial,
+                    on_host=_show, t=self.t).unreachable
                 tail = self._lookup_tail(shown, first_err, unreachable)
                 if tail:
                     self.send_message(tail)

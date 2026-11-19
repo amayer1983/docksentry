@@ -2349,8 +2349,8 @@ GUARDED = [
 
     ("Telegram /status <name> names the hosts that did not answer",
      'app/telegram_bot.py',
-     '                        on_host=_show, t=self.t).unreachable\n',
-     '                        on_host=_show, t=self.t).unreachable[:0]\n',
+     '                    on_host=_show, t=self.t).unreachable\n',
+     '                    on_host=_show, t=self.t).unreachable[:0]\n',
      'test_telegram_dispatch_matrix.py'),
 
     ("Telegram /check <name> names the hosts that did not answer",
@@ -2435,6 +2435,44 @@ GUARDED = [
      "                continue\n",
      "                continue\n",
      "test_discord_dispatch_matrix.py"),
+
+    # W4: Telegram's glob /status, /check and /update go through
+    # find_on_hosts too, so a dead or refused host is named instead of
+    # reading as "no containers match". The two failure lines of
+    # match_glob_checked now guard a chat path, and the two glob call
+    # sites each get a mutation that puts the old shortcut back.
+    ("…and Telegram says a refused host is unreachable for a glob, not 'no match'",
+     'app/lifecycle.py',
+     '    if rc != 0:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and Telegram says a dead host is unreachable for a glob, not 'no match'",
+     'app/lifecycle.py',
+     '    except Exception as e:                                  # noqa: BLE001\n'
+     '        return [], e\n',
+     '    except Exception as e:                                  # noqa: BLE001\n'
+     '        return [], None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check and /update <glob> keep an unreachable host apart from 'no match'",
+     'app/telegram_bot.py',
+     '        containers match" (W4)."""\n'
+     '        import container_flags\n',
+     '        containers match" (W4)."""\n'
+     '        if self._is_glob(arg):\n'
+     '            names = self._match_glob(arg, backend=backend)\n'
+     '            if not names:\n'
+     '                return [], self.t("glob_no_match", pattern=arg), None\n'
+     '            return names, None, None\n'
+     '        import container_flags\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <glob> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '                    on_host=_show, t=self.t).unreachable\n',
+     '                    on_host=_show, t=self.t).unreachable[:0 if glob else None]\n',
+     'test_telegram_dispatch_matrix.py'),
 
 ]
 

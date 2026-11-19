@@ -73,7 +73,9 @@ read row by row against the branch each one lands in. The ten rows W3
 flipped (a plain name with a dead or refused host among the targets)
 come from core-split after W3, as do the four `/check web @dead` and
 `/update web @dead` rows added with it; W3_SPEC states by hand what
-they say.
+they say. The seven glob rows W4 flipped, and `/update web* @dead` and
+`/update web* @all` added with it, come from core-split after W4 and
+are checked against W4_SPEC.
 """
 
 import contextlib
@@ -634,6 +636,7 @@ EXTRA = [
     "/status web* @dead", "/check web @refused", "/check web* @refused",
     "/check web* @dead", "/update web @refused", "/update web* @refused",
     "/check web @dead", "/update web @dead",
+    "/update web* @dead", "/update web* @all",
 ]
 
 
@@ -651,18 +654,10 @@ def all_rows():
 
 #: Rows that are wrong today and pinned as they are, with the slice that
 #: is meant to change them. Read off the generated table by hand.
-_W4 = "W4: an unreachable host reads as 'no match' for a glob"
 _NOT_FOUND = ("no slice yet: the refused host answers 'not found' and the "
               "dead one 'could not list containers'")
 _QUIET = "no slice yet: dead and refused hosts are skipped without a word"
 KNOWN_DEFECTS = {
-    ("multi", "/status web*"): _W4,
-    ("multi", "/status web* @refused"): _W4,
-    ("multi", "/status web* @dead"): _W4,
-    ("multi", "/check web*"): _W4,
-    ("multi", "/check web* @refused"): _W4,
-    ("multi", "/check web* @dead"): _W4,
-    ("multi", "/update web* @refused"): _W4,
     ("multi", "/start web @all"): _QUIET,
     ("multi", "/restart web @all"): _QUIET,
     ("multi", "/stop web @all"): _QUIET,
@@ -805,6 +800,106 @@ def w3_extra_checks():
     results.append(("W3 single host, daemon dead: /check web says so",
                     rec["out"] == want and rec["raised"] is None
                     and rec["events"] == [] and not esc,
+                    f"got {rec['out']!r}, raised {rec['raised']!r}"))
+    return results
+
+
+#: W4, written by hand before the change: the same for a glob. Before
+#: W4 a dead or refused host read as "no containers match" — on its own
+#: that was the whole answer, and among others it was not mentioned at
+#: all. Now a glob says it like a plain name does: the hosts that
+#: answered as before, one closing line per host that did not.
+_W4_OVERVIEW = (
+    "*Status — 2 match(es) for* `web*`*:*\n🟢 `web` — running (healthy)\n"
+    "⏹ `webdav` — exited",
+    "*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @nas — running (healthy)",
+    "*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @flaky — running")
+_W4_CHECKED = ["check_all@local only=['web', 'webdav']",
+               "check_all@nas only=['web']", "check_all@flaky only=['web']"]
+W4_SPEC = {
+    "/status web*": (list(_W4_OVERVIEW) + [_W3_BOTH], []),
+    "/status web* @refused": ([_W3_REFUSED], []),
+    "/status web* @dead": ([_W3_DEAD], []),
+    "/check web*": (_W3_CHECK_OUT, _W4_CHECKED),
+    "/check web* @refused": ([_W3_REFUSED], []),
+    "/check web* @dead": ([_W3_DEAD], []),
+    "/update web* @refused": ([_W3_REFUSED], []),
+    "/update web* @dead": ([_W3_DEAD], []),
+    # Nothing matches on the hosts that answered: "no match" leads, the
+    # hosts nobody could ask follow in the same message.
+    "/check nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH],
+                       []),
+    "/status nosuch*": (["⚠️ No containers match `nosuch*`.\n" + _W3_BOTH],
+                        []),
+    "/update web* @all": (
+        [_W3_BOTH, "🔍 Checking for updates...", _W3_FLAKY,
+         "⏳ Updating 2 container(s) matching `web*`…",
+         "⏳ Starting update for 1 containers...", _W3_RESULT.format(tag=""),
+         "⏳ Starting update for 1 containers...",
+         _W3_RESULT.format(tag=" @nas")],
+        _W4_CHECKED + ["update_container@local:web",
+                       "update_container@nas:web"]),
+}
+
+
+def w4_checks():
+    """The W4 rows against W4_SPEC, the same three questions as W3:
+    what is said, what ran and that nothing raised, and that each
+    unreachable host was asked once while the walk went on to flaky."""
+    results = []
+    for text, (want_out, want_events) in W4_SPEC.items():
+        rec, esc = run_row("multi", text)
+        results.append((f"W4 {text!r}: says what the spec says",
+                        rec["out"] == want_out and not esc,
+                        f"got {rec['out']!r}, escapes {esc!r}"))
+        results.append((f"W4 {text!r}: raises nothing, runs what it should",
+                        rec["raised"] is None
+                        and rec["events"] == want_events,
+                        f"raised {rec['raised']!r}, events {rec['events']!r}"))
+        named = [h for h in ("dead", "refused")
+                 if "@" not in text or text.endswith(("@all", "@" + h))]
+        asked = all(rec["hosts"].get(h) == "ps -a --format" for h in named)
+        if "@" not in text or text.endswith("@all"):
+            asked = asked and "flaky" in rec["hosts"]
+        results.append((f"W4 {text!r}: every unreachable host asked once, "
+                        f"and the walk went on past it", asked and bool(named),
+                        f"hosts {rec['hosts']!r}"))
+    return results + w4_extra_checks()
+
+
+def w4_extra_checks():
+    """The glob's SSH hint, and a single host whose own daemon does not
+    answer a glob — before W4 both read as "no containers match"."""
+    import hostdiag
+    from i18n import get_translator
+    en = get_translator("en")
+    results = []
+    no_dir = os.path.join(_TMP_ROOT or tempfile.gettempdir(), "no-ssh-here")
+    real_home = hostdiag._home_ssh
+    hostdiag._home_ssh = lambda: no_dir
+    try:
+        denied = "user@192.0.2.30: Permission denied (publickey)."
+        rec, esc = _w3_row("multi", "/check web* @refused", refused=denied)
+    finally:
+        hostdiag._home_ssh = real_home
+    hint = en("hostdiag_ssh_no_dir", dir=no_dir)
+    want = [f"⚠ `refused` unreachable: {denied}\n{hint}"]
+    results.append(("W4 a glob's unreachable host gets its SSH hint too",
+                    rec["out"] == want and not esc and bool(hint),
+                    f"got {rec['out']!r}, want {want!r}"))
+    gone = ("Cannot connect to the Docker daemon at unix:///var/run/"
+            "docker.sock. Is the docker daemon running?")
+    rec, esc = _w3_row("none", "/check web*", modes={"local": "refused"},
+                       refused=gone)
+    want = [f"⚠ `local` unreachable: {gone}"]
+    results.append(("W4 single host, daemon refuses: /check web* says so",
+                    rec["out"] == want and rec["raised"] is None
+                    and rec["events"] == [] and not esc,
+                    f"got {rec['out']!r}, raised {rec['raised']!r}"))
+    rec, esc = _w3_row("none", "/status web*", modes={"local": "dead"})
+    want = ["⚠ `local` unreachable: no answer within 30 seconds"]
+    results.append(("W4 single host, daemon dead: /status web* says so",
+                    rec["out"] == want and rec["raised"] is None and not esc,
                     f"got {rec['out']!r}, raised {rec['raised']!r}"))
     return results
 
@@ -996,7 +1091,7 @@ def check():
     for label, ok in trap_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
-    for label, ok, detail in w3_checks():
+    for label, ok, detail in w3_checks() + w4_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         if not ok:
             print(f"      → {detail}")
@@ -1033,6 +1128,7 @@ def check():
 
 # ── expected, generated by --snapshot from main (8a74ba7), reviewed; ──
 # ── the W3 rows from core-split after W3, checked against W3_SPEC ──────
+# ── the W4 glob rows from core-split after W4, against W4_SPEC ─────────
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
     # :3661 `startswith('/status ')` for a name or glob, :3776 `==
@@ -1072,7 +1168,8 @@ EXPECTED = {
     ('multi', '/status web*'): dict(
         out=['*Status — 2 match(es) for* `web*`*:*\n🟢 `web` — running (healthy)\n⏹ `webdav` — exited',
              '*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @nas — running (healthy)',
-             '*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @flaky — running'],
+             '*Status — 1 match(es) for* `web*`*:*\n🟢 `web` @flaky — running',
+             '⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'local': 'ps -a --format, inspect t=10, image inspect --format t=10, inspect t=10, image inspect --format t=10',
                'nas': 'ps -a --format, inspect t=10, image inspect --format t=10',
                'dead': 'ps -a --format',
@@ -1181,7 +1278,7 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/status web* @refused'): dict(
-        out=['⚠️ No containers match `web*`.'],
+        out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'refused': 'ps -a --format'},
         events=[],
         raised=None),
@@ -1201,7 +1298,7 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/status web* @dead'): dict(
-        out=['⚠️ No containers match `web*`.'],
+        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
         hosts={'dead': 'ps -a --format'},
         events=[],
         raised=None),
@@ -1253,7 +1350,8 @@ EXPECTED = {
         events=["check_all@local only=['web']"],
         raised=None),
     ('multi', '/check web*'): dict(
-        out=['🔍 Checking for updates...',
+        out=['⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
+             '🔍 Checking for updates...',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '🔄 *Docker Updates Available*\n\n• [web](https://github.com/example/web/releases/latest) @nas (nginx:1.25) 🔖 v1.25.0 → v1.26.0\n  📦 10 MB | 🗓️ Current: 2026-01-01  [3 buttons]',
              '⚠️ Host `flaky` could not be checked: registry did not answer in 15s'],
@@ -1369,7 +1467,7 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/check web* @refused'): dict(
-        out=['⚠️ No containers match `web*`.'],
+        out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'refused': 'ps -a --format'},
         events=[],
         raised=None),
@@ -1379,7 +1477,7 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/check web* @dead'): dict(
-        out=['⚠️ No containers match `web*`.'],
+        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
         hosts={'dead': 'ps -a --format'},
         events=[],
         raised=None),
@@ -1499,7 +1597,7 @@ EXPECTED = {
         events=[],
         raised=None),
     ('multi', '/update web* @refused'): dict(
-        out=['⚠️ No containers match `web*`.'],
+        out=['⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused'],
         hosts={'refused': 'ps -a --format'},
         events=[],
         raised=None),
@@ -1515,6 +1613,37 @@ EXPECTED = {
         raised=None),
     ('single', '/update web @dead'): dict(
         out=['Container `web @dead` not found.'],
+        hosts={'local': 'ps -a --format'},
+        events=[],
+        raised=None),
+    ('multi', '/update web* @dead'): dict(
+        out=['⚠ `dead` unreachable: no answer within 30 seconds'],
+        hosts={'dead': 'ps -a --format'},
+        events=[],
+        raised=None),
+    ('single', '/update web* @dead'): dict(
+        out=['⚠️ No containers match `web* @dead`.'],
+        hosts={'local': 'ps -a --format'},
+        events=[],
+        raised=None),
+    ('multi', '/update web* @all'): dict(
+        out=['⚠ `dead` unreachable: no answer within 30 seconds\n⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: Connection refused',
+             '🔍 Checking for updates...',
+             '⚠️ Host `flaky` could not be checked: registry did not answer in 15s',
+             '⏳ Updating 2 container(s) matching `web*`…',
+             '⏳ Starting update for 1 containers...',
+             '*Update Result:*\n\n✅ [web](https://github.com/example/web/releases/latest): updated (stand-in)',
+             '⏳ Starting update for 1 containers...',
+             '*Update Result:*\n\n✅ [web](https://github.com/example/web/releases/latest) @nas: updated (stand-in)'],
+        hosts={'local': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=5, inspect --format t=10, inspect --format t=5, inspect --format',
+               'nas': 'ps -a --format, ps --format, inspect --format t=5 ×2, inspect t=60, inspect --format ×2, inspect --format t=10, inspect --format t=5, inspect --format',
+               'dead': 'ps -a --format',
+               'refused': 'ps -a --format',
+               'flaky': 'ps -a --format'},
+        events=["check_all@local only=['web', 'webdav']", "check_all@nas only=['web']", "check_all@flaky only=['web']", 'update_container@local:web', 'update_container@nas:web'],
+        raised=None),
+    ('single', '/update web* @all'): dict(
+        out=['⚠️ No containers match `web* @all`.'],
         hosts={'local': 'ps -a --format'},
         events=[],
         raised=None),

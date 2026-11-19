@@ -9,8 +9,8 @@ Docker Hub's anonymous rate limit. Now they pass `only=<matched names>` to
 This drives the real `_handle_message` dispatch on a real `TelegramBot`
 (built with `__new__`, no Telegram, no Docker) whose local backend is a
 fake CLI: `ps -a --format {{.Names}}` lists a fixed set, so both the glob
-(`lifecycle.match_glob`) and the plain name (`container_flags.find_on_hosts`)
-are resolved by the real code, not by a stand-in. The checker records the
+and the plain name are resolved by the real `container_flags.find_on_hosts`
+(the glob through `lifecycle.match_glob_checked`), not by a stand-in. The checker records the
 `only` argument and counts remote lookups, and the /update thread is run
 synchronously so its `updates` payload is inspectable. Exits non-zero on
 any failure.

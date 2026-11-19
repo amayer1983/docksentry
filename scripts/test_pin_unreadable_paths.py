@@ -246,11 +246,21 @@ class _SyncThread:
         self._t(*self._a, **self._k)
 
 
+class _OnlyDb:
+    """The local CLI for `_typed`: `ps` lists one container, `db`, so the
+    glob is matched by the real lookup (`find_on_hosts`)."""
+
+    def run(self, args, **kw):
+        import subprocess
+        out = "db\n" if args and args[0] == "ps" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+
 def _typed(text, pin_bytes):
     """`text` typed into Telegram; (said, run_updates payload, notified)."""
     ck, cfg = _world(pin_bytes)
     stub = types.SimpleNamespace(update_running=False, bot_username="",
-                                 hosts=None, backend=None, sent=[],
+                                 hosts=None, backend=_OnlyDb(), sent=[],
                                  updated_with="unset", notified=None)
     stub._handle_message = types.MethodType(TelegramBot._handle_message, stub)
     stub._select_containers = types.MethodType(
@@ -262,10 +272,6 @@ def _typed(text, pin_bytes):
     stub._is_glob = TelegramBot._is_glob
     stub._help_alias = TelegramBot._help_alias
     stub._check_auth = lambda chat_id, user_id, kind="message": True
-    # A glob, so the names come from `_match_glob` below and not from a
-    # container lookup this stand-in has no daemon for.
-    stub._match_glob = (lambda pattern, include_stopped=True, backend=None:
-                        ["db"])
     stub.t = get_translator("en")
     stub.send_message = lambda text, **kw: stub.sent.append(text)
     stub.notify_updates = (lambda updates, auto=False:
