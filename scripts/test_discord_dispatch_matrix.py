@@ -3,10 +3,11 @@
 
 The core split moves Discord's `_dispatch` chain into a table, gives
 `host: all` a meaning on read commands (A2), and changes how a dead or
-refused host is reported (W3d, W5d, W7d). test_discord_bot.py drives one
-command at a time against duck-typed fakes; this one drives every
-command in every option form against a real `DiscordBot` and compares
-the result with a table taken from main before anything moved.
+refused host is reported (W5d, W7d; W3d measured /status <container>
+and found nothing to fix). test_discord_bot.py drives one command at a
+time against duck-typed fakes; this one drives every command in every
+option form against a real `DiscordBot` and compares the result with a
+table taken from main before anything moved.
 
 Two set-ups, the same rows in each:
 
@@ -843,8 +844,9 @@ for _r_ in ("/status container:web host:dead",
             "/status container:web host:refused",
             "/status container:nosuch", "/status container:web*"):
     PINNED_FOR[("multi", _r_)] = (
-        "W3d: an unresolved name falls into the narrowed overview, which "
-        "already names the dead and refused host")
+        "W5d/W7d: an unresolved name falls into the narrowed overview; "
+        "W3d measured that it names the dead and refused host, never "
+        "'not found'")
 for _r_ in ("/status", "/status host:dead", "/status host:refused",
             "/status twice"):
     PINNED_FOR[("multi", _r_)] = "W5d/W7d: the overview walk, no hint"
@@ -911,6 +913,89 @@ def twin_checks(recs):
         yield (f"[multi] {name} reaches what {twin or 'no host'} reaches",
                a is not None and b is not None
                and _sans_host(a) == _sans_host(b))
+
+
+#: W3d: /status <container> with a dead or refused host. The plan read
+#: the code as answering "not found" there. Measured on f713111 it does
+#: not: the name fails to resolve on that host, the reply falls through
+#: to the narrowed overview, and the overview names the host as
+#: unreachable. These rows pin that beyond the table's fixed hosts —
+#: a name living only on the broken host, a broken local daemon on one
+#: host, ssh refusing on keys rather than on the port.
+#: (label, setup, backend modes laid over it, what a refused host
+#: prints or None, options, hosts the reply must name as unreachable)
+W3D_ROWS = [
+    ("web host:dead", "multi", {}, None,
+     [("container", "web"), ("host", "dead")], ["dead"]),
+    ("web host:refused", "multi", {}, None,
+     [("container", "web"), ("host", "refused")], ["refused"]),
+    ("nosuch, every host", "multi", {}, None,
+     [("container", "nosuch")], ["dead", "refused"]),
+    ("media, only on nas, nas refused", "multi", {"nas": "refused"}, None,
+     [("container", "media")], ["nas", "dead", "refused"]),
+    ("media host:nas, nas dead", "multi", {"nas": "dead"}, None,
+     [("container", "media"), ("host", "nas")], ["nas"]),
+    ("web host:refused, refused on keys", "multi", {},
+     "Permission denied (publickey).",
+     [("container", "web"), ("host", "refused")], ["refused"]),
+    ("web, local daemon refused", "one", {"local": "refused"}, None,
+     [("container", "web")], ["local"]),
+    ("web, local daemon dead", "one", {"local": "dead"}, None,
+     [("container", "web")], ["local"]),
+]
+
+
+def _w3d_run(setup, opts, modes=None, refused=None):
+    """One /status with `modes` laid over the set-up and `refused` as
+    what a refused host prints; both put back afterwards."""
+    real = m.MatrixBackend.refused_stderr
+    m.MODE_OVERRIDE.update(modes or {})
+    if refused is not None:
+        m.MatrixBackend.refused_stderr = refused
+    try:
+        return run_scenario(setup, [_c("status", *opts)])
+    finally:
+        m.MODE_OVERRIDE.clear()
+        m.MatrixBackend.refused_stderr = real
+
+
+def w3d_checks():
+    """W3d: what /status <container> says about a dead or refused host."""
+    for label, setup, modes, refused, opts, named in W3D_ROWS:
+        rec, esc = _w3d_run(setup, opts, modes, refused)
+        step = rec["steps"][0] if rec["steps"] else {}
+        out = step.get("out", [])
+        edits = [o for o in out if o.startswith("<edit> ")]
+        text = "\n".join(edits)
+        clean = not esc and not step.get("raised") \
+            and not step.get("events") and len(edits) == 1
+        yield (f"[{setup}] W3d /status {label}: one answer, nothing raised "
+               f"or escaped", clean)
+        yield (f"[{setup}] W3d /status {label}: names "
+               f"{', '.join(named)} as unreachable, once each",
+               all(text.count(f"⚠ `{h}` unreachable: ") == 1
+                   for h in named))
+        yield (f"[{setup}] W3d /status {label}: never says 'not found'",
+               bool(text) and "not found" not in text.lower())
+        if refused:
+            yield (f"[{setup}] W3d /status {label}: shows what ssh said",
+                   refused in text)
+    # Pinned as measured, not judged: found on a later host, the answer
+    # is that host's detail, and the dead and refused hosts the lookup
+    # passed on the way are not mentioned — the same first-host-wins rule
+    # that shows local's `web` and says nothing about nas'. Telegram
+    # (W3) adds the unreachable lines here; whether Discord should is
+    # open, so a change to this row has to be made on purpose.
+    rec, esc = _w3d_run("multi", [("container", "cache")])
+    step = rec["steps"][0] if rec["steps"] else {}
+    edits = [o for o in step.get("out", []) if o.startswith("<edit> ")]
+    yield ("[multi] W3d /status cache (only on flaky): flaky's detail, the "
+           "dead and refused hosts before it unmentioned (pinned as measured)",
+           not esc and len(edits) == 1
+           and edits[0].startswith("<edit> 🔎 **cache** @flaky")
+           and "unreachable" not in edits[0]
+           and step.get("hosts", {}).get("dead") == "ps -a --format"
+           and step.get("hosts", {}).get("refused") == "ps -a --format")
 
 
 #: Where each command lands, read against main at 8a74ba7
@@ -1058,6 +1143,9 @@ def check():
                     print(f"      →   {k}: expected {exp.get(k)!r}")
                     print(f"      →   {k}: got      {got.get(k)!r}")
     for label, ok in twin_checks(recs):
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
+    for label, ok in w3d_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
     rows = set(all_rows())

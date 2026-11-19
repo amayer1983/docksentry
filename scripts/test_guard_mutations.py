@@ -2398,6 +2398,31 @@ GUARDED = [
      "                [None], backend_for=self._backend_for,",
      "test_command_host_coverage.py"),
 
+    # W3d: Discord /status <container> names a dead or refused host as
+    # unreachable and never answers "not found" for it. Two lines carry
+    # that: the lookup error is not the answer, and the overview it
+    # falls into writes the unreachable line. Measured on f713111, the
+    # plan expected "not found" there and it was not.
+    ("Discord /status <container>: a lookup error falls into the overview, "
+     "never the answer",
+     "app/discord_bot.py",
+     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                if err:\n",
+     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                if err:\n"
+     "                    return err\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("Discord /status: a host that does not answer the overview is named "
+     "unreachable",
+     "app/discord_bot.py",
+     "                lines.append(self.t(\"host_unreachable_short\",\n"
+     "                                    host=getattr(host, \"name\", \"local\"),\n"
+     "                                    error=clip(e)))\n"
+     "                continue\n",
+     "                continue\n",
+     "test_discord_dispatch_matrix.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

@@ -1491,6 +1491,11 @@ class DiscordBot:
                 backend = self._backend_for(host)
                 name, err = self._resolve_container(wanted, backend)
                 if err:
+                    # Never the answer on its own: a refused host comes
+                    # back here as "not found", a dead one as "could not
+                    # list". The overview below asks again and names
+                    # either as unreachable — I measured that for W3d,
+                    # test_discord_dispatch_matrix pins it.
                     continue
                 info = container_info.state(backend, name)
                 if not info:
