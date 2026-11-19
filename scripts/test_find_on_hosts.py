@@ -357,6 +357,34 @@ if callable(find_on_hosts):
             and errors_of(res) == [("nas", "chan_no_backend", {})]
             and res.errors[0].host is NAS and res.first_error is res.errors[0])
 
+    # A host without a backend comes first in `errors` when it comes
+    # first in the walk — ahead of a later host's real "not there".
+    _bk = backends()
+    EVENTS.clear()
+    try:
+        res = find_on_hosts(
+            [NAS, LOCAL],
+            backend_for=lambda h: None if h is NAS else _bk["local"],
+            arg="zzz", t=t)
+        raised = None
+    except Exception as e:                              # noqa: BLE001
+        res, raised = None, e
+    checks["first_error can be chan_no_backend ahead of a later not-found"] = (
+        raised is None and res.found == () and res.unreachable == ()
+        and [k for _, k, _ in errors_of(res)] == ["chan_no_backend",
+                                                  "resolve_not_found"]
+        and res.first_error is res.errors[0])
+
+    # ── a plain name on two hosts at once (/status web, /restart web) ─
+    bk = backends()
+    bk["local"].names = ["web", "db"]
+    res, raised = run_find("web", bk=bk)
+    checks["a plain name on two hosts is found on both, in walk order"] = (
+        raised is None and names_of(res) == [("local", ["web"]),
+                                             ("nas", ["web"])]
+        and errors_of(res) == [] and res.first_error is None
+        and unreachable_of(res) == ["dead", "refused"])
+
     # ── a caller's mistake raises; it is not a dead host ──────────────
     bk = backends()
     res, raised = run_find(None, targets=[NAS], bk=bk)

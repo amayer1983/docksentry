@@ -307,9 +307,14 @@ class FindResult:
 
     @property
     def first_error(self):
-        """What to say when nothing was found anywhere: the first
-        answering host's Reply. None when every host was unreachable —
-        then there is nothing to call "not found"."""
+        """What to say when nothing was found anywhere: `errors[0]`, in
+        walk order. That is the first host that answered without a match
+        — OR the first host that had no backend (`chan_no_backend`),
+        whichever came first. A host without a backend never answered,
+        so a later host's `resolve_not_found` can stand behind it; a
+        caller that wants the first real "not there" filters `errors`
+        itself. None when `errors` is empty (every host found it or was
+        unreachable) — then there is nothing to call "not found"."""
         return self.errors[0] if self.errors else None
 
 

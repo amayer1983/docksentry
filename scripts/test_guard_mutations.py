@@ -2325,6 +2325,12 @@ GUARDED = [
      '            reply = reply\n',
      'test_find_on_hosts.py'),
 
+    ("a plain name on two hosts is found on both, not just the first",
+     'app/container_flags.py',
+     '            found.append((host, tuple(names)))\n',
+     '            if is_glob or not found:\n                found.append((host, tuple(names)))\n',
+     'test_find_on_hosts.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
