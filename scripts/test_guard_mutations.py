@@ -2177,6 +2177,44 @@ GUARDED = [
      '            (f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "\n',
      "test_docker_hosts.py"),
 
+    # The host walk lives once, in hosts.walk (W1); the Web UI's
+    # _host_views is its first caller.
+    ("a host found dead is not waited for again within its cooldown",
+     "app/hosts.py",
+     "            if left > 0:\n                skip[i] = (cached, int(left))\n",
+     "            if False:\n                skip[i] = (cached, int(left))\n",
+     "test_dead_host_memory.py"),
+
+    ("the status page skips a host still in its cooldown, via the walk",
+     "app/hosts.py",
+     "            if left > 0:\n                skip[i] = (cached, int(left))\n",
+     "            if False:\n                skip[i] = (cached, int(left))\n",
+     "test_host_views_parallel.py"),
+
+    ("the walk remembers a host that did not answer",
+     "app/hosts.py",
+     "            mark_unreachable(host.name, why)\n",
+     "            pass\n",
+     "test_dead_host_memory.py"),
+
+    ("the walk forgets a host's failures once it answers",
+     "app/hosts.py",
+     "        mark_reachable(host.name)\n        walked.append",
+     "        walked.append",
+     "test_dead_host_memory.py"),
+
+    ("the walk asks at most eight hosts at once",
+     "app/hosts.py",
+     "        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))\n",
+     "        workers = len(todo)\n",
+     "test_dead_host_memory.py"),
+
+    ("a walk with use_cache=False asks a host inside its cooldown",
+     "app/hosts.py",
+     "        if use_cache:\n",
+     "        if True:\n",
+     "test_dead_host_memory.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

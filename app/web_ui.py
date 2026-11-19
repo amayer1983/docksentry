@@ -549,55 +549,37 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # against four managed hosts: an ssh endpoint cost 2.1 s of
             # which 476 ms was a probe asking what the listing asks again,
             # and the whole set ran one after another, so the page paid the
-            # sum. Now it pays the slowest one.
-            _todo = [h for h in (multi or ()) if not h.is_local]
-            _skip = {}
-            for _host in list(_todo):
-                _left, _cached = _hosts_mod.unreachable_for(_host.name)
-                if _left > 0:
-                    _skip[_host.name] = (_cached, int(_left))
-                    _todo.remove(_host)
+            # sum. Now it pays the slowest one. The walk itself — side by
+            # side, skipping a host that just failed, remembering the
+            # outcome — lives in `hosts.walk`; this page only asks.
 
             def _fetch(_h):
-                """`(host, containers, error)` — never raises, so one dead
-                endpoint cannot take the others down with it."""
-                try:
-                    _p = _h.backend.ps(quiet=True, timeout=10)
-                    if getattr(_p, "returncode", 1) != 0:
-                        raise OSError((_p.stderr or "").strip() or "ps failed")
-                    _ids = [i for i in (_p.stdout or "").strip().split("\n") if i]
-                    return _h, self._containers_on(_h.backend, timeout=10,
-                                                   ids=_ids), None
-                except Exception as _e:
-                    return _h, None, _e
+                """The host's containers; raises when it does not answer,
+                and the walk turns that into a row of its own."""
+                _p = _h.backend.ps(quiet=True, timeout=10)
+                if getattr(_p, "returncode", 1) != 0:
+                    raise OSError((_p.stderr or "").strip() or "ps failed")
+                _ids = [i for i in (_p.stdout or "").strip().split("\n") if i]
+                return self._containers_on(_h.backend, timeout=10, ids=_ids)
 
-            _results = {}
-            if _todo:
-                import concurrent.futures as _cf
-                with _cf.ThreadPoolExecutor(max_workers=min(8, len(_todo))) as _ex:
-                    for _h, _rem, _err in _ex.map(_fetch, _todo):
-                        _results[_h.name] = (_rem, _err)
-
-            for _host in (multi or ()):
-                if _host.is_local:
-                    continue
-                if _host.name in _skip:
-                    _cached, _left = _skip[_host.name]
+            for _w in _hosts_mod.walk(
+                    [h for h in (multi or ()) if not h.is_local], _fetch,
+                    describe=self._why):
+                _host = _w.host
+                if _w.skipped:
                     views.append({"unreachable": _host.name,
                                   "host": _host.name,
                                   "endpoint": _host.endpoint,
-                                  "reason": _cached,
-                                  "retry_in": _left,
+                                  "reason": _w.reason,
+                                  "retry_in": _w.retry_in,
                                   "contexts": []})
                     continue
-                _remote, _err = _results.get(_host.name, (None, None))
-                if _err is not None:
+                if _w.error is not None:
                     # One dead host is a line in the table, not a broken
-                    # page. The CLI's own words go with it: this page used
-                    # to say "unreachable" for every cause there is, which
-                    # is the one word that fits none of them.
-                    _reason = self._why(_err)
-                    _hosts_mod.mark_unreachable(_host.name, _reason)
+                    # page. The CLI's own words go with it (`self._why`,
+                    # handed to the walk): this page used to say
+                    # "unreachable" for every cause there is, which is the
+                    # one word that fits none of them.
                     # `host` as well as `unreachable`, and they say the
                     # same thing on purpose. Without it `_machine_state`
                     # fell back to LOCAL_HOST, so /metrics and /api/status
@@ -608,12 +590,11 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     views.append({"unreachable": _host.name,
                                   "host": _host.name,
                                   "endpoint": _host.endpoint,
-                                  "reason": _reason,
+                                  "reason": _w.reason,
                                   "contexts": self._docker_contexts()})
                     continue
-                _hosts_mod.mark_reachable(_host.name)
                 views.append(self._status_view(_host.name, _host.store,
-                                               _remote or [], own_name,
+                                               _w.result or [], own_name,
                                                host_backend=_host.backend))
             return views
 

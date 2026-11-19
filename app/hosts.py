@@ -19,6 +19,7 @@ Its state keys stay unprefixed, so existing installs need no migration.
 Pure standard library, like the rest of the project.
 """
 
+import collections
 import threading
 import time
 
@@ -329,3 +330,78 @@ def forget_unreachable():
     with _unreachable_lock:
         _unreachable.clear()
         _failures.clear()
+
+
+#: One host's part of a `walk`, as data — no wording, no markup.
+#:
+#: `result` is what `fetch` returned for a host that answered. A host
+#: that did not answer has `reason`, the words for it: the remembered
+#: ones when it was `skipped` (still in its cooldown, `retry_in` whole
+#: seconds left), or `describe(error)` when it failed just now. A host
+#: that answered has neither.
+HostWalk = collections.namedtuple(
+    "HostWalk", "host result skipped reason retry_in error",
+    defaults=(None, False, None, None, None))
+
+
+#: How many hosts a walk asks at once.
+MAX_WALK_WORKERS = 8
+
+
+def walk(targets, fetch, *, max_workers=MAX_WALK_WORKERS, use_cache=True,
+         describe=str):
+    """Ask every host in `targets` with `fetch(host)`, side by side, and
+    hand back one `HostWalk` per host in the order given.
+
+    This is the walk the status page used to carry itself: a host
+    still in its cooldown is not asked (unless `use_cache` is False), a
+    host whose `fetch` raises is remembered with `describe(error)`, and a
+    host that answers is forgotten. The memory is read for every host
+    before any is asked and written in the order given once all have
+    answered, which is how the page did it.
+
+    `fetch` runs in worker threads and may raise; that is how it says a
+    host is dead. It must not touch anything the caller changes
+    meanwhile.
+    """
+    targets = list(targets or ())
+    skip = {}
+    todo = []
+    for i, host in enumerate(targets):
+        if use_cache:
+            left, cached = unreachable_for(host.name)
+            if left > 0:
+                skip[i] = (cached, int(left))
+                continue
+        todo.append(i)
+
+    def _one(i):
+        try:
+            return fetch(targets[i]), None
+        except Exception as exc:                   # noqa: BLE001
+            return None, exc
+
+    got = {}
+    if todo:
+        import concurrent.futures as _cf
+        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))
+        with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+            for i, out in zip(todo, ex.map(_one, todo)):
+                got[i] = out
+
+    walked = []
+    for i, host in enumerate(targets):
+        if i in skip:
+            cached, left = skip[i]
+            walked.append(HostWalk(host, skipped=True, reason=cached,
+                                   retry_in=left))
+            continue
+        result, err = got[i]
+        if err is not None:
+            why = describe(err)
+            mark_unreachable(host.name, why)
+            walked.append(HostWalk(host, reason=why, error=err))
+            continue
+        mark_reachable(host.name)
+        walked.append(HostWalk(host, result=result))
+    return walked
