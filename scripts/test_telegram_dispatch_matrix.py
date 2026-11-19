@@ -969,6 +969,11 @@ def w4_extra_checks():
 _W7_LATER = " (from a moment ago, not asked again for 60s)"
 _W7_DEAD_PS = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
                "timed out after 10 seconds")
+#: …and what a skipped host says of that, later: errfmt.human's words,
+#: never Python's argv, whoever remembered it (review of W7: the raw line
+#: came back with the seconds clause after it, and then human could no
+#: longer recognise it as a timeout).
+_W7_DEAD_LATER = "no answer within 10 seconds" + _W7_LATER
 _W7_REFUSED = ("ssh: connect to host 192.0.2.30 port 22: Connection "
                "refused")
 _W7_REFUSED_CHECK = "could not list containers (rc=255): " + _W7_REFUSED
@@ -1009,7 +1014,7 @@ def w7_checks():
     (first, second), esc = _w7_seq(["/status", "/status"])
     want = swap(swap(first["out"],
                      _w7_status_line("dead", _W7_DEAD_PS),
-                     _w7_status_line("dead", _W7_DEAD_PS + _W7_LATER)),
+                     _w7_status_line("dead", _W7_DEAD_LATER)),
                 _w7_status_line("refused", _W7_REFUSED),
                 _w7_status_line("refused", _W7_REFUSED + _W7_LATER))
     add("/status then /status: the first is T2's /status row",
@@ -1029,8 +1034,8 @@ def w7_checks():
     # /status, then /check: the check does not wait on them either.
     (first, second), esc = _w7_seq(["/status", "/check"])
     fresh, _e = _w7_seq(["/check"])
-    want = [("⚠️ Host `dead` could not be checked: " + _W7_DEAD_PS
-             + _W7_LATER) if o.startswith("⚠️ Host `dead`")
+    want = [("⚠️ Host `dead` could not be checked: " + _W7_DEAD_LATER)
+            if o.startswith("⚠️ Host `dead`")
             else ("⚠️ Host `refused` could not be checked: " + _W7_REFUSED
                   + _W7_LATER) if o.startswith("⚠️ Host `refused`")
             else o for o in fresh[0]["out"]]
@@ -1064,7 +1069,7 @@ def w7_checks():
 
     # /status, then a lookup: /status web, /check web, /check --dry-run.
     (first, second), esc = _w7_seq(["/status", "/status web"])
-    tail = ("⚠ `dead` unreachable: " + _W7_DEAD_PS + _W7_LATER + "\n"
+    tail = ("⚠ `dead` unreachable: " + _W7_DEAD_LATER + "\n"
             "⚠ `refused` unreachable: " + _W7_REFUSED + _W7_LATER)
     want = list(_W3_FOUND) + [tail]
     add("/status then /status web: the lookup names both without asking",
@@ -1082,8 +1087,8 @@ def w7_checks():
     add("/status then /check --dry-run: dead and refused not asked",
         "dead" not in second["hosts"] and "refused" not in second["hosts"]
         and "check_all@dead" not in second["events"]
-        and any(o.startswith("⚠️ Host `dead` could not be checked: ")
-                and o.endswith(_W7_LATER) for o in second["out"])
+        and any(o == "⚠️ Host `dead` could not be checked: "
+                + _W7_DEAD_LATER for o in second["out"])
         and not esc, f"got {second!r}")
 
     # A lookup leaves its words too: ten seconds is its probe.

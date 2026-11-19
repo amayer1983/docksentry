@@ -3163,9 +3163,31 @@ GUARDED = [
 
     ("a skipped host's seconds are whole",
      'app/hosts.py',
-     '        return reason, int(left)\n',
+     '        return reason, math.ceil(left)\n',
      '        return reason, left\n',
      'test_find_on_hosts.py'),
+
+    ("a skipped host's seconds are rounded up: never \"0s\" while skipped",
+     'app/hosts.py',
+     '        return reason, math.ceil(left)\n',
+     '        return reason, int(left)\n',
+     'test_status_overview_core.py'),
+
+    ("a skipped host's remembered words are said as errfmt.human says them",
+     'app/hosts.py',
+     '    try:\n'
+     '        reason = errfmt.human(reason or "", t)\n',
+     '    try:\n'
+     '        reason = reason or ""\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a Telegram read's failure moves the backoff the Web page sees",
+     'app/hosts.py',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with)\n',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with, cooldown=UNREACHABLE_COOLDOWN)\n',
+     'test_status_overview_core.py'),
 
     ("answering clears a host's mark and its backoff",
      'app/hosts.py',

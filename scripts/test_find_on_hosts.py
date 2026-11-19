@@ -553,9 +553,9 @@ if callable(find_on_hosts):
         u = {getattr(x[0], "name", ""): x for x in
              (res.unreachable if res is not None else ())}
         checks["W7 cache: …it is unreachable with its remembered words and "
-               "the whole seconds left"] = (
+               "the seconds left, rounded up"] = (
             "dead" in u and u["dead"][1] == t(
-                "host_skipped_retry", error="no answer earlier", seconds=30)
+                "host_skipped_retry", error="no answer earlier", seconds=31)
             and u["dead"][2] == "")
         checks["W7 cache: …and renders as host_unreachable_short like any "
                "unreachable host"] = (

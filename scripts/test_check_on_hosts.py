@@ -317,10 +317,10 @@ if callable(check_on_hosts):
             ok and skipped.host is b and skipped.updates is None
             and skipped.error is not None and skipped.checker is None
             and [hc.host for hc in seen7] == [a, b, c])
-        checks["W7 cache: …its words are the remembered ones and the whole "
-               "seconds left"] = (
+        checks["W7 cache: …its words are the remembered ones and the "
+               "seconds left, rounded up"] = (
             ok and str(skipped.error) == en(
-                "host_skipped_retry", error="no answer earlier", seconds=30))
+                "host_skipped_retry", error="no answer earlier", seconds=31))
         checks["W7 cache: …and no hint is asked for a host nobody asked"] = (
             ok and skipped.hint == "")
         checks["W7 cache: the local host is checked even when it is in the "
@@ -387,12 +387,18 @@ if callable(check_on_hosts):
 
         # Telegram says a skipped host's failure through errfmt.human,
         # which turns a line ENDING in "timed out after N seconds" into a
-        # bare timeout. Remembered words often end like that, so in every
-        # language the seconds clause has to come after them.
+        # bare timeout. Remembered words often end like that (the
+        # overview and the Web page remember the CLI's raw line), so the
+        # skipped line says them the way errfmt.human would have, and in
+        # every language the seconds clause comes after them. The first
+        # version kept the raw words: after a /status, /check then quoted
+        # Python's argv at the reader, where a fresh /check said "no
+        # answer within 30 seconds".
         import errfmt
         import i18n
         raw = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
                "timed out after 10 seconds")
+        refused = "ssh: connect to host dead port 22: Connection refused"
         langs = sorted(f[:-5] for f in os.listdir(
             os.path.join(os.path.dirname(cf.__file__), "lang"))
             if f.endswith(".json"))
@@ -400,11 +406,16 @@ if callable(check_on_hosts):
         for lang in langs:
             tr = i18n.get_translator(lang)
             words = hostslib.skipped_words(raw, 42, t=tr)
+            other = hostslib.skipped_words(refused, 42, t=tr)
             kept[lang] = (errfmt.human(hostslib.StillUnreachable(words), tr)
-                          == words and raw in words and "42" in words
-                          and words != tr("host_skipped_retry"))
+                          == words
+                          and words.startswith(errfmt.human(raw, tr))
+                          and "Command '" not in words and "42" in words
+                          and words != tr("host_skipped_retry")
+                          and other.startswith(refused))
         checks[f"W7: in all {len(langs)} languages a skipped host's line "
-               f"keeps its words and its seconds through errfmt.human"] = (
+               f"says its words as errfmt.human does, then its seconds, "
+               f"and survives errfmt.human"] = (
             len(langs) == 16 and all(kept.values()))
         if not all(kept.values()):
             print(f"      → {[k for k, v in kept.items() if not v]}")

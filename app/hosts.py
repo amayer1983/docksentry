@@ -20,6 +20,7 @@ Pure standard library, like the rest of the project.
 """
 
 import collections
+import math
 import threading
 import time
 
@@ -340,8 +341,11 @@ def forget_unreachable():
 # the cooldown is for a machine at the far end of a wire, not for our own
 # daemon, which nothing marks. Unlike `walk`, whose use_cache=False still
 # writes, a chat walk without the cache touches the memory not at all, so
-# a caller that has not moved over (Discord, the Web's check) behaves
-# exactly as before.
+# a caller that has not moved over (Discord, the Web's check) does not
+# read it or add to it. It is still one memory: a host a Telegram read
+# found dead is skipped by the Web status page's `walk` too, with the
+# words that read remembered, and each such failure moves the same
+# backoff (test_status_overview_core pins it).
 
 def _remote_name(host):
     if host is None or getattr(host, "is_local", False):
@@ -351,14 +355,15 @@ def _remote_name(host):
 
 def remembered_dead(host):
     """`(reason, retry_in)` while a remote `host` is still in its cooldown
-    — the words it failed with and the whole seconds left — else None.
-    The local host and the single-host pseudo-host None never are."""
+    — the words it failed with and the seconds left, rounded up: a host
+    with 0.4 s to go is still skipped, so it must not say "0s". The
+    local host and the single-host pseudo-host None never are."""
     name = _remote_name(host)
     if not name:
         return None
     left, reason = unreachable_for(name)
     if left > 0:
-        return reason, int(left)
+        return reason, math.ceil(left)
     return None
 
 
@@ -377,8 +382,20 @@ def remember(host, failed_with):
 def skipped_words(reason, retry_in, t=None):
     """What to say for a host skipped because it failed a moment ago: its
     remembered words, and that it is not asked again for `retry_in` s.
-    The words come first in every language — errfmt.human reads a line
-    that ENDS in "timed out after N seconds" as a bare timeout."""
+
+    The words go through errfmt.human first. The memory holds whatever
+    the walk that failed kept — the overview and the Web page keep the
+    CLI's raw line, which for a timeout is Python's argv — and once the
+    seconds clause is behind it, errfmt.human can no longer tell it is a
+    timeout and would quote the argv at the reader. Words that already
+    are a person's pass through unchanged. They come first in every
+    language for the same reason: a line that ENDS in "timed out after
+    N seconds" reads as a bare timeout."""
+    import errfmt
+    try:
+        reason = errfmt.human(reason or "", t)
+    except Exception:                                       # noqa: BLE001
+        reason = errfmt.human(reason or "")
     if t is not None:
         try:
             return t("host_skipped_retry", error=reason, seconds=retry_in)

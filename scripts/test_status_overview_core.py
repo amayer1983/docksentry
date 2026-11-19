@@ -284,10 +284,10 @@ try:
                 len(raised) == before
                 and not [c for c in order if c[0] == "dead"])
             checks["W7 cache: …it is listed in its place with its remembered "
-                   "words and the whole seconds left"] = (
+                   "words and the seconds left, rounded up"] = (
                 ov.unreachable == [
                     ("dead", en("host_skipped_retry",
-                                error="no answer earlier", seconds=30)),
+                                error="no answer earlier", seconds=31)),
                     ("refused", m.MatrixBackend.refused_stderr)])
             checks["W7 cache: the hosts that answered are listed as before"] = (
                 len(ov.inspected) == 7)
@@ -358,6 +358,54 @@ try:
             checks["W7 no cache: …and nothing is written"] = (
                 _mem("dead") == (30.5, "no answer earlier")
                 and _mem("refused") == (0.0, ""))
+            # In its last second a host is still skipped, so it says 1s,
+            # not "not asked again for 0s" (review of W7: int() said 0).
+            hostslib.forget_unreachable()
+            hostslib.mark_unreachable("x", "boom", cooldown=0.4)
+            run, calls = by(ps=cp(0, "abc\n"), inspect=cp(0, "[]"))
+            ov = collect([Host("x", run)], backend_for=lambda h: h.backend,
+                         t=en, use_cache=True)
+            checks["W7 cache: in its last second a skipped host says 1s, "
+                   "not 0s"] = (
+                calls == [] and ov.unreachable == [
+                    ("x", en("host_skipped_retry", error="boom", seconds=1))])
+            # A timeout's raw line, remembered, is said the way a fresh
+            # one would be: errfmt.human's words, not Python's argv.
+            hostslib.forget_unreachable()
+            hostslib.mark_unreachable("x", dead_why)
+            ov = collect([Host("x", run)], backend_for=lambda h: h.backend,
+                         t=en, use_cache=True)
+            checks["W7 cache: a remembered timeout is said as \"no answer "
+                   "within 10 seconds\", not as the argv"] = (
+                calls == [] and ov.unreachable == [
+                    ("x", en("host_skipped_retry",
+                             error=en("error_timed_out", seconds="10"),
+                             seconds=60))])
+            # The memory is the one the Web status page reads (hosts.walk):
+            # a host Telegram's /status found dead is skipped there too,
+            # with the words /status remembered, and a failure here moves
+            # the same backoff a failure there would.
+            hostslib.forget_unreachable()
+            run, calls = by(ps=subprocess.TimeoutExpired(
+                ["docker", "-H", "ssh://dead", "ps", "-q"], 10))
+            collect([Host("x", run)], backend_for=lambda h: h.backend, t=en,
+                    use_cache=True)
+            asked = []
+            walked = hostslib.walk([Host("x", run)],
+                                   lambda h: asked.append(h) or [])
+            checks["W7 shared memory: a host /status found dead is skipped by "
+                   "the Web page's walk, with /status's words"] = (
+                asked == [] and len(walked) == 1 and walked[0].skipped
+                and walked[0].reason == dead_why
+                and walked[0].retry_in == 60
+                and hostslib._failures.get("x") == 1)
+            _clock[0] += 61
+            collect([Host("x", run)], backend_for=lambda h: h.backend, t=en,
+                    use_cache=True)
+            checks["W7 shared memory: …and a second /status failure doubles "
+                   "the cooldown the page sees"] = (
+                _mem("x") == (120.0, dead_why)
+                and hostslib._failures.get("x") == 2)
             checks["W7: nothing in the cache checks raised out of the walk"] = (
                 len(raised) == before)
         finally:
