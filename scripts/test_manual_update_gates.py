@@ -55,7 +55,16 @@ def _run(how):
     """One batch through the real engine loop; who got updated?"""
     up = _Updater(how)
     bot = types.SimpleNamespace()
-    bot._update_lock = threading.Lock()
+    # The lock lives on a real UpdateEngine, made without __init__ and
+    # given the three lock fields its constructor sets, and `_update_lock`
+    # points at the engine's, as TelegramBot's property does. Without an
+    # engine, the first lock method called on it would take this procedure
+    # down with an AttributeError instead of testing anything.
+    bot.engine = UpdateEngine.__new__(UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+    bot._update_lock = bot.engine._update_lock
     bot._run_queued_selfupdate = lambda: None
     bot.config = types.SimpleNamespace(pending_file=os.path.join(tempfile.mkdtemp(), "p.json"))
     bot.store = _Store()

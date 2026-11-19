@@ -97,10 +97,16 @@ def _updated(labels, all_auto, stored=(), broken=False):
     bot.notify_updates = lambda ups, auto=False: None
     bot._process_update_batch = lambda ups, checker, auto=False: (
         batched.extend(u["name"] for u in ups) or ([], 0, []))
-    bot.engine = types.SimpleNamespace(
-        _update_lock=threading.Lock(), _queued_selfupdate=None,
-        _swap_in_flight=False,
-        _enrich_with_source_url=lambda *a, **kw: None)
+    # A real UpdateEngine, made without __init__ and given the three lock
+    # fields its constructor sets. A SimpleNamespace holds the same fields
+    # but none of the engine's methods, so the first lock method called on
+    # the engine would take this procedure down with an AttributeError
+    # instead of testing anything.
+    bot.engine = _ue.UpdateEngine.__new__(_ue.UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+    bot.engine._enrich_with_source_url = lambda *a, **kw: None
 
     real = _ue.host_store
     _ue.host_store = lambda scope, host: _Store()
