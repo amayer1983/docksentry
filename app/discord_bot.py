@@ -1276,7 +1276,16 @@ class DiscordBot:
     def _resolve_container(self, partial, backend):
         """Partial container name → `(full_name, error)`, mirroring the
         Telegram resolver: running *and* stopped (you want `/logs` of the
-        container that just died), minus our `_old` rollback leftovers."""
+        container that just died), minus our `_old` rollback leftovers.
+
+        The `ps -a` here passes no timeout, so an SSH host gets the
+        backend's `default_timeout` of 30 s. In `/status container:…` the
+        overview's `ps` (timeout=10) follows on the same dead host — T4
+        records exactly that pair of calls, so a hung host can cost up to
+        30 + 10 s before the reply (read from the code, not timed). The
+        detail branch has no walk call to hand `use_cache` to: W7d has to
+        give this call its own short timeout and the `unreachable_for`
+        skip itself, or move the branch onto `find_on_hosts`."""
         if backend is None:
             return None, self.t("chan_no_backend")
         try:
