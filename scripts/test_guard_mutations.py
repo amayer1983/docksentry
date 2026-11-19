@@ -2227,6 +2227,24 @@ GUARDED = [
      "        workers = min(max_workers, len(todo))\n",
      "test_dead_host_memory.py"),
 
+    ("a skipped host keeps its place in the walk's order",
+     "app/hosts.py",
+     "    return walked\n",
+     "    walked.sort(key=lambda w: not w.skipped)\n    return walked\n",
+     "test_dead_host_memory.py"),
+
+    ("use_cache=False still remembers a host that fails",
+     "app/hosts.py",
+     "            mark_unreachable(host.name, why)\n",
+     "            if use_cache:\n                mark_unreachable(host.name, why)\n",
+     "test_dead_host_memory.py"),
+
+    ("use_cache=False still forgets a host that answers",
+     "app/hosts.py",
+     "        mark_reachable(host.name)\n        walked.append",
+     "        if use_cache:\n            mark_reachable(host.name)\n        walked.append",
+     "test_dead_host_memory.py"),
+
     ("the status page hands the walk its own words for a dead host",
      "app/web_ui.py",
      "                    describe=self._why):\n",

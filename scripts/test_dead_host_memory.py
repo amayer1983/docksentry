@@ -178,6 +178,14 @@ _f = _Fetch()
 _walk([_Host("b")], _f, use_cache=False)
 checks["use_cache=False asks a host even inside its cooldown"] = (
     _f.asked == ["b"])
+# It skips reading the memory, not writing it: what it found is kept.
+checks["…and a host that answers then is forgotten"] = (
+    hosts.unreachable_for("b") == (0.0, "") and "b" not in hosts._failures)
+hosts.forget_unreachable()
+_walk([_Host("gone")], _Fetch(dead={"gone"}), use_cache=False,
+      describe=lambda e: "fresh")
+checks["…and one that fails then is remembered"] = (
+    hosts.unreachable_for("gone")[1] == "fresh")
 
 # Whole seconds, rounded down, as the page has always shown them: with
 # 30.5 seconds left the entry says 30, not 31.
@@ -216,6 +224,17 @@ class _Slow(_Fetch):
 _out = _walk([_Host("x"), _Host("y"), _Host("z")], _Slow())
 checks["the walk keeps the order it was given"] = (
     [e.host.name for e in _out] == ["x", "y", "z"])
+
+# …whatever became of each host: a skipped one keeps its place between
+# one that answered and one that failed, it is not put first or last.
+hosts.forget_unreachable()
+hosts.mark_unreachable("s", "boom", cooldown=30)
+_out = _walk([_Host("x"), _Host("s"), _Host("dead"), _Host("z")],
+             _Fetch(dead={"dead"}))
+checks["…for skipped, failed and answering hosts alike"] = (
+    [(e.host.name, e.skipped, e.error is not None) for e in _out]
+    == [("x", False, False), ("s", True, False),
+        ("dead", False, True), ("z", False, False)])
 
 # At most eight at once by default, and the caller's cap holds below that.
 # The gate asks for all twelve at once: a pool of eight waits out its
