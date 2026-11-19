@@ -1940,6 +1940,22 @@ GUARDED = [
      "src.rfind(needle)",
      "test_srcslice.py"),
 
+    # The Telegram command matrix (core split, T2). Bare `/restart` is
+    # the one branch whose position in the elif chain is its meaning:
+    # below the lifecycle prefix it answers with a usage line. D7 and D9
+    # move this condition; re-point the anchor when they do.
+    ("a typed command is answered from the branch its word names",
+     "app/telegram_bot.py",
+     '        elif text == "/restart":\n',
+     "        elif False:\n",
+     "test_telegram_dispatch_matrix.py"),
+
+    ("…and a call that gets past the matrix's stand-ins turns it red",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '        ESCAPES.append(f"{kind}({what!r})"[:200])',
+     "        pass",
+     "test_telegram_dispatch_matrix.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
