@@ -7290,9 +7290,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # A click is a read, so it takes the dead-host memory
                 # like the chats' /check (W7): a remote host that just
                 # failed is not asked again until its cooldown is over,
-                # and its log line says the remembered words. Measured
-                # in T5: the second of two clicks used to wait out the
-                # dead host's 30 s again.
+                # and its log line says the remembered words. T5 shows
+                # it with stub hosts: the second of two clicks used to
+                # ask the dead host again (its stub fails at once with a
+                # 30 s timeout message), now it does not.
                 import container_flags
                 found = []
                 named = bool(hosts) and hosts.is_multi
