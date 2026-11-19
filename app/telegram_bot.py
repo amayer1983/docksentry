@@ -581,6 +581,13 @@ class TelegramBot:
         opt out via `include_stopped=False`.
 
         `backend` picks the host to look on (#7); default is the local one.
+
+        Only `/changelog <name>` still comes here, and it only ever looks
+        at the local host. Everything that looks across hosts goes through
+        `container_flags.find_on_hosts`, which tells a host that did not
+        answer from one that has no such container — this one cannot: a
+        refused SSH exits non-zero with nothing on stdout and reads as
+        "not found", and a dead host's timeout raises straight through.
         """
         # argv without the CLI name — the backend prepends it, so the
         # "-a" insert index shifts down by one accordingly.
@@ -621,20 +628,50 @@ class TelegramBot:
         return lifecycle.match_glob(pattern, backend=backend or self.backend,
                                     include_stopped=include_stopped)
 
-    def _select_containers(self, arg, backend=None):
+    def _select_containers(self, arg, backend=None, host=None):
         """Resolve a /check or /update argument to a list of container names.
         Glob (`*?[`) → all matches; plain → single partial-resolved name.
-        Returns (names, error_msg); error_msg is None on success (#40).
-        `backend` picks the host to select on (#7); default is the local one."""
+        Returns (names, error_msg, unreachable): error_msg is None on
+        success (#40); `unreachable` is the `container_flags.Unreachable`
+        of a host that did not answer a plain-name lookup, else None.
+        `host` is the host asked (None on a single-host install) and
+        `backend` its backend; default is the local one (#7).
+
+        A plain name goes through `find_on_hosts`, so a dead or refused
+        host is said to be unreachable instead of raising its timeout
+        through the dispatch or reading as "not found". The glob branch
+        still matches through `_match_glob`, where an unreachable host
+        reads as no match."""
         if self._is_glob(arg):
             names = self._match_glob(arg, backend=backend)
             if not names:
-                return [], self.t("glob_no_match", pattern=arg)
-            return names, None
-        resolved, err = self._resolve_container(arg, backend=backend)
-        if err:
-            return [], err
-        return [resolved], None
+                return [], self.t("glob_no_match", pattern=arg), None
+            return names, None, None
+        import container_flags
+        found = container_flags.find_on_hosts(
+            [host], backend_for=lambda _h: backend or self.backend,
+            arg=arg, t=self.t)
+        if found.unreachable:
+            return [], None, found.unreachable[0]
+        if found.found:
+            return list(found.found[0][1]), None, None
+        err = found.first_error
+        return [], self.t(err.key, **err.params), None
+
+    def _lookup_tail(self, found_any, first_err, unreachable):
+        """The message that closes a name lookup across hosts, or None.
+
+        Each host that did not answer gets its own line (its SSH hint
+        underneath, when hostdiag has one). When nothing was found on
+        the hosts that did answer, their "not found" leads, so a miss
+        never stands alone while a host nobody could ask may have had
+        the container all along."""
+        lines = [] if found_any or not first_err else [first_err]
+        for gone in unreachable:
+            r = gone.reply()
+            lines.append(self.t(r.key, **r.params)
+                         + ("\n" + gone.hint if gone.hint else ""))
+        return "\n".join(lines) or None
 
     # ── Multi-host command targeting (#7) ──────────────────────────────
     # One instance, N hosts: a command may be aimed at one of them with a
@@ -3586,6 +3623,76 @@ class TelegramBot:
                 return edited
         return {}
 
+    def _send_status_detail(self, host, resolved, checker):
+        """`/status <name>`: send one container's detail on `host`.
+
+        Returns None once sent, or the "not found" text when the container
+        has gone between the lookup and the inspect. Called per host while
+        `find_on_hosts` is still walking, so a host's detail goes out as
+        soon as that host has answered."""
+        backend = self._backend_for(host)
+        tag = self._host_tag(host)
+        info = container_info.state(backend, resolved)
+        if not info:
+            return self.t("resolve_not_found", name=resolved)
+        # Assembled ONCE, rendered per front end (#2). I
+        # assumed replies were generated once and sent
+        # per connection — true for notifications since
+        # announce(), and now true here: Discord's detail
+        # calls this same collector and renderer, so the two
+        # cannot drift apart field by field.
+        import status_render
+        hstore = self._store_for(host)
+        probe = ""
+        if info.get("health") == "unhealthy":
+            try:
+                probe = self._checker_for(host, checker)\
+                    ._health_output(resolved, entries=1)
+            except Exception:
+                probe = ""
+        detail = status_render.collect(
+            resolved, info,
+            stats=container_info.stats(backend, resolved)
+            if info.get("running") else None,
+            store=hstore,
+            pending=resolved in [
+                u.get("name") for u in
+                read_pending(self.config.pending_file)],
+            probe=probe,
+            disk=container_info.disk_facts(backend, resolved))
+        lines = status_render.lines(detail, bold="*",
+                                    host_tag=tag)
+        # Build inline keyboard based on current state. Only for
+        # the local host: the lifecycle callbacks carry a bare
+        # container name and act locally, so a Stop button under
+        # a remote container would stop the wrong box's
+        # container. Remote detail stays read-only until the
+        # callbacks learn about hosts.
+        if host is not None and not host.is_local:
+            self.send_message("\n".join(lines))
+            return None
+        buttons = []
+        if info["running"]:
+            buttons.append({"text": self.t("lifecycle_btn_restart"),
+                            "callback_data": f"lifecycle:restart:{resolved}"})
+            # Stop hidden for protected containers (#38). The callback is
+            # also guarded in lifecycle.act, so a stale button can't
+            # slip a stop through either.
+            if not self._is_protected(resolved,
+                                      self._checker_for(host, checker),
+                                      self._store_for(host)):
+                buttons.append({"text": self.t("lifecycle_btn_stop"),
+                                "callback_data": f"lifecycle:stop:{resolved}"})
+        else:
+            buttons.append({"text": self.t("lifecycle_btn_start"),
+                            "callback_data": f"lifecycle:start:{resolved}"})
+
+        self.send_message(
+            "\n".join(lines),
+            reply_markup={"inline_keyboard": [buttons]},
+        )
+        return None
+
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
         user_id = str(message.get("from", {}).get("id", ""))
@@ -3680,13 +3787,14 @@ class TelegramBot:
                 # behind it (#7).
                 shown = False
                 first_err = None
-                for host in (status_targets or [None]):
-                    backend = self._backend_for(host)
-                    tag = self._host_tag(host)
-                    # Glob → a compact one-line-per-match overview (#40, @LeeNX).
-                    # Read-only, so no action buttons; use /status <name> for the
-                    # full single-container detail.
-                    if self._is_glob(partial):
+                unreachable = ()
+                # Glob → a compact one-line-per-match overview (#40, @LeeNX).
+                # Read-only, so no action buttons; use /status <name> for the
+                # full single-container detail.
+                if self._is_glob(partial):
+                    for host in (status_targets or [None]):
+                        backend = self._backend_for(host)
+                        tag = self._host_tag(host)
                         names = self._match_glob(partial, backend=backend)
                         if not names:
                             first_err = first_err or self.t("glob_no_match",
@@ -3702,75 +3810,33 @@ class TelegramBot:
                             health = f" ({si['health']})" if si["health"] else ""
                             lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
                         self.send_message("\n".join(lines))
-                        continue
-                    resolved, err = self._resolve_container(partial, backend=backend)
-                    if not resolved:
-                        first_err = first_err or err
-                        continue
-                    info = container_info.state(backend, resolved)
-                    if not info:
-                        first_err = first_err or self.t("resolve_not_found",
-                                                        name=resolved)
-                        continue
-                    shown = True
-                    # Assembled ONCE, rendered per front end (#2). I
-                    # assumed replies were generated once and sent
-                    # per connection — true for notifications since
-                    # announce(), and now true here: Discord's detail
-                    # calls this same collector and renderer, so the two
-                    # cannot drift apart field by field.
-                    import status_render
-                    hstore = self._store_for(host)
-                    probe = ""
-                    if info.get("health") == "unhealthy":
-                        try:
-                            probe = self._checker_for(host, checker)\
-                                ._health_output(resolved, entries=1)
-                        except Exception:
-                            probe = ""
-                    detail = status_render.collect(
-                        resolved, info,
-                        stats=container_info.stats(backend, resolved)
-                        if info.get("running") else None,
-                        store=hstore,
-                        pending=resolved in [
-                            u.get("name") for u in
-                            read_pending(self.config.pending_file)],
-                        probe=probe,
-                        disk=container_info.disk_facts(backend, resolved))
-                    lines = status_render.lines(detail, bold="*",
-                                                host_tag=tag)
-                    # Build inline keyboard based on current state. Only for
-                    # the local host: the lifecycle callbacks carry a bare
-                    # container name and act locally, so a Stop button under
-                    # a remote container would stop the wrong box's
-                    # container. Remote detail stays read-only until the
-                    # callbacks learn about hosts.
-                    if host is not None and not host.is_local:
-                        self.send_message("\n".join(lines))
-                        continue
-                    buttons = []
-                    if info["running"]:
-                        buttons.append({"text": self.t("lifecycle_btn_restart"),
-                                        "callback_data": f"lifecycle:restart:{resolved}"})
-                        # Stop hidden for protected containers (#38). The callback is
-                        # also guarded in lifecycle.act, so a stale button can't
-                        # slip a stop through either.
-                        if not self._is_protected(resolved,
-                                                  self._checker_for(host, checker),
-                                                  self._store_for(host)):
-                            buttons.append({"text": self.t("lifecycle_btn_stop"),
-                                            "callback_data": f"lifecycle:stop:{resolved}"})
-                    else:
-                        buttons.append({"text": self.t("lifecycle_btn_start"),
-                                        "callback_data": f"lifecycle:start:{resolved}"})
+                else:
+                    import container_flags
 
-                    self.send_message(
-                        "\n".join(lines),
-                        reply_markup={"inline_keyboard": [buttons]},
-                    )
-                if not shown:
-                    self.send_message(first_err)
+                    def _show(one):
+                        nonlocal shown, first_err
+                        if one.error is not None:
+                            first_err = first_err or self.t(
+                                one.error.key, **one.error.params)
+                        if not one.names:
+                            return
+                        gone = self._send_status_detail(
+                            one.host, one.names[0], checker)
+                        if gone:
+                            first_err = first_err or gone
+                        else:
+                            shown = True
+                    # A dead host's timeout and a refused SSH come back
+                    # as `unreachable` instead of raising out of here or
+                    # reading as "not found"; the walk goes on to the
+                    # next host either way.
+                    unreachable = container_flags.find_on_hosts(
+                        status_targets or [None],
+                        backend_for=self._backend_for, arg=partial,
+                        on_host=_show, t=self.t).unreachable
+                tail = self._lookup_tail(shown, first_err, unreachable)
+                if tail:
+                    self.send_message(tail)
                 return
 
         if text == "/status":
@@ -4036,18 +4102,27 @@ class TelegramBot:
                 return
             # Resolve the names on every targeted host BEFORE announcing the
             # check, so a name that matches nowhere still answers with the
-            # plain "not found" and nothing else — exactly as before.
+            # plain "not found" and nothing else — exactly as before. A host
+            # that did not answer is named along with it (W3).
             selections = []
             first_err = None
+            unreachable = []
             for host in (targets or [None]):
-                names, err = self._select_containers(
-                    arg, backend=self._backend_for(host))
+                names, err, gone = self._select_containers(
+                    arg, backend=self._backend_for(host), host=host)
+                if gone is not None:
+                    unreachable.append(gone)
+                    continue
                 if err:
                     first_err = first_err or err
                     continue
                 selections.append((host, names))
+            # The lookup is over: a host that did not answer is said now,
+            # before the check starts on the ones that did.
+            tail = self._lookup_tail(bool(selections), first_err, unreachable)
+            if tail:
+                self.send_message(tail)
             if not selections:
-                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
             matched = sum(len(n) for _, n in selections)
@@ -4117,15 +4192,23 @@ class TelegramBot:
                 return
             selections = []
             first_err = None
+            unreachable = []
             for host in (targets or [None]):
-                names, err = self._select_containers(
-                    arg, backend=self._backend_for(host))
+                names, err, gone = self._select_containers(
+                    arg, backend=self._backend_for(host), host=host)
+                if gone is not None:
+                    unreachable.append(gone)
+                    continue
                 if err:
                     first_err = first_err or err
                     continue
                 selections.append((host, names))
+            # Same as /check: the hosts that did not answer are said when
+            # the lookup ends, before anything is checked or updated.
+            tail = self._lookup_tail(bool(selections), first_err, unreachable)
+            if tail:
+                self.send_message(tail)
             if not selections:
-                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
             batches = []

@@ -2331,6 +2331,55 @@ GUARDED = [
      '            if is_glob or not found:\n                found.append((host, tuple(names)))\n',
      'test_find_on_hosts.py'),
 
+    # W3: Telegram's plain-name /status, /check and /update go through
+    # find_on_hosts, so the W2 promise now guards a production path and
+    # the Telegram matrix sees it break.
+    ("…and Telegram says a refused host is unreachable, not 'not found'",
+     'app/container_flags.py',
+     '    if rc != 0:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check and /update <name> keep an unreachable host apart from 'not found'",
+     'app/telegram_bot.py',
+     '        if found.unreachable:\n            return [], None, found.unreachable[0]\n',
+     '        if found.unreachable:\n            return [], self.t("resolve_not_found", name=arg), None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '                        on_host=_show, t=self.t).unreachable\n',
+     '                        on_host=_show, t=self.t).unreachable[:0]\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '            # before the check starts on the ones that did.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, unreachable)\n',
+     '            # before the check starts on the ones that did.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, [])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /update <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '            # the lookup ends, before anything is checked or updated.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, unreachable)\n',
+     '            # the lookup ends, before anything is checked or updated.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, [])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("found nowhere that answered: Telegram's 'not found' leads the unreachable lines",
+     'app/telegram_bot.py',
+     '        lines = [] if found_any or not first_err else [first_err]\n',
+     '        lines = []\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram shows an unreachable host's SSH hint under its line",
+     'app/telegram_bot.py',
+     '                         + ("\\n" + gone.hint if gone.hint else ""))\n',
+     '                         + "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

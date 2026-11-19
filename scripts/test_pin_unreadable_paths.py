@@ -256,7 +256,7 @@ def _typed(text, pin_bytes):
     stub._select_containers = types.MethodType(
         TelegramBot._select_containers, stub)
     for _m in ("_multi", "_resolve_targets", "_host_hint", "_backend_for",
-               "_checker_for", "_run_full_check"):
+               "_checker_for", "_run_full_check", "_lookup_tail"):
         setattr(stub, _m, types.MethodType(getattr(TelegramBot, _m), stub))
     stub._host_tag = TelegramBot._host_tag
     stub._is_glob = TelegramBot._is_glob

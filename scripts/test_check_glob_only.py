@@ -6,11 +6,14 @@ filtered the result down to the matched names — wasteful, and unfriendly to
 Docker Hub's anonymous rate limit. Now they pass `only=<matched names>` to
 `check_all`, so only the named containers hit the registry.
 
-This drives the real `_handle_message` dispatch with a fake checker that
-records the `only` argument and counts remote lookups. No Docker, no network:
-`_match_glob` is stubbed to a fixed match set, and the /update thread is run
-synchronously so its `updates` payload is inspectable. Exits non-zero on any
-failure.
+This drives the real `_handle_message` dispatch on a real `TelegramBot`
+(built with `__new__`, no Telegram, no Docker) whose local backend is a
+fake CLI: `ps -a --format {{.Names}}` lists a fixed set, so both the glob
+(`lifecycle.match_glob`) and the plain name (`container_flags.find_on_hosts`)
+are resolved by the real code, not by a stand-in. The checker records the
+`only` argument and counts remote lookups, and the /update thread is run
+synchronously so its `updates` payload is inspectable. Exits non-zero on
+any failure.
 """
 import sys, os, types
 
@@ -55,47 +58,39 @@ class _SyncThread:
         self._t(*self._a, **self._k)
 
 
+class _FakeBackend:
+    """The local CLI: answers `ps` with RUNNING, records every call."""
+
+    def __init__(self):
+        self.calls = []
+
+    def run(self, args, **kw):
+        import subprocess
+        self.calls.append(list(args))
+        out = "\n".join(RUNNING) if args and args[0] == "ps" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+
 def _make_bot():
-    stub = types.SimpleNamespace()
-    stub.update_running = False
-    stub.bot_username = ""
-    stub.sent = []
-    stub.notified = None
-    stub.updated_with = "unset"
+    bot = TelegramBot.__new__(TelegramBot)
+    # No registry: `_multi()` is False, `_resolve_targets` hands back the
+    # argument untouched and `targets=None` — the single-host path.
+    bot.hosts = None
+    bot.backend = _FakeBackend()
+    bot.bot_username = ""
+    bot.engine = types.SimpleNamespace(update_running=False)
+    bot.sent = []
+    bot.notified = None
+    bot.updated_with = "unset"
 
-    # Real logic under test — the dispatch + the glob→only plumbing.
-    stub._handle_message = types.MethodType(TelegramBot._handle_message, stub)
-    stub._select_containers = types.MethodType(TelegramBot._select_containers, stub)
-    # Multi-host targeting (#7) rides along in the dispatch. No registry
-    # here, so `_multi()` is False and all of it is a no-op: `_resolve_targets`
-    # hands back the argument untouched and `targets=None`.
-    stub.hosts = None
-    # `_backend_for(None)` hands back this — never used, because the only
-    # container lookup this test reaches is the stubbed `_match_glob`.
-    stub.backend = None
-    for _m in ("_multi", "_resolve_targets", "_host_hint", "_backend_for",
-               "_checker_for"):
-        setattr(stub, _m, types.MethodType(getattr(TelegramBot, _m), stub))
-    stub._host_tag = staticmethod(TelegramBot._host_tag.__func__
-                                  if hasattr(TelegramBot._host_tag, "__func__")
-                                  else TelegramBot._host_tag)
-    # Static helpers: keep them static so `self._is_glob(arg)` doesn't bind self.
-    stub._is_glob = staticmethod(TelegramBot._is_glob.__func__
-                                 if hasattr(TelegramBot._is_glob, "__func__")
-                                 else TelegramBot._is_glob)
-    stub._help_alias = staticmethod(TelegramBot._help_alias.__func__
-                                    if hasattr(TelegramBot._help_alias, "__func__")
-                                    else TelegramBot._help_alias)
-
-    # Faked-out edges: no Docker, no network, no Telegram.
-    stub._check_auth = lambda chat_id, user_id, kind="message": True
-    stub._match_glob = (lambda pattern, include_stopped=True, backend=None:
-                        list(MATCHED))
-    stub.t = lambda key, **kw: key
-    stub.send_message = lambda text, **kw: stub.sent.append(text)
-    stub.notify_updates = lambda updates, auto=False: setattr(stub, "notified", updates)
-    stub.run_updates = lambda checker, updates=None: setattr(stub, "updated_with", updates)
-    return stub
+    # Faked-out edges only: auth, translation, the chat transport, and the
+    # two hand-offs whose payload is what this test reads.
+    bot._check_auth = lambda chat_id, user_id, kind="message": True
+    bot.t = lambda key, **kw: key
+    bot.send_message = lambda text, **kw: bot.sent.append(text)
+    bot.notify_updates = lambda updates, auto=False: setattr(bot, "notified", updates)
+    bot.run_updates = lambda checker, updates=None: setattr(bot, "updated_with", updates)
+    return bot
 
 
 def _msg(text):
@@ -128,6 +123,23 @@ def main():
         sorted(chk.remote_calls) == sorted(MATCHED)
     checks["/update glob: run_updates got only pending matches"] = \
         [u["name"] for u in (bot.updated_with or [])] == ["web-1"]
+
+    # ── the same with a plain name: one container, still scoped ────
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot._handle_message(_msg("/check web-1"), chk, None)
+    checks["/check name: check_all got only={web-1}"] = chk.only_seen == {"web-1"}
+    checks["/check name: notified with web-1's update"] = \
+        [u["name"] for u in (bot.notified or [])] == ["web-1"]
+    checks["/check name: the name was looked up on the local CLI"] = \
+        ["ps", "-a", "--format", "{{.Names}}"] in bot.backend.calls
+
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot._handle_message(_msg("/update web-2"), chk, None)
+    checks["/update name: check_all got only={web-2}"] = chk.only_seen == {"web-2"}
+    checks["/update name: web-2 has nothing pending, nothing runs"] = \
+        bot.updated_with == "unset" and "update_scoped_none" in bot.sent
 
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
