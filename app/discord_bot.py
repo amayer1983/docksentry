@@ -1273,25 +1273,39 @@ class DiscordBot:
             return ""
         return f" @{host.name}"
 
-    def _resolve_container(self, partial, backend):
+    def _resolve_container(self, partial, backend, host=None):
         """Partial container name → `(full_name, error)`, mirroring the
         Telegram resolver: running *and* stopped (you want `/logs` of the
         container that just died), minus our `_old` rollback leftovers.
 
-        The `ps -a` here passes no timeout, so an SSH host gets the
-        backend's `default_timeout` of 30 s. In `/status container:…` the
-        overview's `ps` (timeout=10) follows on the same dead host — T4
-        records exactly that pair of calls, so a hung host can cost up to
-        30 + 10 s before the reply (read from the code, not timed). The
-        detail branch has no walk call to hand `use_cache` to: W7d has to
-        give this call its own short timeout and the `unreachable_for`
-        skip itself, or move the branch onto `find_on_hosts`."""
+        The name lookup of `/status container:…`, its only caller, and a
+        read (W7d): a remote `host` gets ten seconds, like Telegram's
+        lookup, the local one the backend's default. What the listing
+        shows of a remote host goes into the dead-host memory — the words
+        when it raised or exited non-zero, a clean slate when it
+        answered — so the overview after it does not ask a dead host a
+        second time, and the next read does not ask it at all. Skipping a
+        host the memory already holds is the caller's: it has the
+        overview to name it. A non-zero exit was "not found" until W7d
+        and is "could not list" now; the caller moves on to the next host
+        either way."""
+        import hosts as hostslib
         if backend is None:
             return None, self.t("chan_no_backend")
+        cmd = ["ps", "-a", "--format", "{{.Names}}"]
+        remote = host is not None and not getattr(host, "is_local", False)
         try:
-            result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
+            result = (backend.run(cmd, timeout=10) if remote
+                      else backend.run(cmd))
         except Exception as e:
+            hostslib.remember(host, clip(str(e)))
             return None, self.t("chan_list_failed", error=str(e)[:80])
+        rc = getattr(result, "returncode", 0)
+        if rc != 0:
+            words = clip(getattr(result, "stderr", "") or "") or f"exit {rc}"
+            hostslib.remember(host, words)
+            return None, self.t("chan_list_failed", error=words[:80])
+        hostslib.remember(host, None)
         names = [n.strip() for n in (result.stdout or "").strip().split("\n")
                  if n.strip() and not n.strip().endswith("_old")]
         if partial in names:
@@ -1360,15 +1374,24 @@ class DiscordBot:
         `all` counts as not filled in: it would otherwise hand us every
         host, and this asks for the local one by name instead of trusting
         that it comes first.
+
+        Three seconds for the `ps -a`, on every host: Discord drops a later
+        answer anyway, and without it a dead SSH host held the worker for
+        the backend's 30 s (W7d). A remote host the dead-host memory still
+        holds is not asked at all. Nothing here marks a host dead: three
+        seconds is shorter than any read waits, so a miss is no evidence.
+        A timeout still raises into `_autocomplete`, which logs it and
+        suggests nothing.
         """
-        from hosts import ALL_HOSTS
-        named = self._host_token(host_name) not in (None, ALL_HOSTS)
+        import hosts as hostslib
+        named = self._host_token(host_name) not in (None, hostslib.ALL_HOSTS)
         hosts = self._hosts_for(host_name) if named else None
         host = hosts[0] if hosts else (self.hosts.local if self.hosts else None)
         backend = self._backend_for(host)
-        if backend is None:
+        if backend is None or hostslib.remembered_dead(host) is not None:
             return []
-        result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
+        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],
+                             timeout=3)
         return [n.strip() for n in (result.stdout or "").strip().split("\n")
                 if n.strip() and not n.strip().endswith("_old")]
 
@@ -1498,15 +1521,22 @@ class DiscordBot:
         # matching three things keeps listing three things, as it always
         # has, rather than answering "not found".
         if wanted:
+            import hosts as hostslib
             for host in targets:
+                # Still in its cooldown: not asked for the name either.
+                # The overview below names it with its words (W7d).
+                if hostslib.remembered_dead(host) is not None:
+                    continue
                 backend = self._backend_for(host)
-                name, err = self._resolve_container(wanted, backend)
+                name, err = self._resolve_container(wanted, backend, host)
                 if err:
-                    # Never the answer on its own: a refused host comes
-                    # back here as "not found", a dead one as "could not
-                    # list". The overview below asks again and names
+                    # Never the answer on its own: a dead or refused host
+                    # comes back here as "could not list" (a refused one
+                    # said "not found" until W7d). The overview below names
                     # either as unreachable — I measured that for W3d,
-                    # test_discord_dispatch_matrix pins it.
+                    # test_discord_dispatch_matrix pins it — from what
+                    # this lookup left in the dead-host memory, without
+                    # asking it again.
                     continue
                 info = container_info.state(backend, name)
                 if not info:
@@ -1538,9 +1568,14 @@ class DiscordBot:
         # confused its reporter twice over (#2). The update path keeps
         # its filters, PID 1 among them (#16). A dead or refused host is
         # one line, with the SSH hint under it when hostdiag has one.
+        # With the dead-host memory, as Telegram's /status (W7d): a remote
+        # host that just failed — here, in the lookup above or in any
+        # other read — is not asked again until its cooldown is over, and
+        # its line says so.
         from container_store import LOCAL_HOST
         overview = status_render.collect_overview(
-            targets, backend_for=self._backend_for, t=self.t)
+            targets, backend_for=self._backend_for, t=self.t,
+            use_cache=True)
         gone = dict(overview.unreachable)
         lines = []
         for host in targets:
@@ -1583,14 +1618,20 @@ class DiscordBot:
         # — kept as measured, not endorsed. With nothing left the walk is
         # not started at all: check_on_hosts would turn [] into the
         # single pseudo-host and check that instead.
+        #
+        # A read, so with the dead-host memory (W7d): a remote host whose
+        # listing just failed is not checked again until its cooldown is
+        # over; a check the daemon answered but the registry failed is
+        # not remembered (check_on_hosts decides that).
         walk = [h for h in targets if self._checker_for(h) is not None]
         for hc in container_flags.check_on_hosts(
                 walk, checker_for=self._checker_for, hint=False,
-                raise_alone=False, t=self.t) if walk else ():
+                raise_alone=False, use_cache=True,
+                t=self.t) if walk else ():
             if hc.error is not None:
                 found.append(self.t("host_check_failed",
                                     host=getattr(hc.host, "name", "local"),
-                                    error=str(hc.error)[:80]))
+                                    error=self._check_error(hc.error)))
                 continue
             if getattr(hc.updates, "pin_list_unreadable", False):
                 pins_unreadable = True
@@ -1606,6 +1647,20 @@ class DiscordBot:
         if not found:
             return self.t("chan_all_up_to_date")
         return self._clip("**Updates available**\n" + "\n".join(found))
+
+    def _check_error(self, error):
+        """A failed host's words for /check, cut to 80 characters. For a
+        host skipped because its last try failed, the cut is made on its
+        words and the clause saying so comes after whole: cut at 80, the
+        seconds until the next try would be the part that goes. The
+        words are made a person's first, so the cut cannot hide that
+        Python's argv was a timeout."""
+        import errfmt
+        import hosts as hostslib
+        if isinstance(error, hostslib.StillUnreachable):
+            words = errfmt.human(error.reason or "", self.t)[:80]
+            return hostslib.skipped_words(words, error.retry_in, t=self.t)
+        return str(error)[:80]
 
     def _cmd_updates(self):
         import json

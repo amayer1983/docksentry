@@ -27,7 +27,7 @@ Since W7 Telegram passes `use_cache=True`: a remote host found dead a
 moment ago gets no `ps -q` and is listed with its remembered words and
 the seconds left (and the SSH hint those words get), and each host
 asked leaves its outcome in hosts' dead-host memory (without the hint).
-Discord does not, yet (W7d), but a host that answers it is forgotten.
+Discord does too since W7d. Without it a host that answers is forgotten.
 
 `--app DIR` runs it against another tree's app/ (that is how it was
 seen red before the function existed).
@@ -258,7 +258,7 @@ try:
         # words without the hint — the hint is said under the line, not
         # remembered, and rebuilt from the words when the host is skipped).
         # The local host is never skipped or marked. Without use_cache
-        # (Discord until W7d) nobody is skipped or marked dead, but a host
+        # (no caller since W7d) nobody is skipped or marked dead, but a host
         # that answers is forgotten.
         import hosts as hostslib
         _clock = [9000.0]

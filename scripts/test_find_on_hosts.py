@@ -604,7 +604,7 @@ if callable(find_on_hosts):
             [getattr(s.host, "name", "") for s in seen]
             == ["local", "nas", "refused"]
             and seen[1].unreachable is not None and seen[1].names == ())
-        # Without use_cache (every write, and Discord until W7d): the
+        # Without use_cache (every write): the
         # remembered host is asked and no failure is written.
         hostslib.forget_unreachable()
         hostslib.mark_unreachable("dead", "no answer earlier", cooldown=30.5)

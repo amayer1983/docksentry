@@ -308,7 +308,7 @@ def collect_overview(targets, *, backend_for, t, use_cache=False):
     the original two calls. One host after the other, in the order
     given. `t` translates the SSH hint.
 
-    `use_cache=True` is for reads (W7; Telegram's /status): a remote host
+    `use_cache=True` is for reads (W7; both chats' /status): a remote host
     still in its cooldown gets no `ps -q` and is listed with its
     remembered words, the seconds until it is asked again and, under
     them, the hint those words get; every remote host that is asked

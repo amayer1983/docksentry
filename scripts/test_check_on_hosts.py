@@ -270,8 +270,8 @@ if callable(check_on_hosts):
     # timeout, ContainerListUnavailable) is remembered; one whose check
     # failed for any other reason is not, because its daemon answered
     # and a /status a moment later must still ask it. A host that
-    # checked fine is forgotten. Without use_cache (/update, Discord and
-    # the Web until W7d/W7w) nobody is skipped or marked dead, but a host
+    # checked fine is forgotten. Without use_cache (/update, and the Web
+    # until W7w) nobody is skipped or marked dead, but a host
     # that checked fine is forgotten (review of W7). The
     # local host is never skipped or marked. hosts' clock is replaced so
     # the seconds do not depend on this machine's speed.

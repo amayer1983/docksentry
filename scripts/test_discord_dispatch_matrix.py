@@ -324,6 +324,8 @@ class Row:
         elif kind == "drop_pending":
             if os.path.exists(self.cfg.pending_file):
                 os.remove(self.cfg.pending_file)
+        elif kind == "call":            # the W7d checks only, never a row
+            args[0]()
         else:
             raise ValueError(f"unknown step {kind!r}")
 
@@ -471,10 +473,43 @@ def _join():
     return hung
 
 
+#: The dead-host memory's clock; only a "call" step moves it.
+HOSTS_CLOCK = [4242.0]
+
+
+class _FrozenClock:
+    """`hosts.time` while a row runs: the dead-host memory's cooldown
+    does not tick, so "not asked again for 60s" is 60 whatever the
+    machine's load (W7d)."""
+
+    @staticmethod
+    def monotonic():
+        return HOSTS_CLOCK[0]
+
+
+#: The raw content of each step's last edit of the original response,
+#: in step order, for the last row driven — the table clips long lines,
+#: the W7d checks read them whole. Not part of the record.
+STEP_TEXT = []
+
+
 def run_scenario(setup, steps):
-    """Drive one row; return (record, escapes)."""
+    """Drive one row; return (record, escapes). The dead-host memory
+    starts empty and its clock stands still for the whole row."""
+    import hosts as hostslib
+    real = hostslib.time
+    hostslib.time = _FrozenClock
+    HOSTS_CLOCK[0] = 4242.0
+    try:
+        return _run_scenario(setup, steps)
+    finally:
+        hostslib.time = real
+
+
+def _run_scenario(setup, steps):
     import hosts as hostslib
     hostslib.forget_unreachable()
+    del STEP_TEXT[:]
     m.EVENTS.clear()
     del m.ESCAPES[:]
     del m.STARTED[:]
@@ -504,6 +539,7 @@ def run_scenario(setup, steps):
                 raised = type(e).__name__
             hung = _join()
         rec = {"do": row.norm(_label_step(step))}
+        STEP_TEXT.append(_w5d_edit_text())
         out = [row.line(e) for e in LOG]
         touched = {n: m._calls_summary(b.calls[mark[n]:], keep=("--tail",))
                    for n, b in row.backends.items()
@@ -841,26 +877,6 @@ for _h_ in ("dead", "refused", "flaky"):
 
 #: Rows another slice leans on as they are today (not wrong, but named).
 PINNED_FOR = {}
-for _r_ in ("/status container:web host:dead",
-            "/status container:web host:refused",
-            "/status container:nosuch", "/status container:web*"):
-    PINNED_FOR[("multi", _r_)] = (
-        "W7d: an unresolved name falls into the narrowed overview; "
-        "W3d measured that it names the dead and refused host, never "
-        "'not found'")
-for _r_ in ("/status", "/status host:dead", "/status host:refused",
-            "/status twice"):
-    PINNED_FOR[("multi", _r_)] = (
-        "W7d: the overview walk, `collect_overview` since W5d, serial and "
-        "without the dead-host memory")
-for _r_ in ("/check", "/check twice"):
-    PINNED_FOR[("multi", _r_)] = (
-        "W7d: the check walk, `check_on_hosts` since W6d, serial and "
-        "without the dead-host memory")
-for _r_ in ("auto container host:dead", "auto container host:refused",
-            "auto container host:dead twice"):
-    PINNED_FOR[("multi", _r_)] = (
-        "W7d: `ps -a` with no timeout of its own (backend default 30 s)")
 for _setup_ in SETUPS:
     PINNED_FOR[(_setup_, "auto container host:all")] = (
         "A2: autocomplete with `host: all` lists the local host")
@@ -1000,7 +1016,8 @@ def w3d_checks():
     # passed on the way are not mentioned — the same first-host-wins rule
     # that shows local's `web` and says nothing about nas'. Telegram
     # (W3) adds the unreachable lines here; whether Discord should is
-    # open, so a change to this row has to be made on purpose.
+    # open, so a change to this row has to be made on purpose. Since W7d
+    # the lookup gives each of them ten seconds (and remembers them).
     rec, esc = _w3d_run("multi", [("container", "cache")])
     step = rec["steps"][0] if rec["steps"] else {}
     edits = [o for o in step.get("out", []) if o.startswith("<edit> ")]
@@ -1010,8 +1027,8 @@ def w3d_checks():
            and not _w3d_handler_failed(step.get("out", []))
            and edits[0].startswith("<edit> 🔎 **cache** @flaky")
            and "unreachable" not in edits[0]
-           and step.get("hosts", {}).get("dead") == "ps -a --format"
-           and step.get("hosts", {}).get("refused") == "ps -a --format")
+           and step.get("hosts", {}).get("dead") == "ps -a --format t=10"
+           and step.get("hosts", {}).get("refused") == "ps -a --format t=10")
 
 
 #: W5d: Discord's bare /status listed through `get_running_containers`
@@ -1172,6 +1189,272 @@ def w5d_checks():
            "version label", bool(listed) and dc.count(" (v9.9)") == len(listed))
 
 
+#: W7d, written by hand before the change: Discord's reads and its
+#: container autocomplete with the dead-host memory Telegram's reads got
+#: in W7. Several steps on one bot, the clock frozen (run_scenario), so a
+#: first failure's cooldown is the full 60 s. A read that finds a remote
+#: host dead or refused leaves it in the memory; the next read within the
+#: cooldown does not ask it — not its `ps`, not its check, not its
+#: `ps -a` for a name — and names it with the words it gave and the
+#: seconds left. The name lookup of /status <container> gives a remote
+#: host ten seconds, like Telegram's, and what it learns is what the
+#: overview after it says. Autocomplete gives every host three seconds
+#: (Discord drops a later answer), skips a remembered host, and marks
+#: nobody dead: a host slow for three seconds is not dead for a read
+#: that waits ten. A check failure the daemon answered (flaky: its
+#: registry) is not remembered. Writes ask anew; the local host is never
+#: skipped.
+_W7D_LATER = " (from the last try, not asked again for 60s)"
+_W7D_DEAD_PS = ("Command '['docker', '-H', 'ssh://dead', 'ps', '-q']' "
+                "timed out after 10 seconds")
+_W7D_REFUSED = "ssh: connect to host 192.0.2.30 port 22: Connection refused"
+_W7D_REFUSED_CHECK = "could not list containers (rc=255): " + _W7D_REFUSED
+
+
+def _w7d_seq(setup, steps, modes=None):
+    """run_scenario with `modes` laid over the hosts (put back after).
+    Returns (step records, each step's raw edit text, escapes); a raise
+    comes back as no steps with the exception in the escapes, so a check
+    goes red instead of the procedure dying."""
+    m.MODE_OVERRIDE.update(modes or {})
+    try:
+        rec, esc = run_scenario(setup, steps)
+        return rec["steps"], list(STEP_TEXT), esc
+    except Exception as e:                              # noqa: BLE001
+        return [], [], [f"raised {type(e).__name__}: {e}"]
+    finally:
+        m.MODE_OVERRIDE.clear()
+
+
+def _w7d_ok(steps, texts, esc, n):
+    """`n` steps ran, nothing escaped, no handler raised."""
+    return (len(steps) == n and len(texts) == n and not esc
+            and not any(_w3d_handler_failed(s.get("out", []))
+                        or s.get("raised") or s.get("events", []) and any(
+                            e.startswith("thread") for e in s["events"])
+                        for s in steps))
+
+
+def _w7d_gone(host, words):
+    return f"⚠ `{host}` unreachable: {words}"
+
+
+def _w7d_failed(host, words):
+    return f"⚠️ Host `{host}` could not be checked: {words}"
+
+
+def _w7d_auto(steps, i):
+    """Step `i`'s autocomplete answer, or None when it sent none."""
+    if i >= len(steps):
+        return None
+    for o in steps[i].get("out", []):
+        if o.startswith("<autocomplete>"):
+            return o[len("<autocomplete>"):].strip()
+    return None
+
+
+def w7d_checks():
+    """W7d: Discord reads skip a host found dead a moment ago."""
+    def asked(step, host):
+        return step.get("hosts", {}).get(host)
+
+    def checked(step):
+        return [e for e in step.get("events", []) if e.startswith("check_all@")]
+
+    # /status, then /status: dead and refused are not asked again.
+    steps, texts, esc = _w7d_seq("multi", [_c("status"), _c("status")])
+    ok = _w7d_ok(steps, texts, esc, 2)
+    want = texts[0].replace(
+        _w7d_gone("dead", _W7D_DEAD_PS),
+        _w7d_gone("dead", "no answer within 10 seconds" + _W7D_LATER)).replace(
+        _w7d_gone("refused", _W7D_REFUSED),
+        _w7d_gone("refused", _W7D_REFUSED + _W7D_LATER)) if ok else None
+    yield ("[multi] W7d /status then /status: dead and refused named with "
+           "their words and the seconds left, the rest as before",
+           ok and want != texts[0] and texts[1] == want)
+    yield ("[multi] W7d /status then /status: …neither is asked, every "
+           "other host as the first time",
+           ok and steps[1].get("hosts") == {
+               k: v for k, v in steps[0].get("hosts", {}).items()
+               if k not in ("dead", "refused")})
+
+    # /status, then /check: the check does not wait on them either.
+    steps, texts, esc = _w7d_seq("multi", [_c("status"), _c("check")])
+    ok = _w7d_ok(steps, texts, esc, 2)
+    yield ("[multi] W7d /status then /check: dead and refused say the "
+           "remembered words, the clause whole",
+           ok and _w7d_failed("dead", "no answer within 10 seconds"
+                              + _W7D_LATER) in texts[1].split("\n")
+           and _w7d_failed("refused", _W7D_REFUSED + _W7D_LATER)
+           in texts[1].split("\n"))
+    yield ("[multi] W7d /status then /check: …neither is asked or checked, "
+           "the others are",
+           ok and asked(steps[1], "dead") is None
+           and asked(steps[1], "refused") is None
+           and checked(steps[1]) == ["check_all@local", "check_all@nas",
+                                     "check_all@flaky"])
+
+    # /check, then /status: what the check learnt; flaky is asked.
+    steps, texts, esc = _w7d_seq("multi", [_c("check"), _c("status")])
+    ok = _w7d_ok(steps, texts, esc, 2)
+    yield ("[multi] W7d /check then /status: the check's words, remembered",
+           ok and _w7d_gone("dead", "no answer within 30 seconds"
+                            + _W7D_LATER) in texts[1]
+           and _w7d_gone("refused", _W7D_REFUSED_CHECK + _W7D_LATER)
+           in texts[1])
+    yield ("[multi] W7d /check then /status: …dead and refused not asked, "
+           "flaky (its registry failed, not its daemon) asked",
+           ok and asked(steps[1], "dead") is None
+           and asked(steps[1], "refused") is None
+           and (asked(steps[1], "flaky") or "").startswith("ps -q t=10"))
+
+    # /check, then /check: the cut words, then the clause.
+    steps, texts, esc = _w7d_seq("multi", [_c("check"), _c("check")])
+    ok = _w7d_ok(steps, texts, esc, 2)
+    lines = texts[1].split("\n") if ok else []
+    flaky = [ln for ln in (texts[0].split("\n") if ok else [])
+             if ln.startswith("⚠️ Host `flaky`")]
+    yield ("[multi] W7d /check then /check: the words cut to 80 as a fresh "
+           "failure is, then the clause whole",
+           ok and _w7d_failed("dead", "no answer within 30 seconds"
+                              + _W7D_LATER) in lines
+           and _w7d_failed("refused", _W7D_REFUSED_CHECK[:80] + _W7D_LATER)
+           in lines)
+    yield ("[multi] W7d /check then /check: …dead and refused not asked, "
+           "flaky checked again and said as the first time",
+           ok and asked(steps[1], "dead") is None
+           and asked(steps[1], "refused") is None
+           and "check_all@flaky" in checked(steps[1])
+           and len(flaky) == 1 and flaky[0] in lines)
+
+    # /status <container>: the lookup's short probe, and its memory.
+    for host, words, fresh in (
+            ("dead", "no answer within 10 seconds", "dead"),
+            ("refused", _W7D_REFUSED, "refused")):
+        steps, texts, esc = _w7d_seq(
+            "multi", [_c("status", ("container", "web"), ("host", host))])
+        ok = _w7d_ok(steps, texts, esc, 1)
+        yield (f"[multi] W7d /status container:web host:{host}: the lookup "
+               f"asks once, ten seconds, and the overview says what it "
+               f"learnt",
+               ok and asked(steps[0], fresh) == "ps -a --format t=10"
+               and texts[0] == _w7d_gone(host, words + _W7D_LATER))
+        steps, texts, esc = _w7d_seq(
+            "multi", [_c("status"),
+                      _c("status", ("container", "web"), ("host", host))])
+        ok = _w7d_ok(steps, texts, esc, 2)
+        yield (f"[multi] W7d /status then /status container:web host:{host}:"
+               f" not asked at all",
+               ok and asked(steps[1], host) is None
+               and texts[1].startswith(_w7d_gone(host, ""))
+               and texts[1].endswith(_W7D_LATER))
+    steps, texts, esc = _w7d_seq(
+        "multi", [_c("status"), _c("status", ("container", "cache"))])
+    ok = _w7d_ok(steps, texts, esc, 2)
+    yield ("[multi] W7d /status then /status container:cache: flaky's "
+           "detail, dead and refused not asked on the way",
+           ok and texts[1].startswith("🔎 **cache** @flaky")
+           and asked(steps[1], "dead") is None
+           and asked(steps[1], "refused") is None
+           and asked(steps[1], "nas") == "ps -a --format t=10")
+    steps, texts, esc = _w7d_seq(
+        "multi", [_c("status", ("container", "nosuch"))])
+    ok = _w7d_ok(steps, texts, esc, 1)
+    yield ("[multi] W7d /status container:nosuch: every remote host's "
+           "lookup gets ten seconds, the local one its default; dead and "
+           "refused are asked that once",
+           ok and (asked(steps[0], "local") or "").startswith(
+               "ps -a --format, ")
+           and all((asked(steps[0], h) or "").startswith(
+               "ps -a --format t=10, ps -q t=10") for h in ("nas", "flaky"))
+           and all(asked(steps[0], h) == "ps -a --format t=10"
+                   for h in ("dead", "refused")))
+
+    # Autocomplete: three seconds, skip, and no memory of its own.
+    _ac = ("auto", "logs", [("container", "", True), ("host", "dead", False)])
+    steps, texts, esc = _w7d_seq("multi", [_ac, _ac])
+    yield ("[multi] W7d autocomplete host:dead twice: three seconds each "
+           "time, nothing suggested, nothing remembered",
+           not esc and len(steps) == 2
+           and all(asked(s, "dead") == "ps -a --format t=3" for s in steps)
+           and _w7d_auto(steps, 0) == "" and _w7d_auto(steps, 1) == "")
+    steps, texts, esc = _w7d_seq("multi", [_c("status"), _ac])
+    yield ("[multi] W7d /status then autocomplete host:dead: not asked, "
+           "nothing suggested, nothing logged",
+           not esc and len(steps) == 2 and asked(steps[1], "dead") is None
+           and _w7d_auto(steps, 1) == ""
+           and not any(o.startswith("<log>") for o in steps[1].get("out", [])))
+    for setup, host, on, want in (
+            ("multi", "refused", "refused", ""),
+            ("multi", "nas", "nas", "web, media"),
+            ("multi", None, "local", "docksentry, web, webdav, db"),
+            ("one", None, "local", "docksentry, web, webdav, db")):
+        opts = [("container", "", True)] + (
+            [("host", host, False)] if host else [])
+        steps, texts, esc = _w7d_seq(setup, [("auto", "logs", opts)])
+        yield (f"[{setup}] W7d autocomplete host:{host or '–'}: `ps -a` on "
+               f"{on} with three seconds, the same suggestions",
+               not esc and len(steps) == 1
+               and asked(steps[0], on) == "ps -a --format t=3"
+               and _w7d_auto(steps, 0) == want)
+
+    # The local host is never skipped, not even on its own.
+    steps, texts, esc = _w7d_seq("one", [_c("status"), _c("status")],
+                                 modes={"local": "dead"})
+    ok = _w7d_ok(steps, texts, esc, 2)
+    yield ("[one] W7d local daemon dead, /status twice: asked both times",
+           ok and all(asked(s, "local") == "ps -q t=10" for s in steps)
+           and texts[0] == texts[1])
+
+    # A lookup that reaches a host clears its record: nas failed once,
+    # its cooldown ran out, the lookup found web on it — so the next
+    # failure starts the backoff at 60 s again, not at 120.
+    import hosts as hostslib
+    left = []
+    steps, texts, esc = _w7d_seq("multi", [
+        ("call", lambda: hostslib.mark_unreachable("nas", "earlier")),
+        ("call", lambda: HOSTS_CLOCK.__setitem__(0, HOSTS_CLOCK[0] + 61)),
+        _c("status", ("container", "web"), ("host", "nas")),
+        ("call", lambda: (hostslib.mark_unreachable("nas", "again"),
+                          left.append(hostslib.unreachable_for("nas")[0])))])
+    yield ("[multi] W7d /status container:web host:nas after nas's cooldown "
+           "ran out: asked, found, and its backoff starts over",
+           not esc and len(texts) == 4
+           and texts[2].startswith("🔎 **web** @nas")
+           and (asked(steps[2], "nas") or "").startswith("ps -a --format t=10")
+           and left == [60.0])
+
+    # A skipped host's check line: the words made a person's BEFORE the
+    # cut, so a long host name cannot leave the reader Python's argv.
+    import types
+    import discord_bot
+    from i18n import get_translator
+    argv = ("Command '['docker', '-H', 'ssh://backup-server.internal."
+            "example', 'ps', '--format', '{{.Names}}|{{.Image}}']' timed "
+            "out after 30 seconds")
+    try:
+        said = discord_bot.DiscordBot._check_error(
+            types.SimpleNamespace(t=get_translator("en")),
+            hostslib.StillUnreachable("x", argv, 60))
+    except Exception as e:                              # noqa: BLE001
+        said = f"raised {type(e).__name__}: {e}"
+    yield ("[multi] W7d /check, a skipped host remembered as a long argv: "
+           "says the timeout, not the argv",
+           said == "no answer within 30 seconds" + _W7D_LATER)
+
+    # A write asks anew: /stop after a /status that found dead and refused
+    # is the fresh /stop, call for call.
+    _stop = _c("stop", ("container", "web"), ("host", "all"))
+    steps, texts, esc = _w7d_seq("multi", [_c("status"), _stop])
+    fresh = (_expected_for("multi", "/stop container:web host:all")
+             or {}).get("steps", [{}])[0]
+    yield ("[multi] W7d /status then /stop container:web host:all: the "
+           "write asks every host, as a fresh /stop does",
+           not esc and len(steps) == 2 and bool(fresh)
+           and steps[1].get("hosts") == fresh.get("hosts")
+           and steps[1].get("out") == fresh.get("out"))
+
+
 #: Where each command lands, read against main at 8a74ba7
 #: (app/discord_bot.py, `_dispatch` from :1344). Printed above its rows
 #: by --snapshot, so a regenerated table keeps the review notes.
@@ -1179,16 +1462,20 @@ BRANCH_NOTES = {
     "/status": ":1361 → :1447. `_hosts_for` (:1172, read: no host = every "
                "host, `all` = every host on multi since A2 and unknown on "
                "one host, anything else unknown = 'unknown host'). A name "
-               "resolves per host through `_resolve_container` (`ps -a`, no "
-               "timeout of its own), first host that resolves wins; "
-               "ambiguous or not found falls through to the overview "
-               "narrowed by substring. The overview is "
-               "`status_render.collect_overview` since W5d, the walk "
-               "Telegram's /status takes (`ps -q`, `inspect`, 10 s each), "
-               "plus `image inspect` per listed container for the version.",
+               "resolves per host through `_resolve_container` (`ps -a`, "
+               "10 s on a remote host and the backend default locally since "
+               "W7d), first host that resolves wins; ambiguous or not found "
+               "falls through to the overview narrowed by substring. The "
+               "overview is `status_render.collect_overview` since W5d, the "
+               "walk Telegram's /status takes (`ps -q`, `inspect`, 10 s "
+               "each), plus `image inspect` per listed container for the "
+               "version. Both read the dead-host memory since W7d: a remote "
+               "host the lookup or an earlier read found dead or refused is "
+               "not asked again and its line carries 'from the last try'.",
     "/check": ":1363 → :1529. Read targeting; busy lock → web_check_one_busy; "
               "`check_all()` per host, a raise is a 'could not be checked' "
-              "line under the same heading.",
+              "line under the same heading. With the dead-host memory since "
+              "W7d (`check_on_hosts`, use_cache).",
     "/updates": ":1365 → :1563, reads the pending file directly; no options.",
     "/pin": ":1367 → :1615. No container lists (read), a container sets "
             "(write: `_write_hosts_for`, :1183, no host = local, `all` = "
@@ -1231,7 +1518,8 @@ BRANCH_NOTES = {
     "autocomplete": ":836 authorised, then `_autocomplete` (:1282) on a "
                     "worker: host → registry names, container → `ps -a` on "
                     "the named host or local (nothing or `all` named → "
-                    "local, since A2 by name rather than registry order).",
+                    "local, since A2 by name rather than registry order), "
+                    "3 s and a remembered dead host not asked since W7d.",
     "lock": "the update lock held from outside for one command.",
 }
 
@@ -1328,6 +1616,9 @@ def check():
     for label, ok in w5d_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
+    for label, ok in w7d_checks():
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
     rows = set(all_rows())
     for key in sorted(k for k in EXPECTED if k not in rows):
         print(f"  FAIL  expectation without a row: {key!r}")
@@ -1388,18 +1679,22 @@ def main():
 
 # ── expected, generated by --snapshot from main (8a74ba7); the 16 A2
 # ── rows from core-split after A2, the 22 /status overview rows after
-# ── W5d, reviewed ──
+# ── W5d, the 29 /status, /check and autocomplete rows after W7d,
+# ── reviewed ──
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
     # :1361 → :1447. `_hosts_for` (:1172, read: no host = every host, `all`
     # = every host on multi since A2 and unknown on one host, anything else
     # unknown = 'unknown host'). A name resolves per host through
-    # `_resolve_container` (`ps -a`, no timeout of its own), first host that
-    # resolves wins; ambiguous or not found falls through to the overview
-    # narrowed by substring. The overview is
-    # `status_render.collect_overview` since W5d, the walk Telegram's
-    # /status takes (`ps -q`, `inspect`, 10 s each), plus `image inspect`
-    # per listed container for the version.
+    # `_resolve_container` (`ps -a`, 10 s on a remote host and the backend
+    # default locally since W7d), first host that resolves wins; ambiguous
+    # or not found falls through to the overview narrowed by substring. The
+    # overview is `status_render.collect_overview` since W5d, the walk
+    # Telegram's /status takes (`ps -q`, `inspect`, 10 s each), plus `image
+    # inspect` per listed container for the version. Both read the dead-host
+    # memory since W7d: a remote host the lookup or an earlier read found
+    # dead or refused is not asked again and its line carries 'from the last
+    # try'.
     ('multi', '/status'): {'steps': [{'do': 'cmd /status',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚪ `docksentry` — `ghcr.io/example/docksentry:latest` — ⏱ '
@@ -1519,9 +1814,9 @@ EXPECTED = {
                         '     `251ad31786ba`\n'
                         '\n'
                         '🔁 unless-stopped  []'],
-                'hosts': {'nas': 'ps -a --format, inspect t=10, image inspect --format '
-                                 't=10, stats --no-stream --format t=20, inspect --size '
-                                 '--format t=15, image inspect --format t=15'}}],
+                'hosts': {'nas': 'ps -a --format t=10, inspect t=10, image inspect '
+                                 '--format t=10, stats --no-stream --format t=20, inspect '
+                                 '--size --format t=15, image inspect --format t=15'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "nas"}, "source": "discord"}']}},
@@ -1566,15 +1861,16 @@ EXPECTED = {
                          '"web", "host": "zzz"}, "source": "discord"}']}},
     ('multi', '/status container:web*'): {'steps': [{'do': "cmd /status container:'web*'",
                 'out': ['<ack deferred ephemeral>',
-                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '<edit> ⚠ `dead` unreachable: no answer within 10 seconds (from '
+                        'the last try, not asked again for 60s)\n'
                         '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
-                        'Connection refused  []'],
+                        'Connection refused (from the last try, not asked again for 60s)  '
+                        '[]'],
                 'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'dead': 'ps -a --format, ps -q t=10',
-                          'refused': 'ps -a --format, ps -q t=10',
-                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                          'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format t=10',
+                          'refused': 'ps -a --format t=10',
+                          'flaky': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*"}, "source": "discord"}']}},
@@ -1586,7 +1882,7 @@ EXPECTED = {
                          '"web*"}, "source": "discord"}']}},
     ('multi', '/status container:web* host:nas'): {'steps': [{'do': "cmd /status container:'web*' host:'nas'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'nas': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                'hosts': {'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "nas"}, "source": "discord"}']}},
@@ -1598,15 +1894,16 @@ EXPECTED = {
                          '"web*", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/status container:web* host:all'): {'steps': [{'do': "cmd /status container:'web*' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '<edit> ⚠ `dead` unreachable: no answer within 10 seconds (from '
+                        'the last try, not asked again for 60s)\n'
                         '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
-                        'Connection refused  []'],
+                        'Connection refused (from the last try, not asked again for 60s)  '
+                        '[]'],
                 'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'dead': 'ps -a --format, ps -q t=10',
-                          'refused': 'ps -a --format, ps -q t=10',
-                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                          'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format t=10',
+                          'refused': 'ps -a --format t=10',
+                          'flaky': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web*", "host": "all"}, "source": "discord"}']}},
@@ -1631,15 +1928,16 @@ EXPECTED = {
                          '"web*", "host": "zzz"}, "source": "discord"}']}},
     ('multi', '/status container:nosuch'): {'steps': [{'do': "cmd /status container:'nosuch'",
                 'out': ['<ack deferred ephemeral>',
-                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '<edit> ⚠ `dead` unreachable: no answer within 10 seconds (from '
+                        'the last try, not asked again for 60s)\n'
                         '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
-                        'Connection refused  []'],
+                        'Connection refused (from the last try, not asked again for 60s)  '
+                        '[]'],
                 'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'dead': 'ps -a --format, ps -q t=10',
-                          'refused': 'ps -a --format, ps -q t=10',
-                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                          'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format t=10',
+                          'refused': 'ps -a --format t=10',
+                          'flaky': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch"}, "source": "discord"}']}},
@@ -1651,7 +1949,7 @@ EXPECTED = {
                          '"nosuch"}, "source": "discord"}']}},
     ('multi', '/status container:nosuch host:nas'): {'steps': [{'do': "cmd /status container:'nosuch' host:'nas'",
                 'out': ['<ack deferred ephemeral>', '<edit> No containers running.  []'],
-                'hosts': {'nas': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                'hosts': {'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "nas"}, "source": "discord"}']}},
@@ -1663,15 +1961,16 @@ EXPECTED = {
                          '"nosuch", "host": "nas"}, "source": "discord"}']}},
     ('multi', '/status container:nosuch host:all'): {'steps': [{'do': "cmd /status container:'nosuch' host:'all'",
                 'out': ['<ack deferred ephemeral>',
-                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds\n"
+                        '<edit> ⚠ `dead` unreachable: no answer within 10 seconds (from '
+                        'the last try, not asked again for 60s)\n'
                         '⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 port 22: '
-                        'Connection refused  []'],
+                        'Connection refused (from the last try, not asked again for 60s)  '
+                        '[]'],
                 'hosts': {'local': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'nas': 'ps -a --format, ps -q t=10, inspect t=10',
-                          'dead': 'ps -a --format, ps -q t=10',
-                          'refused': 'ps -a --format, ps -q t=10',
-                          'flaky': 'ps -a --format, ps -q t=10, inspect t=10'}}],
+                          'nas': 'ps -a --format t=10, ps -q t=10, inspect t=10',
+                          'dead': 'ps -a --format t=10',
+                          'refused': 'ps -a --format t=10',
+                          'flaky': 'ps -a --format t=10, ps -q t=10, inspect t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"nosuch", "host": "all"}, "source": "discord"}']}},
@@ -2969,7 +3268,8 @@ EXPECTED = {
     # ── /check ──────────────────────────────────────────────────────
     # :1363 → :1529. Read targeting; busy lock → web_check_one_busy;
     # `check_all()` per host, a raise is a 'could not be checked' line under
-    # the same heading.
+    # the same heading. With the dead-host memory since W7d
+    # (`check_on_hosts`, use_cache).
     ('multi', '/check'): {'steps': [{'do': 'cmd /check',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> **Updates available**\n'
@@ -6478,9 +6778,9 @@ EXPECTED = {
                         '\n'
                         '🔁 unless-stopped  []'],
                 'hosts': {'local': 'ps -a --format',
-                          'nas': 'ps -a --format, inspect t=10, image inspect --format '
-                                 't=10, stats --no-stream --format t=20, inspect --size '
-                                 '--format t=15, image inspect --format t=15'}}],
+                          'nas': 'ps -a --format t=10, inspect t=10, image inspect '
+                                 '--format t=10, stats --no-stream --format t=20, inspect '
+                                 '--size --format t=15, image inspect --format t=15'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"media"}, "source": "discord"}']}},
@@ -6499,9 +6799,9 @@ EXPECTED = {
                         '\n'
                         '🔁 unless-stopped  []'],
                 'hosts': {'local': 'ps -a --format',
-                          'nas': 'ps -a --format, inspect t=10, image inspect --format '
-                                 't=10, stats --no-stream --format t=20, inspect --size '
-                                 '--format t=15, image inspect --format t=15'}}],
+                          'nas': 'ps -a --format t=10, inspect t=10, image inspect '
+                                 '--format t=10, stats --no-stream --format t=20, inspect '
+                                 '--size --format t=15, image inspect --format t=15'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"we"}, "source": "discord"}']}},
@@ -6543,9 +6843,9 @@ EXPECTED = {
                          '"refused"}, "source": "discord"}']}},
     ('multi', '/status container:web host:dead'): {'steps': [{'do': "cmd /status container:'web' host:'dead'",
                 'out': ['<ack deferred ephemeral>',
-                        "<edit> ⚠ `dead` unreachable: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '-q']' timed out after 10 seconds  []"],
-                'hosts': {'dead': 'ps -a --format, ps -q t=10'}}],
+                        '<edit> ⚠ `dead` unreachable: no answer within 10 seconds (from '
+                        'the last try, not asked again for 60s)  []'],
+                'hosts': {'dead': 'ps -a --format t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "dead"}, "source": "discord"}']}},
@@ -6558,8 +6858,9 @@ EXPECTED = {
     ('multi', '/status container:web host:refused'): {'steps': [{'do': "cmd /status container:'web' host:'refused'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⚠ `refused` unreachable: ssh: connect to host 192.0.2.30 '
-                        'port 22: Connection refused  []'],
-                'hosts': {'refused': 'ps -a --format, ps -q t=10'}}],
+                        'port 22: Connection refused (from the last try, not asked again '
+                        'for 60s)  []'],
+                'hosts': {'refused': 'ps -a --format t=10'}}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/status", "actor": "u7", "detail": {"container": '
                          '"web", "host": "refused"}, "source": "discord"}']}},
@@ -7152,13 +7453,12 @@ EXPECTED = {
                         '⚪ `db` — `postgres:16` — ⏱ ?\n'
                         '🟢 `web` @nas — `nginx:1.25` — ⏱ ?\n'
                         '⚪ `media` @nas — `jellyfin/jellyfin:10.9` — ⏱ ?\n'
-                        "⚠ `dead` unreachable: Command '['docker', '-H', 'ssh://dead', "
-                        "'ps', '-q']' timed out after 10 seconds…#20d73b0bc5  []"],
+                        '⚠ `dead` unreachable: no answer within 10 seconds (from the last '
+                        'try, not asked again for 60s)\n'
+                        '⚠ `ref…#e77fa6c0d5  []'],
                 'hosts': {'local': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
                                    '×3',
                           'nas': 'ps -q t=10, inspect t=10, image inspect --format t=10 ×2',
-                          'dead': 'ps -q t=10',
-                          'refused': 'ps -q t=10',
                           'flaky': 'ps -q t=10, inspect t=10, image inspect --format t=10 '
                                    '×2'}}],
      'state': {'pending': ['web@local', 'web@nas'],
@@ -7210,21 +7510,14 @@ EXPECTED = {
                         '<edit> **Updates available**\n'
                         '• `web` — nginx:1.25\n'
                         '• `web` @nas — nginx:1.25\n'
-                        "⚠️ Host `dead` could not be checked: Command '['docker', '-H', "
-                        "'ssh://dead', 'ps', '--format', '{{.Names}}|{{.Image}}\n"
+                        '⚠️ Host `dead` could not be checked: no answer within 30 seconds '
+                        '(from the last try, not asked again for 60s)\n'
                         '⚠️ Host `refused` could not be checked: could not list containers '
-                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Con\n'
-                        '⚠️ Host `flaky` could not be checked: registry did not answer in '
-                        '15s  []'],
+                        '(rc=255): ssh: connect to host 192.0.2.30 port 22: Con '
+                        '…#faba9bd3f6  []'],
                 'hosts': {'local': 'ps --format, inspect t=60, inspect --format ×2',
-                          'nas': 'ps --format, inspect t=60, inspect --format ×2',
-                          'dead': 'ps --format',
-                          'refused': 'ps --format'},
-                'events': ['check_all@local',
-                           'check_all@nas',
-                           'check_all@dead',
-                           'check_all@refused',
-                           'check_all@flaky']}],
+                          'nas': 'ps --format, inspect t=60, inspect --format ×2'},
+                'events': ['check_all@local', 'check_all@nas', 'check_all@flaky']}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/check", "actor": "u7", "source": "discord"}',
                          '{"action": "/check", "actor": "u7", "source": "discord"}']}},
@@ -8419,7 +8712,7 @@ EXPECTED = {
     # :836 authorised, then `_autocomplete` (:1282) on a worker: host →
     # registry names, container → `ps -a` on the named host or local
     # (nothing or `all` named → local, since A2 by name rather than registry
-    # order).
+    # order), 3 s and a remembered dead host not asked since W7d.
     ('multi', "auto host ''"): {'steps': [{'do': "auto /status host:''*",
                 'out': ['<autocomplete> local, nas, dead, refused, flaky']}],
      'state': {'pending': ['web@local', 'web@nas']}},
@@ -8431,82 +8724,82 @@ EXPECTED = {
      'state': {'pending': ['web@local']}},
     ('multi', "auto container ''"): {'steps': [{'do': "auto /logs container:''*",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', "auto container ''"): {'steps': [{'do': "auto /logs container:''*",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', "auto container 'we'"): {'steps': [{'do': "auto /logs container:'we'*",
                 'out': ['<autocomplete> web, webdav'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', "auto container 'we'"): {'steps': [{'do': "auto /logs container:'we'*",
                 'out': ['<autocomplete> web, webdav'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:nas'): {'steps': [{'do': "auto /logs container:''* host:'nas'",
                 'out': ['<autocomplete> web, media'],
-                'hosts': {'nas': 'ps -a --format'}}],
+                'hosts': {'nas': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:nas'): {'steps': [{'do': "auto /logs container:''* host:'nas'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:all'): {'steps': [{'do': "auto /logs container:''* host:'all'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:all'): {'steps': [{'do': "auto /logs container:''* host:'all'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:zzz'): {'steps': [{'do': "auto /logs container:''* host:'zzz'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:zzz'): {'steps': [{'do': "auto /logs container:''* host:'zzz'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:dead'): {'steps': [{'do': "auto /logs container:''* host:'dead'",
                 'out': ["<log> Discord autocomplete failed: Command '['docker', '-H', "
                         "'ssh://dead', 'ps', '-a', '--format', '{{.Names}}']' timed out "
-                        'after 30 seconds',
+                        'after 3 seconds',
                         '<autocomplete> '],
-                'hosts': {'dead': 'ps -a --format'}}],
+                'hosts': {'dead': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:dead'): {'steps': [{'do': "auto /logs container:''* host:'dead'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:refused'): {'steps': [{'do': "auto /logs container:''* host:'refused'",
                 'out': ['<autocomplete> '],
-                'hosts': {'refused': 'ps -a --format'}}],
+                'hosts': {'refused': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:refused'): {'steps': [{'do': "auto /logs container:''* host:'refused'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto container host:dead twice'): {'steps': [{'do': "auto /logs container:''* host:'dead'",
                 'out': ["<log> Discord autocomplete failed: Command '['docker', '-H', "
                         "'ssh://dead', 'ps', '-a', '--format', '{{.Names}}']' timed out "
-                        'after 30 seconds',
+                        'after 3 seconds',
                         '<autocomplete> '],
-                'hosts': {'dead': 'ps -a --format'}},
+                'hosts': {'dead': 'ps -a --format t=3'}},
                {'do': "auto /logs container:''* host:'dead'",
                 'out': ["<log> Discord autocomplete failed: Command '['docker', '-H', "
                         "'ssh://dead', 'ps', '-a', '--format', '{{.Names}}']' timed out "
-                        'after 30 seconds',
+                        'after 3 seconds',
                         '<autocomplete> '],
-                'hosts': {'dead': 'ps -a --format'}}],
+                'hosts': {'dead': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'auto container host:dead twice'): {'steps': [{'do': "auto /logs container:''* host:'dead'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}},
+                'hosts': {'local': 'ps -a --format t=3'}},
                {'do': "auto /logs container:''* host:'dead'",
                 'out': ['<autocomplete> docksentry, web, webdav, db'],
-                'hosts': {'local': 'ps -a --format'}}],
+                'hosts': {'local': 'ps -a --format t=3'}}],
      'state': {'pending': ['web@local']}},
     ('multi', 'auto nothing focused'): {'steps': [{'do': "auto /logs container:'we'"}],
      'state': {'pending': ['web@local', 'web@nas']}},

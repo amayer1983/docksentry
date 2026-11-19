@@ -2165,7 +2165,7 @@ GUARDED = [
 
     ("Discord autocomplete with `host: all` asks the local host only",
      "app/discord_bot.py",
-     "        named = self._host_token(host_name) not in (None, ALL_HOSTS)\n",
+     "        named = self._host_token(host_name) not in (None, hostslib.ALL_HOSTS)\n",
      "        named = bool(host_name)\n",
      "test_target_resolution_shared.py"),
 
@@ -2406,9 +2406,9 @@ GUARDED = [
     ("Discord /status <container>: a lookup error falls into the overview, "
      "never the answer",
      "app/discord_bot.py",
-     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
      "                if err:\n",
-     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
      "                if err:\n"
      "                    return err\n",
      "test_discord_dispatch_matrix.py"),
@@ -2419,9 +2419,9 @@ GUARDED = [
     ("Discord /status <container>: a lookup error never ends in "
      "\"Something went wrong\"",
      "app/discord_bot.py",
-     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
      "                if err:\n",
-     "                name, err = self._resolve_container(wanted, backend)\n"
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
      "                if err:\n"
      "                    raise RuntimeError(err)\n",
      "test_discord_dispatch_matrix.py"),
@@ -2815,8 +2815,8 @@ GUARDED = [
 
     ("Discord /check never raises out of the handler, not even alone",
      'app/discord_bot.py',
-     '                raise_alone=False, t=self.t) if walk else ():\n',
-     '                raise_alone=True, t=self.t) if walk else ():\n',
+     '                raise_alone=False, use_cache=True,\n',
+     '                raise_alone=True, use_cache=True,\n',
      'test_check_on_hosts.py'),
 
     ("Discord /check asks for no SSH hint",
@@ -2839,8 +2839,8 @@ GUARDED = [
 
     ("…and with nothing left starts no walk at all",
      'app/discord_bot.py',
-     '                raise_alone=False, t=self.t) if walk else ():\n',
-     '                raise_alone=False, t=self.t):\n',
+     '                t=self.t) if walk else ():\n',
+     '                t=self.t):\n',
      'test_check_on_hosts.py'),
 
     ("…not even for the pseudo-host check_on_hosts makes of []",
@@ -2852,8 +2852,8 @@ GUARDED = [
 
     ("Discord /check cuts a host's error to 80 characters",
      'app/discord_bot.py',
-     '                                    error=str(hc.error)[:80]))\n',
-     '                                    error=str(hc.error)))\n',
+     '        return str(error)[:80]\n',
+     '        return str(error)\n',
      'test_discord_dispatch_matrix.py'),
 
     ("Discord /check names the host that could not be checked",
@@ -2866,6 +2866,103 @@ GUARDED = [
      'app/discord_bot.py',
      '{self._label(hc.host)} — ',
      '{self._label(None)} — ',
+     'test_discord_dispatch_matrix.py'),
+
+    # W7d: Discord's reads and its container autocomplete take the
+    # dead-host memory and a short probe.
+    ("Discord /status skips a remote host found dead a moment ago",
+     'app/discord_bot.py',
+     '            targets, backend_for=self._backend_for, t=self.t,\n'
+     '            use_cache=True)\n',
+     '            targets, backend_for=self._backend_for, t=self.t,\n'
+     '            use_cache=False)\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check skips a remote host found dead a moment ago",
+     'app/discord_bot.py',
+     '                raise_alone=False, use_cache=True,\n',
+     '                raise_alone=False, use_cache=False,\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check keeps a skipped host's clause whole after the cut",
+     'app/discord_bot.py',
+     '            return hostslib.skipped_words(words, error.retry_in, t=self.t)\n',
+     '            return str(error)[:80]\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and cuts the skipped host's words to 80, as a fresh failure's",
+     'app/discord_bot.py',
+     '            words = errfmt.human(error.reason or "", self.t)[:80]\n',
+     '            words = errfmt.human(error.reason or "", self.t)\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…after making them a person's, so the cut cannot leave the argv",
+     'app/discord_bot.py',
+     '            words = errfmt.human(error.reason or "", self.t)[:80]\n',
+     '            words = (error.reason or "")[:80]\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <container> does not ask a remembered host for the name",
+     'app/discord_bot.py',
+     '                if hostslib.remembered_dead(host) is not None:\n'
+     '                    continue\n',
+     '                if False:\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <container> gives a remote host ten seconds",
+     'app/discord_bot.py',
+     '            result = (backend.run(cmd, timeout=10) if remote\n',
+     '            result = (backend.run(cmd) if remote\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and the local host its backend's default",
+     'app/discord_bot.py',
+     '        remote = host is not None and not getattr(host, "is_local", False)\n',
+     '        remote = host is not None\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…remembers a remote host whose listing raised",
+     'app/discord_bot.py',
+     '            hostslib.remember(host, clip(str(e)))\n',
+     '            pass\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…remembers a remote host whose listing exited non-zero",
+     'app/discord_bot.py',
+     '            hostslib.remember(host, words)\n',
+     '            pass\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and clears the record of a host that answered",
+     'app/discord_bot.py',
+     '        hostslib.remember(host, None)\n        names = [',
+     '        names = [',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord autocomplete gives `ps -a` three seconds",
+     'app/discord_bot.py',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                             timeout=3)\n',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"])\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…does not ask a host found dead a moment ago",
+     'app/discord_bot.py',
+     '        if backend is None or hostslib.remembered_dead(host) is not None:\n',
+     '        if backend is None:\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and marks no host dead itself",
+     'app/discord_bot.py',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                             timeout=3)\n',
+     '        try:\n'
+     '            result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                                 timeout=3)\n'
+     '        except Exception as e:\n'
+     '            hostslib.remember(host, str(e))\n'
+     '            raise\n',
      'test_discord_dispatch_matrix.py'),
 
     ("Web Check Updates walks every host, not only the first",
