@@ -2835,6 +2835,19 @@ GUARDED = [
      '        walk = list(targets)\n',
      'test_check_on_hosts.py'),
 
+    ("…and with nothing left starts no walk at all",
+     'app/discord_bot.py',
+     '                raise_alone=False, t=self.t) if walk else ():\n',
+     '                raise_alone=False, t=self.t):\n',
+     'test_check_on_hosts.py'),
+
+    ("…not even for the pseudo-host check_on_hosts makes of []",
+     'app/discord_bot.py',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]\n',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]'
+     ' or [None]\n',
+     'test_check_on_hosts.py'),
+
     ("Discord /check cuts a host's error to 80 characters",
      'app/discord_bot.py',
      '                                    error=str(hc.error)[:80]))\n',
