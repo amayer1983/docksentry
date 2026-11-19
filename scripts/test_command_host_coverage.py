@@ -116,7 +116,8 @@ class Backend:
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
     def logs(self, name, tail=30, timeout=None):
         return types.SimpleNamespace(
-            returncode=0, stdout=f"log line from {name}", stderr="")
+            returncode=0, stdout=f"log line from {name} on {self.name}",
+            stderr="")
 
 class Host:
     def __init__(self, name, backend, local=False):
@@ -146,32 +147,45 @@ remote_be = Backend(["llama-server"], "dock8520")
 reg = Registry([Host("local", local_be, local=True),
                 Host("dock8520", remote_be)])
 
-# /logs of a container that lives only on the remote host must find it.
+# Through the real dispatcher, not a hand-built loop over the hosts: the
+# sweep a test writes itself proves only that the test can sweep. Until
+# W3 this drove `_resolve_container` host by host, the way the branches
+# used to; no command does that across hosts any more (/logs and /audit
+# hand `backend_for` to container_flags, #63), so the old loop guarded a
+# path nothing walked.
 bot = make_bot(reg)
 from i18n import get_translator
 bot.t = get_translator("en")
-TelegramBot._handle_message  # ensure import side effects are fine
-# Drive the resolver path the way the branch does:
-arg, targets, err = bot._resolve_targets("llama-server", write=False)
-found_on = []
-for host in (targets or [None]):
-    be = bot._backend_for(host)
-    name, e = bot._resolve_container(arg, backend=be)
-    if not e:
-        found_on.append(host.name if host else "local")
-checks["/logs-style sweep finds a remote-only container"] = (
-    found_on == ["dock8520"])
+bot.bot_username = "docksentry_test_bot"
+bot._check_auth = lambda chat_id, user_id, kind="message": True
 
-# And a local-only container is found on local, not claimed on the remote.
-arg, targets, err = bot._resolve_targets("web", write=False)
-found_on = []
-for host in (targets or [None]):
-    be = bot._backend_for(host)
-    name, e = bot._resolve_container(arg, backend=be)
-    if not e:
-        found_on.append(host.name if host else "local")
-checks["…and a local-only container resolves on local only"] = (
-    found_on == ["local"])
+def dispatch(text):
+    bot._sent.clear()
+    bot._handle_message({"text": text, "from": {"id": 1},
+                         "chat": {"id": 1}}, None, None)
+    return "\n".join(bot._sent)
+
+# A container that lives only on the remote host: its logs come from that
+# host's backend and the reply says which host.
+out = dispatch("/logs llama-server")
+checks["/logs llama-server reads the remote host's logs"] = (
+    "log line from llama-server on dock8520" in out)
+checks["…and tags the reply with that host"] = "@dock8520" in out
+
+# A local-only container is read on local, not claimed on the remote.
+out = dispatch("/logs web")
+checks["/logs web reads the local host's logs"] = (
+    "log line from web on local" in out)
+checks["…and is not tagged with the remote host"] = "@dock8520" not in out
+
+# /audit finds the remote-only container and names its host.
+out = dispatch("/audit llama-server")
+checks["/audit llama-server audits it on the remote host"] = (
+    "`llama-server`" in out and "@dock8520" in out
+    and "not found" not in out)
+out = dispatch("/audit web")
+checks["/audit web audits it on local"] = (
+    "`web`" in out and "@dock8520" not in out and "not found" not in out)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

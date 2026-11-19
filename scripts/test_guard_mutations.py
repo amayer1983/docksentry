@@ -2381,6 +2381,23 @@ GUARDED = [
      '                         + "")\n',
      'test_telegram_dispatch_matrix.py'),
 
+    # The behavioural half of command_host_coverage drives /logs and
+    # /audit through _handle_message now. Both mutations keep the text
+    # the static half looks for (`backend_for=self._backend_for`), so
+    # only a real dispatch to a remote-only container sees them; the old
+    # hand-built sweep stayed green under both (measured on 1403ec1).
+    ("Telegram /logs <name> looks on every host the token names",
+     "app/telegram_bot.py",
+     "                log_targets or [None], backend_for=self._backend_for,",
+     "                [None], backend_for=self._backend_for,",
+     "test_command_host_coverage.py"),
+
+    ("Telegram /audit <name> looks on every host the token names",
+     "app/telegram_bot.py",
+     "                audit_targets or [None], backend_for=self._backend_for,",
+     "                [None], backend_for=self._backend_for,",
+     "test_command_host_coverage.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
