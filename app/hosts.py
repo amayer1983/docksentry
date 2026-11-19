@@ -357,8 +357,11 @@ def walk(targets, fetch, *, max_workers=MAX_WALK_WORKERS, use_cache=True,
     still in its cooldown is not asked (unless `use_cache` is False), a
     host whose `fetch` raises is remembered with `describe(error)`, and a
     host that answers is forgotten. The memory is read for every host
-    before any is asked and written in the order given once all have
-    answered, which is how the page did it.
+    before any is asked, and written for all of them, in the order
+    given, once all have answered and before the caller builds anything
+    from the answers. The page used to write each mark while it built
+    that host's row, so a row that raised left the hosts after it
+    unmarked; now they are remembered either way.
 
     `fetch` runs in worker threads and may raise; that is how it says a
     host is dead. It must not touch anything the caller changes

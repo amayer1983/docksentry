@@ -179,6 +179,14 @@ _walk([_Host("b")], _f, use_cache=False)
 checks["use_cache=False asks a host even inside its cooldown"] = (
     _f.asked == ["b"])
 
+# Whole seconds, rounded down, as the page has always shown them: with
+# 30.5 seconds left the entry says 30, not 31.
+hosts.forget_unreachable()
+hosts.mark_unreachable("half", "boom", cooldown=30.5)
+_e = _by_name(_walk([_Host("half")], _Fetch()))
+checks["…rounded down, the way the page always showed it"] = (
+    "half" in _e and _e["half"].retry_in == 30)
+
 # A host that comes back is marked reachable: the failure counter that
 # drives the growing cooldown is what only `mark_reachable` clears (an
 # expired entry alone reads as (0.0, "") anyway).
@@ -220,6 +228,10 @@ _f = _Fetch(gate=2, total=5)
 _walk([_Host(f"h{i}") for i in range(5)], _f, max_workers=2)
 checks["…and a smaller max_workers is honoured"] = (
     _f.peak == 2 and len(_f.asked) == 5)
+_f = _Fetch(gate=12, total=12)
+_walk([_Host(f"h{i}") for i in range(12)], _f, max_workers=12)
+checks["…but a larger max_workers cannot lift the cap of eight"] = (
+    _f.peak == 8 and len(_f.asked) == 12)
 _f = _Fetch(gate=4, total=4)
 _walk([_Host(f"h{i}") for i in range(4)], _f)
 checks["…and the hosts really are asked side by side"] = _f.peak == 4
@@ -235,6 +247,10 @@ _view = srcslice.section(_src, "def _host_views", "\n        def ",
                          label="web_ui.py: _host_views")
 checks["the page asks the core for the walk"] = (
     _view is not None and "_hosts_mod.walk(" in _view)
+# The words that go into the memory are the page's own: `_why` cuts
+# the CLI's error block down to the one line the row quotes.
+checks["…and hands it its own words for a dead host"] = (
+    _view is not None and "describe=self._why" in _view)
 checks["…and keeps no memory handling of its own"] = (
     _view is not None
     and not any(w in _view for w in ("unreachable_for", "mark_reachable",

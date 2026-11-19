@@ -2215,6 +2215,24 @@ GUARDED = [
      "        if True:\n",
      "test_dead_host_memory.py"),
 
+    ("a skipped host's retry_in is whole seconds, rounded down",
+     "app/hosts.py",
+     "                skip[i] = (cached, int(left))\n",
+     "                skip[i] = (cached, int(left) + 1)\n",
+     "test_dead_host_memory.py"),
+
+    ("a caller's max_workers cannot lift the walk above eight",
+     "app/hosts.py",
+     "        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))\n",
+     "        workers = min(max_workers, len(todo))\n",
+     "test_dead_host_memory.py"),
+
+    ("the status page hands the walk its own words for a dead host",
+     "app/web_ui.py",
+     "                    describe=self._why):\n",
+     "                    describe=str):\n",
+     "test_dead_host_memory.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
