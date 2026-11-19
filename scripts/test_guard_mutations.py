@@ -1956,6 +1956,21 @@ GUARDED = [
      "        pass",
      "test_telegram_dispatch_matrix.py"),
 
+    # The Telegram callback matrix (core split, T3). With `stop_cancel`
+    # switched off the press falls through every branch and nothing
+    # answers — only that family's rows go red, measured.
+    ("a button press is answered from the branch its data names",
+     "app/telegram_bot.py",
+     '        if data == "stop_cancel":\n',
+     "        if False:\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and an exception inside the thread a press starts turns it red",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    THREAD_ERRORS.append(f"{args.exc_type.__name__} in thread")',
+     "    pass",
+     "test_telegram_callback_matrix.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
