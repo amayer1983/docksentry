@@ -2617,6 +2617,32 @@ GUARDED = [
      '                    continue\n',
      'test_discord_dispatch_matrix.py'),
 
+    ("…and test_status_parity sees a Discord back on the update path's list",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm not in {c["name"] for c in self._checker_for(host)\n'
+     '                              .get_running_containers(include_self=True)}:\n'
+     '                    continue\n',
+     'test_status_parity.py'),
+
+    ("Discord /status lists containers opted out by docksentry label",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                lab = (cfg.get("Config") or {}).get("Labels") or {}\n'
+     '                if lab.get("docksentry.enable") == "false" or lab.get("docksentry.exclude") == "true":\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status lists EXCLUDE_CONTAINERS, on one host and on many",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm in (self.config.exclude_containers or ()):\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
     ("Discord /status lists the container that answers it",
      'app/discord_bot.py',
      '                nm = (cfg.get("Name") or "?").lstrip("/")\n',

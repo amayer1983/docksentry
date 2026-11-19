@@ -1025,7 +1025,12 @@ W5D_ROWS = [
     ("as built", "one", {}, "docksentry"),
     ("db pinned", "multi", {"pin": "db"}, "db"),
     ("db pinned", "one", {"pin": "db"}, "db"),
+    ("db excluded", "multi", {"env": {"EXCLUDE_CONTAINERS": "db"}}, "db"),
     ("db excluded", "one", {"env": {"EXCLUDE_CONTAINERS": "db"}}, "db"),
+    ("db labelled docksentry.enable=false", "multi",
+     {"labels": {"db": {"docksentry.enable": "false"}}}, "db"),
+    ("db labelled docksentry.exclude=true", "one",
+     {"labels": {"db": {"docksentry.exclude": "true"}}}, "db"),
     ("nas refused, flaky dead", "multi",
      {"modes": {"nas": "refused", "flaky": "dead"}}, "web"),
 ]
@@ -1043,24 +1048,27 @@ def _w5d_edit_text():
 
 
 def _w5d_world(setup, *, env=None, modes=None, refused=None, pin=None,
-               version=None):
+               version=None, labels=None):
     """Discord's and Telegram's bare /status, raw, in one world.
 
     `env` is laid over the matrix's env, `modes` and `refused` over the
-    hosts as in W3d, `pin` is pinned through Discord first, `version` is
-    what `image inspect` answers for the version label. Everything put
+    hosts as in W3d, `pin` is pinned through Discord first, `labels`
+    (`{name: {label: value}}`) is laid over the local host's containers,
+    `version` is what `image inspect` answers for the version label.
+    Everything put
     back afterwards. Returns (discord text, telegram text, escapes,
     discord's recorded lines). A raise anywhere comes back as an empty
     answer with the exception in the escapes, so a check goes red
     instead of the procedure dying."""
     try:
         return _w5d_world_inner(setup, env=env, modes=modes,
-                                refused=refused, pin=pin, version=version)
+                                refused=refused, pin=pin, version=version,
+                                labels=labels)
     except Exception as e:                              # noqa: BLE001
         return "", "", [f"raised {type(e).__name__}: {e}"], []
 
 
-def _w5d_world_inner(setup, *, env, modes, refused, pin, version):
+def _w5d_world_inner(setup, *, env, modes, refused, pin, version, labels):
     import hosts as hostslib
     real_refused = m.MatrixBackend.refused_stderr
     real_answer = m.MatrixBackend._answer
@@ -1084,6 +1092,9 @@ def _w5d_world_inner(setup, *, env, modes, refused, pin, version):
         with contextlib.redirect_stdout(sink), \
                 contextlib.redirect_stderr(sink):
             row = Row(setup)
+            for nm, lab in (labels or {}).items():
+                row.backends["local"].containers[nm]["Config"][
+                    "Labels"].update(lab)
             if pin:
                 row.do(_c("pin", ("container", pin)))
                 _join()
