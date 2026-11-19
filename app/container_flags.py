@@ -441,7 +441,8 @@ def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
     (`/check web*` matches different containers on different hosts);
     without it `only=` is not passed at all. `debug_sink` is handed to
     `check_all` as `bot=`, which uses it only to send the debug trace;
-    without one `check_all()` gets no arguments. `hint=True` asks
+    without one `bot=` is not passed, and with neither `check_all()`
+    gets no arguments at all. `hint=True` asks
     hostdiag for a sentence under each failure, in `t`'s language; a
     hint that throws costs the hint, never the walk. An exception from
     `on_host` is the caller's and is not swallowed.
