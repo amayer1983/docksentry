@@ -1620,14 +1620,14 @@ GUARDED = [
 
     ('…and so does /check --dry-run',
      'app/telegram_bot.py',
-     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
-     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
      'test_pin_unreadable_paths.py'),
 
     ('…and /check <name>',
      'app/telegram_bot.py',
-     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
-     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            container_flags.check_on_hosts(',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            container_flags.check_on_hosts(',
      'test_pin_unreadable_paths.py'),
 
     ('Discord /check says nothing was checked when the pin list is unreadable',
@@ -2684,6 +2684,125 @@ GUARDED = [
      '                    host_tag=tag))\n',
      '                lines.append(f"{nm}{tag}")\n',
      'test_status_parity.py'),
+
+    # W6: Telegram's four check walks are container_flags.check_on_hosts.
+    ("a single-host install's check still raises as it always did",
+     'app/container_flags.py',
+     '            if alone:\n                raise\n',
+     '            if False:\n                raise\n',
+     'test_check_on_hosts.py'),
+
+    ("one host failing its check does not stop the others (Telegram)",
+     'app/container_flags.py',
+     '            updates, error = None, e\n',
+     '            raise\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the check walk asks for a hint only when the caller wants one",
+     'app/container_flags.py',
+     '        if error is not None and hint:\n',
+     '        if error is not None:\n',
+     'test_check_on_hosts.py'),
+
+    ("…in the reader's language",
+     'app/container_flags.py',
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=t) or ""\n',
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=None) or ""\n',
+     'test_check_on_hosts.py'),
+
+    ("…and a hint that throws costs the hint, not the check",
+     'app/container_flags.py',
+     '            try:\n'
+     '                import hostdiag\n'
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=t) or ""\n'
+     '            except Exception:                               # noqa: BLE001\n'
+     '                why = ""\n',
+     '            import hostdiag\n'
+     '            why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                t=t) or ""\n',
+     'test_check_on_hosts.py'),
+
+    ("a host's check result is handed on before the next host is checked",
+     'app/container_flags.py',
+     '        out.append(answer)\n'
+     '        if on_host is not None:\n'
+     '            on_host(answer)\n'
+     '    return out\n',
+     '        out.append(answer)\n'
+     '    for answer in out:\n'
+     '        if on_host is not None:\n'
+     '            on_host(answer)\n'
+     '    return out\n',
+     'test_check_on_hosts.py'),
+
+    ("a scoped check asks each host only about its own matches",
+     'app/container_flags.py',
+     '            kw["only"] = only_for(host)\n',
+     '            pass\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the check walk hands the debug sink to check_all",
+     'app/container_flags.py',
+     '            kw["bot"] = debug_sink\n',
+     '            pass\n',
+     'test_check_on_hosts.py'),
+
+    ("a host without a checker is that host's failure, not the walk's",
+     'app/container_flags.py',
+     '        checker = None\n        try:\n            checker = checker_for(host)\n',
+     '        checker = checker_for(host)\n        try:\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check asks for the SSH hint under a failed host",
+     'app/telegram_bot.py',
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            debug_sink=self, hint=False, on_host=_report, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and puts it under the failure",
+     'app/telegram_bot.py',
+     '                if hc.hint:\n                    _detail += "\\n\\n" + hc.hint\n',
+     '                if False:\n                    _detail += "\\n\\n" + hc.hint\n',
+     'test_check_on_hosts.py'),
+
+    ("…and sends the debug trace through the bot",
+     'app/telegram_bot.py',
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            debug_sink=None, hint=True, on_host=_report, t=self.t)\n',
+     'test_check_per_host.py'),
+
+    ("the dry run says a failed host without a hint, as it always did",
+     'app/telegram_bot.py',
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     '                debug_sink=self, hint=True, on_host=_dry, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and so does /check <name>",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                only_for=scoped.__getitem__, debug_sink=self, hint=True,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check <name> scopes each host's check to its matches",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                only_for=None, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and so does /update <name>",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     '                only_for=None, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
 
 ]
 

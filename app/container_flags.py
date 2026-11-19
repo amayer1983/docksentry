@@ -414,6 +414,70 @@ def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
     return FindResult(tuple(found), tuple(errors), tuple(unreachable))
 
 
+#: One host's update check, as `on_host` sees it and `check_on_hosts`
+#: returns it: `updates` is what `check_all` returned (None when it
+#: raised), `error` the exception (None when it did not), `hint`
+#: hostdiag's sentence for that error or "", `checker` the one asked.
+HostCheck = namedtuple("HostCheck", "host updates error hint checker")
+
+
+def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
+                   hint=False, on_host=None, t):
+    """`check_all` on each of `targets`, one after the other, in order.
+
+    `on_host(HostCheck)` runs for each host before the next host's
+    `check_all` starts, so a chat can say "nas: up to date" the moment
+    nas is done instead of after the slowest machine (#2). The answers
+    also come back as a list in the same order.
+
+    A host that raises is reported, not raised: one unreachable host
+    must not stop the others from being checked (#7, the scheduler's
+    rule). Except on a single-host install — `targets` None (or empty,
+    or just the pseudo-host None): there the exception goes up exactly
+    as it did before there were hosts. A host whose `checker_for`
+    raises counts as that host's failure.
+
+    `only_for(host)` is the set of names to scope that host's check to
+    (`/check web*` matches different containers on different hosts);
+    without it `only=` is not passed at all. `debug_sink` is handed to
+    `check_all` as `bot=`, which uses it only to send the debug trace;
+    without one `check_all()` gets no arguments. `hint=True` asks
+    hostdiag for a sentence under each failure, in `t`'s language; a
+    hint that throws costs the hint, never the walk. An exception from
+    `on_host` is the caller's and is not swallowed.
+    """
+    walk = list(targets) if targets else [None]
+    alone = len(walk) == 1 and walk[0] is None
+    out = []
+    for host in walk:
+        kw = {}
+        if debug_sink is not None:
+            kw["bot"] = debug_sink
+        if only_for is not None:
+            kw["only"] = only_for(host)
+        checker = None
+        try:
+            checker = checker_for(host)
+            updates, error = checker.check_all(**kw), None
+        except Exception as e:                              # noqa: BLE001
+            if alone:
+                raise
+            updates, error = None, e
+        why = ""
+        if error is not None and hint:
+            try:
+                import hostdiag
+                why = hostdiag.hint(getattr(host, "endpoint", ""), error,
+                                    t=t) or ""
+            except Exception:                               # noqa: BLE001
+                why = ""
+        answer = HostCheck(host, updates, error, why, checker)
+        out.append(answer)
+        if on_host is not None:
+            on_host(answer)
+    return out
+
+
 def apply_flag(spec, targets, *, store_for, backend_for=None, partial=None,
                defaulted_to_local=False):
     """Set, clear or toggle one flag — or list it when `partial` is None.

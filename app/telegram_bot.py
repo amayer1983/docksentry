@@ -863,36 +863,31 @@ class TelegramBot:
         hosts each one gets its own "Updates Available" notification;
         the container lines carry the `@host` marker via `_display_name`.
         """
+        import container_flags
         self.send_message(self.t("checking_updates"))
         found = False
         pins_said = False
-        for host in (targets or [None]):
-            try:
-                updates = self._checker_for(host, checker).check_all(bot=self)
-            except Exception as e:
-                if not self._multi():
-                    raise
+
+        def _report(hc):
+            nonlocal found, pins_said
+            host, updates = hc.host, hc.updates
+            if hc.error is not None:
                 # One unreachable host must not stop the others from being
-                # reported — same rule the scheduler follows (#7).
-                _detail = human(e, self.t)
-                try:
-                    import hostdiag
-                    _extra = hostdiag.hint(getattr(host, "endpoint", ""), e,
-                                           t=self.t)
-                    if _extra:
-                        _detail += "\n\n" + _extra
-                except Exception:
-                    pass
+                # reported — same rule the scheduler follows (#7). On a
+                # single-host install the walk raises instead, as before.
+                _detail = human(hc.error, self.t)
+                if hc.hint:
+                    _detail += "\n\n" + hc.hint
                 self.send_message(self.t("host_check_failed",
                                          host=host.name, error=_detail))
-                continue
+                return
             # Nothing was checked, so neither "up to date" below may be
             # said. Once: the pin list is one file for every host.
             if getattr(updates, "pin_list_unreadable", False):
                 if not pins_said:
                     self.send_message(self.t("check_pin_list_unreadable"))
                     pins_said = True
-                continue
+                return
             if updates:
                 found = True
                 self.notify_updates(updates)
@@ -908,6 +903,13 @@ class TelegramBot:
                 # original single summary untouched.
                 self.send_message(self.t("host_check_uptodate",
                                          host=getattr(host, "name", "local")))
+
+        # The only one of the four walks that puts hostdiag's hint under
+        # a failed host; /check <name>, /update <name> and the dry run
+        # never had it.
+        container_flags.check_on_hosts(
+            targets, checker_for=lambda h: self._checker_for(h, checker),
+            debug_sink=self, hint=True, on_host=_report, t=self.t)
         if not found and not self._multi() and not pins_said:
             self.notify_no_updates()
         # Docksentry-selfupdate hint (#2, @famewolf): the regular
@@ -3980,31 +3982,33 @@ class TelegramBot:
             # trusted before an update; one that silently covers half an
             # estate is worse than none.
             _, targets, _ = self._resolve_targets("", write=False)
+            import container_flags
             found = False
             pins_said = False
-            for host in (targets or [None]):
-                host_checker = self._checker_for(host, checker)
-                try:
-                    updates = host_checker.check_all(bot=self)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+
+            def _dry(hc):
+                nonlocal found, pins_said
+                updates = hc.updates
+                if hc.error is not None:
                     # One unreachable host must not stop the others being
                     # reported — same rule the scheduler follows (#7).
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name,
-                                             error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     if not pins_said:
                         self.send_message(
                             self.t("check_pin_list_unreadable"))
                         pins_said = True
-                    continue
+                    return
                 if updates:
                     found = True
                     self.send_message(self._build_dry_run(updates,
-                                                          host_checker))
+                                                          hc.checker))
+            container_flags.check_on_hosts(
+                targets, checker_for=lambda h: self._checker_for(h, checker),
+                debug_sink=self, on_host=_dry, t=self.t)
             if not found and not pins_said:
                 self.notify_no_updates()
 
@@ -4051,41 +4055,46 @@ class TelegramBot:
             if not selections:
                 return
             self.send_message(self.t("checking_updates"))
+            import container_flags
             matched = sum(len(n) for _, n in selections)
             found = False
             pins_said = False
-            for host, names in selections:
-                nameset = set(names)
-                # Scope the check to the matched containers via `only=` (#53,
-                # @LeeNX) instead of checking everything and filtering after.
-                # A glob that hits nothing never reaches here — _select_containers
-                # already returned glob_no_match — so `nameset` is non-empty.
-                # Deliberate behaviour change: a scoped check no longer refreshes
-                # the pending state of the *other* containers as a side effect.
-                # That's intended — targeted means we only touch what was named —
-                # and the scheduled full check updates the rest anyway. check_all
-                # merges the scoped result into pending_updates.json rather than
-                # overwriting it, so the untouched entries stay put.
-                try:
-                    updates = self._checker_for(host, checker).check_all(
-                        bot=self, only=nameset)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so each host's set is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. check_all
+            # merges the scoped result into pending_updates.json rather than
+            # overwriting it, so the untouched entries stay put.
+            scoped = {host: set(names) for host, names in selections}
+
+            def _scoped_check(hc):
+                nonlocal found, pins_said
+                updates = hc.updates
+                if hc.error is not None:
                     # One unreachable host must not swallow the others'
                     # results — same rule the scheduler follows.
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     if not pins_said:
                         self.send_message(
                             self.t("check_pin_list_unreadable"))
                         pins_said = True
-                    continue
+                    return
                 if updates:
                     found = True
                     self.notify_updates(updates)
+            container_flags.check_on_hosts(
+                [host for host, _ in selections],
+                checker_for=lambda h: self._checker_for(h, checker),
+                only_for=scoped.__getitem__, debug_sink=self,
+                on_host=_scoped_check, t=self.t)
             if not found and not pins_said:
                 self.send_message(self.t("check_scoped_uptodate",
                                          count=matched, pattern=arg))
@@ -4137,35 +4146,40 @@ class TelegramBot:
             if not selections:
                 return
             self.send_message(self.t("checking_updates"))
+            import container_flags
             batches = []
             pins_unreadable = False
-            for host, names in selections:
-                nameset = set(names)
-                # Scope the check to the matched containers via `only=` (#53,
-                # @LeeNX) instead of checking everything and filtering after.
-                # A glob that hits nothing never reaches here — _select_containers
-                # already returned glob_no_match — so `nameset` is non-empty.
-                # Deliberate behaviour change: a scoped check no longer refreshes
-                # the pending state of the *other* containers as a side effect.
-                # That's intended — targeted means we only touch what was named —
-                # and the scheduled full check updates the rest anyway. The
-                # returned `updates` already contains only the matched containers
-                # that have a pending update, so run_updates below acts on exactly
-                # them, unchanged.
-                host_checker = self._checker_for(host, checker)
-                try:
-                    updates = host_checker.check_all(bot=self, only=nameset)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so each host's set is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. The
+            # returned `updates` already contains only the matched containers
+            # that have a pending update, so run_updates below acts on exactly
+            # them, unchanged.
+            scoped = {host: set(names) for host, names in selections}
+
+            def _batch(hc):
+                nonlocal pins_unreadable
+                updates = hc.updates
+                if hc.error is not None:
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     pins_unreadable = True
-                    continue
+                    return
                 if updates:
-                    batches.append((host_checker, updates))
+                    batches.append((hc.checker, updates))
+            container_flags.check_on_hosts(
+                [host for host, _ in selections],
+                checker_for=lambda h: self._checker_for(h, checker),
+                only_for=scoped.__getitem__, debug_sink=self,
+                on_host=_batch, t=self.t)
             if pins_unreadable:
                 # Not "no update matches": nothing could be checked, and
                 # nothing may run (see `pin_list_unreadable`).

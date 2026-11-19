@@ -37,8 +37,6 @@ import os
 import sys
 import types
 
-import srcslice
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from hosts import HostRegistry, ManagedHost, host_checkers  # noqa: E402
@@ -131,24 +129,50 @@ def main():
         [u["name"] for u in found] == ["backup"])
 
     # ── Telegram's dry run ───────────────────────────────────────
-    # Source-level, not behavioural: driving that branch needs a whole
-    # bot. What matters is that it no longer calls check_all on a single
-    # checker, and that it resolves targets the way the arg-less /check
-    # does — those two together are the defect and the fix.
-    src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                            "telegram_bot.py"), encoding="utf-8").read()
-    branch = srcslice.section(src, 'elif text in ("/check --dry-run"',
-                              "\n        elif ",
-                              label="telegram_bot.py: /check --dry-run branch")
-    ok = branch is not None
-    checks["the dry run resolves host targets"] = (
-        ok and "_resolve_targets" in branch)
-    checks["…loops over them"] = (
-        ok and "for host in (targets or [None])" in branch)
-    checks["…and asks each host's own checker"] = (
-        ok and "_checker_for" in branch)
-    checks["…tolerating one unreachable host"] = (
-        ok and "host_check_failed" in branch)
+    # Driven through the real dispatcher on the Telegram matrix's hosts
+    # (T2: local, nas, dead, refused, flaky). It used to be four greps
+    # over the branch's source; the loop they looked for lives in
+    # `container_flags.check_on_hosts` now, and what matters is what the
+    # command does: every host's own checker is asked, a host that
+    # fails is named and does not cost the others their dry run.
+    import shutil
+    import tempfile
+    import container_flags
+    import test_telegram_dispatch_matrix as m
+    m._TMP_ROOT = tempfile.mkdtemp(prefix="manual-check-")
+    real_walk = getattr(container_flags, "check_on_hosts", None)
+    walks = []
+
+    def recording(targets, **kw):
+        walks.append([getattr(h, "name", h) for h in (targets or [])])
+        return real_walk(targets, **kw)
+    try:
+        for text in ("/check --dry-run", "/dryrun"):
+            del walks[:]
+            if callable(real_walk):
+                container_flags.check_on_hosts = recording
+            try:
+                rec, esc = m.run_row("multi", text)
+            finally:
+                if callable(real_walk):
+                    container_flags.check_on_hosts = real_walk
+            asked = [e.split()[0] for e in rec["events"]
+                     if e.startswith("check_all@")]
+            checks[f"{text}: every host's own checker is asked"] = asked == [
+                "check_all@local", "check_all@nas", "check_all@dead",
+                "check_all@refused", "check_all@flaky"]
+            checks[f"…through container_flags.check_on_hosts ({text})"] = (
+                walks == [["local", "nas", "dead", "refused", "flaky"]])
+            failed_hosts = [o.split("`")[1] for o in rec["out"]
+                            if "could not be checked" in o]
+            checks[f"…a host that fails is named, the others still "
+                   f"answer ({text})"] = (
+                failed_hosts == ["dead", "refused", "flaky"]
+                and sum("Dry run" in o for o in rec["out"]) == 2)
+            checks[f"…exactly as its T2 row ({text})"] = (
+                rec == m.EXPECTED[("multi", text)] and not esc)
+    finally:
+        shutil.rmtree(m._TMP_ROOT, ignore_errors=True)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

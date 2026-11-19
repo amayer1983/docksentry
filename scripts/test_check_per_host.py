@@ -18,6 +18,12 @@ updates, its "everything up to date", or its failure. A single-host
 install keeps its original single summary untouched — the docstring of
 `_run_full_check` promises byte-identical messages there, and this
 holds it to that.
+
+The walk itself is `container_flags.check_on_hosts` since W6 (its own
+procedure is test_check_on_hosts); `_run_full_check` hands it an
+`on_host` that sends as each host finishes. The rows below drive the
+real thing through the bot, and one check says the bot goes through
+the core rather than a loop of its own.
 """
 
 import os
@@ -28,6 +34,7 @@ import srcslice
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
+import container_flags  # noqa: E402
 import telegram_bot  # noqa: E402
 
 checks = {}
@@ -83,7 +90,26 @@ hosts = [Host("local", Checker(updates=[{"name": "web"}])),
          Host("nas", Checker()),
          Host("pve", Checker(fail=True))]
 b = bot(hosts)
-ran = run_full_check(b, hosts[0].checker, hosts)
+walks = []
+_real_walk = getattr(container_flags, "check_on_hosts", None)
+
+
+def _recording(targets, **kw):
+    walks.append((targets, kw.get("hint"), kw.get("debug_sink")))
+    return _real_walk(targets, **kw)
+
+
+if callable(_real_walk):
+    container_flags.check_on_hosts = _recording
+try:
+    ran = run_full_check(b, hosts[0].checker, hosts)
+finally:
+    if callable(_real_walk):
+        container_flags.check_on_hosts = _real_walk
+checks["/check walks its hosts through container_flags.check_on_hosts"] = (
+    len(walks) == 1 and walks[0][0] is hosts)
+checks["…with the hint, and the bot as the debug sink"] = (
+    len(walks) == 1 and walks[0][1] is True and walks[0][2] is b)
 
 checks["the host with updates answers"] = "UPDATES:web" in b.sent
 checks["the clean host says so itself, at once"] = any(
