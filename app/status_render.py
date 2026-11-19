@@ -1,4 +1,4 @@
-"""One container detail, rendered for whichever chat asked (#2).
+"""What `/status` shows, collected once for whichever chat asked (#2).
 
 @NotRetarded compared `/status` on Discord and Telegram and found them
 disagreeing — Discord missing Docksentry itself, missing health, missing
@@ -24,6 +24,14 @@ misbehaves at 2 am:
   * ports, volumes, restart policy
   * Docksentry's own knowledge: pinned, auto-update, protected,
     trust-running, ask-major, group, note, pending update
+
+Not everything here is pure rendering. `collect_overview` is the bare
+`/status` overview's host walk and talks to the hosts itself: `ps -q`
+and `inspect` on every target through its backend, plus `hostdiag` for
+the SSH hint when a host does not answer. It returns data, not text;
+counting and markdown stay with the front end. `collect`, `lines` and
+`overview_line` never reach a host: inspect data and stats come in from
+the caller, `collect` only reads the state store it is handed.
 """
 
 from collections import namedtuple
