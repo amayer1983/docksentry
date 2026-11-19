@@ -2475,6 +2475,108 @@ GUARDED = [
      '                    on_host=_show, t=self.t).unreachable[:0 if glob else None]\n',
      'test_telegram_dispatch_matrix.py'),
 
+    # W5: the /status overview's host walk moved out of Telegram into
+    # status_render.collect_overview, unchanged. Each line of the walk
+    # that decides what the overview says about a host gets broken here,
+    # and test_status_overview_core drives the walk on T2's hosts.
+    ("the /status overview lists a host whose ps raises (dead host) as unreachable",
+     'app/status_render.py',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            pass\n',
+     'test_status_overview_core.py'),
+
+    ("…and a host whose ps exits non-zero (refused SSH) too",
+     'app/status_render.py',
+     '        if getattr(ids_p, "returncode", 0) != 0:\n',
+     '        if False:\n',
+     'test_status_overview_core.py'),
+
+    ("…and a host whose inspect raises",
+     'app/status_render.py',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            pass\n',
+     'test_status_overview_core.py'),
+
+    ("the /status overview asks each host's ps for ten seconds, not the backend's 30",
+     'app/status_render.py',
+     '_b.run(["ps", "-q"], timeout=10)',
+     '_b.run(["ps", "-q"], timeout=30)',
+     'test_status_overview_core.py'),
+
+    ("…and its inspect for ten seconds",
+     'app/status_render.py',
+     '_b.run(["inspect", *ids], timeout=10)',
+     '_b.run(["inspect", *ids], timeout=30)',
+     'test_status_overview_core.py'),
+
+    ("an unreachable host in the /status overview gets its SSH hint in the reader's language",
+     'app/status_render.py',
+     '_h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)',
+     '_h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=None)',
+     'test_status_overview_core.py'),
+
+    ("…and a hint that raises costs the hint, not the overview",
+     'app/status_render.py',
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n',
+     '        if True:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n',
+     'test_status_overview_core.py'),
+
+    ("a single-host install's unreachable daemon is called local in the overview",
+     'app/status_render.py',
+     '(getattr(_host, "name", "") or LOCAL_HOST, _why))',
+     '(getattr(_host, "name", ""), _why))',
+     'test_status_overview_core.py'),
+
+    ("a refused host with nothing on stderr says its exit code",
+     'app/status_render.py',
+     '                or f"exit {ids_p.returncode}")\n',
+     '                or "")\n',
+     'test_status_overview_core.py'),
+
+    ("a refused host's words are clipped like every other host line",
+     'app/status_render.py',
+     '                clip(getattr(ids_p, "stderr", "") or "")\n',
+     '                (getattr(ids_p, "stderr", "") or "")\n',
+     'test_status_overview_core.py'),
+
+    ("the /status overview walks the hosts in registry order",
+     'app/status_render.py',
+     '    for _host in (targets or [None]):\n',
+     '    for _host in reversed(targets or [None]):\n',
+     'test_status_overview_core.py'),
+
+    ("Telegram /status renders what the core walk found",
+     'app/telegram_bot.py',
+     '            inspected, unreachable = status_render.collect_overview(\n'
+     '                status_targets, backend_for=self._backend_for, t=self.t)\n',
+     '            inspected, unreachable = [], []\n',
+     'test_status_overview_core.py'),
+
+    ("…and so do T2's /status rows",
+     'app/telegram_bot.py',
+     '            inspected, unreachable = status_render.collect_overview(\n'
+     '                status_targets, backend_for=self._backend_for, t=self.t)\n',
+     '            inspected, unreachable = [], []\n',
+     'test_telegram_dispatch_matrix.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

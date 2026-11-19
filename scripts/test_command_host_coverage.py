@@ -60,7 +60,7 @@ HOST_COMMANDS = [
 # different members of the family.
 ROUTERS = ("_resolve_targets", "_state_targets", "host_checkers",
            "_handle_callback", "_backend_for", "_checker_for",
-           "_store_for", "self.hosts")
+           "_store_for", "self.hosts", "status_render.collect_overview")
 
 for cmd in HOST_COMMANDS:
     body = blocks.get(cmd, "")
