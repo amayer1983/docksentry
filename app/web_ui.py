@@ -2690,7 +2690,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # holds the lock, or had nothing to act on at all.
                 #
                 # Advisory, not the gate: the real claim is still the
-                # atomic `acquire(blocking=False)` in the worker, and a
+                # engine's `claim_update()` in the worker, and a
                 # click that loses the race between here and there is
                 # reported by the history like any other.
                 if not key:
@@ -7193,7 +7193,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return
             # Atomic claim of the shared update mutex — same one the bot's
             # run_updates / single-update / self-update flows use. Busy → bail.
-            if not engine._update_lock.acquire(blocking=False):
+            if not engine.claim_update():
                 if bot.enabled:
                     bot.send_message(bot.t("update_already_running"))
                 return
@@ -7222,23 +7222,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             except Exception as e:
                 print(f"Web UI update error: {e}")
             finally:
-                engine._update_lock.release()
-                bot._run_queued_selfupdate()
+                engine.release_update(after=bot._run_queued_selfupdate)
 
         def _update_lock_held(self, _bot):
             """True when the shared update mutex is taken right now.
 
             Read-only and best-effort: the claim that matters is still
-            the atomic `acquire(blocking=False)` in
-            `_run_web_update_batch`. This only decides which of two
-            sentences the page shows, so a lost race costs a word, not
-            an update. Written defensively because `bot` can be a
-            Telegram-less stand-in with no engine at all.
+            the engine's `claim_update()` in `_run_web_update_batch`.
+            This only decides which of two sentences the page shows, so
+            a lost race costs a word, not an update. Written defensively
+            because `bot` can be a Telegram-less stand-in with no engine
+            at all.
             """
             eng = getattr(_bot, "engine", None)
-            lock = getattr(eng, "_update_lock", None)
             try:
-                return bool(lock.locked())
+                return bool(getattr(eng, "update_claimed", False))
             except Exception:                               # noqa: BLE001
                 return False
 

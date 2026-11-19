@@ -31,8 +31,9 @@ lists below:
     "_update_lock")`; plus calls to Discord's `_release_lock()`, and
     every call to the engine's door — `claim_update()`,
     `release_update(...)` with what it hands `after`, `with
-    update_claim(...)`, and `cleanup_guarded(...)` called on an engine
-    — recorded under the caller's qualified name;
+    update_claim(...)`, `cleanup_guarded(...)` called on an engine, and
+    every read of `update_claimed` — recorded under the caller's
+    qualified name;
   * every function that mentions the lock at all (the accessors and
     every caller of the door too, so a new alias or a new door user is
     a new entry);
@@ -138,11 +139,15 @@ LOCK_OPS = {
     # key `cleanup_busy`; each chat says it in its own language.
     ("update_engine.py", "UpdateEngine.cleanup_guarded"):
         ("CLAIM", ["claim_update()", "release_update(after=after)"]),
+    # Through the door since Q3, with the same self-update hand-over as
+    # the chats.
     ("web_ui.py", "create_handler.WebHandler._run_web_update_batch"):
-        ("CLAIM", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=bot._run_queued_selfupdate)"]),
     # Sanctioned raw site (Q3): the self-update keeps its own raw claim by
     # design, because it keeps the lock past its own return once the
-    # helper container is launched.
+    # helper container is launched. RAW_CLAIMS below says it is the only
+    # one outside the engine.
     ("selfupdate.py", "start"):
         ("CLAIM", ["acquire(blocking=False)", "release"]),
     # ── probes ──
@@ -151,8 +156,9 @@ LOCK_OPS = {
     ("telegram_bot.py", "TelegramBot._drain_update_queue"):
         ("PROBE", ["acquire(blocking=False)", "release"]),
     # ── readers ──
+    # Asks the engine's door (Q3) instead of looking at the lock itself.
     ("web_ui.py", "create_handler.WebHandler._update_lock_held"):
-        ("READER", ["locked"]),
+        ("READER", ["update_claimed"]),
     ("telegram_bot.py", "TelegramBot._sweep_update_queue"):
         ("READER", ["locked"]),
     # ── release helper ──
@@ -167,7 +173,14 @@ LOCK_OPS = {
         ("DOOR", ["release"]),
     ("update_engine.py", "UpdateEngine.update_claim"):
         ("DOOR", ["claim_update()", "release_update(after=after)"]),
+    ("update_engine.py", "UpdateEngine.update_claimed"):
+        ("DOOR", ["locked"]),
 }
+
+#: Functions outside update_engine.py that take the lock with a raw
+#: `acquire` to do work under it (any role but PROBE). Everything else
+#: claims through the door.
+RAW_CLAIMS = {("selfupdate.py", "start")}
 
 #: Functions that mention the lock without operating on it.
 LOCK_MENTIONS = {
@@ -319,6 +332,9 @@ RELEASE_HELPERS = ("_release_lock",)
 DOOR_CLAIM = "claim_update"
 DOOR_RELEASE = "release_update"
 DOOR_WITH = "update_claim"
+#: The door's look-only answer (Q3): reading it, as `x.update_claimed` or
+#: `getattr(x, "update_claimed")`, is a lock operation of the reader.
+DOOR_READ = "update_claimed"
 #: The engine's cleanup guard: a claim of the caller's when it is called
 #: on an engine (`self.engine.cleanup_guarded(...)`). Calls on the bot —
 #: the scheduler's and the Web UI's — go through the bot's delegator,
@@ -490,6 +506,12 @@ def enumerate_sites(app=None):
             for n in nodes:
                 if _names_lock(n):
                     mentions.add((rel, qual))
+                if (isinstance(n, ast.Attribute) and n.attr == DOOR_READ
+                        and isinstance(n.ctx, ast.Load)) or (
+                        isinstance(n, ast.Constant)
+                        and n.value == DOOR_READ):
+                    ops[(rel, qual)].append(DOOR_READ)
+                    mentions.add((rel, qual))
                 if isinstance(n, ast.Call):
                     c = _callee(n)
                     f = n.func
@@ -592,7 +614,11 @@ def enumeration_checks(found):
                     "def d(engine, ck):\n"
                     "    return engine.cleanup_guarded(ck)\n"
                     "def e(self, ck):\n"
-                    "    return self.bot.cleanup_guarded(ck)\n")
+                    "    return self.bot.cleanup_guarded(ck)\n"
+                    "def f(eng):\n"
+                    "    return getattr(eng, \"update_claimed\", False)\n"
+                    "def g(self):\n"
+                    "    return self.engine.update_claimed\n")
         d_ops, d_mentions, *_ = enumerate_sites(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -600,10 +626,20 @@ def enumeration_checks(found):
               ("door.py", "b"): ["claim_update()",
                                  "release_update(after=self.g)"],
               ("door.py", "c"): ["cleanup_guarded(ck, after=self.g)"],
-              ("door.py", "d"): ["cleanup_guarded(ck)"]}
+              ("door.py", "d"): ["cleanup_guarded(ck)"],
+              ("door.py", "f"): ["update_claimed"],
+              ("door.py", "g"): ["update_claimed"]}
     out.append(("the enumeration sees every spelling of the door, "
                 "by caller", d_ops == want_d and d_mentions == set(want_d),
                 f"ops {d_ops}, mentions {sorted(d_mentions)}"))
+
+    raw = {k for k, v in ops.items() if k[0] != "update_engine.py"
+           and any(o.startswith("acquire") for o in v)
+           and LOCK_OPS.get(k, ("NEW",))[0] != "PROBE"}
+    out.append((f"raw claims outside the engine: {sorted(raw)}",
+                raw == RAW_CLAIMS,
+                f"expected {sorted(RAW_CLAIMS)}; everything else claims "
+                "through the door"))
 
     drains = {k[0] for k in queue if k[2] != "enqueue_update"}
     out.append((f"only these files work the queue off: {sorted(drains)}",

@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import web_ui                                            # noqa: E402
 from i18n import get_translator                          # noqa: E402
 from hosts import HostRegistry, ManagedHost              # noqa: E402
+from update_engine import UpdateEngine                   # noqa: E402
 from container_store import ContainerStore, HostScopedStore, host_key  # noqa: E402
 
 checks = {}
@@ -151,6 +152,12 @@ class FakeEngine:
         `False` here would let a guard that reads it pass while doing
         nothing."""
         return self._update_lock.locked()
+
+    # The engine's own door, borrowed rather than re-written: what the
+    # Web worker and the banner ask is the real answer on this real Lock.
+    claim_update = UpdateEngine.claim_update
+    release_update = UpdateEngine.release_update
+    update_claimed = UpdateEngine.update_claimed
 
     def _process_update_batch(self, updates, checker, *, auto):
         # Record WHICH checker recreated WHICH containers — the whole

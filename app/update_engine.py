@@ -340,6 +340,16 @@ class UpdateEngine:
         """
         return self._update_lock.acquire(blocking=False)
 
+    @property
+    def update_claimed(self):
+        """True while somebody holds the update lock. Only looks.
+
+        For a caller that just wants to say "busy" before trying — the
+        Web page's banner. The answer can be stale the moment it is
+        returned; the claim that decides is still `claim_update`.
+        """
+        return self._update_lock.locked()
+
     def release_update(self, *, after=None):
         """Give the update lock back, then run `after` (if given).
 

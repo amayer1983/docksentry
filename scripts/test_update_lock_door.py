@@ -24,7 +24,10 @@ on it:
     an exception unwind, `after` still sees `sys.exc_info()`.
     `selfupdate.run_queued` relies on that: after a crashed batch it
     cancels the queued self-update instead of restarting on top of it;
-  * `update_claim()` is the same pair as a `with` block.
+  * `update_claim()` is the same pair as a `with` block;
+  * `update_claimed` only looks: True while anybody holds the lock,
+    False when it is free, and asking never takes or gives back the
+    lock (the Web banner asks it before every click, Q3).
 
 Exits non-zero on any failure.
 """
@@ -291,6 +294,46 @@ checks["update_claim: a crash inside gives the lock back, after() sees it, "
        "and the crash goes on"] = (
     have and not eng._update_lock.locked()
     and seen == [ValueError, "propagated"])
+
+# ── update_claimed ───────────────────────────────────────────────────
+# A property, so `if eng.update_claimed:` cannot quietly be a bound
+# method that is always true. Gated like the rest: without it, no PASS.
+look = isinstance(type(eng).__dict__.get("update_claimed"), property)
+checks["update_claimed is a property on the engine"] = look
+eng = fresh()
+if look:
+    checks["update_claimed on a free lock is False"] = (
+        eng.update_claimed is False)
+    checks["…and asking left it free: the next claim wins it"] = (
+        not eng._update_lock.locked() and eng.claim_update() is True)
+    eng.release_update()
+    # Held by somebody else, the way a tap holds it while the Web page
+    # asks: from a second thread that keeps the lock until told.
+    got, stop = threading.Event(), threading.Event()
+
+    def holder():
+        if eng.claim_update():
+            got.set()
+            stop.wait(3)
+            eng.release_update()
+    t = threading.Thread(target=holder, daemon=True)
+    t.start()
+    got.wait(3)
+    checks["update_claimed while another thread holds it is True"] = (
+        got.is_set() and eng.update_claimed is True)
+    checks["…the same answer as update_running"] = (
+        got.is_set() and eng.update_running is True)
+    _ = eng.update_claimed
+    checks["…and asking does not give the holder's lock back"] = (
+        got.is_set() and eng._update_lock.locked()
+        and eng.claim_update() is False)
+    stop.set()
+    t.join(3)
+    checks["once the holder lets go it is False again"] = (
+        not t.is_alive() and eng.update_claimed is False)
+else:
+    checks["update_claimed on a free lock is False"] = False
+    checks["update_claimed while another thread holds it is True"] = False
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

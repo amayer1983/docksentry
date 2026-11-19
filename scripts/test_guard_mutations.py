@@ -2039,13 +2039,41 @@ GUARDED = [
     # over by the Web worker once it releases. Dropping the hand-over or
     # running it before the release both turn the two "hands over" rows
     # red, measured. Q14 rewrites this claim and release — re-point the
-    # anchor there.
+    # anchor there. Since Q3 the hand-over is the door's `after`.
     ("…and a Web update hands a queued self-update over after its release",
      "app/web_ui.py",
-     "                engine._update_lock.release()\n"
-     "                bot._run_queued_selfupdate()\n",
-     "                engine._update_lock.release()\n",
+     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "                engine.release_update()\n",
      "test_web_action_matrix.py"),
+
+    # Q3: the Web worker and the banner's question go through the
+    # engine's door. Each one applied by hand in a copy, red without a
+    # traceback.
+    ("the engine's update_claimed answers what the lock says",
+     "app/update_engine.py",
+     "        return self._update_lock.locked()\n",
+     "        return False\n",
+     "test_update_lock_door.py"),
+    ("the Web banner asks the engine whether an update holds the lock",
+     "app/web_ui.py",
+     "                return bool(getattr(eng, \"update_claimed\", False))\n",
+     "                return False\n",
+     "test_web_update_feedback.py"),
+    ("the Web worker does no work while somebody else holds the lock",
+     "app/web_ui.py",
+     "            if not engine.claim_update():\n",
+     "            if False:\n",
+     "test_update_lock_sites.py"),
+    ("the Web worker claims through the engine's door, not the raw lock",
+     "app/web_ui.py",
+     "            if not engine.claim_update():\n",
+     "            if not engine._update_lock.acquire(blocking=False):\n",
+     "test_update_lock_sites.py"),
+    ("a read of the door's update_claimed is noticed",
+     "scripts/test_update_lock_sites.py",
+     "                    ops[(rel, qual)].append(DOOR_READ)\n",
+     "                    pass\n",
+     "test_update_lock_sites.py"),
 
     # The update-lock sites (core split, T6). A claim added anywhere in
     # app/ shows up as an unlisted function in the AST enumeration; the
