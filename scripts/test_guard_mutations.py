@@ -1993,6 +1993,34 @@ GUARDED = [
      '            (("rest", (self.who, method, path,\n',
      "test_discord_dispatch_matrix.py"),
 
+    # The Web action matrix (core split, T5). /api/unpin calling the
+    # store's `pin` instead turns exactly the unpin rows red (7 of 612,
+    # measured). A flag branch, so none of the queue, walk or cleanup
+    # slices moves it.
+    ("a Web request acts through the store method its path names",
+     "app/web_ui.py",
+     "                    target[4].unpin(target[1])\n",
+     "                    target[4].pin(target[1])\n",
+     "test_web_action_matrix.py"),
+
+    ("…the webhook stand-in still hands every other URL to the trap",
+     "scripts/test_web_action_matrix.py",
+     "        return trap(req, *a, **kw)",
+     "        return _Resp()",
+     "test_web_action_matrix.py"),
+
+    ("…the docker-pull stand-in still hands every other command to the trap",
+     "scripts/test_web_action_matrix.py",
+     "        return trap(args, *a, **kw)",
+     '        return subprocess.CompletedProcess(args, 0, "", "")',
+     "test_web_action_matrix.py"),
+
+    ("…and what reaches Telegram is what the Web matrix compares",
+     "scripts/test_web_action_matrix.py",
+     '                LOG.append(("telegram", (data.get("text", ""), n)))',
+     "                pass",
+     "test_web_action_matrix.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
