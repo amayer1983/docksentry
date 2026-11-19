@@ -2461,7 +2461,8 @@ GUARDED = [
      '        import container_flags\n',
      '        containers match" (W4)."""\n'
      '        if self._is_glob(arg):\n'
-     '            names = self._match_glob(arg, backend=backend)\n'
+     '            import lifecycle\n'
+     '            names = lifecycle.match_glob(arg, backend=backend or self.backend)\n'
      '            if not names:\n'
      '                return [], self.t("glob_no_match", pattern=arg), None\n'
      '            return names, None, None\n'

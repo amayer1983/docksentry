@@ -619,19 +619,6 @@ class TelegramBot:
         import lifecycle
         return lifecycle.is_glob(s)
 
-    def _match_glob(self, pattern, include_stopped=True, backend=None):
-        """Sorted container names matching a glob (#40, @LeeNX).
-        `backend` picks the host to match on (#7); default is the local
-        one. The matching is `lifecycle.match_glob` — shared, so `/stop
-        web*` means the same set of containers in either chat.
-
-        Nothing in the bot calls this since W4 — /status, /check and
-        /update match a glob through `find_on_hosts`, which can tell an
-        unreachable host from no match. Only test_glob still drives it."""
-        import lifecycle
-        return lifecycle.match_glob(pattern, backend=backend or self.backend,
-                                    include_stopped=include_stopped)
-
     def _select_containers(self, arg, backend=None, host=None):
         """Resolve a /check or /update argument to a list of container names.
         Glob (`*?[`) → all matches; plain → single partial-resolved name.

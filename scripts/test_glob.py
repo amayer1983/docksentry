@@ -2,8 +2,13 @@
 """Test glob matching for <name> commands (#40, @LeeNX).
 
   - _is_glob recognises *, ?, [...] (and not plain names)
-  - _match_glob returns the right containers, case-insensitively, excluding
-    _old rollback leftovers
+  - the bot's own glob lookup for /check and /update (`_select_containers`,
+    which goes through `find_on_hosts` and `lifecycle.match_glob_checked`
+    since W4) returns the right containers, case-insensitively, excluding
+    _old rollback leftovers, and says "no match" for a pattern that
+    matches nothing — on a daemon that answered, not "unreachable"
+  - `lifecycle.match_glob`, which /start, /stop and /restart still use,
+    returns the same sets
 
 Uses real throwaway containers. Requires Docker. Exits non-zero on failure.
 """
@@ -14,6 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import livefixture as lf
 from telegram_bot import TelegramBot
 from container_backend import get_backend
+from i18n import get_translator
+import lifecycle
 
 # A missing container runtime is not a regression. Without this the
 # procedure goes red on a machine that simply has no Docker, which is
@@ -34,11 +41,19 @@ OLD = f"{STEM}-a-even_old"
 
 
 def main():
-    # _match_glob lists containers through the container backend seam, so
-    # the stub needs one just like a real bot has.
-    stub = types.SimpleNamespace(backend=get_backend(None))
-    stub._match_glob = types.MethodType(TelegramBot._match_glob, stub)
+    # The bot's real lookup, bound to a stub that carries what it reads:
+    # the backend seam and the translator. Until W4 this drove
+    # `TelegramBot._match_glob`, which nothing in the bot called any more.
+    stub = types.SimpleNamespace(backend=get_backend(None),
+                                 t=get_translator("en"))
+    select = types.MethodType(TelegramBot._select_containers, stub)
     is_glob = TelegramBot._is_glob
+
+    def bot_glob(pattern):
+        return select(pattern)
+
+    def life_glob(pattern):
+        return lifecycle.match_glob(pattern, backend=stub.backend)
 
     # The two checks that need no daemon, computed before anything is
     # started, and handed to `lf.start`: a registry that will not serve
@@ -63,22 +78,33 @@ def main():
     # an _old rollback leftover that must NOT match
     lf.start(["run", "-d", "--name", OLD, "alpine", "sh", "-c",
               "trap 'exit 0' TERM; sleep 200 & wait"], checks=checks)
+    pats = {"even": f"{STEM}-*-even", "all": f"{STEM}-*",
+            "q": f"{STEM}-?-odd",
+            "upper": f"{STEM.upper()}-*-EVEN"}  # case-insensitive
+    nosuch = f"{STEM}-zzz*"
     try:
-        even = stub._match_glob(f"{STEM}-*-even")
-        allc = stub._match_glob(f"{STEM}-*")
-        q = stub._match_glob(f"{STEM}-?-odd")
-        upper = stub._match_glob(f"{STEM.upper()}-*-EVEN")  # case-insensitive
+        bot = {k: bot_glob(p) for k, p in pats.items()}
+        bot_none = bot_glob(nosuch)
+        life = {k: life_glob(p) for k, p in pats.items()}
     finally:
         lf.rm(*NAMES, OLD)
 
+    want = {"even": [f"{STEM}-a-even", f"{STEM}-b-even"],
+            "all": sorted(NAMES),
+            "q": [f"{STEM}-a-odd"],
+            "upper": [f"{STEM}-a-even", f"{STEM}-b-even"]}
+    # `_select_containers` answers (names, error, unreachable).
+    even, allc = bot["even"][0], bot["all"][0]
     checks.update({
-        "glob *-even matches both even": even == [f"{STEM}-a-even",
-                                                 f"{STEM}-b-even"],
-        "glob ctf-* matches all three": allc == sorted(NAMES),
+        "glob *-even matches both even": bot["even"] == (want["even"], None, None),
+        "glob ctf-* matches all three": bot["all"] == (want["all"], None, None),
         "_old leftover excluded": OLD not in allc,
-        "? single-char glob": q == [f"{STEM}-a-odd"],
-        "case-insensitive match": upper == [f"{STEM}-a-even",
-                                            f"{STEM}-b-even"],
+        "? single-char glob": bot["q"] == (want["q"], None, None),
+        "case-insensitive match": bot["upper"] == (want["upper"], None, None),
+        "no match says so, and not unreachable": bot_none == (
+            [], stub.t("glob_no_match", pattern=nosuch), None),
+        "lifecycle.match_glob (/start|stop|restart) gives the same sets":
+            life == want,
     })
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)
