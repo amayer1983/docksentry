@@ -1875,6 +1875,18 @@ GUARDED = [
      '        ["git", "-C", root, "ls-files", "-z", "--cached",',
      "test_ratchet_copy.py"),
 
+    ("a damaged exit marker is set aside, so it cannot hide the next kill",
+     "app/recovery.py",
+     '            os.replace(path, path + ".damaged")\n',
+     '            raise OSError("left in place")\n',
+     "test_exit_marker_damage.py"),
+
+    ("…and a marker that is not an object counts as damaged",
+     "app/recovery.py",
+     "        if not isinstance(data, dict):\n",
+     "        if False:\n",
+     "test_exit_marker_damage.py"),
+
     ("…and no stale bytecode rides along into the copy",
      "scripts/test_guard_mutations.py",
      "        if not os.path.isfile(src) or " "_cache(rel):\n",

@@ -239,26 +239,20 @@ def main():
     # Asked BEFORE the exit marker is consumed below — the whole point is
     # that the marker is ABSENT after a hard kill (#2, @NotRetarded, whose
     # Docksentry exited 137 and said nothing about it).
-    from recovery import previous_run_died, recover_interrupted_update
+    from recovery import (consume_marker, previous_run_died,
+                          recover_interrupted_update)
     hard_kill = previous_run_died(config)
 
     restart_signal = None
     killed_stopping = False
-    try:
-        if os.path.exists(config.last_exit_file):
-            import json as _json
-            with open(config.last_exit_file, encoding="utf-8") as f:
-                _exit = _json.load(f)
-            if _exit.get("reason") == "signal":
-                restart_signal = _exit.get("signal", "signal")
-                # A stop that never finished. `done` is written after
-                # every service has come to a halt, so its absence means
-                # the process was killed partway through — almost always
-                # a `docker stop` timeout expiring into SIGKILL (#62).
-                killed_stopping = not _exit.get("done", True)
-            os.unlink(config.last_exit_file)
-    except Exception as e:
-        print(f"Could not read exit cause (non-fatal): {e}")
+    _exit = consume_marker(config.last_exit_file, "exit cause") or {}
+    if _exit.get("reason") == "signal":
+        restart_signal = _exit.get("signal", "signal")
+        # A stop that never finished. `done` is written after
+        # every service has come to a halt, so its absence means
+        # the process was killed partway through — almost always
+        # a `docker stop` timeout expiring into SIGKILL (#62).
+        killed_stopping = not _exit.get("done", True)
 
     # A self-update restart ALSO arrives as SIGTERM (the recreate stops our
     # old container), but it is not an external stop. When our own
@@ -278,18 +272,16 @@ def main():
     # channel is left out of it.
     selfupdate_restart = False
     selfupdate_reply_to = None
+    _mark = consume_marker(config.selfupdate_marker_file,
+                           "selfupdate marker") or {}
     try:
-        if os.path.exists(config.selfupdate_marker_file):
-            import json as _json, time as _time
-            with open(config.selfupdate_marker_file, encoding="utf-8") as f:
-                _mark = _json.load(f)
-            if _time.time() - float(_mark.get("ts", 0) or 0) < 3600:
-                selfupdate_restart = True
-                _reply = _mark.get("reply_to")
-                if isinstance(_reply, dict) and _reply:
-                    selfupdate_reply_to = _reply
-            os.unlink(config.selfupdate_marker_file)
-    except Exception as e:
+        import time as _time
+        if _mark and _time.time() - float(_mark.get("ts", 0) or 0) < 3600:
+            selfupdate_restart = True
+            _reply = _mark.get("reply_to")
+            if isinstance(_reply, dict) and _reply:
+                selfupdate_reply_to = _reply
+    except (TypeError, ValueError) as e:
         print(f"Could not read selfupdate marker (non-fatal): {e}")
     # A self-update is not an external signal, regardless of how we got here.
     if selfupdate_restart:

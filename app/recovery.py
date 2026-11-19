@@ -140,6 +140,40 @@ def _names(backend):
     return {n for n in (r.stdout or "").split() if n}
 
 
+def consume_marker(path, what):
+    """Read a one-shot JSON marker and remove it. `None` if there is none.
+
+    A marker that cannot be read is set aside as `<path>.damaged`, not
+    left where it was. Left in place, it is read and refused again on
+    every boot, and for the exit marker that is worse than noise: its
+    mere presence tells `previous_run_died` the last run said goodbye,
+    so a later SIGKILL went unreported until a clean stop overwrote it.
+    Seen on a tester's box on 19.11.2026 (#63): a last_exit.json with a
+    non-UTF-8 byte at position 86, where the file this program writes is
+    82 bytes of ASCII.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"expected an object, got {type(data).__name__}")
+    except Exception as e:                              # noqa: BLE001
+        try:
+            os.replace(path, path + ".damaged")
+            where = f"set aside as {os.path.basename(path)}.damaged"
+        except OSError as e2:
+            where = f"could not be moved aside either: {e2}"
+        print(f"Could not read the {what} (non-fatal, {where}): {e}")
+        return None
+    try:
+        os.unlink(path)
+    except OSError as e:
+        print(f"Could not remove the {what} (non-fatal): {e}")
+    return data
+
+
 def previous_run_died(config):
     """True when the last run was killed rather than asked to stop.
 
