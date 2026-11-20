@@ -174,6 +174,180 @@ checks["…and names what will not run"] = any(
 checks["…leaving nothing queued to be lost by the restart"] = (
     eng._update_queue == [])
 
+# A run that raises is said, raw and cut to 200 characters, and the
+# drain goes on with the next entry; the error does not carry a group.
+eng = engine()
+b = Bot(eng, groups={"bad": "vpn", "mate": "vpn"})
+b.raises = {"bad"}
+_orig_run = b._run_single_update
+
+
+def _raising(checker, key, from_queue=False):
+    _orig_run(checker, key, from_queue)
+    if b._short_key(key) in b.raises:
+        raise RuntimeError("x" * 300)
+
+
+b._run_single_update = _raising
+for k in ("bad", "mate"):
+    eng.enqueue_update(k)
+b._drain_update_queue(checker=None)
+checks["a run that raises is said and the drain goes on"] = (
+    b.updated == ["bad", "mate"]
+    and "❌ `bad`: " + "x" * 200 in b.sent)
+
+# ── the loop is the engine's (Q8) ────────────────────────────────────
+# `UpdateEngine.drain_queue` holds the drain; a connection hands it
+# `run_one` (update this key, return the group a failure takes down),
+# `group_of` and `say`. `run_one` here is a recorder in place of the
+# container update, not of the drain decision: the decisions are what
+# these checks are about. `say` hands over an i18n key and raw keys,
+# never a sentence.
+
+
+def _drain(e, fails=(), groups=None, last_group=None, raises=(),
+           during=None):
+    """Drive `e.drain_queue` with a recorder; None if there is none."""
+    fn = getattr(e, "drain_queue", None)
+    if fn is None:
+        return None
+    groups = groups or {}
+    rec = {"ran": [], "said": [], "free_while_running": []}
+
+    def run_one(key):
+        rec["ran"].append(key)
+        rec["free_while_running"].append(not e._update_lock.locked())
+        if during:
+            during(key)
+        if key in raises:
+            raise RuntimeError("boom " + key)
+        return groups.get(key) if key in fails else None
+
+    def say(key, params):
+        rec["said"].append((key, params))
+
+    fn(run_one, group_of=groups.get, say=say, last_group=last_group)
+    return rec
+
+
+e = engine()
+for k in ("a", "b", "c"):
+    e.enqueue_update(k)
+r = _drain(e)
+checks["engine: every queued key runs, in the order it was queued"] = (
+    r is not None and r["ran"] == ["a", "b", "c"] and e._update_queue == []
+    and r["said"] == [])
+checks["engine: run_one runs with the lock free, so it can claim it"] = (
+    r is not None and r["free_while_running"] == [True, True, True]
+    and not e._update_lock.locked())
+
+e = engine()
+for k in ("broken", "x", "y"):
+    e.enqueue_update(k)
+r = _drain(e, fails={"broken"})
+checks["engine: a failure with no group does not stop the rest"] = (
+    r is not None and r["ran"] == ["broken", "x", "y"] and r["said"] == [])
+
+e = engine()
+g = {"gluetun": "vpn", "sonarr": "vpn", "radarr": "vpn"}
+for k in ("gluetun", "searxng", "sonarr", "radarr"):
+    e.enqueue_update(k)
+r = _drain(e, fails={"gluetun"}, groups=g)
+checks["engine: a failure takes its group-mates off the queue"] = (
+    r is not None and r["ran"] == ["gluetun", "searxng"]
+    and e._update_queue == [])
+checks["engine: …and says which, with the group, as keys"] = (
+    r is not None and r["said"] == [
+        ("update_queue_skipped_group",
+         {"group": "vpn", "keys": ["sonarr", "radarr"]})])
+
+# The group of the run that came before the drain is handed in.
+e = engine()
+for k in ("sonarr", "searxng"):
+    e.enqueue_update(k)
+r = _drain(e, groups={"sonarr": "vpn"}, last_group="vpn")
+checks["engine: the group handed in is dropped before the first run"] = (
+    r is not None and r["ran"] == ["searxng"]
+    and r["said"] == [("update_queue_skipped_group",
+                       {"group": "vpn", "keys": ["sonarr"]})])
+
+# Only the run right before counts: a success after the failure clears
+# it. `c` of the failed group is queued while `b` runs, after the drop.
+e = engine()
+g = {"a": "g1", "c": "g1"}
+for k in ("a", "b"):
+    e.enqueue_update(k)
+r = _drain(e, fails={"a"}, groups=g,
+           during=lambda k: e.enqueue_update("c") if k == "b" else None)
+checks["engine: a success clears the failed group for what comes next"] = (
+    r is not None and r["ran"] == ["a", "b", "c"] and r["said"] == [])
+
+e = engine()
+e._queued_selfupdate = ("2.9.0",)
+for k in ("one", "two"):
+    e.enqueue_update(k)
+r = _drain(e)
+checks["engine: a pending self-update stops the drain before any run"] = (
+    r is not None and r["ran"] == [] and e._update_queue == [])
+checks["engine: …and names every key it dropped"] = (
+    r is not None and r["said"] == [
+        ("update_queue_dropped_selfupdate", {"keys": ["one", "two"]})])
+
+e = engine()
+e._queued_selfupdate = ("2.9.0",)
+r = _drain(e)
+checks["engine: …and says nothing when there was nothing to drop"] = (
+    r is not None and r["said"] == [])
+
+# Queued while the drain runs: the next entry is the one that stops.
+e = engine()
+for k in ("first", "second", "third"):
+    e.enqueue_update(k)
+r = _drain(e, during=lambda k: setattr(e, "_queued_selfupdate", ("2.9.0",)))
+checks["engine: a self-update queued mid-drain stops it after that run"] = (
+    r is not None and r["ran"] == ["first"]
+    and r["said"] == [("update_queue_dropped_selfupdate",
+                       {"keys": ["second", "third"]})])
+
+# Lost race: somebody claimed the lock between the take and the run.
+e = engine()
+for k in ("a", "b"):
+    e.enqueue_update(k)
+e._update_lock.acquire()
+r = _drain(e)
+checks["engine: a lost race runs nothing and hands the entry back"] = (
+    r is not None and r["ran"] == [] and e._update_queue == ["b", "a"])
+checks["engine: …and leaves the holder's lock alone"] = (
+    r is not None and e._update_lock.locked())
+e._update_lock.release()
+
+e = engine()
+for k in ("a", "b"):
+    e.enqueue_update(k)
+r = _drain(e, raises={"a"}, groups={"a": "g", "b": "g"}, fails={"a"})
+checks["engine: a run that raises is said, and the drain goes on"] = (
+    r is not None and r["ran"] == ["a", "b"]
+    and r["said"] == [("entry_failed", {"key": "a", "error": "boom a"})])
+
+# Telegram's drain is a wrapper: it hands its own last group and lets
+# the engine run the loop.
+eng = engine()
+b = Bot(eng)
+seen = []
+_real = getattr(eng, "drain_queue", None)
+
+
+def _spy(run_one, **kw):
+    seen.append(kw.get("last_group"))
+    return _real(run_one, **kw)
+
+
+eng.drain_queue = _spy
+eng.enqueue_update("k")
+b._drain_update_queue(checker=None, last_group="g")
+checks["Telegram's drain hands the loop to engine.drain_queue"] = (
+    _real is not None and seen == ["g"] and b.updated == ["k"])
+
 # ── claim_or_queue: the engine decides, a connection only translates ─
 # Q7 moved the decision out of Telegram's tap handler. The answer is a
 # key and its parameters, never a sentence, so the Web UI and Discord
@@ -435,12 +609,15 @@ checks["…and the tap leaves the holder's lock alone"] = (
 # ── the source says what the docstring says ─────────────────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()
-drain = srcslice.section(src, "def _drain_update_queue", "\n    @staticmethod",
-                         label="telegram_bot.py: _drain_update_queue")
+esrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "update_engine.py"), encoding="utf-8").read()
+# The loop lives in the engine since Q8; Telegram's drain is a wrapper.
+drain = srcslice.section(esrc, "    def drain_queue(self", "\n    def ",
+                         label="update_engine.py: drain_queue")
 checks["the drain re-takes the lock per entry"] = (
     drain is not None and "_update_lock.acquire(blocking=False)" in drain)
 checks["…and hands the entry back if it loses the race"] = (
-    drain is not None and "self.engine.enqueue_update(key)" in drain)
+    drain is not None and "self.enqueue_update(key)" in drain)
 checks["…rather than holding it across the whole queue"] = (
     drain is not None and drain.count("_update_lock.acquire") == 1)
 # The rejected tap is queued, not answered with the old brush-off.
@@ -454,9 +631,7 @@ checks["a busy lock queues the tap instead of discarding it"] = (
 # …and the queueing itself is the engine's (Q7). The behaviour is driven
 # above; this only says where it lives, so a second copy in a connection
 # cannot come back unnoticed.
-esrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                         "update_engine.py"), encoding="utf-8").read()
-coq = srcslice.section(esrc, "    def claim_or_queue(self",
+coq =srcslice.section(esrc, "    def claim_or_queue(self",
                        "\n    def claim_or_queue_many(",
                        label="update_engine.py: claim_or_queue")
 checks["…through the engine, which puts it on the queue"] = (

@@ -1984,51 +1984,32 @@ class TelegramBot:
     def _drain_update_queue(self, checker, last_group=None):
         """Run whatever was queued while an update held the lock.
 
-        Never raises: a queue is a convenience and must not be able to
-        take down the update that finished successfully before it.
+        The loop is the engine's (`UpdateEngine.drain_queue`); this hands
+        it the single update, the group lookup and the sentences.
+
+        Never raises because of an entry: a queue is a convenience and
+        must not be able to take down the update that finished
+        successfully before it.
         """
-        while True:
-            # A pending self-update restarts the process, which would take
-            # the rest of the queue with it. Stop and NAME what is not
-            # going to run — dropping work quietly is the bug this whole
-            # change exists to fix, and doing it here would be worse than
-            # never having queued at all.
-            if self._queued_selfupdate:
-                left = self.engine.drop_queued_updates()
-                if left:
-                    self.send_message(self.t(
-                        "update_queue_dropped_selfupdate",
-                        names=", ".join(f"`{self._short_key(k)}`" for k in left)))
-                return
-            # A failed container takes its group-mates with it: the group
-            # order exists because they depend on each other, and updating
-            # the next one against a head that just failed is how you get
-            # an app talking to a database that rolled back. Same rule the
-            # automatic batch already follows.
-            if last_group:
-                mates = self.engine.drop_queued_updates(
-                    lambda k: self._group_of(k) == last_group)
-                if mates:
-                    self.send_message(self.t(
-                        "update_queue_skipped_group", group=last_group,
-                        names=", ".join(f"`{self._short_key(k)}`" for k in mates)))
-                last_group = None
-            key = self.engine.take_queued_update()
-            if key is None:
-                return
-            if not self._update_lock.acquire(blocking=False):
-                # Something else claimed it first — hand the entry back and
-                # let whoever holds it now do the draining.
-                self.engine.enqueue_update(key)
-                return
-            self._update_lock.release()
-            try:
-                self._run_single_update(checker, key, from_queue=True)
-            except Exception as e:                          # pragma: no cover
-                self.send_message(f"❌ `{self._short_key(key)}`: {str(e)[:200]}")
-                last_group = None
-                continue
-            last_group = getattr(self, "_last_update_group", None)
+        def run_one(key):
+            self._run_single_update(checker, key, from_queue=True)
+            # The group its failure takes down, as the run left it. Read
+            # here rather than in the engine, which only gets the answer.
+            return getattr(self, "_last_update_group", None)
+
+        self.engine.drain_queue(run_one, group_of=self._group_of,
+                                say=self._say_drain, last_group=last_group)
+
+    def _say_drain(self, key, params):
+        """Say what the drain reports, containers named the short way."""
+        if key == "entry_failed":
+            self.send_message(
+                f"❌ `{self._short_key(params['key'])}`: {params['error'][:200]}")
+            return
+        kw = {k: v for k, v in params.items() if k != "keys"}
+        kw["names"] = ", ".join(f"`{self._short_key(k)}`"
+                                for k in params["keys"])
+        self.send_message(self.t(key, **kw))
 
     @staticmethod
     def _short_key(container_key):

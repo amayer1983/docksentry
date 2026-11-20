@@ -505,6 +505,73 @@ class UpdateEngine:
                 "since_seconds": waited if waited is not None else 0}
         return "update_queued", {"pos": pos}
 
+    # ── Working the queue off ───────────────────────────────────────────
+    def drain_queue(self, run_one, *, group_of, say, last_group=None):
+        """Run whatever was queued while an update held the lock.
+
+        `run_one(key)` updates one container and returns the group a
+        failure of it takes down, or None. It claims the lock itself, so
+        it runs with the lock free. `group_of(key)` names a key's group.
+        `say(key, params)` tells the person; `params` carry raw container
+        keys under "keys", each connection names them its own way:
+
+          update_queue_dropped_selfupdate  {keys}: not run, a self-update
+                                           restarts the process first
+          update_queue_skipped_group       {group, keys}: group-mates of
+                                           the failure, taken off
+          entry_failed                     {key, error}: `run_one` raised.
+                                           Not an i18n key — Telegram
+                                           says the error raw.
+
+        `last_group` is the group of the run that came before the drain.
+
+        Never raises because of `run_one`: a queue is a convenience and
+        must not be able to take down the update that finished
+        successfully before it.
+        """
+        while True:
+            # A pending self-update restarts the process, which would take
+            # the rest of the queue with it. Stop and NAME what is not
+            # going to run — dropping work quietly is the bug this whole
+            # change exists to fix, and doing it here would be worse than
+            # never having queued at all.
+            if self._queued_selfupdate:
+                left = self.drop_queued_updates()
+                if left:
+                    say("update_queue_dropped_selfupdate", {"keys": left})
+                return
+            # A failed container takes its group-mates with it: the group
+            # order exists because they depend on each other, and updating
+            # the next one against a head that just failed is how you get
+            # an app talking to a database that rolled back. Same rule the
+            # automatic batch already follows.
+            if last_group:
+                failed_group = last_group
+                mates = self.drop_queued_updates(
+                    lambda k: group_of(k) == failed_group)
+                if mates:
+                    say("update_queue_skipped_group",
+                        {"group": failed_group, "keys": mates})
+                last_group = None
+            key = self.take_queued_update()
+            if key is None:
+                return
+            # Re-taken per entry rather than held across the whole queue,
+            # so the scheduler and a queued self-update can still get in
+            # between. Given straight back: `run_one` claims it itself.
+            if not self._update_lock.acquire(blocking=False):
+                # Something else claimed it first — hand the entry back and
+                # let whoever holds it now do the draining.
+                self.enqueue_update(key)
+                return
+            self._update_lock.release()
+            try:
+                last_group = run_one(key)
+            except Exception as e:
+                say("entry_failed", {"key": key, "error": str(e)})
+                last_group = None
+                continue
+
     def cleanup_guarded(self, checker, *, after=None):
         """Image cleanup under the update lock (#2 follow-up, @famewolf).
 

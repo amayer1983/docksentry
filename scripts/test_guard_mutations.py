@@ -4113,6 +4113,92 @@ GUARDED = [
      '        base_checker = checker\n',
      'test_telegram_callback_matrix.py'),
 
+    # Q8: the drain loop moved into UpdateEngine.drain_queue. Its rules
+    # had no guard of their own before; test_update_queue drives the
+    # engine with a run_one recorder, and Telegram's wrapper on top.
+    ("the drain stops for a pending self-update",
+     "app/update_engine.py",
+     "            if self._queued_selfupdate:\n"
+     "                left = self.drop_queued_updates()\n",
+     "            if False:\n"
+     "                left = self.drop_queued_updates()\n",
+     "test_update_queue.py"),
+
+    ("…and names what it dropped",
+     "app/update_engine.py",
+     '                    say("update_queue_dropped_selfupdate", {"keys": left})\n',
+     "                    pass\n",
+     "test_update_queue.py"),
+
+    ("a failure in the drain takes its group-mates off the queue",
+     "app/update_engine.py",
+     "            if last_group:\n                failed_group = last_group\n",
+     "            if False:\n                failed_group = last_group\n",
+     "test_update_queue.py"),
+
+    ("…and says which, with the group",
+     "app/update_engine.py",
+     '                    say("update_queue_skipped_group",\n'
+     '                        {"group": failed_group, "keys": mates})\n',
+     "                    pass\n",
+     "test_update_queue.py"),
+
+    ("the group a drained run leaves is the one its failure takes down",
+     "app/update_engine.py",
+     "                last_group = run_one(key)\n",
+     "                run_one(key)\n",
+     "test_update_queue.py"),
+
+    ("a drained entry that loses the race goes back on the queue",
+     "app/update_engine.py",
+     "                self.enqueue_update(key)\n                return\n"
+     "            self._update_lock.release()\n",
+     "                return\n            self._update_lock.release()\n",
+     "test_update_queue.py"),
+
+    ("…and the per-entry probe gives the lock straight back",
+     "app/update_engine.py",
+     "            self._update_lock.release()\n            try:\n"
+     "                last_group = run_one(key)\n",
+     "            try:\n                last_group = run_one(key)\n",
+     "test_update_queue.py"),
+
+    ("a drained run that raises is said and the drain goes on",
+     "app/update_engine.py",
+     "                last_group = None\n                continue\n",
+     "                return\n",
+     "test_update_queue.py"),
+
+    ("…said, with the key and the error",
+     "app/update_engine.py",
+     '                say("entry_failed", {"key": key, "error": str(e)})\n',
+     "                pass\n",
+     "test_update_queue.py"),
+
+    ("Telegram's drain hands the engine its last group",
+     "app/telegram_bot.py",
+     "                                say=self._say_drain, last_group=last_group)\n",
+     "                                say=self._say_drain, last_group=None)\n",
+     "test_update_queue.py"),
+
+    ("…and a run's failed group, from the run itself",
+     "app/telegram_bot.py",
+     '            return getattr(self, "_last_update_group", None)\n',
+     "            return None\n",
+     "test_update_queue.py"),
+
+    ("…and names the containers the drain reports",
+     "app/telegram_bot.py",
+     '        kw["names"] = ", ".join(f"`{self._short_key(k)}`"\n',
+     '        kw["names"] = "" and ", ".join(f"`{self._short_key(k)}`"\n',
+     "test_update_queue.py"),
+
+    ("…and cuts a raised error to 200 characters",
+     "app/telegram_bot.py",
+     "{params['error'][:200]}\")\n",
+     "{params['error']}\")\n",
+     "test_update_queue.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

@@ -156,7 +156,10 @@ LOCK_OPS = {
     ("selfupdate.py", "start"):
         ("CLAIM", ["acquire(blocking=False)", "release"]),
     # ── probes ──
-    ("telegram_bot.py", "TelegramBot._drain_update_queue"):
+    # The drain loop is the engine's since Q8; Telegram's
+    # `_drain_update_queue` only hands it run_one, group_of and say.
+    # Driven through that wrapper below.
+    ("update_engine.py", "UpdateEngine.drain_queue"):
         ("PROBE", ["acquire(blocking=False)", "release"]),
     # ── readers ──
     # Only looks since Q4. As a probe it took the lock for a moment, and
@@ -245,15 +248,17 @@ QUEUE_CALLS = {
      "_drain_update_queue"): 1,
     ("telegram_bot.py", "TelegramBot._sweep_update_queue",
      "_drain_update_queue"): 1,
-    ("telegram_bot.py", "TelegramBot._drain_update_queue",
+    # The loop lives in the engine (Q8); Telegram's drain calls it.
+    ("telegram_bot.py", "TelegramBot._drain_update_queue", "drain_queue"): 1,
+    ("update_engine.py", "UpdateEngine.drain_queue",
      "take_queued_update"): 1,
     # Lost the race between take and run: the entry goes back (to the end).
-    ("telegram_bot.py", "TelegramBot._drain_update_queue", "enqueue_update"): 1,
+    ("update_engine.py", "UpdateEngine.drain_queue", "enqueue_update"): 1,
     ("telegram_bot.py", "TelegramBot.listen", "_sweep_update_queue"): 1,
 }
 #: The two that feed the queue; the rest work it off.
 QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
-QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update",
+QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
                  "_drain_update_queue", "_sweep_update_queue")
 
 #: (file, qualname, callee) → (count, why). Who asks the lock through a
@@ -280,9 +285,10 @@ def _helper_callees():
 #: the sentence; other lock = not the update lock.
 BUSY_MESSAGES = {
     # Telegram
-    ("telegram_bot.py", "TelegramBot._drain_update_queue",
+    # The engine's drain hands these keys to Telegram's `_say_drain`.
+    ("update_engine.py", "UpdateEngine.drain_queue",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
-    ("telegram_bot.py", "TelegramBot._drain_update_queue",
+    ("update_engine.py", "UpdateEngine.drain_queue",
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
     ("telegram_bot.py", "TelegramBot._confirm_major_update",
      "update_already_running"): (1, "claim"),
@@ -675,7 +681,10 @@ def enumeration_checks(found):
                 f"expected {sorted(RAW_CLAIMS)}; everything else claims "
                 "through the door"))
 
-    drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS}
+    # The engine's own loop (Q8) is not a connection working it off;
+    # who calls that loop is.
+    drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS
+              and k[0] != "update_engine.py"}
     out.append((f"only these files work the queue off: {sorted(drains)}",
                 drains == {"telegram_bot.py"}, "Q13: today Telegram only"))
 
@@ -837,7 +846,7 @@ DRIVES = [
     (("update_engine.py", "UpdateEngine.update_running"),
      "busy question", None,
      lambda w: w.engine.update_running),
-    (("telegram_bot.py", "TelegramBot._drain_update_queue"),
+    (("update_engine.py", "UpdateEngine.drain_queue"),
      "drain with web queued", _queued,
      lambda w: w.tg._drain_update_queue(w.local)),
     (("web_ui.py", "create_handler.WebHandler._update_lock_held"),
@@ -973,7 +982,7 @@ def drive_checks():
                     f"lock {rec['lock_after']}, work {rec['work']}"))
 
         rec, esc = drive(prepare, call, held=False)
-        if role == "CLAIM" or site[1].endswith(("_drain_update_queue",
+        if role == "CLAIM" or site[1].endswith((".drain_queue",
                                                 "_sweep_update_queue")):
             ok = (bool(rec["work"]) and all(h for _w, h in rec["work"])
                   and rec["lock_after"] == "free" and not esc
@@ -1138,7 +1147,7 @@ EXPECTED_BUSY = {
     (('update_engine.py', 'UpdateEngine.update_running'),
      'busy question'):
         {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
-    (('telegram_bot.py', 'TelegramBot._drain_update_queue'),
+    (('update_engine.py', 'UpdateEngine.drain_queue'),
      'drain with web queued'):
         {'kind': 'LEAVES_QUEUED', 'lock_after': 'held', 'queue_after': ['web']},
     (('web_ui.py', 'create_handler.WebHandler._update_lock_held'),
