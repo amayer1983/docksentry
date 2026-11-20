@@ -129,6 +129,12 @@ SCENARIOS = [
     ("update_all:<tok> mixed, nas group head",
      [("group", "nas", "g1", ["web", "media"]), ("notify", None),
       ("tap", "update_all:<tok>")]),
+    ("update_all:<tok> mixed, dead host",
+     [("add_pending", "web", "nginx:1.25", "dead"), ("notify", None),
+      ("tap", "update_all:<tok>")]),
+    ("update_all:<tok> mixed, gone host",
+     [("add_pending", "web", "nginx:1.25", "gone"), ("notify", None),
+      ("tap", "update_all:<tok>")]),
     ("update_all:<tok> stale", [("tap", "update_all:7")]),
     ("update_all lock held", [("notify", None), ("lock",),
                               ("tap", "update_all:<tok>"), ("unlock",)]),
@@ -214,12 +220,6 @@ SCENARIOS = [
 #: Rows that are wrong today and pinned as they are, with the slice
 #: meant to change them. Read off the generated table by hand.
 KNOWN_DEFECTS = {
-    ("multi", "update_all bare"):
-        "Q12: the netns snapshot for nas's `web` asks the local backend",
-    ("multi", "update_all:<tok> mixed"):
-        "Q12: the netns snapshot for nas's `web` asks the local backend",
-    ("multi", "update_all:<tok> mixed, nas group head"):
-        "Q12: nas's dependents are restarted through the local checker",
     ("multi", "noop"): "D10: the used button is never answered",
     ("none", "noop"): "D10: the used button is never answered",
     ("one", "noop"): "D10: the used button is never answered",
@@ -253,11 +253,13 @@ BRANCH_NOTES = {
     "restart_self": ":3416 `restart_self` with the caller's checker.",
     "update_all": ":3423 token → snapshot (stale answers and stops), bare "
         "→ the whole pending file; `run_updates` on a thread with the "
-        "caller's (local) checker. Each entry's `update_container` already "
-        "runs on its own host's checker (`update_container@nas:web`); what "
-        "still goes through the local one is the netns snapshot (the extra "
-        "`inspect --format` on local) and a group head's cascade (its "
-        "wait_healthy and the dependents' restart) — the Q12 rows.",
+        "caller's (local) checker. Since Q12 it runs one batch per host, "
+        "in the order the hosts first appear, each with that host's "
+        "checker: the netns snapshot (`inspect --format`) and a group "
+        "head's cascade (wait_healthy, the dependents' restart) go to the "
+        "entry's own host. A host that stops answering fails its own entry "
+        "from the snapshot; a host the registry does not know keeps the "
+        "caller's checker and the batch refuses it.",
     "update_skip": ":3451 multi keeps the other hosts' entries, single "
         "deletes the file.",
     "update_one": ":3479 rebuilds the keyboard without the tapped button "
@@ -1435,11 +1437,12 @@ EXPECTED = {
     # ── update_all ──────────────────────────────────────────────────
     # :3423 token → snapshot (stale answers and stops), bare → the whole
     # pending file; `run_updates` on a thread with the caller's (local)
-    # checker. Each entry's `update_container` already runs on its own
-    # host's checker (`update_container@nas:web`); what still goes through
-    # the local one is the netns snapshot (the extra `inspect --format` on
-    # local) and a group head's cascade (its wait_healthy and the
-    # dependents' restart) — the Q12 rows.
+    # checker. Since Q12 it runs one batch per host, in the order the hosts
+    # first appear, each with that host's checker: the netns snapshot
+    # (`inspect --format`) and a group head's cascade (wait_healthy, the
+    # dependents' restart) go to the entry's own host. A host that stops
+    # answering fails its own entry from the snapshot; a host the registry
+    # does not know keeps the caller's checker and the batch refuses it.
     ('multi', 'update_all bare'): {'steps': [{'do': 'tap update_all',
                 'out': ['<unbutton>',
                         '<toast> Updates are starting...',
@@ -1451,8 +1454,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format ×2',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1561,8 +1565,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format ×2',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1627,15 +1632,15 @@ EXPECTED = {
                         '\n'
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)\n'
-                        '❌ `web` dependents: 1 FAILED\n'
-                        '   • `media`: Error: No such container: media\n'
+                        '🔁 `web` dependents restarted: `media`\n'
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format ×2, inspect --format t=10 ×3, restart t=30',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format, inspect --format t=10, restart t=30'},
                 'events': ['update_container@nas:web',
-                           'wait_healthy@local:web max=30',
+                           'wait_healthy@nas:web max=30',
                            'update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1672,6 +1677,192 @@ EXPECTED = {
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10 ×3, restart t=30'},
                 'events': ['update_container@local:web', 'wait_healthy@local:web max=30'],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all:<tok> mixed, dead host'): {'steps': [{'do': 'add_pending web nginx:1.25 dead',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://hub.docker.com/_/nginx) @dead (nginx:1.25) 🔖 '
+                        'v1.0.0 → v1.1.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🔄 web @dead (?)→update_one:dead/web] [🚀 '
+                        'Update all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5',
+                          'dead': 'inspect --format t=10, inspect --format t=5 ×2'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 3 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)\n'
+                        '❌ [web](https://hub.docker.com/_/nginx) @dead: Command '
+                        "'['docker', '-H', 'ssh://dead', 'inspect', '--format', "
+                        "'{{.HostConfig.NetworkMode}}', 'web']' timed out after 30 "
+                        'seconds'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format',
+                          'dead': 'inspect --format t=10, inspect --format t=5 ×2, inspect '
+                                  '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all:<tok> mixed, dead host'): {'steps': [{'do': 'add_pending web nginx:1.25 dead',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @dead '
+                        '(nginx:1.25) 🔖 v1.0.0 → v1.1.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @dead '
+                        '(?)→update_one:dead/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 2 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '❌ [web](https://github.com/example/web/releases/latest) @dead: '
+                        'host `dead` is not managed any more — skipped rather than acting '
+                        'on the wrong machine'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5, '
+                                   'inspect --format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all:<tok> mixed, gone host'): {'steps': [{'do': 'add_pending web nginx:1.25 gone',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @gone '
+                        '(nginx:1.25) 🔖 v1.0.0 → v1.1.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🔄 web @gone (?)→update_one:gone/web] [🚀 '
+                        'Update all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 3 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)\n'
+                        '❌ [web](https://github.com/example/web/releases/latest) @gone: '
+                        'host `gone` is not managed any more — skipped rather than acting '
+                        'on the wrong machine'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all:<tok> mixed, gone host'): {'steps': [{'do': 'add_pending web nginx:1.25 gone',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @gone '
+                        '(nginx:1.25) 🔖 v1.0.0 → v1.1.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @gone '
+                        '(?)→update_one:gone/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 2 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '❌ [web](https://github.com/example/web/releases/latest) @gone: '
+                        'host `gone` is not managed any more — skipped rather than acting '
+                        'on the wrong machine'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5, '
+                                   'inspect --format'},
+                'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
                'queue': [],
@@ -2209,8 +2400,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format ×2',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',

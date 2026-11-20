@@ -2973,6 +2973,7 @@ class TelegramBot:
             return
         try:
             import pending as _pending
+            from container_store import LOCAL_HOST
             from_snapshot = updates is not None
             pending_file = self.config.pending_file
             if not from_snapshot:
@@ -2993,7 +2994,41 @@ class TelegramBot:
             # filter (already applied at candidate selection) and the
             # ask-before-major gate — tapping "Update all" is itself the
             # explicit "do it now / yes to majors".
-            results, _sc, _mp = self._process_update_batch(updates, updater, auto=False)
+            #
+            # One batch per host, in the order the hosts first turn up,
+            # each with that host's checker — as the Web UI and Discord do.
+            # The batch takes ONE checker for its netns snapshot and for a
+            # group head's cascade, and with the local one and a mixed list
+            # it asked the local daemon about nas's containers and
+            # restarted nas's dependents on this machine (T3, measured
+            # before Q12). A host the registry does not know keeps the
+            # caller's checker; the batch refuses its entries itself.
+            #
+            # `snapshot_fails_entry`: the snapshot now reaches the remote
+            # host, and one that stops answering raises there. That is its
+            # own entries' failure, not the end of "Update all" with no
+            # summary and nothing taken off the list.
+            # `proactive_cleanup` only until one batch has pruned: it
+            # reads the local disk, whichever host the batch is for, so
+            # "once per batch" must stay once per "Update all".
+            by_host = {}
+            for u in updates:
+                by_host.setdefault(pending_host(u), []).append(u)
+            registry = getattr(self.engine, "hosts", None) or ()
+            results, cleaned = [], False
+            for host_name, entries in by_host.items():
+                host_checker = updater
+                if host_name != LOCAL_HOST:
+                    for host in registry:
+                        if getattr(host, "name", None) == host_name:
+                            host_checker = getattr(host, "checker", None) or updater
+                            break
+                lines, _sc, _mp = self._process_update_batch(
+                    entries, host_checker, auto=False,
+                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)
+                results.extend(lines)
+                cleaned = cleaned or bool(
+                    getattr(self.engine, "_batch_cleaned", False))
 
             if from_snapshot:
                 # Remove only the processed containers from pending —

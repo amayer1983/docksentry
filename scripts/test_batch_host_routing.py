@@ -161,6 +161,168 @@ checks["…and Discord's /cleanup walks them too"] = (
     dblock is not None
     and "container_flags.cleanup(" in dblock and "_hosts_for(None)" in dblock)
 
+# ── "Update all" over a mixed list: one batch per host (Q12) ───────────
+# The batch takes ONE checker for its netns snapshot and for a group
+# head's cascade. Telegram's run_updates handed it the LOCAL checker with
+# the whole mixed snapshot: `update_container` already ran per entry (the
+# checks above), but the netns owner of a dock8520 container was asked of
+# the local daemon, and a dock8520 group head's dependents were restarted
+# on this machine. Measured on core-split before the change: the T3 row
+# "update_all:<tok> mixed, nas group head" showed `wait_healthy@local:web`
+# and a local `restart` of nas's `media`. Driven here through the real
+# TelegramBot.run_updates on a stand-in bot.
+import subprocess  # noqa: E402
+
+from telegram_bot import TelegramBot  # noqa: E402
+
+
+class RecChecker(FakeChecker):
+    """Records every call that has to reach its own host."""
+
+    def __init__(self, label, disk=0, dead=False):
+        super().__init__(label)
+        self.netns_asked, self.healthy, self.restarted = [], [], []
+        self.cleanups = 0
+        self.disk = disk
+        self.dead = dead
+        ck = self
+
+        class _Backend:
+            name = label
+
+            def inspect(self, name, fmt=None, timeout=None):
+                return types.SimpleNamespace(stdout="", returncode=1)
+
+            def restart(self, name, timeout=None):
+                ck.restarted.append(name)
+                return types.SimpleNamespace(returncode=0, stderr="")
+        self.backend = _Backend()
+
+    def netns_target_name(self, name):
+        self.netns_asked.append(name)
+        if self.dead:
+            raise subprocess.TimeoutExpired(["inspect", name], 30)
+        return None
+
+    def _wait_healthy(self, name, max_wait):
+        self.healthy.append(name)
+        return "healthy", "running", "healthy"
+
+    def get_disk_usage(self):
+        return self.disk, 1, 100
+
+    def cleanup_images(self):
+        self.cleanups += 1
+        return True, "pruned"
+
+
+def _host_store(groups=None, cooldowns=None):
+    return types.SimpleNamespace(
+        get_groups=lambda: dict(groups or {}),
+        get_cooldown=lambda n: (cooldowns or {}).get(n, 0),
+        get_ask_before_major=lambda: [],
+        add_pending_major=lambda *a, **k: None)
+
+
+def run_update_all(updates, lc, rc, remote_groups=None, local_cooldowns=None,
+                   disk_cleanup=False):
+    """TelegramBot.run_updates(local checker, mixed snapshot), as the
+    "Update all" button calls it. Returns (batches, sent, removed, waits)."""
+    h_local = Host("local", lc, local=True)
+    h_local.store = _host_store(cooldowns=local_cooldowns)
+    h_remote = Host("dock8520", rc)
+    h_remote.store = _host_store(groups=remote_groups)
+    eng = make_engine(Registry([h_local, h_remote]))
+    eng.config = types.SimpleNamespace(
+        pending_file="/nonexistent", auto_update_all=False,
+        disk_warn_auto_cleanup=disk_cleanup, disk_warn_percent=85)
+    eng._t = lambda key, **kw: key
+    waits = []
+    eng._sleep = waits.append
+    batches, sent, removed = [], [], []
+
+    def batch(ups, ck, **kw):
+        batches.append((ck.label, [u["name"] for u in ups]))
+        return eng._process_update_batch(ups, ck, **kw)
+    bot = types.SimpleNamespace(engine=eng, hosts=eng.hosts,
+                                config=eng.config)
+    bot.send_message = lambda text, *a, **k: sent.append(text)
+    bot.t = lambda key, **kw: key
+    bot._process_update_batch = batch
+    bot._remove_from_pending = removed.extend
+    bot._run_queued_selfupdate = lambda: None
+    try:
+        TelegramBot.run_updates(bot, lc, updates=[dict(u) for u in updates])
+    except Exception as e:                          # noqa: BLE001
+        # Recorded, not raised: a run that ends here is a red check
+        # below, not a procedure that dies before its other checks.
+        sent.append(f"raised {type(e).__name__}")
+    return batches, sent, removed, waits
+
+
+MIXED = [{"name": "web", "image": "nginx:1", "host": "local"},
+         {"name": "llama-server", "image": "cuda:1", "host": "dock8520"},
+         {"name": "db", "image": "pg:16", "host": "local"}]
+lc, rc = RecChecker("local"), RecChecker("dock8520")
+batches, sent, removed, _w = run_update_all(
+    MIXED, lc, rc, remote_groups={"g1": {
+        "containers": ["llama-server", "sidecar"],
+        "restart_dependents": True, "wait_seconds": 0}})
+checks["Update all over a mixed list runs one batch per host"] = (
+    [b[0] for b in batches] == ["local", "dock8520"])
+checks["…each host's entries together, in the order the hosts turn up"] = (
+    batches == [("local", ["web", "db"]), ("dock8520", ["llama-server"])])
+checks["…a remote entry's netns owner is asked of its own host"] = (
+    rc.netns_asked == ["llama-server"] and lc.netns_asked == ["web", "db"])
+checks["…a remote group head's health is awaited on its own host"] = (
+    rc.healthy == ["llama-server"] and lc.healthy == [])
+checks["…and its dependents are restarted there, not locally"] = (
+    rc.restarted == ["sidecar"] and lc.restarted == [])
+checks["…every host's lines reach the one summary"] = (
+    len(sent) == 2 and sent[-1].startswith("update_result")
+    and all(f"{n}: OK on" in sent[-1]
+            for n in ("web", "llama-server", "db")))
+checks["…and every entry of the snapshot leaves pending"] = (
+    sorted(removed) == [("dock8520", "llama-server"), ("local", "db"),
+                        ("local", "web")])
+
+# A host that stops answering: its snapshot now goes to it and raises.
+# That must be its own entry's failure, not the end of "Update all" —
+# before the split the snapshot asked the local daemon and never met the
+# dead host there.
+lc, rc = RecChecker("local"), RecChecker("dock8520", dead=True)
+batches, sent, removed, _w = run_update_all(MIXED[:2], lc, rc)
+checks["a remote host that stops answering fails its own entry only"] = (
+    len(sent) == 2 and "✅ web: OK on local" in sent[-1]
+    and "❌ llama-server:" in sent[-1] and "timed out" in sent[-1])
+checks["…nothing is recreated there"] = rc.updated == []
+checks["…and Update all still clears the snapshot from pending"] = (
+    sorted(removed) == [("dock8520", "llama-server"), ("local", "web")])
+
+# The proactive prune of a full local disk ran once per "Update all"
+# (one batch, one prune). One batch per host must not make it once per
+# host: the second batch reads the same local disk.
+lc, rc = RecChecker("local", disk=95), RecChecker("dock8520")
+batches, sent, removed, _w = run_update_all(MIXED[:2], lc, rc,
+                                            disk_cleanup=True)
+checks["Update all prunes a full local disk once, not once per host"] = (
+    lc.cleanups == 1 and rc.cleanups == 0
+    and sent[-1].count("cleanup_between_updates") == 1)
+
+# A cooldown lets a heavy container settle before the next recreate on
+# its own machine. Between two hosts' batches it is not sat out any more
+# (the Web UI and Discord never did); inside a host's batch it still is.
+lc, rc = RecChecker("local"), RecChecker("dock8520")
+_b, _s, _r, waits = run_update_all(MIXED[:2], lc, rc,
+                                   local_cooldowns={"web": 60})
+checks["a local cooldown is not waited before the next host's batch"] = (
+    waits == [])
+lc, rc = RecChecker("local"), RecChecker("dock8520")
+_b, _s, _r, waits = run_update_all(MIXED, lc, rc,
+                                   local_cooldowns={"web": 60})
+checks["…but still between two containers of the same host"] = (
+    waits == [60])
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

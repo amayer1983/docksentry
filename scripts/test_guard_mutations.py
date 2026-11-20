@@ -4732,6 +4732,53 @@ GUARDED = [
      "                                after=None)\n",
      "test_update_queue.py"),
 
+    # Q12: Telegram's "Update all" runs one batch per host, each with
+    # that host's checker, so the netns snapshot and a group head's
+    # cascade reach the entry's own host.
+    ("Update all splits a mixed snapshot into one batch per host",
+     "app/telegram_bot.py",
+     "                by_host.setdefault(pending_host(u), []).append(u)\n",
+     "                by_host.setdefault(LOCAL_HOST, []).append(u)  # MUTATION: one batch\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…driven with a stand-in bot: one batch per host, in host order",
+     "app/telegram_bot.py",
+     "                by_host.setdefault(pending_host(u), []).append(u)\n",
+     "                by_host.setdefault(LOCAL_HOST, []).append(u)  # MUTATION: one batch\n",
+     "test_batch_host_routing.py"),
+
+    ("…each host's batch takes that host's checker, not the caller's",
+     "app/telegram_bot.py",
+     "                            host_checker = getattr(host, \"checker\", None) or updater\n",
+     "                            host_checker = updater  # MUTATION: the caller's checker\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…so a remote group head's dependents restart on that host",
+     "app/telegram_bot.py",
+     "                            host_checker = getattr(host, \"checker\", None) or updater\n",
+     "                            host_checker = updater  # MUTATION: the caller's checker\n",
+     "test_batch_host_routing.py"),
+
+    ("Update all: a host that stops answering fails its own entry, the "
+     "rest still report",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
+     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("Update all prunes a full local disk once, not once per host batch",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
+     "                    proactive_cleanup=True, snapshot_fails_entry=True)  # MUTATION\n",
+     "test_batch_host_routing.py"),
+
+    ("…because it remembers that a host's batch pruned",
+     "app/telegram_bot.py",
+     "                cleaned = cleaned or bool(\n"
+     "                    getattr(self.engine, \"_batch_cleaned\", False))\n",
+     "                cleaned = False  # MUTATION: forgets the prune\n",
+     "test_batch_host_routing.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

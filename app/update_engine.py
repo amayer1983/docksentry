@@ -1334,8 +1334,10 @@ class UpdateEngine:
           backend) that container's failure, reported like a raising
           update, with nothing recreated. Without it the error leaves
           the batch before any container's guard, as it always has for
-          "Update all", the scheduler and the Web UI (T5 pins the Web
-          UI's log line and the entry it leaves). For `run_keys` it
+          the scheduler, the Web UI and Discord (T5 pins the Web UI's
+          log line and the entry it leaves). Telegram's "Update all"
+          asks for it since Q12, when its snapshot started reaching
+          the remote host. For `run_keys` it
           left the tap at "Updating …" with nothing after it and the
           queue stuck (Q11c review, measured); before Q11c the single
           update took no snapshot and the same timeout came up inside
