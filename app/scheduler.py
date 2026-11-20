@@ -392,156 +392,167 @@ class Scheduler:
         if last_check:
             print(f"Initial cron tick for {last_check} claimed by deferred-check (post-selfupdate)")
 
-        while self.running:
-            now = datetime.now()
-            current_minute = now.strftime("%Y-%m-%d %H:%M")
+        # The hold a pass takes (`_hold_queue`) is let go in `_after_tick`,
+        # and on every way out of `_run` here: the applied self-update's
+        # `return`, and anything that raises out of the loop. Before this
+        # only `_after_tick` and that `return` let go, and measured on
+        # cbd4790 a host list that raised after its first host left the
+        # engine's hold counted for good: no release on any front end
+        # started a drainer again, and the queue stayed frozen.
+        try:
+            while self.running:
+                now = datetime.now()
+                current_minute = now.strftime("%Y-%m-%d %H:%M")
 
-            # Weekly report: independent of the cron schedule. Fires at the
-            # configured weekday + hour, at most once per day.
-            current_hour = now.strftime("%Y-%m-%d %H")
-            if current_hour != last_weekly:
-                last_weekly = current_hour
+                # Weekly report: independent of the cron schedule. Fires at the
+                # configured weekday + hour, at most once per day.
+                current_hour = now.strftime("%Y-%m-%d %H")
+                if current_hour != last_weekly:
+                    last_weekly = current_hour
+                    try:
+                        from weekly_report import maybe_send_weekly_report
+                        from i18n import get_translator
+                        today = now.date().isoformat()
+                        # In-memory guard: if the state file couldn't be written
+                        # last time (e.g. full disk), should_send_now would re-fire
+                        # the report every hour. Skip if we already sent it today.
+                        if self._weekly_sent_date != today:
+                            t = get_translator(self.config.language)
+                            if maybe_send_weekly_report(self.config, self.bot, t):
+                                self._weekly_sent_date = today
+                    except Exception as e:
+                        print(f"Weekly report check error: {e}")
+
+                if current_minute != last_check and self._matches_cron(now):
+                    last_check = current_minute
+                    # Maintenance-mode short-circuit: skip the entire tick.
+                    # Disk-warning, weekly-report etc. all get skipped too —
+                    # the whole point of maintenance is "nothing autonomous".
+                    from maintenance import is_active as _maint_active
+                    if _maint_active(self.config):
+                        print(f"Scheduled check at {current_minute} skipped — maintenance mode active")
+                        time.sleep(30)
+                        continue
+                    print(f"Scheduled check triggered at {current_minute}")
+                    # From here to `_after_tick` the pass claims and releases
+                    # the lock several times, and a queued update must not
+                    # take it in between (see `_hold_queue`).
+                    self._hold_queue()
+
+                    # Auto self-update FIRST. If a new image is available we
+                    # restart this process before running the container-update
+                    # check — that way the check itself runs on the new code
+                    # and the user gets one linear notification story rather
+                    # than "5 updates found" → bot dies mid-conversation →
+                    # silent restart. The deferred-check marker (handled in
+                    # _resume_deferred_check on next boot) carries the intent
+                    # across the restart.
+                    if self.config.auto_selfupdate:
+                        try:
+                            applied = self.bot.check_selfupdate_auto(defer_check=True)
+                            if applied:
+                                # The `finally` round the loop lets the
+                                # pass's hold go on the way out.
+                                # Helper container is about to stop us.
+                                # check_selfupdate_auto already wrote the
+                                # deferred-check marker, so the freshly-booted
+                                # process will run check_all() in our place.
+                                print("Self-update applied, exiting tick — check will resume after restart")
+                                return
+                        except Exception as e:
+                            print(f"Auto selfupdate error: {e}")
+
+                    auto_updated = 0
+                    for host_checker, host_name in self._checkers():
+                        try:
+                            updates = host_checker.check_all()
+                            if updates:
+                                auto_updated += self.bot.handle_autoupdates(
+                                    updates, host_checker) or 0
+                            # If no updates, stay quiet (--quiet behavior)
+                            self._host_recovered(host_name)
+                        except Exception as e:
+                            # One unreachable or misbehaving host must not stop
+                            # the others from being checked (#7) — report it and
+                            # carry on down the list.
+                            where = f" on {host_name}" if host_name else ""
+                            print(f"Scheduled check error{where}: {e}")
+                            self._host_failed(host_name, e)
+
+                    # Auto cleanup after successful auto-updates. The grace-hours
+                    # filter (default 24h) in cleanup_images() prevents removing
+                    # images we just pulled — the rollback safety-net stays
+                    # intact. With cleanup_backup_local_only enabled, locally-
+                    # built images are saved as tarballs first.
+                    if self.config.auto_cleanup and auto_updated > 0:
+                        try:
+                            # Guarded: skips silently if another update flow
+                            # (e.g. a manual batch in the bot thread) holds the
+                            # mutex right now — the next trigger cleans instead.
+                            ok, msg = self.bot.cleanup_guarded(self.checker)
+                            if ok is None:
+                                print(f"Auto cleanup skipped: {msg}")
+                            else:
+                                print(f"Auto cleanup: {msg}")
+                                # Not the seam, on purpose: the plugins get
+                                # `cleanup_auto_prefix` and Telegram the bare
+                                # text, and the seam carries one text to
+                                # everybody. The prefix is what tells a
+                                # webhook reader this was the automatic run.
+                                notifier = getattr(self.bot, "notifier", None)
+                                if ok and notifier and notifier.has_channels():
+                                    notifier.send_message(self.bot.t("cleanup_auto_prefix", message=msg))
+                                if ok and self.bot.enabled:
+                                    # No 🧹 in front: `cleanup_images` already
+                                    # opens with ✅ or ❌, and two status icons
+                                    # back to back read as a rendering fault.
+                                    self.bot.send_message(msg, auto=True)
+                        except Exception as e:
+                            print(f"Auto cleanup error: {e}")
+
+                # Disk monitoring on its OWN cadence — decoupled from the update
+                # cron. A disk can fill in minutes; tying the check to a once-a-day
+                # cron meant a crash-looping container filled the disk between two
+                # daily ticks with no warning at all (2026-06-18). Runs every
+                # disk_check_interval_seconds (default 300). Skipped in maintenance.
                 try:
-                    from weekly_report import maybe_send_weekly_report
-                    from i18n import get_translator
-                    today = now.date().isoformat()
-                    # In-memory guard: if the state file couldn't be written
-                    # last time (e.g. full disk), should_send_now would re-fire
-                    # the report every hour. Skip if we already sent it today.
-                    if self._weekly_sent_date != today:
-                        t = get_translator(self.config.language)
-                        if maybe_send_weekly_report(self.config, self.bot, t):
-                            self._weekly_sent_date = today
+                    from maintenance import is_active as _maint_active
+                    disk_interval = int(getattr(self.config, "disk_check_interval_seconds", 300) or 300)
+                    if ((last_disk_ts is None
+                            or time.monotonic() - last_disk_ts >= disk_interval)
+                            and not _maint_active(self.config)):
+                        last_disk_ts = time.monotonic()
+                        self._check_disk_space()
                 except Exception as e:
-                    print(f"Weekly report check error: {e}")
+                    print(f"Disk space check error: {e}")
 
-            if current_minute != last_check and self._matches_cron(now):
-                last_check = current_minute
-                # Maintenance-mode short-circuit: skip the entire tick.
-                # Disk-warning, weekly-report etc. all get skipped too —
-                # the whole point of maintenance is "nothing autonomous".
-                from maintenance import is_active as _maint_active
-                if _maint_active(self.config):
-                    print(f"Scheduled check at {current_minute} skipped — maintenance mode active")
-                    time.sleep(30)
-                    continue
-                print(f"Scheduled check triggered at {current_minute}")
-                # From here to `_after_tick` the pass claims and releases
-                # the lock several times, and a queued update must not
-                # take it in between (see `_hold_queue`).
-                self._hold_queue()
+                # Container state monitor — transitions only, quiet during
+                # updates (the tick itself checks the update mutex) and in
+                # maintenance mode.
+                try:
+                    if monitors:
+                        from maintenance import is_active as _maint_active2
+                        mon_interval = int(getattr(self.config, "monitor_interval_seconds", 60) or 60)
+                        if ((last_mon_ts is None
+                                or time.monotonic() - last_mon_ts >= mon_interval)
+                                and not _maint_active2(self.config)):
+                            last_mon_ts = time.monotonic()
+                            for mon in monitors:
+                                try:
+                                    mon.tick()
+                                except Exception as e:
+                                    # One unreachable host must not silence the
+                                    # others — that would turn a network blip on
+                                    # the NAS into a blind spot at home.
+                                    print(f"Monitor error ({mon.host_name or 'local'}): {e}")
+                except Exception as e:
+                    print(f"Monitor error: {e}")
 
-                # Auto self-update FIRST. If a new image is available we
-                # restart this process before running the container-update
-                # check — that way the check itself runs on the new code
-                # and the user gets one linear notification story rather
-                # than "5 updates found" → bot dies mid-conversation →
-                # silent restart. The deferred-check marker (handled in
-                # _resume_deferred_check on next boot) carries the intent
-                # across the restart.
-                if self.config.auto_selfupdate:
-                    try:
-                        applied = self.bot.check_selfupdate_auto(defer_check=True)
-                        if applied:
-                            self._let_queue_go()
-                            # Helper container is about to stop us.
-                            # check_selfupdate_auto already wrote the
-                            # deferred-check marker, so the freshly-booted
-                            # process will run check_all() in our place.
-                            print("Self-update applied, exiting tick — check will resume after restart")
-                            return
-                    except Exception as e:
-                        print(f"Auto selfupdate error: {e}")
+                self._after_tick()
 
-                auto_updated = 0
-                for host_checker, host_name in self._checkers():
-                    try:
-                        updates = host_checker.check_all()
-                        if updates:
-                            auto_updated += self.bot.handle_autoupdates(
-                                updates, host_checker) or 0
-                        # If no updates, stay quiet (--quiet behavior)
-                        self._host_recovered(host_name)
-                    except Exception as e:
-                        # One unreachable or misbehaving host must not stop
-                        # the others from being checked (#7) — report it and
-                        # carry on down the list.
-                        where = f" on {host_name}" if host_name else ""
-                        print(f"Scheduled check error{where}: {e}")
-                        self._host_failed(host_name, e)
-
-                # Auto cleanup after successful auto-updates. The grace-hours
-                # filter (default 24h) in cleanup_images() prevents removing
-                # images we just pulled — the rollback safety-net stays
-                # intact. With cleanup_backup_local_only enabled, locally-
-                # built images are saved as tarballs first.
-                if self.config.auto_cleanup and auto_updated > 0:
-                    try:
-                        # Guarded: skips silently if another update flow
-                        # (e.g. a manual batch in the bot thread) holds the
-                        # mutex right now — the next trigger cleans instead.
-                        ok, msg = self.bot.cleanup_guarded(self.checker)
-                        if ok is None:
-                            print(f"Auto cleanup skipped: {msg}")
-                        else:
-                            print(f"Auto cleanup: {msg}")
-                            # Not the seam, on purpose: the plugins get
-                            # `cleanup_auto_prefix` and Telegram the bare
-                            # text, and the seam carries one text to
-                            # everybody. The prefix is what tells a
-                            # webhook reader this was the automatic run.
-                            notifier = getattr(self.bot, "notifier", None)
-                            if ok and notifier and notifier.has_channels():
-                                notifier.send_message(self.bot.t("cleanup_auto_prefix", message=msg))
-                            if ok and self.bot.enabled:
-                                # No 🧹 in front: `cleanup_images` already
-                                # opens with ✅ or ❌, and two status icons
-                                # back to back read as a rendering fault.
-                                self.bot.send_message(msg, auto=True)
-                    except Exception as e:
-                        print(f"Auto cleanup error: {e}")
-
-            # Disk monitoring on its OWN cadence — decoupled from the update
-            # cron. A disk can fill in minutes; tying the check to a once-a-day
-            # cron meant a crash-looping container filled the disk between two
-            # daily ticks with no warning at all (2026-06-18). Runs every
-            # disk_check_interval_seconds (default 300). Skipped in maintenance.
-            try:
-                from maintenance import is_active as _maint_active
-                disk_interval = int(getattr(self.config, "disk_check_interval_seconds", 300) or 300)
-                if ((last_disk_ts is None
-                        or time.monotonic() - last_disk_ts >= disk_interval)
-                        and not _maint_active(self.config)):
-                    last_disk_ts = time.monotonic()
-                    self._check_disk_space()
-            except Exception as e:
-                print(f"Disk space check error: {e}")
-
-            # Container state monitor — transitions only, quiet during
-            # updates (the tick itself checks the update mutex) and in
-            # maintenance mode.
-            try:
-                if monitors:
-                    from maintenance import is_active as _maint_active2
-                    mon_interval = int(getattr(self.config, "monitor_interval_seconds", 60) or 60)
-                    if ((last_mon_ts is None
-                            or time.monotonic() - last_mon_ts >= mon_interval)
-                            and not _maint_active2(self.config)):
-                        last_mon_ts = time.monotonic()
-                        for mon in monitors:
-                            try:
-                                mon.tick()
-                            except Exception as e:
-                                # One unreachable host must not silence the
-                                # others — that would turn a network blip on
-                                # the NAS into a blind spot at home.
-                                print(f"Monitor error ({mon.host_name or 'local'}): {e}")
-            except Exception as e:
-                print(f"Monitor error: {e}")
-
-            self._after_tick()
-
-            time.sleep(30)
+                time.sleep(30)
+        finally:
+            self._let_queue_go()
 
     def _after_tick(self):
         """The end of a pass of `_run`, right before its sleep.
@@ -599,8 +610,9 @@ class Scheduler:
         second host's batch printed "Auto-update skipped" and waited for
         the next cron match, and with the key queued during the last
         host's batch both cleanups said they skipped. Kicks that land
-        while this holds are kept, and `_after_tick` lets them go (or the
-        applied self-update does, on its way out of `_run`). Scheduled
+        while this holds are kept, and `_after_tick` lets them go, or the
+        `finally` round the loop in `_run` does when the pass leaves early
+        (an applied self-update, or an error out of the loop). Scheduled
         passes only; outside one a release kicks at once, as before.
         """
         engine = getattr(self, "engine", None)

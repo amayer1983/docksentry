@@ -2244,14 +2244,14 @@ GUARDED = [
     ("maintenance mode stops the scheduled run: no self-update, no "
      "auto-update",
      "app/scheduler.py",
-     "                if _maint_active(self.config):",
-     "                if False:",
+     "                    if _maint_active(self.config):",
+     "                    if False:",
      "test_scheduler_maintenance.py"),
 
     ("…and keeps the monitor quiet while it lasts",
      "app/scheduler.py",
-     "                            and not _maint_active2(self.config)):",
-     "                            ):",
+     "                                and not _maint_active2(self.config)):",
+     "                                ):",
      "test_scheduler_maintenance.py"),
 
     ("a scheduled auto-update touches nothing while a manual update holds "
@@ -4790,8 +4790,8 @@ GUARDED = [
     ("a scheduled pass keeps the drainer out of the gaps between its "
      "hosts",
      "app/scheduler.py",
-     "                self._hold_queue()\n",
-     "                pass  # MUTATION: no hold\n",
+     "                    self._hold_queue()\n",
+     "                    pass  # MUTATION: no hold\n",
      "test_scheduler_pass_queue.py"),
 
     ("…a kick while the drainer is held starts nothing",
@@ -4813,10 +4813,17 @@ GUARDED = [
      "        return None  # MUTATION\n",
      "test_scheduler_pass_queue.py"),
 
-    ("…an applied self-update leaves no hold behind",
+    # Every way out of `_run` lets the pass's hold go, in one `finally`:
+    # the applied self-update's `return` and an error out of the loop.
+    # Before, the `return` let go by itself and an error left the hold
+    # counted for good (followup to cbd4790: a raising host list froze
+    # the queue for every front end). Applied by hand: the self-update
+    # row and the three raising-pass rows go red, no traceback.
+    ("…an applied self-update leaves no hold behind, and neither does "
+     "a pass that raises out of the loop",
      "app/scheduler.py",
-     "                            self._let_queue_go()\n",
-     "                            pass  # MUTATION\n",
+     "        finally:\n            self._let_queue_go()\n",
+     "        finally:\n            pass  # MUTATION\n",
      "test_scheduler_pass_queue.py"),
 
     ("…the deferred check after a restart holds the drainer too",
@@ -4949,8 +4956,8 @@ GUARDED = [
     ("every pass of the scheduler loop ends in _after_tick, before the "
      "sleep",
      "app/scheduler.py",
-     "            self._after_tick()\n\n            time.sleep(30)\n",
-     "            time.sleep(30)  # MUTATION: no end-of-pass work\n",
+     "                self._after_tick()\n\n                time.sleep(30)\n",
+     "                time.sleep(30)  # MUTATION: no end-of-pass work\n",
      "test_scheduler_after_tick.py"),
 
     ("_after_tick gives held notifications their next go",
@@ -4970,24 +4977,24 @@ GUARDED = [
 
     ("the cron minute in maintenance mode skips _after_tick",
      "app/scheduler.py",
-     "                    print(f\"Scheduled check at {current_minute} "
+     "                        print(f\"Scheduled check at {current_minute} "
      "skipped — maintenance mode active\")\n"
-     "                    time.sleep(30)\n",
-     "                    print(f\"Scheduled check at {current_minute} "
+     "                        time.sleep(30)\n",
+     "                        print(f\"Scheduled check at {current_minute} "
      "skipped — maintenance mode active\")\n"
-     "                    self._after_tick()  # MUTATION\n"
-     "                    time.sleep(30)\n",
+     "                        self._after_tick()  # MUTATION\n"
+     "                        time.sleep(30)\n",
      "test_scheduler_after_tick.py"),
 
     ("an applied self-update leaves the loop without _after_tick",
      "app/scheduler.py",
-     "                            print(\"Self-update applied, exiting tick "
-     "— check will resume after restart\")\n"
-     "                            return\n",
-     "                            print(\"Self-update applied, exiting tick "
-     "— check will resume after restart\")\n"
-     "                            self._after_tick()  # MUTATION\n"
-     "                            return\n",
+     "                                print(\"Self-update applied, exiting "
+     "tick — check will resume after restart\")\n"
+     "                                return\n",
+     "                                print(\"Self-update applied, exiting "
+     "tick — check will resume after restart\")\n"
+     "                                self._after_tick()  # MUTATION\n"
+     "                                return\n",
      "test_scheduler_after_tick.py"),
 
     # Q13: one drainer, the engine's, kicked by every release and by

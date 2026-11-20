@@ -32,6 +32,8 @@ the cleanup and the disk check.
   leaves no hold behind: the tap still runs;
 - the deferred check after a self-update restart walks the hosts the
   same way, on its own thread, and holds the drainer back too;
+- a pass that raises between its hold and `_after_tick` lets the hold
+  go on its way out, and later releases kick as before;
 - the other direction: outside a pass, a release still starts the
   drainer at once, and so does a hold that is let go.
 
@@ -203,6 +205,12 @@ def run_pass(w):
             return _BASE + timedelta(seconds=clk["t"] - 1000.0)
 
     def fake_sleep(sec):
+        # What the pass left behind at its own sleep, before `_run`'s
+        # way out has had a say: a pass must let its hold go itself.
+        w.at_sleep = dict(
+            holds=getattr(w.eng, "_drain_holds", None),
+            drainer=getattr(w.eng, "_drainer", None) is not None
+            or "drain:tapped" in w.events)
         clk["t"] += sec
         w.s.running = False
 
@@ -245,6 +253,13 @@ check("the tapped update runs once, after the whole pass",
       f"events {ev}")
 check("…and the queue is empty afterwards",
       w.eng.queued_updates() == [], f"left {w.eng.queued_updates()}")
+# The pass ends at its sleep, and the loop goes round; `_run`'s own way
+# out only comes when the scheduler stops. So the kept kick has to be
+# gone by the sleep, or the next passes would all run under the hold.
+_at = getattr(w, "at_sleep", {})
+check("…and the pass let its hold go and started the drainer before its "
+      "sleep, not only on the way out of _run",
+      _at.get("holds") == 0 and _at.get("drainer"), f"at sleep {_at}")
 
 # ── a tap during the last host's batch, and the two cleanups ─────────
 # The last host's release is the one right before the cleanups. On the
@@ -336,6 +351,49 @@ check("the deferred check runs every host with updates",
 check("…and the tap runs once, after its last host",
       ev.count("drain:tapped") == 1 and ev[-1] == "drain:tapped",
       f"events {ev}")
+
+# ── a pass that raises between its hold and _after_tick ──────────────
+# The hold is the pass's, and so is letting it go. Measured on cbd4790:
+# a host list that raised after the first host left `_run` with the hold
+# still counted, and from then on no release anywhere (Telegram, Web,
+# Discord) started a drainer — the queue stayed frozen for good. Whether
+# the error then ends `_run` is not what this pins; that the hold does
+# not outlive the pass is.
+w = _world()
+_hosts = list(w.hosts)
+
+
+def _raising_hosts():
+    yield _hosts[0]
+    raise RuntimeError("host list blew up")
+
+
+w.s._checkers = _raising_hosts
+try:
+    log = run_pass(w)
+except RuntimeError:
+    log = ""
+_settle(w)
+ev = list(w.events)
+check("a pass that raises after its first host still lets the queue go",
+      ev.count("drain:tapped") == 1 and ev[-1] == "drain:tapped",
+      f"events {ev}")
+check("…and leaves no hold behind on the engine",
+      getattr(w.eng, "_drain_holds", 0) == 0
+      and not getattr(w.s, "_queue_held", False),
+      f"holds {getattr(w.eng, '_drain_holds', None)}, "
+      f"pass holds {getattr(w.s, '_queue_held', None)}")
+with contextlib.redirect_stdout(io.StringIO()):
+    w.eng.claim_update()
+    w.eng.claim_or_queue("tapped2")
+    w.eng.release_update()
+    kicked = getattr(w.eng, "_drainer", None) is not None
+    _settle(w)
+check("…so a later release outside a pass starts the drainer again",
+      kicked and w.events.count("drain:tapped2") == 1
+      and w.eng.queued_updates() == [],
+      f"started {kicked}, events {w.events}, "
+      f"left {w.eng.queued_updates()}")
 
 # ── the other direction: outside a pass a release kicks at once ──────
 w = _world()
