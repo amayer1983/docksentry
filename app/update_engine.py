@@ -198,6 +198,11 @@ class UpdateEngine:
         #: wherever it is read, so an engine assembled by hand without
         #: `__init__` simply has none running.
         self._drainer = None
+        #: How many holds keep the drainer back (`hold_drain`), and the
+        #: kick that landed while one did: None, or `(after,)`. Both under
+        #: `_update_queue_lock`.
+        self._drain_holds = 0
+        self._held_kick = None
         #: The local host's checker, for an engine built without a host
         #: registry. The drainer needs one for a local key and has nobody
         #: to hand it one; with a registry (main.py always passes one)
@@ -712,7 +717,9 @@ class UpdateEngine:
         own lock, so two releases at the same moment start one thread,
         and a kick while it works starts nothing: the running one takes
         the new entry on its next turn. Its own releases do not kick
-        (`kick=False`, see `drain_queue`).
+        (`kick=False`, see `drain_queue`). While a scheduled pass holds
+        it back (`hold_drain`) a kick is kept, not started, and the end of
+        the pass starts it.
 
         `after` is what each of the drainer's releases hands on, as the
         release that kicked it did (a front end's queued self-update);
@@ -729,6 +736,11 @@ class UpdateEngine:
             return None
         try:
             with self._update_queue_lock:
+                if getattr(self, "_drain_holds", 0):
+                    # A scheduled pass is between two of its steps; the
+                    # kick waits for its end (`hold_drain`).
+                    self._held_kick = (after,)
+                    return None
                 if (getattr(self, "_drainer", None) is not None
                         or not self._update_queue):
                     return None
@@ -746,6 +758,58 @@ class UpdateEngine:
         except Exception as e:                              # noqa: BLE001
             print(f"Queue drain could not start: {e}")
             return None
+
+    def hold_drain(self):
+        """Keep the drainer back until `let_drain_go`, for one pass.
+
+        The scheduler's pass is a row of claims: the automatic self-update
+        check, `handle_autoupdates` once per host, the post-update cleanup
+        and the disk-warning cleanup each claim and release on their own.
+        Every one of those releases kicks the drainer, and a queued update
+        then took the lock in the gap between two hosts: the next host's
+        batch failed its claim and was "skipped" until the next cron match,
+        usually a day later (Q13 review, measured). The lock is free in
+        that gap, the pass is not done.
+
+        So for the length of a pass a kick is kept, not started; the last
+        `let_drain_go` starts it. Counted, because the deferred check after
+        a restart walks the hosts on a thread of its own and can overlap a
+        pass. A drainer that was already running goes on as before — this
+        only stops a new one. Never raises.
+        """
+        lock = getattr(self, "_update_queue_lock", None)
+        if lock is None:
+            return
+        try:
+            with lock:
+                self._drain_holds = getattr(self, "_drain_holds", 0) + 1
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queue drain hold failed: {e}")
+
+    def let_drain_go(self):
+        """End one `hold_drain`; the last one starts the kick it kept.
+
+        Returns the drainer it started, or None. Never raises.
+        """
+        lock = getattr(self, "_update_queue_lock", None)
+        if lock is None:
+            return None
+        try:
+            with lock:
+                holds = getattr(self, "_drain_holds", 0)
+                self._drain_holds = holds - 1 if holds > 0 else 0
+                kept = getattr(self, "_held_kick", None)
+                # While another hold is left, the kick stays kept. Without
+                # this check `kick_drain` would keep it again (it looks at
+                # the count itself), so no mutation of this line alone
+                # shows; it saves the round trip.
+                if self._drain_holds or kept is None:
+                    return None
+                self._held_kick = None
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queue drain hold failed: {e}")
+            return None
+        return self.kick_drain(after=kept[0])
 
     def _drain_on_thread(self, after):
         """The drainer's body: `drain_queue` with the engine's own hooks.

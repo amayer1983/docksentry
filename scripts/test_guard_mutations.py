@@ -4781,6 +4781,62 @@ GUARDED = [
      "                pass\n",
      "test_update_queue_sweep.py"),
 
+    # Q13 review 2: a scheduled pass claims and releases once per step
+    # (self-update check, each host, both cleanups), and every release
+    # kicked the drainer — a queued key took the lock between two hosts
+    # and the next host's batch was skipped. The pass holds the drainer
+    # back until _after_tick. Each applied by hand, red without a
+    # traceback.
+    ("a scheduled pass keeps the drainer out of the gaps between its "
+     "hosts",
+     "app/scheduler.py",
+     "                self._hold_queue()\n",
+     "                pass  # MUTATION: no hold\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…a kick while the drainer is held starts nothing",
+     "app/update_engine.py",
+     '                if getattr(self, "_drain_holds", 0):\n',
+     "                if False:  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…the end of the pass lets the kept kick go",
+     "app/scheduler.py",
+     "                self._let_queue_go()\n"
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…and letting the hold go starts the drainer it kept",
+     "app/update_engine.py",
+     "        return self.kick_drain(after=kept[0])\n",
+     "        return None  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…an applied self-update leaves no hold behind",
+     "app/scheduler.py",
+     "                            self._let_queue_go()\n",
+     "                            pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…the deferred check after a restart holds the drainer too",
+     "app/scheduler.py",
+     "                    engine.hold_drain()\n",
+     "                    pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…and lets it go after its last host",
+     "app/scheduler.py",
+     "                        engine.let_drain_go()\n",
+     "                        pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…holds are counted: a pass and a deferred check both let go first",
+     "app/update_engine.py",
+     '                self._drain_holds = getattr(self, "_drain_holds", 0) + 1\n',
+     "                self._drain_holds = 1  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
     # Q12: Telegram's "Update all" runs one batch per host, each with
     # that host's checker, so the netns snapshot and a group head's
     # cascade reach the entry's own host.

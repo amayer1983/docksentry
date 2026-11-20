@@ -324,14 +324,24 @@ class Scheduler:
                     notifier = getattr(self.bot, "notifier", None)
                     if notifier and notifier.has_channels():
                         notifier.send_message(resumed_msg)
-                for host_checker, host_name in self._checkers():
-                    try:
-                        updates = host_checker.check_all()
-                        if updates:
-                            self.bot.handle_autoupdates(updates, host_checker)
-                    except Exception as e:
-                        where = f" on {host_name}" if host_name else ""
-                        print(f"Deferred check error{where}: {e}")
+                # The same row of claims as a scheduled pass, so the
+                # same hold on the drainer (see `_hold_queue`).
+                engine = getattr(self, "engine", None)
+                if engine is not None:
+                    engine.hold_drain()
+                try:
+                    for host_checker, host_name in self._checkers():
+                        try:
+                            updates = host_checker.check_all()
+                            if updates:
+                                self.bot.handle_autoupdates(updates,
+                                                            host_checker)
+                        except Exception as e:
+                            where = f" on {host_name}" if host_name else ""
+                            print(f"Deferred check error{where}: {e}")
+                finally:
+                    if engine is not None:
+                        engine.let_drain_go()
             except Exception as e:
                 print(f"Deferred check error: {e}")
 
@@ -416,6 +426,10 @@ class Scheduler:
                     time.sleep(30)
                     continue
                 print(f"Scheduled check triggered at {current_minute}")
+                # From here to `_after_tick` the pass claims and releases
+                # the lock several times, and a queued update must not
+                # take it in between (see `_hold_queue`).
+                self._hold_queue()
 
                 # Auto self-update FIRST. If a new image is available we
                 # restart this process before running the container-update
@@ -429,6 +443,7 @@ class Scheduler:
                     try:
                         applied = self.bot.check_selfupdate_auto(defer_check=True)
                         if applied:
+                            self._let_queue_go()
                             # Helper container is about to stop us.
                             # check_selfupdate_auto already wrote the
                             # deferred-check marker, so the freshly-booted
@@ -543,7 +558,10 @@ class Scheduler:
         scripts/test_scheduler_after_tick.py. A queued update therefore
         waits up to 60 s here on an install whose only sweep this is;
         the release that ends the update it queued behind kicks the
-        drain sooner, wherever that release is.
+        drain sooner, wherever that release is — except inside a
+        scheduled pass, which holds the drainer back until here
+        (`_hold_queue`), so that it does not take the lock between two
+        hosts.
         """
         # Anything a dead network swallowed is still waiting. This loop
         # is the only thing that runs on its own no matter what else is
@@ -565,9 +583,39 @@ class Scheduler:
         engine = getattr(self, "engine", None)
         if engine is not None:
             try:
+                self._let_queue_go()
                 engine.sweep_queue(engine.kick_drain)
             except Exception as e:                      # noqa: BLE001
                 print(f"Queue sweep error: {e}")
+
+    def _hold_queue(self):
+        """Keep the drainer back for the rest of this pass.
+
+        A scheduled pass claims and releases the update lock once per
+        step — the self-update check, each host's `handle_autoupdates`,
+        the post-update cleanup and the disk-warning cleanup — and every
+        release kicks the drainer. Measured on the first Q13 tree: a key
+        queued during the first host's batch was drained in the gap, the
+        second host's batch printed "Auto-update skipped" and waited for
+        the next cron match, and with the key queued during the last
+        host's batch both cleanups said they skipped. Kicks that land
+        while this holds are kept, and `_after_tick` lets them go (or the
+        applied self-update does, on its way out of `_run`). Scheduled
+        passes only; outside one a release kicks at once, as before.
+        """
+        engine = getattr(self, "engine", None)
+        if engine is None or getattr(self, "_queue_held", False):
+            return
+        engine.hold_drain()
+        self._queue_held = True
+
+    def _let_queue_go(self):
+        """End `_hold_queue`, if this pass holds. Never raises."""
+        engine = getattr(self, "engine", None)
+        if engine is None or not getattr(self, "_queue_held", False):
+            return
+        self._queue_held = False
+        engine.let_drain_go()
 
     def _check_disk_space(self):
         action, percent, free_gb = self.checker.check_disk_usage()

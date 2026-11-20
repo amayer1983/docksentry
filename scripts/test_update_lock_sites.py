@@ -288,6 +288,16 @@ QUEUE_CALLS = {
     # call, so only the sweep is counted).
     ("telegram_bot.py", "TelegramBot.listen", "sweep_queue"): 1,
     ("scheduler.py", "Scheduler._after_tick", "sweep_queue"): 1,
+    # A scheduled pass (and the deferred check after a restart) holds the
+    # drainer back between its steps; the last let-go starts the kick it
+    # kept (Q13 review). Driven in test_scheduler_pass_queue.py.
+    ("scheduler.py", "Scheduler._hold_queue", "hold_drain"): 1,
+    ("scheduler.py", "Scheduler._let_queue_go", "let_drain_go"): 1,
+    ("scheduler.py", "Scheduler._resume_deferred_check._run_deferred",
+     "hold_drain"): 1,
+    ("scheduler.py", "Scheduler._resume_deferred_check._run_deferred",
+     "let_drain_go"): 1,
+    ("update_engine.py", "UpdateEngine.let_drain_go", "kick_drain"): 1,
 }
 #: The two that feed the queue; the rest work it off. Telegram's old
 #: `_drain_update_queue` / `_sweep_update_queue` stay listed so a call
@@ -295,7 +305,8 @@ QUEUE_CALLS = {
 QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
 QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
                  "_drain_update_queue", "sweep_queue",
-                 "_sweep_update_queue", "kick_drain", "drop_group_mates")
+                 "_sweep_update_queue", "kick_drain", "drop_group_mates",
+                 "hold_drain", "let_drain_go")
 
 #: (file, qualname, callee) → (count, why). Who asks the lock through a
 #: helper that only looks at it. The callees are the READER and PROBE
