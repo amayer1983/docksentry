@@ -1918,14 +1918,8 @@ class TelegramBot:
             # the thread, and the chat heard nothing after the toast.
             return self.t("no_pending_updates")
         if why == "host_unknown":
-            # The same sentence a command aimed at an unknown host gets,
-            # with the hosts there are now.
-            from container_store import LOCAL_HOST, split_host_key
-            names = [h.name for h in self.hosts] if self.hosts \
-                else [LOCAL_HOST]
-            return self.t("host_unknown",
-                          name=split_host_key(container_key)[0],
-                          hosts=", ".join(f"`{n}`" for n in names))
+            from container_store import split_host_key
+            return self._unknown_host_text(split_host_key(container_key)[0])
         # Two different things, and they used to read the same. Off the
         # queue it almost always means the update already happened while
         # this entry waited — saying "not in the update list" there puts
@@ -1934,6 +1928,14 @@ class TelegramBot:
         return self.t(
             "update_already_done" if from_queue else "container_not_in_list",
             name=self._key_label(container_key))
+
+    def _unknown_host_text(self, host_name):
+        """The same sentence a command aimed at an unknown host gets,
+        with the hosts there are now."""
+        from container_store import LOCAL_HOST
+        names = [h.name for h in self.hosts] if self.hosts else [LOCAL_HOST]
+        return self.t("host_unknown", name=host_name,
+                      hosts=", ".join(f"`{n}`" for n in names))
 
     def _report_single_update(self, container_key, target, success, msg):
         """One finished single update: the result line here, and the card
@@ -2079,6 +2081,13 @@ class TelegramBot:
         keys) can pass one straight through."""
         from container_store import split_host_key
         host_name, name = split_host_key(container_key)
+        # A key for a host that left DOCKER_HOSTS (or `nas/…` on a single
+        # host) is refused before anything is looked up: `_checker_for`
+        # would hand back the local checker and update a namesake there,
+        # and on a single host `_store_for` reads the local entries.
+        if not self.engine._manages_host(host_name):
+            self.send_message(self._unknown_host_text(host_name))
+            return
         host = self._host_by_name(host_name)
         checker = self._checker_for(host, checker)
         store = self._store_for(host_name)

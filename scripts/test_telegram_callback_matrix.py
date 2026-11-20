@@ -164,6 +164,10 @@ SCENARIOS = [
                            ("tap", "confirm_major:web")]),
     ("confirm_major:nas/web", [("major", "nas", "web"),
                                ("tap", "confirm_major:nas/web")]),
+    ("confirm_major gone host", [("major", "gone", "web"),
+                                 ("tap", "confirm_major:gone/web")]),
+    ("confirm_major gone host, nothing deferred",
+     [("tap", "confirm_major:gone/web")]),
     ("confirm_major none pending", [("tap", "confirm_major:web")]),
     ("confirm_major lock held", [("major", "local", "web"), ("lock",),
                                  ("tap", "confirm_major:web"), ("unlock",)]),
@@ -249,7 +253,10 @@ BRANCH_NOTES = {
         "key not listed): those return inside the try and skip the drain, "
         "so on a single host the queued `db` is still waiting.",
     "confirm_major": ":3497 on a thread, `_confirm_major_update`; busy "
-        "lock answers 'already running' and does not queue (Q16).",
+        "lock answers 'already running' and does not queue (Q16). A key "
+        "whose host the registry does not know (`gone`, and `nas` on a "
+        "single host) answers 'Unknown host' since Q11b, before anything "
+        "is looked up; nothing runs and the deferred major stays.",
     "reject_major": ":3508 drops the deferred major in that host's store.",
     "lifecycle": ":3520 local only; a bad split or action is a toast.",
     "restart_deps": ":3548 local group, needs two members; the cascade "
@@ -448,7 +455,11 @@ class Row:
             pending = [f"{u.get('name')}@{pending_host(u)}"
                        for u in self._pending()] if usable \
                 else f"unreadable: {raw!r}"
-        hosts = ["local"] + (["nas"] if self.setup == "multi" else [])
+        # `gone` only where it has a store of its own: on a single host
+        # `_store_for` hands every host the raw store, so it would just
+        # repeat what `local` shows.
+        hosts = ["local"] + (["nas", "gone"] if self.setup == "multi"
+                             else [])
         majors = {h: sorted(bot._store_for(h).get_pending_major())
                   for h in hosts}
         return {"pending": pending,
@@ -2517,10 +2528,73 @@ EXPECTED = {
                {'do': 'tap confirm_major:nas/web',
                 'out': ['<toast> Confirming major update for web…',
                         '<unbutton>',
-                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
-                        'updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
-                'events': ['update_container@local:web'],
+                        '❌ Unknown host `nas`. Managed hosts: `local`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'local': ['web']},
+               'locked': False}},
+    ('multi', 'confirm_major gone host'): {'steps': [{'do': 'major gone web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap confirm_major:gone/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`, `nas`, `dead`, '
+                        '`refused`, `flaky`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'gone': ['web']},
+               'locked': False}},
+    ('single', 'confirm_major gone host'): {'steps': [{'do': 'major gone web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap confirm_major:gone/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'local': ['web']},
+               'locked': False}},
+    ('multi', 'confirm_major gone host, nothing deferred'): {'steps': [{'do': 'tap confirm_major:gone/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`, `nas`, `dead`, '
+                        '`refused`, `flaky`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'confirm_major gone host, nothing deferred'): {'steps': [{'do': 'tap confirm_major:gone/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`'],
+                'hosts': {},
+                'events': [],
                 'raised': None}],
      'state': {'pending': ['web@local'],
                'queue': [],

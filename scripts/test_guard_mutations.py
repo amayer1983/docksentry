@@ -1491,6 +1491,26 @@ GUARDED = [
      "        if False:\n",
      "test_telegram_callback_matrix.py"),
 
+    ("a confirm_major key for a host the registry does not know is refused",
+     "app/telegram_bot.py",
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "",
+     "test_telegram_callback_matrix.py"),
+
+    ("…with the unknown-host sentence",
+     "app/telegram_bot.py",
+     "            self.send_message(self._unknown_host_text(host_name))\n",
+     "            self.send_message(self.t(\"major_none_pending\", name=name))\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…before the deferred majors are looked up",
+     "app/telegram_bot.py",
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n"
+     "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n",
+     "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n"
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "test_telegram_callback_matrix.py"),
+
     ("a server that answers after the body is believed over a guess",
      "app/notifiers/smtp.py",
      "    code = _smtp_code(err)\n    if code is not None:\n        return TEMPORARY if 400 <= code <= 499 else PERMANENT\n    if taken:",
