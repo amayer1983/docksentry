@@ -348,6 +348,85 @@ b._drain_update_queue(checker=None, last_group="g")
 checks["Telegram's drain hands the loop to engine.drain_queue"] = (
     _real is not None and seen == ["g"] and b.updated == ["k"])
 
+# The real `_run_single_update` under Telegram's drain: an entry off the
+# queue is run as one (`from_queue=True`). Two things hang on that. A key
+# that is no longer pending is work that already happened, not a typo;
+# and a queued run does not start a drain of its own from inside the
+# drain, so the queue is worked off by one loop, not one level per entry.
+import json  # noqa: E402
+import tempfile  # noqa: E402
+
+
+def _queued_bot(eng, pending_entries):
+    said = []
+    # Bounded: with a mutation that never lets a run claim the free lock,
+    # each run puts its key back and the drain would spin forever. Fifty
+    # takes is far more than these three keys need, and a hang is not red.
+    _take, _taken = eng.take_queued_update, []
+
+    def _bounded_take():
+        _taken.append(1)
+        return _take() if len(_taken) <= 50 else None
+
+    eng.take_queued_update = _bounded_take
+    fd, path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w") as fh:
+        json.dump(pending_entries, fh)
+    bot = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
+    bot.engine = eng
+    bot.t = _T_drain
+    bot.send_message = lambda m_, **kw: said.append(m_)
+    bot.config = types.SimpleNamespace(pending_file=path)
+    bot.notifier = None
+    bot._host_by_name = lambda n: None
+    bot._checker_for = lambda host, checker: checker
+    bot._run_queued_selfupdate = lambda: None
+    bot._group_of = lambda k: None
+    bot._enrich_with_source_url = lambda us: None
+    bot._display_name = lambda u: u["name"]
+    return bot, said, path
+
+
+class _OkChecker:
+    def update_container(self, name, image, **kw):
+        return True, "ok"
+
+
+from i18n import get_translator as _gt  # noqa: E402
+_T_drain = _gt("en")
+
+eng = engine()
+eng._updating = {}
+eng.enqueue_update("gone")
+qb, said, path = _queued_bot(eng, [])
+qb._drain_update_queue(_OkChecker())
+os.unlink(path)
+checks["a queued key no longer pending is called done, not unknown"] = (
+    said == [_T_drain("update_already_done", name="gone")])
+
+eng = engine()
+eng._updating = {}
+for k in ("a", "b", "c"):
+    eng.enqueue_update(k)
+qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                   for n in ("a", "b", "c")])
+drains = []
+_real_dq = eng.drain_queue
+
+
+def _count(run_one, **kw):
+    drains.append(1)
+    return _real_dq(run_one, **kw)
+
+
+eng.drain_queue = _count
+qb._drain_update_queue(_OkChecker())
+os.unlink(path)
+checks["…and a queued run does not drain the queue again from inside"] = (
+    len(drains) == 1 and eng._update_queue == []
+    and [m for m in said if m.endswith(": ok")] == [
+        "✅ a: ok", "✅ b: ok", "✅ c: ok"])
+
 # ── claim_or_queue: the engine decides, a connection only translates ─
 # Q7 moved the decision out of Telegram's tap handler. The answer is a
 # key and its parameters, never a sentence, so the Web UI and Discord

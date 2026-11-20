@@ -4187,6 +4187,12 @@ GUARDED = [
      "            return None\n",
      "test_update_queue.py"),
 
+    ("…and runs each entry as a queued one, not as a fresh tap",
+     "app/telegram_bot.py",
+     "            self._run_single_update(checker, key, from_queue=True)\n",
+     "            self._run_single_update(checker, key)\n",
+     "test_update_queue.py"),
+
     ("…and names the containers the drain reports",
      "app/telegram_bot.py",
      '        kw["names"] = ", ".join(f"`{self._short_key(k)}`"\n',
