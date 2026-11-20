@@ -669,7 +669,7 @@ class UpdateEngine:
             print(f"Queue sweep failed: {e}")
 
     def run_keys(self, keys, *, checker_for, group_of=None, enrich=None,
-                 starting=None, report=None, pending_file=None):
+                 starting=None, report=None, done=None, pending_file=None):
         """Update the containers behind `keys`, one after the other.
 
         The body of what used to be Telegram's single update, without the
@@ -704,8 +704,25 @@ class UpdateEngine:
           update is back, before the entry leaves the file: a file that
           cannot be rewritten (a full disk) must not swallow the report
           of an update that ran;
+        * `done()` is called once, when the entry just taken out was the
+          last one in the file — exactly when `all_done` comes back
+          True, but while that key is still marked in flight. The "all
+          done" line goes out there: a second tap on the same container
+          while it is being sent must still be answered "the same one is
+          running", not be queued (Q11a review, measured);
+        * `group_of` is the caller's; without one no failure names a
+          group (the engine has no group lookup of its own);
         * `pending_file` is the file to read and rewrite; this engine's
           own config names it when None.
+
+        The file is read once, before the first key, and each write
+        comes from that copy: whatever another writer puts in the file
+        while several keys run is overwritten by the next key's write.
+        One key per call, as Telegram calls it today, has no such gap
+        between read and write beyond its own update. A key that raises past its own
+        report (the file write failing, a report raising twice) ends the
+        call there: its in-flight mark goes, the keys after it do not
+        run, and the error reaches the caller instead of any results.
         """
         import pending as _pending
         from container_store import split_host_key
@@ -768,6 +785,11 @@ class UpdateEngine:
                 _pending.write(pending_file, updates)
                 written = True
                 results.append((key, target, success, msg, last_group))
+                if not updates and done is not None:
+                    # Nothing left in the file, so every key after this
+                    # one is "not_pending": this is the all-done moment,
+                    # said before the mark below goes.
+                    done()
             finally:
                 self.clear_updating(key)
         return results, (written and not updates)

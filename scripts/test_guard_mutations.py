@@ -1424,6 +1424,27 @@ GUARDED = [
      "                enrich=lambda updates: None,\n",
      "test_telegram_callback_matrix.py"),
 
+    # Q11a review: "all done" goes out while the tapped container still
+    # counts as in flight, so a second tap during it is "the same one"
+    # instead of a queued job the drain then calls already updated.
+    ("'all done' is said while the tapped container is still in flight",
+     "app/telegram_bot.py",
+     '                done=lambda: self.send_message(self.t("update_all_done")),\n',
+     '                done=lambda: (self.engine.clear_updating(container_key),\n                              self.send_message(self.t("update_all_done"))),\n',
+     "test_single_update_report.py"),
+
+    ("…because run_keys calls done before the mark goes",
+     "app/update_engine.py",
+     "                    done()\n            finally:\n",
+     "                    self.clear_updating(key)\n                    done()\n            finally:\n",
+     "test_single_update_report.py"),
+
+    ("…and only once the file is empty",
+     "app/update_engine.py",
+     "                if not updates and done is not None:\n",
+     "                if done is not None:\n",
+     "test_single_update_report.py"),
+
     ("a server that answers after the body is believed over a guess",
      "app/notifiers/smtp.py",
      "    code = _smtp_code(err)\n    if code is not None:\n        return TEMPORARY if 400 <= code <= 499 else PERMANENT\n    if taken:",

@@ -273,6 +273,43 @@ checks["…and each of the two is reported once, the failure as one"] = (
                                      ("db", "postgres:16", True)])
 _done(row)
 
+# ── a second tap while "all done" is being said ─────────────────────
+# The tapped container is still the one in flight until that line is
+# out: a second tap on it in that moment is "the same one", not a new
+# job for the queue (claim_or_queue, 08.10.2026). Q11a first cleared
+# the in-flight mark before the line went out; then the second tap
+# queued, and after the release the drain said "was already updated
+# while this one waited" (measured on 1041ac7). The second tap is made
+# from inside send_message, in the first one's thread, so the moment is
+# exact and not a race.
+row, rec = _world()
+_drive(row, [("notify", None), ("tap", "update_one:web")])
+_send = row.bot.send_message
+_second = []
+
+
+def _send_and_tap(text, *a, **kw):
+    if _all_done in text and not _second:
+        _second.append(dict(row.bot.engine.updating))
+        row.bot._run_single_update(row.checker, "nas/web")
+    return _send(text, *a, **kw)
+
+
+row.bot.send_message = _send_and_tap
+del row.log[:]
+_drive(row, [("tap", "update_one:nas/web")])
+row.bot.send_message = _send
+said = _said(row)
+checks["a second tap during 'all done': the container is still in flight"] = (
+    _second == [{"nas/web": "1.26.0"}])
+checks["…so it is answered 'the same one', not queued"] = (
+    any("same one" in s for s in said)
+    and not any("queued" in s for s in said)
+    and row.bot.engine.queued_updates() == [])
+checks["…and nothing says it was already updated while it waited"] = (
+    not any("while this one waited" in s for s in said))
+_done(row)
+
 # ── nothing ran, nothing reported ────────────────────────────────────
 row, rec = _world()
 _drive(row, [("tap", "update_one:db")])
@@ -334,9 +371,14 @@ def _rk(keys, ck, **kw):
     if not hasattr(eng, "run_keys"):
         return [("no run_keys",) * 5], None
     with contextlib.redirect_stdout(io.StringIO()):
-        return eng.run_keys(keys, checker_for=lambda k: ck,
-                            group_of=lambda k: f"g-{k}",
-                            enrich=lambda us: None, pending_file=pf, **kw)
+        try:
+            return eng.run_keys(keys, checker_for=lambda k: ck,
+                                group_of=lambda k: f"g-{k}",
+                                enrich=lambda us: None, pending_file=pf,
+                                **kw)
+        except TypeError as e:
+            # A hook this run_keys does not take yet.
+            return [("TypeError: " + str(e),) * 5], None
 
 
 _pending_mod.write(pf, [{"name": "web", "image": "nginx:1.25",
@@ -344,8 +386,9 @@ _pending_mod.write(pf, [{"name": "web", "image": "nginx:1.25",
                         {"name": "web", "image": "nginx:1.25", "host": "nas"}])
 ck = _Ck((True, "ok"))
 _started = []
+_dones = []
 res, done = _rk(["web"], ck, starting=lambda k, t: _started.append(
-    (k, ck.seen[:])))
+    (k, ck.seen[:])), done=lambda: _dones.append(dict(eng.updating)))
 checks["run_keys: a success is (key, entry, True, msg, no group)"] = (
     len(res) == 1 and res[0][0] == "web"
     and (res[0][1] or {}).get("name") == "web"
@@ -359,16 +402,20 @@ checks["…calls `starting` before the update, not after"] = (
 checks["…takes the entry out of the file, the other host's survives"] = (
     [(_pending_mod.key_of(u)) for u in _pending_mod.read(pf)]
     == [("nas", "web")])
-checks["…and is not all done while another entry is pending"] = done is False
+checks["…and is not all done while another entry is pending"] = (
+    done is False and _dones == [])
 checks["…and leaves the lock to its caller"] = (
     [x[3] for x in ck.seen] == [False] and not eng._update_lock.locked())
 
 ck = _Ck((False, "pull failed"))
-res, done = _rk(["nas/web"], ck)
+res, done = _rk(["nas/web"], ck,
+                done=lambda: _dones.append(dict(eng.updating)))
 checks["run_keys: a failure names the group it takes down"] = (
     [r[2:] for r in res] == [(False, "pull failed", "g-nas/web")])
 checks["…and the last entry out is all done, leaving []"] = (
     done is True and _pending_mod.load(pf) == [])
+checks["…calls `done` once for it, while the key is still in flight"] = (
+    len(_dones) == 1 and "nas/web" in _dones[0] and eng.updating == {})
 
 _pending_mod.write(pf, [{"name": "db", "image": "postgres:16"}])
 ck = _Ck(RuntimeError("x" * 300))

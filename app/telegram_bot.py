@@ -1865,7 +1865,7 @@ class TelegramBot:
             # The engine runs it (Q11a): pending lookup, the in-flight
             # mark, `update_container`, the entry out of the file. What
             # is said about it stays here.
-            results, all_done = self.engine.run_keys(
+            results, _all_done = self.engine.run_keys(
                 [container_key],
                 checker_for=lambda key: checker,
                 group_of=self._group_of,
@@ -1876,6 +1876,10 @@ class TelegramBot:
                 starting=lambda key, target: self.send_message(self.t(
                     "update_single_starting", name=self._key_label(key))),
                 report=self._report_single_update,
+                # Said inside run_keys, while the container still counts
+                # as in flight: a second tap during this line is "the
+                # same one", not a job for the queue.
+                done=lambda: self.send_message(self.t("update_all_done")),
                 pending_file=self.config.pending_file)
             for key, target, success, msg, last_group in results:
                 if target is None:
@@ -1889,9 +1893,6 @@ class TelegramBot:
                 # as good as `_group_of`, which today finds no group at
                 # all (see there).
                 self._last_update_group = last_group
-
-            if all_done:
-                self.send_message(self.t("update_all_done"))
         finally:
             # One releaser per claim: a drained entry's claim is the
             # drain's to give back.
