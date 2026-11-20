@@ -1826,8 +1826,7 @@ class TelegramBot:
         this neither claims nor releases, and the queued self-update is
         handed on by the caller's release, not here."""
         from container_store import split_host_key
-        host_name, container_name = split_host_key(container_key)
-        host = self._host_by_name(host_name)
+        host = self._host_by_name(split_host_key(container_key)[0])
         # Kept for the drain below: the queue holds keys from every host,
         # and `_checker_for` hands a local key whatever checker it is
         # given. Passing on the one reassigned here sent a queued local
@@ -1863,80 +1862,37 @@ class TelegramBot:
         # make the drain skip a group that has nothing to do with this run.
         self._last_update_group = None
         try:
-            import pending as _pending
-            updates = _pending.load(self.config.pending_file)
-            if updates is None:
-                # No file, or one nothing can read (cut off mid-write,
-                # edited by hand): nothing is pending that this tap could
-                # act on. It used to raise here, inside the thread, and
-                # the chat heard nothing after the toast. A file holding
-                # `[]` is a different answer — the last single update
-                # leaves exactly that — and goes on to "not in the list".
-                self.send_message(self.t("no_pending_updates"))
-                return
+            # The engine runs it (Q11a): pending lookup, the in-flight
+            # mark, `update_container`, the entry out of the file. What
+            # is said about it stays here.
+            results, all_done = self.engine.run_keys(
+                [container_key],
+                checker_for=lambda key: checker,
+                group_of=self._group_of,
+                enrich=self._enrich_with_source_url,
+                # The host here too: this line sits directly above a
+                # result line that names it, and `portainer` alone is
+                # ambiguous the moment two machines run one.
+                starting=lambda key, target: self.send_message(self.t(
+                    "update_single_starting", name=self._key_label(key))),
+                report=self._report_single_update,
+                pending_file=self.config.pending_file)
+            for key, target, success, msg, last_group in results:
+                if target is None:
+                    self.send_message(self._single_update_skipped(
+                        key, msg, from_queue))
+                    # Nothing ran: no "all done", and no drain either —
+                    # the lock goes back and that is all.
+                    return
+                # Remembered for the drain, which takes a failed
+                # container's queued group-mates out of the queue. Only
+                # as good as `_group_of`, which today finds no group at
+                # all (see there).
+                self._last_update_group = last_group
 
-            target = next((u for u in updates
-                           if self._pending_key(u) == (host_name, container_name)),
-                          None)
-            if not target:
-                # Two different things, and they used to read the same.
-                # Off the queue it almost always means the update already
-                # happened while this entry waited — saying "not in the
-                # update list" there puts a warning under a green result
-                # for work that succeeded. Typed by hand it really is a
-                # name that is not pending.
-                self.send_message(self.t(
-                    "update_already_done" if from_queue else "container_not_in_list",
-                    name=self._key_label(container_key)))
-                return
-
-            # Enrich source_url so both the inline send_message line and
-            # the Discord/webhook send_update_result carry the link
-            # (parity with the auto-update + bulk-update flows, fixed in
-            # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
-            self._enrich_with_source_url([target])
-            # Say what is running, where the rest of the program can see
-            # it. The batch path has always done this; the single path
-            # never did — so the Web UI showed no "updating" badge for a
-            # container updated from a chat, and a second tap had no way
-            # to know it was already in flight.
-            self.engine.mark_updating(container_key,
-                                      target.get("new_version") or "")
-            # The host here too: this line sits directly above a result
-            # line that names it, and `portainer` alone is ambiguous the
-            # moment two machines run one.
-            self.send_message(self.t("update_single_starting",
-                                     name=self._key_label(container_key)))
-
-            try:
-                compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
-                success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
-                # Remembered for the drain: a failure takes its group-mates
-                # out of the queue, an success does not.
-                self._last_update_group = (
-                    None if success else self._group_of(container_key))
-                status = "✅" if success else "❌"
-                self.send_message(f"{status} {self._display_name(target)}: {msg}")
-                if self.notifier:
-                    self.notifier.send_update_result(container_name, target["image"], success, msg,
-                                                     source_url=target.get("source_url", ""))
-            except Exception as e:
-                self._last_update_group = self._group_of(container_key)
-                self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
-                if self.notifier:
-                    self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
-                                                     source_url=target.get("source_url", ""))
-
-            # Remove from pending list (atomic write — v1.22.1). Matched on
-            # (host, name): another host's same-named entry must survive.
-            remaining = [u for u in updates
-                         if self._pending_key(u) != (host_name, container_name)]
-            _pending.write(self.config.pending_file, remaining)
-
-            if not remaining:
+            if all_done:
                 self.send_message(self.t("update_all_done"))
         finally:
-            self.engine.clear_updating(container_key)
             # One releaser per claim: a drained entry's claim is the
             # drain's to give back.
             if not held_by_caller:
@@ -1952,6 +1908,37 @@ class TelegramBot:
             self._drain_update_queue(
                 base_checker,
                 last_group=getattr(self, "_last_update_group", None))
+
+    def _single_update_skipped(self, container_key, why, from_queue):
+        """The sentence for a single update the engine found nothing to
+        run for: `why` is `run_keys`'s `msg` for a key that did not run."""
+        if why == "no_pending_updates":
+            # No file, or one nothing can read: it used to raise inside
+            # the thread, and the chat heard nothing after the toast.
+            return self.t("no_pending_updates")
+        # Two different things, and they used to read the same. Off the
+        # queue it almost always means the update already happened while
+        # this entry waited — saying "not in the update list" there puts
+        # a warning under a green result for work that succeeded. Typed
+        # by hand it really is a name that is not pending.
+        return self.t(
+            "update_already_done" if from_queue else "container_not_in_list",
+            name=self._key_label(container_key))
+
+    def _report_single_update(self, container_key, target, success, msg):
+        """One finished single update: the result line here, and the card
+        for the other channels.
+
+        Enriched with `source_url` before this is called, so both carry
+        the link (parity with the auto-update + bulk-update flows, fixed
+        in v1.19.2/v1.19.3 after @NotRetarded surfaced the gap)."""
+        from container_store import split_host_key
+        status = "✅" if success else "❌"
+        self.send_message(f"{status} {self._display_name(target)}: {msg}")
+        if self.notifier:
+            self.notifier.send_update_result(
+                split_host_key(container_key)[1], target.get("image", "?"),
+                success, msg, source_url=target.get("source_url", ""))
 
     def _sweep_update_queue(self, checker):
         """Once per poll cycle: hand the engine's sweep this bot's drain.
@@ -2026,7 +2013,15 @@ class TelegramBot:
         return name if host == LOCAL_HOST else f"{name} @{host}"
 
     def _group_of(self, container_key):
-        """The group name a queued container belongs to, or None."""
+        """The group name a queued container belongs to, or None.
+
+        Measured 20.11.2026: None for every container. The store's
+        `get_group_for_container` returns `(gid, group)`, the `.get`
+        below raises on the tuple, and the `except` turns that into
+        None — so the drain has never dropped a failed container's
+        group-mates through Telegram. Pinned as it is in
+        test_single_update_report; fixing it is a behaviour change of
+        its own."""
         try:
             from container_store import split_host_key
             host_name, name = split_host_key(container_key)

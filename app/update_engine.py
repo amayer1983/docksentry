@@ -668,6 +668,110 @@ class UpdateEngine:
         except Exception as e:                              # pragma: no cover
             print(f"Queue sweep failed: {e}")
 
+    def run_keys(self, keys, *, checker_for, group_of=None, enrich=None,
+                 starting=None, report=None, pending_file=None):
+        """Update the containers behind `keys`, one after the other.
+
+        The body of what used to be Telegram's single update, without the
+        words: look each key up in the pending file, say it is in flight,
+        run `update_container` on `checker_for(key)`, take the entry out
+        of the file, and stop saying it is in flight. The caller holds
+        the update lock for the whole call; this neither claims nor
+        releases it.
+
+        Returns `(results, all_done)`. One result per key, in order:
+        `(key, target, success, msg, last_group)`. `target` is the
+        pending entry that ran, or None when nothing ran — then `msg` is
+        `"no_pending_updates"` (no usable file at all) or `"not_pending"`
+        (the file has no entry for this key) and `success` is None. A
+        raising `update_container` is a failure with its error as `msg`,
+        clipped to 200 characters as the chat always showed it.
+        `last_group` is `group_of(key)` after a failure and None after a
+        success — the group a failure takes out of the queue. `all_done`
+        is True when an entry was taken out and the file is empty after.
+
+        The hooks are the caller's, so the words and the stand-ins the
+        tests put on a bot stay where they were:
+
+        * `enrich([target])` resolves the release link before anything
+          is said about it (the result line and the other channels'
+          card both carry it);
+        * `starting(key, target)` is called right before the update
+          runs. It is a hook rather than part of the result because the
+          "Updating …" line has to go out while the update runs, not
+          after it;
+        * `report(key, target, success, msg)` is called as soon as the
+          update is back, before the entry leaves the file: a file that
+          cannot be rewritten (a full disk) must not swallow the report
+          of an update that ran;
+        * `pending_file` is the file to read and rewrite; this engine's
+          own config names it when None.
+        """
+        import pending as _pending
+        from container_store import split_host_key
+        if enrich is None:
+            enrich = self._enrich_with_source_url
+        if group_of is None:
+            def group_of(key):
+                return None
+        if pending_file is None:
+            pending_file = self.config.pending_file
+        results = []
+        written = False
+        updates = _pending.load(pending_file)
+        for key in keys:
+            try:
+                if updates is None:
+                    # No file, or one nothing can read (cut off mid-write,
+                    # edited by hand): nothing is pending that this could
+                    # act on. A file holding `[]` is a different answer —
+                    # the last single update leaves exactly that — and
+                    # goes on to "not pending".
+                    results.append((key, None, None, "no_pending_updates",
+                                    None))
+                    continue
+                host_name, name = split_host_key(key)
+                target = next((u for u in updates
+                               if _pending.key_of(u) == (host_name, name)),
+                              None)
+                if not target:
+                    results.append((key, None, None, "not_pending", None))
+                    continue
+                enrich([target])
+                # Say what is running, where the rest of the program can
+                # see it: the Web UI's "updating" badge, and a second tap
+                # that has to know this one is already in flight.
+                self.mark_updating(key, target.get("new_version") or "")
+                if starting is not None:
+                    starting(key, target)
+                try:
+                    compose_kwargs = {k: target[k] for k in target
+                                      if k.startswith("compose_")}
+                    success, msg = checker_for(key).update_container(
+                        target["name"], target["image"], **compose_kwargs)
+                    last_group = None if success else group_of(key)
+                    if report is not None:
+                        report(key, target, success, msg)
+                except Exception as e:
+                    # The update, or the report of it: either way the
+                    # container is told as failed, once more if the first
+                    # report was what broke — as the single update always
+                    # did.
+                    success, msg = False, str(e)[:200]
+                    last_group = group_of(key)
+                    if report is not None:
+                        report(key, target, False, msg)
+                # Matched on (host, name): another host's same-named
+                # entry must survive.
+                updates = [u for u in updates
+                           if _pending.key_of(u) != (host_name, name)]
+                _pending.write(pending_file, updates)
+                written = True
+                results.append((key, target, success, msg, last_group))
+            finally:
+                self.clear_updating(key)
+        return results, (written and not updates)
+
     def cleanup_guarded(self, checker, *, after=None):
         """Image cleanup under the update lock (#2 follow-up, @famewolf).
 

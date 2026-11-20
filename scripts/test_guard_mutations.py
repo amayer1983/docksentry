@@ -1335,17 +1335,94 @@ GUARDED = [
      'QUEUE_FEEDERS = ("enqueue_update",)\n',
      "test_update_lock_sites.py"),
 
+    # The single update's body is the engine's run_keys since Q11a;
+    # Telegram keeps the sentences.
     ("…which needs the single-update path to say what it is doing",
-     "app/telegram_bot.py",
-     "            self.engine.mark_updating(container_key,\n                                      target.get(\"new_version\") or \"\")",
-     "            pass  # MUTATION: nothing says what is running",
+     "app/update_engine.py",
+     "                self.mark_updating(key, target.get(\"new_version\") or \"\")\n",
+     "                pass  # MUTATION: nothing says what is running\n",
      "test_update_queue_duplicate.py"),
 
     ("…and finished work is not called a mistake",
      "app/telegram_bot.py",
-     '                    "update_already_done" if from_queue else "container_not_in_list",',
-     '                    "container_not_in_list",',
+     '            "update_already_done" if from_queue else "container_not_in_list",',
+     '            "container_not_in_list",',
      "test_update_queue_duplicate.py"),
+
+    # Q11a: run_keys runs the single update; Telegram says how it went.
+    # Each of these goes red in test_single_update_report, which drives
+    # the real tap and drain with a recording notifier and Broadcast.
+    ("a single update is reported to the other channels",
+     "app/telegram_bot.py",
+     "        if self.notifier:\n            self.notifier.send_update_result(\n                split_host_key(container_key)[1],",
+     "        if False:\n            self.notifier.send_update_result(\n                split_host_key(container_key)[1],",
+     "test_single_update_report.py"),
+
+    ("…and said on Telegram",
+     "app/telegram_bot.py",
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n',
+     "        pass  # MUTATION: no result line\n",
+     "test_single_update_report.py"),
+
+    ("…each of them once, not twice",
+     "app/update_engine.py",
+     "                    if report is not None:\n                        report(key, target, success, msg)\n",
+     "                    if report is not None:\n                        report(key, target, success, msg)\n                        report(key, target, success, msg)\n",
+     "test_single_update_report.py"),
+
+    ("…an update that raises is reported, as a failure",
+     "app/update_engine.py",
+     "                    if report is not None:\n                        report(key, target, False, msg)\n",
+     "                    pass  # MUTATION: a crash goes unreported\n",
+     "test_single_update_report.py"),
+
+    ("…and the report does not wait for the pending file to be rewritten",
+     "app/update_engine.py",
+     "                    last_group = None if success else group_of(key)\n                    if report is not None:\n                        report(key, target, success, msg)\n",
+     "                    last_group = None if success else group_of(key)\n                    _pending.write(pending_file, [u for u in updates if _pending.key_of(u) != (host_name, name)])\n                    if report is not None:\n                        report(key, target, success, msg)\n",
+     "test_single_update_report.py"),
+
+    ("'Updating …' is said before the single update runs, not after it",
+     "app/update_engine.py",
+     "                if starting is not None:\n                    starting(key, target)\n                try:\n                    compose_kwargs = {k: target[k] for k in target\n                                      if k.startswith(\"compose_\")}\n                    success, msg = checker_for(key).update_container(\n                        target[\"name\"], target[\"image\"], **compose_kwargs)\n",
+     "                try:\n                    compose_kwargs = {k: target[k] for k in target\n                                      if k.startswith(\"compose_\")}\n                    success, msg = checker_for(key).update_container(\n                        target[\"name\"], target[\"image\"], **compose_kwargs)\n                    if starting is not None:\n                        starting(key, target)\n",
+     "test_single_update_report.py"),
+
+    ("a failed single update names the group it takes out of the queue",
+     "app/update_engine.py",
+     "                    last_group = None if success else group_of(key)\n",
+     "                    last_group = None\n",
+     "test_single_update_report.py"),
+
+    ("the single update stops saying a container is in flight once done",
+     "app/update_engine.py",
+     "            finally:\n                self.clear_updating(key)\n",
+     "            finally:\n                pass\n",
+     "test_update_queue_duplicate.py"),
+
+    ("'all done' after the single update that took the last entry",
+     "app/update_engine.py",
+     "        return results, (written and not updates)\n",
+     "        return results, False\n",
+     "test_single_update_report.py"),
+
+    ("…and not while another entry is still pending",
+     "app/update_engine.py",
+     "        return results, (written and not updates)\n",
+     "        return results, written\n",
+     "test_single_update_report.py"),
+
+    ("Telegram hands the engine the tapped key's own checker",
+     "app/telegram_bot.py",
+     "                checker_for=lambda key: checker,\n",
+     "                checker_for=lambda key: base_checker,\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and its own link lookup, so the result line carries the link",
+     "app/telegram_bot.py",
+     "                enrich=self._enrich_with_source_url,\n",
+     "                enrich=lambda updates: None,\n",
+     "test_telegram_callback_matrix.py"),
 
     ("a server that answers after the body is believed over a guess",
      "app/notifiers/smtp.py",
@@ -4031,22 +4108,24 @@ GUARDED = [
     # through app/pending.py. An unreadable file is answered as nothing
     # pending instead of raising (T2 q6_checks, T3 q6_checks), and the
     # moved writes keep what they wrote before (T3 rows).
+    # The single update reads and rewrites through the engine's
+    # run_keys since Q11a.
     ('a single update answers an unreadable pending file instead of raising',
-     'app/telegram_bot.py',
-     '            updates = _pending.load(self.config.pending_file)\n            if updates is None:\n',
-     '            updates = (json.load(open(self.config.pending_file, encoding="utf-8"))\n                       if os.path.exists(self.config.pending_file) else None)\n            if updates is None:\n',
+     'app/update_engine.py',
+     '        updates = _pending.load(pending_file)\n',
+     '        updates = (__import__("json").load(open(pending_file, encoding="utf-8"))\n                   if __import__("os").path.exists(pending_file) else None)\n',
      'test_telegram_callback_matrix.py'),
 
     ('…and tells it from a file that holds [], which is "not in the list"',
-     'app/telegram_bot.py',
-     '            updates = _pending.load(self.config.pending_file)\n            if updates is None:\n',
-     '            updates = _pending.load(self.config.pending_file)\n            if not updates:\n',
+     'app/update_engine.py',
+     '                if updates is None:\n',
+     '                if not updates:\n',
      'test_telegram_callback_matrix.py'),
 
     ('a single update that takes the last entry leaves [], not no file',
-     'app/telegram_bot.py',
-     '            _pending.write(self.config.pending_file, remaining)\n',
-     '            _pending.remove(self.config.pending_file,\n                            [(host_name, container_name)],\n                            delete_when_empty=True)\n',
+     'app/update_engine.py',
+     '                _pending.write(pending_file, updates)\n',
+     '                _pending.remove(pending_file,\n                                [(host_name, name)],\n                                delete_when_empty=True)\n',
      'test_telegram_callback_matrix.py'),
 
     ('the bare "Update all" answers an unreadable pending file instead of raising',

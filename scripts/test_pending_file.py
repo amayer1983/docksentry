@@ -273,6 +273,7 @@ if clear is not None:
 import telegram_bot                                 # noqa: E402
 import discord_bot                                  # noqa: E402
 import web_ui                                       # noqa: E402
+import update_engine                                # noqa: E402
 
 cfg = types.SimpleNamespace(pending_file=path, language="en")
 tg = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
@@ -440,8 +441,9 @@ SOURCES = [
     # Q6: Telegram's update flows.
     ("Telegram run_updates", telegram_bot.TelegramBot, "run_updates",
      "_pending.read("),
-    ("Telegram _run_single_update", telegram_bot.TelegramBot,
-     "_run_single_update", "_pending.load("),
+    # Q11a: the single update's read moved into the engine's run_keys.
+    ("Engine run_keys", update_engine.UpdateEngine, "run_keys",
+     "_pending.load("),
 ]
 for who, owner, name, door in SOURCES:
     src = srcslice.method_source(owner, name, label=who)
@@ -462,9 +464,8 @@ checks["…and does not open or parse the file itself (Web _get_pending)"] = (
 # single update and the auto-update batch rewrite through `write`, the
 # whole-file deletes go through `clear`.
 _tg_src = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
-_single = srcslice.method_source(telegram_bot.TelegramBot,
-                                 "_run_single_update",
-                                 label="Telegram _run_single_update")
+_single = srcslice.method_source(update_engine.UpdateEngine, "run_keys",
+                                 label="Engine run_keys")
 _auto = srcslice.method_source(telegram_bot.TelegramBot, "handle_autoupdates",
                                label="Telegram handle_autoupdates")
 _run = srcslice.method_source(telegram_bot.TelegramBot, "run_updates",
@@ -480,11 +481,18 @@ TG_SECTIONS = [
                       '        elif data.startswith("update_one:"):',
                       label="Telegram update_skip"),
      ("pending_store.read(", "pending_store.write(", "pending_store.clear(")),
-    ("Telegram _run_single_update's rewrite", _single, ("_pending.write(",)),
+    ("Engine run_keys' rewrite", _single, ("_pending.write(",)),
     ("Telegram run_updates' delete", _run, ("_pending.clear(",)),
     ("Telegram auto-update rewrite", _auto, ("_pending.read(",
                                             "_pending.write(")),
 ]
+# …and Telegram's single update no longer touches the file at all.
+_tg_single = srcslice.method_source(telegram_bot.TelegramBot,
+                                    "_run_single_update",
+                                    label="Telegram _run_single_update")
+checks["Telegram _run_single_update leaves the file to the engine"] = (
+    _tg_single is not None and "engine.run_keys(" in _tg_single
+    and "_pending." not in _tg_single and "open(" not in _tg_single)
 for who, src, doors in TG_SECTIONS:
     checks[f"{who} goes through pending"] = (
         src is not None and all(d in src for d in doors))
