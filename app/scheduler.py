@@ -531,10 +531,12 @@ class Scheduler:
     def _after_tick(self):
         """The end of a pass of `_run`, right before its sleep.
 
-        Work that must not depend on a front end hangs off here. One pass
-        skips it: the cron minute in maintenance mode sleeps and goes
-        round early, so the next pass, 30 s later, is the one that runs
-        this.
+        Work that must not depend on a front end hangs off here, and it
+        inherits two ways out of a pass that skip this. The cron minute
+        in maintenance mode sleeps and goes round early, so the next
+        pass, 30 s later, is the one that runs this. An applied
+        self-update returns from `_run` on the spot, without it. Both
+        are pinned in scripts/test_scheduler_after_tick.py.
         """
         # Anything a dead network swallowed is still waiting. This loop
         # is the only thing that runs on its own no matter what else is

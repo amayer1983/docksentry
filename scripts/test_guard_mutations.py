@@ -4863,6 +4863,28 @@ GUARDED = [
      "            print(f\"Notify retry error: {e}\")\n",
      "test_scheduler_after_tick.py"),
 
+    ("the cron minute in maintenance mode skips _after_tick",
+     "app/scheduler.py",
+     "                    print(f\"Scheduled check at {current_minute} "
+     "skipped — maintenance mode active\")\n"
+     "                    time.sleep(30)\n",
+     "                    print(f\"Scheduled check at {current_minute} "
+     "skipped — maintenance mode active\")\n"
+     "                    self._after_tick()  # MUTATION\n"
+     "                    time.sleep(30)\n",
+     "test_scheduler_after_tick.py"),
+
+    ("an applied self-update leaves the loop without _after_tick",
+     "app/scheduler.py",
+     "                            print(\"Self-update applied, exiting tick "
+     "— check will resume after restart\")\n"
+     "                            return\n",
+     "                            print(\"Self-update applied, exiting tick "
+     "— check will resume after restart\")\n"
+     "                            self._after_tick()  # MUTATION\n"
+     "                            return\n",
+     "test_scheduler_after_tick.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

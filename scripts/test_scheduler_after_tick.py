@@ -19,6 +19,10 @@ Driven here:
 - the real `_run`, with the clock and the sleep stood in for: every pass
   goes through `_after_tick`, and the flush happens before that pass's
   sleep, not after it;
+- the two ways out of a pass that skip `_after_tick`, pinned as
+  measured: the cron minute in maintenance mode (sleeps and goes round
+  early) and an applied self-update (returns from `_run`), each next to
+  the same pass without that reason, which does reach it;
 - read as a tree: the loop's last two statements are `self._after_tick()`
   and `time.sleep(30)`, and the flush sits in `_after_tick` alone.
 
@@ -31,6 +35,7 @@ import os
 import sys
 import tempfile
 import types
+from datetime import datetime, timedelta
 
 import srcslice
 
@@ -58,6 +63,8 @@ def _config(tmp):
         disk_check_interval_seconds=300,
         monitor_interval_seconds=60,
         maintenance_file=os.path.join(tmp, "maintenance.json"),
+        auto_selfupdate=False,
+        auto_cleanup=False,
         language="en")
 
 
@@ -136,11 +143,26 @@ check("…and it says so in the log",
 
 
 # ── through the real loop ────────────────────────────────────────────
-def run_loop(passes, spy_tick=False, flush=_flush_rec):
+_BASE = datetime(2026, 11, 20, 12, 0, 0)
+
+
+def run_loop(passes, spy_tick=False, flush=_flush_rec, cfg=None,
+             checker=None, bot=None, log=None):
     """Run `_run` for `passes` passes of its 30 s sleep and return what
-    happened, in order: "tick" (when spied), "flush", "sleep"."""
+    happened, in order: "tick" (when spied), "flush", "sleep".
+
+    The wall clock is stood in too: the first pass is 12:00:00 and every
+    sleep moves it on, so a cron minute lands where the caller puts it."""
     clk = {"t": 1000.0, "n": 0}
-    s = scheduler.Scheduler(_config(_tmp), object(), object())
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _BASE + timedelta(seconds=clk["t"] - 1000.0)
+
+    s = scheduler.Scheduler(cfg or _config(_tmp),
+                            object() if checker is None else checker,
+                            object() if bot is None else bot)
     s._check_disk_space = lambda: None
     if spy_tick:
         real = srcslice.attr(s, "_after_tick", label="Scheduler._after_tick")
@@ -159,7 +181,8 @@ def run_loop(passes, spy_tick=False, flush=_flush_rec):
             s.running = False
 
     saved = (scheduler.time, weekly_report.maybe_send_weekly_report,
-             notify_retry.flush)
+             notify_retry.flush, scheduler.datetime)
+    scheduler.datetime = _Clock
     scheduler.time = types.SimpleNamespace(
         monotonic=lambda: clk["t"], sleep=fake_sleep, time=lambda: clk["t"])
     weekly_report.maybe_send_weekly_report = lambda *a, **k: False
@@ -167,13 +190,14 @@ def run_loop(passes, spy_tick=False, flush=_flush_rec):
     s.running = True
     crashed = None
     try:
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(log if log is not None
+                                        else io.StringIO()):
             s._run()
     except Exception as e:
         crashed = e
     finally:
         (scheduler.time, weekly_report.maybe_send_weekly_report,
-         notify_retry.flush) = saved
+         notify_retry.flush, scheduler.datetime) = saved
     return crashed
 
 
@@ -193,6 +217,70 @@ events.clear()
 crashed = run_loop(3, flush=_flush_boom)
 check("a flush that keeps raising does not stop the loop",
       crashed is None and events == ["flush", "sleep 30"] * 3,
+      f"crashed {crashed!r}, events {events}")
+
+# ── the two ways out of a pass that skip _after_tick ─────────────────
+# Measured on the old inline flush and on _after_tick alike; pinned here
+# so that work hung off _after_tick (the queue sweep, Q13) does not
+# inherit either skip without anybody saying so. A cron of every minute
+# makes the first pass (12:00:00) and the third (12:01:00) cron minutes;
+# the second (12:00:30) is the same minute again and runs no check.
+class _Checker:
+    def check_all(self):
+        events.append("check")
+        return []
+
+
+class _Bot:
+    def __init__(self, applied):
+        self.applied = applied
+
+    def check_selfupdate_auto(self, defer_check=False):
+        events.append("selfupdate")
+        return self.applied
+
+
+_mtmp = tempfile.mkdtemp()
+_mcfg = _config(_mtmp)
+_mcfg.cron_schedule = "* * * * *"
+with open(_mcfg.maintenance_file, "w", encoding="utf-8") as f:
+    f.write('{"until": "forever"}')
+events.clear()
+_mlog = io.StringIO()
+crashed = run_loop(3, cfg=_mcfg, checker=_Checker(), log=_mlog)
+check("a cron minute in maintenance mode sleeps without _after_tick",
+      crashed is None
+      and events == ["sleep 30", "flush", "sleep 30", "sleep 30"],
+      f"crashed {crashed!r}, events {events}")
+check("…and says it skipped, once per cron minute",
+      _mlog.getvalue().count("skipped — maintenance mode active") == 2,
+      f"log {_mlog.getvalue()!r}")
+
+_ncfg = _config(tempfile.mkdtemp())
+_ncfg.cron_schedule = "* * * * *"
+events.clear()
+crashed = run_loop(3, cfg=_ncfg, checker=_Checker())
+check("…while the same cron minutes out of maintenance check and then "
+      "reach _after_tick",
+      crashed is None and events == ["check", "flush", "sleep 30",
+                                     "flush", "sleep 30",
+                                     "check", "flush", "sleep 30"],
+      f"crashed {crashed!r}, events {events}")
+
+_scfg = _config(tempfile.mkdtemp())
+_scfg.cron_schedule = "* * * * *"
+_scfg.auto_selfupdate = True
+events.clear()
+crashed = run_loop(3, cfg=_scfg, checker=_Checker(), bot=_Bot(True))
+check("an applied self-update leaves the loop without _after_tick",
+      crashed is None and events == ["selfupdate"],
+      f"crashed {crashed!r}, events {events}")
+
+events.clear()
+crashed = run_loop(1, cfg=_scfg, checker=_Checker(), bot=_Bot(False))
+check("…while one that is not applied checks and reaches _after_tick",
+      crashed is None
+      and events == ["selfupdate", "check", "flush", "sleep 30"],
       f"crashed {crashed!r}, events {events}")
 
 # ── read as a tree ───────────────────────────────────────────────────
