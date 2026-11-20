@@ -1262,6 +1262,12 @@ GUARDED = [
      "        running = {}\n",
      "test_update_queue.py"),
 
+    ("…and a batch that does not fit is answered as a whole",
+     "app/update_engine.py",
+     "        if -1 in positions.values():\n",
+     "        if False:\n",
+     "test_update_queue.py"),
+
     ("'already queued' hands over raw seconds, not a rendered time",
      "app/update_engine.py",
      '                "since_seconds": waited if waited is not None else 0}\n',

@@ -467,14 +467,22 @@ class UpdateEngine:
         `(key, i18n key, params)` per distinct key in the order asked,
         with the same keys as `claim_or_queue`. The new keys go on the
         queue all together or not at all (`enqueue_updates`); when they
-        do not fit, each of them is answered `update_queue_full`, and a
-        key that was already queued or is running is still told so.
+        do not fit, the request is answered as a whole: every key of it
+        gets `update_queue_full`, the running one and one already
+        waiting too (that one keeps its place on the queue). With
+        nothing new to place, each key is answered for itself.
         """
         if self.claim_update():
             return True, []
         keys = list(dict.fromkeys(keys))
         running = self.updating
         positions = self.enqueue_updates([k for k in keys if k not in running])
+        # My decision for batches (18.11.2026): a batch that does not
+        # fit is answered as a whole with "queue full". Telling one key
+        # of it "already queued" next to "queue full" for the rest reads
+        # as if part of the request had gone through.
+        if -1 in positions.values():
+            return False, [(k,) + self._queue_answer(k, -1) for k in keys]
         return False, [(k,) + self._queue_answer(
             k, None if k in running else positions[k]) for k in keys]
 

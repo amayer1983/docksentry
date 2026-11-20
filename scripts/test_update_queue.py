@@ -296,12 +296,41 @@ got = _coqm(e, ["c0", "x", "y", "z"])
 _out = got[1] if isinstance(got, tuple) and len(got) == 2 else None
 checks["full mid-batch: nothing of it goes on the queue"] = (
     e._update_queue == [f"c{i}" for i in range(MAX - 2)])
-checks["…every key that needed a place is told the queue is full"] = (
+# And it is answered as a whole: "queue full" for every key of it, the
+# one that was already waiting too (same decision). That one keeps its
+# place; the answer is about the request, and the request did not fit.
+checks["…the whole batch is told the queue is full, in order"] = (
     _out is not None
-    and [(k, key, p) for k, key, p in _out][1:]
-    == [(k, "update_queue_full", {"max": MAX}) for k in ("x", "y", "z")])
-checks["…and the one already there is still told it is there"] = (
-    _out is not None and _out[0][:2] == ("c0", "update_already_queued"))
+    and [(k, key, p) for k, key, p in _out]
+    == [(k, "update_queue_full", {"max": MAX})
+        for k in ("c0", "x", "y", "z")])
+checks["…and the one already waiting keeps its place"] = (
+    e._update_queue[0] == "c0" and "c0" in e._queued_at)
+
+e = engine()
+e._updating = {"run": ""}
+for i in range(MAX - 1):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+got = _coqm(e, ["run", "x", "y"])
+_out = got[1] if isinstance(got, tuple) and len(got) == 2 else None
+checks["full, with the running one in it: the batch as a whole is full"] = (
+    _out is not None
+    and [(k, key) for k, key, _p in _out]
+    == [(k, "update_queue_full") for k in ("run", "x", "y")]
+    and len(e._update_queue) == MAX - 1)
+
+e = engine()
+e._updating = {"run": ""}
+for i in range(MAX):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+got = _coqm(e, ["run", "c3"])
+_out = got[1] if isinstance(got, tuple) and len(got) == 2 else None
+checks["a full queue, but nothing new asked for: each key answered itself"] = (
+    _out is not None
+    and [(k, key) for k, key, _p in _out]
+    == [("run", "update_same_running"), ("c3", "update_already_queued")])
 
 e = engine()
 e._updating = {}
