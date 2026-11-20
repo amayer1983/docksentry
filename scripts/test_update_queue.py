@@ -411,7 +411,8 @@ for k in ("a", "b", "c"):
 qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
                                    for n in ("a", "b", "c")])
 drains = []
-_real_dq = eng.drain_queue
+# getattr, so an engine without `drain_queue` goes red here, not crashes.
+_real_dq = getattr(eng, "drain_queue", None)
 
 
 def _count(run_one, **kw):
@@ -419,11 +420,12 @@ def _count(run_one, **kw):
     return _real_dq(run_one, **kw)
 
 
-eng.drain_queue = _count
+if _real_dq is not None:
+    eng.drain_queue = _count
 qb._drain_update_queue(_OkChecker())
 os.unlink(path)
 checks["…and a queued run does not drain the queue again from inside"] = (
-    len(drains) == 1 and eng._update_queue == []
+    _real_dq is not None and len(drains) == 1 and eng._update_queue == []
     and [m for m in said if m.endswith(": ok")] == [
         "✅ a: ok", "✅ b: ok", "✅ c: ok"])
 
