@@ -4096,6 +4096,23 @@ GUARDED = [
      '                _pending.write(self.config.pending_file, remaining)\n',
      'test_host_state_wiring.py'),
 
+    # Q7b: the drain after a single update gets the checker the tap was
+    # called with, so a queued local key no longer runs on the tapped
+    # remote host's checker (T3 "queue drain after a remote tap"); the
+    # reverse row ("…after a local tap") holds that a queued remote key
+    # still runs on its own host's.
+    ('a drained entry runs on its own host\'s checker, not the tapped one\'s',
+     'app/telegram_bot.py',
+     '                base_checker,\n',
+     '                checker,\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and a tapped or queued remote key runs on its own host\'s checker',
+     'app/telegram_bot.py',
+     '        base_checker = checker\n        checker = self._checker_for(host, checker)\n',
+     '        base_checker = checker\n',
+     'test_telegram_callback_matrix.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

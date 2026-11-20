@@ -153,6 +153,9 @@ SCENARIOS = [
     ("queue drain after a remote tap",
      [("add_pending", "db", "postgres:16", "local"), ("lock",),
       ("tap", "update_one:db"), ("unlock",), ("tap", "update_one:nas/web")]),
+    ("queue drain after a local tap",
+     [("add_pending", "db", "postgres:16", "local"), ("lock",),
+      ("tap", "update_one:nas/web"), ("unlock",), ("tap", "update_one:db")]),
     ("queue twice while locked",
      [("add_pending", "db", "postgres:16", "local"), ("lock",),
       ("tap", "update_one:db"), ("tap", "update_one:db"), ("unlock",)]),
@@ -185,8 +188,6 @@ SCENARIOS = [
 #: Rows that are wrong today and pinned as they are, with the slice
 #: meant to change them. Read off the generated table by hand.
 KNOWN_DEFECTS = {
-    ("multi", "queue drain after a remote tap"):
-        "Q7b: the queued local `db` is updated through nas's checker",
     ("multi", "update_one gone host"):
         "Q11b: a host that left the registry falls back to the local checker",
     # Single does the same: no registry there knows `gone` either, and
@@ -244,9 +245,10 @@ BRANCH_NOTES = {
         "deletes the file.",
     "update_one": ":3479 rebuilds the keyboard without the tapped button "
         "(`noop`), `_run_single_update` on a thread; it reassigns "
-        "`checker` to the tapped key's host (:1798) and hands that one to "
-        "the drain (:1929). `_checker_for` returns the caller's checker "
-        "for the local host, so a queued local key runs on nas's.",
+        "`checker` to the tapped key's host (:1798). Until Q7b it handed "
+        "that one to the drain (:1929), and `_checker_for` returns the "
+        "caller's checker for the local host, so a queued local key ran on "
+        "nas's; now the drain gets the checker the tap was called with.",
     "queue": ":1825 lock busy → enqueue (position, then 'already in the "
         "queue'); the drain runs after the tap that held the lock — but "
         "only when that tap got past its early returns (no pending file, "
@@ -1776,9 +1778,10 @@ EXPECTED = {
     # ── update_one ──────────────────────────────────────────────────
     # :3479 rebuilds the keyboard without the tapped button (`noop`),
     # `_run_single_update` on a thread; it reassigns `checker` to the tapped
-    # key's host (:1798) and hands that one to the drain (:1929).
-    # `_checker_for` returns the caller's checker for the local host, so a
-    # queued local key runs on nas's.
+    # key's host (:1798). Until Q7b it handed that one to the drain (:1929),
+    # and `_checker_for` returns the caller's checker for the local host, so
+    # a queued local key ran on nas's; now the drain gets the checker the
+    # tap was called with.
     ('multi', 'update_one:web'): {'steps': [{'do': 'notify None',
                 'out': ['🔄 *Docker Updates Available*\n'
                         '\n'
@@ -2297,7 +2300,7 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2',
                           'nas': 'inspect --format t=10, inspect --format t=5'},
-                'events': ['update_container@nas:web', 'update_container@nas:db'],
+                'events': ['update_container@nas:web', 'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
                'queue': [],
@@ -2329,6 +2332,70 @@ EXPECTED = {
                 'raised': None}],
      'state': {'pending': ['web@local', 'db@local'],
                'queue': ['db'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'queue drain after a local tap'): {'steps': [{'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:nas/web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `web @nas` queued — position 1. It starts when the current '
+                        'update finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
+                        '⏳ Updating `web @nas`...',
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:db', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'queue drain after a local tap'): {'steps': [{'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:nas/web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `web @nas` queued — position 1. It starts when the current '
+                        'update finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
+                        '✅ `web @nas` was already updated while this one waited. Nothing '
+                        'left to do.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2'},
+                'events': ['update_container@local:db'],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
                'stops': 0,
                'restores': 0,
                'majors': {},

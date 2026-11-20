@@ -1822,6 +1822,12 @@ class TelegramBot:
         from container_store import split_host_key
         host_name, container_name = split_host_key(container_key)
         host = self._host_by_name(host_name)
+        # Kept for the drain below: the queue holds keys from every host,
+        # and `_checker_for` hands a local key whatever checker it is
+        # given. Passing on the one reassigned here sent a queued local
+        # container through nas's checker after a tap on `nas/web` (Q7b,
+        # measured in the callback matrix).
+        base_checker = checker
         checker = self._checker_for(host, checker)
         # Before the lock and the queue: a tap that is refused must not
         # come back later off the queue, and must leave the pending
@@ -1931,7 +1937,8 @@ class TelegramBot:
         # per entry keeps the concurrency guard that v1.23.1 added.
         if not from_queue:
             self._drain_update_queue(
-                checker, last_group=getattr(self, "_last_update_group", None))
+                base_checker,
+                last_group=getattr(self, "_last_update_group", None))
 
     def _sweep_update_queue(self, checker):
         """Pick up queued work that nobody is going to drain.
