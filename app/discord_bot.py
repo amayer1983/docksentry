@@ -2542,54 +2542,24 @@ class DiscordBot:
     # updating one must not make the other's entry disappear.
 
     def _pending(self):
-        import json
-        import os
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return []
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return []
-        if not isinstance(data, list):
-            return []
-        return [u for u in data if isinstance(u, dict) and u.get("name")]
+        """Every host's pending entries that carry a name — the only
+        ones a Discord command can act on."""
+        import pending as _pending
+        return _pending.read(getattr(self.config, "pending_file", ""),
+                             named_only=True)
 
     def _drop_pending(self, keys):
         """Remove the given `(host, name)` pairs from the pending file
         (atomic write; the file is deleted when nothing is left, which is
         what every other reader treats as "nothing pending")."""
-        import json
-        import os
-        from container_store import atomic_write_json, entry_host
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return
-        if not isinstance(data, list):
-            return
-        wanted = {tuple(k) for k in keys}
-        remaining = [u for u in data
-                     if not isinstance(u, dict)
-                     or (entry_host(u), u.get("name")) not in wanted]
-        if remaining:
-            atomic_write_json(path, remaining)
-        else:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        import pending as _pending
+        _pending.remove(getattr(self.config, "pending_file", ""), keys,
+                        delete_when_empty=True)
 
     def _pending_for(self, host):
-        from container_store import entry_host
+        import pending as _pending
         from update_engine import host_name_of
-        name = host_name_of(host)
-        return [u for u in self._pending() if entry_host(u) == name]
+        return _pending.entries_for(self._pending(), [host_name_of(host)])
 
     # ── /update ───────────────────────────────────────────────────
     def _cmd_update(self, opts):

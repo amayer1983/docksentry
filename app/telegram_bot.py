@@ -172,21 +172,17 @@ def pending_key(entry):
 
     The pending file is a single flat list holding EVERY managed host's
     entries, so this pair, not the name alone, is what removals have to
-    match on: two boxes may each run an `nginx`."""
-    return pending_host(entry), entry.get("name")
+    match on: two boxes may each run an `nginx`. The rule is
+    `pending.key_of`; this name stays for the call sites."""
+    import pending as _pending
+    return _pending.key_of(entry)
 
 
 def read_pending(path):
     """`pending_updates.json` as a list. Empty when missing or corrupt —
-    same tolerance every other reader of this file applies."""
-    if not path or not os.path.exists(path):
-        return []
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return []
-    return data if isinstance(data, list) else []
+    the tolerance lives in `pending.read`, shared by every caller."""
+    import pending as _pending
+    return _pending.read(path)
 
 
 class TelegramBot:
@@ -3059,27 +3055,12 @@ class TelegramBot:
         if the file is missing or unreadable.
 
         `keys` are `(host, name)` pairs; a bare string is accepted and read
-        as the local host, so older/simple callers keep working."""
-        from container_store import LOCAL_HOST
-        pending_file = self.config.pending_file
-        if not os.path.exists(pending_file):
-            return
-        try:
-            with open(pending_file, encoding="utf-8") as f:
-                pending = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return
-        wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)
-                  for k in keys}
-        remaining = [u for u in pending if self._pending_key(u) not in wanted]
-        from container_store import atomic_write_json
-        if remaining:
-            atomic_write_json(pending_file, remaining)
-        else:
-            try:
-                os.remove(pending_file)
-            except OSError:
-                pass
+        as the local host, so older/simple callers keep working. The file
+        is deleted when nothing is left (the Web update worker removes
+        through here too)."""
+        import pending as _pending
+        _pending.remove(self.config.pending_file, keys,
+                        delete_when_empty=True)
 
     # Long-polling timing for getUpdates. Telegram holds the request open
     # for LONG_POLL_TIMEOUT seconds; the HTTP socket gets a generous extra

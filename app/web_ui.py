@@ -1395,19 +1395,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             from the remote entry's image. Filtering here fixes the badge,
             the detail-page button and the update action in one place.
             """
-            from container_store import LOCAL_HOST, entry_host
-            if not os.path.exists(config.pending_file):
-                return []
-            try:
-                with open(config.pending_file, encoding="utf-8") as f:
-                    data = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return []
-            if not isinstance(data, list):
-                return []
-            wanted = host or LOCAL_HOST
-            return [u for u in data
-                    if isinstance(u, dict) and entry_host(u) == wanted]
+            import pending as _pending
+            from container_store import LOCAL_HOST
+            return _pending.entries_for(_pending.read(config.pending_file),
+                                        [host or LOCAL_HOST])
 
         def _render_page(self, content, active="status", wide=None):
             # Only for a session. Basic Auth has no logout — the browser

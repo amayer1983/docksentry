@@ -3805,6 +3805,106 @@ GUARDED = [
      '                            c == DOOR_GUARDED):\n',
      'test_update_lock_sites.py'),
 
+    # Q5: one reader and one writer for pending_updates.json. Each line
+    # that decides what a caller gets out of the file, or what a removal
+    # leaves in it, is broken here; test_pending_file drives the core and
+    # every caller on missing, corrupt, wrongly-shaped and valid files.
+    ('a corrupt pending file reads as nothing pending, not a crash',
+     'app/pending.py',
+     '    except (OSError, ValueError):\n        return None\n',
+     '    except OSError:\n        return None\n',
+     'test_pending_file.py'),
+
+    ('…and so does a pending file that is not a list',
+     'app/pending.py',
+     '    return data if isinstance(data, list) else None\n',
+     '    return data\n',
+     'test_pending_file.py'),
+
+    ('named_only keeps only the pending entries that carry a name',
+     'app/pending.py',
+     '    if named_only:\n        return [e for e in data if isinstance(e, dict) and e.get("name")]\n',
+     '    if named_only:\n        return data\n',
+     'test_pending_file.py'),
+
+    ("entries_for hands out only the asked hosts' pending entries",
+     'app/pending.py',
+     '            if isinstance(e, dict) and entry_host(e) in names]\n',
+     '            if isinstance(e, dict)]\n',
+     'test_pending_file.py'),
+
+    ('a pending entry is identified by (host, name), not the name',
+     'app/pending.py',
+     '    return entry_host(entry), entry.get("name")\n',
+     '    return LOCAL_HOST, entry.get("name")\n',
+     'test_pending_file.py'),
+
+    ('a bare name in a pending removal means the local host',
+     'app/pending.py',
+     '    wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)\n              for k in keys}\n',
+     '    wanted = {tuple(k)\n              for k in keys}\n',
+     'test_pending_file.py'),
+
+    ('a pending removal keeps entries that are not dicts',
+     'app/pending.py',
+     '                 if not isinstance(e, dict) or key_of(e) not in wanted]\n',
+     '                 if isinstance(e, dict) and key_of(e) not in wanted]\n',
+     'test_pending_file.py'),
+
+    ('a pending removal leaves a file it cannot read alone',
+     'app/pending.py',
+     '    data = _load(path)\n    if data is None:\n        return None\n    wanted',
+     '    data = _load(path)\n    if data is None:\n        data = []\n    wanted',
+     'test_pending_file.py'),
+
+    ('a pending removal that empties the file deletes it when asked',
+     'app/pending.py',
+     '    if remaining or not delete_when_empty:\n',
+     '    if True:\n',
+     'test_pending_file.py'),
+
+    ('the pending file is written atomically',
+     'app/pending.py',
+     '    atomic_write_json(path, entries)\n',
+     '    with open(path, "w") as fh:\n        json.dump(entries, fh)\n',
+     'test_pending_file.py'),
+
+    ("Telegram's pending removal deletes the emptied file",
+     'app/telegram_bot.py',
+     '        _pending.remove(self.config.pending_file, keys,\n                        delete_when_empty=True)\n',
+     '        _pending.remove(self.config.pending_file, keys,\n                        delete_when_empty=False)\n',
+     'test_pending_file.py'),
+
+    ("Telegram's read_pending hands back every entry",
+     'app/telegram_bot.py',
+     '    return _pending.read(path)\n',
+     '    return _pending.read(path, named_only=True)\n',
+     'test_pending_file.py'),
+
+    ("Discord's pending removal deletes the emptied file",
+     'app/discord_bot.py',
+     '        _pending.remove(getattr(self.config, "pending_file", ""), keys,\n                        delete_when_empty=True)\n',
+     '        _pending.remove(getattr(self.config, "pending_file", ""), keys,\n                        delete_when_empty=False)\n',
+     'test_pending_file.py'),
+
+    ('Discord reads only named pending entries',
+     'app/discord_bot.py',
+     '        return _pending.read(getattr(self.config, "pending_file", ""),\n                             named_only=True)\n',
+     '        return _pending.read(getattr(self.config, "pending_file", ""),\n                             named_only=False)\n',
+     'test_pending_file.py'),
+
+    ("Discord's pending list for a host is that host's",
+     'app/discord_bot.py',
+     '        return _pending.entries_for(self._pending(), [host_name_of(host)])\n',
+     '        return _pending.entries_for(self._pending(), ["local"])\n',
+     'test_pending_file.py'),
+
+    ("the Web UI's pending list for a host is that host's",
+     'app/web_ui.py',
+     '                                        [host or LOCAL_HOST])\n',
+     '                                        [LOCAL_HOST])\n',
+     'test_pending_file.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
