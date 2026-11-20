@@ -19,11 +19,17 @@ pins what each one returns and what the file looks like afterwards.
 Measured on the tree before Q5 (scratchpad q5/measure.py): every caller
 already agreed on a missing file, corrupt JSON and the valid file, and
 both removals delete the file when nothing is left — `[]` included.
-They differed only where one of them crashed: Telegram's removal raised
-on a file that is not a list, on a non-dict entry, on bytes that are not
-UTF-8 and on a `None` path; the Web UI's reader raised on the last two.
-Those rows are marked "(raised before Q5)". Every other row is the old
-answer, unchanged.
+Most differences were a crash: Telegram's removal raised on a file that
+is not a list, on a non-dict entry, on bytes that are not UTF-8 and on a
+`None` path; the Web UI's reader raised on the last two. Those rows are
+marked "(raised before Q5)". Two were not crashes (found in review, run
+on 6c4c474): Telegram's removal iterated an empty non-list value such as
+`{}` or `""` as nothing and deleted the file; now that file is left as
+it is, like Discord always did — marked "(deleted before Q5)". And
+Discord's removal turned a bare string key into a tuple of characters
+that never matched; now it is the local host's entry, as in Telegram —
+marked "(never matched before Q5)". No Discord caller passes a bare
+string. Every other row is the old answer, unchanged.
 
 The Web update worker removes through Telegram's `_remove_from_pending`,
 so its delete-when-empty is the Telegram row here; the worker itself is
@@ -61,6 +67,8 @@ STATES = {
     "corrupt": b"{ not json",
     "not UTF-8": b'[{"name": "w\xff"}]',
     "not a list": b'{"a": 1}',
+    "an empty object": b"{}",
+    "an empty string": b'""',
     "junk": json.dumps(JUNK).encode(),
     "valid": json.dumps(VALID).encode(),
 }
@@ -120,7 +128,8 @@ else:
 
 if have:
     # reading: every way of having nothing is an empty list
-    for state in ("missing", "empty", "corrupt", "not UTF-8", "not a list"):
+    for state in ("missing", "empty", "corrupt", "not UTF-8", "not a list",
+                  "an empty object", "an empty string"):
         put(state)
         before = on_disk()
         checks[f"read: {state} is nothing pending"] = call(read, path) == ("ok", [])
@@ -186,7 +195,8 @@ if have:
     checks["remove: a file that already holds [] is deleted too"] = (
         r[0] == "ok" and on_disk() is None)
 
-    for state in ("missing", "corrupt", "not UTF-8", "not a list"):
+    for state in ("missing", "corrupt", "not UTF-8", "not a list",
+                  "an empty object", "an empty string"):
         put(state)
         before = on_disk()
         r = call(remove, path, [("local", "web")], delete_when_empty=True)
@@ -267,10 +277,18 @@ RAISED_BEFORE = {
     ("junk", "Telegram _remove_from_pending"),
     ("None path", "Telegram _remove_from_pending"),
 }
+#: Telegram's removal deleted these files before Q5 (measured on 6c4c474);
+#: now they are left as they are, like Discord's removal always did.
+DELETED_BEFORE = {
+    ("an empty object", "Telegram _remove_from_pending"),
+    ("an empty string", "Telegram _remove_from_pending"),
+}
 
 
 def label(state, who):
-    tail = " (raised before Q5)" if (state, who) in RAISED_BEFORE else ""
+    tail = (" (raised before Q5)" if (state, who) in RAISED_BEFORE
+            else " (deleted before Q5)" if (state, who) in DELETED_BEFORE
+            else "")
     return f"{who}: {state}{tail}"
 
 
@@ -322,7 +340,8 @@ for who, rm in REMOVERS:
     r = call(rm, [("local", "web"), ("nas", "db")])
     checks[label("junk", who) + ": non-dict entries are kept"] = (
         r == ("ok", None) and on_disk() == ["junk", 3, {"host": "nas"}])
-    for state in ("missing", "corrupt", "not UTF-8", "not a list"):
+    for state in ("missing", "corrupt", "not UTF-8", "not a list",
+                  "an empty object", "an empty string"):
         put(state)
         before = on_disk()
         r = call(rm, [("local", "web")])
@@ -338,6 +357,11 @@ for who, rm in REMOVERS:
 put("valid")
 r = call(tg._remove_from_pending, ["web"])
 checks["Telegram _remove_from_pending: a bare name is the local host"] = (
+    r == ("ok", None) and on_disk() == VALID[1:])
+put("valid")
+r = call(dc._drop_pending, ["web"])
+checks["Discord _drop_pending: a bare name is the local host "
+       "(never matched before Q5)"] = (
     r == ("ok", None) and on_disk() == VALID[1:])
 
 # ── the callers do not open the file themselves ─────────────────────
