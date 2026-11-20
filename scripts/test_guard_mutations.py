@@ -1250,6 +1250,12 @@ GUARDED = [
      "                self._update_queue.insert(0, k)\n",
      "test_update_queue.py"),
 
+    ("…and each key of it knows since when it waits",
+     "app/update_engine.py",
+     "                self._queued_at[k] = now\n",
+     "                pass\n",
+     "test_update_queue.py"),
+
     ("…and the container being updated is not queued behind itself",
      "app/update_engine.py",
      "        running = self.updating\n",

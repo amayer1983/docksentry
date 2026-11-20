@@ -315,6 +315,39 @@ checks["a batch that fits exactly goes in whole"] = (
     == [{"pos": MAX - 2}, {"pos": MAX - 1}, {"pos": MAX}]
     and len(e._update_queue) == MAX)
 
+# A key that came in with a batch knows since when, like a single one.
+# The clock is the engine's own `time`, moved by hand: writing the
+# stamp from here would test my write, not the engine's.
+import update_engine as _ue  # noqa: E402
+
+
+class _Clock:
+    def __init__(self, t):
+        self.t = t
+
+    def time(self):
+        return self.t
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+_real_time, _ue.time = _ue.time, _Clock(1_000_000.0)
+try:
+    e = engine()
+    e._updating = {}
+    e._update_lock.acquire()
+    _coqm(e, ["p", "q"])
+    _ue.time.t += 300
+    got = _coq(e, "q")
+    snap = e.queued_updates()
+finally:
+    _ue.time = _real_time
+checks["batch-queued, asked again 300s later: since_seconds is 300"] = (
+    got == (False, "update_already_queued", {"since_seconds": 300.0}))
+checks["…and the queue snapshot says 300s for both"] = (
+    snap == [("p", 300.0), ("q", 300.0)])
+
 # ── Telegram's tap only translates the engine's answer ───────────────
 # The real `_run_single_update` on a real engine, through every busy
 # answer, against the sentence the old handler built by hand.
