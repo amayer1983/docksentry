@@ -3905,6 +3905,12 @@ GUARDED = [
      '                                        [LOCAL_HOST])\n',
      'test_pending_file.py'),
 
+    ("Discord's /updates lists every pending entry, nameless ones too",
+     'app/discord_bot.py',
+     '        pending = _pending.read(getattr(self.config, "pending_file", ""))\n',
+     '        pending = _pending.read(getattr(self.config, "pending_file", ""),\n                                named_only=True)\n',
+     'test_pending_file.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

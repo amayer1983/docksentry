@@ -16,8 +16,13 @@ run an `nginx`, and a removal matching on the name alone would take both.
 The write is atomic; the merge is not. Two writers finishing at the
 same moment each read the old list and the later one wins. Moving the
 removals here does not change that; it puts their arithmetic in one
-place. The checker's own rewrite (`check_all`) and the raw reads inside
-the Telegram update flows are not on this module yet.
+place.
+
+Not on this module yet: the checker's own read and rewrite
+(`check_all`), and Telegram's update flows, which still read the file
+raw (`_run_single_update`, `run_updates`, `/updates`) and rewrite it
+with their own `atomic_write_json` / `os.remove` (`_run_single_update`,
+`run_updates`, the auto-update batch, the "I'll do it manually" button).
 """
 import json
 import os

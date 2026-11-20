@@ -1667,17 +1667,10 @@ class DiscordBot:
         return str(error)[:80]
 
     def _cmd_updates(self):
-        import json
-        import os
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return self.t("no_pending_updates")
-        try:
-            with open(path, encoding="utf-8") as f:
-                pending = json.load(f)
-        except (OSError, ValueError):
-            return self.t("no_pending_updates")
-        if not isinstance(pending, list) or not pending:
+        import pending as _pending
+        # Every entry, not `_pending()`: a nameless one is still listed as `?`.
+        pending = _pending.read(getattr(self.config, "pending_file", ""))
+        if not pending:
             return self.t("no_pending_updates")
         from container_store import LOCAL_HOST, entry_host
         lines = []

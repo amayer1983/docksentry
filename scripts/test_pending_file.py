@@ -13,7 +13,8 @@ an empty list, corrupt JSON, bytes that are not UTF-8, a file that is
 not a list, entries that are not dicts, and a valid file with the same
 name on two hosts. The second drives each caller as it stands — Telegram
 `read_pending` and `_remove_from_pending`, Discord `_pending`,
-`_pending_for` and `_drop_pending`, the Web UI's `_get_pending` — and
+`_pending_for`, `_drop_pending` and `/updates` (`_cmd_updates`), the
+Web UI's `_get_pending` — and
 pins what each one returns and what the file looks like afterwards.
 
 Measured on the tree before Q5 (scratchpad q5/measure.py): every caller
@@ -364,6 +365,27 @@ checks["Discord _drop_pending: a bare name is the local host "
        "(never matched before Q5)"] = (
     r == ("ok", None) and on_disk() == VALID[1:])
 
+# Discord's /updates lists every dict entry in the file, nameless ones
+# included (as `?`), and answers "no pending updates" whenever there is
+# no usable, non-empty list. Measured on 04f192c, before it moved onto
+# pending.read; every row is that answer, unchanged.
+NONE_PENDING = dc.t("no_pending_updates")
+UPDATES_ANSWERS = {
+    "junk": "**Pending updates**\n• `web` — ?\n• `db` @nas — ?\n• `?` @nas — ?",
+    "valid": "**Pending updates**\n• `web` — ?\n• `web` @nas — ?\n• `db` @nas — ?",
+}
+for state in STATES:
+    put(state)
+    before = on_disk()
+    want = UPDATES_ANSWERS.get(state, NONE_PENDING)
+    checks[label(state, "Discord /updates") + " → " + want[:40].replace("\n", " ")] = (
+        call(dc._cmd_updates) == ("ok", want) and on_disk() == before)
+for pf, st in ((None, "None path"), ("", "no path")):
+    cfg.pending_file = pf
+    checks[label(st, "Discord /updates") + " → no pending updates"] = (
+        call(dc._cmd_updates) == ("ok", NONE_PENDING))
+cfg.pending_file = path
+
 # ── the callers do not open the file themselves ─────────────────────
 SOURCES = [
     ("Telegram read_pending", telegram_bot, "read_pending", "_pending.read("),
@@ -374,6 +396,8 @@ SOURCES = [
      "_pending.entries_for("),
     ("Discord _drop_pending", discord_bot.DiscordBot, "_drop_pending",
      "_pending.remove("),
+    ("Discord /updates", discord_bot.DiscordBot, "_cmd_updates",
+     "_pending.read("),
 ]
 for who, owner, name, door in SOURCES:
     src = srcslice.method_source(owner, name, label=who)
