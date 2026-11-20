@@ -299,7 +299,8 @@ def _helper_callees():
 BUSY_MESSAGES = {
     # Telegram
     # The engine's drain hands these keys to Telegram's `_say_drain`.
-    # Said by the drain's helper, before and after each entry (Q10).
+    # Said by the drain's helper, once per turn at the top of the loop
+    # (Q10), which covers the end of each entry as well.
     ("update_engine.py", "UpdateEngine._drop_for_selfupdate",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
     ("update_engine.py", "UpdateEngine.drain_queue",
