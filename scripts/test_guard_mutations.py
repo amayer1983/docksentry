@@ -4810,6 +4810,14 @@ GUARDED = [
      "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
      "test_batch_host_routing.py"),
 
+    # Q12 second review: applied by hand, red without a traceback.
+    ("/update <pattern>: a host that stops answering fails its own "
+     "entries, and the host after it still updates",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
+     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "test_batch_host_routing.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

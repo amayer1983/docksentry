@@ -3013,6 +3013,11 @@ class TelegramBot:
             # silently with the list untouched; now each container gets
             # its failure line and the snapshot leaves pending, as every
             # other outcome of "Update all" does (batch_host_routing).
+            # /update <pattern> runs through here as well, with one host's
+            # checker and list: a host that hung in the snapshot ended it
+            # the same way, and over several hosts the loop in
+            # `_run_batches` never reached the hosts after it. Now that
+            # host's entries fail and the next host runs (batch_host_routing).
             # `proactive_cleanup` only until one batch has pruned: it
             # reads the local disk, whichever host the batch is for, so
             # "once per batch" must stay once per "Update all".

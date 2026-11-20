@@ -225,9 +225,16 @@ def _host_store(groups=None, cooldowns=None):
 
 
 def run_update_all(updates, lc, rc, remote_groups=None, local_cooldowns=None,
-                   disk_cleanup=False):
+                   disk_cleanup=False, runs=None):
     """TelegramBot.run_updates(local checker, mixed snapshot), as the
-    "Update all" button calls it. Returns (batches, sent, removed, waits)."""
+    "Update all" button calls it. Returns (batches, sent, removed, waits).
+
+    `runs`, a list of (checker, updates), calls it once per pair in one
+    go instead, the way /update <pattern> does: one host's list with that
+    host's checker, and over several hosts `_run_batches` loops those
+    calls in one thread, so a raise ends the loop there."""
+    if runs is None:
+        runs = [(lc, updates)]
     h_local = Host("local", lc, local=True)
     h_local.store = _host_store(cooldowns=local_cooldowns)
     h_remote = Host("dock8520", rc)
@@ -252,7 +259,9 @@ def run_update_all(updates, lc, rc, remote_groups=None, local_cooldowns=None,
     bot._remove_from_pending = removed.extend
     bot._run_queued_selfupdate = lambda: None
     try:
-        TelegramBot.run_updates(bot, lc, updates=[dict(u) for u in updates])
+        for caller, ups in runs:
+            TelegramBot.run_updates(bot, caller,
+                                    updates=[dict(u) for u in ups])
     except Exception as e:                          # noqa: BLE001
         # Recorded, not raised: a run that ends here is a red check
         # below, not a procedure that dies before its other checks.
@@ -316,6 +325,32 @@ checks["a local daemon that hangs in the snapshot still gets a summary"] = (
 checks["…nothing is recreated on it"] = lc.updated == []
 checks["…and the snapshot leaves pending"] = (
     sorted(removed) == [("local", "db"), ("local", "web")])
+
+# /update <pattern> reaches the same guard: it calls run_updates with one
+# host's checker and that host's list, and over several hosts it loops
+# those calls in one thread (`_run_batches`). Measured before Q12 with
+# these scenarios: a dead dock8520 raised TimeoutExpired out of
+# run_updates — no summary, nothing taken off the list, and in the loop
+# every later host was never updated.
+lc, rc = RecChecker("local"), RecChecker("dock8520", dead=True)
+LLAMA = {"name": "llama-server", "image": "cuda:1", "host": "dock8520"}
+batches, sent, removed, _w = run_update_all(None, lc, rc,
+                                            runs=[(rc, [LLAMA])])
+checks["/update <pattern> on a host that stops answering ends with a "
+       "summary"] = (
+    len(sent) == 2 and sent[-1].startswith("update_result")
+    and "❌ llama-server:" in sent[-1] and "timed out" in sent[-1])
+checks["…nothing is recreated there, and the entry leaves pending"] = (
+    rc.updated == [] and removed == [("dock8520", "llama-server")])
+lc, rc = RecChecker("local"), RecChecker("dock8520", dead=True)
+batches, sent, removed, _w = run_update_all(
+    None, lc, rc, runs=[(rc, [LLAMA]),
+                        (lc, [{"name": "web", "image": "nginx:1",
+                               "host": "local"}])])
+checks["/update <pattern> over several hosts: the host after a dead one "
+       "still updates"] = (
+    lc.updated == ["web"] and len(sent) == 4
+    and "✅ web: OK on local" in sent[-1])
 
 
 # A group head whose update fails was rolled back, and its dependents
