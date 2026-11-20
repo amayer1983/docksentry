@@ -581,7 +581,24 @@ class UpdateEngine:
         must not be able to take down the update that finished
         successfully before it.
         """
+        handed_on = False
         while True:
+            # A self-update waiting with the lock free was queued behind a
+            # release that handed nothing on (`check_selfupdate_auto`
+            # passes no `after`). Nobody else is going to start it, so the
+            # drain does, through a claim and a release of its own, before
+            # it looks at the queue: up to date it comes back and the
+            # queue runs, a restart is named below. Once only — a hand-over
+            # that leaves it waiting (no context to start it from) falls
+            # through to the drop. Without this the queue was dropped
+            # "because a self-update restarts first" and that self-update
+            # stayed queued (Q13 review, measured).
+            if (not handed_on and self._queued_selfupdate
+                    and not getattr(self, "_swap_in_flight", False)):
+                handed_on = True
+                if self.claim_update():
+                    self.release_update(after=after, kick=False)
+                    continue
             if self._drop_for_selfupdate(say):
                 return
             # A failed container takes its group-mates with it: the group
@@ -694,8 +711,8 @@ class UpdateEngine:
         At most one drainer runs. The slot is taken under the queue's
         own lock, so two releases at the same moment start one thread,
         and a kick while it works starts nothing: the running one takes
-        the new entry on its next turn. Its own releases kick too, and
-        find the slot taken.
+        the new entry on its next turn. Its own releases do not kick
+        (`kick=False`, see `drain_queue`).
 
         `after` is what each of the drainer's releases hands on, as the
         release that kicked it did (a front end's queued self-update);

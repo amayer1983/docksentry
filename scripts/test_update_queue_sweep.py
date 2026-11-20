@@ -420,6 +420,114 @@ checks["…and one that restarts: nothing queued runs, and it is named"] = (
 eng8._swap_in_flight = False
 eng8._update_lock.release()
 
+# A release that hands nothing on (`check_selfupdate_auto`'s, which
+# passes no `after`) with a self-update AND a container queued behind
+# it. The drainer finds the lock free and the self-update waiting: it
+# hands it on itself, through `_hand_on_selfupdate` and the real
+# `selfupdate.run_queued`, before it looks at the queue. Up to date, the
+# self-update comes back and the container runs; one that restarts takes
+# the container down named, as above. Before this the drainer dropped
+# the container "because a self-update restarts first" and left that
+# self-update queued for good (Q13 review, measured with a probe).
+import selfupdate as _su  # noqa: E402
+
+
+class _SuCtx:
+    """What `run_queued` touches on the shared self-update context."""
+
+    def __init__(self, eng):
+        self.eng, self.sent = eng, []
+
+    @property
+    def _queued_selfupdate(self):
+        return self.eng._queued_selfupdate
+
+    @_queued_selfupdate.setter
+    def _queued_selfupdate(self, value):
+        self.eng._queued_selfupdate = value
+
+    def t(self, key, **kw):
+        return key
+
+    def send_message(self, text, *a, **k):
+        self.sent.append(text)
+
+
+def _stranded(restarts):
+    eng = _qengine()
+    order, said = [], []
+    eng._drain_one = lambda key: order.append(key)
+    eng._say_drain = lambda key, params: said.append((key, params))
+    eng.selfupdate_ctx = ctx = _SuCtx(eng)
+
+    def _start(c, target, reply_to=None):
+        # The self-update itself (pull, swap) is docker; what matters
+        # here is that it was started with the lock free to take.
+        order.append(("self-update", target, eng._update_lock.locked()))
+        if restarts:
+            eng._update_lock.acquire(blocking=False)
+            eng._swap_in_flight = True
+
+    real_start = _su.start
+    _su.start = _start
+    try:
+        eng.claim_update()
+        eng._queued_selfupdate = ("2.9.0",)
+        eng.enqueue_update("a")
+        eng.release_update()
+        _join_drainer(eng)
+    finally:
+        _su.start = real_start
+    return eng, order, said, ctx
+
+
+eng12, _order12, _said12, _ctx12 = _stranded(restarts=False)
+checks["a release that hands nothing on: the drainer starts the waiting "
+       "self-update first"] = (
+    _order12[:1] == [("self-update", "2.9.0", False)]
+    and eng12._queued_selfupdate is None
+    and _ctx12.sent == ["selfupdate_dequeued"])
+checks["…and once it is back without a restart, the container runs"] = (
+    _order12 == [("self-update", "2.9.0", False), "a"] and _said12 == []
+    and not eng12.has_queued_updates() and not eng12._update_lock.locked())
+eng13, _order13, _said13, _ctx13 = _stranded(restarts=True)
+checks["…and one that restarts: the container does not run, and is named"] = (
+    _order13 == [("self-update", "2.9.0", False)]
+    and _said13 == [("update_queue_dropped_selfupdate", {"keys": ["a"]})]
+    and not eng13.has_queued_updates())
+eng13._swap_in_flight = False
+if eng13._update_lock.locked():
+    eng13._update_lock.release()
+
+# A hand-over that leaves the self-update waiting (no context to start
+# it from) is tried once: the drain then drops and names the queue as
+# before, rather than claiming and releasing for ever. A drainer that
+# tried again would be counted here, and on the third try the stand-in
+# gives up the self-update so the drain ends instead of spinning.
+eng14 = _qengine()
+_ran14, _said14, _tries14 = [], [], []
+eng14._drain_one = lambda key: _ran14.append(key)
+eng14._say_drain = lambda key, params: _said14.append((key, params))
+eng14._queued_selfupdate = ("2.9.0",)
+eng14.enqueue_update("a")
+
+
+def _after14():
+    _tries14.append(1)
+    if len(_tries14) >= 3:
+        eng14._queued_selfupdate = None
+
+
+if getattr(eng14, "kick_drain", None) is not None:
+    eng14.kick_drain(after=_after14)
+_join_drainer(eng14)
+checks["a hand-over that leaves it waiting is tried once, then the queue "
+       "is named"] = (
+    _tries14 == [1] and _ran14 == []
+    and _said14 == [("update_queue_dropped_selfupdate", {"keys": ["a"]})]
+    and eng14._queued_selfupdate == ("2.9.0",)
+    and not eng14._update_lock.locked())
+
 # ── the real drain, in the callback matrix's world ───────────────────
 # A real TelegramBot and engine over the five-host registry, the real
 # `_drain_one` → `run_keys` → batch, a recording notifier behind a real

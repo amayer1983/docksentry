@@ -171,9 +171,13 @@ LOCK_OPS = {
     # the release after the run (no fourth release since the Q10
     # review). Its releases do not kick the drainer (`kick=False`,
     # Q13): this loop is the drain. Driven through the engine's one
-    # drainer (`kick_drain`) below.
+    # drainer (`kick_drain`) below. The second claim and fourth release
+    # (Q13 review) hand on a self-update that waits with the lock free,
+    # stranded behind a release that passed no `after`.
     ("update_engine.py", "UpdateEngine.drain_queue"):
-        ("CLAIM", ["claim_update()", "release_update(after=after, kick=False)",
+        ("CLAIM", ["claim_update()", "claim_update()",
+                   "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)",
                    "release_update(after=after, kick=False)",
                    "release_update(after=after, kick=False)"]),
     # ── readers ──

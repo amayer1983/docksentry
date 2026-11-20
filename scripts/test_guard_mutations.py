@@ -4763,6 +4763,24 @@ GUARDED = [
      "            pass\n",
      "test_update_queue.py"),
 
+    # Q13 review: a release with no `after` (check_selfupdate_auto) left
+    # a queued self-update waiting, and the drainer dropped the queue
+    # "because a self-update restarts first". It hands it on itself now,
+    # once, before it looks at the queue.
+    ("a self-update stranded behind a release with no after() is handed on by the drainer",
+     "app/update_engine.py",
+     "                if self.claim_update():\n"
+     "                    self.release_update(after=after, kick=False)\n"
+     "                    continue\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…once: a hand-over that leaves it waiting falls through to the drop",
+     "app/update_engine.py",
+     "                handed_on = True\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
     # Q12: Telegram's "Update all" runs one batch per host, each with
     # that host's checker, so the netns snapshot and a group head's
     # cascade reach the entry's own host.

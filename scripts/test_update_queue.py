@@ -1178,9 +1178,11 @@ drain = srcslice.section(esrc, "    def drain_queue(self", "\n    def ",
                          label="update_engine.py: drain_queue")
 # Re-pointed in Q10: the drain claims through the door, once per entry
 # (driven above: "one claim per entry…"), and no longer touches the raw
-# lock or puts an entry back on the queue.
-checks["the drain claims through the door, in one place"] = (
-    drain is not None and drain.count("self.claim_update()") == 1
+# lock or puts an entry back on the queue. A second claim since the
+# Q13 review: once, to hand on a self-update stranded behind a release
+# that passed no `after` (driven in test_update_queue_sweep).
+checks["the drain claims through the door, per entry and for a stranded self-update"] = (
+    drain is not None and drain.count("self.claim_update()") == 2
     and "_update_lock" not in drain)
 checks["…and never puts an entry back on the queue"] = (
     drain is not None and "enqueue_update" not in drain)
