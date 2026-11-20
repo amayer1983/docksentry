@@ -460,9 +460,11 @@ checks["run_keys: no file is 'no_pending_updates', nothing ran"] = (
     res == [("db", None, None, "no_pending_updates", None)]
     and ck.seen == [] and done is False and not os.path.exists(pf))
 
-# Q11b: a key whose host the registry does not know is refused before
-# anything is looked up, marked or run — whatever checker the caller
-# hands over for it (Telegram's falls back to the local one).
+# Q11b: a pending key whose host the registry does not know is refused
+# right after its pending lookup, before anything is marked or run —
+# whatever checker the caller hands over for it (Telegram's falls back to
+# the local one). After the lookup on purpose: a key that is not pending
+# still says so, whatever its host.
 _gone = [{"name": "web", "image": "nginx:1.25", "host": "gone"}]
 _pending_mod.write(pf, _gone)
 _before = open(pf, "rb").read()
