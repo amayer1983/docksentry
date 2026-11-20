@@ -315,12 +315,12 @@ class UpdateEngine:
     @property
     def update_running(self):
         """True while any update flow holds the lock. Read-only view kept
-        for the /check race-guard and any external callers."""
-        locked = self._update_lock.acquire(blocking=False)
-        if locked:
-            self._update_lock.release()
-            return False
-        return True
+        for the /check race-guard and any external callers.
+
+        Only looks. It used to take the lock and give it straight back,
+        and a real claim landing between those two calls was refused
+        although nobody was updating."""
+        return self._update_lock.locked()
 
     # ── The one door to the update lock ────────────────────────────────
     def claim_update(self):

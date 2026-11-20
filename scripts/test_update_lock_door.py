@@ -27,7 +27,14 @@ on it:
   * `update_claim()` is the same pair as a `with` block;
   * `update_claimed` only looks: True while anybody holds the lock,
     False when it is free, and asking never takes or gives back the
-    lock (the Web banner asks it before every click, Q3).
+    lock (the Web banner asks it before every click, Q3);
+  * `update_running` only looks too (Q4). It used to take the lock and
+    give it straight back to find out whether it was free; a claim that
+    came in during those two calls was refused although nobody was
+    updating. Measured on the old body with real threads: one thread
+    asking in a loop, the other claiming a lock nobody else held, about
+    half the claims in 3 s refused. The last check below does the same
+    for 0.3 s.
 
 Exits non-zero on any failure.
 """
@@ -334,6 +341,123 @@ if look:
 else:
     checks["update_claimed on a free lock is False"] = False
     checks["update_claimed while another thread holds it is True"] = False
+
+# ── update_running only looks ────────────────────────────────────────
+class SpyLock:
+    """A real lock that notes which thread called what. `hook`, when
+    set, runs once inside the first call made from the thread `armed`,
+    after the real call and before it returns — so whatever the hook
+    does happens exactly in the window that call opens."""
+
+    def __init__(self):
+        self._real = threading.Lock()
+        self.calls = []
+        self.hook = None
+        self.armed = None
+
+    def _note(self, name):
+        self.calls.append((name, threading.get_ident()))
+        if self.hook is not None and self.armed == threading.get_ident():
+            hook, self.hook = self.hook, None
+            hook()
+
+    def acquire(self, blocking=True, timeout=-1):
+        got = self._real.acquire(blocking, timeout)
+        self._note("acquire")
+        return got
+
+    def release(self):
+        self._real.release()
+        self._note("release")
+
+    def locked(self):
+        held = self._real.locked()
+        self._note("locked")
+        return held
+
+
+def mine(spy, *names):
+    me = threading.get_ident()
+    return [n for n, who in spy.calls if who == me and n in names]
+
+
+eng = fresh()
+spy = eng._update_lock = SpyLock()
+won = []
+
+
+def claim_meanwhile():
+    """A real claim from another thread, the scheduler's batch say,
+    landing while update_running is still asking."""
+    def run():
+        ok = eng.claim_update()
+        won.append(ok)
+        if ok:
+            eng.release_update()
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(3)
+
+
+spy.armed, spy.hook = threading.get_ident(), claim_meanwhile
+running = eng.update_running
+checks["update_running on a free lock is False"] = running is False
+checks["…and it never takes the lock to find out"] = (
+    mine(spy, "acquire", "release") == [])
+checks["…so a claim landing while it asks is not refused"] = won == [True]
+checks["…and the lock is free again afterwards"] = not spy._real.locked()
+
+# Held by another thread through the door, the way a tap holds it.
+spy = eng._update_lock = SpyLock()
+got, stop = threading.Event(), threading.Event()
+
+
+def holder():
+    if eng.claim_update():
+        got.set()
+        stop.wait(3)
+        eng.release_update()
+t = threading.Thread(target=holder, daemon=True)
+t.start()
+got.wait(3)
+del spy.calls[:]
+running = eng.update_running
+checks["update_running while another thread holds the lock is True"] = (
+    got.is_set() and running is True)
+checks["…without trying to take it"] = (
+    got.is_set() and mine(spy, "acquire", "release") == [])
+checks["…and the holder keeps it"] = got.is_set() and spy._real.locked()
+stop.set()
+t.join(3)
+
+# The same with a plain lock and real threads, no spy: one thread asks
+# in a loop, this one claims and releases a lock nobody else wants. A
+# single refusal is the probe's doing.
+eng = fresh()
+halt, asked = threading.Event(), [0]
+
+
+def asker():
+    while not halt.is_set():
+        _ = eng.update_running
+        asked[0] += 1
+t = threading.Thread(target=asker, daemon=True)
+t.start()
+tries = refused = 0
+t0 = time.monotonic()
+while time.monotonic() - t0 < 0.3:
+    tries += 1
+    if eng.claim_update():
+        eng.release_update()
+    else:
+        refused += 1
+halt.set()
+t.join(3)
+checks["claims racing a thread that keeps asking update_running are "
+       "never refused"] = tries > 0 and asked[0] > 0 and refused == 0
+if refused:
+    print(f"  ({refused} of {tries} claims refused, "
+          f"{asked[0]} questions asked)")
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

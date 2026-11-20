@@ -2051,9 +2051,14 @@ GUARDED = [
     # traceback.
     ("the engine's update_claimed answers what the lock says",
      "app/update_engine.py",
+     "        returned; the claim that decides is still `claim_update`.\n"
+     "        \"\"\"\n"
      "        return self._update_lock.locked()\n",
+     "        returned; the claim that decides is still `claim_update`.\n"
+     "        \"\"\"\n"
      "        return False\n",
      "test_update_lock_door.py"),
+
     ("the Web banner asks the engine whether an update holds the lock",
      "app/web_ui.py",
      "                return bool(getattr(eng, \"update_claimed\", False))\n",
@@ -2073,6 +2078,30 @@ GUARDED = [
      "scripts/test_update_lock_sites.py",
      "                    ops[(rel, qual)].append(DOOR_READ)\n",
      "                    pass\n",
+     "test_update_lock_sites.py"),
+
+    # Q4: update_running only looks. Applied by hand in a copy, red
+    # without a traceback.
+    ("update_running only looks at the lock, so a claim landing while "
+     "it asks is not refused",
+     "app/update_engine.py",
+     "        although nobody was updating.\"\"\"\n"
+     "        return self._update_lock.locked()\n",
+     "        although nobody was updating.\"\"\"\n"
+     "        locked = self._update_lock.acquire(blocking=False)\n"
+     "        if locked:\n"
+     "            self._update_lock.release()\n"
+     "            return False\n"
+     "        return True\n",
+     "test_update_lock_door.py"),
+    ("…and T6 lists update_running as a reader, not a probe",
+     "app/update_engine.py",
+     "        although nobody was updating.\"\"\"\n"
+     "        return self._update_lock.locked()\n",
+     "        although nobody was updating.\"\"\"\n"
+     "        if self._update_lock.acquire(blocking=False):\n"
+     "            self._update_lock.release()\n"
+     "        return self._update_lock.locked()\n",
      "test_update_lock_sites.py"),
 
     # The update-lock sites (core split, T6). A claim added anywhere in

@@ -151,11 +151,13 @@ LOCK_OPS = {
     ("selfupdate.py", "start"):
         ("CLAIM", ["acquire(blocking=False)", "release"]),
     # ── probes ──
-    ("update_engine.py", "UpdateEngine.update_running"):
-        ("PROBE", ["acquire(blocking=False)", "release"]),
     ("telegram_bot.py", "TelegramBot._drain_update_queue"):
         ("PROBE", ["acquire(blocking=False)", "release"]),
     # ── readers ──
+    # Only looks since Q4. As a probe it took the lock for a moment, and
+    # a real claim landing in that moment was refused.
+    ("update_engine.py", "UpdateEngine.update_running"):
+        ("READER", ["locked"]),
     # Asks the engine's door (Q3) instead of looking at the lock itself.
     ("web_ui.py", "create_handler.WebHandler._update_lock_held"):
         ("READER", ["update_claimed"]),
@@ -193,7 +195,7 @@ LOCK_MENTIONS = {
 
 #: (file, qualname) → how often it reads `update_running`, and why.
 UPDATE_RUNNING_READS = {
-    ("update_engine.py", "UpdateEngine.update_running"): (0, "the probe itself"),
+    ("update_engine.py", "UpdateEngine.update_running"): (0, "the reader itself"),
     ("telegram_bot.py", "TelegramBot.update_running"):
         (1, "property onto engine.update_running"),
     ("telegram_bot.py", "TelegramBot._handle_callback"):
@@ -215,7 +217,7 @@ UPDATE_RUNNING_READS = {
     ("monitor.py", "ContainerMonitor.tick"):
         (1, "no restart alerts while an update recreates containers"),
 }
-# The probe's own definition holds no read; it is listed with 0 so the
+# The reader's own definition holds no read; it is listed with 0 so the
 # table names every function on the lock's side and the check below only
 # compares the non-zero ones.
 
@@ -576,11 +578,11 @@ def enumeration_checks(found):
         out.append((f"reads update_running: {k[0]}:{k[1]} ×{running.get(k, 0)}",
                     running.get(k, 0) == want_r.get(k, 0),
                     f"expected ×{want_r.get(k, 0)}"))
-    out.append(("the update_running table names its own probe",
+    out.append(("the update_running table names its own reader",
                 ("update_engine.py", "UpdateEngine.update_running")
                 in UPDATE_RUNNING_READS
                 and ("update_engine.py", "UpdateEngine.update_running")
-                in ops, "the probe moved"))
+                in ops, "the reader moved"))
 
     for k in sorted(set(queue) | set(QUEUE_CALLS)):
         out.append((f"queue call {k[0]}:{k[1]} → {k[2]} ×{queue.get(k, 0)}",
@@ -801,7 +803,7 @@ DRIVES = [
      "/selfupdate", None,
      lambda w: __import__("selfupdate").start(w.ctx)),
     (("update_engine.py", "UpdateEngine.update_running"),
-     "probe", None,
+     "busy question", None,
      lambda w: w.engine.update_running),
     (("telegram_bot.py", "TelegramBot._drain_update_queue"),
      "drain with web queued", _queued,
@@ -1102,7 +1104,7 @@ EXPECTED_BUSY = {
          'said': ['⏳ Container updates in progress — self-update queued, it will start '
                   'automatically once the…']},
     (('update_engine.py', 'UpdateEngine.update_running'),
-     'probe'):
+     'busy question'):
         {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
     (('telegram_bot.py', 'TelegramBot._drain_update_queue'),
      'drain with web queued'):
