@@ -299,6 +299,49 @@ checks["…nothing is recreated there"] = rc.updated == []
 checks["…and Update all still clears the snapshot from pending"] = (
     sorted(removed) == [("dock8520", "llama-server"), ("local", "web")])
 
+# The same guard holds for the local daemon, so a single-host install
+# sees it too. Measured before Q12: a hung local daemon during the netns
+# snapshot raised out of "Update all" — no summary after "Updating…",
+# nothing taken off the list. Now each container gets its failure line,
+# nothing is recreated, and the snapshot leaves pending like every other
+# outcome of "Update all".
+lc, rc = RecChecker("local", dead=True), RecChecker("dock8520")
+batches, sent, removed, _w = run_update_all(
+    [{"name": "web", "image": "nginx:1", "host": "local"},
+     {"name": "db", "image": "pg:16", "host": "local"}], lc, rc)
+checks["a local daemon that hangs in the snapshot still gets a summary"] = (
+    len(sent) == 2 and sent[-1].startswith("update_result")
+    and "❌ web:" in sent[-1] and "❌ db:" in sent[-1]
+    and sent[-1].count("timed out") == 2)
+checks["…nothing is recreated on it"] = lc.updated == []
+checks["…and the snapshot leaves pending"] = (
+    sorted(removed) == [("local", "db"), ("local", "web")])
+
+
+# A group head whose update fails was rolled back, and its dependents
+# lost the namespace when it stopped: the batch kicks them all (#27).
+# For a remote head that kick belongs on its own host. Measured before
+# Q12 with this scenario: `sidecar` restarted and `llama-server` awaited
+# on the LOCAL checker.
+class FailingChecker(RecChecker):
+    def update_container(self, name, image, **kw):
+        self.updated.append(name)
+        return False, "rolled back"
+
+
+lc, rc = RecChecker("local"), FailingChecker("dock8520")
+batches, sent, removed, _w = run_update_all(
+    MIXED[:2], lc, rc, remote_groups={"g1": {
+        "containers": ["llama-server", "sidecar"],
+        "restart_dependents": True, "wait_seconds": 0}})
+checks["a remote head that rolls back has its dependents kicked there"] = (
+    rc.restarted == ["sidecar"] and rc.healthy == ["llama-server"])
+checks["…and nothing of it is restarted or awaited locally"] = (
+    lc.restarted == [] and lc.healthy == [])
+checks["…and the summary says the dependents were kicked"] = (
+    len(sent) == 2 and "head rollback — dependents kicked" in sent[-1]
+    and "`sidecar`" in sent[-1])
+
 # The proactive prune of a full local disk ran once per "Update all"
 # (one batch, one prune). One batch per host must not make it once per
 # host: the second batch reads the same local disk.

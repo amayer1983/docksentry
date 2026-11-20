@@ -3007,7 +3007,12 @@ class TelegramBot:
             # `snapshot_fails_entry`: the snapshot now reaches the remote
             # host, and one that stops answering raises there. That is its
             # own entries' failure, not the end of "Update all" with no
-            # summary and nothing taken off the list.
+            # summary and nothing taken off the list. The same holds for
+            # the local daemon, so a single-host install changes too: a
+            # daemon that hangs in the snapshot used to end "Update all"
+            # silently with the list untouched; now each container gets
+            # its failure line and the snapshot leaves pending, as every
+            # other outcome of "Update all" does (batch_host_routing).
             # `proactive_cleanup` only until one batch has pruned: it
             # reads the local disk, whichever host the batch is for, so
             # "once per batch" must stay once per "Update all".

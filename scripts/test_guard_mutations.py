@@ -4779,6 +4779,37 @@ GUARDED = [
      "                cleaned = False  # MUTATION: forgets the prune\n",
      "test_batch_host_routing.py"),
 
+    # Q12 review: the three batch sites that take the batch's checker for
+    # an entry's host. Each mutation hands that site the LOCAL host's
+    # checker instead, which is what a mixed batch did before Q12. Each
+    # applied by hand and red without a traceback.
+    ("Update all: a remote head that rolls back has its dependents kicked "
+     "on its own host",
+     "app/update_engine.py",
+     '                                           u["name"], members[1:], checker, max_wait=wait_s))\n',
+     '                                           u["name"], members[1:], next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker), max_wait=wait_s))  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("…a remote head that updates has its dependents restarted on its own "
+     "host",
+     "app/update_engine.py",
+     '                                u["name"], deps, checker, max_wait=wait_s))\n',
+     '                                u["name"], deps, next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker), max_wait=wait_s))  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("…and a remote entry's netns owner is asked of its own host",
+     "app/update_engine.py",
+     '                tn = checker.netns_target_name(u["name"])\n',
+     '                tn = next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker).netns_target_name(u["name"])  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("Update all: a local daemon that hangs in the snapshot still ends "
+     "with a summary",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
+     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "test_batch_host_routing.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
