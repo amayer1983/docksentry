@@ -1352,10 +1352,20 @@ GUARDED = [
     # Q11a: run_keys runs the single update; Telegram says how it went.
     # Each of these goes red in test_single_update_report, which drives
     # the real tap and drain with a recording notifier and Broadcast.
+    # Since Q11c the card for the other channels is the batch's, through
+    # the broadcast seam; Telegram's own renderer only says the line.
     ("a single update is reported to the other channels",
+     "app/update_engine.py",
+     "                _report_result(self, u[\"name\"], u[\"image\"], success, msg,\n                               u.get(\"source_url\", \"\"))\n                if on_result is not None:\n",
+     "                if on_result is not None:\n",
+     "test_single_update_report.py"),
+
+    ("…and Telegram does not send that card a second time",
      "app/telegram_bot.py",
-     "        if self.notifier:\n            self.notifier.send_update_result(\n                split_host_key(container_key)[1],",
-     "        if False:\n            self.notifier.send_update_result(\n                split_host_key(container_key)[1],",
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n',
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n'
+     '        if self.notifier:\n'
+     '            self.notifier.send_update_result(target["name"], target.get("image", "?"), success, msg)\n',
      "test_single_update_report.py"),
 
     ("…and said on Telegram",
@@ -1366,33 +1376,119 @@ GUARDED = [
 
     ("…each of them once, not twice",
      "app/update_engine.py",
-     "                    if report is not None:\n                        report(key, target, success, msg)\n",
-     "                    if report is not None:\n                        report(key, target, success, msg)\n                        report(key, target, success, msg)\n",
+     "                    if report is not None:\n                        report(key, entry, success, msg)\n",
+     "                    if report is not None:\n                        report(key, entry, success, msg)\n                        report(key, entry, success, msg)\n",
      "test_single_update_report.py"),
 
     ("…an update that raises is reported, as a failure",
      "app/update_engine.py",
-     "                    if report is not None:\n                        report(key, target, False, msg)\n",
-     "                    pass  # MUTATION: a crash goes unreported\n",
+     "                if on_result is not None:\n                    on_result(u, False, clip(e))\n",
+     "                pass  # MUTATION: a crash goes unreported\n",
      "test_single_update_report.py"),
 
     ("…and the report does not wait for the pending file to be rewritten",
      "app/update_engine.py",
-     "                    last_group = None if success else group_of(key)\n                    if report is not None:\n                        report(key, target, success, msg)\n",
-     "                    last_group = None if success else group_of(key)\n                    _pending.write(pending_file, [u for u in updates if _pending.key_of(u) != (host_name, name)])\n                    if report is not None:\n                        report(key, target, success, msg)\n",
+     "                lines, _n, _m = self._process_update_batch(\n",
+     "                _pending.write(pending_file, [u for u in updates if _pending.key_of(u) != (host_name, name)])\n                lines, _n, _m = self._process_update_batch(\n",
      "test_single_update_report.py"),
 
     ("'Updating …' is said before the single update runs, not after it",
      "app/update_engine.py",
-     "                if starting is not None:\n                    starting(key, target)\n                try:\n                    compose_kwargs = {k: target[k] for k in target\n                                      if k.startswith(\"compose_\")}\n                    success, msg = checker_for(key).update_container(\n                        target[\"name\"], target[\"image\"], **compose_kwargs)\n",
-     "                try:\n                    compose_kwargs = {k: target[k] for k in target\n                                      if k.startswith(\"compose_\")}\n                    success, msg = checker_for(key).update_container(\n                        target[\"name\"], target[\"image\"], **compose_kwargs)\n                    if starting is not None:\n                        starting(key, target)\n",
+     '                if starting is not None:\n                    starting(key, target)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False)\n',
+     '                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False)\n                if starting is not None:\n                    starting(key, target)\n',
      "test_single_update_report.py"),
 
     ("a failed single update names the group it takes out of the queue",
      "app/update_engine.py",
-     "                    last_group = None if success else group_of(key)\n",
-     "                    last_group = None\n",
+     "                last_group = None if success else group_of(key)\n",
+     "                last_group = None\n",
      "test_single_update_report.py"),
+
+    # Q11c: the single update runs through the shared batch. Each of
+    # these was applied by hand and went red without a traceback.
+    ('a queued container waits the cooldown of the one that ran before it',
+     'app/update_engine.py',
+     '        cooldown = host_store(self, l_host).get_cooldown(l_name) or 0\n',
+     '        cooldown = 0\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…and a queued group-mate waits the group's pause after it",
+     'app/update_engine.py',
+     '                pause = int(g.get("wait_seconds", 0) or 0)\n',
+     '                pause = 0\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…counted from when that recreate finished, not waited again',
+     'app/update_engine.py',
+     '        elapsed = _now(self) - at\n',
+     '        elapsed = 0\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch remembers its last recreate past its end',
+     'app/update_engine.py',
+     '            self._last_recreate = (u_host, cur_group, u["name"], _now(self))\n',
+     '            pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and the waiting container counts as in flight while it waits',
+     'app/update_engine.py',
+     '                self.mark_updating(key, target.get("new_version") or "")\n                self._wait_after_last_recreate(host_name, name)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                self.mark_updating(key, target.get("new_version") or "")\n',
+     'test_single_update_report.py'),
+
+    ('a single update runs on the checker its caller hands it, remote too',
+     'app/update_engine.py',
+     '                    checker_of=lambda u, ck=ck: ck,\n',
+     '                    checker_of=None,\n',
+     'test_single_update_report.py'),
+
+    ('…and a key nobody can reach runs nothing and stays pending',
+     'app/update_engine.py',
+     '                if ck is None:\n',
+     '                if False:\n',
+     'test_single_update_report.py'),
+
+    ("the single update keeps its in-flight mark through 'all done'",
+     'app/update_engine.py',
+     '                    on_result=on_result, marks=False)\n',
+     '                    on_result=on_result, marks=True)\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch leaves the mark alone when told to',
+     'app/update_engine.py',
+     '                finally:\n                    if marks:\n                        self.clear_updating(_u_key)\n',
+     '                finally:\n                    self.clear_updating(_u_key)\n',
+     'test_single_update_report.py'),
+
+    ('the batch hands each result to its caller',
+     'app/update_engine.py',
+     '                if on_result is not None:\n                    on_result(u, success, msg)\n',
+     '                pass  # MUTATION: no result handed on\n',
+     'test_single_update_report.py'),
+
+    ("a group head's cascade after a tap is said on Telegram",
+     'app/telegram_bot.py',
+     '                note=lambda key, line: self.send_message(line),\n',
+     '                note=None,\n',
+     'test_single_update_report.py'),
+
+    ('…handed on by run_keys',
+     'app/update_engine.py',
+     '                            note(key, line)\n',
+     '                            pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…without the result line a second time',
+     'app/update_engine.py',
+     '                        if line not in said:\n',
+     '                        if True:\n',
+     'test_single_update_report.py'),
+
+    ("Telegram's drain finds a queued container's group",
+     'app/telegram_bot.py',
+     '            return gid or None\n',
+     '            return None\n',
+     'test_single_update_report.py'),
 
     ("the single update stops saying a container is in flight once done",
      "app/update_engine.py",
@@ -1475,8 +1571,8 @@ GUARDED = [
 
     ("…the refused entry stays in the pending file",
      "app/update_engine.py",
-     "                    results.append((key, None, None, \"host_unknown\", None))\n",
-     "                    _pending.write(pending_file, [u for u in updates if u is not target])\n                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "                    # that is not pending still answers \"not pending\".\n                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "                    # that is not pending still answers \"not pending\".\n                    _pending.write(pending_file, [u for u in updates if u is not target])\n                    results.append((key, None, None, \"host_unknown\", None))\n",
      "test_telegram_callback_matrix.py"),
 
     ("…and a key that is not pending still says so, whatever its host",

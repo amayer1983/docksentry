@@ -88,6 +88,17 @@ def _wait(seconds, engine=None):
     (getattr(engine, "_sleep", None) or _t.sleep)(seconds)
 
 
+def _now(engine=None):
+    """The engine's clock, for how long ago the last recreate finished.
+
+    Monotonic, and injectable next to `_sleep` for the same reason: a
+    check that a queued container waits the right number of seconds
+    must not depend on how fast the machine running it is.
+    """
+    import time as _t
+    return (getattr(engine, "_clock", None) or _t.monotonic)()
+
+
 def _report_result(engine, name, image, success, detail, source_url=""):
     """One finished container, out through the seam.
 
@@ -678,16 +689,69 @@ class UpdateEngine:
         return any(getattr(h, "name", None) == name
                    for h in (self.hosts or ()))
 
+    def _wait_after_last_recreate(self, host_name, name):
+        """Wait what the batch would have waited between the last
+        recreate and this one: the cooldown of the container that ran
+        last, plus its group's pause when `name` is in the same group on
+        the same host — counted from when that recreate finished, so
+        whatever time has passed since is not waited again.
+
+        Inside one batch those two waits come from `_maybe_cooldown`
+        after a container and the group pause before the next. A single
+        update is a batch of one, and the drain runs every queued entry
+        as one under its own claim, so without this neither wait ever
+        happened between a tap and what was queued behind it. In the
+        same order as the batch: the cooldown first, then the pause.
+        """
+        last = getattr(self, "_last_recreate", None)
+        if not last:
+            return
+        l_host, l_group, l_name, at = last
+        cooldown = host_store(self, l_host).get_cooldown(l_name) or 0
+        pause = 0
+        if l_group and host_name == l_host:
+            groups = host_store(self, host_name).get_groups() or {}
+            g = groups.get(l_group) or {}
+            if name in (g.get("containers") or []):
+                pause = int(g.get("wait_seconds", 0) or 0)
+        elapsed = _now(self) - at
+        cooldown_left = max(0, cooldown - elapsed)
+        pause_left = max(0, cooldown + pause - elapsed) - cooldown_left
+        if cooldown_left > 0:
+            print(f"Update cooldown: waiting {cooldown_left:g}s after "
+                  f"{l_name} before {name}")
+            _wait(cooldown_left, self)
+        if pause_left > 0:
+            _wait(pause_left, self)
+
     def run_keys(self, keys, *, checker_for, group_of=None, enrich=None,
-                 starting=None, report=None, done=None, pending_file=None):
+                 starting=None, report=None, done=None, note=None,
+                 pending_file=None):
         """Update the containers behind `keys`, one after the other.
 
         The body of what used to be Telegram's single update, without the
         words: look each key up in the pending file, say it is in flight,
-        run `update_container` on `checker_for(key)`, take the entry out
-        of the file, and stop saying it is in flight. The caller holds
-        the update lock for the whole call; this neither claims nor
-        releases it.
+        run it through the shared batch (`_process_update_batch`, one
+        entry, on `checker_for(key)`), take the entry out of the file,
+        and stop saying it is in flight. The caller holds the update lock
+        for the whole call; this neither claims nor releases it.
+
+        Through the batch since Q11c, so a single update gets what
+        "Update all" gives the same container: the netns snapshot, the
+        cleanup after a full disk, a group head's dependents restarted,
+        and its result reported to the other channels through the
+        broadcast seam (the caller's `report` only says it in its own
+        chat). And what the batch does between two of its entries is
+        done between the last recreate and this one: the cooldown of the
+        container that ran before, and the group's pause when both are
+        in the same group (`_wait_after_last_recreate`). The drain runs
+        one key per claim, so without that a queued group-mate never got
+        the group's wait and a cooldown never held anything back.
+
+        One batch per key, in the order given, not one per host: every
+        caller passes a single key (a tap, a drained entry), and a queue
+        keeps its own order. Group order inside a batch only means
+        something with several entries.
 
         Returns `(results, all_done)`. One result per key, in order:
         `(key, target, success, msg, last_group)`. `target` is the
@@ -696,7 +760,8 @@ class UpdateEngine:
         (the file has no entry for this key) or `"host_unknown"` (it has
         one, but for a host this engine does not manage) and `success` is
         None. A raising `update_container` is a failure with its error as
-        `msg`, clipped to 200 characters as the chat always showed it.
+        `msg`, clipped the way the batch clips it (`errfmt.clip`; until
+        Q11c the single update cut at 200 characters and lost the end).
         `last_group` is `group_of(key)` after a failure and None after a
         success — the group a failure takes out of the queue. `all_done`
         is True when an entry was taken out and the file is empty after.
@@ -704,17 +769,21 @@ class UpdateEngine:
         The hooks are the caller's, so the words and the stand-ins the
         tests put on a bot stay where they were:
 
-        * `enrich([target])` resolves the release link before anything
-          is said about it (the result line and the other channels'
-          card both carry it);
+        * `enrich([entry])` resolves the release link before the result
+          is said (the result line and the other channels' card both
+          carry it); the batch calls it, after `starting`;
         * `starting(key, target)` is called right before the update
           runs. It is a hook rather than part of the result because the
           "Updating …" line has to go out while the update runs, not
           after it;
-        * `report(key, target, success, msg)` is called as soon as the
-          update is back, before the entry leaves the file: a file that
-          cannot be rewritten (a full disk) must not swallow the report
-          of an update that ran;
+        * `report(key, entry, success, msg)` is called as soon as the
+          batch has told the other channels, before the entry leaves the
+          file: a file that cannot be rewritten (a full disk) must not
+          swallow the report of an update that ran. `entry` is the
+          batch's copy of the pending entry, with its link;
+        * `note(key, line)` gets every other line the batch wrote for
+          the key: a group head's cascade, the cleanup after a full
+          disk. Without it they are only in the batch's return;
         * `done()` is called once, when the entry just taken out was the
           last one in the file — exactly when `all_done` comes back
           True, but while that key is still marked in flight. The "all
@@ -782,30 +851,63 @@ class UpdateEngine:
                     # that is not pending still answers "not pending".
                     results.append((key, None, None, "host_unknown", None))
                     continue
-                enrich([target])
+                ck = checker_for(key)
+                if ck is None:
+                    # Nobody can reach that host: the same answer, before
+                    # anything is marked or waited for.
+                    results.append((key, None, None, "host_unknown", None))
+                    continue
                 # Say what is running, where the rest of the program can
                 # see it: the Web UI's "updating" badge, and a second tap
-                # that has to know this one is already in flight.
+                # that has to know this one is already in flight. Before
+                # the wait below: the entry is off the queue and this
+                # call's, so a tap during the wait is "the same one".
                 self.mark_updating(key, target.get("new_version") or "")
+                self._wait_after_last_recreate(host_name, name)
                 if starting is not None:
                     starting(key, target)
-                try:
-                    compose_kwargs = {k: target[k] for k in target
-                                      if k.startswith("compose_")}
-                    success, msg = checker_for(key).update_container(
-                        target["name"], target["image"], **compose_kwargs)
-                    last_group = None if success else group_of(key)
+                # Through the shared batch (Q11c), so a tap gets what
+                # "Update all" gives the same container: the netns
+                # snapshot, the ENOSPC cleanup, the group head's cascade
+                # and the report to the other channels. A copy, because
+                # the batch writes into its entries (the link, the netns
+                # owner) and the file must not get those.
+                entry = dict(target)
+                outcome = []
+
+                def on_result(u, success, msg, key=key, entry=entry):
+                    outcome.append((success, msg))
                     if report is not None:
-                        report(key, target, success, msg)
-                except Exception as e:
-                    # The update, or the report of it: either way the
-                    # container is told as failed, once more if the first
-                    # report was what broke — as the single update always
-                    # did.
-                    success, msg = False, str(e)[:200]
-                    last_group = group_of(key)
-                    if report is not None:
-                        report(key, target, False, msg)
+                        report(key, entry, success, msg)
+                # What the batch raises outside its per-container guard
+                # (the link lookup, the netns snapshot, a report that
+                # raised twice) ends the call, as a raising `enrich`
+                # always did, and the entry stays in the file.
+                lines, _n, _m = self._process_update_batch(
+                    [entry], ck, auto=False, enrich=enrich,
+                    checker_of=lambda u, ck=ck: ck,
+                    on_result=on_result, marks=False)
+                if not outcome:
+                    # One entry, not auto, in a batch of its own: the
+                    # batch skips it only when it refuses the checker,
+                    # which `ck is None` above already answered. Kept so
+                    # that a batch that ran nothing is never read as a
+                    # result.
+                    results.append((key, None, None, "host_unknown", None))
+                    continue
+                # The last word counts: a report that raised was told
+                # again as a failure.
+                success, msg = outcome[-1]
+                last_group = None if success else group_of(key)
+                if note is not None:
+                    # What the batch said beside the result line: the
+                    # cascade, the cleanup after a full disk.
+                    said = {f"{'✅' if ok else '❌'} "
+                            f"{self._display_name(entry)}: {m}"
+                            for ok, m in outcome}
+                    for line in lines:
+                        if line not in said:
+                            note(key, line)
                 # Matched on (host, name): another host's same-named
                 # entry must survive.
                 updates = [u for u in updates
@@ -1122,7 +1224,8 @@ class UpdateEngine:
             print(f"Update cooldown: waiting {cd}s after {name} before the next recreate")
             _wait(cd, self)
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def _process_update_batch(self, updates, checker, *, auto, enrich=None,
+                              checker_of=None, on_result=None, marks=True):
         """Shared per-container update engine for BOTH the scheduled-auto
         path (handle_autoupdates) and the manual path (run_updates /
         "Update all"). This is the single source of truth that stops the
@@ -1147,8 +1250,22 @@ class UpdateEngine:
         one (written by a pre-#7 version) is the local host, which is also
         why a single-host install resolves everything to the raw store and
         behaves exactly as before.
+
+        The keyword hooks are for `run_keys`, which runs a single update
+        through here (Q11c); "Update all" and the scheduler pass none:
+
+        * `enrich(updates)` resolves the release links instead of this
+          engine's own resolver (Telegram hands in its own, the tests a
+          stand-in);
+        * `checker_of(u)` is the checker for an entry, instead of the
+          registry lookup below; None still refuses it;
+        * `on_result(u, success, msg)` is called once a container's
+          outcome is reported to the other channels, in both the
+          returned and the raising case;
+        * `marks=False` leaves the in-flight mark to the caller, who set
+          it already and takes it away after its own last word.
         """
-        self._enrich_with_source_url(updates)
+        (enrich or self._enrich_with_source_url)(updates)
 
         _host_of = entry_host
         _stores = {}
@@ -1296,7 +1413,7 @@ class UpdateEngine:
 
             try:
                 compose_kwargs = {k: u[k] for k in u if k.startswith("compose_")}
-                u_checker = _checker_of(u)
+                u_checker = (checker_of or _checker_of)(u)
                 if u_checker is None:
                     # A remote entry whose host the registry no longer
                     # knows. Acting on it with the local checker is how
@@ -1315,13 +1432,15 @@ class UpdateEngine:
                 # "updating…" after a rollback would be the same wrong
                 # answer in the other direction.
                 _u_key = host_key(_host_of(u), u["name"])
-                self.mark_updating(_u_key, u.get("new_version") or "")
+                if marks:
+                    self.mark_updating(_u_key, u.get("new_version") or "")
                 try:
                     success, msg = u_checker.update_container(
                         u["name"], u["image"],
                         netns_name=u.get("netns_name"), **compose_kwargs)
                 finally:
-                    self.clear_updating(_u_key)
+                    if marks:
+                        self.clear_updating(_u_key)
                 status = "✅" if success else "❌"
                 results.append(f"{status} {self._display_name(u)}: {msg}")
 
@@ -1378,6 +1497,8 @@ class UpdateEngine:
                                            error=str(_ce)[:120]))
                 _report_result(self, u["name"], u["image"], success, msg,
                                u.get("source_url", ""))
+                if on_result is not None:
+                    on_result(u, success, msg)
 
                 grp = (groups.get(cur_group) or {}) if cur_group else {}
                 members = grp.get("containers") or []
@@ -1415,7 +1536,13 @@ class UpdateEngine:
                     group_aborted.add(abort_key)
                 _report_result(self, u["name"], u.get("image", "?"), False,
                                clip(e), u.get("source_url", ""))
+                if on_result is not None:
+                    on_result(u, False, clip(e))
             prev_group = abort_key
+            # Remembered past the end of this batch: a single update run
+            # right after it (a queued tap) waits what the next entry in
+            # here would have waited — see `_wait_after_last_recreate`.
+            self._last_recreate = (u_host, cur_group, u["name"], _now(self))
             self._maybe_cooldown(u["name"], more_remaining=idx < len(updates) - 1,
                                  host=u_host)
 

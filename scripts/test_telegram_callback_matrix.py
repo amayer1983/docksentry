@@ -41,6 +41,9 @@ Stand-ins, on top of the command matrix's (its header lists them):
   * the checker's `_wait_healthy`, which `restart_deps:` calls directly
     and which polls every 10 s for up to 30 s; it records and answers
     "healthy";
+  * the engine's `_sleep` and `_clock`: a cooldown or a group's pause
+    is recorded as a `wait Ns` event instead of sat out, on a clock
+    that stands still (Q11c);
   * holding the update lock from outside (`lock` / `unlock` steps)
     stands for another update running;
   * an `age` step moves the live stop and restore offers past their
@@ -82,6 +85,8 @@ _CUT = "cut off mid-write"
 #:   ("major", host, name)      a deferred major in that host's store
 #:   ("group", host, gid, members)  a group with restart_dependents on
 #:                              in that host's store
+#:   ("cooldown", host, name, seconds)  an update cooldown in that
+#:                              host's store
 #:   ("add_pending", name, image, host)
 #:   ("drop_pending",)          remove every pending entry (the real
 #:                              _remove_from_pending)
@@ -159,6 +164,21 @@ SCENARIOS = [
     ("queue twice while locked",
      [("add_pending", "db", "postgres:16", "local"), ("lock",),
       ("tap", "update_one:db"), ("tap", "update_one:db"), ("unlock",)]),
+    # Q11c: a tap runs through the shared batch. The cooldown of the
+    # container just updated holds the queued one behind it, the queued
+    # group-mate gets the group's wait, and the head's dependents are
+    # restarted — as "Update all" does with the same containers.
+    ("queue drain after a cooldown container",
+     [("cooldown", "local", "web", 60),
+      ("add_pending", "db", "postgres:16", "local"), ("lock",),
+      ("tap", "update_one:db"), ("unlock",), ("tap", "update_one:web")]),
+    ("update_one cooldown container, nothing queued",
+     [("cooldown", "local", "web", 60), ("notify", None),
+      ("tap", "update_one:web")]),
+    ("queue drain after a group head",
+     [("group", "local", "g1", ["web", "db"]),
+      ("add_pending", "db", "postgres:16", "local"), ("lock",),
+      ("tap", "update_one:db"), ("unlock",), ("tap", "update_one:web")]),
     # ── majors ──────────────────────────────────────────────────────
     ("confirm_major:web", [("major", "local", "web"),
                            ("tap", "confirm_major:web")]),
@@ -248,7 +268,11 @@ BRANCH_NOTES = {
         "nas's; now the drain gets the checker the tap was called with. "
         "A pending key whose host the registry does not know (`gone`) "
         "is refused in `run_keys` since Q11b: 'Unknown host', nothing "
-        "runs, the entry stays.",
+        "runs, the entry stays. Since Q11c `run_keys` runs each key "
+        "through the shared batch: the netns snapshot asks the tapped "
+        "key's own host (the extra `inspect --format`), a group head's "
+        "dependents are restarted, and a queued key waits the last "
+        "recreate's cooldown and its group's pause first.",
     "queue": ":1825 lock busy → enqueue (position, then 'already in the "
         "queue'); the drain runs after the tap that held the lock — but "
         "only when that tap got past its early returns (no pending file, "
@@ -339,6 +363,10 @@ class Row:
                             f"max={max_starting}")
             return "healthy", "running", "healthy"
         type(self.checker)._wait_healthy = wait_healthy
+        # The engine's waits (a cooldown, a group's pause) are recorded
+        # instead of sat out, on a clock that stands still.
+        bot.engine._sleep = lambda s: m.EVENTS.append(f"wait {s:g}s")
+        bot.engine._clock = lambda: 1000.0
         self.n = 0
 
     # ── steps ──
@@ -417,6 +445,8 @@ class Row:
             bot._store_for(args[0]).save_group(args[1], args[1], args[2],
                                                wait_seconds=5,
                                                restart_dependents=True)
+        elif kind == "cooldown":
+            bot._store_for(args[0]).set_cooldown(args[1], args[2])
         elif kind == "add_pending":
             from container_store import atomic_write_json
             rows = self._pending() + [{
@@ -1817,7 +1847,8 @@ EXPECTED = {
                         '⏳ Updating `web`...',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -1843,7 +1874,8 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -1874,7 +1906,8 @@ EXPECTED = {
                         '⏳ Updating `web @nas`...',
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
-                'hosts': {'nas': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -2020,7 +2053,8 @@ EXPECTED = {
                         '⏳ Updating `web`...',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap update_one:web',
@@ -2055,7 +2089,8 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap update_one:web',
@@ -2307,8 +2342,10 @@ EXPECTED = {
                         'updated (stand-in)',
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@nas:web', 'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -2368,8 +2405,10 @@ EXPECTED = {
                         '⏳ Updating `web @nas`...',
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2',
-                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
                 'events': ['update_container@local:db', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -2400,7 +2439,8 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
                         '✅ `web @nas` was already updated while this one waited. Nothing '
                         'left to do.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                                   'inspect --format'},
                 'events': ['update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -2463,6 +2503,242 @@ EXPECTED = {
                {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
      'state': {'pending': ['web@local', 'db@local'],
                'queue': ['db'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    # Q11c, written by hand from the rows before it: the tap runs through
+    # the batch (netns snapshot, cascade, the carried cooldown and group pause).
+    ('multi', 'queue drain after a cooldown container'): {'steps': [{'do': 'cooldown local web 60',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `db` queued — position 1. It starts when the current update '
+                        'finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5 '
+                                   '×2, inspect --format'},
+                'events': ['update_container@local:web', 'wait 60s',
+                           'update_container@local:db'],
+                'raised': None}],
+     'state': {'pending': ['web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'queue drain after a cooldown container'): {'steps': [{'do': 'cooldown local web 60',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `db` queued — position 1. It starts when the current update '
+                        'finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5 '
+                                   '×2, inspect --format'},
+                'events': ['update_container@local:web', 'wait 60s',
+                           'update_container@local:db'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_one cooldown container, nothing queued'): {'steps': [{'do': 'cooldown local web 60',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': ['web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_one cooldown container, nothing queued'): {'steps': [{'do': 'cooldown local web 60',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop]',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'queue drain after a group head'): {'steps': [{'do': "group local g1 ['web', 'db']",
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `db` queued — position 1. It starts when the current update '
+                        'finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '🔁 `web` dependents restarted: `db`',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, restart t=30, inspect '
+                                   '--format t=10, inspect --format t=5 ×2, inspect --format'},
+                'events': ['update_container@local:web', 'wait_healthy@local:web max=30',
+                           'wait 5s', 'update_container@local:db'],
+                'raised': None}],
+     'state': {'pending': ['web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'queue drain after a group head'): {'steps': [{'do': "group local g1 ['web', 'db']",
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'add_pending db postgres:16 local',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:db',
+                'out': ['<toast> Update db...',
+                        '<api> editMessageReplyMarkup  []',
+                        '🕒 `db` queued — position 1. It starts when the current update '
+                        'finishes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '🔁 `web` dependents restarted: `db`',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, restart t=30, inspect '
+                                   '--format t=10, inspect --format t=5 ×2, inspect --format'},
+                'events': ['update_container@local:web', 'wait_healthy@local:web max=30',
+                           'wait 5s', 'update_container@local:db'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
                'stops': 0,
                'restores': 0,
                'majors': {},
@@ -2999,7 +3275,8 @@ EXPECTED = {
                         '⏳ Updating `web`...',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap noop', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
@@ -3026,7 +3303,8 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap noop', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],

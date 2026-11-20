@@ -96,6 +96,11 @@ def _bot(pending_entries, on_update=None):
     # The registry the `_host_by_name` stand-in above answers from: srv30
     # is managed. Since Q11b run_keys refuses a host it does not know.
     eng.hosts = [types.SimpleNamespace(name="srv30")]
+    # Since Q11c a single update runs through the shared batch, which
+    # reads the host's groups and cooldowns and the disk setting.
+    eng.store = types.SimpleNamespace(get_groups=lambda: {},
+                                      get_cooldown=lambda name: 0)
+    eng.config = types.SimpleNamespace(disk_warn_auto_cleanup=False)
     bot.engine = eng
     bot.notifier = None
 
@@ -109,6 +114,9 @@ def _bot(pending_entries, on_update=None):
         """
 
         fired = False
+
+        def netns_target_name(self, name):
+            return None
 
         def update_container(self, name, image, **kw):
             if on_update is not None and not _Checker.fired:

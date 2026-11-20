@@ -66,6 +66,11 @@ def engine():
     e._update_queue_lock = threading.Lock()
     e._update_lock = threading.Lock()      # the real shared update mutex
     e._queued_selfupdate = None
+    # Since Q11c a single update runs through the shared batch, which
+    # reads the host's groups and cooldowns and the disk setting.
+    e.store = types.SimpleNamespace(get_groups=lambda: {},
+                                    get_cooldown=lambda name: 0)
+    e.config = types.SimpleNamespace(disk_warn_auto_cleanup=False)
     return e
 
 
@@ -398,6 +403,9 @@ def _queued_bot(eng, pending_entries):
 
 
 class _OkChecker:
+    def netns_target_name(self, name):
+        return None
+
     def update_container(self, name, image, **kw):
         return True, "ok"
 
@@ -770,7 +778,7 @@ def _tg_selfupdate_drain(run_stand_in):
         say=lambda m_, skip=(): said.append(m_),
         reply=said.append)
 
-    class _QueuesSelfupdate:
+    class _QueuesSelfupdate(_OkChecker):
         def update_container(self, name, image, **kw):
             if name == "a":
                 selfupdate.start(qb.selfupdate_ctx)
@@ -839,7 +847,7 @@ def _count_release(**kw):
     return _real_release(**kw)
 
 
-class _HeldChecker:
+class _HeldChecker(_OkChecker):
     def update_container(self, name, image, **kw):
         _held.append((name, eng._update_lock.locked()))
         return True, "ok"

@@ -144,6 +144,10 @@ def _engine():
     eng._updating = {}
     eng._queued_selfupdate = None
     eng._swap_in_flight = False
+    # Since Q11c a single update runs through the shared batch, which
+    # reads the host's groups and cooldowns and the disk setting.
+    eng.store = _MajorStore()
+    eng.config = types.SimpleNamespace(disk_warn_auto_cleanup=False)
     return eng
 
 
@@ -167,6 +171,9 @@ class _MajorStore:
 
     def get_ask_before_major(self):
         return []
+
+    def get_cooldown(self, name):
+        return 0
 
 
 def _tg(ck, cfg):

@@ -84,6 +84,11 @@ def _world(extra_pending=()):
         return orig(self, name, image, *a, **kw)
     cls.update_container = update_container
     row._restore = lambda: setattr(cls, "update_container", orig)
+    # The engine's waits (a cooldown, a group's pause) land in the same
+    # log, on a clock that stands still: no second is sat out, and the
+    # wait is the whole configured one.
+    row.bot.engine._sleep = lambda s: row.log.append(("wait", f"{s:g}", ""))
+    row.bot.engine._clock = lambda: 1000.0
     del row.log[:]
     return row, rec
 
@@ -236,16 +241,15 @@ checks["…and the entry still leaves the pending list"] = (
     "web@local" not in (row.state()["pending"] or []))
 _done(row)
 
-# ── a failed tap and its queued group-mate: measured, not promised ──
+# ── a failed tap takes its queued group-mate with it (Q11c) ─────────
 # The drain drops a failed container's queued group-mates (held at the
 # engine in test_update_queue, with a stand-in group lookup). Through
-# Telegram it never fires: `TelegramBot._group_of` reads the store's
-# `get_group_for_container` as a dict, the store returns `(gid, group)`,
-# the `.get` raises, and the `except` makes every answer None. Measured
-# 20.11.2026 on this fixture: `web` fails, its group-mate `db` still
-# runs. That has been so since the queue arrived (f9f32f5); this slice
-# moves code and changes nothing, so it is pinned as it is. Whoever
-# fixes `_group_of` flips these two checks.
+# Telegram it never fired until Q11c: `TelegramBot._group_of` read the
+# store's `get_group_for_container` as a dict, the store returns `(gid,
+# group)`, the `.get` raised and the `except` made every answer None —
+# measured 20.11.2026, `web` failed and its group-mate `db` still ran.
+# `web` is the group's head with restart_dependents on, so the batch
+# also kicks `db` back onto the rolled-back head, as "Update all" does.
 row, rec = _world(extra_pending=[("db", "postgres:16", "local")])
 _cls = type(row.checker)
 _ok = _cls.update_container
@@ -262,15 +266,139 @@ _drive(row, [("group", "local", "g1", ["web", "db"]), ("lock",),
              ("tap", "update_one:web")])
 _cls.update_container = _ok
 said = _said(row)
-checks["known defect: Telegram's group lookup finds no group (store gives a tuple)"] = (
-    row.bot._group_of("db") is None
-    and row.bot._store_for(None).get_group_for_container("db")[0] == "g1")
-checks["known defect: so a failed tap's queued group-mate still runs"] = (
-    [b for k, b, _ in row.log if k == "ran"] == ["local:web", "local:db"]
-    and not any("g1" in s for s in said))
-checks["…and each of the two is reported once, the failure as one"] = (
-    [r[:3] for r in rec.results] == [("web", "nginx:1.25", False),
-                                     ("db", "postgres:16", True)])
+checks["a failed tap: Telegram's group lookup finds the container's group"] = (
+    row.bot._group_of("db") == "g1" and row.bot._group_of("web") == "g1"
+    and row.bot._group_of("nas/web") is None)
+checks["…so its queued group-mate does not run, and the chat says why"] = (
+    [b for k, b, _ in row.log if k == "ran"] == ["local:web"]
+    and any("g1" in s and "`db`" in s for s in said)
+    and row.bot.engine.queued_updates() == [])
+checks["…and only the failure is reported, once"] = (
+    [r[:3] for r in rec.results] == [("web", "nginx:1.25", False)])
+checks["…and the head's dependents are kicked back, said on Telegram once"] = (
+    len([s for s in said if s.startswith("🔁 head rollback")]) == 1)
+checks["…and the group-mate is still pending"] = (
+    "db@local" in (row.state()["pending"] or []))
+_done(row)
+
+# ── a remote container's group is looked up on its own host ─────────
+row, rec = _world()
+row.do(("group", "nas", "g2", ["web", "media"]))
+checks["a remote container's group is looked up on its own host"] = (
+    row.bot._group_of("nas/web") == "g2"
+    and row.bot._group_of("nas/media") == "g2"
+    and row.bot._group_of("web") is None)
+_done(row)
+
+# ── a cooldown holds the queued container behind it (Q11c) ──────────
+# "Update all" waits a container's cooldown before the next recreate.
+# A tap with something queued behind it does the same now: the wait is
+# carried from the container that ran to the next one that runs.
+row, rec = _world(extra_pending=[("db", "postgres:16", "local")])
+row.bot._store_for("local").set_cooldown("web", 60)
+_wait_rec = row.bot.engine._sleep
+_during = []
+
+
+def _wait_and_tap(s):
+    # A tap on the waiting container while it waits: it is off the
+    # queue and this run's, so it is "the same one", not queued again.
+    _during.append(dict(row.bot.engine.updating))
+    row.bot._run_single_update(row.checker, "db")
+    return _wait_rec(s)
+
+
+row.bot.engine._sleep = _wait_and_tap
+_drive(row, [("lock",), ("tap", "update_one:db"), ("unlock",),
+             ("tap", "update_one:web")])
+_order = [(k, b) for k, b, _ in row.log if k in ("ran", "wait")]
+checks["a cooldown container: the queued one waits its cooldown first"] = (
+    _order == [("ran", "local:web"), ("wait", "60"), ("ran", "local:db")])
+checks["…and a tap on it while it waits is 'the same one', not queued"] = (
+    _during == [{"db": "1.1.0"}]
+    and any("same one" in s for s in _said(row))
+    and row.bot.engine.queued_updates() == [])
+checks["…and each is reported once"] = (
+    [r[0] for r in rec.results] == ["web", "db"]
+    and len(_results(_said(row), "web")) == 1
+    and len(_results(_said(row), "db")) == 1)
+_done(row)
+
+row, rec = _world()
+row.bot._store_for("local").set_cooldown("web", 60)
+_drive(row, [("notify", None), ("tap", "update_one:web")])
+checks["a cooldown container with nothing after it: nobody waits"] = (
+    [k for k, b, _ in row.log if k == "wait"] == []
+    and [b for k, b, _ in row.log if k == "ran"] == ["local:web"])
+_done(row)
+
+# ── a queued group-mate gets the group's pause (Q11c) ───────────────
+row, rec = _world(extra_pending=[("db", "postgres:16", "local")])
+_drive(row, [("group", "local", "g1", ["web", "db"]), ("lock",),
+             ("tap", "update_one:db"), ("unlock",),
+             ("tap", "update_one:web")])
+said = _said(row)
+_order = [(k, b) for k, b, _ in row.log if k in ("ran", "wait")]
+checks["a queued group-mate: it waits the group's pause after the head"] = (
+    _order == [("ran", "local:web"), ("wait", "5"), ("ran", "local:db")])
+checks["…and the head's dependents are restarted, said once"] = (
+    [s for s in said if s.startswith("🔁")]
+    == ["🔁 `web` dependents restarted: `db`"])
+checks["…and each container is reported once, everywhere"] = (
+    [r[0] for r in rec.results] == ["web", "db"]
+    and len(_results(said, "web")) == 1 and len(_results(said, "db")) == 1)
+_done(row)
+
+# ── a tap that runs out of disk gets the host's cleanup (Q11c) ──────
+row, rec = _world()
+_cls = type(row.checker)
+_ok = _cls.update_container
+
+
+def _full(self, name, image, *a, **kw):
+    _ok(self, name, image, *a, **kw)
+    return False, "write /var/lib: no space left on device"
+
+
+_cls.update_container = _full
+_drive(row, [("notify", None), ("tap", "update_one:nas/web")])
+_cls.update_container = _ok
+said = _said(row)
+checks["out of disk on a tap: that host's images are pruned"] = (
+    any(c[0][:2] == ["image", "prune"] for c in row.backends["nas"].calls)
+    and not any(c[0][:2] == ["image", "prune"]
+                for c in row.backends["local"].calls))
+_fail_at = next((i for i, s in enumerate(said)
+                 if s in _results(said, "web @nas")), None)
+_clean_at = next((i for i, s in enumerate(said) if s.startswith("🧹 nas:")),
+                 None)
+checks["…and Telegram says the cleanup once, after the failure"] = (
+    len([s for s in said if s.startswith("🧹 nas:")]) == 1
+    and None not in (_fail_at, _clean_at) and _fail_at < _clean_at)
+checks["…and the failure is reported once"] = (
+    [r[:3] for r in rec.results] == [("web", "nginx:1.25", False)])
+_done(row)
+
+# ── a tap on a sidecar is recreated against its owner's name (Q11c) ──
+row, rec = _world()
+_seen = []
+_cls = type(row.checker)
+_ok = _cls.update_container
+_nt = _cls.netns_target_name
+
+
+def _records(self, name, image, *a, **kw):
+    _seen.append(kw.get("netns_name", "<not passed>"))
+    return _ok(self, name, image, *a, **kw)
+
+
+_cls.update_container = _records
+_cls.netns_target_name = lambda self, name: "vpn" if name == "web" else None
+_drive(row, [("notify", None), ("tap", "update_one:web")])
+_cls.update_container = _ok
+_cls.netns_target_name = _nt
+checks["a tapped sidecar is recreated against its netns owner's name"] = (
+    _seen == ["vpn"])
 _done(row)
 
 # ── a second tap while "all done" is being said ─────────────────────
@@ -380,6 +508,9 @@ class _Ck:
     def __init__(self, answer):
         self.answer, self.seen = answer, []
 
+    def netns_target_name(self, name):
+        return None
+
     def update_container(self, name, image, **kw):
         self.seen.append((name, image, dict(eng.updating),
                           eng._update_lock.locked()))
@@ -441,12 +572,18 @@ checks["…calls `done` once for it, while the key is still in flight"] = (
     len(_dones) == 1 and "nas/web" in _dones[0] and eng.updating == {})
 
 _pending_mod.write(pf, [{"name": "db", "image": "postgres:16"}])
-ck = _Ck(RuntimeError("x" * 300))
+from errfmt import clip  # noqa: E402
+
+_err = "a" * 300 + "z" * 300
+ck = _Ck(RuntimeError(_err))
 _rep = []
 res, done = _rk(["db"], ck, report=lambda *a: _rep.append(a[2:]))
-checks["run_keys: an update that raises is a failure, clipped to 200"] = (
-    [r[2:] for r in res] == [(False, "x" * 200, "g-db")] and done is True)
-checks["…and is reported once, as that failure"] = _rep == [(False, "x" * 200)]
+# Clipped the way the batch clips it ("Update all" always did; the
+# single update cut at 200 characters until Q11c and lost the end).
+checks["run_keys: an update that raises is a failure, clipped like the batch"] = (
+    [r[2:] for r in res] == [(False, clip(_err), "g-db")] and done is True
+    and clip(_err).endswith("z" * 20))
+checks["…and is reported once, as that failure"] = _rep == [(False, clip(_err))]
 
 ck = _Ck((True, "ok"))
 _rep = []
@@ -500,6 +637,63 @@ checks["run_keys without a registry: a remote key is 'host_unknown'"] = (
 checks["…and a local key still runs"] = (
     [r[:1] + r[2:4] for r in res[1:]] == [("db", True, "ok")]
     and [x[:2] for x in ck.seen] == [("db", "postgres:16")])
+
+# A checker the batch refuses (None: nobody can reach the host) runs
+# nothing and leaves the entry, like a host the registry does not know.
+_pending_mod.write(pf, [{"name": "db", "image": "postgres:16"}])
+_before = open(pf, "rb").read()
+_rep = []
+with contextlib.redirect_stdout(io.StringIO()):
+    try:
+        res, done = eng.run_keys(["db"], checker_for=lambda k: None,
+                                 enrich=lambda us: None, pending_file=pf,
+                                 report=lambda *a: _rep.append(a))
+    except Exception as e:                          # noqa: BLE001
+        # Red, not a traceback.
+        res, done = [("raised " + type(e).__name__,)], None
+checks["run_keys: a key whose checker is None is 'host_unknown'"] = (
+    res == [("db", None, None, "host_unknown", None)] and _rep == []
+    and done is False and open(pf, "rb").read() == _before
+    and eng.updating == {})
+
+# ── what a single update waits before it runs (Q11c) ────────────────
+# The last recreate's cooldown, plus its group's pause when this one is
+# in the same group on the same host — counted from when that recreate
+# finished.
+_store = row.bot._store_for("local")
+_store.set_cooldown("web", 60)
+row.do(("group", "local", "g1", ["web", "db"]))
+row.do(("group", "nas", "g2", ["web", "media"]))
+
+
+def _waits(last, host, name, now):
+    got = []
+    eng._last_recreate = last
+    eng._clock = lambda: now
+    eng._sleep = got.append
+    with contextlib.redirect_stdout(io.StringIO()):
+        eng._wait_after_last_recreate(host, name)
+    return got
+
+
+checks["the wait: the last recreate's cooldown, then its group's pause"] = (
+    _waits(("local", "g1", "web", 1000.0), "local", "db", 1000.0)
+    == [60, 5])
+checks["…counted from when that recreate finished"] = (
+    _waits(("local", "g1", "web", 1000.0), "local", "db", 1045.0)
+    == [15, 5]
+    and _waits(("local", "g1", "web", 1000.0), "local", "db", 1063.0)
+    == [2])
+checks["…and nothing once both have passed"] = (
+    _waits(("local", "g1", "web", 1000.0), "local", "db", 1065.0) == [])
+checks["…no pause for a container outside that group"] = (
+    _waits(("local", "g1", "web", 1000.0), "local", "other", 1000.0)
+    == [60])
+checks["…nor for a container in another host's group"] = (
+    _waits(("local", "g1", "web", 1000.0), "nas", "media", 1000.0)
+    == [60])
+checks["…and no wait at all with nothing run before"] = (
+    _waits(None, "local", "db", 1000.0) == [])
 _done(row)
 
 for k, v in checks.items():

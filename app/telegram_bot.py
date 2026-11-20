@@ -1880,6 +1880,9 @@ class TelegramBot:
                 # as in flight: a second tap during this line is "the
                 # same one", not a job for the queue.
                 done=lambda: self.send_message(self.t("update_all_done")),
+                # What the batch says beside the result: the cascade of a
+                # group head, the cleanup after a full disk.
+                note=lambda key, line: self.send_message(line),
                 pending_file=self.config.pending_file)
             for key, target, success, msg, last_group in results:
                 if target is None:
@@ -1889,9 +1892,7 @@ class TelegramBot:
                     # the lock goes back and that is all.
                     return
                 # Remembered for the drain, which takes a failed
-                # container's queued group-mates out of the queue. Only
-                # as good as `_group_of`, which today finds no group at
-                # all (see there).
+                # container's queued group-mates out of the queue.
                 self._last_update_group = last_group
         finally:
             # One releaser per claim: a drained entry's claim is the
@@ -1938,19 +1939,19 @@ class TelegramBot:
                       hosts=", ".join(f"`{n}`" for n in names))
 
     def _report_single_update(self, container_key, target, success, msg):
-        """One finished single update: the result line here, and the card
-        for the other channels.
+        """One finished single update: the result line here.
 
-        Enriched with `source_url` before this is called, so both carry
-        the link (parity with the auto-update + bulk-update flows, fixed
-        in v1.19.2/v1.19.3 after @NotRetarded surfaced the gap)."""
-        from container_store import split_host_key
+        The card for the other channels is the batch's now (Q11c): the
+        engine reports it through the broadcast seam before this is
+        called, exactly as for "Update all". Sending it here as well is
+        the double report test_single_update_report counts.
+
+        Enriched with `source_url` before this is called, so the line
+        carries the link (parity with the auto-update + bulk-update
+        flows, fixed in v1.19.2/v1.19.3 after @NotRetarded surfaced the
+        gap)."""
         status = "✅" if success else "❌"
         self.send_message(f"{status} {self._display_name(target)}: {msg}")
-        if self.notifier:
-            self.notifier.send_update_result(
-                split_host_key(container_key)[1], target.get("image", "?"),
-                success, msg, source_url=target.get("source_url", ""))
 
     def _sweep_update_queue(self, checker):
         """Once per poll cycle: hand the engine's sweep this bot's drain.
@@ -2025,21 +2026,21 @@ class TelegramBot:
         return name if host == LOCAL_HOST else f"{name} @{host}"
 
     def _group_of(self, container_key):
-        """The group name a queued container belongs to, or None.
+        """The id of the group a queued container belongs to on its own
+        host, or None. The same id the batch names a group by.
 
-        Measured 20.11.2026: None for every container. The store's
-        `get_group_for_container` returns `(gid, group)`, the `.get`
-        below raises on the tuple, and the `except` turns that into
-        None — so the drain has never dropped a failed container's
-        group-mates through Telegram. Pinned as it is in
-        test_single_update_report; fixing it is a behaviour change of
-        its own."""
+        Until Q11c this was None for every container: the store's
+        `get_group_for_container` returns `(gid, group)`, the lookup
+        read it as a dict, raised on the tuple, and the `except` turned
+        that into None — so the drain never dropped a failed
+        container's queued group-mates through Telegram (measured
+        20.11.2026, test_single_update_report)."""
         try:
             from container_store import split_host_key
             host_name, name = split_host_key(container_key)
-            store = self._store_for(self._host_by_name(host_name))
-            g = store.get_group_for_container(name)
-            return (g or {}).get("name") or (g or {}).get("id") or None
+            gid, _group = self._store_for(host_name).get_group_for_container(
+                name)
+            return gid or None
         except Exception:
             return None
 
