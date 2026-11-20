@@ -1833,42 +1833,16 @@ class TelegramBot:
         # Claim the shared update mutex — before v1.23.1 this path took
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
-        if not self.engine.claim_update():
-            # Tapping the SAME container again while it is running is not
-            # a second piece of work — it is the same one. Queueing it
-            # meant the drain picked it up after the update had finished
-            # and emptied the pending list, and then reported "container
-            # not in update list" directly under a green OK (seen on the
-            # local instance, 08.10.2026).
-            if container_key in self.engine.updating:
-                self.send_message(self.t("update_same_running",
-                                         name=self._key_label(container_key)))
-                return
-            # Anything else: queue it rather than drop it. Tapping four containers in
-            # the notification used to run one and discard three, with an
-            # "an update is already running" for each — so you had to come
-            # back and tap them again, one at a time, and nothing told you
-            # which ones had not run.
-            pos = self.engine.enqueue_update(container_key)
-            if pos == -1:
-                self.send_message(self.t("update_queue_full",
-                                         max=self.engine.UPDATE_QUEUE_MAX))
-            elif pos == 0:
-                # How long it has been sitting there, because "already in
-                # the queue" alone reads as "you already pressed this" —
-                # and the entry may have been stranded since another day
-                # (see `_sweep_update_queue`). A genuine double tap says
-                # "for 2s", which is also the truth.
-                from notify_retry import _ago
-                waited = self.engine.queued_waiting_seconds(container_key)
-                self.send_message(self.t(
-                    "update_already_queued",
-                    name=self._key_label(container_key),
-                    since=_ago(waited if waited is not None else 0)))
-            else:
-                self.send_message(self.t("update_queued",
-                                         name=self._key_label(container_key),
-                                         pos=pos))
+        #
+        # Busy, the engine decides what happens to the tap (Q7) and this
+        # only says it: queued rather than dropped, because tapping four
+        # containers in the notification used to run one and discard
+        # three, with an "an update is already running" for each — so you
+        # had to come back and tap them again, one at a time, and nothing
+        # told you which ones had not run.
+        claimed, busy, params = self.engine.claim_or_queue(container_key)
+        if not claimed:
+            self.send_message(self._claim_answer(container_key, busy, params))
             return
         # Reset per attempt: a stale value from a previous failure would
         # make the drain skip a group that has nothing to do with this run.
@@ -2053,6 +2027,18 @@ class TelegramBot:
     def _short_key(container_key):
         from container_store import split_host_key
         return split_host_key(container_key)[1]
+
+    def _claim_answer(self, container_key, key, params):
+        """The sentence for a claim the engine answered with `key`.
+
+        The engine's parameters, plus the container's name the way the
+        buttons say it, and `since_seconds` rendered as "2m".
+        """
+        kw = dict(params)
+        if "since_seconds" in kw:
+            from notify_retry import _ago
+            kw["since"] = _ago(kw.pop("since_seconds"))
+        return self.t(key, name=self._key_label(container_key), **kw)
 
     def _key_label(self, container_key):
         """`portainer` locally, `portainer @srv30` on a remote host.

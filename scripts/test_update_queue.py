@@ -174,6 +174,202 @@ checks["…and names what will not run"] = any(
 checks["…leaving nothing queued to be lost by the restart"] = (
     eng._update_queue == [])
 
+# ── claim_or_queue: the engine decides, a connection only translates ─
+# Q7 moved the decision out of Telegram's tap handler. The answer is a
+# key and its parameters, never a sentence, so the Web UI and Discord
+# can say the same thing in their own words once they queue too. Raw
+# seconds for "since": rendering "2m" is the connection's business.
+import time  # noqa: E402
+
+MAX = UpdateEngine.UPDATE_QUEUE_MAX
+
+
+def _coq(e, key):
+    """`e.claim_or_queue(key)`, or a marker when the engine has none."""
+    f = getattr(e, "claim_or_queue", None)
+    return f(key) if f else ("no claim_or_queue",)
+
+
+def _coqm(e, keys):
+    f = getattr(e, "claim_or_queue_many", None)
+    return f(keys) if f else ("no claim_or_queue_many",)
+
+
+e = engine()
+e._updating = {}
+got = _coq(e, "web")
+checks["claim_or_queue on a free lock claims it: (True, None, {})"] = (
+    got == (True, None, {}) and e._update_lock.locked())
+checks["…and queues nothing"] = e._update_queue == []
+if e._update_lock.locked():
+    e._update_lock.release()
+
+e = engine()
+e._updating = {"nas/web": "1.26.0"}
+e._update_lock.acquire()
+got = _coq(e, "nas/web")
+checks["held, the same key being updated: update_same_running"] = (
+    got == (False, "update_same_running", {}))
+checks["…not queued behind itself"] = e._update_queue == []
+checks["…and the holder keeps its lock"] = e._update_lock.locked()
+
+e = engine()
+e._updating = {}
+for i in range(MAX):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+got = _coq(e, "one-too-many")
+checks["held and full: update_queue_full with max"] = (
+    got == (False, "update_queue_full", {"max": MAX}))
+checks["…and the queue is left as it was"] = (
+    e._update_queue == [f"c{i}" for i in range(MAX)])
+
+e = engine()
+e._updating = {}
+e.enqueue_update("db")
+e._queued_at["db"] = time.time() - 120
+e._update_lock.acquire()
+got = _coq(e, "db")
+checks["held and already queued: update_already_queued, raw seconds"] = (
+    isinstance(got, tuple) and len(got) == 3
+    and got[:2] == (False, "update_already_queued")
+    and set(got[2]) == {"since_seconds"}
+    and isinstance(got[2]["since_seconds"], (int, float))
+    and 119 <= got[2]["since_seconds"] < 125)
+checks["…queued once, not twice"] = e._update_queue == ["db"]
+
+e = engine()
+e._updating = {"busy": ""}
+e.enqueue_update("first")
+e._update_lock.acquire()
+got = _coq(e, "second")
+checks["held otherwise: update_queued with its position"] = (
+    got == (False, "update_queued", {"pos": 2}))
+checks["…and it is on the queue, behind the first"] = (
+    e._update_queue == ["first", "second"])
+checks["…and the holder still has the lock"] = e._update_lock.locked()
+
+# ── claim_or_queue_many: one claim for the whole request ─────────────
+e = engine()
+e._updating = {}
+got = _coqm(e, ["a", "b", "c"])
+checks["three keys on a free lock: one claim, no outcomes"] = (
+    got == (True, []) and e._update_lock.locked())
+checks["…and a batch never queues behind itself"] = e._update_queue == []
+if e._update_lock.locked():
+    e._update_lock.release()
+
+e = engine()
+e._updating = {}
+e._update_lock.acquire()
+got = _coqm(e, ["a", "b", "c"])
+checks["three keys on a held lock: three outcomes, in order"] = (
+    got == (False, [("a", "update_queued", {"pos": 1}),
+                    ("b", "update_queued", {"pos": 2}),
+                    ("c", "update_queued", {"pos": 3})]))
+checks["…and the queue keeps the request's order"] = (
+    e._update_queue == ["a", "b", "c"])
+checks["…and the holder keeps its lock"] = e._update_lock.locked()
+
+e = engine()
+e._updating = {"run": ""}
+e.enqueue_update("old")
+e._update_lock.acquire()
+got = _coqm(e, ["run", "old", "new", "new"])
+_out = got[1] if isinstance(got, tuple) and len(got) == 2 else None
+checks["held, mixed: each key answered for itself"] = (
+    _out is not None and [(k, key) for k, key, _p in _out]
+    == [("run", "update_same_running"), ("old", "update_already_queued"),
+        ("new", "update_queued")]
+    and _out[2][2] == {"pos": 2})
+checks["…a key asked for twice is one entry"] = (
+    e._update_queue == ["old", "new"])
+
+# Full mid-batch. My decision for batches (18.11.2026): all of it or
+# none of it. Half a request on the queue is a request nobody asked for.
+e = engine()
+e._updating = {}
+for i in range(MAX - 2):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+got = _coqm(e, ["c0", "x", "y", "z"])
+_out = got[1] if isinstance(got, tuple) and len(got) == 2 else None
+checks["full mid-batch: nothing of it goes on the queue"] = (
+    e._update_queue == [f"c{i}" for i in range(MAX - 2)])
+checks["…every key that needed a place is told the queue is full"] = (
+    _out is not None
+    and [(k, key, p) for k, key, p in _out][1:]
+    == [(k, "update_queue_full", {"max": MAX}) for k in ("x", "y", "z")])
+checks["…and the one already there is still told it is there"] = (
+    _out is not None and _out[0][:2] == ("c0", "update_already_queued"))
+
+e = engine()
+e._updating = {}
+for i in range(MAX - 3):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+got = _coqm(e, ["x", "y", "z"])
+checks["a batch that fits exactly goes in whole"] = (
+    isinstance(got, tuple) and got[0] is False
+    and [p for _k, _key, p in got[1]]
+    == [{"pos": MAX - 2}, {"pos": MAX - 1}, {"pos": MAX}]
+    and len(e._update_queue) == MAX)
+
+# ── Telegram's tap only translates the engine's answer ───────────────
+# The real `_run_single_update` on a real engine, through every busy
+# answer, against the sentence the old handler built by hand.
+from i18n import get_translator  # noqa: E402
+from notify_retry import _ago  # noqa: E402
+
+_T = get_translator("en")
+
+
+def _tap(eng, key):
+    said = []
+    bot = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
+    bot.engine = eng
+    bot.t = _T
+    bot.send_message = lambda m_, **kw: said.append(m_)
+    bot._host_by_name = lambda n: None
+    bot._checker_for = lambda host, checker: checker
+    bot._run_queued_selfupdate = lambda: None
+    bot._run_single_update(object(), key)
+    return said
+
+
+e = engine()
+e._updating = {"nas/web": ""}
+e._update_lock.acquire()
+checks["Telegram: same container → its sentence, with the host"] = (
+    _tap(e, "nas/web") == [_T("update_same_running", name="web @nas")])
+
+e = engine()
+e._updating = {}
+for i in range(MAX):
+    e.enqueue_update(f"c{i}")
+e._update_lock.acquire()
+checks["Telegram: queue full → its sentence, with the cap"] = (
+    _tap(e, "web") == [_T("update_queue_full", max=MAX)])
+
+e = engine()
+e._updating = {}
+e.enqueue_update("nas/db")
+e._queued_at["nas/db"] = time.time() - 125
+e._update_lock.acquire()
+checks["Telegram: already queued → since, rendered by Telegram"] = (
+    _tap(e, "nas/db") == [_T("update_already_queued", name="db @nas",
+                             since=_ago(125))])
+
+e = engine()
+e._updating = {}
+e.enqueue_update("first")
+e._update_lock.acquire()
+checks["Telegram: queued → its position"] = (
+    _tap(e, "db") == [_T("update_queued", name="db", pos=2)]
+    and e._update_queue == ["first", "db"])
+checks["…and the tap leaves the holder's lock alone"] = (
+    e._update_lock.locked())
+
 # ── the source says what the docstring says ─────────────────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()
@@ -191,8 +387,20 @@ single = srcslice.section(src, "def _run_single_update",
                           label="telegram_bot.py: _run_single_update")
 checks["a busy lock queues the tap instead of discarding it"] = (
     single is not None
-    and "self.engine.enqueue_update(container_key)" in single
+    and "self.engine.claim_or_queue(container_key)" in single
     and "update_already_running" not in single)
+# …and the queueing itself is the engine's (Q7). The behaviour is driven
+# above; this only says where it lives, so a second copy in a connection
+# cannot come back unnoticed.
+esrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                         "update_engine.py"), encoding="utf-8").read()
+coq = srcslice.section(esrc, "    def claim_or_queue(self",
+                       "\n    def claim_or_queue_many(",
+                       label="update_engine.py: claim_or_queue")
+checks["…through the engine, which puts it on the queue"] = (
+    coq is not None and "self.enqueue_update(container_key)" in coq)
+checks["…and the tap no longer queues by hand"] = (
+    single is not None and "enqueue_update(" not in single)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

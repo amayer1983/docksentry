@@ -7,7 +7,9 @@ claim it. Ten go through the engine's door (`claim_update()` /
 its scheduled self-update check, Discord's two update commands, and the
 engine's own `cleanup_guarded`, which Telegram's and Discord's cleanup
 guards hand their work to (`engine.cleanup_guarded(...)`, counted as
-their claim). The Web worker and `selfupdate.start` still claim by hand
+their claim). Telegram's per-container tap claims through
+`engine.claim_or_queue(...)` (Q7), which queues it when busy and hands
+back the answer as a key. The Web worker and `selfupdate.start` still claim by hand
 with `acquire(blocking=False)`. Each one has
 its own answer for "somebody else holds it": Telegram's per-container
 tap queues, `/update all` and a confirmed major refuse, the scheduler
@@ -30,6 +32,7 @@ lists below:
     a local name assigned from one of those, or `getattr(x,
     "_update_lock")`; plus calls to Discord's `_release_lock()`, and
     every call to the engine's door — `claim_update()`,
+    `claim_or_queue(...)` / `claim_or_queue_many(...)`,
     `release_update(...)` with what it hands `after`, `with
     update_claim(...)`, `cleanup_guarded(...)` called on an engine, and
     every read of `update_claimed` — recorded under the caller's
@@ -107,8 +110,10 @@ APP = m.APP
 #: (driven by test_update_lock_door.py, not here).
 LOCK_OPS = {
     # ── claims ──
+    # Claims through the engine's claim-or-queue (Q7): busy, the engine
+    # queues the tap and this only translates the answer.
     ("telegram_bot.py", "TelegramBot._run_single_update"):
-        ("CLAIM", ["claim_update()",
+        ("CLAIM", ["claim_or_queue(container_key)",
                    "release_update(after=self._run_queued_selfupdate)"]),
     ("telegram_bot.py", "TelegramBot._confirm_major_update"):
         ("CLAIM", ["claim_update()",
@@ -177,6 +182,13 @@ LOCK_OPS = {
         ("DOOR", ["claim_update()", "release_update(after=after)"]),
     ("update_engine.py", "UpdateEngine.update_claimed"):
         ("DOOR", ["locked"]),
+    # Claim, or queue and say why not (Q7). Driven by test_update_queue.py
+    # (every answer, single and many) and, through Telegram's tap, by the
+    # drive below.
+    ("update_engine.py", "UpdateEngine.claim_or_queue"):
+        ("DOOR", ["claim_update()"]),
+    ("update_engine.py", "UpdateEngine.claim_or_queue_many"):
+        ("DOOR", ["claim_update()"]),
 }
 
 #: Functions outside update_engine.py that take the lock with a raw
@@ -224,7 +236,11 @@ UPDATE_RUNNING_READS = {
 #: (file, qualname, callee) → count. Who feeds the container queue and
 #: who works it off. Today only Telegram does either (Q13).
 QUEUE_CALLS = {
-    ("telegram_bot.py", "TelegramBot._run_single_update", "enqueue_update"): 1,
+    # Telegram's tap queues through the engine's claim_or_queue (Q7).
+    ("update_engine.py", "UpdateEngine.claim_or_queue", "enqueue_update"): 1,
+    # One request, all of it or none of it.
+    ("update_engine.py", "UpdateEngine.claim_or_queue_many",
+     "enqueue_updates"): 1,
     ("telegram_bot.py", "TelegramBot._run_single_update",
      "_drain_update_queue"): 1,
     ("telegram_bot.py", "TelegramBot._sweep_update_queue",
@@ -235,7 +251,9 @@ QUEUE_CALLS = {
     ("telegram_bot.py", "TelegramBot._drain_update_queue", "enqueue_update"): 1,
     ("telegram_bot.py", "TelegramBot.listen", "_sweep_update_queue"): 1,
 }
-QUEUE_CALLEES = ("enqueue_update", "take_queued_update",
+#: The two that feed the queue; the rest work it off.
+QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
+QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update",
                  "_drain_update_queue", "_sweep_update_queue")
 
 #: (file, qualname, callee) → (count, why). Who asks the lock through a
@@ -262,14 +280,6 @@ def _helper_callees():
 #: the sentence; other lock = not the update lock.
 BUSY_MESSAGES = {
     # Telegram
-    ("telegram_bot.py", "TelegramBot._run_single_update",
-     "update_same_running"): (1, "claim: same container tapped again"),
-    ("telegram_bot.py", "TelegramBot._run_single_update",
-     "update_queue_full"): (1, "claim: queue at UPDATE_QUEUE_MAX"),
-    ("telegram_bot.py", "TelegramBot._run_single_update",
-     "update_already_queued"): (1, "claim: already on the queue"),
-    ("telegram_bot.py", "TelegramBot._run_single_update",
-     "update_queued"): (1, "claim: queued"),
     ("telegram_bot.py", "TelegramBot._drain_update_queue",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
     ("telegram_bot.py", "TelegramBot._drain_update_queue",
@@ -306,6 +316,16 @@ BUSY_MESSAGES = {
     ("web_ui.py", "create_handler.WebHandler._run_web_update_batch",
      "update_already_running"): (1, "claim"),
     # The engine
+    # claim_or_queue(_many)'s answers, as keys (Q7); Telegram's tap
+    # translates them and so will every connection that queues.
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_same_running"): (1, "claim: same container tapped again"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_queue_full"): (1, "claim: queue at UPDATE_QUEUE_MAX"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_already_queued"): (1, "claim: already on the queue"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_queued"): (1, "claim: queued"),
     ("update_engine.py", "UpdateEngine.cleanup_guarded",
      "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle
@@ -342,6 +362,9 @@ DOOR_READ = "update_claimed"
 #: the scheduler's and the Web UI's — go through the bot's delegator,
 #: which is counted there.
 DOOR_GUARDED = "cleanup_guarded"
+#: Claim, or queue and say why not (Q7): a claim of the caller's,
+#: whatever object it is spelled on, like `claim_update`.
+DOOR_QUEUE = ("claim_or_queue", "claim_or_queue_many")
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -528,6 +551,9 @@ def enumerate_sites(app=None):
                             c == DOOR_GUARDED and _on_engine(f)):
                         ops[(rel, qual)].append(_door_form(n))
                         mentions.add((rel, qual))
+                    elif c in DOOR_QUEUE:
+                        ops[(rel, qual)].append(_door_form(n))
+                        mentions.add((rel, qual))
                     if c in QUEUE_CALLEES:
                         queue[(rel, qual, c)] += 1
                     if c in helper_callees:
@@ -620,7 +646,11 @@ def enumeration_checks(found):
                     "def f(eng):\n"
                     "    return getattr(eng, \"update_claimed\", False)\n"
                     "def g(self):\n"
-                    "    return self.engine.update_claimed\n")
+                    "    return self.engine.update_claimed\n"
+                    "def h(self, k):\n"
+                    "    return self.engine.claim_or_queue(k)\n"
+                    "def i(engine, ks):\n"
+                    "    return engine.claim_or_queue_many(ks)\n")
         d_ops, d_mentions, *_ = enumerate_sites(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -630,7 +660,9 @@ def enumeration_checks(found):
               ("door.py", "c"): ["cleanup_guarded(ck, after=self.g)"],
               ("door.py", "d"): ["cleanup_guarded(ck)"],
               ("door.py", "f"): ["update_claimed"],
-              ("door.py", "g"): ["update_claimed"]}
+              ("door.py", "g"): ["update_claimed"],
+              ("door.py", "h"): ["claim_or_queue(k)"],
+              ("door.py", "i"): ["claim_or_queue_many(ks)"]}
     out.append(("the enumeration sees every spelling of the door, "
                 "by caller", d_ops == want_d and d_mentions == set(want_d),
                 f"ops {d_ops}, mentions {sorted(d_mentions)}"))
@@ -643,7 +675,7 @@ def enumeration_checks(found):
                 f"expected {sorted(RAW_CLAIMS)}; everything else claims "
                 "through the door"))
 
-    drains = {k[0] for k in queue if k[2] != "enqueue_update"}
+    drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS}
     out.append((f"only these files work the queue off: {sorted(drains)}",
                 drains == {"telegram_bot.py"}, "Q13: today Telegram only"))
 

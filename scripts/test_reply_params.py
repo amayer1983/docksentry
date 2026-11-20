@@ -127,6 +127,90 @@ checks[f"no value is measured and then dropped (known: {KNOWN_SPARE})"] = (
 if spare:
     print("  ungenutzt:", "; ".join(spare))
 
+# ── the engine's busy answers (Q7) ──────────────────────────────────
+# `claim_or_queue` and `claim_or_queue_many` answer with a key and its
+# parameters; every connection fills in the container's name itself and
+# renders a `<x>_seconds` value as `{x}` ("2m"). So for each answer the
+# engine can give, in every language: the key exists, every placeholder
+# is either one of those parameters or `name`, and no parameter is left
+# with nowhere to go. Driven, not read off the source: the keys are the
+# ones the engine actually returned, in every state it has.
+import glob  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+sys.path.insert(0, APP)
+from update_engine import UpdateEngine  # noqa: E402
+
+LANGS = {os.path.basename(f)[:-5]: json.load(open(f, encoding="utf-8"))
+         for f in sorted(glob.glob(os.path.join(APP, "lang", "*.json")))}
+
+
+def _eng(queued=(), updating=(), held=True):
+    e = UpdateEngine.__new__(UpdateEngine)
+    e._update_queue, e._queued_at = [], {}
+    e._update_queue_lock = threading.Lock()
+    e._update_lock = threading.Lock()
+    e._updating = {k: "" for k in updating}
+    e._queued_selfupdate = None
+    for k in queued:
+        e.enqueue_update(k)
+        e._queued_at[k] = time.time() - 90
+    if held:
+        e._update_lock.acquire()
+    return e
+
+
+answers = []          # (key, params), in the order the engine gave them
+_full = [f"c{i}" for i in range(UpdateEngine.UPDATE_QUEUE_MAX)]
+for coq in ("claim_or_queue", "claim_or_queue_many"):
+    for state, kw, keys in (
+            ("running", {"updating": ["web"]}, ["web"]),
+            ("full", {"queued": _full}, ["web"]),
+            ("already queued", {"queued": ["web"]}, ["web"]),
+            ("queued", {}, ["web"])):
+        e = _eng(**kw)
+        f = getattr(e, coq, None)
+        if f is None:
+            checks[f"{coq} exists"] = False
+            break
+        if coq == "claim_or_queue":
+            _c, key, params = f(keys[0])
+            got = [(key, params)]
+        else:
+            _c, outcomes = f(keys)
+            got = [(key, params) for _k, key, params in outcomes]
+        checks[f"{coq}, {state}: answers busy"] = _c is False and len(got) == 1
+        answers += got
+
+_given = {key for key, _p in answers}
+checks["the engine's busy answers are the four I know"] = _given == {
+    "update_same_running", "update_queue_full", "update_already_queued",
+    "update_queued"}
+
+
+def _rendered(params):
+    return {p[:-len("_seconds")] if p.endswith("_seconds") else p
+            for p in params}
+
+
+_bad = []
+for key, params in answers:
+    want = _rendered(params)
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _bad.append(f"{lang}: no {key}")
+            continue
+        have = placeholders(strings[key])
+        if have - want - {"name"}:
+            _bad.append(f"{lang}: {key} wants {sorted(have - want - {'name'})}")
+        if want - have:
+            _bad.append(f"{lang}: {key} drops {sorted(want - have)}")
+checks[f"…exist in all {len(LANGS)} languages with matching placeholders"] = (
+    bool(answers) and not _bad and len(LANGS) >= 16)
+if _bad:
+    print("  busy answers:", "; ".join(_bad))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

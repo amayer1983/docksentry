@@ -236,6 +236,34 @@ class UpdateEngine:
             self._queued_at[key] = time.time()
             return len(self._update_queue)
 
+    def enqueue_updates(self, keys):
+        """Queue several keys as one request: all of them or none.
+
+        `{key: answer}` with `enqueue_update`'s answers — the 1-based
+        position, 0 for a key already queued, -1 for a key that needed a
+        place it did not get. When the new keys do not all fit, none of
+        them goes in and each of them gets -1: half a request on the
+        queue is a request nobody made. A key named twice is one entry.
+        """
+        out = {}
+        with self._update_queue_lock:
+            new = []
+            for k in dict.fromkeys(keys):
+                if k in self._update_queue:
+                    out[k] = 0
+                else:
+                    new.append(k)
+            if len(self._update_queue) + len(new) > self.UPDATE_QUEUE_MAX:
+                for k in new:
+                    out[k] = -1
+                return out
+            now = time.time()
+            for k in new:
+                self._update_queue.append(k)
+                self._queued_at[k] = now
+                out[k] = len(self._update_queue)
+        return out
+
     def take_queued_update(self):
         """Pop the next queued key, or None."""
         with self._update_queue_lock:
@@ -398,6 +426,76 @@ class UpdateEngine:
         finally:
             if claimed:
                 self.release_update(after=after)
+
+    # ── Claim, or say why not and queue ────────────────────────────────
+    def claim_or_queue(self, container_key):
+        """Claim the update lock for one container, or queue it.
+
+        `(True, None, {})` when the lock was free: the caller now holds
+        it and gives it back with `release_update`. Otherwise `(False,
+        key, params)`, with the lock untouched and `key` what to tell
+        the person:
+
+          update_same_running    `container_key` is the one being
+                                 updated right now — not a second job
+          update_queue_full      {max}: it did not fit
+          update_already_queued  {since_seconds}: it was on the queue
+          update_queued          {pos}: it is on the queue now
+
+        A key and its parameters, never a sentence: every connection
+        adds the container's name and says it in its own words, and
+        `since_seconds` stays raw so each renders it as it likes.
+        """
+        if self.claim_update():
+            return True, None, {}
+        # Tapping the SAME container again while it is running is not a
+        # second piece of work — it is the same one. Queueing it meant
+        # the drain picked it up after the update had finished and
+        # emptied the pending list, and then reported "container not in
+        # update list" directly under a green OK (seen on my local
+        # instance, 08.10.2026).
+        pos = (None if container_key in self.updating
+               else self.enqueue_update(container_key))
+        return (False,) + self._queue_answer(container_key, pos)
+
+    def claim_or_queue_many(self, keys):
+        """`claim_or_queue` for one request that names several containers.
+
+        ONE claim for the whole request: `(True, [])` when the lock was
+        free, and the caller runs every key under it — a batch never
+        queues behind itself. Otherwise `(False, outcomes)`, one
+        `(key, i18n key, params)` per distinct key in the order asked,
+        with the same keys as `claim_or_queue`. The new keys go on the
+        queue all together or not at all (`enqueue_updates`); when they
+        do not fit, each of them is answered `update_queue_full`, and a
+        key that was already queued or is running is still told so.
+        """
+        if self.claim_update():
+            return True, []
+        keys = list(dict.fromkeys(keys))
+        running = self.updating
+        positions = self.enqueue_updates([k for k in keys if k not in running])
+        return False, [(k,) + self._queue_answer(
+            k, None if k in running else positions[k]) for k in keys]
+
+    def _queue_answer(self, container_key, pos):
+        """`(i18n key, params)` for a claim that lost. `pos` is what the
+        queue said (`enqueue_update`), or None for the container that is
+        being updated right now."""
+        if pos is None:
+            return "update_same_running", {}
+        if pos == -1:
+            return "update_queue_full", {"max": self.UPDATE_QUEUE_MAX}
+        if pos == 0:
+            # How long it has been sitting there, because "already in
+            # the queue" alone reads as "you already pressed this" — and
+            # the entry may have been stranded since another day (see
+            # the Telegram sweep). A genuine double tap says "for 2s",
+            # which is also the truth.
+            waited = self.queued_waiting_seconds(container_key)
+            return "update_already_queued", {
+                "since_seconds": waited if waited is not None else 0}
+        return "update_queued", {"pos": pos}
 
     def cleanup_guarded(self, checker, *, after=None):
         """Image cleanup under the update lock (#2 follow-up, @famewolf).
