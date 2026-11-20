@@ -21,8 +21,9 @@ Driven here:
   sleep, not after it;
 - the two ways out of a pass that skip `_after_tick`, pinned as
   measured: the cron minute in maintenance mode (sleeps and goes round
-  early) and an applied self-update (returns from `_run`), each next to
-  the same pass without that reason, which does reach it;
+  early; started at :40, two passes in a row land in a cron minute) and
+  an applied self-update (returns from `_run`), each next to the same
+  pass without that reason, which does reach it;
 - read as a tree: the loop's last two statements are `self._after_tick()`
   and `time.sleep(30)`, and the flush sits in `_after_tick` alone.
 
@@ -147,18 +148,19 @@ _BASE = datetime(2026, 11, 20, 12, 0, 0)
 
 
 def run_loop(passes, spy_tick=False, flush=_flush_rec, cfg=None,
-             checker=None, bot=None, log=None):
+             checker=None, bot=None, log=None, base=_BASE):
     """Run `_run` for `passes` passes of its 30 s sleep and return what
     happened, in order: "tick" (when spied), "flush", "sleep".
 
-    The wall clock is stood in too: the first pass is 12:00:00 and every
-    sleep moves it on, so a cron minute lands where the caller puts it."""
+    The wall clock is stood in too: the first pass is at `base`
+    (12:00:00 unless the caller says otherwise) and every sleep moves it
+    on, so a cron minute lands where the caller puts it."""
     clk = {"t": 1000.0, "n": 0}
 
     class _Clock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return _BASE + timedelta(seconds=clk["t"] - 1000.0)
+            return base + timedelta(seconds=clk["t"] - 1000.0)
 
     s = scheduler.Scheduler(cfg or _config(_tmp),
                             object() if checker is None else checker,
@@ -254,6 +256,27 @@ check("a cron minute in maintenance mode sleeps without _after_tick",
       f"crashed {crashed!r}, events {events}")
 check("…and says it skipped, once per cron minute",
       _mlog.getvalue().count("skipped — maintenance mode active") == 2,
+      f"log {_mlog.getvalue()!r}")
+
+# The skip lasts as long as the cron minute does, not one pass: a pass
+# that starts at :30 or later has its next pass in a new minute, which
+# skips too. Started at 12:00:40, the passes at 12:00:40 and 12:01:10
+# both skip and the first flush is at 12:01:40, 60 s after the first
+# pass. Measured the same on the tree before _after_tick existed.
+events.clear()
+_mlog = io.StringIO()
+crashed = run_loop(4, cfg=_mcfg, checker=_Checker(), log=_mlog,
+                   base=datetime(2026, 11, 20, 12, 0, 40))
+check("…and started at :40, two passes in a row skip it",
+      crashed is None
+      and events == ["sleep 30", "sleep 30", "flush", "sleep 30",
+                     "sleep 30"],
+      f"crashed {crashed!r}, events {events}")
+check("…and says it skipped once per cron minute: 12:00, 12:01, 12:02",
+      _mlog.getvalue().count("skipped — maintenance mode active") == 3
+      and "12:00 skipped" in _mlog.getvalue()
+      and "12:01 skipped" in _mlog.getvalue()
+      and "12:02 skipped" in _mlog.getvalue(),
       f"log {_mlog.getvalue()!r}")
 
 _ncfg = _config(tempfile.mkdtemp())

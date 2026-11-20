@@ -532,11 +532,15 @@ class Scheduler:
         """The end of a pass of `_run`, right before its sleep.
 
         Work that must not depend on a front end hangs off here, and it
-        inherits two ways out of a pass that skip this. The cron minute
-        in maintenance mode sleeps and goes round early, so the next
-        pass, 30 s later, is the one that runs this. An applied
-        self-update returns from `_run` on the spot, without it. Both
-        are pinned in scripts/test_scheduler_after_tick.py.
+        inherits two ways out of a pass that skip this. In maintenance
+        mode every pass that lands in a cron minute sleeps and goes round
+        early, and that is every pass of the minute, not only the first:
+        a pass that starts at :30 or later has its next one in a new
+        minute too. With a cron of every minute the gap between two runs
+        of this is 30 s or 60 s, depending on where in the minute the
+        loop started. An applied self-update returns from `_run` on the
+        spot, without it. Both are pinned in
+        scripts/test_scheduler_after_tick.py.
         """
         # Anything a dead network swallowed is still waiting. This loop
         # is the only thing that runs on its own no matter what else is
