@@ -718,11 +718,17 @@ class UpdateEngine:
         The file is read once, before the first key, and each write
         comes from that copy: whatever another writer puts in the file
         while several keys run is overwritten by the next key's write.
-        One key per call, as Telegram calls it today, has no such gap
-        between read and write beyond its own update. A key that raises past its own
-        report (the file write failing, a report raising twice) ends the
-        call there: its in-flight mark goes, the keys after it do not
-        run, and the error reaches the caller instead of any results.
+        One key per call, as Telegram calls it today, still has that gap
+        across its whole `update_container` (minutes): an entry another
+        writer takes out meanwhile comes back with this key's write
+        (measured in the Q11a review). With one update at a time that
+        never mattered; once hosts update in parallel (P1), two calls
+        rewrite the shared file from their own copies, and this
+        read-modify-write is where that has to be fixed. A key that
+        raises past its own report (the file write failing, a report
+        raising twice) ends the call there: its in-flight mark goes, the
+        keys after it do not run, and the error reaches the caller
+        instead of any results.
         """
         import pending as _pending
         from container_store import split_host_key

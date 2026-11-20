@@ -6479,8 +6479,8 @@ Does the suite actually hold the promises, or only run near them?
 - 'Updating …' is said before the single update runs, not after it
 - a failed single update names the group it takes out of the queue
 - the single update stops saying a container is in flight once done
-- 'all done' after the single update that took the last entry
-- …and not while another entry is still pending
+- run_keys answers all_done after the call that took the last entry
+- …and not all_done while another entry is still pending
 - Telegram hands the engine the tapped key's own checker
 - …and its own link lookup, so the result line carries the link
 - 'all done' is said while the tapped container is still in flight

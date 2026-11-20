@@ -320,8 +320,9 @@ _done(row)
 
 # ── a pending file that cannot be rewritten (a full disk) ────────────
 # The update ran; the report of it must not depend on the file write
-# that comes after it. The write's error still surfaces — the drain
-# says it — but after the result, not instead of it.
+# that comes after it. Nothing in the chat says the write's error: on a
+# tap the OSError ends the callback thread before any drain, and the
+# entry stays in the file (measured on 1041ac7^ and after, the same).
 import pending as _pending_mod  # noqa: E402
 
 row, rec = _world()

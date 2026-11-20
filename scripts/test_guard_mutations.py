@@ -1400,13 +1400,15 @@ GUARDED = [
      "            finally:\n                pass\n",
      "test_update_queue_duplicate.py"),
 
-    ("'all done' after the single update that took the last entry",
+    # Since 11d1e45 the "all done" line goes through done(); these two
+    # hold run_keys' all_done answer, which Q11b/Q11c/Q13 may read.
+    ("run_keys answers all_done after the call that took the last entry",
      "app/update_engine.py",
      "        return results, (written and not updates)\n",
      "        return results, False\n",
      "test_single_update_report.py"),
 
-    ("…and not while another entry is still pending",
+    ("…and not all_done while another entry is still pending",
      "app/update_engine.py",
      "        return results, (written and not updates)\n",
      "        return results, written\n",
