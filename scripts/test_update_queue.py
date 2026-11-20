@@ -567,8 +567,12 @@ checks["…and the competitor's lock is its own to give back"] = (
     and ("competitor's lock was released under it",) not in ev)
 
 # A self-update queued while an entry runs goes next — after that
-# entry's release, through `after` — and the entries it would take with
-# it are named before it starts, not dropped by the restart unsaid.
+# entry's release, through `after`. Whether it takes the rest with it is
+# only known once it has run: up to date, or a pull that failed, ends
+# without a restart, and then the rest of the queue runs as before. The
+# first cut of Q10 named the rest as dropped before handing on, which
+# told the person "about to restart" when nothing restarted, and lost
+# b and c for nothing (review, measured on 34c1040).
 e = engine()
 ev = []
 for k in ("first", "second", "third"):
@@ -582,7 +586,8 @@ def _queues_selfupdate(key):
 
 
 def _runs_queued_selfupdate():
-    # What `selfupdate.run_queued` does with it: take it, then start.
+    # What `selfupdate.run_queued` does with one that finds nothing to
+    # do: take it, start it, and come back without a restart.
     if e._queued_selfupdate:
         ev.append(("selfupdate", list(e._update_queue),
                    e._update_lock.locked()))
@@ -591,10 +596,69 @@ def _runs_queued_selfupdate():
 
 said = _drain_q10(e, _queues_selfupdate, after=_runs_queued_selfupdate)
 checks["engine: a self-update queued between two entries goes next, lock free"] = (
-    ev == [("run", "first"), ("selfupdate", [], False)])
-checks["…and the rest are named as dropped before it starts"] = (
-    said == [("update_queue_dropped_selfupdate",
-              {"keys": ["second", "third"]})])
+    ev[:2] == [("run", "first"), ("selfupdate", ["second", "third"], False)])
+checks["…one that ends without a restart leaves the rest to run"] = (
+    ev[2:] == [("run", "second"), ("run", "third")]
+    and said == [] and e._update_queue == []
+    and not e._update_lock.locked())
+
+# One that does restart: the helper is launched and the process is about
+# to be stopped. Only now is "about to restart" true, so only now is the
+# rest named and taken off. `start` claimed the lock for the swap and
+# keeps it; the drain does not touch it.
+e = engine()
+ev = []
+for k in ("first", "second", "third"):
+    e.enqueue_update(k)
+
+
+def _swaps():
+    if e._queued_selfupdate:
+        e._queued_selfupdate = None
+        e.claim_update()
+        ev.append(("swap", list(said_sw)))
+        e._swap_in_flight = True
+
+
+said_sw = []
+_fn = getattr(e, "drain_queue", None)
+if _fn is not None:
+    _fn(_queues_selfupdate, group_of=lambda k: None,
+        say=lambda k, p: said_sw.append((k, p)),
+        **({"after": _swaps}
+           if "after" in inspect.signature(_fn).parameters else {}))
+checks["engine: a self-update that restarts takes the rest, named after it began"] = (
+    ev == [("run", "first"), ("swap", [])]
+    and said_sw == [("update_queue_dropped_selfupdate",
+                     {"keys": ["second", "third"]})]
+    and e._update_queue == [])
+checks["…and the swap keeps the lock it claimed"] = e._update_lock.locked()
+
+# `say` never runs while the drain holds an entry's claim. A say that
+# raises there left the update lock held for the life of the process —
+# the incident class `release_update`'s docstring describes — and the
+# queued self-update behind it never ran. The sweep swallows the error,
+# so nobody would have seen it (review, measured on 34c1040).
+e = engine()
+for k in ("first", "second", "third"):
+    e.enqueue_update(k)
+
+
+def _say_breaks(k, p):
+    raise RuntimeError("send broke")
+
+
+_raised = []
+_fn = getattr(e, "drain_queue", None)
+try:
+    if _fn is not None:
+        _fn(_queues_selfupdate, group_of=lambda k: None, say=_say_breaks)
+except RuntimeError as _e:
+    _raised.append(str(_e))
+checks["engine: a say that raises after an entry leaves the lock free"] = (
+    _fn is not None and _raised == ["send broke"]
+    and not e._update_lock.locked()
+    and e._queued_selfupdate == ("2.9.0",))
 
 # An entry that raises is given back inside the handler, so `after`
 # still sees the crash: `selfupdate.run_queued` cancels a queued
@@ -683,41 +747,78 @@ checks["…the entry is not re-queued and nobody hears 'queued' a second time"] 
     _queued_lines == [] and eng._update_queue == []
     and [m_ for m_ in said if m_.endswith(": ok")] == ["✅ a: ok", "✅ b: ok"])
 
-# A self-update queued while a drained entry updates goes next, and the
-# rest are named as dropped first.
-eng = engine()
-eng._updating = {}
-for k in ("a", "b", "c"):
-    eng.enqueue_update(k)
-qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                   for n in ("a", "b", "c")])
-_su = []
+# A self-update queued while a drained entry updates goes next. Here the
+# real `selfupdate.start` queues it and the real `run_queued` starts it,
+# through Telegram's own hand-over; only `selfupdate.run` — the pull and
+# the swap — is a stand-in. Up to date: no restart, so b and c still run
+# and nobody hears "about to restart".
+import selfupdate  # noqa: E402
 
 
-class _QueuesSelfupdate:
-    def update_container(self, name, image, **kw):
-        if name == "a":
-            eng._queued_selfupdate = ("2.9.0",)
-        return True, "ok"
+def _tg_selfupdate_drain(run_stand_in):
+    eng = engine()
+    eng._updating = {}
+    eng._swap_in_flight = False
+    for k in ("a", "b", "c"):
+        eng.enqueue_update(k)
+    qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                       for n in ("a", "b", "c")])
+    # The real hand-over, not the stub `_queued_bot` puts there.
+    del qb._run_queued_selfupdate
+    qb.selfupdate_ctx = selfupdate.Context(
+        eng, types.SimpleNamespace(language="en"),
+        say=lambda m_, skip=(): said.append(m_),
+        reply=said.append)
+
+    class _QueuesSelfupdate:
+        def update_container(self, name, image, **kw):
+            if name == "a":
+                selfupdate.start(qb.selfupdate_ctx)
+            return True, "ok"
+
+    real_run = selfupdate.run
+    selfupdate.run = lambda ctx, target=None, reply_to=None: run_stand_in(
+        ctx, said)
+    try:
+        qb._drain_update_queue(_QueuesSelfupdate())
+    finally:
+        selfupdate.run = real_run
+        os.unlink(path)
+    return eng, said
 
 
-def _tg_runs_queued_selfupdate():
-    if eng._queued_selfupdate:
-        _su.append((list(eng._update_queue), eng._update_lock.locked(),
-                    len(said)))
-        eng._queued_selfupdate = None
+def _up_to_date(ctx, said):
+    ctx.send_message(ctx.t("selfupdate_up_to_date"))
 
 
-qb._run_queued_selfupdate = _tg_runs_queued_selfupdate
-qb._drain_update_queue(_QueuesSelfupdate())
-os.unlink(path)
+def _swap_launched(ctx, said):
+    # The helper is up and this process is about to be stopped. In real
+    # life the stop lands inside `swap`'s wait; here `run` returns, which
+    # is what a stop that never came looks like.
+    said.append("<swap>")
+    ctx._swap_in_flight = True
+
+
 _dropped = _T_drain("update_queue_dropped_selfupdate", names="`b`, `c`")
-checks["Telegram drain: a self-update queued during an entry wins, once"] = (
+eng, said = _tg_selfupdate_drain(_up_to_date)
+_oks = [m_ for m_ in said if m_.endswith(": ok")]
+_order = [m_ for m_ in said if m_ in (
+    _T_drain("selfupdate_queued"), "✅ a: ok",
+    _T_drain("selfupdate_up_to_date"), "✅ b: ok")]
+checks["Telegram drain: a self-update queued during an entry runs after it"] = (
+    _order == [_T_drain("selfupdate_queued"), "✅ a: ok",
+               _T_drain("selfupdate_up_to_date"), "✅ b: ok"])
+checks["…one without a restart drops nothing: b and c still run"] = (
+    _oks == ["✅ a: ok", "✅ b: ok", "✅ c: ok"] and _dropped not in said
+    and eng._update_queue == [] and eng._queued_selfupdate is None
+    and not eng._update_lock.locked())
+
+eng, said = _tg_selfupdate_drain(_swap_launched)
+checks["Telegram drain: a self-update that swaps names b and c, after it began"] = (
     [m_ for m_ in said if m_.endswith(": ok")] == ["✅ a: ok"]
-    and len(_su) == 1 and _su[0][:2] == ([], False))
-checks["…and b and c are named as dropped before it starts"] = (
-    _dropped in said and len(_su) == 1
-    and said.index(_dropped) < _su[0][2])
+    and "<swap>" in said and _dropped in said
+    and said.index("<swap>") < said.index(_dropped)
+    and eng._update_queue == [] and eng._update_lock.locked())
 
 # The drain is the one releaser: a drained entry gives back nothing
 # itself, so each entry is released once and the self-update hand-over

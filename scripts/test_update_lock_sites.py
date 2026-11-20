@@ -160,12 +160,12 @@ LOCK_OPS = {
     # `_drain_update_queue` only hands it run_one, group_of, say and
     # after. A probe until Q10 (take, give straight back, let the run
     # claim again); now it claims per entry and is that entry's one
-    # releaser: after the run, after a crash, on the self-update
-    # hand-over and when the queue was emptied under it. Driven through
-    # Telegram's wrapper below.
+    # releaser: after the run, after a crash and when the queue was
+    # emptied under it. A self-update queued during an entry rides on
+    # the release after the run (no fourth release since the Q10
+    # review). Driven through Telegram's wrapper below.
     ("update_engine.py", "UpdateEngine.drain_queue"):
         ("CLAIM", ["claim_update()", "release_update(after=after)",
-                   "release_update(after=after)",
                    "release_update(after=after)",
                    "release_update(after=after)"]),
     # ── readers ──

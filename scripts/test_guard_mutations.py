@@ -4143,7 +4143,7 @@ GUARDED = [
     # engine with a run_one recorder, and Telegram's wrapper on top.
     ("the drain stops for a pending self-update",
      "app/update_engine.py",
-     "        if not self._queued_selfupdate:\n"
+     "        if not self._queued_selfupdate and not swapping:\n"
      "            return False\n",
      "        if True:\n"
      "            return False\n",
@@ -4274,14 +4274,39 @@ GUARDED = [
      "                # Emptied between the look and the claim.\n",
      "test_update_queue.py"),
 
-    ("a self-update queued during a drained entry goes next, the rest named first",
+    # Q10 review: the rest was named and dropped before the self-update
+    # had run, under the drain's claim. A self-update that came back
+    # without a restart lost b and c for nothing, and a `say` that raised
+    # there kept the update lock for good.
+    ("a drained entry is given back before anything is said about it",
      "app/update_engine.py",
+     "            # this entry runs from this release, through `after`, and the\n"
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            self.release_update(after=after)\n",
+     "            # this entry runs from this release, through `after`, and the\n"
+     "            # top of the loop then sees whether it is restarting.\n"
      "            if self._drop_for_selfupdate(say):\n"
      "                self.release_update(after=after)\n"
+     "                return\n"
+     "            self.release_update(after=after)\n",
+     "test_update_queue.py"),
+
+    ("…a self-update after a drained entry that does not restart drops nothing",
+     "app/update_engine.py",
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            self.release_update(after=after)\n",
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            _su = self._queued_selfupdate\n"
+     "            self.release_update(after=after)\n"
+     "            if _su:\n"
+     "                self.drop_queued_updates()\n"
      "                return\n",
-     "            if False:\n"
-     "                self.release_update(after=after)\n"
-     "                return\n",
+     "test_update_queue.py"),
+
+    ("…and a swap under way names the rest it takes with it",
+     "app/update_engine.py",
+     "        if not self._queued_selfupdate and not swapping:\n",
+     "        if not self._queued_selfupdate:\n",
      "test_update_queue.py"),
 
     ("a drained entry that crashed is given back inside the crash, so after() sees it",

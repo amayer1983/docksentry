@@ -583,25 +583,40 @@ class UpdateEngine:
                 say("entry_failed", {"key": key, "error": str(e)})
                 last_group = None
                 continue
-            # Queued while this entry held the lock: it goes next, through
-            # `after`, and the restart takes the rest with it — so the
-            # rest is named before it is handed on, not after.
-            if self._drop_for_selfupdate(say):
-                self.release_update(after=after)
-                return
+            # Given back before anything is said: a `say` that raised
+            # while the drain still held the claim kept the update lock
+            # for the life of the process. A self-update queued during
+            # this entry runs from this release, through `after`, and the
+            # top of the loop then sees whether it is restarting.
             self.release_update(after=after)
 
     def _drop_for_selfupdate(self, say):
-        """True when a self-update is waiting, after taking the queue off
-        and naming what was on it.
+        """True when a self-update is waiting or swapping, after taking
+        the queue off and naming what was on it.
 
-        A pending self-update restarts the process, which would take the
-        rest of the queue with it. Stop and NAME what is not going to run
-        — dropping work quietly is the bug this whole change exists to
-        fix, and doing it here would be worse than never having queued
-        at all.
+        A self-update restarts the process, which would take the rest of
+        the queue with it. Stop and NAME what is not going to run —
+        dropping work quietly is the bug this whole change exists to fix,
+        and doing it here would be worse than never having queued at all.
+
+        A swap under way (`_swap_in_flight`: the helper is launched and
+        this process is about to be stopped) counts too, because that is
+        the one moment "about to restart" is a fact. A self-update queued
+        during an entry is only known to restart once it has run: up to
+        date, or a failed pull, comes back without one, and then the rest
+        of the queue runs. Named before it started, the rest was dropped
+        for nothing under "about to restart" (Q10 review, measured).
+        Not measured, read from `selfupdate.swap`: the helper's stop is
+        meant to land inside its 30-second wait, so on a real restart the
+        drain usually never gets back here, and the rest goes with the
+        process unnamed, as before Q10. The entries stay in the pending
+        list either way.
         """
-        if not self._queued_selfupdate:
+        try:
+            swapping = bool(getattr(self, "_swap_in_flight", False))
+        except Exception:
+            swapping = False
+        if not self._queued_selfupdate and not swapping:
             return False
         left = self.drop_queued_updates()
         if left:
