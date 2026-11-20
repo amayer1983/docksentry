@@ -84,7 +84,8 @@ dead-host memory; what a read leaves in it for the next command is
 the business of `w7_checks` — two commands on one bot, written by hand.
 `q6_checks` drives /updates and /updateall over a pending file that
 cannot be read (`PENDING_RAW` replaces the seeded rows for that row);
-written by hand before Q6, when those rows raised.
+written by hand before Q6. On the old code 16 of its 48 rows were red,
+the rest are pins (see the note above `Q6_FILES`).
 """
 
 import contextlib
@@ -1218,7 +1219,13 @@ def w7_checks():
 #: out of `_handle_message`, run_updates inside its thread, and the chat
 #: heard nothing either way. Written by hand before the change: every one
 #: of these says "nothing pending", raises nothing, updates nothing and
-#: leaves the file exactly as it found it.
+#: leaves the file exactly as it found it. Run against 5934f9b^, 16 rows
+#: were red: single-host /updates over all three files, multi /updates and
+#: /updates @nas over the two that don't parse, and single-host /updateall
+#: over all three. Already green there and pins only: every "left as it
+#: was" row, multi /updateall and /updateall @all (they never reach the
+#: raw read), and multi /updates over the object, whose keys the host
+#: filter drops as non-dicts.
 Q6_FILES = {
     "cut off mid-write": b'[{"name": "web", "image": "nginx:1.25", "ho',
     "not UTF-8": b'\xff\xfe[\x00]\x00',
