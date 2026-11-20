@@ -21,7 +21,6 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 """
 
 import contextlib
-import subprocess
 import threading
 import time
 
@@ -786,8 +785,8 @@ class UpdateEngine:
         * `enrich([entry])` resolves the release link before the result
           is said (the result line and the other channels' card both
           carry it). Called before the key is marked or `starting` is,
-          as before Q11c, so a lookup that raises ends the call with
-          nothing said; the batch is handed a no-op in its place;
+          as before Q11c; the batch is handed a no-op in its place. A
+          lookup that raises is logged and the key runs without a link;
         * `starting(key, target)` is called once the key is marked in
           flight, before the wait for the last recreate and the update.
           It is a hook rather than part of the result because the
@@ -824,10 +823,10 @@ class UpdateEngine:
         read-modify-write is where that has to be fixed. A host that
         stops answering is a failure like any other: the batch takes a
         netns snapshot that raises as that container's failure. A key
-        that raises past its own report (the link lookup, the file write
-        failing, a report raising twice) ends the call there: its in-flight mark goes, the
-        keys after it do not run, and the error reaches the caller
-        instead of any results.
+        that raises past its own report (the file write failing, a
+        report raising twice) ends the call there: its in-flight mark
+        goes, the keys after it do not run, and the error reaches the
+        caller instead of any results.
         """
         import pending as _pending
         from container_store import split_host_key
@@ -879,12 +878,18 @@ class UpdateEngine:
                 # A copy, because the batch writes into its entries (the
                 # link, the netns owner) and the file must not get those.
                 # The link is looked up here, before anything is marked
-                # or said, as before Q11c: a lookup that raises ends the
-                # call with nothing said. Left to the batch, it ran after
-                # "Updating …", and the chat showed that line and then
-                # nothing (Q11c review).
+                # or said, as before Q11c (left to the batch, it ran
+                # after "Updating …"). A lookup that raises is logged and
+                # the update goes on without the link: a missing link is
+                # cosmetic. Until the Q11c follow-up it ended the call
+                # with nothing said, the entry and the queue behind it
+                # stuck (review, measured).
                 entry = dict(target)
-                enrich([entry])
+                try:
+                    enrich([entry])
+                except Exception as e:              # noqa: BLE001
+                    print(f"Link lookup for {key} failed, updating "
+                          f"without a link: {clip(e)}")
                 # Say what is running, where the rest of the program can
                 # see it: the Web UI's "updating" badge, and a second tap
                 # that has to know this one is already in flight. Before
@@ -1155,13 +1160,29 @@ class UpdateEngine:
         checker.recreate_dependent). Non-netns group members are still just
         restarted (cheaper, sufficient).
 
-        Returns a one-line user-facing result string for the update report."""
+        Returns a one-line user-facing result string for the update report.
+        A health check or a dependent that raises ends up in that string,
+        not as an exception: by the time this runs the head's result has
+        been reported, and the batch would report it again as failed."""
         # Use the checker's canonical 3-tuple _wait_healthy (outcome, state,
         # health) — NOT a bot-local one. A stray bool-returning duplicate here
         # caused "cannot unpack non-iterable bool object" mid-cascade (#2,
         # @famewolf): the head updated fine, then the dependents kick crashed.
-        outcome, _, _ = checker._wait_healthy(head_name, max_wait)
-        if outcome != "healthy":
+        #
+        # A health check that raises is a head whose health is unknown,
+        # and the dependents are fixed anyway, as for one that is not
+        # healthy. It used to raise out of here into the batch's except
+        # after the head's ✅ had gone out: a second, failing report for
+        # an update that ran, and its group-mates dropped (review of
+        # Q11c, measured with a host that stops answering right after
+        # the recreate: TimeoutExpired from `_restart_count`).
+        try:
+            outcome, _, _ = checker._wait_healthy(head_name, max_wait)
+        except Exception as e:                      # noqa: BLE001
+            outcome = None
+            print(f"⚠ {head_name}: health check failed ({clip(e)}) "
+                  f"— fixing dependents anyway")
+        if outcome is not None and outcome != "healthy":
             print(f"⚠ {head_name} not healthy ({outcome}) after {max_wait}s — fixing dependents anyway")
 
         backend = getattr(checker, "backend", None)
@@ -1219,7 +1240,11 @@ class UpdateEngine:
                         why = clip(r.stderr or "") or f"exit {r.returncode}"
                         failed.append((dep, why))
                         print(f"Failed to restart dependent {dep}: {why}")
-            except subprocess.SubprocessError as e:
+            except Exception as e:                  # noqa: BLE001
+                # Any exception, not only a subprocess one: a missing CLI
+                # (FileNotFoundError) or a backend's own error is this
+                # dependent's failure, with its reason. Left to raise, it
+                # turned the head's report into a failure (see above).
                 failed.append((dep, clip(e)))
                 print(f"Fixing dependent {dep} crashed: {e}")
 

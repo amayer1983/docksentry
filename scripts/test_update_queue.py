@@ -869,7 +869,10 @@ checks["…and each entry's update runs under that claim"] = (
     and not eng._update_lock.locked() and eng._update_queue == [])
 
 # A drained entry that raises: the drain's release is the one, inside the
-# crash, so Telegram's self-update hand-over still sees it.
+# crash, so Telegram's self-update hand-over still sees it. The crash is
+# the "Updating …" line failing to go out (the `starting` hook raises
+# past run_keys). Until the Q11c follow-up a raising link lookup was the
+# vehicle here; that one is logged and the update goes on now.
 eng = engine()
 eng._updating = {}
 for k in ("a", "b"):
@@ -879,17 +882,18 @@ qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
 _exc = []
 
 
-def _enrich_raises(us):
-    if us and us[0]["name"] == "a":
-        raise RuntimeError("enrich broke")
+def _send_raises(m_, **kw):
+    if m_.startswith("⏳") and "`a`" in m_:
+        raise RuntimeError("send broke")
+    said.append(m_)
 
 
-qb._enrich_with_source_url = _enrich_raises
+qb.send_message = _send_raises
 qb._run_queued_selfupdate = lambda: _exc.append(sys.exc_info()[0])
 qb._drain_update_queue(_OkChecker())
 os.unlink(path)
 checks["Telegram drain: the hand-over after a crashed entry sees the crash"] = (
-    _exc == [RuntimeError, None] and "❌ `a`: enrich broke" in said
+    _exc == [RuntimeError, None] and "❌ `a`: send broke" in said
     and "✅ b: ok" in said and not eng._update_lock.locked())
 
 # ── claim_or_queue: the engine decides, a connection only translates ─

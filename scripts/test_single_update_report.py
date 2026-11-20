@@ -826,28 +826,188 @@ checks["…and without it the batch raises, as it always has"] = (
     _dead_batch() == (["raised TimeoutExpired"], None) and rec.results == [])
 _done(row)
 
-# A link lookup that raises ends the tap before anything is said, as
-# before Q11c: the batch's own enrich runs after "Updating …", so the
-# chat would show that line and then nothing.
+# A link lookup that raises is logged and the update goes on without the
+# link: a missing link is cosmetic. Until this follow-up it ended the tap
+# with nothing said, the error went to the thread, both entries stayed
+# in the file and the queued one was never drained (review, measured
+# with the review's probe). Still looked up before "Updating …".
 row, rec = _world()
 _drive(row, [("notify", None)])
 del row.log[:]
+del rec.results[:]
+_orig_enrich = row.bot._enrich_with_source_url
 
 
 def _raising_enrich(updates):
-    raise RuntimeError("link lookup failed (stand-in)")
+    if any(u.get("host") == "nas" for u in updates):
+        raise RuntimeError("link lookup failed (stand-in)")
+    return _orig_enrich(updates)
 
 
 row.bot._enrich_with_source_url = _raising_enrich
-_drive(row, [("tap", "update_one:web")])
+_sink = io.StringIO()
+with contextlib.redirect_stdout(_sink), contextlib.redirect_stderr(_sink):
+    for _step in [("lock",), ("tap", "update_one:web"), ("unlock",),
+                  ("tap", "update_one:nas/web")]:
+        row.do(_step)
+        t3._join()
 said = _said(row)
-checks["raising link lookup: no 'Updating' line goes out"] = (
-    not any(s.startswith("⏳") for s in said))
-checks["…nothing ran and the entry stays"] = (
-    not any(k == "ran" for k, _b, _ in row.log)
-    and ("web", "local") in [(u["name"], u.get("host") or "local")
-                             for u in row._pending()]
-    and row.bot.engine.updating == {})
+_nas = _results(said, "web @nas")
+checks["raising link lookup: the tap ends in no crashed thread"] = (
+    m.THREAD_ERRORS == [])
+checks["…'Updating' goes out and web @nas is updated, without a link"] = (
+    any(s.startswith("⏳") and "web @nas" in s for s in said)
+    and any(k == "ran" and b == "nas:web" for k, b, _ in row.log)
+    and _nas == [s for s in _nas if s.startswith("✅ `web` @nas: ")]
+    and len(_nas) == 1)
+checks["…the lookup's failure is in the log"] = (
+    "link lookup failed (stand-in)" in _sink.getvalue())
+checks["…the queued local web runs after it, and both leave the file"] = (
+    any(k == "ran" and b == "local:web" for k, b, _ in row.log)
+    and len(_results(said, "web")) == 1
+    and [k for k, _ in row.bot.engine.queued_updates()] == []
+    and row._pending() == [] and row.bot.engine.updating == {})
+checks["…the other channels hear both results once"] = (
+    [(r[0], r[2]) for r in rec.results] == [("web", True), ("web", True)])
+_done(row)
+
+# ── a head's cascade that raises after a good recreate (followup) ───
+# The head's health check, the first thing the cascade asks, raises: the
+# host stopped answering a moment after the recreate (TimeoutExpired
+# from `_restart_count`). That came out of the batch's except after the
+# ✅ had gone out: a second ❌ for the same container, a failure card
+# after the success card, and its group-mate dropped from the queue
+# (review, measured with the review's probe on e6e1617). The update ran
+# and stays a success; the cascade goes on as it does for a head that is
+# not healthy.
+import subprocess  # noqa: E402
+
+
+def _wh_raises(ch, name, max_starting=None, interval=10):
+    m.EVENTS.append(f"wait_healthy@{ch.backend.name}:{name}")
+    raise subprocess.TimeoutExpired(
+        ["docker", "-H", "ssh://nas", "inspect", name], 10)
+
+
+row, rec = _world()
+_drive(row, [("group", "nas", "g", ["web", "media"]),
+             ("add_pending", "media", "jellyfin/jellyfin:10.9", "nas"),
+             ("notify", None)])
+del row.log[:]
+del rec.results[:]
+# Each row has a checker class of its own; its stand-in is put back.
+_cls = type(row.checker)
+_wh_kept = _cls._wait_healthy
+_cls._wait_healthy = _wh_raises
+try:
+    _drive(row, [("lock",), ("tap", "update_one:nas/media"), ("unlock",),
+                 ("tap", "update_one:nas/web")])
+finally:
+    _cls._wait_healthy = _wh_kept
+said = _said(row)
+_web = _results(said, "web @nas")
+checks["head's health check raises: one ✅ for web @nas, no ❌"] = (
+    len(_web) == 1 and _web[0].startswith("✅"))
+checks["…the other channels hear one success for it, no failure"] = (
+    [(r[0], r[2]) for r in rec.results if r[0] == "web"] == [("web", True)])
+checks["…its dependent is still put back, said once"] = (
+    [s for s in said if s.startswith("🔁")]
+    == ["🔁 `web` dependents restarted: `media`"])
+checks["…the group is not skipped: the queued media runs after it"] = (
+    not any(s.startswith("⚠️") for s in said)
+    and [b for k, b, _ in row.log if k == "ran"] == ["nas:web", "nas:media"]
+    and len(_results(said, "media @nas")) == 1
+    and [k for k, _ in row.bot.engine.queued_updates()] == []
+    and m.THREAD_ERRORS == [])
+checks["…and only the untouched local web is left in the file"] = (
+    [(u["name"], u.get("host")) for u in row._pending()]
+    == [("web", "local")])
+_done(row)
+
+
+def _head_batch(row, **kw):
+    """`web` alone in a batch, the head of local group g1 = [web, db]
+    with restart_dependents, the way "Update all" runs it."""
+    batch = [{"name": "web", "image": "nginx:1.25", "host": "local"}]
+    with contextlib.redirect_stdout(io.StringIO()):
+        try:
+            lines, ok, _maj = row.bot.engine._process_update_batch(
+                batch, row.checker, auto=False, enrich=lambda us: None,
+                **kw)
+        except Exception as e:                      # noqa: BLE001
+            # Red, not a traceback.
+            return ["raised " + type(e).__name__], None
+    return lines, ok
+
+
+# The batch on its own, as "Update all" and the scheduler run it: the
+# same raise came out of the same except there.
+row, rec = _world()
+_drive(row, [("group", "local", "g1", ["web", "db"])])
+_cls = type(row.checker)
+_wh_kept = _cls._wait_healthy
+_cls._wait_healthy = _wh_raises
+try:
+    _lines, _ok = _head_batch(row)
+finally:
+    _cls._wait_healthy = _wh_kept
+checks["batch, head's health check raises: ✅ and the cascade line only"] = (
+    len(_lines) == 2 and _lines[0].startswith("✅ `web`: ")
+    and _lines[1] == "🔁 `web` dependents restarted: `db`" and _ok == 1)
+checks["…one success card, no failure card"] = (
+    [(r[0], r[2]) for r in rec.results] == [("web", True)])
+_done(row)
+
+# A dependent whose fix raises something that is not a subprocess error
+# (a CLI that is gone: FileNotFoundError, a backend's own RuntimeError)
+# is that dependent's failure, with its reason, not the head's.
+row, rec = _world()
+_drive(row, [("group", "local", "g1", ["web", "db"])])
+_lb = row.backends["local"]
+
+
+def _restart_raises(name, *a, **kw):
+    raise RuntimeError("restart blew up (stand-in)")
+
+
+_lb.restart = _restart_raises
+_lines, _ok = _head_batch(row)
+checks["batch, a dependent's restart raises: the head stays ✅"] = (
+    len(_lines) == 2 and _lines[0].startswith("✅ `web`: ") and _ok == 1
+    and [(r[0], r[2]) for r in rec.results] == [("web", True)])
+checks["…and the dependent is the failure, with its reason"] = (
+    len(_lines) == 2 and _lines[1] == (
+        "❌ `web` dependents: 1 FAILED\n"
+        "   • `db`: restart blew up (stand-in)"))
+_done(row)
+
+# A head that failed: the rollback kicks its dependents. A health check
+# raising there told the other channels a second time that it failed.
+row, rec = _world()
+_drive(row, [("group", "local", "g1", ["web", "db"])])
+
+
+def _head_fails(self, name, image, *a, **kw):
+    return False, "rolled back (stand-in)"
+
+
+_cls = type(row.checker)
+_wh_kept = _cls._wait_healthy
+_cls_uc = _cls.update_container
+_cls.update_container = _head_fails
+_cls._wait_healthy = _wh_raises
+try:
+    _lines, _ok = _head_batch(row)
+finally:
+    _cls._wait_healthy = _wh_kept
+    _cls.update_container = _cls_uc
+checks["batch, failed head whose health check raises: one ❌, one card"] = (
+    [ln for ln in _lines if ln.startswith("❌ `web`: ")]
+    == ["❌ `web`: rolled back (stand-in)"]
+    and [(r[0], r[2]) for r in rec.results] == [("web", False)])
+checks["…and its dependents are still kicked"] = (
+    any(ln == "🔁 head rollback — dependents kicked: "
+        "🔁 `web` dependents restarted: `db`" for ln in _lines))
 _done(row)
 
 for k, v in checks.items():

@@ -1420,8 +1420,39 @@ GUARDED = [
 
     ("A single update looks up its link before 'Updating …' is said",
      "app/update_engine.py",
-     "                entry = dict(target)\n                enrich([entry])\n",
-     "                entry = dict(target)\n                pass  # MUTATION: no lookup before the mark\n",
+     "                entry = dict(target)\n                try:\n                    enrich([entry])\n",
+     "                entry = dict(target)\n                try:\n                    pass  # MUTATION: no lookup before the mark\n",
+     "test_single_update_report.py"),
+
+    # Q11c follow-up: what goes wrong after a good recreate, or in the
+    # link lookup, is not the update's failure.
+    ("…and a lookup that raises is logged, the key runs without a link",
+     "app/update_engine.py",
+     '                except Exception as e:              # noqa: BLE001\n'
+     '                    print(f"Link lookup for {key} failed, updating "\n',
+     '                except Exception as e:              # noqa: BLE001\n'
+     '                    raise  # MUTATION: the lookup ends the call\n'
+     '                    print(f"Link lookup for {key} failed, updating "\n',
+     "test_single_update_report.py"),
+
+    ("A head's health check that raises leaves its ✅ alone and the "
+     "dependents are fixed anyway",
+     "app/update_engine.py",
+     "        try:\n"
+     "            outcome, _, _ = checker._wait_healthy(head_name, max_wait)\n"
+     "        except Exception as e:                      # noqa: BLE001\n",
+     "        try:\n"
+     "            outcome, _, _ = checker._wait_healthy(head_name, max_wait)\n"
+     "        except ImportError as e:  # MUTATION: the raise reaches the batch\n",
+     "test_single_update_report.py"),
+
+    ("A dependent whose fix raises anything is that dependent's failure, "
+     "not the head's",
+     "app/update_engine.py",
+     "            except Exception as e:                  # noqa: BLE001\n"
+     "                # Any exception, not only a subprocess one: a missing CLI\n",
+     "            except OSError as e:  # MUTATION: only some of them\n"
+     "                # Any exception, not only a subprocess one: a missing CLI\n",
      "test_single_update_report.py"),
 
     ("'Updating …' is said before the single update runs, not after it",
