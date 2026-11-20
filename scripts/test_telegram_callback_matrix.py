@@ -188,15 +188,6 @@ SCENARIOS = [
 #: Rows that are wrong today and pinned as they are, with the slice
 #: meant to change them. Read off the generated table by hand.
 KNOWN_DEFECTS = {
-    ("multi", "update_one gone host"):
-        "Q11b: a host that left the registry falls back to the local checker",
-    # Single does the same: no registry there knows `gone` either, and
-    # the tap updates the local `web`. A button from before DOCKER_HOSTS
-    # was dropped lands exactly here, so Q11b's refusal flips these too.
-    ("none", "update_one gone host"):
-        "Q11b: a host that is in no registry falls back to the local checker",
-    ("one", "update_one gone host"):
-        "Q11b: a host that is in no registry falls back to the local checker",
     ("multi", "update_all bare"):
         "Q12: the netns snapshot for nas's `web` asks the local backend",
     ("multi", "update_all:<tok> mixed"):
@@ -248,7 +239,10 @@ BRANCH_NOTES = {
         "`checker` to the tapped key's host (:1798). Until Q7b it handed "
         "that one to the drain (:1929), and `_checker_for` returns the "
         "caller's checker for the local host, so a queued local key ran on "
-        "nas's; now the drain gets the checker the tap was called with.",
+        "nas's; now the drain gets the checker the tap was called with. "
+        "A pending key whose host the registry does not know (`gone`) "
+        "is refused in `run_keys` since Q11b: 'Unknown host', nothing "
+        "runs, the entry stays.",
     "queue": ":1825 lock busy → enqueue (position, then 'already in the "
         "queue'); the drain runs after the tap that held the lock — but "
         "only when that tap got past its early returns (no pending file, "
@@ -1928,13 +1922,12 @@ EXPECTED = {
                {'do': 'tap update_one:gone/web',
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
-                        '⏳ Updating `web @gone`...',
-                        '✅ [web](https://github.com/example/web/releases/latest) @gone: '
-                        'updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
-                'events': ['update_container@local:web'],
+                        '❌ Unknown host `gone`. Managed hosts: `local`, `nas`, `dead`, '
+                        '`refused`, `flaky`'],
+                'hosts': {},
+                'events': [],
                 'raised': None}],
-     'state': {'pending': ['web@local', 'web@nas'],
+     'state': {'pending': ['web@local', 'web@nas', 'web@gone'],
                'queue': [],
                'stops': 0,
                'restores': 0,
@@ -1948,13 +1941,11 @@ EXPECTED = {
                {'do': 'tap update_one:gone/web',
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
-                        '⏳ Updating `web @gone`...',
-                        '✅ [web](https://github.com/example/web/releases/latest) @gone: '
-                        'updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
-                'events': ['update_container@local:web'],
+                        '❌ Unknown host `gone`. Managed hosts: `local`'],
+                'hosts': {},
+                'events': [],
                 'raised': None}],
-     'state': {'pending': ['web@local'],
+     'state': {'pending': ['web@local', 'web@gone'],
                'queue': [],
                'stops': 0,
                'restores': 0,

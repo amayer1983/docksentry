@@ -1917,6 +1917,15 @@ class TelegramBot:
             # No file, or one nothing can read: it used to raise inside
             # the thread, and the chat heard nothing after the toast.
             return self.t("no_pending_updates")
+        if why == "host_unknown":
+            # The same sentence a command aimed at an unknown host gets,
+            # with the hosts there are now.
+            from container_store import LOCAL_HOST, split_host_key
+            names = [h.name for h in self.hosts] if self.hosts \
+                else [LOCAL_HOST]
+            return self.t("host_unknown",
+                          name=split_host_key(container_key)[0],
+                          hosts=", ".join(f"`{n}`" for n in names))
         # Two different things, and they used to read the same. Off the
         # queue it almost always means the update already happened while
         # this entry waited — saying "not in the update list" there puts

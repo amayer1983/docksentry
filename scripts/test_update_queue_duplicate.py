@@ -93,6 +93,9 @@ def _bot(pending_entries, on_update=None):
     eng._updating = {}
     eng._queued_selfupdate = None
     eng._swap_in_flight = False
+    # The registry the `_host_by_name` stand-in above answers from: srv30
+    # is managed. Since Q11b run_keys refuses a host it does not know.
+    eng.hosts = [types.SimpleNamespace(name="srv30")]
     bot.engine = eng
     bot.notifier = None
 

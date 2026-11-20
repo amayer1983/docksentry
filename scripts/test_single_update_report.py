@@ -318,6 +318,28 @@ checks["a key that is not pending reports nothing to anyone"] = (
                                if s.startswith(("✅", "❌"))])
 _done(row)
 
+# ── a queued key whose host has left the registry (Q11b) ─────────────
+# A button from before `gone` was dropped from DOCKER_HOSTS, tapped while
+# another update held the lock: it waits in the queue and comes up in the
+# drain after the local tap. Before Q11b it ran on the local checker and
+# updated the local `web` a second time (the callback matrix's "update_one
+# gone host" rows measured the tap; this is the queued half).
+row, rec = _world(extra_pending=[("web", "nginx:1.25", "gone")])
+_drive(row, [("lock",), ("tap", "update_one:gone/web"), ("unlock",),
+             ("tap", "update_one:web")])
+said = _said(row)
+checks["queued, host gone: only the tapped local container runs"] = (
+    [b for k, b, _ in row.log if k == "ran"] == ["local:web"])
+checks["…the drain says the host is unknown"] = any(
+    s.startswith("❌ Unknown host `gone`") for s in said)
+checks["…nobody hears a result for it"] = (
+    [r[0] for r in rec.results] == ["web"]
+    and not _results(said, "web @gone"))
+checks["…and its entry stays in the file, the queue is empty"] = (
+    "web@gone" in (row.state()["pending"] or [])
+    and row.bot.engine.queued_updates() == [])
+_done(row)
+
 # ── a pending file that cannot be rewritten (a full disk) ────────────
 # The update ran; the report of it must not depend on the file write
 # that comes after it. Nothing in the chat says the write's error: on a
@@ -437,6 +459,45 @@ res, done = _rk(["db"], ck)
 checks["run_keys: no file is 'no_pending_updates', nothing ran"] = (
     res == [("db", None, None, "no_pending_updates", None)]
     and ck.seen == [] and done is False and not os.path.exists(pf))
+
+# Q11b: a key whose host the registry does not know is refused before
+# anything is looked up, marked or run — whatever checker the caller
+# hands over for it (Telegram's falls back to the local one).
+_gone = [{"name": "web", "image": "nginx:1.25", "host": "gone"}]
+_pending_mod.write(pf, _gone)
+_before = open(pf, "rb").read()
+ck = _Ck((True, "ok"))
+_marks, _rep, _started, _dones = [], [], [], []
+_mark = eng.mark_updating
+eng.mark_updating = lambda k, v: (_marks.append(k), _mark(k, v))
+try:
+    res, done = _rk(["gone/web"], ck, report=lambda *a: _rep.append(a),
+                    starting=lambda *a: _started.append(a),
+                    done=lambda: _dones.append(1))
+finally:
+    eng.mark_updating = _mark
+checks["run_keys: a host the registry does not know is 'host_unknown'"] = (
+    res == [("gone/web", None, None, "host_unknown", None)])
+checks["…nothing ran, nothing was marked, said or reported"] = (
+    ck.seen == [] and _marks == [] and _started == [] and _rep == []
+    and _dones == [] and done is False)
+checks["…and the file is left exactly as it was"] = (
+    open(pf, "rb").read() == _before)
+# With no registry at all (a single-host install that never set
+# DOCKER_HOSTS) the local host is still known and nothing else is.
+_hosts = eng.hosts
+eng.hosts = None
+_pending_mod.write(pf, _gone + [{"name": "db", "image": "postgres:16"}])
+ck = _Ck((True, "ok"))
+try:
+    res, done = _rk(["gone/web", "db"], ck)
+finally:
+    eng.hosts = _hosts
+checks["run_keys without a registry: a remote key is 'host_unknown'"] = (
+    res[:1] == [("gone/web", None, None, "host_unknown", None)])
+checks["…and a local key still runs"] = (
+    [r[:1] + r[2:4] for r in res[1:]] == [("db", True, "ok")]
+    and [x[:2] for x in ck.seen] == [("db", "postgres:16")])
 _done(row)
 
 for k, v in checks.items():

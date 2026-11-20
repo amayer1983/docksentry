@@ -1447,6 +1447,50 @@ GUARDED = [
      "                if done is not None:\n",
      "test_single_update_report.py"),
 
+    # Q11b: a tapped or queued key whose host has left the registry is
+    # refused in run_keys instead of running on the local checker.
+    ("a pending key whose host left the registry is refused, not run locally",
+     "app/update_engine.py",
+     "                if not self._manages_host(host_name):\n",
+     "                if False:\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…a queued one too, when the drain comes to it",
+     "app/update_engine.py",
+     "                if not self._manages_host(host_name):\n",
+     "                if False:\n",
+     "test_single_update_report.py"),
+
+    ("…and without any registry every host but the local one is unknown",
+     "app/update_engine.py",
+     "        if name in (None, \"\", LOCAL_HOST):\n            return True\n",
+     "        if name in (None, \"\", LOCAL_HOST) or not self.hosts:\n            return True\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…while the local host is always known, registry or not",
+     "app/update_engine.py",
+     "        if name in (None, \"\", LOCAL_HOST):\n            return True\n",
+     "        if name in (None, \"\"):\n            return True\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…the refused entry stays in the pending file",
+     "app/update_engine.py",
+     "                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "                    _pending.write(pending_file, [u for u in updates if u is not target])\n                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and a key that is not pending still says so, whatever its host",
+     "app/update_engine.py",
+     "                if not target:\n                    results.append((key, None, None, \"not_pending\", None))\n                    continue\n",
+     "                if not self._manages_host(host_name):\n                    results.append((key, None, None, \"host_unknown\", None))\n                    continue\n                if not target:\n                    results.append((key, None, None, \"not_pending\", None))\n                    continue\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("Telegram answers the refusal with the unknown-host sentence",
+     "app/telegram_bot.py",
+     "        if why == \"host_unknown\":\n",
+     "        if False:\n",
+     "test_telegram_callback_matrix.py"),
+
     ("a server that answers after the body is believed over a guess",
      "app/notifiers/smtp.py",
      "    code = _smtp_code(err)\n    if code is not None:\n        return TEMPORARY if 400 <= code <= 499 else PERMANENT\n    if taken:",

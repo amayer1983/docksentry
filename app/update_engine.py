@@ -668,6 +668,16 @@ class UpdateEngine:
         except Exception as e:                              # pragma: no cover
             print(f"Queue sweep failed: {e}")
 
+    def _manages_host(self, name):
+        """Whether `name` is a host this engine manages: the local one
+        always, any other only while the registry holds it. No registry
+        (a single-host install) knows nothing but the local host — the
+        same reading `run_updates`' `_checker_of` refuses on."""
+        if name in (None, "", LOCAL_HOST):
+            return True
+        return any(getattr(h, "name", None) == name
+                   for h in (self.hosts or ()))
+
     def run_keys(self, keys, *, checker_for, group_of=None, enrich=None,
                  starting=None, report=None, done=None, pending_file=None):
         """Update the containers behind `keys`, one after the other.
@@ -682,10 +692,11 @@ class UpdateEngine:
         Returns `(results, all_done)`. One result per key, in order:
         `(key, target, success, msg, last_group)`. `target` is the
         pending entry that ran, or None when nothing ran — then `msg` is
-        `"no_pending_updates"` (no usable file at all) or `"not_pending"`
-        (the file has no entry for this key) and `success` is None. A
-        raising `update_container` is a failure with its error as `msg`,
-        clipped to 200 characters as the chat always showed it.
+        `"no_pending_updates"` (no usable file at all), `"not_pending"`
+        (the file has no entry for this key) or `"host_unknown"` (it has
+        one, but for a host this engine does not manage) and `success` is
+        None. A raising `update_container` is a failure with its error as
+        `msg`, clipped to 200 characters as the chat always showed it.
         `last_group` is `group_of(key)` after a failure and None after a
         success — the group a failure takes out of the queue. `all_done`
         is True when an entry was taken out and the file is empty after.
@@ -759,6 +770,17 @@ class UpdateEngine:
                               None)
                 if not target:
                     results.append((key, None, None, "not_pending", None))
+                    continue
+                if not self._manages_host(host_name):
+                    # Pending, but for a host that has left DOCKER_HOSTS
+                    # since (a button or a queued tap from before). What
+                    # `checker_for` hands back for it is another machine:
+                    # Telegram's falls back to the local checker, and the
+                    # local container of the same name was updated (Q11b,
+                    # measured in the callback matrix). Nothing runs, the
+                    # entry stays. After the lookup on purpose: a key
+                    # that is not pending still answers "not pending".
+                    results.append((key, None, None, "host_unknown", None))
                     continue
                 enrich([target])
                 # Say what is running, where the rest of the program can
