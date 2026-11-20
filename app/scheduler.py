@@ -130,8 +130,14 @@ def cron_next_ticks(expr, count=3, after=None, max_minutes=60 * 24 * 366):
 
 
 class Scheduler:
-    def __init__(self, config, checker, bot, hosts=None):
+    def __init__(self, config, checker, bot, hosts=None, engine=None):
         self.config = config
+        # The update engine, for the end-of-pass work in _after_tick.
+        # main.py passes it; without one the bot's is used, so a caller
+        # that still builds the scheduler with three arguments gets the
+        # same engine Telegram already holds.
+        self.engine = (engine if engine is not None
+                       else getattr(bot, "engine", None))
         # The local host's checker. Disk space, cleanup and the monitor are
         # about the machine Docksentry runs on, so they stay on this one
         # even when several hosts are managed.
@@ -518,20 +524,30 @@ class Scheduler:
             except Exception as e:
                 print(f"Monitor error: {e}")
 
-            # Anything a dead network swallowed is still waiting. This loop
-            # is the only thing that runs on its own no matter what else is
-            # configured, so it is where a held notification gets its next
-            # go — within 30s of the network coming back (#66,
-            # @NotRetarded, whose crash alert went out over Discord and
-            # never over Telegram). Never blocks: the queue skips a channel
-            # the moment one of its resends fails.
-            try:
-                import notify_retry
-                notify_retry.flush()
-            except Exception as e:
-                print(f"Notify retry error: {e}")
+            self._after_tick()
 
             time.sleep(30)
+
+    def _after_tick(self):
+        """The end of a pass of `_run`, right before its sleep.
+
+        Work that must not depend on a front end hangs off here. One pass
+        skips it: the cron minute in maintenance mode sleeps and goes
+        round early, so the next pass, 30 s later, is the one that runs
+        this.
+        """
+        # Anything a dead network swallowed is still waiting. This loop
+        # is the only thing that runs on its own no matter what else is
+        # configured, so it is where a held notification gets its next
+        # go — within 30s of the network coming back (#66,
+        # @NotRetarded, whose crash alert went out over Discord and
+        # never over Telegram). Never blocks: the queue skips a channel
+        # the moment one of its resends fails.
+        try:
+            import notify_retry
+            notify_retry.flush()
+        except Exception as e:
+            print(f"Notify retry error: {e}")
 
     def _check_disk_space(self):
         action, percent, free_gb = self.checker.check_disk_usage()

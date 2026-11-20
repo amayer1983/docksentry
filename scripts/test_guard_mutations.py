@@ -4818,6 +4818,51 @@ GUARDED = [
      "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
      "test_batch_host_routing.py"),
 
+    # S1: the end of a scheduler pass has its own method, and the
+    # scheduler holds the engine. Each applied by hand, red without a
+    # traceback.
+    ("the scheduler takes the bot's engine when it is not handed one",
+     "app/scheduler.py",
+     '                       else getattr(bot, "engine", None))\n',
+     '                       else None)  # MUTATION\n',
+     "test_scheduler_after_tick.py"),
+
+    ("…and an engine handed in wins over the bot's",
+     "app/scheduler.py",
+     '        self.engine = (engine if engine is not None\n'
+     '                       else getattr(bot, "engine", None))\n',
+     '        self.engine = getattr(bot, "engine", None)  # MUTATION\n',
+     "test_scheduler_after_tick.py"),
+
+    ("main.py hands the scheduler the engine it built",
+     "app/main.py",
+     "    scheduler = Scheduler(config, checker, bot, hosts=host_registry,\n"
+     "                          engine=engine)\n",
+     "    scheduler = Scheduler(config, checker, bot, hosts=host_registry)\n",
+     "test_scheduler_after_tick.py"),
+
+    ("every pass of the scheduler loop ends in _after_tick, before the "
+     "sleep",
+     "app/scheduler.py",
+     "            self._after_tick()\n\n            time.sleep(30)\n",
+     "            time.sleep(30)  # MUTATION: no end-of-pass work\n",
+     "test_scheduler_after_tick.py"),
+
+    ("_after_tick gives held notifications their next go",
+     "app/scheduler.py",
+     "            notify_retry.flush()\n",
+     "            pass  # MUTATION: nothing is resent\n",
+     "test_scheduler_after_tick.py"),
+
+    ("…and a flush that raises stays in the log instead of ending the "
+     "scheduler thread",
+     "app/scheduler.py",
+     "        except Exception as e:\n"
+     "            print(f\"Notify retry error: {e}\")\n",
+     "        except ImportError as e:  # MUTATION\n"
+     "            print(f\"Notify retry error: {e}\")\n",
+     "test_scheduler_after_tick.py"),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was
