@@ -683,19 +683,28 @@ checks["…and a local key still runs"] = (
 # nothing and leaves the entry, like a host the registry does not know.
 _pending_mod.write(pf, [{"name": "db", "image": "postgres:16"}])
 _before = open(pf, "rb").read()
-_rep = []
+_rep, _started, _marks = [], [], []
+_mark = eng.mark_updating
+eng.mark_updating = lambda k, v: (_marks.append(k), _mark(k, v))
 with contextlib.redirect_stdout(io.StringIO()):
     try:
         res, done = eng.run_keys(["db"], checker_for=lambda k: None,
                                  enrich=lambda us: None, pending_file=pf,
-                                 report=lambda *a: _rep.append(a))
+                                 report=lambda *a: _rep.append(a),
+                                 starting=lambda *a: _started.append(a))
     except Exception as e:                          # noqa: BLE001
         # Red, not a traceback.
         res, done = [("raised " + type(e).__name__,)], None
+    finally:
+        eng.mark_updating = _mark
 checks["run_keys: a key whose checker is None is 'host_unknown'"] = (
     res == [("db", None, None, "host_unknown", None)] and _rep == []
     and done is False and open(pf, "rb").read() == _before
     and eng.updating == {})
+# Answered before the mark and "Updating …": the batch would refuse the
+# None checker too, but only after both (and the wait between them).
+checks["…before anything is marked or said"] = (
+    _marks == [] and _started == [])
 
 # ── what a single update waits before it runs (Q11c) ────────────────
 # The last recreate's cooldown, plus its group's pause when this one is
@@ -749,6 +758,96 @@ checks["…nor for another host's member of a group id that spans hosts"] = (
     .get("containers", [])
     and _waits(("local", "g3", "web", 1000.0), "nas", "media", 1000.0)
     == [60])
+_done(row)
+
+# ── a host that stops answering (Q11c review) ───────────────────────
+# A tap on `web @nas` once nas raises TimeoutExpired on every call, with
+# the local `web` queued behind it. The batch's netns snapshot is the
+# first thing that asks nas; it used to raise past the batch, so the tap
+# said "Updating …" and then nothing, and the queue stayed. Now it is
+# that container's failure: said, carded, out of the file, nothing
+# recreated on nas, and the drain runs the queued one.
+row, rec = _world()
+_drive(row, [("notify", None)])
+row.backends["nas"].mode = "dead"
+del row.log[:]
+del rec.results[:]
+_drive(row, [("lock",), ("tap", "update_one:web"), ("unlock",),
+             ("tap", "update_one:nas/web")])
+said = _said(row)
+_dead = _results(said, "web @nas")
+checks["dead host: the tap ends in no crashed thread"] = (
+    m.THREAD_ERRORS == [])
+checks["…Telegram says one failure for web @nas, naming the timeout"] = (
+    len(_dead) == 1 and _dead[0].startswith("❌") and "timed out" in _dead[0])
+checks["…the other channels get its failure card, then the drained one"] = (
+    [(r[0], r[2]) for r in rec.results] == [("web", False), ("web", True)])
+checks["…nothing was recreated on nas"] = (
+    not any(k == "ran" and b == "nas:web" for k, b, _ in row.log))
+checks["…and the queued local web ran after it"] = (
+    any(k == "ran" and b == "local:web" for k, b, _ in row.log)
+    and len(_results(said, "web")) == 1
+    and [k for k, _ in row.bot.engine.queued_updates()] == [])
+checks["…both entries are out of the file"] = (row._pending() == [])
+_done(row)
+
+# The batch's side of it, with two entries on the dead host: a failure
+# per container when asked for it (what run_keys asks), and the raise it
+# has always been without (Update all, the scheduler, the Web UI; T5
+# pins the Web UI's answer).
+row, rec = _world()
+row.backends["nas"].mode = "dead"
+_nas_ck = next(h.checker for h in row.bot.engine.hosts if h.name == "nas")
+
+
+def _dead_batch(**kw):
+    batch = [{"name": "web", "image": "nginx:1.25", "host": "nas"},
+             {"name": "media", "image": "jellyfin/jellyfin:10.9",
+              "host": "nas"}]
+    with contextlib.redirect_stdout(io.StringIO()):
+        try:
+            lines, ok, _maj = row.bot.engine._process_update_batch(
+                batch, _nas_ck, auto=False, enrich=lambda us: None, **kw)
+        except Exception as e:                      # noqa: BLE001
+            # Red, not a traceback.
+            return ["raised " + type(e).__name__], None
+    return lines, ok
+
+
+_lines, _ok = _dead_batch(snapshot_fails_entry=True)
+checks["dead host, batch asked to: one failure line per container"] = (
+    len(_lines) == 2 and all(ln.startswith("❌") and "timed out" in ln
+                             for ln in _lines) and _ok == 0)
+checks["…and a failure card for each"] = (
+    [(r[0], r[2]) for r in rec.results]
+    == [("web", False), ("media", False)])
+del rec.results[:]
+checks["…and without it the batch raises, as it always has"] = (
+    _dead_batch() == (["raised TimeoutExpired"], None) and rec.results == [])
+_done(row)
+
+# A link lookup that raises ends the tap before anything is said, as
+# before Q11c: the batch's own enrich runs after "Updating …", so the
+# chat would show that line and then nothing.
+row, rec = _world()
+_drive(row, [("notify", None)])
+del row.log[:]
+
+
+def _raising_enrich(updates):
+    raise RuntimeError("link lookup failed (stand-in)")
+
+
+row.bot._enrich_with_source_url = _raising_enrich
+_drive(row, [("tap", "update_one:web")])
+said = _said(row)
+checks["raising link lookup: no 'Updating' line goes out"] = (
+    not any(s.startswith("⏳") for s in said))
+checks["…nothing ran and the entry stays"] = (
+    not any(k == "ran" for k, _b, _ in row.log)
+    and ("web", "local") in [(u["name"], u.get("host") or "local")
+                             for u in row._pending()]
+    and row.bot.engine.updating == {})
 _done(row)
 
 for k, v in checks.items():

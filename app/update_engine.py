@@ -785,7 +785,9 @@ class UpdateEngine:
 
         * `enrich([entry])` resolves the release link before the result
           is said (the result line and the other channels' card both
-          carry it); the batch calls it, after `starting`;
+          carry it). Called before the key is marked or `starting` is,
+          as before Q11c, so a lookup that raises ends the call with
+          nothing said; the batch is handed a no-op in its place;
         * `starting(key, target)` is called once the key is marked in
           flight, before the wait for the last recreate and the update.
           It is a hook rather than part of the result because the
@@ -819,9 +821,11 @@ class UpdateEngine:
         (measured in the Q11a review). With one update at a time that
         never mattered; once hosts update in parallel (P1), two calls
         rewrite the shared file from their own copies, and this
-        read-modify-write is where that has to be fixed. A key that
-        raises past its own report (the file write failing, a report
-        raising twice) ends the call there: its in-flight mark goes, the
+        read-modify-write is where that has to be fixed. A host that
+        stops answering is a failure like any other: the batch takes a
+        netns snapshot that raises as that container's failure. A key
+        that raises past its own report (the link lookup, the file write
+        failing, a report raising twice) ends the call there: its in-flight mark goes, the
         keys after it do not run, and the error reaches the caller
         instead of any results.
         """
@@ -872,6 +876,15 @@ class UpdateEngine:
                     # anything is marked or waited for.
                     results.append((key, None, None, "host_unknown", None))
                     continue
+                # A copy, because the batch writes into its entries (the
+                # link, the netns owner) and the file must not get those.
+                # The link is looked up here, before anything is marked
+                # or said, as before Q11c: a lookup that raises ends the
+                # call with nothing said. Left to the batch, it ran after
+                # "Updating …", and the chat showed that line and then
+                # nothing (Q11c review).
+                entry = dict(target)
+                enrich([entry])
                 # Say what is running, where the rest of the program can
                 # see it: the Web UI's "updating" badge, and a second tap
                 # that has to know this one is already in flight. Before
@@ -888,10 +901,9 @@ class UpdateEngine:
                 # Through the shared batch (Q11c), so a tap gets what
                 # "Update all" gives the same container: the netns
                 # snapshot, the ENOSPC cleanup, the group head's cascade
-                # and the report to the other channels. A copy, because
-                # the batch writes into its entries (the link, the netns
-                # owner) and the file must not get those.
-                entry = dict(target)
+                # and the report to the other channels. The link is on
+                # `entry` already, so the batch looks up none. A netns
+                # snapshot that raises is that container's failure there.
                 outcome = []
 
                 def on_result(u, success, msg, key=key, entry=entry):
@@ -899,14 +911,13 @@ class UpdateEngine:
                     if report is not None:
                         report(key, entry, success, msg)
                 # What the batch raises outside its per-container guard
-                # (the link lookup, the netns snapshot, a report that
-                # raised twice) ends the call, as a raising `enrich`
-                # always did, and the entry stays in the file.
+                # (a report that raised twice) ends the call, and the
+                # entry stays in the file.
                 lines, _n, _m = self._process_update_batch(
-                    [entry], ck, auto=False, enrich=enrich,
+                    [entry], ck, auto=False, enrich=lambda us: None,
                     checker_of=lambda u, ck=ck: ck,
                     on_result=on_result, marks=False,
-                    proactive_cleanup=False)
+                    proactive_cleanup=False, snapshot_fails_entry=True)
                 if not outcome:
                     # One entry, not auto, in a batch of its own: the
                     # batch skips it only when it refuses the checker,
@@ -1246,7 +1257,8 @@ class UpdateEngine:
 
     def _process_update_batch(self, updates, checker, *, auto, enrich=None,
                               checker_of=None, on_result=None, marks=True,
-                              proactive_cleanup=True):
+                              proactive_cleanup=True,
+                              snapshot_fails_entry=False):
         """Shared per-container update engine for BOTH the scheduled-auto
         path (handle_autoupdates) and the manual path (run_updates /
         "Update all"). This is the single source of truth that stops the
@@ -1291,7 +1303,18 @@ class UpdateEngine:
           "once per batch" would be once per tap and per drained entry —
           three prunes and three 🧹 lines for a tap with two entries
           queued behind it (Q11c review, measured). A single update
-          never had that prune.
+          never had that prune;
+        * `snapshot_fails_entry=True` makes a netns snapshot that raises
+          (a host that stops answering: TimeoutExpired from a remote
+          backend) that container's failure, reported like a raising
+          update, with nothing recreated. Without it the error leaves
+          the batch before any container's guard, as it always has for
+          "Update all", the scheduler and the Web UI (T5 pins the Web
+          UI's log line and the entry it leaves). For `run_keys` it
+          left the tap at "Updating …" with nothing after it and the
+          queue stuck (Q11c review, measured); before Q11c the single
+          update took no snapshot and the same timeout came up inside
+          `update_container`, where it was a failure.
         """
         (enrich or self._enrich_with_source_url)(updates)
 
@@ -1371,8 +1394,20 @@ class UpdateEngine:
         # head recreated earlier in the batch changes ID, so sidecars still
         # referencing the old ID break — resolving to a stable name lets the
         # sidecars rejoin.
+        #
+        # With `snapshot_fails_entry` a raise is kept per entry and
+        # becomes that container's failure below, in its own guard. Not
+        # "no netns name and go on": a sidecar recreated without its
+        # owner's name is the #2 breakage.
+        snapshot_failed = {}
         for u in updates:
-            tn = checker.netns_target_name(u["name"])
+            try:
+                tn = checker.netns_target_name(u["name"])
+            except Exception as e:
+                if not snapshot_fails_entry:
+                    raise
+                snapshot_failed[(_host_of(u), u["name"])] = e
+                continue
             if tn:
                 u["netns_name"] = tn
 
@@ -1453,6 +1488,11 @@ class UpdateEngine:
                         f"skipped rather than acting on the wrong machine")
                     prev_group = abort_key
                     continue
+                if (u_host, u["name"]) in snapshot_failed:
+                    # Its netns snapshot raised: reported, carded and
+                    # group-aborted by the except below, as a raising
+                    # update is; nothing is recreated.
+                    raise snapshot_failed[(u_host, u["name"])]
                 # Marked around this one call and nothing else, so the
                 # window the UI reads is exactly the window the container
                 # is being pulled and recreated in. `finally`, because a
