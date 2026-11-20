@@ -753,6 +753,20 @@ class UpdateEngine:
         keeps its own order. Group order inside a batch only means
         something with several entries.
 
+        Two places where it is not what "Update all" does with the same
+        containers. The prune "Update all" runs once per batch when the
+        local disk is past DISK_WARN_PERCENT is left out here (once per
+        key would be once per tap; a single update never had it). And a
+        group-mate still queued behind a tapped head is not in the head's
+        batch, so the head's cascade restarts it (and waits for the
+        head's health) before its own update recreates it; "Update all"
+        leaves in-batch members to their own update. Left so on purpose:
+        the queued member's netns snapshot is taken only once the head
+        has been recreated, and `netns_target_name` resolves the owner
+        through the id the head's recreate retired — that is my reading
+        of the code, not run against a daemon — so for a queued sidecar
+        it is the cascade that puts it back onto the head first.
+
         Returns `(results, all_done)`. One result per key, in order:
         `(key, target, success, msg, last_group)`. `target` is the
         pending entry that ran, or None when nothing ran — then `msg` is
@@ -772,10 +786,11 @@ class UpdateEngine:
         * `enrich([entry])` resolves the release link before the result
           is said (the result line and the other channels' card both
           carry it); the batch calls it, after `starting`;
-        * `starting(key, target)` is called right before the update
-          runs. It is a hook rather than part of the result because the
-          "Updating …" line has to go out while the update runs, not
-          after it;
+        * `starting(key, target)` is called once the key is marked in
+          flight, before the wait for the last recreate and the update.
+          It is a hook rather than part of the result because the
+          "Updating …" line has to go out while the update runs (and
+          while it waits), not after it;
         * `report(key, entry, success, msg)` is called as soon as the
           batch has told the other channels, before the entry leaves the
           file: a file that cannot be rewritten (a full disk) must not
@@ -863,9 +878,13 @@ class UpdateEngine:
                 # the wait below: the entry is off the queue and this
                 # call's, so a tap during the wait is "the same one".
                 self.mark_updating(key, target.get("new_version") or "")
-                self._wait_after_last_recreate(host_name, name)
+                # Said before the wait, not after: a cooldown can be
+                # minutes, and the chat would show nothing but the toast
+                # until it was over (Q11c review). The Web UI's badge
+                # already says "updating" from the mark above.
                 if starting is not None:
                     starting(key, target)
+                self._wait_after_last_recreate(host_name, name)
                 # Through the shared batch (Q11c), so a tap gets what
                 # "Update all" gives the same container: the netns
                 # snapshot, the ENOSPC cleanup, the group head's cascade
@@ -886,7 +905,8 @@ class UpdateEngine:
                 lines, _n, _m = self._process_update_batch(
                     [entry], ck, auto=False, enrich=enrich,
                     checker_of=lambda u, ck=ck: ck,
-                    on_result=on_result, marks=False)
+                    on_result=on_result, marks=False,
+                    proactive_cleanup=False)
                 if not outcome:
                     # One entry, not auto, in a batch of its own: the
                     # batch skips it only when it refuses the checker,
@@ -1225,7 +1245,8 @@ class UpdateEngine:
             _wait(cd, self)
 
     def _process_update_batch(self, updates, checker, *, auto, enrich=None,
-                              checker_of=None, on_result=None, marks=True):
+                              checker_of=None, on_result=None, marks=True,
+                              proactive_cleanup=True):
         """Shared per-container update engine for BOTH the scheduled-auto
         path (handle_autoupdates) and the manual path (run_updates /
         "Update all"). This is the single source of truth that stops the
@@ -1263,7 +1284,14 @@ class UpdateEngine:
           outcome is reported to the other channels, in both the
           returned and the raising case;
         * `marks=False` leaves the in-flight mark to the caller, who set
-          it already and takes it away after its own last word.
+          it already and takes it away after its own last word;
+        * `proactive_cleanup=False` leaves out the once-per-batch prune
+          over a local disk past DISK_WARN_PERCENT (the cleanup after an
+          ENOSPC failure stays). `run_keys` runs one batch per key, so
+          "once per batch" would be once per tap and per drained entry —
+          three prunes and three 🧹 lines for a tap with two entries
+          queued behind it (Q11c review, measured). A single update
+          never had that prune.
         """
         (enrich or self._enrich_with_source_url)(updates)
 
@@ -1469,7 +1497,8 @@ class UpdateEngine:
                         results.append(self._t(
                             "cleanup_enospc",
                             host=_host_of(u) or "local", message=_cmsg))
-                    elif (getattr(self.config, "disk_warn_auto_cleanup", False)
+                    elif (proactive_cleanup
+                          and getattr(self.config, "disk_warn_auto_cleanup", False)
                           and not getattr(self, "_batch_cleaned", False)):
                         # Measurement and cleanup on the SAME machine:
                         # get_disk_usage() reads the local data dir no
@@ -1510,6 +1539,9 @@ class UpdateEngine:
                     # batch self-heal via their own update (recreated onto the
                     # head's new name through the netns snapshot above), so
                     # only out-of-batch sidecars need the explicit kick.
+                    # A member queued behind a tapped head is out of
+                    # batch too (run_keys runs one key per batch) and
+                    # gets the kick before its own update — see run_keys.
                     if is_head:
                         deps = [d for d in members[1:]
                                 if (u_host, d) not in batch_names]

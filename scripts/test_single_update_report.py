@@ -314,6 +314,14 @@ _drive(row, [("lock",), ("tap", "update_one:db"), ("unlock",),
 _order = [(k, b) for k, b, _ in row.log if k in ("ran", "wait")]
 checks["a cooldown container: the queued one waits its cooldown first"] = (
     _order == [("ran", "local:web"), ("wait", "60"), ("ran", "local:db")])
+_kinds = [(k, b) for k, b, _ in row.log if k in ("send", "wait")]
+_upd_db = next((i for i, (k, b) in enumerate(_kinds)
+                if k == "send" and b.startswith("⏳ Updating `db`")), None)
+_wait_at = next((i for i, (k, b) in enumerate(_kinds) if k == "wait"), None)
+# Said before the wait, not after it: a cooldown can be minutes, and
+# until then the toast was all the chat had to show for the tap.
+checks["…and 'Updating' is said before it waits, not after"] = (
+    None not in (_upd_db, _wait_at) and _upd_db < _wait_at)
 checks["…and a tap on it while it waits is 'the same one', not queued"] = (
     _during == [{"db": "1.1.0"}]
     and any("same one" in s for s in _said(row))
@@ -377,6 +385,39 @@ checks["…and Telegram says the cleanup once, after the failure"] = (
     and None not in (_fail_at, _clean_at) and _fail_at < _clean_at)
 checks["…and the failure is reported once"] = (
     [r[:3] for r in rec.results] == [("web", "nginx:1.25", False)])
+_done(row)
+
+# ── a local disk over the warning line: no prune per single update ──
+# "Update all" prunes once per batch when DISK_WARN_AUTO_CLEANUP is on
+# and the local disk is over DISK_WARN_PERCENT. A single update never
+# did that, and Q11c is not meant to start: one batch per key would
+# prune once per tap and once per drained entry, and each result line
+# would wait for a whole prune (measured on 3641bb7: three prunes and
+# three 🧹 lines for a tap with two entries queued behind it).
+row, rec = _world(extra_pending=[("db", "postgres:16", "local"),
+                                 ("cache", "redis:7", "local")])
+for _cfg in {id(c): c for c in (row.bot.config,
+                                row.bot.engine.config)}.values():
+    _cfg.disk_warn_auto_cleanup = True
+    _cfg.disk_warn_percent = 85
+_cls = type(row.checker)
+_prunes = []
+_du, _ci = _cls.get_disk_usage, _cls.cleanup_images
+_cls.get_disk_usage = lambda self: (90, 1, 10)
+_cls.cleanup_images = lambda self: (_prunes.append(self.backend.name)
+                                    or (True, "freed 1 GB"))
+try:
+    _drive(row, [("lock",), ("tap", "update_one:db"),
+                 ("tap", "update_one:cache"), ("unlock",),
+                 ("tap", "update_one:web")])
+finally:
+    _cls.get_disk_usage, _cls.cleanup_images = _du, _ci
+said = _said(row)
+checks["a full-ish local disk: a tap and its queue run without a prune"] = (
+    [b for k, b, _ in row.log if k == "ran"]
+    == ["local:web", "local:db", "local:cache"] and _prunes == [])
+checks["…and nothing says it cleaned between updates"] = (
+    not any(s.startswith("🧹") for s in said))
 _done(row)
 
 # ── a tap on a sidecar is recreated against its owner's name (Q11c) ──
@@ -694,6 +735,20 @@ checks["…nor for a container in another host's group"] = (
     == [60])
 checks["…and no wait at all with nothing run before"] = (
     _waits(None, "local", "db", 1000.0) == [])
+# Group ids are global in the raw store and the per-host views only
+# split the members, so one id can hold members on two hosts. Then the
+# other host's view has a group of the same id with `media` in it, and
+# only the host check keeps `media @nas` from waiting `web`'s pause —
+# the batch keys its group gates on (host, id) for the same reason.
+from container_store import host_key  # noqa: E402
+
+eng.store.save_group("g3", "g3", ["web", host_key("nas", "media")],
+                     wait_seconds=5)
+checks["…nor for another host's member of a group id that spans hosts"] = (
+    "media" in (row.bot._store_for("nas").get_groups().get("g3") or {})
+    .get("containers", [])
+    and _waits(("local", "g3", "web", 1000.0), "nas", "media", 1000.0)
+    == [60])
 _done(row)
 
 for k, v in checks.items():

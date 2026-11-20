@@ -1393,10 +1393,10 @@ GUARDED = [
      "test_single_update_report.py"),
 
     ("'Updating …' is said before the single update runs, not after it",
-     "app/update_engine.py",
-     '                if starting is not None:\n                    starting(key, target)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False)\n',
-     '                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False)\n                if starting is not None:\n                    starting(key, target)\n',
-     "test_single_update_report.py"),
+     'app/update_engine.py',
+     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. A copy, because\n                # the batch writes into its entries (the link, the netns\n                # owner) and the file must not get those.\n                entry = dict(target)\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (the link lookup, the netns snapshot, a report that\n                # raised twice) ends the call, as a raising `enrich`\n                # always did, and the entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=enrich,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False)\n                if starting is not None:\n                    starting(key, target)\n',
+     'test_single_update_report.py'),
 
     ("a failed single update names the group it takes out of the queue",
      "app/update_engine.py",
@@ -1432,8 +1432,8 @@ GUARDED = [
 
     ('…and the waiting container counts as in flight while it waits',
      'app/update_engine.py',
-     '                self.mark_updating(key, target.get("new_version") or "")\n                self._wait_after_last_recreate(host_name, name)\n',
-     '                self._wait_after_last_recreate(host_name, name)\n                self.mark_updating(key, target.get("new_version") or "")\n',
+     '                self.mark_updating(key, target.get("new_version") or "")\n                # Said before the wait, not after: a cooldown can be\n                # minutes, and the chat would show nothing but the toast\n                # until it was over (Q11c review). The Web UI\'s badge\n                # already says "updating" from the mark above.\n                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n',
+     '                # Said before the wait, not after: a cooldown can be\n                # minutes, and the chat would show nothing but the toast\n                # until it was over (Q11c review). The Web UI\'s badge\n                # already says "updating" from the mark above.\n                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                self.mark_updating(key, target.get("new_version") or "")\n',
      'test_single_update_report.py'),
 
     ('a single update runs on the checker its caller hands it, remote too',
@@ -1450,8 +1450,8 @@ GUARDED = [
 
     ("the single update keeps its in-flight mark through 'all done'",
      'app/update_engine.py',
-     '                    on_result=on_result, marks=False)\n',
-     '                    on_result=on_result, marks=True)\n',
+     '                    on_result=on_result, marks=False,\n',
+     '                    on_result=on_result, marks=True,\n',
      'test_single_update_report.py'),
 
     ('…because the batch leaves the mark alone when told to',
@@ -1464,6 +1464,31 @@ GUARDED = [
      'app/update_engine.py',
      '                if on_result is not None:\n                    on_result(u, success, msg)\n',
      '                pass  # MUTATION: no result handed on\n',
+     'test_single_update_report.py'),
+
+    # Q11c review: each applied by hand and red without a traceback.
+    ("a single update does not run the batch's proactive disk prune",
+     'app/update_engine.py',
+     '                    proactive_cleanup=False)\n',
+     '                    proactive_cleanup=True)\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch leaves that prune out when told to',
+     'app/update_engine.py',
+     '                    elif (proactive_cleanup\n',
+     '                    elif (True\n',
+     'test_single_update_report.py'),
+
+    ("…and 'Updating' is said before the wait for the last recreate",
+     'app/update_engine.py',
+     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                if starting is not None:\n                    starting(key, target)\n',
+     'test_single_update_report.py'),
+
+    ("no group pause for another host's member of the same group id",
+     'app/update_engine.py',
+     '        if l_group and host_name == l_host:\n',
+     '        if l_group:\n',
      'test_single_update_report.py'),
 
     ("a group head's cascade after a tap is said on Telegram",
