@@ -1499,8 +1499,8 @@ GUARDED = [
 
     ("…with the unknown-host sentence",
      "app/telegram_bot.py",
-     "            self.send_message(self._unknown_host_text(host_name))\n",
-     "            self.send_message(self.t(\"major_none_pending\", name=name))\n",
+     "            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n",
      "test_telegram_callback_matrix.py"),
 
     ("…before the deferred majors are looked up",
@@ -1509,6 +1509,26 @@ GUARDED = [
      "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n",
      "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n"
      "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("a reject_major key for a host the registry does not know is refused",
+     "app/telegram_bot.py",
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n",
+     "",
+     "test_telegram_callback_matrix.py"),
+
+    ("…with the unknown-host sentence, not 'skipped'",
+     "app/telegram_bot.py",
+     "                self.send_message(self._unknown_host_text(host_name))\n",
+     "                self.send_message(self.t(\"major_skipped\", name=name, tag=self._entry_host_tag({\"host\": host_name})))\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…before the deferred major is dropped from a store",
+     "app/telegram_bot.py",
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n"
+     "            self._store_for(host_name).remove_pending_major(name)\n",
+     "            self._store_for(host_name).remove_pending_major(name)\n"
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n",
      "test_telegram_callback_matrix.py"),
 
     ("a server that answers after the body is believed over a guess",

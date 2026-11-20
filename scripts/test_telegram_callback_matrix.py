@@ -175,6 +175,8 @@ SCENARIOS = [
                           ("tap", "reject_major:web")]),
     ("reject_major:nas/web", [("major", "nas", "web"),
                               ("tap", "reject_major:nas/web")]),
+    ("reject_major gone host", [("major", "local", "web"),
+                                ("tap", "reject_major:gone/web")]),
     # ── lifecycle / groups / leftovers ──────────────────────────────
     ("lifecycle:stop:web", [("tap", "lifecycle:stop:web")]),
     ("lifecycle:restart:web", [("tap", "lifecycle:restart:web")]),
@@ -257,7 +259,12 @@ BRANCH_NOTES = {
         "whose host the registry does not know (`gone`, and `nas` on a "
         "single host) answers 'Unknown host' since Q11b, before anything "
         "is looked up; nothing runs and the deferred major stays.",
-    "reject_major": ":3508 drops the deferred major in that host's store.",
+    "reject_major": ":3508 drops the deferred major in that host's store. "
+        "A key whose host the registry does not know (`gone`, and `nas` "
+        "on a single host) answers 'Unknown host' since Q11b, like "
+        "confirm_major: before, `_store_for` handed it the local store, "
+        "so the local `web`'s deferred major went and the chat said "
+        "'skipped'.",
     "lifecycle": ":3520 local only; a bad split or action is a toast.",
     "restart_deps": ":3548 local group, needs two members; the cascade "
         "runs on a thread.",
@@ -2732,7 +2739,7 @@ EXPECTED = {
                {'do': 'tap reject_major:nas/web',
                 'out': ['<toast> Skipped major update for web.',
                         '<unbutton>',
-                        '⏭ Major update for `web` @nas skipped.'],
+                        '❌ Unknown host `nas`. Managed hosts: `local`'],
                 'hosts': {},
                 'events': [],
                 'raised': None}],
@@ -2740,7 +2747,44 @@ EXPECTED = {
                'queue': [],
                'stops': 0,
                'restores': 0,
-               'majors': {},
+               'majors': {'local': ['web']},
+               'locked': False}},
+    ('multi', 'reject_major gone host'): {'steps': [{'do': 'major local web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap reject_major:gone/web',
+                'out': ['<toast> Skipped major update for web.',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`, `nas`, `dead`, '
+                        '`refused`, `flaky`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'local': ['web']},
+               'locked': False}},
+    ('single', 'reject_major gone host'): {'steps': [{'do': 'major local web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap reject_major:gone/web',
+                'out': ['<toast> Skipped major update for web.',
+                        '<unbutton>',
+                        '❌ Unknown host `gone`. Managed hosts: `local`'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'local': ['web']},
                'locked': False}},
     # ── lifecycle ───────────────────────────────────────────────────
     # :3520 local only; a bad split or action is a toast.

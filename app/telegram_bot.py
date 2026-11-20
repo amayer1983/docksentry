@@ -3471,6 +3471,13 @@ class TelegramBot:
                                  self.t("major_skipping", name=name))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
+            # Same refusal as confirm_major: for a host that left
+            # DOCKER_HOSTS (or `nas/…` on a single host) `_store_for`
+            # hands back the local store, and the local namesake's
+            # deferred major would go.
+            if not self.engine._manages_host(host_name):
+                self.send_message(self._unknown_host_text(host_name))
+                return
             self._store_for(host_name).remove_pending_major(name)
             tag = self._entry_host_tag({"host": host_name})
             self.send_message(self.t("major_skipped", name=name, tag=tag))
