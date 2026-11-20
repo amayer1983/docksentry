@@ -3853,8 +3853,8 @@ GUARDED = [
 
     ('a pending removal leaves a file it cannot read alone',
      'app/pending.py',
-     '    data = _load(path)\n    if data is None:\n        return None\n    wanted',
-     '    data = _load(path)\n    if data is None:\n        data = []\n    wanted',
+     '    data = load(path)\n    if data is None:\n        return None\n    wanted',
+     '    data = load(path)\n    if data is None:\n        data = []\n    wanted',
      'test_pending_file.py'),
 
     ('a pending removal that empties the file deletes it when asked',
@@ -3910,6 +3910,100 @@ GUARDED = [
      '        pending = _pending.read(getattr(self.config, "pending_file", ""))\n',
      '        pending = _pending.read(getattr(self.config, "pending_file", ""),\n                                named_only=True)\n',
      'test_pending_file.py'),
+
+    # Q6: Telegram's update flows read and write pending_updates.json
+    # through app/pending.py. An unreadable file is answered as nothing
+    # pending instead of raising (T2 q6_checks, T3 q6_checks), and the
+    # moved writes keep what they wrote before (T3 rows).
+    ('a single update answers an unreadable pending file instead of raising',
+     'app/telegram_bot.py',
+     '            updates = _pending.load(self.config.pending_file)\n            if updates is None:\n',
+     '            updates = (json.load(open(self.config.pending_file, encoding="utf-8"))\n                       if os.path.exists(self.config.pending_file) else None)\n            if updates is None:\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and tells it from a file that holds [], which is "not in the list"',
+     'app/telegram_bot.py',
+     '            updates = _pending.load(self.config.pending_file)\n            if updates is None:\n',
+     '            updates = _pending.load(self.config.pending_file)\n            if not updates:\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('a single update that takes the last entry leaves [], not no file',
+     'app/telegram_bot.py',
+     '            _pending.write(self.config.pending_file, remaining)\n',
+     '            _pending.remove(self.config.pending_file,\n                            [(host_name, container_name)],\n                            delete_when_empty=True)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('the bare "Update all" answers an unreadable pending file instead of raising',
+     'app/telegram_bot.py',
+     '                updates = _pending.read(pending_file)\n',
+     '                with open(pending_file, encoding="utf-8") as f:\n                    updates = json.load(f)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('…and deletes the pending file when it is done',
+     'app/telegram_bot.py',
+     '                _pending.clear(pending_file)\n',
+     '                pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('/updates answers an unreadable pending file instead of raising',
+     'app/telegram_bot.py',
+     '            pending = _pending.read(self.config.pending_file)\n',
+     '            pending = json.load(open(self.config.pending_file, encoding="utf-8"))\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('/updates @host lists that host\'s pending entries only',
+     'app/telegram_bot.py',
+     '                                               [h.name for h in targets])\n',
+     '                                               ["local"])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('"I\'ll do it manually" keeps the other hosts\' pending entries',
+     'app/telegram_bot.py',
+     '                    pending_store.write(self.config.pending_file, keep)\n',
+     '                    pending_store.clear(self.config.pending_file)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and deletes the pending file on a single host',
+     'app/telegram_bot.py',
+     '            else:\n                pending_store.clear(self.config.pending_file)\n',
+     '            else:\n                pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('pending.clear is fine with a file that is already gone',
+     'app/pending.py',
+     '    try:\n        os.remove(path)\n    except OSError:\n        pass\n',
+     '    os.remove(path)\n',
+     'test_pending_file.py'),
+
+    ('…and with no path',
+     'app/pending.py',
+     '    if not path:\n        return\n    try:\n',
+     '    try:\n',
+     'test_pending_file.py'),
+
+    ('a pending removal that empties the file really deletes it',
+     'app/pending.py',
+     '        clear(path)\n',
+     '        pass\n',
+     'test_pending_file.py'),
+
+    ('the command matrix really seeds an unreadable pending file for Q6',
+     'scripts/test_telegram_dispatch_matrix.py',
+     '        with open(cfg.pending_file, "wb") as f:\n            f.write(PENDING_RAW[0])\n        return\n',
+     '        pass\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('the callback matrix records an unreadable pending file as its bytes',
+     'scripts/test_telegram_callback_matrix.py',
+     '                else f"unreadable: {raw!r}"\n',
+     '                else []\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("the auto-update batch carries the other hosts' pending entries over",
+     'app/telegram_bot.py',
+     '                _pending.write(self.config.pending_file, others + remaining)\n',
+     '                _pending.write(self.config.pending_file, remaining)\n',
+     'test_host_state_wiring.py'),
 
 ]
 

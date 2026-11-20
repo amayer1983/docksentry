@@ -1874,12 +1874,17 @@ class TelegramBot:
         # make the drain skip a group that has nothing to do with this run.
         self._last_update_group = None
         try:
-            if not os.path.exists(self.config.pending_file):
+            import pending as _pending
+            updates = _pending.load(self.config.pending_file)
+            if updates is None:
+                # No file, or one nothing can read (cut off mid-write,
+                # edited by hand): nothing is pending that this tap could
+                # act on. It used to raise here, inside the thread, and
+                # the chat heard nothing after the toast. A file holding
+                # `[]` is a different answer — the last single update
+                # leaves exactly that — and goes on to "not in the list".
                 self.send_message(self.t("no_pending_updates"))
                 return
-
-            with open(self.config.pending_file, encoding="utf-8") as f:
-                updates = json.load(f)
 
             target = next((u for u in updates
                            if self._pending_key(u) == (host_name, container_name)),
@@ -1937,8 +1942,7 @@ class TelegramBot:
             # (host, name): another host's same-named entry must survive.
             remaining = [u for u in updates
                          if self._pending_key(u) != (host_name, container_name)]
-            from container_store import atomic_write_json
-            atomic_write_json(self.config.pending_file, remaining)
+            _pending.write(self.config.pending_file, remaining)
 
             if not remaining:
                 self.send_message(self.t("update_all_done"))
@@ -2353,10 +2357,10 @@ class TelegramBot:
                 # UpdateChecker.check_all merges its own result in. On a
                 # single-host install nothing is foreign, so this writes
                 # byte-for-byte what it always wrote.
-                from container_store import atomic_write_json
-                others = [e for e in read_pending(self.config.pending_file)
+                import pending as _pending
+                others = [e for e in _pending.read(self.config.pending_file)
                           if _host_of(e) not in batch_hosts]
-                atomic_write_json(self.config.pending_file, others + remaining)
+                _pending.write(self.config.pending_file, others + remaining)
         finally:
             # Release the update mutex if we claimed it for this batch.
             # try/finally guarantees release even if a send_message /
@@ -2995,14 +2999,14 @@ class TelegramBot:
             self.send_message(self.t("update_already_running"))
             return
         try:
+            import pending as _pending
             from_snapshot = updates is not None
             pending_file = self.config.pending_file
             if not from_snapshot:
-                if not os.path.exists(pending_file):
-                    self.send_message(self.t("no_pending_updates"))
-                    return
-                with open(pending_file, encoding="utf-8") as f:
-                    updates = json.load(f)
+                # A missing file and one nothing can read both come back
+                # empty and get the answer below; the unreadable one used
+                # to raise inside the thread, after the toast.
+                updates = _pending.read(pending_file)
 
             if not updates:
                 self.send_message(self.t("no_pending_updates"))
@@ -3024,10 +3028,7 @@ class TelegramBot:
                 # including same-named ones on other hosts (#7).
                 self._remove_from_pending([pending_key(u) for u in updates])
             else:
-                try:
-                    os.remove(pending_file)
-                except OSError:
-                    pass
+                _pending.clear(pending_file)
 
             self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         finally:
@@ -3449,23 +3450,18 @@ class TelegramBot:
             # never saw, and they only reappeared on that host's next scan
             # (#7). Without a registry there is exactly one host and this
             # is the old behaviour.
+            # (`_pending` here is the live stop offers, hence the alias.)
+            import pending as pending_store
             if self.hosts and getattr(self.hosts, "is_multi", False):
                 from container_store import LOCAL_HOST as _LOCAL
-                keep = [u for u in read_pending(self.config.pending_file)
+                keep = [u for u in pending_store.read(self.config.pending_file)
                         if pending_host(u) != _LOCAL]
                 if keep:
-                    from container_store import atomic_write_json
-                    atomic_write_json(self.config.pending_file, keep)
+                    pending_store.write(self.config.pending_file, keep)
                 else:
-                    try:
-                        os.remove(self.config.pending_file)
-                    except OSError:
-                        pass
+                    pending_store.clear(self.config.pending_file)
             else:
-                try:
-                    os.remove(self.config.pending_file)
-                except OSError:
-                    pass
+                pending_store.clear(self.config.pending_file)
         elif data.startswith("update_one:"):
             # The payload is a host key (#7): `nginx` locally, `nas/nginx`
             # for a remote host. `_run_single_update` splits it; only the
@@ -4309,24 +4305,23 @@ class TelegramBot:
             if host_err:
                 self.send_message(host_err)
                 return
-            if os.path.exists(self.config.pending_file):
-                with open(self.config.pending_file, encoding="utf-8") as f:
-                    pending = json.load(f)
-                if targets is not None:
-                    # The pending file holds every host's entries (#7);
-                    # show the ones belonging to the targeted hosts, and
-                    # say which host each is on via _display_name.
-                    from container_store import LOCAL_HOST
-                    wanted = {h.name for h in targets}
-                    pending = [u for u in pending if isinstance(u, dict)
-                               and (u.get("host") or LOCAL_HOST) in wanted]
-                if pending:
-                    if targets is None:
-                        names = [f"• `{u['name']}`" for u in pending]
-                    else:
-                        names = [f"• {self._display_name(u)}" for u in pending]
-                    self.send_message(self.t("pending_title") + "\n" + "\n".join(names))
-                    return
+            # A missing file and one nothing can read both list nothing;
+            # the unreadable one used to raise out of here unanswered.
+            import pending as _pending
+            pending = _pending.read(self.config.pending_file)
+            if targets is not None:
+                # The pending file holds every host's entries (#7);
+                # show the ones belonging to the targeted hosts, and
+                # say which host each is on via _display_name.
+                pending = _pending.entries_for(pending,
+                                               [h.name for h in targets])
+            if pending:
+                if targets is None:
+                    names = [f"• `{u['name']}`" for u in pending]
+                else:
+                    names = [f"• {self._display_name(u)}" for u in pending]
+                self.send_message(self.t("pending_title") + "\n" + "\n".join(names))
+                return
             self.send_message(self.t("no_pending"))
 
         elif text == "/debug":

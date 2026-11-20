@@ -82,6 +82,9 @@ seconds" where dead is named) come from core-split after W7, and
 nothing else in the table moved. Each row starts with an empty
 dead-host memory; what a read leaves in it for the next command is
 the business of `w7_checks` — two commands on one bot, written by hand.
+`q6_checks` drives /updates and /updateall over a pending file that
+cannot be read (`PENDING_RAW` replaces the seeded rows for that row);
+written by hand before Q6, when those rows raised.
 """
 
 import contextlib
@@ -443,10 +446,17 @@ LOCAL = [None]
 #: Host name → backend mode, laid over the set-up's own for one row (W3's
 #: single-host checks make `local` dead or refused). Empty otherwise.
 MODE_OVERRIDE = {}
+#: Bytes written as the pending file instead of the seeded rows, for one
+#: row (Q6's unreadable file). None otherwise.
+PENDING_RAW = [None]
 _TMP_ROOT = None
 
 
 def _seed_pending(cfg, setup):
+    if PENDING_RAW[0] is not None:
+        with open(cfg.pending_file, "wb") as f:
+            f.write(PENDING_RAW[0])
+        return
     rows = [{"name": "web", "image": "nginx:1.25", "host": "local",
              "old_version": "1.25.0", "new_version": "1.26.0"}]
     if setup == "multi":
@@ -1201,6 +1211,84 @@ def w7_checks():
     return results
 
 
+#: Q6: a pending file Docksentry cannot read. It never writes one itself,
+#: but a disk that filled up mid-write or a hand edit leaves one behind,
+#: and /updates and the raw read in `run_updates` (the bare "Update all",
+#: which a single-host /updateall goes through) raised on it — /updates
+#: out of `_handle_message`, run_updates inside its thread, and the chat
+#: heard nothing either way. Written by hand before the change: every one
+#: of these says "nothing pending", raises nothing, updates nothing and
+#: leaves the file exactly as it found it.
+Q6_FILES = {
+    "cut off mid-write": b'[{"name": "web", "image": "nginx:1.25", "ho',
+    "not UTF-8": b'\xff\xfe[\x00]\x00',
+    "an object, not a list": b'{"name": "web", "image": "nginx:1.25"}',
+}
+
+
+def _q6_spec():
+    from i18n import get_translator
+    en = get_translator("en")
+    none_found = en("no_pending_updates")
+    return {
+        ("multi", "/updates"): [en("no_pending")],
+        ("multi", "/updates @nas"): [en("no_pending")],
+        ("none", "/updates"): [en("no_pending")],
+        ("one", "/updates"): [en("no_pending")],
+        # A single host has no host filter, so /updateall is the bare
+        # "Update all" and run_updates reads the file itself.
+        ("none", "/updateall"): ["<toast> " + en("updates_starting_cb"),
+                                 none_found],
+        ("one", "/updateall"): ["<toast> " + en("updates_starting_cb"),
+                                none_found],
+        # Several hosts: /updateall filters by host through the tolerant
+        # reader first (Q5) and never reaches run_updates' own read.
+        ("multi", "/updateall"): [none_found + "\n\n"
+                                  + en("host_local_only_hint")],
+        ("multi", "/updateall @all"): [none_found],
+    }
+
+
+def _q6_row(setup, text, raw):
+    """`run_row` over a pending file holding `raw`; also returns the
+    file's bytes afterwards (None when it is gone)."""
+    import hosts as hostslib
+    hostslib.forget_unreachable()
+    EVENTS.clear()
+    del ESCAPES[:]
+    del STARTED[:]
+    del THREAD_ERRORS[:]
+    PENDING_RAW[0] = raw
+    try:
+        bot, checker, backends, log, data = build(setup)
+    finally:
+        PENDING_RAW[0] = None
+    record = _drive(bot, checker, backends, log, data, text)
+    path = bot.config.pending_file
+    after = open(path, "rb").read() if os.path.exists(path) else None
+    escapes = list(ESCAPES)
+    shutil.rmtree(data, ignore_errors=True)
+    return record, escapes, after
+
+
+def q6_checks():
+    results = []
+    for (setup, text), want in _q6_spec().items():
+        for kind, raw in Q6_FILES.items():
+            rec, esc, after = _q6_row(setup, text, raw)
+            results.append((
+                f"Q6 [{setup}] {text!r}, pending file {kind}: says nothing "
+                f"is pending, raises nothing, updates nothing",
+                rec["out"] == want and rec["raised"] is None
+                and rec["events"] == [] and not esc,
+                f"got {rec['out']!r}, raised {rec['raised']!r}, "
+                f"events {rec['events']!r}, escapes {esc!r}"))
+            results.append((
+                f"Q6 [{setup}] {text!r}, pending file {kind}: the file is "
+                f"left as it was", after == raw, f"file now {after!r}"))
+    return results
+
+
 #: Where each command word lands, read against main at 8a74ba7
 #: (app/telegram_bot.py, `_handle_message`). Printed above its rows by
 #: --snapshot, so a regenerated table keeps the review notes.
@@ -1388,7 +1476,8 @@ def check():
     for label, ok in trap_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
-    for label, ok, detail in w3_checks() + w4_checks() + w7_checks():
+    for label, ok, detail in (w3_checks() + w4_checks() + w7_checks()
+                              + q6_checks()):
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         if not ok:
             print(f"      → {detail}")

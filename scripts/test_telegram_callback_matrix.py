@@ -69,6 +69,7 @@ import test_telegram_dispatch_matrix as m
 CHAT, USER, OTHER = m.CHAT, m.USER, "8"
 
 # ── the scenarios ──────────────────────────────────────────────────────
+_CUT = "cut off mid-write"
 #: Steps, in order:
 #:   ("type", text[, user])     a typed message through _handle_message
 #:   ("upload", user)           a backup .json dropped into the chat
@@ -84,6 +85,8 @@ CHAT, USER, OTHER = m.CHAT, m.USER, "8"
 #:   ("add_pending", name, image, host)
 #:   ("drop_pending",)          remove every pending entry (the real
 #:                              _remove_from_pending)
+#:   ("raw_pending", bytes)     overwrite the pending file with these bytes
+#:                              (Q6: a file Docksentry cannot read)
 SCENARIOS = [
     ("unauthorised chat", [("tap", "update_all", USER, "999")]),
     # ── stop ────────────────────────────────────────────────────────
@@ -132,6 +135,21 @@ SCENARIOS = [
     ("update_one gone host", [("add_pending", "web", "nginx:1.25", "gone"),
                               ("tap", "update_one:gone/web")]),
     ("update_one empty file", [("drop_pending",), ("tap", "update_one:web")]),
+    # The file a single update leaves when it took the last entry is `[]`,
+    # not gone; a tap on it says "not in the list", not "nothing pending".
+    ("update_one after the last single update",
+     [("notify", None), ("tap", "update_one:web"), ("tap", "update_one:web")]),
+    # ── Q6: a pending file Docksentry cannot read ───────────────────
+    ("update_one unreadable file", [("raw_pending", m.Q6_FILES[_CUT]),
+                                    ("tap", "update_one:web")]),
+    ("update_all bare unreadable file", [("raw_pending", m.Q6_FILES[_CUT]),
+                                         ("tap", "update_all")]),
+    ("update_all:<tok> unreadable file",
+     [("notify", None), ("raw_pending", m.Q6_FILES[_CUT]),
+      ("tap", "update_all:<tok>")]),
+    ("update_skip unreadable file",
+     [("notify", None), ("raw_pending", m.Q6_FILES[_CUT]),
+      ("tap", "update_skip")]),
     ("queue drain after a remote tap",
      [("add_pending", "db", "postgres:16", "local"), ("lock",),
       ("tap", "update_one:db"), ("unlock",), ("tap", "update_one:nas/web")]),
@@ -399,6 +417,9 @@ class Row:
             from telegram_bot import pending_key
             bot._remove_from_pending([pending_key(u)
                                       for u in self._pending()])
+        elif kind == "raw_pending":
+            with open(bot.config.pending_file, "wb") as f:
+                f.write(args[0])
         else:
             raise ValueError(f"unknown step {kind!r}")
 
@@ -420,8 +441,17 @@ class Row:
         pf = bot.config.pending_file
         pending = None
         if os.path.exists(pf):
+            with open(pf, "rb") as f:
+                raw = f.read()
+            try:
+                usable = isinstance(json.loads(raw.decode("utf-8")), list)
+            except ValueError:
+                usable = False
+            # A file nothing can read is recorded as its bytes, so a row
+            # shows whether a press left it alone, rewrote or deleted it.
             pending = [f"{u.get('name')}@{pending_host(u)}"
-                       for u in self._pending()]
+                       for u in self._pending()] if usable \
+                else f"unreadable: {raw!r}"
         hosts = ["local"] + (["nas"] if self.setup == "multi" else [])
         majors = {h: sorted(bot._store_for(h).get_pending_major())
                   for h in hosts}
@@ -552,10 +582,58 @@ def trap_checks():
     return results
 
 
+#: Q6, written by hand before the change: the two presses that read the
+#: pending file themselves (`_run_single_update` and the bare
+#: "Update all" through `run_updates`) raised inside their thread on a
+#: file they could not read, and the chat heard nothing after the toast.
+#: Now they say what a missing file makes them say, update nothing, and
+#: leave the file as they found it. The tap is the scenario's last step.
+def _q6_spec():
+    from i18n import get_translator
+    en = get_translator("en")
+    return {
+        "update_one unreadable file": [
+            "<toast> Update web...",            # literal in the bot
+            "<api> editMessageReplyMarkup  []",
+            en("no_pending_updates")],
+        "update_all bare unreadable file": [
+            "<unbutton>", "<toast> " + en("updates_starting_cb"),
+            en("no_pending_updates")],
+    }
+
+
+def q6_checks():
+    results = []
+    unreadable = "unreadable: " + repr(m.Q6_FILES[_CUT])
+    for name, want in _q6_spec().items():
+        for setup in m.SETUPS:
+            rec, esc = run_scenario(setup, _STEPS[name])
+            tap = rec["steps"][-1]
+            results.append((
+                f"Q6 [{setup}] {name}: the tap says nothing is pending, "
+                f"raises nothing in its thread, updates nothing",
+                tap["out"] == want and tap["events"] == []
+                and tap["raised"] is None and not esc,
+                f"got {tap['out']!r}, events {tap['events']!r}, "
+                f"escapes {esc!r}"))
+            results.append((
+                f"Q6 [{setup}] {name}: the file is left as it was, the "
+                f"lock is free",
+                rec["state"]["pending"] == unreadable
+                and not rec["state"]["locked"],
+                f"state {rec['state']!r}"))
+    return results
+
+
 def check():
     failed = 0
     for label, ok in trap_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
+    for label, ok, detail in q6_checks():
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        if not ok:
+            print(f"      → {detail}")
         failed += not ok
     for setup, name in all_rows():
         rec, esc = run_scenario(setup, _STEPS[name])
@@ -645,6 +723,8 @@ def main():
 
 
 # ── expected, generated by --snapshot from main (8a74ba7), reviewed ──
+# ── the Q6 rows (an unreadable pending file, the `[]` a single ──────
+# ── update leaves) from core-split after Q6, against q6_checks ──────
 EXPECTED = {
     # ── unauthorised chat ───────────────────────────────────────────
     # :3262 `_check_auth` refuses before the audit seam and answers the
@@ -1896,6 +1976,287 @@ EXPECTED = {
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
                         '⚠️ No pending updates found.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_one after the last single update'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:web'],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]',
+                        '⚠️ Container `web` not in update list.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': ['web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_one after the last single update'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop]',
+                        '⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:web'],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  [✅ web (?)→noop]',
+                        '⚠️ Container `web` not in update list.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_one unreadable file'): {'steps': [{'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⚠️ No pending updates found.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_one unreadable file'): {'steps': [{'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_one:web',
+                'out': ['<toast> Update web...',
+                        '<api> editMessageReplyMarkup  []',
+                        '⚠️ No pending updates found.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all bare unreadable file'): {'steps': [{'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⚠️ No pending updates found.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all bare unreadable file'): {'steps': [{'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⚠️ No pending updates found.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all:<tok> unreadable file'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 2 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format ×2',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:web', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all:<tok> unreadable file'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '⏳ Starting update for 1 containers...',
+                        '*Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_skip unreadable file'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_skip',
+                'out': ['<unbutton>',
+                        '<toast> OK, manual.',
+                        '👍 Updates will not be performed automatically.'],
+                'hosts': {},
+                'events': [],
+                'raised': None}],
+     'state': {'pending': None,
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_skip unreadable file'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'raw_pending b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_skip',
+                'out': ['<unbutton>',
+                        '<toast> OK, manual.',
+                        '👍 Updates will not be performed automatically.'],
                 'hosts': {},
                 'events': [],
                 'raised': None}],

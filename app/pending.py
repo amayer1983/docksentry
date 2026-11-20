@@ -19,10 +19,7 @@ removals here does not change that; it puts their arithmetic in one
 place.
 
 Not on this module yet: the checker's own read and rewrite
-(`check_all`), and Telegram's update flows, which still read the file
-raw (`_run_single_update`, `run_updates`, `/updates`) and rewrite it
-with their own `atomic_write_json` / `os.remove` (`_run_single_update`,
-`run_updates`, the auto-update batch, the "I'll do it manually" button).
+(`check_all`).
 """
 import json
 import os
@@ -30,9 +27,14 @@ import os
 from container_store import LOCAL_HOST, atomic_write_json, entry_host
 
 
-def _load(path):
+def load(path):
     """The list in the file, or None when there is no usable list:
-    no path, no file, unreadable, not JSON, not UTF-8, not a list."""
+    no path, no file, unreadable, not JSON, not UTF-8, not a list.
+
+    For the caller that has to tell "no usable file" from "the file says
+    nothing is pending": a single update leaves `[]` behind when it took
+    the last entry, and a tap on that answers differently from a tap
+    with no file at all. Everyone else wants `read`."""
     if not path or not os.path.exists(path):
         return None
     try:
@@ -50,7 +52,7 @@ def read(path, *, named_only=False):
     a reader that counted them before still counts them. `named_only`
     keeps only the dicts that carry a name (what Discord acts on).
     """
-    data = _load(path)
+    data = load(path)
     if data is None:
         return []
     if named_only:
@@ -76,19 +78,29 @@ def write(path, entries):
     atomic_write_json(path, entries)
 
 
+def clear(path):
+    """Delete the file. One that is already gone, or no path, is fine."""
+    if not path:
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def remove(path, keys, *, delete_when_empty):
     """Drop `keys` from the file and return what is left.
 
     `keys` are `(host, name)` pairs; a bare string is the local host's
     entry. Entries that are not dicts cannot match a pair and are kept.
 
-    When there is no usable list (see `_load`) nothing is touched and the
+    When there is no usable list (see `load`) nothing is touched and the
     answer is None — a removal must not turn a file it cannot read into
     an empty one. When nothing is left, the file is deleted if
     `delete_when_empty`, otherwise it is written as `[]`. The rewrite
     happens even when no key matched, as both removals always did.
     """
-    data = _load(path)
+    data = load(path)
     if data is None:
         return None
     wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)
@@ -98,8 +110,5 @@ def remove(path, keys, *, delete_when_empty):
     if remaining or not delete_when_empty:
         write(path, remaining)
     else:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+        clear(path)
     return remaining

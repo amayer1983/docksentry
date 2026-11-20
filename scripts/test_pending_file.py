@@ -229,6 +229,45 @@ if have:
             pending.atomic_write_json = real
     checks["write: no temp file is left beside the target"] = leftovers() == []
 
+# Q6: `load` for the caller that must tell "no usable file" from "the
+# file says nothing is pending" (a single update leaves `[]` behind, and
+# a tap on that says "not in the list"), and `clear` for the callers that
+# delete the whole file.
+load = srcslice.attr(pending, "load") if pending is not None else None
+clear = srcslice.attr(pending, "clear") if pending is not None else None
+checks["…and load and clear (Q6)"] = None not in (load, clear)
+if load is not None:
+    for state in ("missing", "corrupt", "not UTF-8", "not a list",
+                  "an empty object", "an empty string"):
+        put(state)
+        before = on_disk()
+        checks[f"load: {state} is no usable file (None)"] = (
+            call(load, path) == ("ok", None))
+        checks[f"…and loading leaves the {state} file as it was"] = (
+            on_disk() == before)
+    checks["load: no path is no usable file"] = call(load, "") == ("ok", None)
+    checks["load: a None path is no usable file"] = (
+        call(load, None) == ("ok", None))
+    put("empty")
+    checks["load: [] is an empty list, not None"] = call(load, path) == ("ok", [])
+    put("junk")
+    checks["load: every entry comes back, junk included"] = (
+        call(load, path) == ("ok", JUNK))
+    put("valid")
+    checks["load: a valid file comes back as written"] = (
+        call(load, path) == ("ok", VALID))
+if clear is not None:
+    for state in ("valid", "corrupt", "empty"):
+        put(state)
+        checks[f"clear: a {state} file is deleted"] = (
+            call(clear, path) == ("ok", None) and on_disk() is None)
+    put("missing")
+    checks["clear: a file that is already gone is fine"] = (
+        call(clear, path) == ("ok", None) and on_disk() is None)
+    checks["clear: no path or a None path is fine too"] = (
+        call(clear, "") == ("ok", None) and call(clear, None) == ("ok", None))
+    checks["clear: nothing else in the directory is touched"] = leftovers() == []
+
 
 # ── second half: every caller, as it answers ─────────────────────────
 import telegram_bot                                 # noqa: E402
@@ -398,6 +437,11 @@ SOURCES = [
      "_pending.remove("),
     ("Discord /updates", discord_bot.DiscordBot, "_cmd_updates",
      "_pending.read("),
+    # Q6: Telegram's update flows.
+    ("Telegram run_updates", telegram_bot.TelegramBot, "run_updates",
+     "_pending.read("),
+    ("Telegram _run_single_update", telegram_bot.TelegramBot,
+     "_run_single_update", "_pending.load("),
 ]
 for who, owner, name, door in SOURCES:
     src = srcslice.method_source(owner, name, label=who)
@@ -413,6 +457,40 @@ checks["Web _get_pending goes through pending"] = (
     and "_pending.entries_for(" in _gp)
 checks["…and does not open or parse the file itself (Web _get_pending)"] = (
     _gp is not None and "open(" not in _gp and "json." not in _gp)
+
+# Q6: the rest of Telegram, cut out of the methods they sit in. The
+# single update and the auto-update batch rewrite through `write`, the
+# whole-file deletes go through `clear`.
+_tg_src = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
+_single = srcslice.method_source(telegram_bot.TelegramBot,
+                                 "_run_single_update",
+                                 label="Telegram _run_single_update")
+_auto = srcslice.method_source(telegram_bot.TelegramBot, "handle_autoupdates",
+                               label="Telegram handle_autoupdates")
+_run = srcslice.method_source(telegram_bot.TelegramBot, "run_updates",
+                              label="Telegram run_updates")
+TG_SECTIONS = [
+    ("Telegram /updates",
+     srcslice.section(_tg_src, '        elif text == "/updates" or (',
+                      '        elif text == "/debug":',
+                      label="Telegram /updates"),
+     ("_pending.read(", "_pending.entries_for(")),
+    ("Telegram \"I'll do it manually\"",
+     srcslice.section(_tg_src, '        elif data == "update_skip":',
+                      '        elif data.startswith("update_one:"):',
+                      label="Telegram update_skip"),
+     ("pending_store.read(", "pending_store.write(", "pending_store.clear(")),
+    ("Telegram _run_single_update's rewrite", _single, ("_pending.write(",)),
+    ("Telegram run_updates' delete", _run, ("_pending.clear(",)),
+    ("Telegram auto-update rewrite", _auto, ("_pending.read(",
+                                            "_pending.write(")),
+]
+for who, src, doors in TG_SECTIONS:
+    checks[f"{who} goes through pending"] = (
+        src is not None and all(d in src for d in doors))
+    checks[f"…and does not parse, rewrite or delete the file itself ({who})"] = (
+        src is not None and "json." not in src and "os.remove" not in src
+        and "atomic_write_json" not in src and "read_pending(" not in src)
 
 shutil.rmtree(tmp, ignore_errors=True)
 for k, v in checks.items():
