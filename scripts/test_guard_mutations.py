@@ -66,10 +66,35 @@ GUARDED = [
      "                pass",
      "test_update_queue_sweep.py"),
 
+    # The sweep's rules are the engine's since Q9.
     ("the sweep leaves the queue alone while somebody holds the lock",
-     "app/telegram_bot.py",
-     "            if self._update_lock.locked():\n                return",
+     "app/update_engine.py",
+     "            if self.update_claimed:\n                return",
      "            if False:\n                return",
+     "test_update_queue_sweep.py"),
+
+    ("the sweep does not call the drain when nothing is queued",
+     "app/update_engine.py",
+     "            if not self.has_queued_updates():\n                return",
+     "            if False:\n                return",
+     "test_update_queue_sweep.py"),
+
+    ("…and does call it when something is queued and the lock is free",
+     "app/update_engine.py",
+     "            drain()\n        except",
+     "            pass\n        except",
+     "test_update_queue_sweep.py"),
+
+    ("a failing drain does not take the listener loop down with it",
+     "app/update_engine.py",
+     '            print(f"Queue sweep failed: {e}")',
+     "            raise",
+     "test_update_queue_sweep.py"),
+
+    ("Telegram's sweep goes through the engine's rules, not its own",
+     "app/telegram_bot.py",
+     "        self.engine.sweep_queue(lambda: self._drain_update_queue(checker))",
+     "        self._drain_update_queue(checker)",
      "test_update_queue_sweep.py"),
 
     ("a queue entry remembers when it was queued",

@@ -169,8 +169,11 @@ LOCK_OPS = {
     # Asks the engine's door (Q3) instead of looking at the lock itself.
     ("web_ui.py", "create_handler.WebHandler._update_lock_held"):
         ("READER", ["update_claimed"]),
-    ("telegram_bot.py", "TelegramBot._sweep_update_queue"):
-        ("READER", ["locked"]),
+    # The poll-cycle sweep's rules are the engine's since Q9; Telegram's
+    # `_sweep_update_queue` only hands it its drain. Asks the door like
+    # the Web banner does. Driven through Telegram's wrapper below.
+    ("update_engine.py", "UpdateEngine.sweep_queue"):
+        ("READER", ["update_claimed"]),
     # ── release helper ──
     # Release through the door, then hand on a queued self-update.
     # Discord's two update commands give the lock back only through here.
@@ -246,8 +249,10 @@ QUEUE_CALLS = {
      "enqueue_updates"): 1,
     ("telegram_bot.py", "TelegramBot._run_single_update",
      "_drain_update_queue"): 1,
+    # Handed to the engine's sweep as a lambda (Q9), still written here.
     ("telegram_bot.py", "TelegramBot._sweep_update_queue",
      "_drain_update_queue"): 1,
+    ("telegram_bot.py", "TelegramBot._sweep_update_queue", "sweep_queue"): 1,
     # The loop lives in the engine (Q8); Telegram's drain calls it.
     ("telegram_bot.py", "TelegramBot._drain_update_queue", "drain_queue"): 1,
     ("update_engine.py", "UpdateEngine.drain_queue",
@@ -259,7 +264,8 @@ QUEUE_CALLS = {
 #: The two that feed the queue; the rest work it off.
 QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
 QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
-                 "_drain_update_queue", "_sweep_update_queue")
+                 "_drain_update_queue", "sweep_queue",
+                 "_sweep_update_queue")
 
 #: (file, qualname, callee) → (count, why). Who asks the lock through a
 #: helper that only looks at it. The callees are the READER and PROBE
@@ -852,7 +858,7 @@ DRIVES = [
     (("web_ui.py", "create_handler.WebHandler._update_lock_held"),
      "status banner question", None,
      lambda w: w.web()._update_lock_held(w.tg)),
-    (("telegram_bot.py", "TelegramBot._sweep_update_queue"),
+    (("update_engine.py", "UpdateEngine.sweep_queue"),
      "poll-cycle sweep with web queued", _queued,
      lambda w: w.tg._sweep_update_queue(w.local)),
 ]
@@ -983,7 +989,7 @@ def drive_checks():
 
         rec, esc = drive(prepare, call, held=False)
         if role == "CLAIM" or site[1].endswith((".drain_queue",
-                                                "_sweep_update_queue")):
+                                                ".sweep_queue")):
             ok = (bool(rec["work"]) and all(h for _w, h in rec["work"])
                   and rec["lock_after"] == "free" and not esc
                   and "raised" not in rec and not rec["queue_after"])
@@ -1153,7 +1159,7 @@ EXPECTED_BUSY = {
     (('web_ui.py', 'create_handler.WebHandler._update_lock_held'),
      'status banner question'):
         {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
-    (('telegram_bot.py', 'TelegramBot._sweep_update_queue'),
+    (('update_engine.py', 'UpdateEngine.sweep_queue'),
      'poll-cycle sweep with web queued'):
         {'kind': 'LEAVES_QUEUED', 'lock_after': 'held', 'queue_after': ['web']},
 }

@@ -1941,45 +1941,13 @@ class TelegramBot:
                 last_group=getattr(self, "_last_update_group", None))
 
     def _sweep_update_queue(self, checker):
-        """Pick up queued work that nobody is going to drain.
+        """Once per poll cycle: hand the engine's sweep this bot's drain.
 
-        `_drain_update_queue` runs in exactly one place: at the end of a
-        Telegram single update, once it has let go of the lock. The lock
-        itself is taken in eleven places — the scheduled run, the Web UI,
-        a self-update and six further Telegram paths among them. Queue
-        something while one of THOSE is holding it and the entry waits
-        for the next Telegram single update to finish, however long that
-        takes.
-
-        Measured on my own instance, 23.10.2026: three
-        buttons pressed at 19:15:17, :21 and :22 (audit log). The second
-        came back "queued — position 2" and the third "already in the
-        queue", neither of which made sense for a first press. The queue
-        had been holding an entry since an earlier day, and both
-        portainers were then updated within the same minute once an
-        unrelated 2.3 GB update happened to end. Nothing was lost; it
-        simply sat there, and the person pressing the button was told
-        something that read like a correction.
-
-        Called once per poll cycle, so a stranded entry now waits
-        seconds. Cheap when there is nothing to do: one lock, one
-        truth test.
-
-        Never raises — this runs inside the listener loop, and taking
-        that down to retry a queued update would be a far worse trade.
+        The rules (nothing queued → nothing; lock held → nothing; never
+        raises) are `UpdateEngine.sweep_queue`'s, and so is the story of
+        why the sweep exists. The drain runs on the poll loop's checker.
         """
-        try:
-            if not self.engine.has_queued_updates():
-                return
-            # Somebody is working: they will either drain it themselves
-            # or leave it for the next sweep. Racy by nature and
-            # harmless — `_drain_update_queue` re-acquires per entry and
-            # puts the entry back if it loses.
-            if self._update_lock.locked():
-                return
-            self._drain_update_queue(checker)
-        except Exception as e:                              # pragma: no cover
-            print(f"Queue sweep failed: {e}")
+        self.engine.sweep_queue(lambda: self._drain_update_queue(checker))
 
     def _drain_update_queue(self, checker, last_group=None):
         """Run whatever was queued while an update held the lock.
@@ -3188,7 +3156,7 @@ class TelegramBot:
 
                 # Anything queued while somebody OTHER than a Telegram
                 # single update held the lock gets picked up here. See
-                # `_sweep_update_queue` for why that is not a rare case.
+                # `UpdateEngine.sweep_queue` for why that is not a rare case.
                 self._sweep_update_queue(checker)
 
             except Exception as e:

@@ -572,6 +572,51 @@ class UpdateEngine:
                 last_group = None
                 continue
 
+    def sweep_queue(self, drain):
+        """Pick up queued work that nobody is going to drain.
+
+        `drain()` works the queue off; each connection hands in its own
+        (Telegram's is `_drain_update_queue` with the poll loop's
+        checker). This only decides whether to call it.
+
+        The drain used to run in exactly one place: at the end of a
+        Telegram single update, once it had let go of the lock. The lock
+        itself is taken in many more — the scheduled run, the Web UI, a
+        self-update and further Telegram paths among them. Queue
+        something while one of THOSE is holding it and the entry waits
+        for the next Telegram single update to finish, however long that
+        takes.
+
+        Measured on my own instance, 23.10.2026: three
+        buttons pressed at 19:15:17, :21 and :22 (audit log). The second
+        came back "queued — position 2" and the third "already in the
+        queue", neither of which made sense for a first press. The queue
+        had been holding an entry since an earlier day, and both
+        portainers were then updated within the same minute once an
+        unrelated 2.3 GB update happened to end. Nothing was lost; it
+        simply sat there, and the person pressing the button was told
+        something that read like a correction.
+
+        Called once per poll cycle, so a stranded entry now waits
+        seconds. Cheap when there is nothing to do: one lock, one
+        truth test.
+
+        Never raises — this runs inside the listener loop, and taking
+        that down to retry a queued update would be a far worse trade.
+        """
+        try:
+            if not self.has_queued_updates():
+                return
+            # Somebody is working: they will either drain it themselves
+            # or leave it for the next sweep. Racy by nature and
+            # harmless — the drain re-acquires per entry and puts the
+            # entry back if it loses.
+            if self.update_claimed:
+                return
+            drain()
+        except Exception as e:                              # pragma: no cover
+            print(f"Queue sweep failed: {e}")
+
     def cleanup_guarded(self, checker, *, after=None):
         """Image cleanup under the update lock (#2 follow-up, @famewolf).
 

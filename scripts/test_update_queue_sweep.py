@@ -196,6 +196,87 @@ except Exception as e:
 checks["a failing drain does not escape the sweep"] = (
     _broken_sweep is not None and _raised is None)
 
+# ── the same rules, on the engine ────────────────────────────────────
+# The rules live in `UpdateEngine.sweep_queue(drain)` since Q9; Telegram
+# only hands it its own drain. Driven here with a drain that records
+# that it was reached, so a connection without Telegram's drain can rely
+# on the same three answers: empty → nothing, held → nothing, never
+# raises.
+
+eng3 = _engine(clock)
+eng3._update_lock = threading.Lock()
+_esweep = srcslice.attr(eng3, "sweep_queue", label="UpdateEngine.sweep_queue")
+_ecalls = []
+
+
+def esweep(drain):
+    if _esweep is not None:
+        return _esweep(drain)
+
+
+def _drain_rec():
+    _ecalls.append("drained")
+
+
+esweep(_drain_rec)
+checks["engine: an empty queue does not reach the drain"] = (
+    _esweep is not None and _ecalls == [])
+
+eng3.enqueue_update("srv40/portainer")
+esweep(_drain_rec)
+checks["engine: queued work with a free lock is drained"] = (
+    _ecalls == ["drained"])
+# The sweep only decides; working the queue off is the drain's job.
+checks["engine: …and the sweep leaves the queue to the drain"] = (
+    _esweep is not None and [k for k, _ in eng3.queued_updates()] == ["srv40/portainer"])
+
+_ecalls.clear()
+eng3._update_lock.acquire()
+try:
+    esweep(_drain_rec)
+    checks["engine: a held lock is left alone"] = (
+        _esweep is not None and _ecalls == [])
+finally:
+    eng3._update_lock.release()
+esweep(_drain_rec)
+checks["engine: …and the next sweep takes it"] = _ecalls == ["drained"]
+
+
+def _drain_boom():
+    raise RuntimeError("drain broke")
+
+
+_eraised = None
+try:
+    esweep(_drain_boom)
+except Exception as e:
+    _eraised = e
+checks["engine: a failing drain does not escape the sweep"] = (
+    _esweep is not None and _eraised is None)
+
+# Telegram's sweep asks the engine's rather than keeping its own copy of
+# the rules. Observed, not replaced: the real sweep still runs.
+_spied = []
+_real_esweep = getattr(UpdateEngine, "sweep_queue", None)
+
+
+def _spy(self, drain):
+    _spied.append(drain)
+    return _real_esweep(self, drain)
+
+
+if _real_esweep is not None:
+    UpdateEngine.sweep_queue = _spy
+try:
+    bot._drained.clear()
+    eng2.enqueue_update("srv30/portainer")
+    sweep("checker-D")
+finally:
+    if _real_esweep is not None:
+        UpdateEngine.sweep_queue = _real_esweep
+checks["Telegram's sweep goes through the engine's"] = (
+    len(_spied) == 1 and bot._drained == ["checker-D"])
+
 # ── it is actually wired into the poll loop ──────────────────────────
 # The two blocks above prove the sweep works. They say nothing about
 # whether anything calls it — a correct, unreachable helper is the exact
