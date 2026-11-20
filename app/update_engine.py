@@ -506,12 +506,17 @@ class UpdateEngine:
         return "update_queued", {"pos": pos}
 
     # ── Working the queue off ───────────────────────────────────────────
-    def drain_queue(self, run_one, *, group_of, say, last_group=None):
+    def drain_queue(self, run_one, *, group_of, say, last_group=None,
+                    after=None):
         """Run whatever was queued while an update held the lock.
 
         `run_one(key)` updates one container and returns the group a
-        failure of it takes down, or None. It claims the lock itself, so
-        it runs with the lock free. `group_of(key)` names a key's group.
+        failure of it takes down, or None. It runs under the drain's
+        claim and must not give the lock back: the drain claims before
+        it takes an entry, holds the claim through `run_one` and
+        releases it after, handing `after` to `release_update` — one
+        claim and one release per entry, and the drain is the only one
+        that releases. `group_of(key)` names a key's group.
         `say(key, params)` tells the person; `params` carry raw container
         keys under "keys", each connection names them its own way:
 
@@ -524,21 +529,15 @@ class UpdateEngine:
                                            says the error raw.
 
         `last_group` is the group of the run that came before the drain.
+        `after` is what every release hands on (Telegram's queued
+        self-update), as it did when each run released for itself.
 
         Never raises because of `run_one`: a queue is a convenience and
         must not be able to take down the update that finished
         successfully before it.
         """
         while True:
-            # A pending self-update restarts the process, which would take
-            # the rest of the queue with it. Stop and NAME what is not
-            # going to run — dropping work quietly is the bug this whole
-            # change exists to fix, and doing it here would be worse than
-            # never having queued at all.
-            if self._queued_selfupdate:
-                left = self.drop_queued_updates()
-                if left:
-                    say("update_queue_dropped_selfupdate", {"keys": left})
+            if self._drop_for_selfupdate(say):
                 return
             # A failed container takes its group-mates with it: the group
             # order exists because they depend on each other, and updating
@@ -553,24 +552,61 @@ class UpdateEngine:
                     say("update_queue_skipped_group",
                         {"group": failed_group, "keys": mates})
                 last_group = None
+            if not self.has_queued_updates():
+                return
+            # Claimed per entry rather than held across the whole queue,
+            # so the scheduler and a queued self-update can still get in
+            # between two entries — but not halfway through one. It used
+            # to be taken and given straight back here, with `run_one`
+            # claiming it again; anybody landing in that moment sent the
+            # entry to the back of the queue with a second "queued at
+            # position N" (Q10, measured in test_update_queue).
+            if not self.claim_update():
+                # Something else holds it. Nothing was taken, so the entry
+                # keeps its place at the head; whoever holds the lock now,
+                # or the next sweep, works the queue off.
+                return
             key = self.take_queued_update()
             if key is None:
+                # Emptied between the look and the claim.
+                self.release_update(after=after)
                 return
-            # Re-taken per entry rather than held across the whole queue,
-            # so the scheduler and a queued self-update can still get in
-            # between. Given straight back: `run_one` claims it itself.
-            if not self._update_lock.acquire(blocking=False):
-                # Something else claimed it first — hand the entry back and
-                # let whoever holds it now do the draining.
-                self.enqueue_update(key)
-                return
-            self._update_lock.release()
             try:
                 last_group = run_one(key)
-            except Exception as e:
+            except BaseException as e:
+                # Given back inside the handler, so `after` still sees the
+                # crash: `selfupdate.run_queued` cancels a queued
+                # self-update after one rather than restart on top of it.
+                self.release_update(after=after)
+                if not isinstance(e, Exception):
+                    raise
                 say("entry_failed", {"key": key, "error": str(e)})
                 last_group = None
                 continue
+            # Queued while this entry held the lock: it goes next, through
+            # `after`, and the restart takes the rest with it — so the
+            # rest is named before it is handed on, not after.
+            if self._drop_for_selfupdate(say):
+                self.release_update(after=after)
+                return
+            self.release_update(after=after)
+
+    def _drop_for_selfupdate(self, say):
+        """True when a self-update is waiting, after taking the queue off
+        and naming what was on it.
+
+        A pending self-update restarts the process, which would take the
+        rest of the queue with it. Stop and NAME what is not going to run
+        — dropping work quietly is the bug this whole change exists to
+        fix, and doing it here would be worse than never having queued
+        at all.
+        """
+        if not self._queued_selfupdate:
+            return False
+        left = self.drop_queued_updates()
+        if left:
+            say("update_queue_dropped_selfupdate", {"keys": left})
+        return True
 
     def sweep_queue(self, drain):
         """Pick up queued work that nobody is going to drain.
@@ -609,8 +645,8 @@ class UpdateEngine:
                 return
             # Somebody is working: they will either drain it themselves
             # or leave it for the next sweep. Racy by nature and
-            # harmless — the drain re-acquires per entry and puts the
-            # entry back if it loses.
+            # harmless — the drain claims per entry and leaves the entry
+            # where it is if it loses.
             if self.update_claimed:
                 return
             drain()

@@ -1811,14 +1811,20 @@ class TelegramBot:
 
         return {"inline_keyboard": keyboard}
 
-    def _run_single_update(self, checker, container_key, from_queue=False):
+    def _run_single_update(self, checker, container_key, from_queue=False,
+                           claimed=False):
         """Update a single container.
 
         `container_key` is the `update_one:` payload: a bare container name
         for the local host, `nas/nginx` for a remote one (#7). It has to
         carry the host — the pending file holds every host's entries and
         two of them may both list an `nginx`, so a name alone would update
-        (and then delete) whichever happened to come first."""
+        (and then delete) whichever happened to come first.
+
+        `claimed`: the caller already holds the update lock and gives it
+        back itself — the queue drain does, once per entry (Q10). Then
+        this neither claims nor releases, and the queued self-update is
+        handed on by the caller's release, not here."""
         from container_store import split_host_key
         host_name, container_name = split_host_key(container_key)
         host = self._host_by_name(host_name)
@@ -1846,10 +1852,13 @@ class TelegramBot:
         # three, with an "an update is already running" for each — so you
         # had to come back and tap them again, one at a time, and nothing
         # told you which ones had not run.
-        claimed, busy, params = self.engine.claim_or_queue(container_key)
-        if not claimed:
-            self.send_message(self._claim_answer(container_key, busy, params))
-            return
+        held_by_caller = claimed
+        if not held_by_caller:
+            claimed, busy, params = self.engine.claim_or_queue(container_key)
+            if not claimed:
+                self.send_message(
+                    self._claim_answer(container_key, busy, params))
+                return
         # Reset per attempt: a stale value from a previous failure would
         # make the drain skip a group that has nothing to do with this run.
         self._last_update_group = None
@@ -1928,13 +1937,17 @@ class TelegramBot:
                 self.send_message(self.t("update_all_done"))
         finally:
             self.engine.clear_updating(container_key)
-            self.engine.release_update(after=self._run_queued_selfupdate)
+            # One releaser per claim: a drained entry's claim is the
+            # drain's to give back.
+            if not held_by_caller:
+                self.engine.release_update(after=self._run_queued_selfupdate)
         # Only after the lock is back: whoever ran gets to work off what
-        # arrived while they held it. Re-acquired per entry rather than
-        # held across the whole queue, so the scheduler and a queued
-        # self-update can still get in — holding it for five containers
-        # would lock everything else out for ten minutes, and re-taking it
-        # per entry keeps the concurrency guard that v1.23.1 added.
+        # arrived while they held it. Claimed per entry rather than held
+        # across the whole queue, so the scheduler and a queued
+        # self-update can still get in between two entries — holding it
+        # for five containers would lock everything else out for ten
+        # minutes, and claiming it per entry keeps the concurrency guard
+        # that v1.23.1 added.
         if not from_queue:
             self._drain_update_queue(
                 base_checker,
@@ -1960,13 +1973,16 @@ class TelegramBot:
         successfully before it.
         """
         def run_one(key):
-            self._run_single_update(checker, key, from_queue=True)
+            # Under the drain's claim; the drain gives it back.
+            self._run_single_update(checker, key, from_queue=True,
+                                    claimed=True)
             # The group its failure takes down, as the run left it. Read
             # here rather than in the engine, which only gets the answer.
             return getattr(self, "_last_update_group", None)
 
         self.engine.drain_queue(run_one, group_of=self._group_of,
-                                say=self._say_drain, last_group=last_group)
+                                say=self._say_drain, last_group=last_group,
+                                after=self._run_queued_selfupdate)
 
     def _say_drain(self, key, params):
         """Say what the drain reports, containers named the short way."""

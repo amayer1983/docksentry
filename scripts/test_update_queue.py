@@ -17,10 +17,12 @@ was wrong is what happened to the rejected taps: nothing at all.
 
 So they queue. The design decisions, all deliberate:
 
-**The lock is re-taken per entry, not held across the queue.** Holding it
+**The lock is claimed per entry, not held across the queue.** Holding it
 for five containers would lock out the scheduler, "update all" and a
-queued self-update for ten minutes. Re-acquiring per entry keeps the
-concurrency guard while letting other work in between.
+queued self-update for ten minutes. Claiming per entry keeps the
+concurrency guard while letting other work in between two entries —
+and since Q10 only there: the drain holds each entry's claim through
+that entry and is the one that gives it back.
 
 **A failure takes its group-mates out of the queue.** Group order exists
 because those containers depend on each other; updating the next one
@@ -120,7 +122,8 @@ class Bot(telegram_bot.TelegramBot):
     def _group_of(self, key):
         return self.groups.get(self._short_key(key))
 
-    def _run_single_update(self, checker, key, from_queue=False):
+    def _run_single_update(self, checker, key, from_queue=False,
+                           claimed=False):
         """Stand in for the real one: record it, honour `fails`."""
         self.updated.append(key)
         name = self._short_key(key)
@@ -182,7 +185,7 @@ b.raises = {"bad"}
 _orig_run = b._run_single_update
 
 
-def _raising(checker, key, from_queue=False):
+def _raising(checker, key, from_queue=False, claimed=False):
     _orig_run(checker, key, from_queue)
     if b._short_key(key) in b.raises:
         raise RuntimeError("x" * 300)
@@ -212,11 +215,11 @@ def _drain(e, fails=(), groups=None, last_group=None, raises=(),
     if fn is None:
         return None
     groups = groups or {}
-    rec = {"ran": [], "said": [], "free_while_running": []}
+    rec = {"ran": [], "said": [], "held_while_running": []}
 
     def run_one(key):
         rec["ran"].append(key)
-        rec["free_while_running"].append(not e._update_lock.locked())
+        rec["held_while_running"].append(e._update_lock.locked())
         if during:
             during(key)
         if key in raises:
@@ -237,8 +240,12 @@ r = _drain(e)
 checks["engine: every queued key runs, in the order it was queued"] = (
     r is not None and r["ran"] == ["a", "b", "c"] and e._update_queue == []
     and r["said"] == [])
-checks["engine: run_one runs with the lock free, so it can claim it"] = (
-    r is not None and r["free_while_running"] == [True, True, True]
+# Flipped in Q10: run_one used to run with the lock free and claim it
+# itself, and in the moment between the drain's look and that claim
+# anybody could take it — the entry then went to the back of the queue
+# with a second "queued at position N". The drain holds the claim now.
+checks["engine: run_one runs under the drain's claim, not with the lock free"] = (
+    r is not None and r["held_while_running"] == [True, True, True]
     and not e._update_lock.locked())
 
 e = engine()
@@ -309,14 +316,17 @@ checks["engine: a self-update queued mid-drain stops it after that run"] = (
     and r["said"] == [("update_queue_dropped_selfupdate",
                        {"keys": ["second", "third"]})])
 
-# Lost race: somebody claimed the lock between the take and the run.
+# Lost claim: somebody holds the lock when the drain wants the next
+# entry. The claim comes before the take since Q10, so nothing was taken
+# and the entry keeps its place at the head; it used to go to the back.
 e = engine()
 for k in ("a", "b"):
     e.enqueue_update(k)
 e._update_lock.acquire()
 r = _drain(e)
-checks["engine: a lost race runs nothing and hands the entry back"] = (
-    r is not None and r["ran"] == [] and e._update_queue == ["b", "a"])
+checks["engine: a lost claim runs nothing and leaves the entry at the head"] = (
+    r is not None and r["ran"] == [] and e._update_queue == ["a", "b"]
+    and r["said"] == [])
 checks["engine: …and leaves the holder's lock alone"] = (
     r is not None and e._update_lock.locked())
 e._update_lock.release()
@@ -428,6 +438,350 @@ checks["…and a queued run does not drain the queue again from inside"] = (
     _real_dq is not None and len(drains) == 1 and eng._update_queue == []
     and [m for m in said if m.endswith(": ok")] == [
         "✅ a: ok", "✅ b: ok", "✅ c: ok"])
+
+# ── Q10: the drain holds each entry's claim through that entry ───────
+# Before Q10 the drain took the lock, gave it straight back and let the
+# entry's own run claim it again. In between, anybody could take it —
+# the scheduler, a confirmed major — and the entry then went to the
+# back of the queue with a second "queued at position N", for a
+# container that had been waiting at the front. Now the drain claims
+# before it takes an entry, holds the claim through `run_one` and is the
+# one that gives it back, with `after`, once per entry. The lock is
+# still free between two entries, so other work can get in there; it
+# just cannot get in halfway through one.
+import inspect  # noqa: E402
+import threading  # noqa: E402
+import time as _time  # noqa: E402
+
+
+def _drain_q10(e, run_one, after=None):
+    """`e.drain_queue` with `after` where it takes one; the said list,
+    or None without a drain. On an engine whose drain has no `after`
+    the call goes through without it, so what is checked is what the
+    drain does, not whether it accepts the argument."""
+    fn = getattr(e, "drain_queue", None)
+    if fn is None:
+        return None
+    said = []
+    kw = {"group_of": lambda k: None,
+          "say": lambda k, p: said.append((k, p))}
+    if "after" in inspect.signature(fn).parameters:
+        kw["after"] = after
+    fn(run_one, **kw)
+    return said
+
+
+def _door_spy(e, events):
+    """Record the engine's claims and releases, and let them through."""
+    real_claim, real_release = e.claim_update, e.release_update
+
+    def claim():
+        won = real_claim()
+        events.append(("claim", won))
+        return won
+
+    def release(**kw):
+        events.append(("release",))
+        return real_release(**kw)
+
+    e.claim_update, e.release_update = claim, release
+
+
+# One claim per entry, held through it, given back after it — and the
+# lock is free whenever `after` runs, so no claim reaches from one entry
+# into the next. (Re-pointed from the source check that counted one
+# `acquire` in the drain.)
+e = engine()
+ev = []
+_door_spy(e, ev)
+for k in ("a", "b", "c"):
+    e.enqueue_update(k)
+said = _drain_q10(
+    e, lambda k: ev.append(("run", k, e._update_lock.locked())),
+    after=lambda: ev.append(("after", e._update_lock.locked())))
+_want = []
+for k in ("a", "b", "c"):
+    _want += [("claim", True), ("run", k, True), ("release",),
+              ("after", False)]
+checks["engine: one claim per entry, held through it, one release after it"] = (
+    said == [] and ev == _want)
+checks["…and the lock is free and the queue empty when the drain is done"] = (
+    said == [] and not e._update_lock.locked() and e._update_queue == [])
+
+# A competitor waiting on `claim_update` while an entry runs gets the
+# lock only once the drain has given it back. It then wins the gap
+# before the next entry, and that entry stays where it was: at the head,
+# not put back at the tail, and nobody is told anything.
+e = engine()
+ev = []
+_door_spy(e, ev)
+for k in ("a", "b", "c"):
+    e.enqueue_update(k)
+_got, _let_go = threading.Event(), threading.Event()
+
+
+def _competitor():
+    deadline = _time.time() + 5
+    while not UpdateEngine.claim_update(e):
+        if _time.time() > deadline:
+            return
+        _time.sleep(0.001)
+    ev.append(("competitor got it",))
+    _got.set()
+    _let_go.wait(5)
+    try:
+        e._update_lock.release()
+    except RuntimeError:
+        # Somebody gave back a claim that was not theirs — the double
+        # release a lock without an owner cannot refuse.
+        ev.append(("competitor's lock was released under it",))
+
+
+_th = threading.Thread(target=_competitor, daemon=True)
+
+
+def _run_waited_on(key):
+    ev.append(("run", key))
+    if key == "a":
+        _th.start()
+    _time.sleep(0.1)
+    ev.append(("run done", key, _got.is_set()))
+
+
+said = _drain_q10(e, _run_waited_on, after=lambda: _got.wait(2))
+_events = list(ev)
+_queue = list(e._update_queue)
+_let_go.set()
+_th.join(5)
+checks["engine: a competitor waiting on claim_update does not get in while an entry runs"] = (
+    ("run done", "a", False) in _events)
+checks["…it gets the lock only after the drain gave it back, once"] = (
+    ("competitor got it",) in _events
+    and _events.count(("release",)) == 1
+    and _events.index(("release",)) < _events.index(("competitor got it",)))
+checks["…and the entry after it keeps its place, nothing re-queued or said"] = (
+    said == [] and _queue == ["b", "c"]
+    and [x for x in _events if x[0] == "run"] == [("run", "a")])
+checks["…and the competitor's lock is its own to give back"] = (
+    not _th.is_alive() and not e._update_lock.locked()
+    and ("competitor's lock was released under it",) not in ev)
+
+# A self-update queued while an entry runs goes next — after that
+# entry's release, through `after` — and the entries it would take with
+# it are named before it starts, not dropped by the restart unsaid.
+e = engine()
+ev = []
+for k in ("first", "second", "third"):
+    e.enqueue_update(k)
+
+
+def _queues_selfupdate(key):
+    ev.append(("run", key))
+    if key == "first":
+        e._queued_selfupdate = ("2.9.0",)
+
+
+def _runs_queued_selfupdate():
+    # What `selfupdate.run_queued` does with it: take it, then start.
+    if e._queued_selfupdate:
+        ev.append(("selfupdate", list(e._update_queue),
+                   e._update_lock.locked()))
+        e._queued_selfupdate = None
+
+
+said = _drain_q10(e, _queues_selfupdate, after=_runs_queued_selfupdate)
+checks["engine: a self-update queued between two entries goes next, lock free"] = (
+    ev == [("run", "first"), ("selfupdate", [], False)])
+checks["…and the rest are named as dropped before it starts"] = (
+    said == [("update_queue_dropped_selfupdate",
+              {"keys": ["second", "third"]})])
+
+# An entry that raises is given back inside the handler, so `after`
+# still sees the crash: `selfupdate.run_queued` cancels a queued
+# self-update after one instead of restarting on top of it.
+e = engine()
+seen = []
+for k in ("bad", "good"):
+    e.enqueue_update(k)
+
+
+def _bad(key):
+    if key == "bad":
+        raise RuntimeError("boom")
+
+
+said = _drain_q10(e, _bad, after=lambda: seen.append(sys.exc_info()[0]))
+checks["engine: after() of an entry that raised sees the crash, the next one does not"] = (
+    seen == [RuntimeError, None] and not e._update_lock.locked()
+    and said == [("entry_failed", {"key": "bad", "error": "boom"})])
+
+# Something that is not an Exception (an exit) is not swallowed, and the
+# claim is given back on its way out.
+e = engine()
+seen = []
+for k in ("x", "y"):
+    e.enqueue_update(k)
+
+
+def _exits(key):
+    raise SystemExit(3)
+
+
+try:
+    _drain_q10(e, _exits, after=lambda: seen.append(1))
+    _escaped = None
+except BaseException as _ex:            # anything else is red, not a crash
+    _escaped = getattr(_ex, "code", repr(_ex))
+checks["engine: a run that exits goes through, after giving the claim back"] = (
+    _escaped == 3 and seen == [1] and not e._update_lock.locked()
+    and e._update_queue == ["y"])
+
+# Emptied between the drain's look and its claim (another drain got
+# there first): the claim goes straight back. `has_queued_updates` is
+# the queue's state here, not the decision under test.
+e = engine()
+ev = []
+_door_spy(e, ev)
+_looks = iter([True])
+e.has_queued_updates = lambda: next(_looks, False)
+_ran = []
+said = _drain_q10(e, _ran.append, after=lambda: ev.append(("after",)))
+checks["engine: a queue emptied between the look and the claim gives it back"] = (
+    _ran == [] and said == [] and not e._update_lock.locked()
+    and ev == [("claim", True), ("release",), ("after",)])
+
+# The same through Telegram's real `_run_single_update`.
+# A competing claim inside an entry — where the old drain had let go —
+# is refused, and the entry runs instead of going to the back with a
+# second "queued at position N".
+eng = engine()
+eng._updating = {}
+for k in ("a", "b"):
+    eng.enqueue_update(k)
+qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                   for n in ("a", "b")])
+_tries = []
+
+
+def _checker_for_competing(host, checker):
+    # The scheduler's tick, say, landing while the drain works on `a`.
+    if not _tries:
+        _tries.append(eng.claim_update())
+    return checker
+
+
+qb._checker_for = _checker_for_competing
+qb._drain_update_queue(_OkChecker())
+if _tries and _tries[0] and eng._update_lock.locked():
+    eng._update_lock.release()          # the competitor gives back what it won
+os.unlink(path)
+_queued_lines = [m_ for m_ in said for n in ("a", "b") for p in (1, 2)
+                 if m_ == _T_drain("update_queued", name=n, pos=p)]
+checks["Telegram drain: a claim landing inside an entry is refused"] = (
+    _tries == [False])
+checks["…the entry is not re-queued and nobody hears 'queued' a second time"] = (
+    _queued_lines == [] and eng._update_queue == []
+    and [m_ for m_ in said if m_.endswith(": ok")] == ["✅ a: ok", "✅ b: ok"])
+
+# A self-update queued while a drained entry updates goes next, and the
+# rest are named as dropped first.
+eng = engine()
+eng._updating = {}
+for k in ("a", "b", "c"):
+    eng.enqueue_update(k)
+qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                   for n in ("a", "b", "c")])
+_su = []
+
+
+class _QueuesSelfupdate:
+    def update_container(self, name, image, **kw):
+        if name == "a":
+            eng._queued_selfupdate = ("2.9.0",)
+        return True, "ok"
+
+
+def _tg_runs_queued_selfupdate():
+    if eng._queued_selfupdate:
+        _su.append((list(eng._update_queue), eng._update_lock.locked(),
+                    len(said)))
+        eng._queued_selfupdate = None
+
+
+qb._run_queued_selfupdate = _tg_runs_queued_selfupdate
+qb._drain_update_queue(_QueuesSelfupdate())
+os.unlink(path)
+_dropped = _T_drain("update_queue_dropped_selfupdate", names="`b`, `c`")
+checks["Telegram drain: a self-update queued during an entry wins, once"] = (
+    [m_ for m_ in said if m_.endswith(": ok")] == ["✅ a: ok"]
+    and len(_su) == 1 and _su[0][:2] == ([], False))
+checks["…and b and c are named as dropped before it starts"] = (
+    _dropped in said and len(_su) == 1
+    and said.index(_dropped) < _su[0][2])
+
+# The drain is the one releaser: a drained entry gives back nothing
+# itself, so each entry is released once and the self-update hand-over
+# runs once per entry, from the drain. And the entry's update runs
+# under that claim.
+eng = engine()
+eng._updating = {}
+for k in ("a", "b", "c"):
+    eng.enqueue_update(k)
+qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                   for n in ("a", "b", "c")])
+_rel, _hand, _held = [], [], []
+_real_release = eng.release_update
+
+
+def _count_release(**kw):
+    _rel.append(1)
+    return _real_release(**kw)
+
+
+class _HeldChecker:
+    def update_container(self, name, image, **kw):
+        _held.append((name, eng._update_lock.locked()))
+        return True, "ok"
+
+
+eng.release_update = _count_release
+qb._run_queued_selfupdate = lambda: _hand.append(1)
+import contextlib as _cl  # noqa: E402
+import io as _io  # noqa: E402
+_out = _io.StringIO()
+with _cl.redirect_stdout(_out):
+    qb._drain_update_queue(_HeldChecker())
+os.unlink(path)
+checks["Telegram drain: each entry is released exactly once, by the drain"] = (
+    len(_rel) == 3 and len(_hand) == 3
+    and "was not held" not in _out.getvalue())
+checks["…and each entry's update runs under that claim"] = (
+    _held == [("a", True), ("b", True), ("c", True)]
+    and not eng._update_lock.locked() and eng._update_queue == [])
+
+# A drained entry that raises: the drain's release is the one, inside the
+# crash, so Telegram's self-update hand-over still sees it.
+eng = engine()
+eng._updating = {}
+for k in ("a", "b"):
+    eng.enqueue_update(k)
+qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
+                                   for n in ("a", "b")])
+_exc = []
+
+
+def _enrich_raises(us):
+    if us and us[0]["name"] == "a":
+        raise RuntimeError("enrich broke")
+
+
+qb._enrich_with_source_url = _enrich_raises
+qb._run_queued_selfupdate = lambda: _exc.append(sys.exc_info()[0])
+qb._drain_update_queue(_OkChecker())
+os.unlink(path)
+checks["Telegram drain: the hand-over after a crashed entry sees the crash"] = (
+    _exc == [RuntimeError, None] and "❌ `a`: enrich broke" in said
+    and "✅ b: ok" in said and not eng._update_lock.locked())
 
 # ── claim_or_queue: the engine decides, a connection only translates ─
 # Q7 moved the decision out of Telegram's tap handler. The answer is a
@@ -695,12 +1049,14 @@ esrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
 # The loop lives in the engine since Q8; Telegram's drain is a wrapper.
 drain = srcslice.section(esrc, "    def drain_queue(self", "\n    def ",
                          label="update_engine.py: drain_queue")
-checks["the drain re-takes the lock per entry"] = (
-    drain is not None and "_update_lock.acquire(blocking=False)" in drain)
-checks["…and hands the entry back if it loses the race"] = (
-    drain is not None and "self.enqueue_update(key)" in drain)
-checks["…rather than holding it across the whole queue"] = (
-    drain is not None and drain.count("_update_lock.acquire") == 1)
+# Re-pointed in Q10: the drain claims through the door, once per entry
+# (driven above: "one claim per entry…"), and no longer touches the raw
+# lock or puts an entry back on the queue.
+checks["the drain claims through the door, in one place"] = (
+    drain is not None and drain.count("self.claim_update()") == 1
+    and "_update_lock" not in drain)
+checks["…and never puts an entry back on the queue"] = (
+    drain is not None and "enqueue_update" not in drain)
 # The rejected tap is queued, not answered with the old brush-off.
 single = srcslice.section(src, "def _run_single_update",
                           "\n    def _drain_update_queue",

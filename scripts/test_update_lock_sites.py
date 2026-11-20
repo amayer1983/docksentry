@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Every place that takes, gives back or looks at the update lock, listed and driven.
 
-There is one update lock, `UpdateEngine._update_lock`. Twelve functions
-claim it. Ten go through the engine's door (`claim_update()` /
+There is one update lock, `UpdateEngine._update_lock`. Thirteen functions
+claim it. Eleven go through the engine's door (`claim_update()` /
 `release_update(after=...)`, Q1/Q2): Telegram's four update flows and
-its scheduled self-update check, Discord's two update commands, and the
-engine's own `cleanup_guarded`, which Telegram's and Discord's cleanup
-guards hand their work to (`engine.cleanup_guarded(...)`, counted as
-their claim). Telegram's per-container tap claims through
+its scheduled self-update check, Discord's two update commands, the
+engine's queue drain (Q10: it holds each entry's claim through that
+entry), and the engine's own `cleanup_guarded`, which Telegram's and
+Discord's cleanup guards hand their work to (`engine.cleanup_guarded(...)`,
+counted as their claim). Telegram's per-container tap claims through
 `engine.claim_or_queue(...)` (Q7), which queues it when busy and hands
 back the answer as a key. The Web worker and `selfupdate.start` still claim by hand
 with `acquire(blocking=False)`. Each one has
@@ -155,12 +156,18 @@ LOCK_OPS = {
     # one outside the engine.
     ("selfupdate.py", "start"):
         ("CLAIM", ["acquire(blocking=False)", "release"]),
-    # ── probes ──
     # The drain loop is the engine's since Q8; Telegram's
-    # `_drain_update_queue` only hands it run_one, group_of and say.
-    # Driven through that wrapper below.
+    # `_drain_update_queue` only hands it run_one, group_of, say and
+    # after. A probe until Q10 (take, give straight back, let the run
+    # claim again); now it claims per entry and is that entry's one
+    # releaser: after the run, after a crash, on the self-update
+    # hand-over and when the queue was emptied under it. Driven through
+    # Telegram's wrapper below.
     ("update_engine.py", "UpdateEngine.drain_queue"):
-        ("PROBE", ["acquire(blocking=False)", "release"]),
+        ("CLAIM", ["claim_update()", "release_update(after=after)",
+                   "release_update(after=after)",
+                   "release_update(after=after)",
+                   "release_update(after=after)"]),
     # ── readers ──
     # Only looks since Q4. As a probe it took the lock for a moment, and
     # a real claim landing in that moment was refused.
@@ -257,8 +264,8 @@ QUEUE_CALLS = {
     ("telegram_bot.py", "TelegramBot._drain_update_queue", "drain_queue"): 1,
     ("update_engine.py", "UpdateEngine.drain_queue",
      "take_queued_update"): 1,
-    # Lost the race between take and run: the entry goes back (to the end).
-    ("update_engine.py", "UpdateEngine.drain_queue", "enqueue_update"): 1,
+    # No `enqueue_update` in the drain since Q10: it claims before it
+    # takes, so a lost claim leaves the entry at the head.
     ("telegram_bot.py", "TelegramBot.listen", "_sweep_update_queue"): 1,
 }
 #: The two that feed the queue; the rest work it off.
@@ -292,7 +299,8 @@ def _helper_callees():
 BUSY_MESSAGES = {
     # Telegram
     # The engine's drain hands these keys to Telegram's `_say_drain`.
-    ("update_engine.py", "UpdateEngine.drain_queue",
+    # Said by the drain's helper, before and after each entry (Q10).
+    ("update_engine.py", "UpdateEngine._drop_for_selfupdate",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
     ("update_engine.py", "UpdateEngine.drain_queue",
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
@@ -1153,9 +1161,12 @@ EXPECTED_BUSY = {
     (('update_engine.py', 'UpdateEngine.update_running'),
      'busy question'):
         {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
+    # Q10: the drain claims now, so held it is a claim that skips —
+    # nothing said, nothing run, the entry still at the head. Same record
+    # as the probe's apart from the kind.
     (('update_engine.py', 'UpdateEngine.drain_queue'),
      'drain with web queued'):
-        {'kind': 'LEAVES_QUEUED', 'lock_after': 'held', 'queue_after': ['web']},
+        {'kind': 'SKIP', 'lock_after': 'held', 'queue_after': ['web']},
     (('web_ui.py', 'create_handler.WebHandler._update_lock_held'),
      'status banner question'):
         {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},

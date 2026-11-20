@@ -75,8 +75,8 @@ GUARDED = [
 
     ("the sweep does not call the drain when nothing is queued",
      "app/update_engine.py",
-     "            if not self.has_queued_updates():\n                return",
-     "            if False:\n                return",
+     "        try:\n            if not self.has_queued_updates():\n                return",
+     "        try:\n            if False:\n                return",
      "test_update_queue_sweep.py"),
 
     ("…and does call it when something is queued and the lock is free",
@@ -1307,8 +1307,8 @@ GUARDED = [
 
     ("Telegram's tap asks the engine instead of deciding itself",
      "app/telegram_bot.py",
-     "        claimed, busy, params = self.engine.claim_or_queue(container_key)\n",
-     "        claimed, busy, params = (self.engine.claim_update(), \"update_queued\", {\"pos\": 1})\n",
+     "            claimed, busy, params = self.engine.claim_or_queue(container_key)\n",
+     "            claimed, busy, params = (self.engine.claim_update(), \"update_queued\", {\"pos\": 1})\n",
      "test_update_queue.py"),
 
     ("…renders how long an entry has waited",
@@ -4143,16 +4143,16 @@ GUARDED = [
     # engine with a run_one recorder, and Telegram's wrapper on top.
     ("the drain stops for a pending self-update",
      "app/update_engine.py",
-     "            if self._queued_selfupdate:\n"
-     "                left = self.drop_queued_updates()\n",
-     "            if False:\n"
-     "                left = self.drop_queued_updates()\n",
+     "        if not self._queued_selfupdate:\n"
+     "            return False\n",
+     "        if True:\n"
+     "            return False\n",
      "test_update_queue.py"),
 
     ("…and names what it dropped",
      "app/update_engine.py",
-     '                    say("update_queue_dropped_selfupdate", {"keys": left})\n',
-     "                    pass\n",
+     '            say("update_queue_dropped_selfupdate", {"keys": left})\n',
+     "            pass\n",
      "test_update_queue.py"),
 
     ("a failure in the drain takes its group-mates off the queue",
@@ -4174,19 +4174,10 @@ GUARDED = [
      "                run_one(key)\n",
      "test_update_queue.py"),
 
-    ("a drained entry that loses the race goes back on the queue",
-     "app/update_engine.py",
-     "                self.enqueue_update(key)\n                return\n"
-     "            self._update_lock.release()\n",
-     "                return\n            self._update_lock.release()\n",
-     "test_update_queue.py"),
-
-    ("…and the per-entry probe gives the lock straight back",
-     "app/update_engine.py",
-     "            self._update_lock.release()\n            try:\n"
-     "                last_group = run_one(key)\n",
-     "            try:\n                last_group = run_one(key)\n",
-     "test_update_queue.py"),
+    # Q10 replaced the probe and its re-enqueue ("a drained entry that
+    # loses the race goes back on the queue", "…and the per-entry probe
+    # gives the lock straight back") with a claim held through each
+    # entry; their entries are further down.
 
     ("a drained run that raises is said and the drain goes on",
      "app/update_engine.py",
@@ -4202,8 +4193,8 @@ GUARDED = [
 
     ("Telegram's drain hands the engine its last group",
      "app/telegram_bot.py",
-     "                                say=self._say_drain, last_group=last_group)\n",
-     "                                say=self._say_drain, last_group=None)\n",
+     "                                say=self._say_drain, last_group=last_group,\n",
+     "                                say=self._say_drain, last_group=None,\n",
      "test_update_queue.py"),
 
     ("…and a run's failed group, from the run itself",
@@ -4214,8 +4205,8 @@ GUARDED = [
 
     ("…and runs each entry as a queued one, not as a fresh tap",
      "app/telegram_bot.py",
-     "            self._run_single_update(checker, key, from_queue=True)\n",
-     "            self._run_single_update(checker, key)\n",
+     "            self._run_single_update(checker, key, from_queue=True,\n",
+     "            self._run_single_update(checker, key,\n",
      "test_update_queue.py"),
 
     ("…and names the containers the drain reports",
@@ -4228,6 +4219,122 @@ GUARDED = [
      "app/telegram_bot.py",
      "{params['error'][:200]}\")\n",
      "{params['error']}\")\n",
+     "test_update_queue.py"),
+
+    # Q10: the drain claims before it takes an entry, holds the claim
+    # through it and is its one releaser. Before, it took the lock, gave
+    # it straight back and let the run claim again; a claim landing in
+    # between sent the entry to the back with a second "queued".
+    ("a drained entry whose claim is lost keeps its place at the head",
+     "app/update_engine.py",
+     "            if not self.claim_update():\n"
+     "                # Something else holds it.",
+     "            if not self.claim_update():\n"
+     "                self.enqueue_update(self.take_queued_update())\n"
+     "                return\n"
+     "                # Something else holds it.",
+     "test_update_queue.py"),
+
+    ("…and the drain holds its claim through the entry",
+     "app/update_engine.py",
+     "            key = self.take_queued_update()\n            if key is None:\n"
+     "                # Emptied between",
+     "            self._update_lock.release()\n"
+     "            key = self.take_queued_update()\n            if key is None:\n"
+     "                # Emptied between",
+     "test_update_queue.py"),
+
+    ("…and gives it back after each entry",
+     "app/update_engine.py",
+     "            self.release_update(after=after)\n\n"
+     "    def _drop_for_selfupdate(",
+     "            pass\n\n"
+     "    def _drop_for_selfupdate(",
+     "test_update_queue.py"),
+
+    ("…handing each release the connection's after()",
+     "app/update_engine.py",
+     "            self.release_update(after=after)\n\n"
+     "    def _drop_for_selfupdate(",
+     "            self.release_update(after=None)\n\n"
+     "    def _drop_for_selfupdate(",
+     "test_update_queue.py"),
+
+    ("…and does not claim at all for an empty queue",
+     "app/update_engine.py",
+     "            if not self.has_queued_updates():\n                return\n"
+     "            # Claimed per entry",
+     "            # Claimed per entry",
+     "test_update_queue.py"),
+
+    ("a queue emptied between the drain's look and its claim gives the claim back",
+     "app/update_engine.py",
+     "                # Emptied between the look and the claim.\n"
+     "                self.release_update(after=after)\n",
+     "                # Emptied between the look and the claim.\n",
+     "test_update_queue.py"),
+
+    ("a self-update queued during a drained entry goes next, the rest named first",
+     "app/update_engine.py",
+     "            if self._drop_for_selfupdate(say):\n"
+     "                self.release_update(after=after)\n"
+     "                return\n",
+     "            if False:\n"
+     "                self.release_update(after=after)\n"
+     "                return\n",
+     "test_update_queue.py"),
+
+    ("a drained entry that crashed is given back inside the crash, so after() sees it",
+     "app/update_engine.py",
+     "            except BaseException as e:\n"
+     "                # Given back inside the handler",
+     "            except BaseException as _crash:\n"
+     "                e = _crash\n"
+     "            else:\n"
+     "                e = None\n"
+     "            if e is not None:\n"
+     "                # Given back inside the handler",
+     "test_update_queue.py"),
+
+    ("…and a drained run that exits is not swallowed",
+     "app/update_engine.py",
+     "                if not isinstance(e, Exception):\n                    raise\n",
+     "                if False:\n                    raise\n",
+     "test_update_queue.py"),
+
+    ("…nor left holding the lock",
+     "app/update_engine.py",
+     "                self.release_update(after=after)\n"
+     "                if not isinstance(e, Exception):\n",
+     "                if not isinstance(e, Exception):\n",
+     "test_update_queue.py"),
+
+    ("Telegram's drained entry does not claim for itself",
+     "app/telegram_bot.py",
+     "        if not held_by_caller:\n"
+     "            claimed, busy, params",
+     "        if True:\n"
+     "            claimed, busy, params",
+     "test_update_queue.py"),
+
+    ("…nor give back the drain's claim",
+     "app/telegram_bot.py",
+     "            if not held_by_caller:\n"
+     "                self.engine.release_update(after=self._run_queued_selfupdate)\n",
+     "            if True:\n"
+     "                self.engine.release_update(after=self._run_queued_selfupdate)\n",
+     "test_update_queue.py"),
+
+    ("…because Telegram's drain says the claim is held",
+     "app/telegram_bot.py",
+     "                                    claimed=True)\n",
+     "                                    claimed=False)\n",
+     "test_update_queue.py"),
+
+    ("…and hands the drain its queued self-update",
+     "app/telegram_bot.py",
+     "                                after=self._run_queued_selfupdate)\n",
+     "                                after=None)\n",
      "test_update_queue.py"),
 
 ]
