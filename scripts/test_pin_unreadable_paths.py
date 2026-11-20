@@ -368,6 +368,9 @@ class _Engine:
 
     claim_update = UpdateEngine.claim_update
     release_update = UpdateEngine.release_update
+    # The release kicks the queue drain since Q13; with no queue here it
+    # starts nothing.
+    kick_drain = UpdateEngine.kick_drain
     cleanup_guarded = UpdateEngine.cleanup_guarded
 
     def __init__(self):

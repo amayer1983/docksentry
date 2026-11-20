@@ -148,6 +148,9 @@ def main():
     # "started" — twelve of its thirteen reports were Telegram-only.
     su_ctx = selfupdate.Context(engine, config, broadcast.tell)
     bot.selfupdate_ctx = su_ctx
+    # The engine's queue drain hands a self-update that queued behind
+    # one of its entries on through the same context (Q13).
+    engine.selfupdate_ctx = su_ctx
     checker = host_registry.local.checker
     if host_registry.is_multi:
         print(f"Managing {len(host_registry)} hosts: "

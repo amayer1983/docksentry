@@ -276,10 +276,11 @@ BRANCH_NOTES = {
         "dependents are restarted, and a queued key waits the last "
         "recreate's cooldown and its group's pause first.",
     "queue": ":1825 lock busy → enqueue (position, then 'already in the "
-        "queue'); the drain runs after the tap that held the lock — but "
-        "only when that tap got past its early returns (no pending file, "
-        "key not listed): those return inside the try and skip the drain, "
-        "so on a single host the queued `db` is still waiting.",
+        "queue'). Since Q13 the engine's drainer works it off once the "
+        "tap that held the lock releases it, whatever that tap did: one "
+        "that ran nothing (key not listed, so on a single host the remote "
+        "tap) used to return before the drain, and the queued `db` waited "
+        "for the next sweep. Now it runs right after.",
     "confirm_major": ":3497 on a thread, `_confirm_major_update`; busy "
         "lock answers 'already running' and does not queue (Q16). A key "
         "whose host the registry does not know (`gone`, and `nas` on a "
@@ -2564,12 +2565,15 @@ EXPECTED = {
                {'do': 'tap update_one:nas/web',
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
-                        '⚠️ Container `web @nas` not in update list.'],
-                'hosts': {},
-                'events': [],
+                        '⚠️ Container `web @nas` not in update list.',
+                        '⏳ Updating `db`...',
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                                   'inspect --format'},
+                'events': ['update_container@local:db'],
                 'raised': None}],
-     'state': {'pending': ['web@local', 'db@local'],
-               'queue': ['db'],
+     'state': {'pending': ['web@local'],
+               'queue': [],
                'stops': 0,
                'restores': 0,
                'majors': {},

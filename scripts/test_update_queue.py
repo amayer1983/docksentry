@@ -101,108 +101,106 @@ checks["…and everything else stays queued"] = e._update_queue == ["unrelated"]
 checks["dropping everything returns everything"] = (
     e.drop_queued_updates() == ["unrelated"] and e._update_queue == [])
 
-# ── the bot side: what the owner's four taps now do ──────────────────
+# ── the drainer: what the owner's four taps now do ───────────────────
+# Since Q13 the queue is worked off by the engine's one drainer
+# (`kick_drain`), whoever let go of the lock and on every install; it
+# used to be Telegram's `_drain_update_queue`. Driven through the real
+# kick, the real thread and the real loop. `_drain_one` (one container's
+# update) is a recorder here that honours `fails` and `raises`; what it
+# says goes through a real Broadcast seam to a recording chat.
 import telegram_bot  # noqa: E402
+from broadcast import Broadcast  # noqa: E402
 
 
-class Bot(telegram_bot.TelegramBot):
-    """Just enough bot to drive the queue paths."""
+def _drainer(fails=(), groups=None, raises=()):
+    """An engine with a recording chat and a recorder for `_drain_one`."""
+    eng = engine()
+    eng._swap_in_flight = False
+    groups = groups or {}
+    rec = types.SimpleNamespace(updated=[], sent=[])
+    eng.broadcast = Broadcast(telegram=types.SimpleNamespace(
+        enabled=True, send_message=lambda m_, **kw: rec.sent.append(m_)))
+    # The group lookup reads the host's store; the groups are given here.
+    eng._group_of_key = lambda k: groups.get(k)
 
-    def __init__(self, eng, fails=(), groups=None):
-        self.engine = eng
-        self.sent = []
-        self.updated = []
-        self.fails = set(fails)
-        self.groups = groups or {}
-        self.config = types.SimpleNamespace(pending_file="/nonexistent")
-        self._queued_selfupdate = None
-        self._last_update_group = None
-
-    def send_message(self, text, **kw):
-        self.sent.append(text)
-
-    def t(self, key, **kw):
-        return key + (" " + " ".join(f"{k}={v}" for k, v in kw.items()) if kw else "")
-
-    def _group_of(self, key):
-        return self.groups.get(self._short_key(key))
-
-    def _run_single_update(self, checker, key, from_queue=False,
-                           claimed=False):
-        """Stand in for the real one: record it, honour `fails`."""
-        self.updated.append(key)
-        name = self._short_key(key)
-        self._last_update_group = (self._group_of(key) if name in self.fails
-                                   else None)
+    def one(key):
+        rec.updated.append(key)
+        if key in raises:
+            raise RuntimeError("x" * 300)
+        return groups.get(key) if key in fails else None
+    eng._drain_one = one
+    return eng, rec
 
 
-eng = engine()
-b = Bot(eng)
+def _kick(eng, after=None):
+    """Kick the engine's drainer and wait for it (and any it started).
+    False when the engine has no `kick_drain`."""
+    kick = getattr(eng, "kick_drain", None)
+    if kick is None:
+        return False
+    kick(after=after)
+    for _ in range(400):
+        t = getattr(eng, "_drainer", None)
+        if t is None:
+            return True
+        try:
+            t.join(0.05)
+        except RuntimeError:              # not started: a mutated kick
+            pass
+    return getattr(eng, "_drainer", None) is None
+
+
+eng, b = _drainer()
 for k in ("paperless-ngx-db-1", "notes-app-db-1", "paperless-ngx-webserver-1"):
     eng.enqueue_update(k)
-b._drain_update_queue(checker=None)
+_kick(eng)
 checks["every queued tap actually runs"] = b.updated == [
     "paperless-ngx-db-1", "notes-app-db-1", "paperless-ngx-webserver-1"]
 checks["…and the queue ends up empty"] = eng._update_queue == []
 
 # ── a failure carries on, unless there are dependencies ─────────────
-eng = engine()
-b = Bot(eng, fails={"broken"})
+eng, b = _drainer(fails={"broken"})
 for k in ("broken", "unrelated-1", "unrelated-2"):
     eng.enqueue_update(k)
-b._drain_update_queue(checker=None)
+_kick(eng)
 checks["a failure with no group does not stop the rest"] = (
     b.updated == ["broken", "unrelated-1", "unrelated-2"])
 
-eng = engine()
-b = Bot(eng, fails={"gluetun"},
-        groups={"gluetun": "vpn", "gluetun-sonarr": "vpn",
-                "gluetun-radarr": "vpn", "searxng": None})
+eng, b = _drainer(fails={"gluetun"},
+                  groups={"gluetun": "vpn", "gluetun-sonarr": "vpn",
+                          "gluetun-radarr": "vpn", "searxng": None})
 for k in ("gluetun", "gluetun-sonarr", "gluetun-radarr", "searxng"):
     eng.enqueue_update(k)
-b._drain_update_queue(checker=None)
+_kick(eng)
 checks["a failure in a group skips its group-mates"] = (
     "gluetun-sonarr" not in b.updated and "gluetun-radarr" not in b.updated)
 checks["…but not containers outside that group"] = "searxng" in b.updated
 checks["…and it says which ones it skipped, and why"] = any(
-    "update_queue_skipped_group" in m and "gluetun-sonarr" in m
+    "`vpn`" in m and "`gluetun-sonarr`" in m and "`gluetun-radarr`" in m
     for m in b.sent)
 
 # ── a pending self-update stops the drain and names the casualties ──
-eng = engine()
-b = Bot(eng)
-b._queued_selfupdate = ("2.9.0",)
+eng, b = _drainer()
+eng._queued_selfupdate = ("2.9.0",)
 for k in ("one", "two"):
     eng.enqueue_update(k)
-b._drain_update_queue(checker=None)
+_kick(eng)
 checks["a pending self-update stops the drain"] = b.updated == []
 checks["…and names what will not run"] = any(
-    "update_queue_dropped_selfupdate" in m and "one" in m and "two" in m
-    for m in b.sent)
+    "NOT run" in m and "`one`" in m and "`two`" in m for m in b.sent)
 checks["…leaving nothing queued to be lost by the restart"] = (
     eng._update_queue == [])
 
 # A run that raises is said, raw and cut to 200 characters, and the
 # drain goes on with the next entry; the error does not carry a group.
-eng = engine()
-b = Bot(eng, groups={"bad": "vpn", "mate": "vpn"})
-b.raises = {"bad"}
-_orig_run = b._run_single_update
-
-
-def _raising(checker, key, from_queue=False, claimed=False):
-    _orig_run(checker, key, from_queue)
-    if b._short_key(key) in b.raises:
-        raise RuntimeError("x" * 300)
-
-
-b._run_single_update = _raising
+eng, b = _drainer(groups={"bad": "vpn", "mate": "vpn"}, raises={"bad"})
 for k in ("bad", "mate"):
     eng.enqueue_update(k)
-b._drain_update_queue(checker=None)
+_kick(eng)
 checks["a run that raises is said and the drain goes on"] = (
     b.updated == ["bad", "mate"]
     and "❌ `bad`: " + "x" * 200 in b.sent)
+
 
 # ── the loop is the engine's (Q8) ────────────────────────────────────
 # `UpdateEngine.drain_queue` holds the drain; a connection hands it
@@ -344,39 +342,53 @@ checks["engine: a run that raises is said, and the drain goes on"] = (
     r is not None and r["ran"] == ["a", "b"]
     and r["said"] == [("entry_failed", {"key": "a", "error": "boom a"})])
 
-# Telegram's drain is a wrapper: it hands its own last group and lets
-# the engine run the loop.
-eng = engine()
-b = Bot(eng)
+# The drainer hands the loop the engine's own hooks (Q13): its
+# `_drain_one`, its group lookup and its sentences, and as `after` the
+# one the kick brought, or the engine's own hand-over without one.
+eng, b = _drainer()
 seen = []
 _real = getattr(eng, "drain_queue", None)
 
 
 def _spy(run_one, **kw):
-    seen.append(kw.get("last_group"))
+    seen.append((run_one, kw.get("group_of"), kw.get("say"),
+                 kw.get("after"), kw.get("last_group")))
     return _real(run_one, **kw)
 
 
 eng.drain_queue = _spy
 eng.enqueue_update("k")
-b._drain_update_queue(checker=None, last_group="g")
-checks["Telegram's drain hands the loop to engine.drain_queue"] = (
-    _real is not None and seen == ["g"] and b.updated == ["k"])
+_kick(eng)
+checks["the drainer hands the loop to engine.drain_queue, with its own hooks"] = (
+    _real is not None and len(seen) == 1
+    and seen[0][0] is eng._drain_one and seen[0][1] is eng._group_of_key
+    and seen[0][2] == getattr(eng, "_say_drain", "none")
+    and seen[0][3] == getattr(eng, "_hand_on_selfupdate", "none")
+    and seen[0][4] is None and b.updated == ["k"])
+_mine = lambda: None                                     # noqa: E731
+seen.clear()
+eng.enqueue_update("k2")
+_kick(eng, after=_mine)
+checks["…and the after() of the release that kicked it"] = (
+    len(seen) == 1 and seen[0][3] is _mine)
 
-# The real `_run_single_update` under Telegram's drain: an entry off the
-# queue is run as one (`from_queue=True`). Two things hang on that. A key
-# that is no longer pending is work that already happened, not a typo;
-# and a queued run does not start a drain of its own from inside the
-# drain, so the queue is worked off by one loop, not one level per entry.
+# The real `_drain_one` under the drainer: an entry off the queue runs
+# through `run_keys`. Two things hang on that. A key that is no longer
+# pending is work that already happened, not a typo; and a drained run
+# does not start a drain of its own from inside the drain, so the queue
+# is worked off by one loop, not one level per entry.
 import json  # noqa: E402
 import tempfile  # noqa: E402
 
 
-def _queued_bot(eng, pending_entries):
+def _queued_engine(eng, pending_entries, checker):
+    """`eng` with a pending file, a local checker and a recording chat,
+    the way the drainer finds them on a real install. Returns the said
+    list and the file."""
     said = []
-    # Bounded: with a mutation that never lets a run claim the free lock,
-    # each run puts its key back and the drain would spin forever. Fifty
-    # takes is far more than these three keys need, and a hang is not red.
+    # Bounded: with a mutation that never lets the drain claim the free
+    # lock, it would spin forever. Fifty takes is far more than these
+    # three keys need, and a hang is not red.
     _take, _taken = eng.take_queued_update, []
 
     def _bounded_take():
@@ -387,19 +399,18 @@ def _queued_bot(eng, pending_entries):
     fd, path = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w") as fh:
         json.dump(pending_entries, fh)
-    bot = telegram_bot.TelegramBot.__new__(telegram_bot.TelegramBot)
-    bot.engine = eng
-    bot.t = _T_drain
-    bot.send_message = lambda m_, **kw: said.append(m_)
-    bot.config = types.SimpleNamespace(pending_file=path)
-    bot.notifier = None
-    bot._host_by_name = lambda n: None
-    bot._checker_for = lambda host, checker: checker
-    bot._run_queued_selfupdate = lambda: None
-    bot._group_of = lambda k: None
-    bot._enrich_with_source_url = lambda us: None
-    bot._display_name = lambda u: u["name"]
-    return bot, said, path
+    eng.config = types.SimpleNamespace(disk_warn_auto_cleanup=False,
+                                       language="en", pending_file=path)
+    eng.hosts = None
+    eng.local_checker = checker
+    eng._swap_in_flight = False
+    eng.notifier = None
+    eng.broadcast = Broadcast(telegram=types.SimpleNamespace(
+        enabled=True, send_message=lambda m_, **kw: said.append(m_)))
+    # Link resolution and the display name are not under test.
+    eng._enrich_with_source_url = lambda us: None
+    eng._display_name = lambda u: u["name"]
+    return said, path
 
 
 class _OkChecker:
@@ -416,8 +427,8 @@ _T_drain = _gt("en")
 eng = engine()
 eng._updating = {}
 eng.enqueue_update("gone")
-qb, said, path = _queued_bot(eng, [])
-qb._drain_update_queue(_OkChecker())
+said, path = _queued_engine(eng, [], _OkChecker())
+_kick(eng)
 os.unlink(path)
 checks["a queued key no longer pending is called done, not unknown"] = (
     said == [_T_drain("update_already_done", name="gone")])
@@ -426,8 +437,8 @@ eng = engine()
 eng._updating = {}
 for k in ("a", "b", "c"):
     eng.enqueue_update(k)
-qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                   for n in ("a", "b", "c")])
+said, path = _queued_engine(eng, [{"name": n, "image": f"{n}:1"}
+                                  for n in ("a", "b", "c")], _OkChecker())
 drains = []
 # getattr, so an engine without `drain_queue` goes red here, not crashes.
 _real_dq = getattr(eng, "drain_queue", None)
@@ -440,12 +451,13 @@ def _count(run_one, **kw):
 
 if _real_dq is not None:
     eng.drain_queue = _count
-qb._drain_update_queue(_OkChecker())
+_kick(eng)
 os.unlink(path)
 checks["…and a queued run does not drain the queue again from inside"] = (
     _real_dq is not None and len(drains) == 1 and eng._update_queue == []
     and [m for m in said if m.endswith(": ok")] == [
         "✅ a: ok", "✅ b: ok", "✅ c: ok"])
+
 
 # ── Q10: the drain holds each entry's claim through that entry ───────
 # Before Q10 the drain took the lock, gave it straight back and let the
@@ -722,7 +734,7 @@ checks["engine: a queue emptied between the look and the claim gives it back"] =
     _ran == [] and said == [] and not e._update_lock.locked()
     and ev == [("claim", True), ("release",), ("after",)])
 
-# The same through Telegram's real `_run_single_update`.
+# The same through the drainer's real `_drain_one`.
 # A competing claim inside an entry — where the old drain had let go —
 # is refused, and the entry runs instead of going to the back with a
 # second "queued at position N".
@@ -730,26 +742,28 @@ eng = engine()
 eng._updating = {}
 for k in ("a", "b"):
     eng.enqueue_update(k)
-qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                   for n in ("a", "b")])
+said, path = _queued_engine(eng, [{"name": n, "image": f"{n}:1"}
+                                  for n in ("a", "b")], _OkChecker())
 _tries = []
+_real_cfk = getattr(eng, "_checker_for_key", None)
 
 
-def _checker_for_competing(host, checker):
+def _checker_for_competing(key):
     # The scheduler's tick, say, landing while the drain works on `a`.
     if not _tries:
         _tries.append(eng.claim_update())
-    return checker
+    return _real_cfk(key)
 
 
-qb._checker_for = _checker_for_competing
-qb._drain_update_queue(_OkChecker())
+if _real_cfk is not None:
+    eng._checker_for_key = _checker_for_competing
+_kick(eng)
 if _tries and _tries[0] and eng._update_lock.locked():
     eng._update_lock.release()          # the competitor gives back what it won
 os.unlink(path)
 _queued_lines = [m_ for m_ in said for n in ("a", "b") for p in (1, 2)
                  if m_ == _T_drain("update_queued", name=n, pos=p)]
-checks["Telegram drain: a claim landing inside an entry is refused"] = (
+checks["drainer: a claim landing inside an entry is refused"] = (
     _tries == [False])
 checks["…the entry is not re-queued and nobody hears 'queued' a second time"] = (
     _queued_lines == [] and eng._update_queue == []
@@ -757,38 +771,37 @@ checks["…the entry is not re-queued and nobody hears 'queued' a second time"] 
 
 # A self-update queued while a drained entry updates goes next. Here the
 # real `selfupdate.start` queues it and the real `run_queued` starts it,
-# through Telegram's own hand-over; only `selfupdate.run` — the pull and
-# the swap — is a stand-in. Up to date: no restart, so b and c still run
-# and nobody hears "about to restart".
+# through the engine's own hand-over and the shared context main.py
+# gives it; only `selfupdate.run` — the pull and the swap — is a
+# stand-in. Up to date: no restart, so b and c still run and nobody
+# hears "about to restart".
 import selfupdate  # noqa: E402
 
 
-def _tg_selfupdate_drain(run_stand_in):
+def _engine_selfupdate_drain(run_stand_in):
     eng = engine()
     eng._updating = {}
-    eng._swap_in_flight = False
     for k in ("a", "b", "c"):
         eng.enqueue_update(k)
-    qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                       for n in ("a", "b", "c")])
-    # The real hand-over, not the stub `_queued_bot` puts there.
-    del qb._run_queued_selfupdate
-    qb.selfupdate_ctx = selfupdate.Context(
-        eng, types.SimpleNamespace(language="en"),
-        say=lambda m_, skip=(): said.append(m_),
-        reply=said.append)
 
     class _QueuesSelfupdate(_OkChecker):
         def update_container(self, name, image, **kw):
             if name == "a":
-                selfupdate.start(qb.selfupdate_ctx)
+                selfupdate.start(eng.selfupdate_ctx)
             return True, "ok"
 
+    said, path = _queued_engine(eng, [{"name": n, "image": f"{n}:1"}
+                                      for n in ("a", "b", "c")],
+                                _QueuesSelfupdate())
+    eng.selfupdate_ctx = selfupdate.Context(
+        eng, types.SimpleNamespace(language="en"),
+        say=lambda m_, skip=(): said.append(m_),
+        reply=said.append)
     real_run = selfupdate.run
     selfupdate.run = lambda ctx, target=None, reply_to=None: run_stand_in(
         ctx, said)
     try:
-        qb._drain_update_queue(_QueuesSelfupdate())
+        _kick(eng)
     finally:
         selfupdate.run = real_run
         os.unlink(path)
@@ -808,12 +821,12 @@ def _swap_launched(ctx, said):
 
 
 _dropped = _T_drain("update_queue_dropped_selfupdate", names="`b`, `c`")
-eng, said = _tg_selfupdate_drain(_up_to_date)
+eng, said = _engine_selfupdate_drain(_up_to_date)
 _oks = [m_ for m_ in said if m_.endswith(": ok")]
 _order = [m_ for m_ in said if m_ in (
     _T_drain("selfupdate_queued"), "✅ a: ok",
     _T_drain("selfupdate_up_to_date"), "✅ b: ok")]
-checks["Telegram drain: a self-update queued during an entry runs after it"] = (
+checks["drainer: a self-update queued during an entry runs after it"] = (
     _order == [_T_drain("selfupdate_queued"), "✅ a: ok",
                _T_drain("selfupdate_up_to_date"), "✅ b: ok"])
 checks["…one without a restart drops nothing: b and c still run"] = (
@@ -821,8 +834,8 @@ checks["…one without a restart drops nothing: b and c still run"] = (
     and eng._update_queue == [] and eng._queued_selfupdate is None
     and not eng._update_lock.locked())
 
-eng, said = _tg_selfupdate_drain(_swap_launched)
-checks["Telegram drain: a self-update that swaps names b and c, after it began"] = (
+eng, said = _engine_selfupdate_drain(_swap_launched)
+checks["drainer: a self-update that swaps names b and c, after it began"] = (
     [m_ for m_ in said if m_.endswith(": ok")] == ["✅ a: ok"]
     and "<swap>" in said and _dropped in said
     and said.index("<swap>") < said.index(_dropped)
@@ -836,15 +849,7 @@ eng = engine()
 eng._updating = {}
 for k in ("a", "b", "c"):
     eng.enqueue_update(k)
-qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                   for n in ("a", "b", "c")])
 _rel, _hand, _held = [], [], []
-_real_release = eng.release_update
-
-
-def _count_release(**kw):
-    _rel.append(1)
-    return _real_release(**kw)
 
 
 class _HeldChecker(_OkChecker):
@@ -853,15 +858,24 @@ class _HeldChecker(_OkChecker):
         return True, "ok"
 
 
+said, path = _queued_engine(eng, [{"name": n, "image": f"{n}:1"}
+                                  for n in ("a", "b", "c")], _HeldChecker())
+_real_release = eng.release_update
+
+
+def _count_release(**kw):
+    _rel.append(1)
+    return _real_release(**kw)
+
+
 eng.release_update = _count_release
-qb._run_queued_selfupdate = lambda: _hand.append(1)
 import contextlib as _cl  # noqa: E402
 import io as _io  # noqa: E402
 _out = _io.StringIO()
 with _cl.redirect_stdout(_out):
-    qb._drain_update_queue(_HeldChecker())
+    _kick(eng, after=lambda: _hand.append(1))
 os.unlink(path)
-checks["Telegram drain: each entry is released exactly once, by the drain"] = (
+checks["drainer: each entry is released exactly once, by the drain"] = (
     len(_rel) == 3 and len(_hand) == 3
     and "was not held" not in _out.getvalue())
 checks["…and each entry's update runs under that claim"] = (
@@ -869,16 +883,16 @@ checks["…and each entry's update runs under that claim"] = (
     and not eng._update_lock.locked() and eng._update_queue == [])
 
 # A drained entry that raises: the drain's release is the one, inside the
-# crash, so Telegram's self-update hand-over still sees it. The crash is
-# the "Updating …" line failing to go out (the `starting` hook raises
-# past run_keys). Until the Q11c follow-up a raising link lookup was the
+# crash, so the self-update hand-over still sees it. The crash is the
+# "Updating …" line failing to go out (the `starting` hook raises past
+# run_keys). Until the Q11c follow-up a raising link lookup was the
 # vehicle here; that one is logged and the update goes on now.
 eng = engine()
 eng._updating = {}
 for k in ("a", "b"):
     eng.enqueue_update(k)
-qb, said, path = _queued_bot(eng, [{"name": n, "image": f"{n}:1"}
-                                   for n in ("a", "b")])
+said, path = _queued_engine(eng, [{"name": n, "image": f"{n}:1"}
+                                  for n in ("a", "b")], _OkChecker())
 _exc = []
 
 
@@ -888,13 +902,13 @@ def _send_raises(m_, **kw):
     said.append(m_)
 
 
-qb.send_message = _send_raises
-qb._run_queued_selfupdate = lambda: _exc.append(sys.exc_info()[0])
-qb._drain_update_queue(_OkChecker())
+eng.broadcast.telegram.send_message = _send_raises
+_kick(eng, after=lambda: _exc.append(sys.exc_info()[0]))
 os.unlink(path)
-checks["Telegram drain: the hand-over after a crashed entry sees the crash"] = (
+checks["drainer: the hand-over after a crashed entry sees the crash"] = (
     _exc == [RuntimeError, None] and "❌ `a`: send broke" in said
     and "✅ b: ok" in said and not eng._update_lock.locked())
+
 
 # ── claim_or_queue: the engine decides, a connection only translates ─
 # Q7 moved the decision out of Telegram's tap handler. The answer is a
@@ -1172,7 +1186,7 @@ checks["…and never puts an entry back on the queue"] = (
     drain is not None and "enqueue_update" not in drain)
 # The rejected tap is queued, not answered with the old brush-off.
 single = srcslice.section(src, "def _run_single_update",
-                          "\n    def _drain_update_queue",
+                          "\n    def _single_update_skipped",
                           label="telegram_bot.py: _run_single_update")
 checks["a busy lock queues the tap instead of discarding it"] = (
     single is not None

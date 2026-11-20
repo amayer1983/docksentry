@@ -538,6 +538,17 @@ def build(setup):
         ("unbutton", "", 0))
     bot.send_document = lambda filename, data, caption="": (
         log.append(("document", caption, 0)), True)[1]
+    # Wired as main.py wires them: one broadcast seam on the bot and the
+    # engine. Since Q13 the engine's queue drain speaks through it, so a
+    # bot without it would drain in silence. Without a registry (the
+    # `none` set-up, a pre-#7 embedder) the engine is handed the local
+    # checker the registry would otherwise give it.
+    from broadcast import Broadcast
+    seam = Broadcast(telegram=bot, notifier=bot.notifier)
+    bot.broadcast = seam
+    bot.engine.broadcast = seam
+    if registry is None:
+        bot.engine.local_checker = managed[0].checker
     _seed_pending(cfg, setup)
     return bot, managed[0].checker, backends, log, data
 

@@ -62,10 +62,16 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Everything the constructor promises, on a real instance.
     for attr in ("_update_lock", "_update_queue", "_update_queue_lock",
-                 "_queued_selfupdate", "_swap_in_flight", "notifier"):
+                 "_queued_selfupdate", "_swap_in_flight", "notifier",
+                 # The queue drain's (Q13): its one thread, the local
+                 # checker for an engine without a registry, and the
+                 # self-update context it hands a queued one on through.
+                 "_drainer", "local_checker", "selfupdate_ctx"):
         checks[f"__init__ sets {attr}"] = hasattr(engine, attr)
 
     checks["…and the lock starts free"] = engine.update_running is False
+    checks["…and no drainer is running on a fresh engine"] = (
+        getattr(engine, "_drainer", "unset") is None)
     checks["…the queue starts empty"] = engine._update_queue == []
     checks["…nothing is mid-swap on a fresh engine"] = (
         engine._swap_in_flight is False)

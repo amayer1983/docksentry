@@ -193,6 +193,21 @@ class UpdateEngine:
         # what it is dropping and why.
         self._update_queue = []
         self._update_queue_lock = threading.Lock()
+        #: The one thread working the queue off, or None (`kick_drain`).
+        #: Read and set under `_update_queue_lock`. Read with getattr
+        #: wherever it is read, so an engine assembled by hand without
+        #: `__init__` simply has none running.
+        self._drainer = None
+        #: The local host's checker, for an engine built without a host
+        #: registry. The drainer needs one for a local key and has nobody
+        #: to hand it one; with a registry (main.py always passes one)
+        #: the registry's local host answers and this stays None.
+        self.local_checker = None
+        #: The shared self-update context (`selfupdate.Context`), set by
+        #: main.py. The drainer hands a self-update that queued behind
+        #: one of its entries on through it, as every front end does
+        #: after its own release.
+        self.selfupdate_ctx = None
         #: key -> when it was queued, for the 'already queued' answer
         #: and for /status. Cleared with the entry it belongs to.
         self._queued_at = {}
@@ -388,7 +403,7 @@ class UpdateEngine:
         """
         return self._update_lock.locked()
 
-    def release_update(self, *, after=None):
+    def release_update(self, *, after=None, kick=True):
         """Give the update lock back, then run `after` (if given).
 
         Kept held while the self-update's helper is swapping the
@@ -408,6 +423,15 @@ class UpdateEngine:
         in an exception unwind it still sees `sys.exc_info()`.
         `selfupdate.run_queued` needs that: after a crashed batch it
         cancels the queued self-update instead of restarting on top of it.
+
+        Then the queue (Q13): whatever was queued while this was held is
+        worked off by the engine's one drainer, whoever released and on
+        every install. After `after`, so when a self-update and
+        containers both waited, the self-update goes first — the order
+        it always had (my decision of 18.11.2026). `after` goes along to
+        the drainer, whose own releases hand it on in turn. Those pass
+        `kick=False`: the drain is already working the queue, and its
+        next turn takes whatever came in.
         """
         try:
             swap = bool(getattr(self, "_swap_in_flight", False))
@@ -419,8 +443,12 @@ class UpdateEngine:
             except RuntimeError:
                 print("release_update: the update lock was not held "
                       "— nothing to give back")
-        if after is not None:
-            after()
+        try:
+            if after is not None:
+                after()
+        finally:
+            if kick:
+                self.kick_drain(after=after)
 
     @contextlib.contextmanager
     def update_claim(self, after=None):
@@ -539,8 +567,15 @@ class UpdateEngine:
                                            says the error raw.
 
         `last_group` is the group of the run that came before the drain.
-        `after` is what every release hands on (Telegram's queued
-        self-update), as it did when each run released for itself.
+        `after` is what every release hands on (a queued self-update), as
+        it did when each run released for itself. Those releases do not
+        kick the drainer (`kick=False`): this loop is the drain, and its
+        next turn sees whatever was queued meanwhile.
+
+        Since Q13 the one caller is the engine's drainer
+        (`kick_drain` → `_drain_on_thread`), with the engine's own
+        `_drain_one`, `_group_of_key` and `_say_drain`. Called anywhere
+        else it would be a second drainer next to that one.
 
         Never raises because of `run_one`: a queue is a convenience and
         must not be able to take down the update that finished
@@ -555,12 +590,7 @@ class UpdateEngine:
             # an app talking to a database that rolled back. Same rule the
             # automatic batch already follows.
             if last_group:
-                failed_group = last_group
-                mates = self.drop_queued_updates(
-                    lambda k: group_of(k) == failed_group)
-                if mates:
-                    say("update_queue_skipped_group",
-                        {"group": failed_group, "keys": mates})
+                self.drop_group_mates(last_group, group_of=group_of, say=say)
                 last_group = None
             if not self.has_queued_updates():
                 return
@@ -579,7 +609,7 @@ class UpdateEngine:
             key = self.take_queued_update()
             if key is None:
                 # Emptied between the look and the claim.
-                self.release_update(after=after)
+                self.release_update(after=after, kick=False)
                 return
             try:
                 last_group = run_one(key)
@@ -587,7 +617,7 @@ class UpdateEngine:
                 # Given back inside the handler, so `after` still sees the
                 # crash: `selfupdate.run_queued` cancels a queued
                 # self-update after one rather than restart on top of it.
-                self.release_update(after=after)
+                self.release_update(after=after, kick=False)
                 if not isinstance(e, Exception):
                     raise
                 say("entry_failed", {"key": key, "error": str(e)})
@@ -598,7 +628,7 @@ class UpdateEngine:
             # for the life of the process. A self-update queued during
             # this entry runs from this release, through `after`, and the
             # top of the loop then sees whether it is restarting.
-            self.release_update(after=after)
+            self.release_update(after=after, kick=False)
 
     def _drop_for_selfupdate(self, say):
         """True when a self-update is waiting or swapping, after taking
@@ -633,12 +663,233 @@ class UpdateEngine:
             say("update_queue_dropped_selfupdate", {"keys": left})
         return True
 
+    def drop_group_mates(self, group, *, group_of=None, say=None):
+        """Take `group`'s members off the queue and say which.
+
+        A failed container takes its queued group-mates with it (see
+        `drain_queue`). The drain does it before its next entry; a
+        single update that failed does it itself before it lets go of
+        the lock, so the drainer that release starts finds them gone.
+        `group_of` and `say` default to the engine's own. Returns the
+        keys it dropped.
+        """
+        group_of = group_of or self._group_of_key
+        say = say or self._say_drain
+        mates = self.drop_queued_updates(lambda k: group_of(k) == group)
+        if mates:
+            say("update_queue_skipped_group", {"group": group, "keys": mates})
+        return mates
+
+    # ── The one drainer (Q13) ───────────────────────────────────────────
+    def kick_drain(self, after=None):
+        """Work the queue off on a thread of its own, unless one already is.
+
+        Every release of the lock ends here (`release_update`), and so
+        do both sweeps, the Telegram poll loop's and the scheduler's
+        (`sweep_queue(engine.kick_drain)`). Until Q13 the queue was
+        worked off where a Telegram path happened to let go of the lock
+        — the end of a single update, and the poll loop — so an install
+        with Telegram switched off never ran a queued update at all.
+
+        At most one drainer runs. The slot is taken under the queue's
+        own lock, so two releases at the same moment start one thread,
+        and a kick while it works starts nothing: the running one takes
+        the new entry on its next turn. Its own releases kick too, and
+        find the slot taken.
+
+        `after` is what each of the drainer's releases hands on, as the
+        release that kicked it did (a front end's queued self-update);
+        without one, the engine's own hand-over through the shared
+        self-update context.
+
+        Returns the thread it started, or None. Never raises: it runs
+        from `release_update`, inside other flows' `finally`.
+        """
+        # An engine assembled by hand without a queue (most fixtures
+        # build one with `__new__`) has nothing to work off.
+        if not getattr(self, "_update_queue", None) or getattr(
+                self, "_update_queue_lock", None) is None:
+            return None
+        try:
+            with self._update_queue_lock:
+                if (getattr(self, "_drainer", None) is not None
+                        or not self._update_queue):
+                    return None
+                t = threading.Thread(target=self._drain_on_thread,
+                                     args=(after,), name="update-queue-drain",
+                                     daemon=True)
+                # Started under the lock and only then put in the slot,
+                # so nobody reading the slot finds a thread that has not
+                # started. `start` only waits for the thread to exist;
+                # its first look at the queue waits for this lock, and so
+                # does its giving the slot back.
+                t.start()
+                self._drainer = t
+            return t
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queue drain could not start: {e}")
+            return None
+
+    def _drain_on_thread(self, after):
+        """The drainer's body: `drain_queue` with the engine's own hooks.
+
+        On its way out it gives the slot back and sweeps once. A drain
+        that lost its claim to somebody else leaves the entry for that
+        somebody's release — and if that release came while this thread
+        still held the slot, its kick started nothing.
+        """
+        finished = False
+        try:
+            self.drain_queue(self._drain_one, group_of=self._group_of_key,
+                             say=self._say_drain,
+                             after=after or self._hand_on_selfupdate)
+            finished = True
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queue drain failed: {clip(e)}")
+        finally:
+            with self._update_queue_lock:
+                self._drainer = None
+        # Not after a drain that raised: the same entry would raise again
+        # on a new thread, as often as this could start one.
+        if finished:
+            self.sweep_queue(lambda: self.kick_drain(after=after))
+
+    def _drain_one(self, key):
+        """One queued entry, under the drain's claim: `drain_queue`'s
+        `run_one`. Returns the group its failure takes down, or None.
+
+        What Telegram's single update did for a queued key, said through
+        the broadcast seam instead of one chat: an unreadable pin list
+        refuses it, `run_keys` runs it on its own host's checker, and
+        the result is the batch's card for the plugins plus a line for
+        Telegram (`Broadcast.update_line`, beside "Updating …", the
+        cascade and "all done"). Whatever did not run is told to every
+        channel — a queued update that quietly does nothing is the
+        thing this queue exists to avoid.
+        """
+        seam = self._seam()
+        checker = self._checker_for_key(key)
+        if checker is not None:
+            from update_checker import pin_list_unreadable
+            if pin_list_unreadable(checker):
+                seam.tell(self._t("update_refused_pin_list"))
+                return None
+
+        def starting(k, target):
+            seam.update_line(self._t("update_single_starting",
+                                     name=self._key_label(k)))
+
+        def report(k, target, success, msg):
+            seam.update_line(f"{'✅' if success else '❌'} "
+                             f"{self._display_name(target)}: {msg}")
+
+        results, _all_done = self.run_keys(
+            [key], checker_for=self._checker_for_key,
+            group_of=self._group_of_key,
+            enrich=self._enrich_with_source_url,
+            starting=starting, report=report,
+            done=lambda: seam.update_line(self._t("update_all_done")),
+            note=lambda k, line: seam.update_line(line))
+        for k, target, _success, msg, last_group in results:
+            if target is None:
+                seam.tell(self._drain_skipped_text(k, msg))
+                return None
+            return last_group
+        return None
+
+    def _seam(self):
+        """The broadcast seam main.py wires, or one over the notifier
+        alone for an engine nobody wired."""
+        seam = getattr(self, "broadcast", None)
+        if seam is None:
+            from broadcast import Broadcast
+            seam = Broadcast(notifier=getattr(self, "notifier", None))
+        return seam
+
+    def _checker_for_key(self, key):
+        """The checker of the host a queue key names, or None when no
+        managed host is called that (run_keys then refuses the key)."""
+        from container_store import split_host_key
+        host_name = split_host_key(key)[0]
+        hosts = getattr(self, "hosts", None) or ()
+        if host_name in (None, "", LOCAL_HOST):
+            for h in hosts:
+                if getattr(h, "is_local", False):
+                    return getattr(h, "checker", None)
+            return getattr(self, "local_checker", None)
+        for h in hosts:
+            if getattr(h, "name", None) == host_name:
+                return getattr(h, "checker", None)
+        return None
+
+    def _group_of_key(self, key):
+        """The id of the group a queued container belongs to on its own
+        host, or None — the lookup Telegram's `_group_of` does."""
+        try:
+            from container_store import split_host_key
+            host_name, name = split_host_key(key)
+            gid, _group = host_store(self, host_name).get_group_for_container(
+                name)
+            return gid or None
+        except Exception:                                   # noqa: BLE001
+            return None
+
+    def _key_label(self, key):
+        """`web` locally, `web @nas` on a remote host — how the buttons
+        and the result lines name it."""
+        from container_store import split_host_key
+        host, name = split_host_key(key)
+        return name if host == LOCAL_HOST else f"{name} @{host}"
+
+    def _drain_skipped_text(self, key, why):
+        """The sentence for a queued key `run_keys` ran nothing for."""
+        if why == "no_pending_updates":
+            return self._t("no_pending_updates")
+        if why == "host_unknown":
+            from container_store import split_host_key
+            hosts = getattr(self, "hosts", None)
+            names = [h.name for h in hosts] if hosts else [LOCAL_HOST]
+            return self._t("host_unknown", name=split_host_key(key)[0],
+                           hosts=", ".join(f"`{n}`" for n in names))
+        # Off the queue, "not pending" almost always means the update
+        # already happened while the entry waited. "Not in the update
+        # list" there would put a warning under a green result.
+        return self._t("update_already_done", name=self._key_label(key))
+
+    def _say_drain(self, key, params):
+        """What the drain reports, to every channel. Containers are
+        named the short way, as Telegram's drain named them."""
+        from container_store import split_host_key
+
+        def short(k):
+            return split_host_key(k)[1]
+        if key == "entry_failed":
+            text = f"❌ `{short(params['key'])}`: {params['error'][:200]}"
+        else:
+            kw = {k: v for k, v in params.items() if k != "keys"}
+            kw["names"] = ", ".join(f"`{short(k)}`" for k in params["keys"])
+            text = self._t(key, **kw)
+        self._seam().tell(text)
+
+    def _hand_on_selfupdate(self):
+        """Start a self-update that queued behind a drained entry. The
+        drainer's `after` when the kick brought none."""
+        ctx = getattr(self, "selfupdate_ctx", None)
+        if ctx is None:
+            return
+        try:
+            import selfupdate
+            selfupdate.run_queued(ctx)
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queued self-update hand-over failed: {clip(e)}")
+
     def sweep_queue(self, drain):
         """Pick up queued work that nobody is going to drain.
 
-        `drain()` works the queue off; each connection hands in its own
-        (Telegram's is `_drain_update_queue` with the poll loop's
-        checker). This only decides whether to call it.
+        `drain()` works the queue off — `kick_drain` everywhere since
+        Q13: the Telegram poll loop, the scheduler's `_after_tick` and
+        the drainer on its way out all hand it in. This only decides
+        whether to call it.
 
         The drain used to run in exactly one place: at the end of a
         Telegram single update, once it had let go of the lock. The lock
@@ -659,8 +910,12 @@ class UpdateEngine:
         something that read like a correction.
 
         Called once per poll cycle, so a stranded entry now waits
-        seconds. Cheap when there is nothing to do: one lock, one
-        truth test.
+        seconds — and since Q13 once per scheduler pass too, which is
+        what an install without Telegram has (30 to 60 s, see
+        `Scheduler._after_tick`). Every release kicks the drainer
+        anyway; the sweeps are for what a release does not cover
+        (`selfupdate.start` gives the lock back by hand). Cheap when
+        there is nothing to do: one lock, one truth test.
 
         Never raises — this runs inside the listener loop, and taking
         that down to retry a queued update would be a far worse trade.

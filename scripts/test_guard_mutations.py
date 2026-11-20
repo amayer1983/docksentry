@@ -60,9 +60,11 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    # Since Q13 the poll loop hands the engine's sweep the engine's own
+    # drainer; Telegram keeps no drain of its own.
     ("queued work is picked up even when nobody drains it",
      "app/telegram_bot.py",
-     "                self._sweep_update_queue(checker)",
+     "                self.engine.sweep_queue(self.engine.kick_drain)",
      "                pass",
      "test_update_queue_sweep.py"),
 
@@ -91,10 +93,10 @@ GUARDED = [
      "            raise",
      "test_update_queue_sweep.py"),
 
-    ("Telegram's sweep goes through the engine's rules, not its own",
+    ("the poll loop's sweep goes through the engine's rules, not its own",
      "app/telegram_bot.py",
-     "        self.engine.sweep_queue(lambda: self._drain_update_queue(checker))",
-     "        self._drain_update_queue(checker)",
+     "                self.engine.sweep_queue(self.engine.kick_drain)",
+     "                self.engine.kick_drain()",
      "test_update_queue_sweep.py"),
 
     ("a queue entry remembers when it was queued",
@@ -1307,8 +1309,8 @@ GUARDED = [
 
     ("Telegram's tap asks the engine instead of deciding itself",
      "app/telegram_bot.py",
-     "            claimed, busy, params = self.engine.claim_or_queue(container_key)\n",
-     "            claimed, busy, params = (self.engine.claim_update(), \"update_queued\", {\"pos\": 1})\n",
+     "        claimed, busy, params = self.engine.claim_or_queue(container_key)\n",
+     "        claimed, busy, params = (self.engine.claim_update(), \"update_queued\", {\"pos\": 1})\n",
      "test_update_queue.py"),
 
     ("…renders how long an entry has waited",
@@ -1343,10 +1345,11 @@ GUARDED = [
      "                pass  # MUTATION: nothing says what is running\n",
      "test_update_queue_duplicate.py"),
 
+    # The engine's drainer says it for a queued key since Q13.
     ("…and finished work is not called a mistake",
-     "app/telegram_bot.py",
-     '            "update_already_done" if from_queue else "container_not_in_list",',
-     '            "container_not_in_list",',
+     "app/update_engine.py",
+     '        return self._t("update_already_done", name=self._key_label(key))\n',
+     '        return self._t("container_not_in_list", name=self._key_label(key))\n',
      "test_update_queue_duplicate.py"),
 
     # Q11a: run_keys runs the single update; Telegram says how it went.
@@ -1601,7 +1604,8 @@ GUARDED = [
     ("Telegram hands the engine the tapped key's own checker",
      "app/telegram_bot.py",
      "                checker_for=lambda key: checker,\n",
-     "                checker_for=lambda key: base_checker,\n",
+     "                checker_for=lambda key: (self.hosts.local.checker\n"
+     "                                         if self.hosts else checker),\n",
      "test_telegram_callback_matrix.py"),
 
     ("…and its own link lookup, so the result line carries the link",
@@ -2665,9 +2669,9 @@ GUARDED = [
 
     ("…what comes after a flow runs once it has given the lock back",
      "app/update_engine.py",
-     "        if after is not None:\n"
-     "            after()\n",
-     "        pass\n",
+     "            if after is not None:\n"
+     "                after()\n",
+     "            pass\n",
      "test_update_lock_door.py"),
 
     ("a claim on the update lock never waits",
@@ -4496,16 +4500,31 @@ GUARDED = [
     # remote host's checker (T3 "queue drain after a remote tap"); the
     # reverse row ("…after a local tap") holds that a queued remote key
     # still runs on its own host's.
+    # Since Q13 the engine's drainer looks each queued key's checker up
+    # in the registry itself; there is no tapped checker to hand on.
     ('a drained entry runs on its own host\'s checker, not the tapped one\'s',
-     'app/telegram_bot.py',
-     '                base_checker,\n',
-     '                checker,\n',
+     'app/update_engine.py',
+     '            for h in hosts:\n                if getattr(h, "is_local", False):\n',
+     '            for h in hosts:\n                if not getattr(h, "is_local", False):\n',
      'test_telegram_callback_matrix.py'),
 
-    ('…and a tapped or queued remote key runs on its own host\'s checker',
+    ('…and a queued remote key runs on its own host\'s checker',
+     'app/update_engine.py',
+     '        for h in hosts:\n            if getattr(h, "name", None) == host_name:\n',
+     '        for h in hosts:\n            if getattr(h, "is_local", False):\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and a tapped remote key runs on its own host\'s checker',
      'app/telegram_bot.py',
-     '        base_checker = checker\n        checker = self._checker_for(host, checker)\n',
-     '        base_checker = checker\n',
+     '        host = self._host_by_name(split_host_key(container_key)[0])\n'
+     '        checker = self._checker_for(host, checker)\n',
+     '        host = self._host_by_name(split_host_key(container_key)[0])\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and an engine without a registry finds the local checker it was given',
+     'app/update_engine.py',
+     '            return getattr(self, "local_checker", None)\n',
+     '            return None\n',
      'test_telegram_callback_matrix.py'),
 
     # Q8: the drain loop moved into UpdateEngine.drain_queue. Its rules
@@ -4527,15 +4546,16 @@ GUARDED = [
 
     ("a failure in the drain takes its group-mates off the queue",
      "app/update_engine.py",
-     "            if last_group:\n                failed_group = last_group\n",
-     "            if False:\n                failed_group = last_group\n",
+     "            if last_group:\n"
+     "                self.drop_group_mates(last_group, group_of=group_of, say=say)\n",
+     "            if False:\n"
+     "                self.drop_group_mates(last_group, group_of=group_of, say=say)\n",
      "test_update_queue.py"),
 
     ("…and says which, with the group",
      "app/update_engine.py",
-     '                    say("update_queue_skipped_group",\n'
-     '                        {"group": failed_group, "keys": mates})\n',
-     "                    pass\n",
+     '            say("update_queue_skipped_group", {"group": group, "keys": mates})\n',
+     "            pass\n",
      "test_update_queue.py"),
 
     ("the group a drained run leaves is the one its failure takes down",
@@ -4561,34 +4581,39 @@ GUARDED = [
      "                pass\n",
      "test_update_queue.py"),
 
-    ("Telegram's drain hands the engine its last group",
+    # Q13: Telegram's drain is gone. A failed tap drops its own queued
+    # group-mates before it lets go of the lock, and the engine's drainer
+    # names what its loop reports, the way Telegram's `_say_drain` did.
+    ("a failed tap takes its queued group-mates off before it lets go",
      "app/telegram_bot.py",
-     "                                say=self._say_drain, last_group=last_group,\n",
-     "                                say=self._say_drain, last_group=None,\n",
-     "test_update_queue.py"),
+     "                if last_group:\n"
+     "                    # A failed container takes its queued group-mates\n",
+     "                if False:\n"
+     "                    # A failed container takes its queued group-mates\n",
+     "test_single_update_report.py"),
 
-    ("…and a run's failed group, from the run itself",
-     "app/telegram_bot.py",
-     '            return getattr(self, "_last_update_group", None)\n',
+    ("…and a drained run's failed group, from the run itself",
+     "app/update_engine.py",
+     "            return last_group\n        return None\n\n    def _seam(self):",
+     "            return None\n        return None\n\n    def _seam(self):",
+     "test_update_queue_sweep.py"),
+
+    ("…found through the engine's own group lookup",
+     "app/update_engine.py",
+     "            return gid or None\n",
      "            return None\n",
-     "test_update_queue.py"),
-
-    ("…and runs each entry as a queued one, not as a fresh tap",
-     "app/telegram_bot.py",
-     "            self._run_single_update(checker, key, from_queue=True,\n",
-     "            self._run_single_update(checker, key,\n",
-     "test_update_queue.py"),
+     "test_update_queue_sweep.py"),
 
     ("…and names the containers the drain reports",
-     "app/telegram_bot.py",
-     '        kw["names"] = ", ".join(f"`{self._short_key(k)}`"\n',
-     '        kw["names"] = "" and ", ".join(f"`{self._short_key(k)}`"\n',
+     "app/update_engine.py",
+     '            kw["names"] = ", ".join(f"`{short(k)}`" for k in params["keys"])\n',
+     '            kw["names"] = ""\n',
      "test_update_queue.py"),
 
     ("…and cuts a raised error to 200 characters",
-     "app/telegram_bot.py",
-     "{params['error'][:200]}\")\n",
-     "{params['error']}\")\n",
+     "app/update_engine.py",
+     "{params['error'][:200]}\"\n",
+     "{params['error']}\"\n",
      "test_update_queue.py"),
 
     # Q10: the drain claims before it takes an entry, holds the claim
@@ -4616,7 +4641,7 @@ GUARDED = [
 
     ("…and gives it back after each entry",
      "app/update_engine.py",
-     "            self.release_update(after=after)\n\n"
+     "            self.release_update(after=after, kick=False)\n\n"
      "    def _drop_for_selfupdate(",
      "            pass\n\n"
      "    def _drop_for_selfupdate(",
@@ -4624,9 +4649,9 @@ GUARDED = [
 
     ("…handing each release the connection's after()",
      "app/update_engine.py",
-     "            self.release_update(after=after)\n\n"
+     "            self.release_update(after=after, kick=False)\n\n"
      "    def _drop_for_selfupdate(",
-     "            self.release_update(after=None)\n\n"
+     "            self.release_update(after=None, kick=False)\n\n"
      "    def _drop_for_selfupdate(",
      "test_update_queue.py"),
 
@@ -4640,7 +4665,7 @@ GUARDED = [
     ("a queue emptied between the drain's look and its claim gives the claim back",
      "app/update_engine.py",
      "                # Emptied between the look and the claim.\n"
-     "                self.release_update(after=after)\n",
+     "                self.release_update(after=after, kick=False)\n",
      "                # Emptied between the look and the claim.\n",
      "test_update_queue.py"),
 
@@ -4652,22 +4677,22 @@ GUARDED = [
      "app/update_engine.py",
      "            # this entry runs from this release, through `after`, and the\n"
      "            # top of the loop then sees whether it is restarting.\n"
-     "            self.release_update(after=after)\n",
+     "            self.release_update(after=after, kick=False)\n",
      "            # this entry runs from this release, through `after`, and the\n"
      "            # top of the loop then sees whether it is restarting.\n"
      "            if self._drop_for_selfupdate(say):\n"
-     "                self.release_update(after=after)\n"
+     "                self.release_update(after=after, kick=False)\n"
      "                return\n"
-     "            self.release_update(after=after)\n",
+     "            self.release_update(after=after, kick=False)\n",
      "test_update_queue.py"),
 
     ("…a self-update after a drained entry that does not restart drops nothing",
      "app/update_engine.py",
      "            # top of the loop then sees whether it is restarting.\n"
-     "            self.release_update(after=after)\n",
+     "            self.release_update(after=after, kick=False)\n",
      "            # top of the loop then sees whether it is restarting.\n"
      "            _su = self._queued_selfupdate\n"
-     "            self.release_update(after=after)\n"
+     "            self.release_update(after=after, kick=False)\n"
      "            if _su:\n"
      "                self.drop_queued_updates()\n"
      "                return\n",
@@ -4699,37 +4724,43 @@ GUARDED = [
 
     ("…nor left holding the lock",
      "app/update_engine.py",
-     "                self.release_update(after=after)\n"
+     "                self.release_update(after=after, kick=False)\n"
      "                if not isinstance(e, Exception):\n",
      "                if not isinstance(e, Exception):\n",
      "test_update_queue.py"),
 
-    ("Telegram's drained entry does not claim for itself",
-     "app/telegram_bot.py",
-     "        if not held_by_caller:\n"
-     "            claimed, busy, params",
-     "        if True:\n"
-     "            claimed, busy, params",
+    # Since Q13 a drained entry is the engine's `_drain_one`, which runs
+    # under the drain's claim and never touches the lock itself.
+    ("a drained entry does not claim for itself",
+     "app/update_engine.py",
+     "        seam = self._seam()\n        checker = self._checker_for_key(key)\n",
+     "        if not self.claim_update():\n            return None\n"
+     "        seam = self._seam()\n        checker = self._checker_for_key(key)\n",
      "test_update_queue.py"),
 
     ("…nor give back the drain's claim",
-     "app/telegram_bot.py",
-     "            if not held_by_caller:\n"
-     "                self.engine.release_update(after=self._run_queued_selfupdate)\n",
-     "            if True:\n"
-     "                self.engine.release_update(after=self._run_queued_selfupdate)\n",
+     "app/update_engine.py",
+     "        for k, target, _success, msg, last_group in results:\n",
+     "        self.release_update()\n"
+     "        for k, target, _success, msg, last_group in results:\n",
      "test_update_queue.py"),
 
-    ("…because Telegram's drain says the claim is held",
-     "app/telegram_bot.py",
-     "                                    claimed=True)\n",
-     "                                    claimed=False)\n",
+    ("…and the drainer hands each release the engine's self-update hand-over",
+     "app/update_engine.py",
+     "                             after=after or self._hand_on_selfupdate)\n",
+     "                             after=after)\n",
      "test_update_queue.py"),
 
-    ("…and hands the drain its queued self-update",
-     "app/telegram_bot.py",
-     "                                after=self._run_queued_selfupdate)\n",
-     "                                after=None)\n",
+    ("…or the after() of the release that kicked it",
+     "app/update_engine.py",
+     "                             after=after or self._hand_on_selfupdate)\n",
+     "                             after=self._hand_on_selfupdate)\n",
+     "test_update_queue.py"),
+
+    ("…which starts a self-update queued behind a drained entry",
+     "app/update_engine.py",
+     "            selfupdate.run_queued(ctx)\n",
+     "            pass\n",
      "test_update_queue.py"),
 
     # Q12: Telegram's "Update all" runs one batch per host, each with
@@ -4884,6 +4915,121 @@ GUARDED = [
      "                            self._after_tick()  # MUTATION\n"
      "                            return\n",
      "test_scheduler_after_tick.py"),
+
+    # Q13: one drainer, the engine's, kicked by every release and by
+    # both sweeps, on every install. Each goes red in the procedure named;
+    # the drainer's rows are in test_update_queue_sweep.py, the
+    # releasers in test_update_lock_sites.py.
+    ("queued work runs on an install without a Telegram poll loop",
+     "app/scheduler.py",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and the scheduler's sweep still keeps the sweep's rules",
+     "app/scheduler.py",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                engine.kick_drain()\n",
+     "test_update_queue_sweep.py"),
+
+    ("two kicks at once start one drainer",
+     "app/update_engine.py",
+     "                if (getattr(self, \"_drainer\", None) is not None\n"
+     "                        or not self._update_queue):\n",
+     "                if not self._update_queue:\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and the drainer gives the slot back when it is done",
+     "app/update_engine.py",
+     "            with self._update_queue_lock:\n"
+     "                self._drainer = None\n"
+     "        # Not after a drain that raised",
+     "            pass\n"
+     "        # Not after a drain that raised",
+     "test_update_queue_sweep.py"),
+
+    ("every release works off what queued behind it",
+     "app/update_engine.py",
+     "            if kick:\n                self.kick_drain(after=after)\n",
+     "            pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…which the lock-site drive sees for every releasing site",
+     "app/update_engine.py",
+     "            if kick:\n                self.kick_drain(after=after)\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
+    ("…after its own after(): a queued self-update goes first",
+     "app/update_engine.py",
+     "        try:\n"
+     "            if after is not None:\n"
+     "                after()\n"
+     "        finally:\n"
+     "            if kick:\n"
+     "                self.kick_drain(after=after)\n",
+     "        if kick:\n"
+     "            self.kick_drain(after=after)\n"
+     "        if after is not None:\n"
+     "            after()\n",
+     "test_update_queue_sweep.py"),
+
+    ("a release that lands while the drainer leaves is not lost",
+     "app/update_engine.py",
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "            pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("a drain that raised is not restarted by itself",
+     "app/update_engine.py",
+     "        if finished:\n"
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "        if True:\n"
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "test_update_queue_sweep.py"),
+
+    ("a drained update is said on Telegram, beside the plugins' card",
+     "app/update_engine.py",
+     "            starting=starting, report=report,\n",
+     "            starting=starting, report=None,\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and what did not run is told to every channel",
+     "app/update_engine.py",
+     "                seam.tell(self._drain_skipped_text(k, msg))\n",
+     "                seam.update_line(self._drain_skipped_text(k, msg))\n",
+     "test_update_queue_sweep.py"),
+
+    ("…while the result line stays Telegram's, not a second card",
+     "app/broadcast.py",
+     "        if tg is not None and getattr(tg, \"enabled\", False):\n"
+     "            tg.send_message(text)\n\n"
+     "    def tell(self, text, skip=()):",
+     "        if tg is not None and getattr(tg, \"enabled\", False):\n"
+     "            tg.send_message(text)\n"
+     "        if self.notifier is not None:\n"
+     "            self.notifier.send_message(text)\n\n"
+     "    def tell(self, text, skip=()):",
+     "test_update_queue_sweep.py"),
+
+    ("…and the drain's notices go to every channel",
+     "app/update_engine.py",
+     "        self._seam().tell(text)\n",
+     "        self._seam().update_line(text)\n",
+     "test_update_queue_sweep.py"),
+
+    ("main.py hands the engine the shared self-update context",
+     "app/main.py",
+     "    engine.selfupdate_ctx = su_ctx\n",
+     "",
+     "test_update_queue_sweep.py"),
+
+    ("selfupdate.start's raw release is the one releaser exempt from the drain",
+     "app/selfupdate.py",
+     "        if not swap:\n            ctx._update_lock.release()\n",
+     "        if not swap:\n            ctx._update_lock.release()\n"
+     "            ctx.engine.kick_drain()\n",
+     "test_update_lock_sites.py"),
 
 ]
 

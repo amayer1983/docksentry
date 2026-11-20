@@ -1811,8 +1811,7 @@ class TelegramBot:
 
         return {"inline_keyboard": keyboard}
 
-    def _run_single_update(self, checker, container_key, from_queue=False,
-                           claimed=False):
+    def _run_single_update(self, checker, container_key):
         """Update a single container.
 
         `container_key` is the `update_one:` payload: a bare container name
@@ -1821,18 +1820,13 @@ class TelegramBot:
         two of them may both list an `nginx`, so a name alone would update
         (and then delete) whichever happened to come first.
 
-        `claimed`: the caller already holds the update lock and gives it
-        back itself — the queue drain does, once per entry (Q10). Then
-        this neither claims nor releases, and the queued self-update is
-        handed on by the caller's release, not here."""
+        What queued behind this update is the engine's drainer's once the
+        lock goes back (Q13): `release_update` kicks it. This used to
+        drain the queue itself, here, after the release — which made a
+        Telegram tap the one thing besides the poll loop that ever worked
+        the queue off."""
         from container_store import split_host_key
         host = self._host_by_name(split_host_key(container_key)[0])
-        # Kept for the drain below: the queue holds keys from every host,
-        # and `_checker_for` hands a local key whatever checker it is
-        # given. Passing on the one reassigned here sent a queued local
-        # container through nas's checker after a tap on `nas/web` (Q7b,
-        # measured in the callback matrix).
-        base_checker = checker
         checker = self._checker_for(host, checker)
         # Before the lock and the queue: a tap that is refused must not
         # come back later off the queue, and must leave the pending
@@ -1851,16 +1845,11 @@ class TelegramBot:
         # three, with an "an update is already running" for each — so you
         # had to come back and tap them again, one at a time, and nothing
         # told you which ones had not run.
-        held_by_caller = claimed
-        if not held_by_caller:
-            claimed, busy, params = self.engine.claim_or_queue(container_key)
-            if not claimed:
-                self.send_message(
-                    self._claim_answer(container_key, busy, params))
-                return
-        # Reset per attempt: a stale value from a previous failure would
-        # make the drain skip a group that has nothing to do with this run.
-        self._last_update_group = None
+        claimed, busy, params = self.engine.claim_or_queue(container_key)
+        if not claimed:
+            self.send_message(
+                self._claim_answer(container_key, busy, params))
+            return
         try:
             # The engine runs it (Q11a): pending lookup, the in-flight
             # mark, `update_container`, the entry out of the file. What
@@ -1886,34 +1875,22 @@ class TelegramBot:
                 pending_file=self.config.pending_file)
             for key, target, success, msg, last_group in results:
                 if target is None:
-                    self.send_message(self._single_update_skipped(
-                        key, msg, from_queue))
-                    # Nothing ran: no "all done", and no drain either —
-                    # the lock goes back and that is all.
+                    self.send_message(self._single_update_skipped(key, msg))
                     return
-                # Remembered for the drain, which takes a failed
-                # container's queued group-mates out of the queue.
-                self._last_update_group = last_group
+                if last_group:
+                    # A failed container takes its queued group-mates
+                    # with it. Done here, before the release: the drainer
+                    # that release starts finds them gone. It used to be
+                    # handed to Telegram's own drain after the release.
+                    self.engine.drop_group_mates(last_group,
+                                                 group_of=self._group_of)
         finally:
-            # One releaser per claim: a drained entry's claim is the
-            # drain's to give back.
-            if not held_by_caller:
-                self.engine.release_update(after=self._run_queued_selfupdate)
-        # Only after the lock is back: whoever ran gets to work off what
-        # arrived while they held it. Claimed per entry rather than held
-        # across the whole queue, so the scheduler and a queued
-        # self-update can still get in between two entries — holding it
-        # for five containers would lock everything else out for ten
-        # minutes, and claiming it per entry keeps the concurrency guard
-        # that v1.23.1 added.
-        if not from_queue:
-            self._drain_update_queue(
-                base_checker,
-                last_group=getattr(self, "_last_update_group", None))
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
-    def _single_update_skipped(self, container_key, why, from_queue):
-        """The sentence for a single update the engine found nothing to
-        run for: `why` is `run_keys`'s `msg` for a key that did not run."""
+    def _single_update_skipped(self, container_key, why):
+        """The sentence for a tap the engine found nothing to run for:
+        `why` is `run_keys`'s `msg` for a key that did not run. A queued
+        key is the drainer's to say (`UpdateEngine._drain_skipped_text`)."""
         if why == "no_pending_updates":
             # No file, or one nothing can read: it used to raise inside
             # the thread, and the chat heard nothing after the toast.
@@ -1921,14 +1898,11 @@ class TelegramBot:
         if why == "host_unknown":
             from container_store import split_host_key
             return self._unknown_host_text(split_host_key(container_key)[0])
-        # Two different things, and they used to read the same. Off the
-        # queue it almost always means the update already happened while
-        # this entry waited — saying "not in the update list" there puts
-        # a warning under a green result for work that succeeded. Typed
-        # by hand it really is a name that is not pending.
-        return self.t(
-            "update_already_done" if from_queue else "container_not_in_list",
-            name=self._key_label(container_key))
+        # A tap really names a container that is not pending. Off the
+        # queue the same answer means the update already happened while
+        # the entry waited; the drainer says that one.
+        return self.t("container_not_in_list",
+                      name=self._key_label(container_key))
 
     def _unknown_host_text(self, host_name):
         """The same sentence a command aimed at an unknown host gets,
@@ -1952,53 +1926,6 @@ class TelegramBot:
         gap)."""
         status = "✅" if success else "❌"
         self.send_message(f"{status} {self._display_name(target)}: {msg}")
-
-    def _sweep_update_queue(self, checker):
-        """Once per poll cycle: hand the engine's sweep this bot's drain.
-
-        The rules (nothing queued → nothing; lock held → nothing; never
-        raises) are `UpdateEngine.sweep_queue`'s, and so is the story of
-        why the sweep exists. The drain runs on the poll loop's checker.
-        """
-        self.engine.sweep_queue(lambda: self._drain_update_queue(checker))
-
-    def _drain_update_queue(self, checker, last_group=None):
-        """Run whatever was queued while an update held the lock.
-
-        The loop is the engine's (`UpdateEngine.drain_queue`); this hands
-        it the single update, the group lookup and the sentences.
-
-        Never raises because of an entry: a queue is a convenience and
-        must not be able to take down the update that finished
-        successfully before it.
-        """
-        def run_one(key):
-            # Under the drain's claim; the drain gives it back.
-            self._run_single_update(checker, key, from_queue=True,
-                                    claimed=True)
-            # The group its failure takes down, as the run left it. Read
-            # here rather than in the engine, which only gets the answer.
-            return getattr(self, "_last_update_group", None)
-
-        self.engine.drain_queue(run_one, group_of=self._group_of,
-                                say=self._say_drain, last_group=last_group,
-                                after=self._run_queued_selfupdate)
-
-    def _say_drain(self, key, params):
-        """Say what the drain reports, containers named the short way."""
-        if key == "entry_failed":
-            self.send_message(
-                f"❌ `{self._short_key(params['key'])}`: {params['error'][:200]}")
-            return
-        kw = {k: v for k, v in params.items() if k != "keys"}
-        kw["names"] = ", ".join(f"`{self._short_key(k)}`"
-                                for k in params["keys"])
-        self.send_message(self.t(key, **kw))
-
-    @staticmethod
-    def _short_key(container_key):
-        from container_store import split_host_key
-        return split_host_key(container_key)[1]
 
     def _claim_answer(self, container_key, key, params):
         """The sentence for a claim the engine answered with `key`.
@@ -3230,10 +3157,10 @@ class TelegramBot:
                     if message:
                         self._handle_message(message, checker, scheduler)
 
-                # Anything queued while somebody OTHER than a Telegram
-                # single update held the lock gets picked up here. See
+                # Anything queued that no release has worked off yet gets
+                # picked up here, by the engine's one drainer. See
                 # `UpdateEngine.sweep_queue` for why that is not a rare case.
-                self._sweep_update_queue(checker)
+                self.engine.sweep_queue(self.engine.kick_drain)
 
             except Exception as e:
                 print(f"Bot listener error: {e}")

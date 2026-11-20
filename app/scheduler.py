@@ -540,7 +540,10 @@ class Scheduler:
         of this is 30 s or 60 s, depending on where in the minute the
         loop started. An applied self-update returns from `_run` on the
         spot, without it. Both are pinned in
-        scripts/test_scheduler_after_tick.py.
+        scripts/test_scheduler_after_tick.py. A queued update therefore
+        waits up to 60 s here on an install whose only sweep this is;
+        the release that ends the update it queued behind kicks the
+        drain sooner, wherever that release is.
         """
         # Anything a dead network swallowed is still waiting. This loop
         # is the only thing that runs on its own no matter what else is
@@ -554,6 +557,17 @@ class Scheduler:
             notify_retry.flush()
         except Exception as e:
             print(f"Notify retry error: {e}")
+        # Queued updates nobody has worked off yet (Q13). Every release
+        # of the lock kicks the engine's drainer already; this is for
+        # what a release does not cover, and on an install without
+        # Telegram it is the only sweep there is. Never blocks: the drain
+        # runs on its own thread, and the sweep itself never raises.
+        engine = getattr(self, "engine", None)
+        if engine is not None:
+            try:
+                engine.sweep_queue(engine.kick_drain)
+            except Exception as e:                      # noqa: BLE001
+                print(f"Queue sweep error: {e}")
 
     def _check_disk_space(self):
         action, percent, free_gb = self.checker.check_disk_usage()

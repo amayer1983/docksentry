@@ -188,7 +188,11 @@ _done(row)
 row, rec = _world()
 _drive(row, [("lock",), ("tap", "update_one:web"), ("unlock",)])
 with contextlib.redirect_stdout(io.StringIO()):
-    row.bot._sweep_update_queue(row.checker)
+    # The poll loop's sweep, as `listen` calls it since Q13.
+    # getattr, so an engine without it goes red below, not crashes.
+    row.bot.engine.sweep_queue(getattr(row.bot.engine, "kick_drain",
+                                       lambda: None))
+    t3._join()
 said = _said(row)
 checks["swept: the queued update is reported to the other channels once"] = (
     [r[0] for r in rec.results] == ["web"])

@@ -66,6 +66,12 @@ must answer with its kind:
   SKIP_MSG    returns `(None, busy sentence)` for its caller to use
 
 Free, the work runs with the lock held and the lock is free afterwards.
+And once more free, with a key queued at the site's first piece of work
+(as a tap would while it holds the lock): every site that gives the lock
+back then leads to exactly one drain by the engine's drainer and leaves
+the queue empty (Q13), except the ones in NO_DRAIN, each with its
+reason — and an exemption whose site does drain is stale and red. The
+template is core/catchup 2e64a4f's list of releasers.
 The busy record (kind, i18n keys, what was said or returned, log lines,
 queue, lock) is compared with the table at the bottom; that table was
 taken from main (8a74ba7) with `--app`.
@@ -163,11 +169,13 @@ LOCK_OPS = {
     # releaser: after the run, after a crash and when the queue was
     # emptied under it. A self-update queued during an entry rides on
     # the release after the run (no fourth release since the Q10
-    # review). Driven through Telegram's wrapper below.
+    # review). Its releases do not kick the drainer (`kick=False`,
+    # Q13): this loop is the drain. Driven through the engine's one
+    # drainer (`kick_drain`) below.
     ("update_engine.py", "UpdateEngine.drain_queue"):
-        ("CLAIM", ["claim_update()", "release_update(after=after)",
-                   "release_update(after=after)",
-                   "release_update(after=after)"]),
+        ("CLAIM", ["claim_update()", "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)"]),
     # ── readers ──
     # Only looks since Q4. As a probe it took the lock for a moment, and
     # a real claim landing in that moment was refused.
@@ -176,9 +184,9 @@ LOCK_OPS = {
     # Asks the engine's door (Q3) instead of looking at the lock itself.
     ("web_ui.py", "create_handler.WebHandler._update_lock_held"):
         ("READER", ["update_claimed"]),
-    # The poll-cycle sweep's rules are the engine's since Q9; Telegram's
-    # `_sweep_update_queue` only hands it its drain. Asks the door like
-    # the Web banner does. Driven through Telegram's wrapper below.
+    # The sweep's rules are the engine's since Q9. Since Q13 the poll
+    # loop, the scheduler's `_after_tick` and the drainer on its way out
+    # all hand it `kick_drain`. Asks the door like the Web banner does.
     ("update_engine.py", "UpdateEngine.sweep_queue"):
         ("READER", ["update_claimed"]),
     # ── release helper ──
@@ -247,32 +255,43 @@ UPDATE_RUNNING_READS = {
 # compares the non-zero ones.
 
 #: (file, qualname, callee) → count. Who feeds the container queue and
-#: who works it off. Today only Telegram does either (Q13).
+#: who works it off. Since Q13 the engine's one drainer does the work;
+#: the connections only kick it, sweep for it, or drop a failed tap's
+#: group-mates off it.
 QUEUE_CALLS = {
     # Telegram's tap queues through the engine's claim_or_queue (Q7).
     ("update_engine.py", "UpdateEngine.claim_or_queue", "enqueue_update"): 1,
     # One request, all of it or none of it.
     ("update_engine.py", "UpdateEngine.claim_or_queue_many",
      "enqueue_updates"): 1,
+    # A failed tap takes its queued group-mates off before it releases,
+    # so the drainer that release starts finds them gone (Q13).
     ("telegram_bot.py", "TelegramBot._run_single_update",
-     "_drain_update_queue"): 1,
-    # Handed to the engine's sweep as a lambda (Q9), still written here.
-    ("telegram_bot.py", "TelegramBot._sweep_update_queue",
-     "_drain_update_queue"): 1,
-    ("telegram_bot.py", "TelegramBot._sweep_update_queue", "sweep_queue"): 1,
-    # The loop lives in the engine (Q8); Telegram's drain calls it.
-    ("telegram_bot.py", "TelegramBot._drain_update_queue", "drain_queue"): 1,
+     "drop_group_mates"): 1,
+    # Every release kicks the one drainer (Q13).
+    ("update_engine.py", "UpdateEngine.release_update", "kick_drain"): 1,
+    # The drainer runs the engine's loop and sweeps once on its way out,
+    # handing the sweep a kick of its own (the lambda is counted here).
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "drain_queue"): 1,
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "sweep_queue"): 1,
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "kick_drain"): 1,
+    ("update_engine.py", "UpdateEngine.drain_queue", "drop_group_mates"): 1,
     ("update_engine.py", "UpdateEngine.drain_queue",
      "take_queued_update"): 1,
     # No `enqueue_update` in the drain since Q10: it claims before it
     # takes, so a lost claim leaves the entry at the head.
-    ("telegram_bot.py", "TelegramBot.listen", "_sweep_update_queue"): 1,
+    # The two sweeps hand the engine's sweep `engine.kick_drain` (not a
+    # call, so only the sweep is counted).
+    ("telegram_bot.py", "TelegramBot.listen", "sweep_queue"): 1,
+    ("scheduler.py", "Scheduler._after_tick", "sweep_queue"): 1,
 }
-#: The two that feed the queue; the rest work it off.
+#: The two that feed the queue; the rest work it off. Telegram's old
+#: `_drain_update_queue` / `_sweep_update_queue` stay listed so a call
+#: to either coming back is counted.
 QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
 QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
                  "_drain_update_queue", "sweep_queue",
-                 "_sweep_update_queue")
+                 "_sweep_update_queue", "kick_drain", "drop_group_mates")
 
 #: (file, qualname, callee) → (count, why). Who asks the lock through a
 #: helper that only looks at it. The callees are the READER and PROBE
@@ -303,7 +322,8 @@ BUSY_MESSAGES = {
     # (Q10), which covers the end of each entry as well.
     ("update_engine.py", "UpdateEngine._drop_for_selfupdate",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
-    ("update_engine.py", "UpdateEngine.drain_queue",
+    # The drain's and a failed tap's drop, since Q13 in one helper.
+    ("update_engine.py", "UpdateEngine.drop_group_mates",
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
     ("telegram_bot.py", "TelegramBot._confirm_major_update",
      "update_already_running"): (1, "claim"),
@@ -701,7 +721,9 @@ def enumeration_checks(found):
     drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS
               and k[0] != "update_engine.py"}
     out.append((f"only these files work the queue off: {sorted(drains)}",
-                drains == {"telegram_bot.py"}, "Q13: today Telegram only"))
+                drains == {"telegram_bot.py", "scheduler.py"},
+                "Q13: Telegram's poll loop and tap, the scheduler's pass; "
+                "the drain itself is the engine's"))
 
     want_b = {k: v[0] for k, v in BUSY_MESSAGES.items()}
     for k in sorted(set(busy) | set(want_b)):
@@ -717,6 +739,9 @@ def enumeration_checks(found):
 # ═══════════════════════════════════════════════════════════════════════
 KEYS = []          # i18n keys translated during a drive, in order
 WORK = []          # (what, lock held at the time)
+#: Called once at the first piece of work a drive does, while the site
+#: holds the lock: queues a key the way a tap would meanwhile.
+DURING_WORK = []
 _I18N = []
 
 
@@ -773,6 +798,7 @@ class World:
     def _work(self, what, answer):
         def f(*a, **k):
             WORK.append((what, self.lock.locked()))
+            _during()
             return answer
         return f
 
@@ -780,10 +806,12 @@ class World:
         def update_container(name, image, *a, **k):
             WORK.append((f"update_container@{host}:{name}",
                          self.lock.locked()))
+            _during()
             return True, "updated (stand-in)"
 
         def cleanup_images(*a, **k):
             WORK.append((f"cleanup_images@{host}", self.lock.locked()))
+            _during()
             return True, "Total reclaimed space: 0B"
         checker.update_container = update_container
         checker.cleanup_images = cleanup_images
@@ -794,6 +822,11 @@ class World:
     def pending(self, host="local", name="web"):
         return {"name": name, "image": "nginx:1.25", "host": host,
                 "old_version": "1.25.0", "new_version": "1.26.0"}
+
+
+def _during():
+    while DURING_WORK:
+        DURING_WORK.pop(0)()
 
 
 def _major(w):
@@ -861,15 +894,18 @@ DRIVES = [
     (("update_engine.py", "UpdateEngine.update_running"),
      "busy question", None,
      lambda w: w.engine.update_running),
+    # The engine's one drainer (Q13): a thread of its own, joined by the
+    # drive like every thread a site starts.
     (("update_engine.py", "UpdateEngine.drain_queue"),
      "drain with web queued", _queued,
-     lambda w: w.tg._drain_update_queue(w.local)),
+     lambda w: (w.engine.kick_drain(), None)[1]),
     (("web_ui.py", "create_handler.WebHandler._update_lock_held"),
      "status banner question", None,
      lambda w: w.web()._update_lock_held(w.tg)),
+    # As the poll loop and the scheduler's `_after_tick` call it (Q13).
     (("update_engine.py", "UpdateEngine.sweep_queue"),
      "poll-cycle sweep with web queued", _queued,
-     lambda w: w.tg._sweep_update_queue(w.local)),
+     lambda w: w.engine.sweep_queue(w.engine.kick_drain)),
 ]
 
 
@@ -904,14 +940,21 @@ def _short(v):
     return v
 
 
-def drive(prepare, call, held):
+#: The key queued during a site's work for the drain rows: pending in
+#: the multi world, on another host than most sites' own work.
+QKEY = "nas/web"
+
+
+def drive(prepare, call, held, during=False):
     """One call. Returns the record (with the lock held by us when
-    `held`), plus whatever escaped the stand-ins."""
+    `held`), plus whatever escaped the stand-ins. `during`: queue QKEY
+    at the site's first piece of work, while it holds the lock."""
     m.EVENTS.clear()
     del m.ESCAPES[:]
     del m.STARTED[:]
     del m.THREAD_ERRORS[:]
     del dm.LOG[:]
+    del DURING_WORK[:]
     w = World()
     try:
         if prepare:
@@ -920,6 +963,17 @@ def drive(prepare, call, held):
         del KEYS[:]
         del WORK[:]
         del dm.LOG[:]
+        # Every drain the call leads to, counted where the engine's
+        # drainer runs it; observed, not replaced.
+        drains = []
+        _real_dq = w.engine.drain_queue
+
+        def _counting(*a, **k):
+            drains.append(1)
+            return _real_dq(*a, **k)
+        w.engine.drain_queue = _counting
+        if during:
+            DURING_WORK.append(lambda: w.engine.enqueue_update(QKEY))
         if held:
             w.lock.acquire()
         sink = io.StringIO()
@@ -943,6 +997,7 @@ def drive(prepare, call, held):
             "queue_after": [k for k, _s in w.engine.queued_updates()],
             "queued_selfupdate": w.engine._queued_selfupdate,
             "lock_after": "held" if still else "free",
+            "drains": len(drains),
         }
         if raised:
             rec["raised"] = raised
@@ -952,7 +1007,20 @@ def drive(prepare, call, held):
             rec["thread_errors"] = list(m.THREAD_ERRORS)
         return rec, list(m.ESCAPES)
     finally:
+        del DURING_WORK[:]
         w.close()
+
+
+#: Sites that give the lock back without starting the drainer, and why.
+#: Every other site that releases leads to exactly one drain (Q13).
+#: Checked both ways: an entry here whose site does start one is stale.
+NO_DRAIN = {
+    ("selfupdate.py", "start"):
+        "gives the lock back by hand, by design (Q3). The two sweeps pick "
+        "its queue up: the poll loop within seconds, the scheduler within "
+        "60 s. A self-update that queued behind another flow runs inside "
+        "that flow's release, whose kick comes right after it.",
+}
 
 
 def _busy_view(rec, role):
@@ -968,6 +1036,7 @@ def _busy_view(rec, role):
 def drive_checks():
     out = []
     driven = set()
+    releasers = set()
     for site, label, prepare, call in DRIVES:
         driven.add(site)
         role = LOCK_OPS.get(site, ("?",))[0]
@@ -1014,6 +1083,28 @@ def drive_checks():
                         ok, f"returned {rec['returned']!r}, "
                             f"lock {rec['lock_after']}, work {rec['work']}"))
 
+        # Work queued while the site holds the lock is worked off once
+        # it lets go: exactly one drain, and nothing left on the queue
+        # (Q13). Before, only a Telegram single update and the poll loop
+        # ever drained, so this row was 0 for every other site.
+        if role == "CLAIM" or site[1].endswith(".sweep_queue"):
+            releasers.add(site)
+            rec, esc = drive(prepare, call, held=False, during=True)
+            want = 0 if site in NO_DRAIN else 1
+            left = [QKEY] if site in NO_DRAIN else []
+            ok = (rec["drains"] == want and rec["queue_after"] == left
+                  and not esc and "raised" not in rec
+                  and not rec.get("thread_errors"))
+            out.append((f"queued meanwhile: {name} → {rec['drains']} drain(s)",
+                        ok, f"drains {rec['drains']} (want {want}), queue "
+                            f"{rec['queue_after']} (want {left}), raised "
+                            f"{rec.get('raised')}, thread errors "
+                            f"{rec.get('thread_errors')}, escaped {esc}"))
+
+    for site in sorted(NO_DRAIN):
+        out.append((f"exempt from the drain: {site[0]}:{site[1]} is a "
+                    "driven releaser", site in releasers,
+                    "stale exemption: no such releasing site is driven"))
     for site, (role, _ops) in sorted(LOCK_OPS.items()):
         if role in ("RELEASE", "DOOR"):
             continue
