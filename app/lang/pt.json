@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — já espera há {since}",
   "update_batch_line_same_running": "• `{name}` — está a ser atualizado agora",
   "update_batch_queue_full": "⚠️ A fila de atualizações está cheia ({max}) — nenhum destes {count} entrou na fila; o que já espera mantém o seu lugar. Tenta de novo quando ela tiver esvaziado.",
+  "update_busy_glob_unchecked": "Só entraram na fila os contêineres com uma atualização já conhecida. As outras correspondências de `{pattern}` não foram verificadas — envie `/update {pattern}` de novo quando a atualização terminar para verificá-las também.",
   "update_queue_dropped_selfupdate": "⚠️ Há uma autoatualização pendente, o Docksentry vai reiniciar. NÃO executados: {names}. Toca neles outra vez depois.",
   "update_queue_skipped_group": "⚠️ Resto do grupo `{group}` ignorado após a falha acima: {names}. A ordem existe por um motivo — corrige primeiro o que falhou.",
   "web_hidden_active_title": "Definições ativas que não vê aqui",

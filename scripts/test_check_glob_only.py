@@ -111,7 +111,12 @@ def _make_bot():
     bot.t = lambda key, **kw: key
     bot.send_message = lambda text, **kw: bot.sent.append(text)
     bot.notify_updates = lambda updates, auto=False: setattr(bot, "notified", updates)
-    bot.run_updates = lambda checker, updates=None: setattr(bot, "updated_with", updates)
+    bot.updated_note = "unset"
+
+    def run_updates(checker, updates=None, queued_note=None):
+        bot.updated_with = updates
+        bot.updated_note = queued_note
+    bot.run_updates = run_updates
     return bot
 
 
@@ -177,6 +182,9 @@ def main():
         and [u["name"] for u in bot.updated_with] == ["web-1"]
     checks["/update glob, busy: no 'busy' answer for it"] = \
         "update_already_running" not in bot.sent
+    checks["/update glob, busy: the answer will say the other matches "
+           "were not checked"] = \
+        bot.updated_note == "update_busy_glob_unchecked"
     checks["/update glob, busy: the lock is still the holder's"] = \
         bot.engine._update_lock.locked()
 
@@ -199,6 +207,16 @@ def main():
     bot._handle_message(_msg("/update web"), chk, None)
     checks["/update prefix of a pending name, busy: not that container"] = \
         bot.sent == ["update_already_running"] and bot.updated_with == "unset"
+
+    # A plain pending name is exactly the container it names: no note.
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot.engine._update_lock.acquire()
+    bot._handle_message(_msg("/update web-1"), chk, None)
+    checks["/update pending name, busy: queued without the glob's note"] = \
+        isinstance(bot.updated_with, list) \
+        and [u["name"] for u in bot.updated_with] == ["web-1"] \
+        and bot.updated_note is None
 
     # A glob ignores case, as `lifecycle.match_glob` does on a free lock.
     bot = _make_bot()

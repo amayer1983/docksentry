@@ -1159,7 +1159,7 @@ _mark(PINNED_FOR, ["update: name=web", "bulk: update web,nas/web"],
       "Q3/Q14: one claim of the update lock runs the whole batch")
 _mark(PINNED_FOR, ["major: confirm web, lock held"],
       "Q16 (decided): confirming a major stays 'busy', it is not queued, "
-      "and the Telegram sentence says so")
+      "and the Telegram sentence says so, with Confirm/Skip under it")
 _mark(PINNED_FOR, ["selfupdate: lock held"],
       "T6: selfupdate.start queues itself behind a held lock")
 # Headless queues nothing (the self-update check just skips), so there
@@ -5755,7 +5755,8 @@ EXPECTED = {
                 'http': '303 | Location: /',
                 'out': ['<telegram> ⚠️ Another update is running, so the major update of '
                         '`web` did not start. It was not queued either and still waits for '
-                        'your confirmation — confirm it again once that update is done.']},
+                        'your confirmation — confirm it again once that update is done.  '
+                        '[2 buttons]']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/api/major_confirm", "actor": "admin", "detail": '
@@ -5771,7 +5772,8 @@ EXPECTED = {
                 'http': '303 | Location: /',
                 'out': ['<telegram> ⚠️ Another update is running, so the major update of '
                         '`web` did not start. It was not queued either and still waits for '
-                        'your confirmation — confirm it again once that update is done.']},
+                        'your confirmation — confirm it again once that update is done.  '
+                        '[2 buttons]']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/major_confirm", "actor": "admin", "detail": '

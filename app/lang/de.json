@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — wartet schon seit {since}",
   "update_batch_line_same_running": "• `{name}` — wird gerade aktualisiert",
   "update_batch_queue_full": "⚠️ Die Update-Warteschlange ist voll ({max}) — keiner dieser {count} wurde eingereiht; was schon wartet, behält seinen Platz. Versuch es noch mal, wenn sie abgearbeitet ist.",
+  "update_busy_glob_unchecked": "Eingereiht ist nur, was schon als Update bekannt war. Weitere Treffer für `{pattern}` wurden nicht geprüft — schick `/update {pattern}` noch mal, wenn das Update fertig ist, dann werden sie mitgeprüft.",
   "update_queue_dropped_selfupdate": "⚠️ Ein Selbst-Update steht an, Docksentry startet gleich neu. NICHT gelaufen: {names}. Danach bitte erneut antippen.",
   "update_queue_skipped_group": "⚠️ Rest der Gruppe `{group}` nach dem Fehlschlag oben übersprungen: {names}. Sie werden aus gutem Grund der Reihe nach aktualisiert — erst den gescheiterten reparieren.",
   "web_hidden_active_title": "Aktive Einstellungen, die du hier nicht siehst",

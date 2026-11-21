@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — すでに {since} 待っています",
   "update_batch_line_same_running": "• `{name}` — いま更新中です",
   "update_batch_queue_full": "⚠️ 更新の順番待ちがいっぱいです（{max}）— この {count} 件はどれも追加されていません。すでに待っているものは順番を保ちます。消化されてからもう一度お試しください。",
+  "update_busy_glob_unchecked": "キューに入れたのは、更新があると既に分かっていたコンテナだけです。`{pattern}` に一致する他のコンテナは確認していません — 更新が終わったら `/update {pattern}` をもう一度送ると、それらも確認します。",
   "update_queue_dropped_selfupdate": "⚠️ 自己更新が控えているため、Docksentry はまもなく再起動します。実行されませんでした: {names}。あとでもう一度タップしてください。",
   "update_queue_skipped_group": "⚠️ 上の失敗を受けて、グループ `{group}` の残りを飛ばしました: {names}。順番には理由があります。まず失敗したものを直してください。",
   "web_hidden_active_title": "ここには表示されていない有効な設定",

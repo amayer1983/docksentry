@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — attend déjà depuis {since}",
   "update_batch_line_same_running": "• `{name}` — en cours de mise à jour",
   "update_batch_queue_full": "⚠️ La file des mises à jour est pleine ({max}) — aucun de ces {count} n'a été mis en file ; ce qui attend déjà garde sa place. Réessayez quand elle se sera vidée.",
+  "update_busy_glob_unchecked": "Seuls les conteneurs dont une mise à jour était déjà connue ont été mis en file. Les autres correspondances de `{pattern}` n'ont pas été vérifiées — renvoie `/update {pattern}` une fois la mise à jour terminée pour les vérifier aussi.",
   "update_queue_dropped_selfupdate": "⚠️ Une auto-mise à jour est en attente, Docksentry va redémarrer. NON exécutés : {names}. Retouchez-les ensuite.",
   "update_queue_skipped_group": "⚠️ Reste du groupe `{group}` ignoré après l'échec ci-dessus : {names}. L'ordre existe pour une raison — corrigez d'abord celui qui a échoué.",
   "web_hidden_active_title": "Paramètres actifs que vous ne voyez pas ici",

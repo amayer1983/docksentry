@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — czeka już od {since}",
   "update_batch_line_same_running": "• `{name}` — jest właśnie aktualizowany",
   "update_batch_queue_full": "⚠️ Kolejka aktualizacji jest pełna ({max}) — żaden z tych {count} nie trafił do kolejki; to, co już czeka, zachowuje swoje miejsce. Spróbuj ponownie, gdy się opróżni.",
+  "update_busy_glob_unchecked": "Do kolejki trafiły tylko kontenery, dla których aktualizacja była już znana. Pozostałe dopasowania `{pattern}` nie zostały sprawdzone — wyślij `/update {pattern}` ponownie po zakończeniu aktualizacji, aby je też sprawdzić.",
   "update_queue_dropped_selfupdate": "⚠️ Czeka autoaktualizacja, Docksentry zaraz się zrestartuje. NIE wykonano: {names}. Dotknij ich ponownie później.",
   "update_queue_skipped_group": "⚠️ Pominięto resztę grupy `{group}` po powyższym błędzie: {names}. Kolejność ma powód — najpierw napraw ten, który zawiódł.",
   "web_hidden_active_title": "Aktywne ustawienia, których tu nie widać",

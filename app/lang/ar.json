@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — ينتظر منذ {since}",
   "update_batch_line_same_running": "• `{name}` — يجري تحديثه الآن",
   "update_batch_queue_full": "⚠️ قائمة انتظار التحديثات ممتلئة ({max}) — لم يُضف أيٌّ من هذه الـ {count} إلى القائمة؛ ما ينتظر بالفعل يحتفظ بمكانه. حاول مجدداً بعد أن تُنجَز.",
+  "update_busy_glob_unchecked": "لم يُضف إلى القائمة إلا الحاويات التي كان تحديثها معروفاً مسبقاً. لم تُفحص المطابقات الأخرى لـ `{pattern}` — أرسل `/update {pattern}` مجدداً بعد انتهاء التحديث لفحصها أيضاً.",
   "update_queue_dropped_selfupdate": "⚠️ هناك تحديث ذاتي معلّق، وDocksentry على وشك إعادة التشغيل. لم يُنفَّذ: {names}. اضغط عليها مجدداً بعد ذلك.",
   "update_queue_skipped_group": "⚠️ تم تخطي بقية المجموعة `{group}` بعد الفشل أعلاه: {names}. الترتيب موجود لسبب — أصلح المتعثّر أولاً.",
   "web_hidden_active_title": "إعدادات فعّالة لا تراها هنا",

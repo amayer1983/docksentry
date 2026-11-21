@@ -1765,6 +1765,17 @@ class TelegramBot:
             "reply_markup": json.dumps(keyboard)
         })
 
+    @staticmethod
+    def _major_keyboard(key):
+        """Confirm/Skip for the deferred major update `key` (a host key).
+        The prompt carries it, and so does a confirmation refused because
+        the lock was held: tapping Confirm takes the prompt's buttons
+        away, and nothing else offers them again."""
+        return {"inline_keyboard": [[
+            {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
+            {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
+        ]]}
+
     def _update_one_key(self, entry):
         """The `update_one:` / `confirm_major:` payload identifying ONE
         container on ONE host (#7).
@@ -1967,10 +1978,12 @@ class TelegramBot:
         per container.
 
         One container gets the sentence a tap gets. Several get a heading
-        that says what is running — the container by name when the
-        engine is updating one right now, otherwise only that something
-        holds the lock (a check, a cleanup, a self-update) — and a line
-        each. A batch that did not fit was not queued at all and is
+        and a line each. The heading names the container the engine is
+        updating right now; with none, `update_batch_queued` says
+        "another update is running". That is not quite true when a
+        cleanup or the scheduled self-update holds the lock
+        (`claim_update` lists who takes it) — the old "Update already in
+        progress" said the same, and I have not changed it here. A batch that did not fit was not queued at all and is
         answered once: the engine answers it as a whole (my decision of
         18.11.2026), so every outcome carries `update_queue_full`.
         """
@@ -2094,11 +2107,16 @@ class TelegramBot:
         # Busy, it is still refused and not queued — my decision of
         # 18.11.2026 (Q16): everything else that updates now waits its
         # turn, so the answer says that this one did not, and that the
-        # major is still waiting for a yes.
+        # major is still waiting for a yes. The callback has already
+        # taken the prompt's buttons away, so the answer brings them back:
+        # without them "confirm it again" had nothing to tap on Telegram
+        # until the next auto pass prompted again.
         if not self.engine.claim_update():
+            from container_store import host_key
             self.send_message(self.t(
                 "major_confirm_busy", name=name,
-                tag=self._entry_host_tag({"host": host_name})))
+                tag=self._entry_host_tag({"host": host_name})),
+                reply_markup=self._major_keyboard(host_key(host_name, name)))
             return
         try:
             image = pending.get("image", "")
@@ -2390,11 +2408,8 @@ class TelegramBot:
         # resolve to the local one; it stays the bare name for local
         # containers, which is every container on a single-host install.
         for name, old_ver, new_ver, host_name in major_pending_now:
-            key = self._update_one_key({"name": name, "host": host_name})
-            keyboard = {"inline_keyboard": [[
-                {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
-                {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
-            ]]}
+            keyboard = self._major_keyboard(
+                self._update_one_key({"name": name, "host": host_name}))
             # The keyboard is Telegram's and stays Telegram's; the seam
             # hands the markup to that leg only. Everyone else at least
             # learns that a confirmation is waiting, which they could not
@@ -2938,7 +2953,7 @@ class TelegramBot:
         selfupdate.swap(self, config, own_name, own_image)
         return True
 
-    def run_updates(self, updater, updates=None):
+    def run_updates(self, updater, updates=None, queued_note=None):
         """Run a batch of container updates.
 
         When `updates` is provided (a list of update dicts from a
@@ -2948,6 +2963,10 @@ class TelegramBot:
         actually showed. When `updates` is None (legacy bare-"update_all"
         callback, or programmatic callers), the current pending file is
         read and the whole file is cleared on completion as before.
+
+        `queued_note` is a line added under the answer when the batch is
+        queued instead of run: a busy `/update <glob>` queues only what
+        the pending list holds and says that the rest was not checked.
         """
         # Atomic claim of the shared update mutex, or the queue. If any
         # other update flow (single-container, major-confirm, the
@@ -2980,8 +2999,11 @@ class TelegramBot:
                 if isinstance(u, dict) and u.get("name")]
         claimed, outcomes = self.engine.claim_or_queue_many(keys)
         if not claimed:
-            self.send_message(self._queued_answer(outcomes) if outcomes
-                              else self.t("no_pending_updates"))
+            answer = (self._queued_answer(outcomes) if outcomes
+                      else self.t("no_pending_updates"))
+            if outcomes and queued_note:
+                answer += "\n" + queued_note
+            self.send_message(answer)
             return
         try:
             if not from_snapshot:
@@ -4132,13 +4154,19 @@ class TelegramBot:
                 # behind the running update. A name the list does not
                 # hold gets "busy, try again" as before: nothing is
                 # remembered to be checked later (my decision of
-                # 18.11.2026).
+                # 18.11.2026). A glob may match more than the list holds;
+                # those were not checked, and the answer says so.
                 entries = self._pending_matching(arg, targets)
                 if not entries:
                     self.send_message(self.t("update_already_running"))
                     return
+                import lifecycle
+                note = (self.t("update_busy_glob_unchecked",
+                               pattern=raw_arg)
+                        if lifecycle.is_glob(arg) else None)
                 threading.Thread(target=self.run_updates, args=(checker,),
-                                 kwargs={"updates": entries}).start()
+                                 kwargs={"updates": entries,
+                                         "queued_note": note}).start()
                 return
             selections = []
             first_err = None

@@ -344,6 +344,16 @@ checks["a refused major confirmation names the container and its host in "
 if _mbad:
     print("  major_confirm_busy:", ", ".join(_mbad))
 
+# A busy `/update <glob>` queues only what is pending and says the rest
+# was not checked (Q16 review); the sentence names the typed pattern.
+_gbad = [lang for lang, strings in LANGS.items()
+         if placeholders(strings.get("update_busy_glob_unchecked", ""))
+         != {"pattern"}]
+checks["a busy /update <glob> says the other matches were not checked, in "
+       "all languages"] = not _gbad
+if _gbad:
+    print("  update_busy_glob_unchecked:", ", ".join(_gbad))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

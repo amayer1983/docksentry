@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — wacht al {since}",
   "update_batch_line_same_running": "• `{name}` — wordt nu bijgewerkt",
   "update_batch_queue_full": "⚠️ De update-wachtrij is vol ({max}) — geen van deze {count} is in de wachtrij gezet; wat al wacht houdt zijn plek. Probeer het opnieuw zodra hij is weggewerkt.",
+  "update_busy_glob_unchecked": "Alleen containers waarvan al een update bekend was, zijn in de wachtrij gezet. Andere treffers voor `{pattern}` zijn niet gecontroleerd — stuur `/update {pattern}` opnieuw zodra de update klaar is om ze ook te controleren.",
   "update_queue_dropped_selfupdate": "⚠️ Er staat een zelfupdate klaar, Docksentry herstart zo. NIET uitgevoerd: {names}. Tik ze daarna opnieuw aan.",
   "update_queue_skipped_group": "⚠️ Rest van groep `{group}` overgeslagen na de fout hierboven: {names}. Ze werken in volgorde bij met reden — repareer eerst de mislukte.",
   "web_hidden_active_title": "Actieve instellingen die je hier niet ziet",

@@ -211,6 +211,12 @@ SCENARIOS = [
     ("confirm_major none pending", [("tap", "confirm_major:web")]),
     ("confirm_major lock held", [("major", "local", "web"), ("lock",),
                                  ("tap", "confirm_major:web"), ("unlock",)]),
+    ("confirm_major lock held, confirmed again from its answer",
+     [("major", "local", "web"), ("lock",), ("tap", "confirm_major:web"),
+      ("unlock",), ("tap", "confirm_major:web")]),
+    ("confirm_major:nas/web lock held",
+     [("major", "nas", "web"), ("lock",), ("tap", "confirm_major:nas/web"),
+      ("unlock",)]),
     # ── typed updates with the lock held (Q16) ──────────────────────
     ("/update web lock held", [("lock",), ("type", "/update web"),
                                ("unlock",)]),
@@ -754,7 +760,18 @@ _Q16_BUSY = "⚠️ Update already in progress..."
 _Q16_MAJOR = ("⚠️ Another update is running, so the major update of `web` "
               "did not start. It was not queued either and still waits for "
               "your confirmation — confirm it again once that update is "
-              "done.")
+              "done.  [✅ Confirm→confirm_major:web | ❌ Skip→reject_major:web]")
+#: The confirm callback took the prompt's buttons away before it knew the
+#: lock was held, and no command offers them again: the refusal carries
+#: Confirm/Skip itself, for the same key (Q16 review).
+_Q16_MAJOR_NAS = _Q16_MAJOR.replace("`web`", "`web` @nas").replace(
+    "_major:web", "_major:nas/web")
+#: A busy glob queues only what the pending list holds; the rest it matches
+#: was not checked, and the answer says so (Q16 review).
+_Q16_GLOB_NOTE = ("Only containers already known to have an update were "
+                  "queued. Other matches for `web*` were not checked — send "
+                  "`/update web*` again once the update is done to check "
+                  "them too.")
 
 
 def _q16_spec():
@@ -790,6 +807,10 @@ def _q16_spec():
         ("/updateall @nas lock held", ("multi",)):
             (1, _q16_one("web @nas", 1), ["nas/web"]),
         ("confirm_major lock held", m.SETUPS): (2, _Q16_MAJOR, []),
+        ("confirm_major:nas/web lock held", ("multi",)):
+            (2, _Q16_MAJOR_NAS, []),
+        ("/update web* lock held, then released", m.SETUPS):
+            (1, one + "\n" + _Q16_GLOB_NOTE, []),
         # Not in the table: a key already waiting inside a batch, and a
         # busy "Update all" with nothing pending at all.
         ("already queued", ("multi",)):
@@ -863,6 +884,21 @@ def q16_checks():
                     f"Q16 [{setup}] {name}: the major still waits",
                     rec["state"]["majors"] == {"local": ["web"]},
                     f"majors {rec['state']['majors']!r}"))
+    # The Confirm under the refusal works once the lock is free: it runs
+    # the major update of that container on its host and clears it.
+    for setup in m.SETUPS:
+        name = "confirm_major lock held, confirmed again from its answer"
+        rec, esc = run_scenario(setup, _STEPS[name])
+        again = rec["steps"][-1]
+        ran = [e for e in again["events"] if e.startswith("update_container@")]
+        results.append((
+            f"Q16 [{setup}] {name}: the second Confirm updates web and "
+            f"clears the major",
+            ran == ["update_container@local:web"]
+            and rec["state"]["majors"] == {} and again["raised"] is None
+            and not esc and not rec["state"]["locked"],
+            f"ran {ran!r}, events {again['events']!r}, "
+            f"state {rec['state']!r}, escapes {esc!r}"))
     for name, per in _Q16_RELEASED.items():
         for setup in m.SETUPS:
             want = per.get("multi" if setup == "multi" else "single")
@@ -3535,7 +3571,8 @@ EXPECTED = {
                         '<unbutton>',
                         '⚠️ Another update is running, so the major update of `web` did '
                         'not start. It was not queued either and still waits for your '
-                        'confirmation — confirm it again once that update is done.'],
+                        'confirmation — confirm it again once that update is done.  [✅ '
+                        'Confirm→confirm_major:web | ❌ Skip→reject_major:web]'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -3557,7 +3594,113 @@ EXPECTED = {
                         '<unbutton>',
                         '⚠️ Another update is running, so the major update of `web` did '
                         'not start. It was not queued either and still waits for your '
-                        'confirmation — confirm it again once that update is done.'],
+                        'confirmation — confirm it again once that update is done.  [✅ '
+                        'Confirm→confirm_major:web | ❌ Skip→reject_major:web]'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'local': ['web']},
+               'locked': False}},
+    ('multi', 'confirm_major lock held, confirmed again from its answer'): {'steps': [{'do': 'major local web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '⚠️ Another update is running, so the major update of `web` did '
+                        'not start. It was not queued either and still waits for your '
+                        'confirmation — confirm it again once that update is done.  [✅ '
+                        'Confirm→confirm_major:web | ❌ Skip→reject_major:web]'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'confirm_major lock held, confirmed again from its answer'): {'steps': [{'do': 'major local web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '⚠️ Another update is running, so the major update of `web` did '
+                        'not start. It was not queued either and still waits for your '
+                        'confirmation — confirm it again once that update is done.  [✅ '
+                        'Confirm→confirm_major:web | ❌ Skip→reject_major:web]'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'confirm_major:nas/web lock held'): {'steps': [{'do': 'major nas web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:nas/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '⚠️ Another update is running, so the major update of `web` @nas '
+                        'did not start. It was not queued either and still waits for your '
+                        'confirmation — confirm it again once that update is done.  [✅ '
+                        'Confirm→confirm_major:nas/web | ❌ Skip→reject_major:nas/web]'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {'nas': ['web']},
+               'locked': False}},
+    ('single', 'confirm_major:nas/web lock held'): {'steps': [{'do': 'major nas web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap confirm_major:nas/web',
+                'out': ['<toast> Confirming major update for web…',
+                        '<unbutton>',
+                        '❌ Unknown host `nas`. Managed hosts: `local`'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -3603,7 +3746,10 @@ EXPECTED = {
                'locked': False}},
     ('multi', '/update web* lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /update web*',
-                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.\n'
+                        'Only containers already known to have an update were queued. '
+                        'Other matches for `web*` were not checked — send `/update web*` '
+                        'again once the update is done to check them too.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -3623,7 +3769,10 @@ EXPECTED = {
                'locked': False}},
     ('single', '/update web* lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /update web*',
-                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.\n'
+                        'Only containers already known to have an update were queued. '
+                        'Other matches for `web*` were not checked — send `/update web*` '
+                        'again once the update is done to check them too.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},

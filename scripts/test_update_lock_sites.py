@@ -384,6 +384,9 @@ BUSY_MESSAGES = {
                                     "/check <name>, /update, /check"),
     ("telegram_bot.py", "TelegramBot._handle_message",
      "status_queued"): (1, "queue: /status shows it"),
+    ("telegram_bot.py", "TelegramBot._handle_message",
+     "update_busy_glob_unchecked"): (1, "queue: a busy glob, the rest "
+                                        "was not checked"),
     # Discord
     ("discord_bot.py", "DiscordBot._cmd_check",
      "web_check_one_busy"): (1, "pre-gate"),

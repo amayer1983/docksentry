@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — {since} süredir bekliyor",
   "update_batch_line_same_running": "• `{name}` — şu anda güncelleniyor",
   "update_batch_queue_full": "⚠️ Güncelleme kuyruğu dolu ({max}) — bu {count} öğeden hiçbiri kuyruğa alınmadı; zaten bekleyenler yerini korur. Kuyruk boşalınca yeniden dene.",
+  "update_busy_glob_unchecked": "Yalnızca güncellemesi zaten bilinen konteynerler kuyruğa alındı. `{pattern}` için diğer eşleşmeler kontrol edilmedi — güncelleme bitince onları da kontrol etmek için `/update {pattern}` komutunu yeniden gönder.",
   "update_queue_dropped_selfupdate": "⚠️ Bekleyen bir kendi kendine güncelleme var, Docksentry birazdan yeniden başlayacak. ÇALIŞMADI: {names}. Sonra tekrar dokun.",
   "update_queue_skipped_group": "⚠️ Yukarıdaki hatadan sonra `{group}` grubunun kalanı atlandı: {names}. Sırayla güncellenmelerinin bir nedeni var — önce hata vereni düzelt.",
   "web_hidden_active_title": "Burada göremediğiniz etkin ayarlar",

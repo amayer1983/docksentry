@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — already waiting for {since}",
   "update_batch_line_same_running": "• `{name}` — that one is being updated right now",
   "update_batch_queue_full": "⚠️ The update queue is full ({max}) — none of these {count} was queued; anything already waiting keeps its place. Try again once it has worked through.",
+  "update_busy_glob_unchecked": "Only containers already known to have an update were queued. Other matches for `{pattern}` were not checked — send `/update {pattern}` again once the update is done to check them too.",
   "update_queue_dropped_selfupdate": "⚠️ A self-update is pending, so Docksentry is about to restart. NOT run: {names}. Tap them again afterwards.",
   "update_queue_skipped_group": "⚠️ Skipped the rest of group `{group}` after the failure above: {names}. They update in order for a reason — fix the one that failed first.",
   "web_hidden_active_title": "Active settings you cannot see here",

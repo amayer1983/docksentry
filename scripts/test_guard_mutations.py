@@ -5577,8 +5577,10 @@ GUARDED = [
 
     ('…a busy "Update all" with nothing pending says so, not "busy"',
      'app/telegram_bot.py',
-     '                              else self.t("no_pending_updates"))\n',
-     '                              else self.t("update_already_running"))\n',
+     '            answer = (self._queued_answer(outcomes) if outcomes\n'
+     '                      else self.t("no_pending_updates"))\n',
+     '            answer = (self._queued_answer(outcomes) if outcomes\n'
+     '                      else self.t("update_already_running"))\n',
      'test_telegram_callback_matrix.py'),
 
     ("a busy /update checks nothing and asks no host (#26)",
@@ -5622,6 +5624,46 @@ GUARDED = [
      '                "major_confirm_busy", name=name,\n',
      '                "update_already_running", name=name,\n',
      'test_update_lock_sites.py'),
+
+    # Q16 review: the confirm callback takes the prompt's buttons away
+    # before it knows the lock is held, so the refusal brings them back.
+    ("…and brings Confirm/Skip back, since the tap took the prompt's away",
+     'app/telegram_bot.py',
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                reply_markup=None)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…for that container on its own host",
+     'app/telegram_bot.py',
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                reply_markup=self._major_keyboard(name))\n',
+     'test_telegram_callback_matrix.py'),
+
+    # Q16 review: a busy glob queues only what is pending; the rest it
+    # matches was not checked, and the answer says so.
+    ("a busy /update <glob> says the other matches were not checked",
+     'app/telegram_bot.py',
+     '            if outcomes and queued_note:\n',
+     '            if False:\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…the busy /update hands that line on to run_updates",
+     'app/telegram_bot.py',
+     '                                         "queued_note": note}).start()\n',
+     '                                         "queued_note": None}).start()\n',
+     'test_check_glob_only.py'),
+
+    ("…only for a glob, not for a plain pending name",
+     'app/telegram_bot.py',
+     '                        if lifecycle.is_glob(arg) else None)\n',
+     '                        if True else None)\n',
+     'test_check_glob_only.py'),
+
+    ("…and names the typed pattern in every language",
+     'app/lang/de.json',
+     '"Eingereiht ist nur, was schon als Update bekannt war. Weitere Treffer für `{pattern}` wurden',
+     '"Eingereiht ist nur, was schon als Update bekannt war. Weitere Treffer für `{muster}` wurden',
+     'test_reply_params.py'),
 
     ("the queue holds two hosts' 'Update all' of twenty, one after the other",
      'app/update_engine.py',

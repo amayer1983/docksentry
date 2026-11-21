@@ -815,6 +815,7 @@
   "update_batch_line_already_queued": "• `{name}` — 已等待 {since}",
   "update_batch_line_same_running": "• `{name}` — 正在更新",
   "update_batch_queue_full": "⚠️ 更新队列已满（{max}）— 这 {count} 个都没有加入队列；已在等待的保留其位置。等队列跑完再试一次。",
+  "update_busy_glob_unchecked": "只有已知有更新的容器被加入了队列。`{pattern}` 匹配的其他容器尚未检查 — 更新完成后再发送一次 `/update {pattern}` 即可一并检查。",
   "update_queue_dropped_selfupdate": "⚠️ 有自我更新在等待，Docksentry 即将重启。未执行：{names}。重启后请重新点击。",
   "update_queue_skipped_group": "⚠️ 由于上面的失败，已跳过组 `{group}` 的其余部分：{names}。它们按顺序更新是有原因的 — 先修好失败的那个。",
   "web_hidden_active_title": "这里看不到的生效设置",
