@@ -434,13 +434,35 @@ class _OkChecker:
 from i18n import get_translator as _gt  # noqa: E402
 _T_drain = _gt("en")
 
+from time import strftime as _stamp  # noqa: E402
+
+# Q16i: "already updated" only when the update history has a success for
+# the key since it was queued; without one the sentence is the neutral,
+# named "no longer in the update list" — still not "unknown".
 eng = engine()
 eng._updating = {}
 eng.enqueue_update("gone")
 said, path = _queued_engine(eng, [], _OkChecker())
 _kick(eng)
 os.unlink(path)
-checks["a queued key no longer pending is called done, not unknown"] = (
+checks["a queued key no longer pending, no history: named as no longer "
+       "listed, not unknown, not 'already updated'"] = (
+    said == [_T_drain("update_queue_skipped_not_listed", name="gone")])
+
+eng = engine()
+eng._updating = {}
+eng.enqueue_update("gone")
+said, path = _queued_engine(eng, [], _OkChecker())
+_hfd, _hpath = tempfile.mkstemp(suffix=".json")
+with os.fdopen(_hfd, "w") as fh:
+    json.dump([{"timestamp": _stamp("%Y-%m-%d %H:%M:%S"),
+                "container": "gone", "image": "gone:1", "success": True,
+                "detail": "ok"}], fh)
+eng.config.history_file = _hpath
+_kick(eng)
+os.unlink(path)
+os.unlink(_hpath)
+checks["…with a success for it in the history since: called done"] = (
     said == [_T_drain("update_already_done", name="gone")])
 
 eng = engine()

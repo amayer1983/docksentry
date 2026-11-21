@@ -3123,8 +3123,7 @@ EXPECTED = {
                         '<api> editMessageReplyMarkup  []',
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
-                        '✅ `web @nas` was already updated while this one waited. Nothing '
-                        'left to do.'],
+                        'ℹ️ `web @nas` is no longer in the update list — nothing to do.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
                                    'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:db'],

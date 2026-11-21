@@ -19,7 +19,8 @@ names — measured, not guessed:
     ctx.send_message(text)      where the report goes
     ctx.config                  the settings
     ctx._swap_in_flight         set right before the helper is launched
-                                (and taken down if it does not start),
+                                (and taken down if it does not start or
+                                does not stop us — Q16i),
                                 so the caller knows not to release the
                                 lock on a process about to be replaced
 
@@ -52,11 +53,12 @@ class Context:
         config                the settings
         _update_lock          the mutex every update flow shares
         _queued_selfupdate    what waits behind a running batch
-        _swap_in_flight       set right before the helper is launched
+        _swap_in_flight       set right before the helper is launched,
+                              down again when the swap does not happen
         engine                the update queue's owner: its drainer is
                               kicked after `start` gives the lock back,
-                              and the queue is named and dropped before
-                              the swap (Q16h). Both contexts that drive a
+                              and the queue is named and dropped once
+                              the helper has started (Q16h, Q16i). Both contexts that drive a
                               self-update carry it already (this one and
                               the Telegram bot); one without it (None)
                               leaves the queue alone.
@@ -210,9 +212,10 @@ def _kick_queue(ctx):
     nothing left whatever had queued during it to the next sweep — the
     Telegram poll loop, or the scheduler's tick 30 to 60 s later, and on
     an install without Telegram only the latter (Q16h, measured on
-    f6824c8). Not after a swap: the lock stays
-    held then, and the queue was named and dropped before the helper
-    started (`swap`). Never raises — this runs in `start`'s `finally`.
+    f6824c8). Also after a swap that did not happen (Q16i): its queue is
+    still there. Not after a swap under way: the lock stays held then,
+    and the queue was named and dropped once the helper had started
+    (`swap`). Never raises — this runs in `start`'s `finally`.
     """
     try:
         engine = ctx.engine
@@ -223,7 +226,7 @@ def _kick_queue(ctx):
 
 
 def _drop_queue(ctx):
-    """Name and drop the update queue before the helper starts (see
+    """Name and drop the update queue once the helper has started (see
     `UpdateEngine.drop_queue_for_swap`). Never raises."""
     try:
         engine = ctx.engine
@@ -696,35 +699,100 @@ def swap(ctx, config, own_name, own_image, reply_to=None):
         run_script = f"({update_script}) > {logpath} 2>&1"
     helper_args += ["docker:cli", "sh", "-c", run_script]
     # The helper stops us within seconds of starting, and the update
-    # queue lives in memory. So before it starts: the swap flag goes up
-    # (nothing new is queued, every way in answers "updating itself"),
-    # and whatever is queued is named to every channel and dropped —
-    # whoever started this, and also when a release runs it from its
-    # `after` or a scheduled pass holds the drainer back. Until Q16h the
-    # queue went with the restart unnamed (measured on f6824c8). The
-    # pending entries stay. A helper that does not start takes the flag
-    # down again, and `start` gives the lock back as on every other
-    # path that ends without a swap.
+    # queue lives in memory. Before it starts the swap flag goes up, so
+    # nothing new is queued (every way in answers "updating itself"; the
+    # queue checks it under its own lock). Only once it HAS started is
+    # whatever was queued named to every channel and dropped — whoever
+    # started this, and also when a release runs it from its `after` or
+    # a scheduled pass holds the drainer back. Until Q16h the queue went
+    # with the restart unnamed; in Q16h it was named and dropped before
+    # the launch, so a helper that then failed had cost the queue for a
+    # swap that never happened (Q16i, measured on 2ddd2a0). The pending
+    # entries stay either way.
+    #
+    # A helper that does not start, whose launch times out, or that does
+    # not stop us within the wait: the flag comes down, every channel
+    # hears that the self-update did not happen, and `start` gives the
+    # lock back and starts the drainer, so the queue runs.
+    import time
     ctx._swap_in_flight = True
+    launched = time.time()
     try:
-        _drop_queue(ctx)
         result = subprocess.run(helper_args, capture_output=True, text=True,
                                 timeout=30)
+    except subprocess.TimeoutExpired as e:
+        _not_happened(ctx, ctx.t(
+            "selfupdate_not_happened",
+            error=f"docker run timed out after {e.timeout:g} s"), reply_to)
+        return
+    except Exception as e:                                  # noqa: BLE001
+        _not_happened(ctx, ctx.t(
+            "selfupdate_not_happened", error=str(e)[:200]), reply_to)
+        return
     except BaseException:
         ctx._swap_in_flight = False
         raise
 
     if result.returncode != 0:
-        ctx._swap_in_flight = False
-        ctx.send_message(ctx.t("selfupdate_failed", error=result.stderr[:200]))
+        _not_happened(ctx, ctx.t("selfupdate_not_happened", error=(
+            result.stderr or result.stdout or "unknown").strip()[:200]),
+            reply_to)
         return
 
+    _drop_queue(ctx)
     # The helper container will stop us in ~3 seconds. The update lock
     # stays held from here on (see the `start` wrapper): nothing may
     # start a container update in the final seconds of this process.
     print(f"Selfupdate helper started ({helper_name}). Waiting for shutdown...")
-    import time
-    time.sleep(30)
+    time.sleep(HELPER_WAIT)
+    # Still here. Either the stop is under way — our SIGTERM handler has
+    # written its exit marker and is shutting the services down, which
+    # can outlast this wait — and then the lock stays with the process
+    # that is going away. Or nothing stopped us: until Q16i the flag then
+    # stayed up and the lock held for the life of the process, and every
+    # later update was refused "updating itself" (measured on 2ddd2a0).
+    if _being_stopped(ctx, launched):
+        return
+    print(f"Selfupdate helper ({helper_name}) did not stop us within "
+          f"{HELPER_WAIT} s — giving the update lock back")
+    _not_happened(ctx, ctx.t("selfupdate_not_stopped", seconds=HELPER_WAIT),
+                  reply_to)
+
+
+#: How long `swap` waits for the helper to stop this process.
+HELPER_WAIT = 30
+
+
+def _not_happened(ctx, text, reply_to=None):
+    """The swap did not happen: the flag comes down (so `start` gives the
+    lock back and kicks the drainer), and every channel hears `text` —
+    the restart was announced to every channel, so is this. A private
+    request leaves the Discord channel out, as the announcement did, and
+    tells the asker instead. Never raises."""
+    ctx._swap_in_flight = False
+    try:
+        from notifier import DISCORD_CHANNELS
+        ctx.tell(text, skip=DISCORD_CHANNELS if reply_to else ())
+        if reply_to:
+            ctx.send_message(text)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"Could not say that the self-update did not happen: {e}")
+
+
+def _being_stopped(ctx, since):
+    """True when this process is being stopped: the SIGTERM handler in
+    main.py writes its exit marker first thing, and one written at or
+    after `since` is this stop. A marker that cannot be read counts as
+    a stop too — keeping the lock is the safe side of not knowing."""
+    path = getattr(ctx.config, "last_exit_file", None)
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            mark = json.load(f)
+        return float(mark.get("ts", 0) or 0) >= since
+    except Exception:                                       # noqa: BLE001
+        return True
 
 
 def build_script(name, run_parts, image, stop_timeout=60, cmd_parts=""):

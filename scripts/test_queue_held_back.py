@@ -83,6 +83,12 @@ SKIP_EXCL = ("🚫 `{}` is excluded from updates — its queued update did not "
 REFUSED = ("📌 No update was started: the pin list (`pinned_containers.json`)"
            " could not be read, so every container counts as pinned. Repair "
            "or remove the file, then try again.")
+#: The drain's refusal names the entry (Q16i); it was the nameless
+#: REFUSED once per entry before.
+SKIP_PINLIST = ("📌 `{}` did not run from the queue: the pin list "
+                "(`pinned_containers.json`) could not be read, so every "
+                "container counts as pinned. Repair or remove the file, then "
+                "start it again.")
 HEAD = ("🕒 Another update is running right now. These wait in the queue "
         "and run when their turn comes:")
 TOAST_START = "<toast> Updates are starting..."
@@ -309,11 +315,14 @@ def telegram_checks():
                         f"out {st[-1]['out']!r}"))
         # An unreadable pin list during the drain: refused, nothing runs,
         # the entry stays pending (already so before Q16f — pinned here).
+        # The refusal names the entry (Q16i).
         rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
                                    ("raw_pins", b'["db"'), ("release",)])
         out.append((f"[{setup}] tap queued, then the pin list unreadable: "
-                    f"refused, nothing updated, still pending",
-                    _ran(st[-1]) == [] and REFUSED in st[-1]["out"]
+                    f"refused by name, nothing updated, still pending",
+                    _ran(st[-1]) == []
+                    and SKIP_PINLIST.format("web") in st[-1]["out"]
+                    and REFUSED not in st[-1]["out"]
                     and rec["state"]["queue"] == []
                     and "web@local" in _pending(rec) and not esc,
                     f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
@@ -690,9 +699,10 @@ def telegram_free_checks():
             ("on_wait", ("raw_pins", b'["db"')), ("release",)])
         out.append((f"[{setup}] queued db, web; the pin list unreadable "
                     f"during web's wait in the drain: web does not run, "
-                    f"the refusal is said, still pending",
+                    f"the refusal is said by name, still pending",
                     _ran(st[-1]) == ["update_container@local:db"]
-                    and REFUSED in st[-1]["out"]
+                    and SKIP_PINLIST.format("web") in st[-1]["out"]
+                    and REFUSED not in st[-1]["out"]
                     and "web@local" in _pending(rec) and not esc,
                     f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
                     f"state {rec['state']!r}"))

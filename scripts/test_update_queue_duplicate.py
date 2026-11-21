@@ -202,8 +202,19 @@ checks["…and stops saying it once the update is done"] = (
 
 # ── a queued duplicate that got through anyway ───────────────────────
 # A different route, a restart, a race: the drain must not call finished
-# work a mistake. The engine's drainer since Q13.
+# work a mistake. The engine's drainer since Q13. Since Q16i "already
+# updated" needs the evidence: a success for exactly this key in the
+# update history since it was queued.
+import time as _time  # noqa: E402
+
 bot3, checker3, said3 = _bot([])          # nothing pending any more
+_hist3 = os.path.join(os.path.dirname(bot3.config.pending_file),
+                      "history.json")
+with open(_hist3, "w", encoding="utf-8") as f:
+    json.dump([{"timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
+                "container": "portainer", "host": "srv30", "image": "x",
+                "success": True, "detail": "ok"}], f)
+bot3.engine.config.history_file = _hist3
 bot3.engine.enqueue_update(KEY)
 getattr(bot3.engine, "kick_drain", lambda: None)()   # red, not a crash, without it
 _drained(bot3.engine)
@@ -211,6 +222,16 @@ _t3 = "\n".join(said3)
 checks["a queued entry whose work is done says exactly that"] = (
     "already updated" in _t3 and "not in update list" not in _t3)
 checks["…naming the host it belonged to"] = "portainer @srv30" in _t3
+
+# …and without that evidence it is not called done: named, neutral.
+bot3b, checker3b, said3b = _bot([])
+bot3b.engine.enqueue_update(KEY)
+getattr(bot3b.engine, "kick_drain", lambda: None)()
+_drained(bot3b.engine)
+_t3b = "\n".join(said3b)
+checks["…without a success in the history it is named as no longer listed"] = (
+    "`portainer @srv30` is no longer in the update list" in _t3b
+    and "already updated" not in _t3b and "not in update list" not in _t3b)
 
 # ── …but a name that really is not pending still says so ─────────────
 # The old message is right for this case, which is why both exist.

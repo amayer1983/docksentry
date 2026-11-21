@@ -105,11 +105,13 @@ GUARDED = [
      "            pass",
      "test_update_queue_sweep.py"),
 
-    ("a drained entry forgets its timestamp",
-     "app/update_engine.py",
-     "            key = self._update_queue.pop(0)\n            self._queued_at.pop(key, None)",
-     "            key = self._update_queue.pop(0)",
-     "test_update_queue_sweep.py"),
+    ('a drained entry forgets its timestamp',
+     'app/update_engine.py',
+     '            key = self._update_queue.pop(0)\n'
+     '            self._last_taken = (key, self._queued_at.pop(key, None))',
+     '            key = self._update_queue.pop(0)\n'
+     '            self._last_taken = (key, self._queued_at.get(key))',
+     'test_update_queue_sweep.py'),
 
     ("the 'already queued' answer says how long",
      "app/lang/en.json",
@@ -1358,13 +1360,13 @@ GUARDED = [
      "test_update_queue_duplicate.py"),
 
     # The engine's drainer says it for a queued key since Q13.
-    ("…and finished work is not called a mistake",
-     "app/update_engine.py",
-     '        # list" there would put a warning under a green result.\n'
-     '        return self._t("update_already_done", name=self._key_label(key))\n',
-     '        # list" there would put a warning under a green result.\n'
-     '        return self._t("container_not_in_list", name=self._key_label(key))\n',
-     "test_update_queue_duplicate.py"),
+    ('…and finished work is not called a mistake',
+     'app/update_engine.py',
+     '            return self._t("update_already_done", name=self._key_label(key))\n'
+     '        return self._t("update_queue_skipped_not_listed",\n',
+     '            return self._t("container_not_in_list", name=self._key_label(key))\n'
+     '        return self._t("update_queue_skipped_not_listed",\n',
+     'test_update_queue_duplicate.py'),
 
     # Q11a: run_keys runs the single update; Telegram says how it went.
     # Each of these goes red in test_single_update_report, which drives
@@ -5175,12 +5177,15 @@ GUARDED = [
 
     # Since Q13 a drained entry is the engine's `_drain_one`, which runs
     # under the drain's claim and never touches the lock itself.
-    ("a drained entry does not claim for itself",
-     "app/update_engine.py",
-     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
-     "        if not self.claim_update():\n            return None\n"
-     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
-     "test_update_queue.py"),
+    ('a drained entry does not claim for itself',
+     'app/update_engine.py',
+     '        seam = self._seam()\n'
+     '        taken = getattr(self, "_last_taken", None)',
+     '        if not self.claim_update():\n'
+     '            return None\n'
+     '        seam = self._seam()\n'
+     '        taken = getattr(self, "_last_taken", None)',
+     'test_update_queue.py'),
 
     ("…nor give back the drain's claim",
      "app/update_engine.py",
@@ -5519,11 +5524,11 @@ GUARDED = [
      "            starting=starting, report=None,\n",
      "test_update_queue_sweep.py"),
 
-    ("…and what did not run is told to every channel",
-     "app/update_engine.py",
-     "                seam.tell(self._drain_skipped_text(k, msg))\n",
-     "                seam.update_line(self._drain_skipped_text(k, msg))\n",
-     "test_update_queue_sweep.py"),
+    ('…and what did not run is told to every channel',
+     'app/update_engine.py',
+     '                seam.tell(self._drain_skipped_text(k, msg, since=since))\n',
+     '                seam.update_line(self._drain_skipped_text(k, msg, since=since))\n',
+     'test_update_queue_sweep.py'),
 
     ("…while the result line stays Telegram's, not a second card",
      "app/broadcast.py",
@@ -5827,12 +5832,12 @@ GUARDED = [
      '            seam.tell(self._t("update_queue_skipped_pinned",\n',
      'test_queue_held_back.py'),
 
-    ("…an unreadable pin list at the drain refuses the entry, said as such",
+    ('…an unreadable pin list at the drain refuses the entry, said as such',
      'app/update_engine.py',
      '        if why == "pin_list_unreadable":\n'
-     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     '            # Named: two entries refused here',
      '        if False:\n'
-     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     '            # Named: two entries refused here',
      'test_queue_held_back.py'),
 
     ("…a label hold names the label, not a pin set while it waited",
@@ -6020,11 +6025,9 @@ GUARDED = [
     ('…and an unreadable pin list there as the refusal',
      'app/update_engine.py',
      '        if why == "pin_list_unreadable":\n'
-     '            return self._t("update_refused_pin_list")\n'
-     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '            return self._t("update_queue_skipped_pin_list",\n',
      '        if False:\n'
-     '            return self._t("update_refused_pin_list")\n'
-     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '            return self._t("update_queue_skipped_pin_list",\n',
      'test_queue_held_back.py'),
 
     ('the major confirmation asks the pin check right before its update',
@@ -6148,15 +6151,13 @@ GUARDED = [
      'test_lang_parity.py'),
 
     # ── Q16h: the queue around a self-update, the drain's words, a held major ──
-    ('a self-update names and drops the queue right before its helper starts'
-     ', whoever started it (Q16h)',
+    ('a self-update names and drops the queue once its helper has started, w'
+     'hoever started it (Q16h; after the launch since Q16i)',
      'app/selfupdate.py',
-     '    try:\n'
-     '        _drop_queue(ctx)\n'
-     '        result = subprocess.run(',
-     '    try:\n'
-     '        pass\n'
-     '        result = subprocess.run(',
+     '    _drop_queue(ctx)\n'
+     '    # The helper container will stop us in ~3 seconds.',
+     '    pass\n'
+     '    # The helper container will stop us in ~3 seconds.',
      'test_selfupdate_swap_queue.py'),
 
     ('…through the engine, which takes every entry off the queue',
@@ -6180,44 +6181,42 @@ GUARDED = [
      'its last seconds',
      'app/selfupdate.py',
      '    ctx._swap_in_flight = True\n'
-     '    try:\n'
-     '        _drop_queue(ctx)\n',
-     '    try:\n'
-     '        _drop_queue(ctx)\n',
+     '    launched = time.time()\n',
+     '    launched = time.time()\n',
      'test_selfupdate_swap_queue.py'),
 
-    ('…and comes down again when the helper does not start, so the lock is g'
-     'iven back',
+    ('…and comes down again when the swap does not happen, so the lock is gi'
+     'ven back (since Q16i also after a timed-out launch and a helper that d'
+     'oes not stop us)',
      'app/selfupdate.py',
-     '    if result.returncode != 0:\n'
-     '        ctx._swap_in_flight = False\n',
-     '    if result.returncode != 0:\n'
-     '        pass\n',
+     '    tells the asker instead. Never raises."""\n'
+     '    ctx._swap_in_flight = False\n',
+     '    tells the asker instead. Never raises."""\n',
      'test_selfupdate_swap_queue.py'),
 
-    ('…or when its launch raises',
+    ('…or when its launch times out — reported, not raised (Q16i)',
      'app/selfupdate.py',
-     '    except BaseException:\n'
-     '        ctx._swap_in_flight = False\n'
-     '        raise\n',
-     '    except BaseException:\n'
+     '            error=f"docker run timed out after {e.timeout:g} s"), reply_to)\n'
+     '        return\n',
+     '            error=f"docker run timed out after {e.timeout:g} s"), reply_to)\n'
      '        raise\n',
      'test_selfupdate_swap_queue.py'),
 
-    ('during the swap a single update is refused, not queued',
+    ('during the swap a single update is refused, not queued — by the queue '
+     'itself, under its own lock (Q16h; no window since Q16i)',
      'app/update_engine.py',
-     '        if getattr(self, "_swap_in_flight", False):\n'
-     '            return False, "update_refused_selfupdate", {}\n',
-     '        if False:\n'
-     '            return False, "update_refused_selfupdate", {}\n',
+     '            if getattr(self, "_swap_in_flight", False):\n'
+     '                return -2\n',
+     '            if False:\n'
+     '                return -2\n',
      'test_selfupdate_swap_queue.py'),
 
     ('…and so is a request for several, as a whole',
      'app/update_engine.py',
-     '        if getattr(self, "_swap_in_flight", False):\n'
-     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
-     '        if False:\n'
-     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
+     '            if getattr(self, "_swap_in_flight", False):\n'
+     '                # As `enqueue_update`: none of it while a swap runs (-2).\n',
+     '            if False:\n'
+     '                # As `enqueue_update`: none of it while a swap runs (-2).\n',
      'test_selfupdate_swap_queue.py'),
 
     ('…Telegram says the refusal once for a batch',
@@ -6261,12 +6260,8 @@ GUARDED = [
     ('a queued entry the batch already did is named as done, not the nameles'
      's "no pending updates" (Q16h)',
      'app/update_engine.py',
-     '                               name=self._key_label(key))\n'
-     '            return self._t("update_already_done", name=self._key_label(key))\n'
-     '        if why == "host_unknown":\n',
-     '                               name=self._key_label(key))\n'
-     '            return self._t("no_pending_updates")\n'
-     '        if why == "host_unknown":\n',
+     '        if self._updated_since(key, since):\n',
+     '        if False:\n',
      'test_selfupdate_swap_queue.py'),
 
     ('…and one over an unreadable pending list is named as that, not as done',
@@ -6346,6 +6341,171 @@ GUARDED = [
      'app/lang/zh.json',
      '  "web_update_restarting_title": ',
      '  "web_update_restarting_titlex": ',
+     'test_lang_parity.py'),
+    # ── Q16i: the review of 2ddd2a0 — a swap that did not happen, the queue's own refusal, named drain lines ──
+    ('the drain calls an entry already updated only on a success in the upda'
+     'te history (Q16i)',
+     'app/update_engine.py',
+     '            if not isinstance(h, dict) or h.get("success") is not True:\n',
+     '            if not isinstance(h, dict):\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…for that very container',
+     'app/update_engine.py',
+     '            if h.get("container") != name:\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…on its own host',
+     'app/update_engine.py',
+     '            if (h.get("host") or LOCAL_HOST) != host:\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…since it was queued',
+     'app/update_engine.py',
+     '            if ts >= floor:\n',
+     '            if True:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…which the drain knows for the entry it took',
+     'app/update_engine.py',
+     '        since = taken[1] if taken and taken[0] == key else None\n',
+     '        since = None\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and without it the entry is named as no longer listed',
+     'app/update_engine.py',
+     '        return self._t("update_queue_skipped_not_listed",\n'
+     '                       name=self._key_label(key))\n',
+     '        return self._t("update_already_done", name=self._key_label(key))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a helper that fails has not cost the queue: it is named and dropped on'
+     'ly after the launch (Q16i)',
+     'app/selfupdate.py',
+     '    launched = time.time()\n'
+     '    try:\n'
+     '        result = subprocess.run(',
+     '    launched = time.time()\n'
+     '    _drop_queue(ctx)\n'
+     '    try:\n'
+     '        result = subprocess.run(',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…every channel hears that the self-update did not happen',
+     'app/selfupdate.py',
+     '        ctx.tell(text, skip=DISCORD_CHANNELS if reply_to else ())\n'
+     '        if reply_to:\n',
+     '        if reply_to:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…a helper that does not start says it',
+     'app/selfupdate.py',
+     '    if result.returncode != 0:\n'
+     '        _not_happened(',
+     '    if result.returncode != 0:\n'
+     '        ctx._swap_in_flight = False\n'
+     '        return\n'
+     '        _not_happened(',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and one whose launch times out',
+     'app/selfupdate.py',
+     '    except subprocess.TimeoutExpired as e:\n'
+     '        _not_happened(',
+     '    except subprocess.TimeoutExpired as e:\n'
+     '        ctx._swap_in_flight = False\n'
+     '        return\n'
+     '        _not_happened(',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and one that cannot run, without raising',
+     'app/selfupdate.py',
+     '            "selfupdate_not_happened", error=str(e)[:200]), reply_to)\n'
+     '        return\n',
+     '            "selfupdate_not_happened", error=str(e)[:200]), reply_to)\n'
+     '        raise\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a helper that never stops the process: flag down, lock given back, sai'
+     'd to every channel (Q16i)',
+     'app/selfupdate.py',
+     '    _not_happened(ctx, ctx.t("selfupdate_not_stopped", seconds=HELPER_WAIT),\n'
+     '                  reply_to)\n',
+     '    pass\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…but while the stop is under way the lock stays with the process',
+     'app/selfupdate.py',
+     '    if _being_stopped(ctx, launched):\n'
+     '        return\n',
+     '    if False:\n'
+     '        return\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…read from the exit marker the SIGTERM handler writes',
+     'app/selfupdate.py',
+     '        return float(mark.get("ts", 0) or 0) >= since\n',
+     '        return False\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…answered as the swap refusal',
+     'app/update_engine.py',
+     '        if pos == -2:\n',
+     '        if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the drain names an entry it refuses over an unreadable pin list (Q16i)',
+     'app/update_engine.py',
+     '            seam.tell(self._t("update_queue_skipped_pin_list",\n'
+     '                              name=self._key_label(key)))\n',
+     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ("…and where the update's own pin check finds it",
+     'app/update_engine.py',
+     '            return self._t("update_queue_skipped_pin_list",\n'
+     '                           name=self._key_label(key))\n',
+     '            return self._t("update_refused_pin_list")\n',
+     'test_queue_held_back.py'),
+
+    ('…and one whose host is gone, with the container',
+     'app/update_engine.py',
+     '            return self._t("update_queue_skipped_host_unknown",\n'
+     '                           name=self._key_label(key),\n',
+     '            return self._t("host_unknown",\n'
+     '                           name=split_host_key(key)[0],\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the neutral drain sentence is in every language',
+     'app/lang/es.json',
+     '  "update_queue_skipped_not_listed": ',
+     '  "update_queue_skipped_not_listedx": ',
+     'test_lang_parity.py'),
+
+    ('…and the named pin-list refusal',
+     'app/lang/fr.json',
+     '  "update_queue_skipped_pin_list": ',
+     '  "update_queue_skipped_pin_listx": ',
+     'test_lang_parity.py'),
+
+    ('…and the named unknown host',
+     'app/lang/it.json',
+     '  "update_queue_skipped_host_unknown": ',
+     '  "update_queue_skipped_host_unknownx": ',
+     'test_lang_parity.py'),
+
+    ('…and the self-update that did not happen',
+     'app/lang/ja.json',
+     '  "selfupdate_not_happened": ',
+     '  "selfupdate_not_happenedx": ',
+     'test_lang_parity.py'),
+
+    ('…and the helper that did not stop us',
+     'app/lang/nl.json',
+     '  "selfupdate_not_stopped": ',
+     '  "selfupdate_not_stoppedx": ',
      'test_lang_parity.py'),
 ]
 

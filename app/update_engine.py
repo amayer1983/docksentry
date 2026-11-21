@@ -217,6 +217,9 @@ class UpdateEngine:
         #: key -> when it was queued, for the 'already queued' answer
         #: and for /status. Cleared with the entry it belongs to.
         self._queued_at = {}
+        #: `(key, when it was queued)` of the entry the drain took last,
+        #: so its report can ask the update history "since then" (Q16i).
+        self._last_taken = None
         # Which container the held lock is currently busy with, and what
         # it is moving to: `{host key: target version}`. `update_running`
         # above already says "an update is in flight" but cannot say for
@@ -231,10 +234,11 @@ class UpdateEngine:
         # reboot would be a lie the UI could never clear.
         self._updating = {}
         # True from right before the helper container is launched (and
-        # down again if it does not start) — the process is about to be
-        # stopped, so the wrapper keeps the update lock held (nothing may
-        # start an update in the final seconds), and nothing is queued
-        # (Q16h).
+        # down again if it does not start, or does not stop this process
+        # — Q16i) — the process is about to be stopped, so the wrapper
+        # keeps the update lock held (nothing may start an update in the
+        # final seconds), and nothing is queued (Q16h; the queue itself
+        # checks it under its lock since Q16i).
         self._swap_in_flight = False
         # Notifier (Discord/webhook fan-out) — single-sourced here so the
         # orchestration methods that moved off the bot (_process_update_batch)
@@ -257,8 +261,19 @@ class UpdateEngine:
 
     def enqueue_update(self, key):
         """Queue a container key. Returns its 1-based position, or 0 when
-        it is already queued, or -1 when the queue is full."""
+        it is already queued, or -1 when the queue is full, or -2 while a
+        self-update swaps (nothing goes on then).
+
+        The swap flag is read here, under the queue's lock, and not only
+        by the caller beforehand: a request that had passed the caller's
+        look when the swap began went onto the queue after the swap had
+        named and dropped it, and the restart took it unnamed (Q16i,
+        measured on 2ddd2a0). The swap raises the flag before its drop
+        takes this lock, so an entry is either named by the drop or
+        refused here."""
         with self._update_queue_lock:
+            if getattr(self, "_swap_in_flight", False):
+                return -2
             if key in self._update_queue:
                 return 0
             if len(self._update_queue) >= self.UPDATE_QUEUE_MAX:
@@ -278,12 +293,15 @@ class UpdateEngine:
 
         `{key: answer}` with `enqueue_update`'s answers — the 1-based
         position, 0 for a key already queued, -1 for a key that needed a
-        place it did not get. When the new keys do not all fit, none of
+        place it did not get, -2 for every key while a self-update swaps. When the new keys do not all fit, none of
         them goes in and each of them gets -1: half a request on the
         queue is a request nobody made. A key named twice is one entry.
         """
         out = {}
         with self._update_queue_lock:
+            if getattr(self, "_swap_in_flight", False):
+                # As `enqueue_update`: none of it while a swap runs (-2).
+                return {k: -2 for k in dict.fromkeys(keys)}
             new = []
             for k in dict.fromkeys(keys):
                 if k in self._update_queue:
@@ -307,7 +325,7 @@ class UpdateEngine:
             if not self._update_queue:
                 return None
             key = self._update_queue.pop(0)
-            self._queued_at.pop(key, None)
+            self._last_taken = (key, self._queued_at.pop(key, None))
             return key
 
     def drop_queued_updates(self, predicate=None):
@@ -479,7 +497,8 @@ class UpdateEngine:
 
     def drop_queue_for_swap(self):
         """Take everything off the queue and name it, to every channel,
-        right before the self-update's helper starts (Q16h).
+        once the self-update's helper has started (Q16h; after the start,
+        not before it, since Q16i).
 
         The helper stops this process within seconds, and the queue lives
         in memory: whatever was on it went with the restart, and nobody
@@ -491,9 +510,12 @@ class UpdateEngine:
         release runs `after` before it kicks the drainer, and a held
         scheduled pass keeps the kick back anyway. So the swap says it
         itself, whoever started it. `selfupdate.swap` raises
-        `_swap_in_flight` first, so nothing new is queued from here on
-        (`claim_or_queue` refuses). The pending entries stay; the
-        restarted process finds them in the list.
+        `_swap_in_flight` before the helper's launch, so nothing new is
+        queued from then on (the queue refuses under its own lock), and
+        calls this only once the launch succeeded: a helper that failed
+        had already cost the queue, named "did not run" for a swap that
+        never happened (Q16i, measured on 2ddd2a0). The pending entries
+        stay; the restarted process finds them in the list.
 
         Returns the keys it took off. Never raises: a sentence that fails
         must not stop the self-update it is about.
@@ -540,10 +562,9 @@ class UpdateEngine:
         """
         if self.claim_update():
             return True, None, {}
-        # The self-update's helper is about to replace this process
-        # (Q16h): a queued update would go with it. Refused, and said so.
-        if getattr(self, "_swap_in_flight", False):
-            return False, "update_refused_selfupdate", {}
+        # A self-update's swap (Q16h) is refused by the queue itself,
+        # under its own lock (`enqueue_update`, -2): a look here first
+        # left a window to the drop (Q16i).
         # Tapping the SAME container again while it is running is not a
         # second piece of work — it is the same one. Queueing it meant
         # the drain picked it up after the update had finished and
@@ -577,15 +598,13 @@ class UpdateEngine:
         or excluded key is not placed and gets its own answer (Q16f), and
         one already waiting is taken off, unless the request did not fit;
         an unreadable pin list refuses the whole request, every key with
-        `update_refused_pin_list`, and so does a self-update's swap, with
-        `update_refused_selfupdate` (Q16h).
+        `update_refused_pin_list`. During a self-update's swap the queue
+        refuses every new key (-2), answered `update_refused_selfupdate`
+        (Q16h; by the queue under its own lock since Q16i).
         """
         if self.claim_update():
             return True, []
         keys = list(dict.fromkeys(keys))
-        if getattr(self, "_swap_in_flight", False):
-            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).
-            return False, [(k, "update_refused_selfupdate", {}) for k in keys]
         running = self.updating
         # Pinned and excluded keys stay off the queue and are answered
         # for themselves (Q16f); the rest goes on as before. One pin read
@@ -760,6 +779,9 @@ class UpdateEngine:
             return "update_same_running", {}
         if pos == -1:
             return "update_queue_full", {"max": self.UPDATE_QUEUE_MAX}
+        if pos == -2:
+            # The swap began after the caller's own look (Q16i).
+            return "update_refused_selfupdate", {}
         if pos == 0:
             # How long it has been sitting there, because "already in
             # the queue" alone reads as "you already pressed this" — and
@@ -1074,6 +1096,8 @@ class UpdateEngine:
         Q16f) and its pending entry stays.
         """
         seam = self._seam()
+        taken = getattr(self, "_last_taken", None)
+        since = taken[1] if taken and taken[0] == key else None
         # Pinned or excluded while it waited (Q16f): it was queued before
         # the pin, or a label says so now. Off the queue already (the
         # drain took it), said to every channel, and the pending entry
@@ -1081,7 +1105,10 @@ class UpdateEngine:
         # list is read once, here: an unreadable one refuses the entry.
         why = self.held_back(key, labels=True)
         if why == "pin_list_unreadable":
-            seam.tell(self._t("update_refused_pin_list"))
+            # Named: two entries refused here were two identical nameless
+            # lines (Q16i, measured on 2ddd2a0).
+            seam.tell(self._t("update_queue_skipped_pin_list",
+                              name=self._key_label(key)))
             return None
         if why is not None:
             seam.tell(self._t(f"update_queue_skipped_{why}",
@@ -1105,7 +1132,7 @@ class UpdateEngine:
             note=lambda k, line: seam.update_line(line))
         for k, target, _success, msg, last_group in results:
             if target is None:
-                seam.tell(self._drain_skipped_text(k, msg))
+                seam.tell(self._drain_skipped_text(k, msg, since=since))
                 return None
             return last_group
         return None
@@ -1154,39 +1181,88 @@ class UpdateEngine:
         host, name = split_host_key(key)
         return name if host == LOCAL_HOST else f"{name} @{host}"
 
-    def _drain_skipped_text(self, key, why):
-        """The sentence for a queued key `run_keys` ran nothing for."""
+    def _drain_skipped_text(self, key, why, since=None):
+        """The sentence for a queued key `run_keys` ran nothing for.
+
+        `since` is when the entry was queued (None: not known)."""
         if why == "pin_list_unreadable":
-            return self._t("update_refused_pin_list")
+            return self._t("update_queue_skipped_pin_list",
+                           name=self._key_label(key))
         if why in ("pinned", "pinned_label", "excluded"):
             # Held right before the update, after the drain's own
             # question: pinned during its wait (Q16g).
             return self._t(f"update_queue_skipped_{why}",
                            name=self._key_label(key))
-        if why == "no_pending_updates":
-            # No usable pending file. Without one at all, the batch the
-            # entry waited behind emptied it: "Update all" deletes the
-            # file when it is done. That used to come out as a nameless
-            # "No pending updates found", once per entry, under the green
-            # results of the very containers it meant (Q16h, measured on
-            # f6824c8: two of them under three results). A file that is
-            # there but cannot be read is not "already done": nobody can
-            # tell, and the entry is named with that.
-            path = getattr(self.config, "pending_file", None)
-            if path and os.path.exists(path):
-                return self._t("update_queue_skipped_pending_unreadable",
-                               name=self._key_label(key))
-            return self._t("update_already_done", name=self._key_label(key))
         if why == "host_unknown":
             from container_store import split_host_key
             hosts = getattr(self, "hosts", None)
             names = [h.name for h in hosts] if hosts else [LOCAL_HOST]
-            return self._t("host_unknown", name=split_host_key(key)[0],
+            return self._t("update_queue_skipped_host_unknown",
+                           name=self._key_label(key),
+                           host=split_host_key(key)[0],
                            hosts=", ".join(f"`{n}`" for n in names))
-        # Off the queue, "not pending" almost always means the update
-        # already happened while the entry waited. "Not in the update
-        # list" there would put a warning under a green result.
-        return self._t("update_already_done", name=self._key_label(key))
+        if why == "no_pending_updates":
+            # No usable pending file. That used to come out as a nameless
+            # "No pending updates found", once per entry, under the green
+            # results of the very containers it meant (Q16h). A file that
+            # is there but cannot be read is not "already done": nobody
+            # can tell, and the entry is named with that.
+            path = getattr(self.config, "pending_file", None)
+            if path and os.path.exists(path):
+                return self._t("update_queue_skipped_pending_unreadable",
+                               name=self._key_label(key))
+        # The pending entry is gone: no file ("Update all" deletes it when
+        # it is done), or a file without this key. That alone says
+        # nothing about how: "Update all" empties the list also for a
+        # container whose update FAILED, and "was already updated" came
+        # for exactly that one (Q16i, measured on 2ddd2a0). So "already
+        # updated" only on evidence — a success for this key in the update
+        # history since it was queued — and otherwise the neutral, named
+        # sentence.
+        if self._updated_since(key, since):
+            return self._t("update_already_done", name=self._key_label(key))
+        return self._t("update_queue_skipped_not_listed",
+                       name=self._key_label(key))
+
+    def _updated_since(self, key, since):
+        """True when the update history has a success for exactly `key`
+        (its name on its host) at or after `since` (a `time.time()`).
+
+        The history stores whole seconds of local time, so `since` is
+        taken down to its second: an update that finished in the second
+        the entry was queued counts. Anything that cannot be read, or no
+        `since`, is no evidence: False."""
+        if since is None:
+            return False
+        path = getattr(getattr(self, "config", None), "history_file", None)
+        if not path:
+            return False
+        try:
+            import json as _json
+            with open(path, encoding="utf-8") as f:
+                rows = _json.load(f)
+            from container_store import split_host_key
+            host, name = split_host_key(key)
+        except Exception:                                   # noqa: BLE001
+            return False
+        if not isinstance(rows, list):
+            return False
+        floor = int(since)
+        for h in reversed(rows):
+            if not isinstance(h, dict) or h.get("success") is not True:
+                continue
+            if h.get("container") != name:
+                continue
+            if (h.get("host") or LOCAL_HOST) != host:
+                continue
+            try:
+                ts = time.mktime(time.strptime(str(h.get("timestamp", "")),
+                                               "%Y-%m-%d %H:%M:%S"))
+            except (ValueError, OverflowError):
+                continue
+            if ts >= floor:
+                return True
+        return False
 
     def _say_drain(self, key, params):
         """What the drain reports, to every channel. Containers are

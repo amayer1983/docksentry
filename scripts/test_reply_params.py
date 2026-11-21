@@ -430,10 +430,67 @@ checks["a container held right before its update is said in all "
         "update_held_pinned", "update_held_pinned_label",
         "update_held_excluded", "update_held_pin_list_unreadable",
         "update_queue_skipped_pinned", "update_queue_skipped_pinned_label",
-        "update_queue_skipped_excluded", "update_refused_pin_list"}
+        "update_queue_skipped_excluded", "update_queue_skipped_pin_list"}
     and not _hbad)
 if _hbad:
     print("  held right before the update:", "; ".join(sorted(set(_hbad))))
+
+# ── the drain's other words, and a self-update that did not happen (Q16i)
+# Driven through the real `_drain_skipped_text` for every other reason
+# `run_keys` gives (no history, so "not listed"; with a success, "already
+# done"), and the two sentences `selfupdate.swap` says with their one
+# parameter each.
+import types as _types  # noqa: E402
+
+
+class _DrainAsked(_Asked):
+    hosts = None
+    config = _types.SimpleNamespace(pending_file=None, history_file=None)
+
+    def __init__(self, evidence):
+        super().__init__()
+        self._evidence = evidence
+
+    def _updated_since(self, key, since):
+        return self._evidence
+
+
+_dbad, _dkeys = [], set()
+for _ev in (False, True):
+    _da = _DrainAsked(_ev)
+    for _why in ("no_pending_updates", "not_pending", "host_unknown",
+                 "pin_list_unreadable"):
+        try:
+            _UE._drain_skipped_text(_da, "nas/web", _why, since=1.0)
+        except Exception as _e:                         # noqa: BLE001
+            _dbad.append(f"{_why}: {type(_e).__name__}: {_e}")
+    _da.asked += [("selfupdate_not_happened", {"error"}),
+                  ("selfupdate_not_stopped", {"seconds"})]
+    for key, given in _da.asked:
+        _dkeys.add(key)
+        for lang, strings in LANGS.items():
+            if key not in strings:
+                _dbad.append(f"{lang}: no {key}")
+            elif placeholders(strings[key]) != given:
+                _dbad.append(f"{lang}: {key} wants "
+                             f"{sorted(placeholders(strings[key]))}, gets "
+                             f"{sorted(given)}")
+_src_su = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "app", "selfupdate.py"),
+               encoding="utf-8").read()
+checks["a drained entry that ran nothing, and a self-update that did not "
+       "happen, are said in all languages, placeholders filled"] = (
+    _dkeys == {"update_queue_skipped_not_listed", "update_already_done",
+               "update_queue_skipped_host_unknown",
+               "update_queue_skipped_pin_list", "selfupdate_not_happened",
+               "selfupdate_not_stopped"}
+    and len(__import__("re").findall(
+        r'"selfupdate_not_happened",\s*error=', _src_su)) == 3
+    and _src_su.count('"selfupdate_not_happened"') == 3
+    and 'ctx.t("selfupdate_not_stopped", seconds=' in _src_su
+    and not _dbad)
+if _dbad:
+    print("  drain / self-update:", "; ".join(sorted(set(_dbad))))
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
