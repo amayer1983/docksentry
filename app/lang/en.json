@@ -570,7 +570,7 @@
   "web_update_started_title": "Update started",
   "web_update_started": "The update is running in the background. Its result shows up in the history, and on this page, once it finishes.",
   "web_update_queued_title": "Update queued",
-  "web_update_queued": "Another update is running. This one is queued at position {pos} and starts on its own as soon as that one finishes.",
+  "web_update_queued": "Another update is running. This one is queued at position {pos} and starts on its own when its turn comes.",
   "web_update_queued_many": "Another update is running. {count} of the selected containers are waiting in the queue and start one after another as soon as it finishes.",
   "web_update_already_queued_title": "Already queued",
   "web_update_already_queued": "This container has been waiting in the queue for {since}. It starts on its own as soon as the running update finishes.",

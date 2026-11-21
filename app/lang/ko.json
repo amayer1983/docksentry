@@ -570,7 +570,7 @@
   "web_update_started_title": "업데이트 시작됨",
   "web_update_started": "업데이트가 백그라운드에서 실행 중입니다. 완료되면 결과가 기록과 이 페이지에 표시됩니다.",
   "web_update_queued_title": "업데이트 대기열에 추가됨",
-  "web_update_queued": "다른 업데이트가 실행 중입니다. 이 업데이트는 대기열 {pos}번째이며, 그 업데이트가 끝나면 자동으로 시작됩니다.",
+  "web_update_queued": "다른 업데이트가 실행 중입니다. 이 업데이트는 대기열 {pos}번째이며, 차례가 오면 자동으로 시작됩니다.",
   "web_update_queued_many": "다른 업데이트가 실행 중입니다. 선택한 컨테이너 중 {count}개가 대기열에 있으며, 끝나면 하나씩 차례로 시작됩니다.",
   "web_update_already_queued_title": "이미 대기열에 있음",
   "web_update_already_queued": "이 컨테이너는 {since} 전부터 대기열에 있습니다. 실행 중인 업데이트가 끝나면 자동으로 시작됩니다.",

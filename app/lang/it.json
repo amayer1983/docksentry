@@ -570,7 +570,7 @@
   "web_update_started_title": "Aggiornamento avviato",
   "web_update_started": "L'aggiornamento è in esecuzione in background. Il risultato comparirà nella cronologia e su questa pagina al termine.",
   "web_update_queued_title": "Aggiornamento in coda",
-  "web_update_queued": "È in corso un altro aggiornamento. Questo è in posizione {pos} nella coda e parte da solo appena l'altro finisce.",
+  "web_update_queued": "È in corso un altro aggiornamento. Questo è in posizione {pos} nella coda e parte da solo quando arriva il suo turno.",
   "web_update_queued_many": "È in corso un altro aggiornamento. {count} dei container selezionati aspettano in coda e partono uno dopo l'altro appena finisce.",
   "web_update_already_queued_title": "Già in coda",
   "web_update_already_queued": "Questo container è in coda da {since}. Parte da solo appena finisce l'aggiornamento in corso.",

@@ -570,7 +570,7 @@
   "web_update_started_title": "Aktualizacja uruchomiona",
   "web_update_started": "Aktualizacja działa w tle. Jej wynik pojawi się w historii i na tej stronie po zakończeniu.",
   "web_update_queued_title": "Aktualizacja w kolejce",
-  "web_update_queued": "Trwa inna aktualizacja. Ta jest na pozycji {pos} w kolejce i ruszy sama, gdy tamta się skończy.",
+  "web_update_queued": "Trwa inna aktualizacja. Ta jest na pozycji {pos} w kolejce i ruszy sama, gdy przyjdzie jej kolej.",
   "web_update_queued_many": "Trwa inna aktualizacja. Wybrane kontenery w kolejce: {count}. Ruszą po kolei, gdy tamta się skończy.",
   "web_update_already_queued_title": "Już w kolejce",
   "web_update_already_queued": "Ten kontener czeka w kolejce od {since}. Ruszy sam, gdy skończy się bieżąca aktualizacja.",

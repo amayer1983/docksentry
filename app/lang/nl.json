@@ -570,7 +570,7 @@
   "web_update_started_title": "Update gestart",
   "web_update_started": "De update draait op de achtergrond. Het resultaat verschijnt na afloop in de geschiedenis en op deze pagina.",
   "web_update_queued_title": "Update in de wachtrij",
-  "web_update_queued": "Er loopt een andere update. Deze staat op plek {pos} in de wachtrij en start vanzelf zodra die klaar is.",
+  "web_update_queued": "Er loopt een andere update. Deze staat op plek {pos} in de wachtrij en start vanzelf zodra hij aan de beurt is.",
   "web_update_queued_many": "Er loopt een andere update. {count} van de geselecteerde containers staan in de wachtrij en starten na elkaar zodra die klaar is.",
   "web_update_already_queued_title": "Al in de wachtrij",
   "web_update_already_queued": "Deze container staat al {since} in de wachtrij. Hij start vanzelf zodra de lopende update klaar is.",

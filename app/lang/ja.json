@@ -570,7 +570,7 @@
   "web_update_started_title": "更新を開始しました",
   "web_update_started": "更新はバックグラウンドで実行中です。完了すると結果が履歴とこのページに表示されます。",
   "web_update_queued_title": "更新を順番待ちに追加しました",
-  "web_update_queued": "別の更新が実行中です。この更新は順番待ちの {pos} 番目で、それが終わり次第自動的にはじまります。",
+  "web_update_queued": "別の更新が実行中です。この更新は順番待ちの {pos} 番目で、順番が来たら自動的にはじまります。",
   "web_update_queued_many": "別の更新が実行中です。選択したコンテナのうち {count} 件が順番待ちで、それが終わり次第ひとつずつはじまります。",
   "web_update_already_queued_title": "すでに順番待ちです",
   "web_update_already_queued": "このコンテナは {since} 前から順番待ちです。実行中の更新が終わり次第自動的にはじまります。",

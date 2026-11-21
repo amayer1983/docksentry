@@ -570,7 +570,7 @@
   "web_update_started_title": "Actualización iniciada",
   "web_update_started": "La actualización se está ejecutando en segundo plano. Su resultado aparecerá en el historial y en esta página cuando termine.",
   "web_update_queued_title": "Actualización en cola",
-  "web_update_queued": "Hay otra actualización en curso. Esta queda en la posición {pos} de la cola y empieza sola en cuanto termine aquella.",
+  "web_update_queued": "Hay otra actualización en curso. Esta queda en la posición {pos} de la cola y empieza sola cuando le toque.",
   "web_update_queued_many": "Hay otra actualización en curso. {count} de los contenedores seleccionados esperan en la cola y empiezan uno tras otro en cuanto termine.",
   "web_update_already_queued_title": "Ya en la cola",
   "web_update_already_queued": "Este contenedor lleva {since} en la cola. Empieza solo en cuanto termine la actualización en curso.",
