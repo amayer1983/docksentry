@@ -519,7 +519,15 @@ class UpdateEngine:
             return True, []
         keys = list(dict.fromkeys(keys))
         running = self.updating
-        positions = self.enqueue_updates([k for k in keys if k not in running])
+        # Onto the queue in the order the batch would have run them: the
+        # drainer runs one key per run, so the batch's group sort never
+        # sees two of them. Without this, the same Web bulk ran a group's
+        # dependent before its head whenever the lock happened to be busy
+        # (measured in T5 on 2354a6b: db,web of the group [web, db] ran
+        # web → db on a free lock, db → web queued). The answers stay in
+        # the order asked.
+        positions = self.enqueue_updates(self._in_group_order(
+            [k for k in keys if k not in running]))
         # My decision for batches (18.11.2026): a batch that does not
         # fit is answered as a whole with "queue full". Telling one key
         # of it "already queued" next to "queue full" for the rest reads
@@ -528,6 +536,40 @@ class UpdateEngine:
             return False, [(k,) + self._queue_answer(k, -1) for k in keys]
         return False, [(k,) + self._queue_answer(
             k, None if k in running else positions[k]) for k in keys]
+
+    def _in_group_order(self, keys):
+        """`keys` in the order one batch of them runs: hosts as they first
+        come up, and on each host the group members by group and place
+        before everything else, as `_process_update_batch` sorts them.
+        The rest keeps the order it came in. A host whose groups cannot
+        be read keeps its keys as they are — the order is a courtesy,
+        not a reason to refuse the request."""
+        from container_store import split_host_key
+        hosts, by_host = [], {}
+        for k in keys:
+            h = split_host_key(k)[0]
+            if h not in by_host:
+                by_host[h] = []
+                hosts.append(h)
+            by_host[h].append(k)
+        out = []
+        for h in hosts:
+            mine = by_host[h]
+            try:
+                groups = host_store(self, h).get_groups() or {}
+            except Exception:                               # noqa: BLE001
+                out.extend(mine)
+                continue
+            position = {}
+            for gid, g in groups.items():
+                for pos, cname in enumerate(g.get("containers") or []):
+                    position[cname] = (gid, pos)
+
+            def _rank(k):
+                gp = position.get(split_host_key(k)[1])
+                return (0,) + gp if gp else (1, "", 0)
+            out.extend(sorted(mine, key=_rank))
+        return out
 
     def _queue_answer(self, container_key, pos):
         """`(i18n key, params)` for a claim that lost. `pos` is what the

@@ -56,6 +56,8 @@ def _engine():
     eng._update_queue_lock = threading.Lock()
     eng._queued_at = {}
     eng._updating = {}
+    # No groups: a queued selection keeps the order it was asked in.
+    eng.store = types.SimpleNamespace(get_groups=lambda: {})
     return eng
 
 
@@ -189,6 +191,77 @@ _to, _started = _post_update(name="", engine=_eng)
 checks["an empty container name starts nothing"] = _started == []
 checks["…and says so rather than redirecting blank"] = _to == "/?update=gone"
 checks["…and takes no claim"] = not _eng.update_claimed
+
+# ── a queued selection keeps the order its batch would have run in ────
+# The drainer runs one key per run, so the batch's group sort never sees
+# two of them: the queue itself has to be in that order. A bulk of the
+# group [web, db] named db first ran db before web whenever the lock was
+# busy, and web before db when it was free (review of Q14).
+
+
+class _Groups:
+    """A store stand-in: only the groups are read here."""
+
+    def __init__(self, groups, fail=False):
+        self._groups, self._fail = groups, fail
+
+    def get_groups(self):
+        if self._fail:
+            raise OSError("groups.json unreadable")
+        return self._groups
+
+
+def _order(keys, store=None, hosts=None):
+    eng = _engine()
+    eng.store = store if store is not None else _Groups({})
+    if hosts is not None:
+        eng.hosts = hosts
+    eng.claim_update()
+    try:
+        claimed, outcomes = eng.claim_or_queue_many(keys)
+    except Exception as e:                          # noqa: BLE001
+        # A request refused by a crash is a failed check here, not a
+        # traceback that ends the procedure.
+        _let_go(eng)
+        return None, f"raised {type(e).__name__}", _queued(eng)
+    _let_go(eng)
+    return claimed, [k for k, _a, _p in outcomes], _queued(eng)
+
+
+_stack = {"my-stack": {"containers": ["web", "db"]}}
+_c, _asked, _q = _order(["db", "web"], _Groups(_stack))
+checks["a queued group goes on the queue head first"] = (
+    not _c and _q == ["web", "db"])
+checks["…while the answers stay in the order asked"] = _asked == ["db", "web"]
+_c, _asked, _q = _order(["solo", "db", "zeta", "web"], _Groups(_stack))
+checks["…group members before the rest, the rest as selected"] = (
+    _q == ["web", "db", "solo", "zeta"])
+_c, _asked, _q = _order(["zeta", "alpha"], _Groups(_stack))
+checks["containers in no group keep the order selected"] = (
+    _q == ["zeta", "alpha"])
+_c, _asked, _q = _order(["db", "web"], _Groups(_stack, fail=True))
+checks["unreadable groups keep the selection as it is"] = (
+    _c is False and _q == ["db", "web"])
+# Two hosts: each host's keys stay together, the hosts in the order they
+# first come up — how the Web worker splits a free-lock batch.
+
+
+class _Hosts:
+    is_multi = True
+
+    def __init__(self, stores):
+        self._stores = stores
+
+    def get(self, name):
+        st = self._stores.get(name)
+        return types.SimpleNamespace(store=st) if st is not None else None
+
+
+_c, _asked, _q = _order(
+    ["nas/db", "db", "nas/web", "web"], _Groups({}),
+    _Hosts({"local": _Groups(_stack), "nas": _Groups(_stack)}))
+checks["each host's group in order, the hosts as they come"] = (
+    _q == ["nas/web", "nas/db", "web", "db"])
 
 # ── the page can say it ──────────────────────────────────────────────
 # A redirect target nobody renders is the same silence in a new place.

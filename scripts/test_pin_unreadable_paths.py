@@ -376,6 +376,9 @@ class _Engine:
     claim_or_queue_many = UpdateEngine.claim_or_queue_many
     enqueue_updates = UpdateEngine.enqueue_updates
     _queue_answer = UpdateEngine._queue_answer
+    # Queued keys go on in the batch's order (review of Q14); no store
+    # here, so they keep the order asked.
+    _in_group_order = UpdateEngine._in_group_order
     updating = UpdateEngine.updating
 
     def __init__(self):

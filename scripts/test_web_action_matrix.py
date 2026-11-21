@@ -778,6 +778,23 @@ def _rows():
         ("enqueue",) + tuple(f"q{i}" for i in range(9)), P(
         "/api/bulk", ("action", "update"), ("names", "web,nas/web")),
         ("unlock",))
+    # A bulk that names a group's members out of order still runs the
+    # head first, whether it starts at once or waits on the queue. The
+    # queued one ran them in selection order until the Q14 review: each
+    # queued key is its own run, so the batch's group sort saw one entry.
+    # No restart_dependents: the head's kick of a dependent outside its
+    # run waits on the dependent's health in real time, which is Q11c's
+    # business, not this row's.
+    group = (("name", "My Stack!"), ("containers", "web"),
+             ("containers", "db"), ("wait_seconds", "0"))
+    add("bulk: update db,web of a group", P("/api/group_save", *group),
+        ("add_pending", "db", "postgres:16", "local"),
+        P("/api/bulk", ("action", "update"), ("names", "db,web")))
+    add("bulk: update db,web of a group, lock held, then released",
+        P("/api/group_save", *group),
+        ("add_pending", "db", "postgres:16", "local"), ("lock",),
+        P("/api/bulk", ("action", "update"), ("names", "db,web")),
+        ("release",))
     add("bulk: update, pin list unreadable", ("corrupt_pins",), P(
         "/api/bulk", ("action", "update"), ("names", "web")))
     add("bulk: bogus action", P("/api/bulk", ("action", "bogus"),
@@ -1135,7 +1152,9 @@ BRANCH_NOTES = {
               "by the engine's drainer (Q13).",
     "bulk": ":3516, no pre-gate except the pin list. update: "
             "`_start_web_update` over all keys, one claim or all of them "
-            "queued (?update=queued&n when more than one waits); the "
+            "queued (?update=queued&n when more than one waits), in "
+            "the order the batch would run them, so a group's head goes "
+            "before its dependents either way; the "
             "flags: a thread → `_api_bulk` (:7444), straight to each "
             "host's store, unknown host printed.",
     "check_one": ":2726 → `_api_check_one` (:7317), synchronous JSON. "
@@ -2593,8 +2612,10 @@ EXPECTED = {
     # ── bulk ────────────────────────────────────────────────────────
     # :3516, no pre-gate except the pin list. update: `_start_web_update`
     # over all keys, one claim or all of them queued (?update=queued&n when
-    # more than one waits); the flags: a thread → `_api_bulk` (:7444),
-    # straight to each host's store, unknown host printed.
+    # more than one waits), in the order the batch would run them, so a
+    # group's head goes before its dependents either way; the flags: a
+    # thread → `_api_bulk` (:7444), straight to each host's store, unknown
+    # host printed.
     ('multi', 'bulk: pin web,nas/web,zzz/web'): {'steps': [{'do': 'POST /api/bulk action=pin&names=web,nas/web,zzz/web',
                 'http': '303 | Location: /',
                 'out': ["<log> Web UI bulk: unknown host 'zzz' — skipped"]}],
@@ -3055,6 +3076,199 @@ EXPECTED = {
                'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('multi', 'bulk: update db,web of a group'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}',
+                        '<telegram> *Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format ×2'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
+               'backups': 1}},
+    ('one', 'bulk: update db,web of a group'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}',
+                        '<telegram> *Update Result:*\n'
+                        '\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format ×2'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': None,
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
+               'backups': 1}},
+    ('headless', 'bulk: update db,web of a group'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=started',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format ×2'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': None,
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
+               'backups': 1}},
+    ('multi', 'bulk: update db,web of a group, lock held, then released'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=queued&n=2'},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ⏳ Updating `db`...',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}',
+                        '<telegram> ✅ [db](https://hub.docker.com/_/postgres): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5 '
+                                   '×2, inspect --format'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
+               'backups': 1}},
+    ('one', 'bulk: update db,web of a group, lock held, then released'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=queued&n=2'},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ⏳ Updating `db`...',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}',
+                        '<telegram> ✅ [db](https://hub.docker.com/_/postgres): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5 '
+                                   '×2, inspect --format'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
+               'backups': 1}},
+    ('headless', 'bulk: update db,web of a group, lock held, then released'): {'steps': [{'do': 'POST /api/group_save name=My '
+                      'Stack!&containers=web&containers=db&wait_seconds=0',
+                'http': '303 | Location: /groups'},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=db,web',
+                'http': '303 | Location: /?update=queued&n=2'},
+               {'do': 'release',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "postgres:16", "source_url": '
+                        '"https://hub.docker.com/_/postgres", "success": true}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format, inspect --format t=10, inspect --format t=5 '
+                                   '×2, inspect --format'},
+                'events': ['update_container@local:web', 'update_container@local:db']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
+                         '{"containers": "web", "name": "My Stack!", "wait_seconds": "0"}, '
+                         '"source": "web", "target": "My Stack!"}',
+                         '{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,web"}, "source": "web"}'],
+               'files': {'groups.json': '{"my-stack": {"containers": ["web", "db"], '
+                                        '"name": "My Stack!", "restart_dependents": false, '
+                                        '"wait_seconds": 0}}'},
                'backups': 1}},
     ('multi', 'bulk: update, pin list unreadable'): {'steps': [{'do': 'corrupt_pins'},
                {'do': 'POST /api/bulk action=update&names=web',

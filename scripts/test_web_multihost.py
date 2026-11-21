@@ -174,6 +174,9 @@ class FakeEngine:
     queued_updates = UpdateEngine.queued_updates
     queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
     _queue_answer = UpdateEngine._queue_answer
+    # Queued keys go on in the batch's order (review of Q14); no store
+    # here, so they keep the order asked.
+    _in_group_order = UpdateEngine._in_group_order
     updating = UpdateEngine.updating
     UPDATE_QUEUE_MAX = UpdateEngine.UPDATE_QUEUE_MAX
     # The release kicks the queue drain since Q13; with no queue here it
