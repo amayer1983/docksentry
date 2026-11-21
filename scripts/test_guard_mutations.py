@@ -2598,6 +2598,56 @@ GUARDED = [
      "                return \"/?update=same_running\"\n",
      "                return \"/?update=queued&pos=0\"\n",
      "test_web_update_feedback.py"),
+    # Q14b: a key with nothing pending is answered before anything is
+    # claimed or queued. Applied by hand in a copy, each red without a
+    # traceback.
+    ('a Web update click for a container no longer pending is told so, '
+     'before anything is claimed or queued',
+     'app/web_ui.py',
+     '                    if not _left:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     '                    if False:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     'test_web_update_feedback.py'),
+    ('…a Web bulk update with nothing pending left says so too',
+     'app/web_ui.py',
+     '                    if not keys:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     '                    if False:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     'test_web_action_matrix.py'),
+    ('…and of a selection only what is still pending is claimed or queued',
+     'app/web_ui.py',
+     '                    keys, _why = _still_pending(keys)\n',
+     '                    _why = _still_pending(keys)[1]\n',
+     'test_web_action_matrix.py'),
+    ("…a container on a host nobody manages is told that, not 'gone'",
+     'app/web_ui.py',
+     '        if named and unknown == named:\n',
+     '        if False:\n',
+     'test_web_update_feedback.py'),
+    ("…another host's entry of the same name is not this one pending",
+     'app/web_ui.py',
+     '                   for e in _pending.entries_for(entries, [resolved[0]])):\n',
+     '                   for e in entries if isinstance(e, dict)):\n',
+     'test_web_update_feedback.py'),
+    ('…the host nobody manages is still logged where it is dropped',
+     'app/web_ui.py',
+     "                # The worker's own words for it, said where it is dropped.\n"
+     '                print(',
+     "                # The worker's own words for it, said where it is dropped.\n"
+     '                (',
+     'test_web_action_matrix.py'),
+    ('…and the status page shows the host-not-managed answer',
+     'app/web_ui.py',
+     '                        "host_unknown"):\n',
+     '                        ):\n',
+     'test_web_update_feedback.py'),
+    ('…and has its words in every language',
+     'app/lang/ja.json',
+     '"web_update_host_unknown": "更新は開始されませんでした。Docksentry はこのホストを（もう）管理していません。ページを再読み込みすると現在の一覧が表示されます。"',
+     '"web_update_host_unknown": "No update was started: Docksentry does not manage that host (any more). Reload the page for the current list."',
+     'test_lang_parity.py'),
     # Review of Q14: the drainer runs one queued key per run, so the
     # batch's group sort never saw two of them and a busy bulk ran a
     # group's dependent before its head.

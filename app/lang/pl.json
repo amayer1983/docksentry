@@ -580,6 +580,8 @@
   "web_update_same_running": "Ten kontener jest właśnie aktualizowany — to ta sama aktualizacja, nie druga.",
   "web_update_gone_title": "Nie ma czego aktualizować",
   "web_update_gone": "Tego kontenera nie ma już na liście oczekujących — mógł zostać już zaktualizowany albo lista została w międzyczasie odświeżona.",
+  "web_update_host_unknown_title": "Host niezarządzany",
+  "web_update_host_unknown": "Nie rozpoczęto aktualizacji: Docksentry nie zarządza (już) tym hostem. Odśwież stronę, aby zobaczyć aktualną listę.",
   "update_refused_pin_list": "📌 Nie uruchomiono aktualizacji: nie udało się odczytać listy przypiętych (`pinned_containers.json`), więc każdy kontener liczy się jako przypięty. Napraw lub usuń plik i spróbuj ponownie.",
   "check_pin_list_unreadable": "📌 Niczego nie sprawdzono: nie udało się odczytać listy przypiętych (`pinned_containers.json`), więc każdy kontener liczy się jako przypięty. Napraw lub usuń plik i sprawdź ponownie.",
   "web_update_pinlist_title": "Lista przypiętych nieczytelna",

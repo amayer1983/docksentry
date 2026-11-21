@@ -32,8 +32,10 @@ Driven against the real handler — what matters is where it redirects to
 and whether a worker thread was started at all.
 """
 
+import json
 import os
 import sys
+import tempfile
 import threading
 import types
 
@@ -72,16 +74,40 @@ def _let_go(engine):
         engine._update_lock.release()
 
 
-def _post_update(name="db", engine=None, thread_fails=False):
+_TMP = tempfile.mkdtemp(prefix="web-update-feedback-")
+
+
+def _pending_file(entries):
+    """A pending file holding `entries`, or (a string) those bytes."""
+    path = os.path.join(_TMP, f"pending-{len(os.listdir(_TMP))}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        if isinstance(entries, str):
+            f.write(entries)
+        else:
+            json.dump(entries, f)
+    return path
+
+
+#: What the page offered an Update button for: both local containers
+#: the checks below click are pending.
+_PENDING = [{"name": "db", "image": "postgres:16", "host": "local"},
+            {"name": "web", "image": "nginx:1.25"}]
+
+
+def _post_update(name="db", engine=None, thread_fails=False, pending=None):
     """POST /api/update on `engine`; returns (redirect target, threads
-    started). A started thread is recorded, not run."""
+    started). A started thread is recorded, not run. `pending` is what
+    the pending file holds (default `_PENDING`)."""
     started = []
     engine = engine if engine is not None else _engine()
     bot = types.SimpleNamespace(
         t=None, enabled=False, engine=engine,
         _run_queued_selfupdate=lambda: None)
     handler_cls = web_ui.create_handler(
-        types.SimpleNamespace(web_password="", web_username="", language="en"),
+        types.SimpleNamespace(
+            web_password="", web_username="", language="en",
+            pending_file=_pending_file(
+                _PENDING if pending is None else pending)),
         checker=None, bot=bot, store=None)
     h = handler_cls.__new__(handler_cls)
     h.path = "/api/update"
@@ -192,6 +218,40 @@ checks["an empty container name starts nothing"] = _started == []
 checks["…and says so rather than redirecting blank"] = _to == "/?update=gone"
 checks["…and takes no claim"] = not _eng.update_claimed
 
+# ── nothing pending is said before anything is claimed (Q14b) ─────────
+# Until Q14b the click was answered "started" and the worker then found
+# nothing and returned without a word; a busy lock queued it for the
+# drainer to call "already updated" later.
+_eng = _engine()
+_to, _started = _post_update(name="cache", engine=_eng)
+checks["a container that is no longer pending is told so"] = (
+    _to == "/?update=gone" and _started == [])
+checks["…and takes no claim for it"] = not _eng.update_claimed
+_eng = _engine()
+_eng.claim_update()
+_to, _started = _post_update(name="cache", engine=_eng)
+checks["…nor goes on the queue behind a held lock"] = (
+    _to == "/?update=gone" and _queued(_eng) == [] and _started == [])
+_let_go(_eng)
+# Another host's entry of the same name is not this one's.
+_eng = _engine()
+_to, _started = _post_update(name="db", engine=_eng, pending=[
+    {"name": "db", "image": "postgres:16", "host": "nas"}])
+checks["another host's entry of that name does not count"] = (
+    _to == "/?update=gone" and _started == [] and not _eng.update_claimed)
+_eng = _engine()
+_to, _started = _post_update(name="db", engine=_eng, pending='[{"name"')
+checks["an unreadable pending file has nothing to update"] = (
+    _to == "/?update=gone" and _started == [] and not _eng.update_claimed)
+# A host this instance does not manage: no registry here, so anything
+# but the local host is one.
+_eng = _engine()
+_to, _started = _post_update(name="zzz/db", engine=_eng, pending=[
+    {"name": "db", "image": "postgres:16", "host": "zzz"}])
+checks["a host nobody manages is told so"] = (
+    _to == "/?update=host_unknown" and _started == []
+    and not _eng.update_claimed and _queued(_eng) == [])
+
 # ── a queued selection keeps the order its batch would have run in ────
 # The drainer runs one key per run, so the batch's group sort never sees
 # two of them: the queue itself has to be in that order. A bulk of the
@@ -271,7 +331,7 @@ _lang = os.path.join(os.path.dirname(__file__), "..", "app", "lang", "en.json")
 with open(_lang, encoding="utf-8") as _f:
     _keys = _json.load(_f)
 for _what in ("started", "gone", "queued", "already_queued", "queue_full",
-              "same_running"):
+              "same_running", "host_unknown"):
     checks[f"the '{_what}' answer has words to show"] = (
         bool(_keys.get(f"web_update_{_what}"))
         and bool(_keys.get(f"web_update_{_what}_title")))
@@ -350,6 +410,10 @@ checks["…that the queue was full, and its size"] = (
 _page = _status_page("/?update=same_running")
 checks["…that it is the one updating now"] = (
     _fmt("web_update_same_running") in _page)
+_page = _status_page("/?update=host_unknown")
+checks["…that the host is not one this instance manages"] = (
+    _fmt("web_update_host_unknown") in _page
+    and _fmt("web_update_host_unknown_title") in _page)
 # The numbers come from the URL, so a hand-made one must not break the
 # page or put words on it that nobody sent.
 _page = _status_page("/?update=queued&pos=%3Cb%3E")
@@ -360,6 +424,9 @@ checks["no banner without an answer"] = (
     _fmt("web_update_queued_title") not in _status_page("/")
     and "web_update_queued_title" in _keys)
 
+import shutil  # noqa: E402
+
+shutil.rmtree(_TMP, ignore_errors=True)
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'✅' if v else '❌'} {k}")

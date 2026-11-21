@@ -580,6 +580,8 @@
   "web_update_same_running": "Deze container wordt nu bijgewerkt — dat is dezelfde update, geen tweede.",
   "web_update_gone_title": "Niets bij te werken",
   "web_update_gone": "Die container staat niet meer in de lijst met openstaande updates — misschien is hij al bijgewerkt, of de lijst is intussen opnieuw geladen.",
+  "web_update_host_unknown_title": "Host niet beheerd",
+  "web_update_host_unknown": "Er is geen update gestart: Docksentry beheert die host niet (meer). Herlaad de pagina voor de actuele lijst.",
   "update_refused_pin_list": "📌 Geen update gestart: de lijst met vastgezette containers (`pinned_containers.json`) kon niet worden gelezen, dus elke container geldt als vastgezet. Herstel of verwijder het bestand en probeer het opnieuw.",
   "check_pin_list_unreadable": "📌 Niets gecontroleerd: de lijst met vastgezette containers (`pinned_containers.json`) kon niet worden gelezen, dus elke container geldt als vastgezet. Herstel of verwijder het bestand en controleer opnieuw.",
   "web_update_pinlist_title": "Lijst met vastgezette containers onleesbaar",

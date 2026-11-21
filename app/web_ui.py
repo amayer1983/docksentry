@@ -525,6 +525,47 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return True
         return False
 
+    def _still_pending(keys):
+        """`(keys, answer)`: the `keys` that have an entry in their own
+        host's slice of the pending file, in the order asked, and — when
+        none is left — the status-page answer for that.
+
+        Asked before anything is claimed or queued (Q14b). The worker
+        filters the same way, but only after the redirect: until Q14b a
+        key that was no longer pending was answered "started" and the
+        worker then returned without a word, and a busy lock put it on
+        the queue for the drainer to say "already updated" about later.
+
+        A key on a host this instance does not manage is dropped like
+        the worker drops it (never retried locally). `host_unknown` when
+        every named key was such a host, `gone` otherwise — an unreadable
+        pending file holds nothing, so it is `gone` too.
+        """
+        import pending as _pending
+        from container_store import split_host_key
+        entries = _pending.read(config.pending_file)
+        kept, named, unknown = [], 0, 0
+        for key in keys:
+            host_name, name = split_host_key(key)
+            if not name:
+                continue
+            named += 1
+            resolved = _resolve_host(host_name)
+            if resolved is None:
+                # The worker's own words for it, said where it is dropped.
+                print(f"Web UI update: unknown host {host_name!r} "
+                      "— skipped")
+                unknown += 1
+                continue
+            if any(e.get("name") == name
+                   for e in _pending.entries_for(entries, [resolved[0]])):
+                kept.append(key)
+        if kept:
+            return kept, None
+        if named and unknown == named:
+            return [], "host_unknown"
+        return [], "gone"
+
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress default logging
@@ -2685,14 +2726,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 #
                 # The claim is taken here, not guessed at (Q14): a free
                 # lock goes to the worker with the thread, a held one
-                # queues the click, and the page says which.
+                # queues the click, and the page says which. A key with
+                # nothing pending is answered before either (Q14b).
                 if not key:
                     self._send_redirect("/?update=gone")
                 elif _pins_unreadable_for([key]):
                     self._send_redirect("/?update=pinlist")
                 else:
-                    self._send_redirect(self._start_web_update(
-                        [key], self._api_update, key))
+                    _left, _why = _still_pending([key])
+                    if not _left:
+                        self._send_redirect("/?update=" + _why)
+                    else:
+                        self._send_redirect(self._start_web_update(
+                            [key], self._api_update, key))
             elif path == "/api/check_one":
                 # Per-container update check from the Status table (#50).
                 # POST rather than GET so it inherits the auth + CSRF checks
@@ -3500,9 +3546,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     self._send_redirect("/?update=pinlist")
                     return
                 if action == "update" and keys:
-                    # One claim for the whole selection, or every key of
-                    # it on the queue (Q14) — before the redirect, so the
-                    # page can say which.
+                    # Only what is still pending goes on, and a selection
+                    # with nothing left says so instead of "started"
+                    # (Q14b). Then one claim for the whole selection, or
+                    # every key of it on the queue (Q14) — before the
+                    # redirect, so the page can say which.
+                    keys, _why = _still_pending(keys)
+                    if not keys:
+                        self._send_redirect("/?update=" + _why)
+                        return
                     self._send_redirect(self._start_web_update(
                         keys, self._run_web_update_batch, keys))
                     return
@@ -4412,7 +4464,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     return 0
             update_banner = ""
             if _upd in ("started", "gone", "pinlist", "queued",
-                        "already_queued", "queue_full", "same_running"):
+                        "already_queued", "queue_full", "same_running",
+                        "host_unknown"):
                 _calm = _upd in ("started", "queued", "already_queued",
                                  "same_running")
                 _kind = "card" if _calm else "card-warn"

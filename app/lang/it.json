@@ -580,6 +580,8 @@
   "web_update_same_running": "Questo container è in aggiornamento proprio ora — è lo stesso aggiornamento, non un secondo.",
   "web_update_gone_title": "Niente da aggiornare",
   "web_update_gone": "Quel container non è più nella lista in attesa — forse è già stato aggiornato, oppure la lista è stata ricaricata nel frattempo.",
+  "web_update_host_unknown_title": "Host non gestito",
+  "web_update_host_unknown": "Nessun aggiornamento avviato: Docksentry non gestisce (più) quell'host. Ricarica la pagina per vedere l'elenco attuale.",
   "update_refused_pin_list": "📌 Nessun aggiornamento avviato: non è stato possibile leggere l'elenco dei bloccati (`pinned_containers.json`), quindi ogni container conta come bloccato. Ripara o rimuovi il file, poi riprova.",
   "check_pin_list_unreadable": "📌 Non è stato controllato nulla: non è stato possibile leggere l'elenco dei bloccati (`pinned_containers.json`), quindi ogni container conta come bloccato. Ripara o rimuovi il file, poi controlla di nuovo.",
   "web_update_pinlist_title": "Elenco dei bloccati illeggibile",

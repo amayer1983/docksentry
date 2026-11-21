@@ -361,6 +361,9 @@ class Row:
         elif kind == "corrupt_pins":
             with open(self.cfg.pinned_file, "w", encoding="utf-8") as f:
                 f.write('["db"')
+        elif kind == "corrupt_pending":
+            with open(self.cfg.pending_file, "w", encoding="utf-8") as f:
+                f.write('[{"name": "web"')
         else:
             raise ValueError(f"unknown step {kind!r}")
         return None
@@ -743,6 +746,13 @@ def _rows():
         P("/api/update", ("name", "web")), ("unlock",))
     add("update: pin list unreadable", ("corrupt_pins",),
         P("/api/update", ("name", "web")))
+    # An unreadable pending file holds nothing to update (Q14b).
+    add("update: pending file unreadable", ("corrupt_pending",),
+        P("/api/update", ("name", "web")))
+    # Nothing pending is answered before the lock is even asked (Q14b):
+    # not queued for the drainer to call "already updated" later.
+    add("update: name=db, lock held", ("lock",),
+        P("/api/update", ("name", "db")), ("unlock",))
     add("update: twice", P("/api/update", ("name", "web")),
         P("/api/update", ("name", "web")))
     # A self-update queued while the lock was held is handed over by the
@@ -769,6 +779,14 @@ def _rows():
                                       ("names", "web,nas/web")))
     add("bulk: update web,db (db not pending)", P(
         "/api/bulk", ("action", "update"), ("names", "web,db")))
+    # Only what is still pending is claimed or queued (Q14b).
+    add("bulk: update web,db (db not pending), lock held, then released",
+        ("lock",), P("/api/bulk", ("action", "update"), ("names", "web,db")),
+        ("release",))
+    add("bulk: update db,zzz/web (nothing pending)", P(
+        "/api/bulk", ("action", "update"), ("names", "db,zzz/web")))
+    add("bulk: update zzz/web", P("/api/bulk", ("action", "update"),
+                                  ("names", "zzz/web")))
     add("bulk: update, lock held", ("lock",), P(
         "/api/bulk", ("action", "update"), ("names", "web")), ("unlock",))
     add("bulk: update web,nas/web, lock held, then released", ("lock",), P(
@@ -1067,8 +1085,6 @@ _mark(KNOWN_DEFECTS, ["POST /api/check"],
 _mark(KNOWN_DEFECTS, ["cleanup", "cleanup: lock held"],
       "WB3: the page says 'Settings saved.', and on several hosts only "
       "the local one is pruned")
-_mark(KNOWN_DEFECTS, ["update: name=db", "update: twice"],
-      "Q14b: 'started' for a key that is not pending, then nothing")
 _mark(KNOWN_DEFECTS, ["lifecycle: stop refused/web"],
       "no slice yet: the refused host answers 'not found', in the log only",
       ("multi",))
@@ -1102,11 +1118,6 @@ _mark(KNOWN_DEFECTS, ["selfupdate", "selfupdate: lock held"],
 
 _mark(PINNED_FOR, ["GET /api/check: cross-origin"],
       "WB1: the POST it adds goes behind the CSRF check; this GET stays")
-_mark(PINNED_FOR, ["update: name=zzz/web"],
-      "Q14b: an unknown host is 'started', then a log line")
-_mark(PINNED_FOR, ["update: name=nas/web"],
-      "Q14b: an unknown host is 'started', then a log line",
-      ("one", "headless"))
 _mark(PINNED_FOR, ["update: name=web", "bulk: update web,nas/web"],
       "Q3/Q14: one claim of the update lock runs the whole batch")
 _mark(PINNED_FOR, ["major: confirm web, lock held"],
@@ -1140,7 +1151,10 @@ BRANCH_NOTES = {
     "connections": ":2504. Webhooks validated first; `conn_page` marks a "
                    "real form submission (switches and checkboxes); a "
                    "changed Discord credential calls `restart_discord`.",
-    "update": ":2699 pre-gate (empty → gone, pin list → pinlist). Since "
+    "update": ":2699 pre-gate (empty → gone, pin list → pinlist, and "
+              "since Q14b `_still_pending`: no entry in the key's host's "
+              "slice → gone, a host we don't manage → host_unknown, both "
+              "before the lock is asked). Since "
               "Q14 `_start_web_update` asks `claim_or_queue_many([key])` "
               "once: free → a thread on `_run_web_update_batch` holding "
               "that claim (given back in its finally), ?update=started; "
@@ -1150,8 +1164,11 @@ BRANCH_NOTES = {
               "host printed and skipped, the engine batch per host, "
               "Telegram only when `bot.enabled`. A queued key is run later "
               "by the engine's drainer (Q13).",
-    "bulk": ":3516, no pre-gate except the pin list. update: "
-            "`_start_web_update` over all keys, one claim or all of them "
+    "bulk": ":3516, no pre-gate except the pin list. update: since "
+            "Q14b only the keys `_still_pending` keeps (pending on a host "
+            "we manage; none left → gone, or host_unknown when every key "
+            "named such a host), then "
+            "`_start_web_update` over those keys, one claim or all of them "
             "queued (?update=queued&n when more than one waits), in "
             "the order the batch would run them, so a group's head goes "
             "before its dependents either way; the "
@@ -2114,7 +2131,9 @@ EXPECTED = {
                                           '"smtp_tls_verify": false}'},
                'backups': 1}},
     # ── update ──────────────────────────────────────────────────────
-    # :2699 pre-gate (empty → gone, pin list → pinlist). Since Q14
+    # :2699 pre-gate (empty → gone, pin list → pinlist, and since Q14b
+    # `_still_pending`: no entry in the key's host's slice → gone, a host we
+    # don't manage → host_unknown, both before the lock is asked). Since Q14
     # `_start_web_update` asks `claim_or_queue_many([key])` once: free → a
     # thread on `_run_web_update_batch` holding that claim (given back in
     # its finally), ?update=started; held → the key is queued and the page
@@ -2188,14 +2207,14 @@ EXPECTED = {
                          '"nas/web"}, "source": "web", "target": "nas/web"}'],
                'backups': 1}},
     ('one', 'update: name=nas/web'): {'steps': [{'do': 'POST /api/update name=nas/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'nas' — skipped"]}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"nas/web"}, "source": "web", "target": "nas/web"}'],
                'backups': 1}},
     ('headless', 'update: name=nas/web'): {'steps': [{'do': 'POST /api/update name=nas/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'nas' — skipped"]}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2213,40 +2232,37 @@ EXPECTED = {
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "source": "web"}'],
                'backups': 1}},
-    ('multi', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db',
-                'http': '303 | Location: /?update=started'}],
+    ('multi', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"db"}, "source": "web", "target": "db"}'],
                'backups': 1}},
-    ('one', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db',
-                'http': '303 | Location: /?update=started'}],
+    ('one', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"db"}, "source": "web", "target": "db"}'],
                'backups': 1}},
-    ('headless', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db',
-                'http': '303 | Location: /?update=started'}],
+    ('headless', 'update: name=db'): {'steps': [{'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"db"}, "source": "web", "target": "db"}'],
                'backups': 1}},
     ('multi', 'update: name=zzz/web'): {'steps': [{'do': 'POST /api/update name=zzz/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"zzz/web"}, "source": "web", "target": "zzz/web"}'],
                'backups': 1}},
     ('one', 'update: name=zzz/web'): {'steps': [{'do': 'POST /api/update name=zzz/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"zzz/web"}, "source": "web", "target": "zzz/web"}'],
                'backups': 1}},
     ('headless', 'update: name=zzz/web'): {'steps': [{'do': 'POST /api/update name=zzz/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2267,7 +2283,7 @@ EXPECTED = {
                'backups': 1}},
     ('one', 'update: dead/web pending'): {'steps': [{'do': 'add_pending web nginx:1.25 dead'},
                {'do': 'POST /api/update name=dead/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'dead' — skipped"]}],
      'state': {'pending': ['web@local', 'web@dead'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2275,7 +2291,7 @@ EXPECTED = {
                'backups': 1}},
     ('headless', 'update: dead/web pending'): {'steps': [{'do': 'add_pending web nginx:1.25 dead'},
                {'do': 'POST /api/update name=dead/web',
-                'http': '303 | Location: /?update=started',
+                'http': '303 | Location: /?update=host_unknown',
                 'out': ["<log> Web UI update: unknown host 'dead' — skipped"]}],
      'state': {'pending': ['web@local', 'web@dead'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2473,6 +2489,48 @@ EXPECTED = {
                          '"web"}, "source": "web", "target": "web"}'],
                'files': {'pinned_containers.json': '<unreadable>'},
                'backups': 1}},
+    ('multi', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=gone'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('one', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=gone'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('headless', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/update name=web',
+                'http': '303 | Location: /?update=gone'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"web"}, "source": "web", "target": "web"}'],
+               'backups': 1}},
+    ('multi', 'update: name=db, lock held'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"db"}, "source": "web", "target": "db"}'],
+               'backups': 1}},
+    ('one', 'update: name=db, lock held'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"db"}, "source": "web", "target": "db"}'],
+               'backups': 1}},
+    ('headless', 'update: name=db, lock held'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/update name=db', 'http': '303 | Location: /?update=gone'},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
+                         '"db"}, "source": "web", "target": "db"}'],
+               'backups': 1}},
     ('multi', 'update: twice'): {'steps': [{'do': 'POST /api/update name=web',
                 'http': '303 | Location: /?update=started',
                 'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
@@ -2487,7 +2545,7 @@ EXPECTED = {
                                    '--format'},
                 'events': ['update_container@local:web']},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=started'}],
+                'http': '303 | Location: /?update=gone'}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}',
@@ -2508,7 +2566,7 @@ EXPECTED = {
                                    '--format'},
                 'events': ['update_container@local:web']},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=started'}],
+                'http': '303 | Location: /?update=gone'}],
      'state': {'pending': None,
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}',
@@ -2525,7 +2583,7 @@ EXPECTED = {
                                    '--format'},
                 'events': ['update_container@local:web']},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=started'}],
+                'http': '303 | Location: /?update=gone'}],
      'state': {'pending': None,
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}',
@@ -2610,12 +2668,14 @@ EXPECTED = {
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     # ── bulk ────────────────────────────────────────────────────────
-    # :3516, no pre-gate except the pin list. update: `_start_web_update`
-    # over all keys, one claim or all of them queued (?update=queued&n when
-    # more than one waits), in the order the batch would run them, so a
-    # group's head goes before its dependents either way; the flags: a
-    # thread → `_api_bulk` (:7444), straight to each host's store, unknown
-    # host printed.
+    # :3516, no pre-gate except the pin list. update: since Q14b only the
+    # keys `_still_pending` keeps (pending on a host we manage; none left →
+    # gone, or host_unknown when every key named such a host), then
+    # `_start_web_update` over those keys, one claim or all of them queued
+    # (?update=queued&n when more than one waits), in the order the batch
+    # would run them, so a group's head goes before its dependents either
+    # way; the flags: a thread → `_api_bulk` (:7444), straight to each
+    # host's store, unknown host printed.
     ('multi', 'bulk: pin web,nas/web,zzz/web'): {'steps': [{'do': 'POST /api/bulk action=pin&names=web,nas/web,zzz/web',
                 'http': '303 | Location: /',
                 'out': ["<log> Web UI bulk: unknown host 'zzz' — skipped"]}],
@@ -2949,6 +3009,102 @@ EXPECTED = {
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,db"}, "source": "web"}'],
                'backups': 1}},
+    ('multi', 'bulk: update web,db (db not pending), lock held, then released'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=queued&pos=1'},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
+               'backups': 1}},
+    ('one', 'bulk: update web,db (db not pending), lock held, then released'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=queued&pos=1'},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
+               'backups': 1}},
+    ('headless', 'bulk: update web,db (db not pending), lock held, then released'): {'steps': [{'do': 'lock'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=queued&pos=1'},
+               {'do': 'release',
+                'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
+                        '"event": "update_result", "image": "nginx:1.25", "source_url": '
+                        '"https://github.com/example/web/releases/latest", "success": '
+                        'true}'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
+               'backups': 1}},
+    ('multi', 'bulk: update db,zzz/web (nothing pending)'): {'steps': [{'do': 'POST /api/bulk action=update&names=db,zzz/web',
+                'http': '303 | Location: /?update=gone',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('one', 'bulk: update db,zzz/web (nothing pending)'): {'steps': [{'do': 'POST /api/bulk action=update&names=db,zzz/web',
+                'http': '303 | Location: /?update=gone',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('headless', 'bulk: update db,zzz/web (nothing pending)'): {'steps': [{'do': 'POST /api/bulk action=update&names=db,zzz/web',
+                'http': '303 | Location: /?update=gone',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "db,zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('multi', 'bulk: update zzz/web'): {'steps': [{'do': 'POST /api/bulk action=update&names=zzz/web',
+                'http': '303 | Location: /?update=host_unknown',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('one', 'bulk: update zzz/web'): {'steps': [{'do': 'POST /api/bulk action=update&names=zzz/web',
+                'http': '303 | Location: /?update=host_unknown',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('headless', 'bulk: update zzz/web'): {'steps': [{'do': 'POST /api/bulk action=update&names=zzz/web',
+                'http': '303 | Location: /?update=host_unknown',
+                'out': ["<log> Web UI update: unknown host 'zzz' — skipped"]}],
+     'state': {'pending': ['web@local'],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "zzz/web"}, "source": "web"}'],
+               'backups': 1}},
     ('multi', 'bulk: update, lock held'): {'steps': [{'do': 'lock'},
                {'do': 'POST /api/bulk action=update&names=web',
                 'http': '303 | Location: /?update=queued&pos=1'},
@@ -3008,7 +3164,8 @@ EXPECTED = {
                'backups': 1}},
     ('one', 'bulk: update web,nas/web, lock held, then released'): {'steps': [{'do': 'lock'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queued&n=2'},
+                'http': '303 | Location: /?update=queued&pos=1',
+                'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
@@ -3018,11 +3175,7 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
-                        '<telegram> ✅ All updates completed.',
-                        '<telegram> ✅ `web @nas` was already updated while this one '
-                        'waited. Nothing left to do.',
-                        '<webhook ok> {"event": "message", "text": "✅ `web @nas` was '
-                        'already updated while this one waited. Nothing left to do."}'],
+                        '<telegram> ✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format'},
                 'events': ['update_container@local:web']}],
@@ -3032,14 +3185,13 @@ EXPECTED = {
                'backups': 1}},
     ('headless', 'bulk: update web,nas/web, lock held, then released'): {'steps': [{'do': 'lock'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queued&n=2'},
+                'http': '303 | Location: /?update=queued&pos=1',
+                'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'release',
                 'out': ['<webhook ok> {"container": "web", "detail": "updated (stand-in)", '
                         '"event": "update_result", "image": "nginx:1.25", "source_url": '
                         '"https://github.com/example/web/releases/latest", "success": '
-                        'true}',
-                        '<webhook ok> {"event": "message", "text": "✅ `web @nas` was '
-                        'already updated while this one waited. Nothing left to do."}'],
+                        'true}'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format'},
                 'events': ['update_container@local:web']}],
@@ -3060,20 +3212,22 @@ EXPECTED = {
     ('one', 'bulk: update web,nas/web, lock held, queue nearly full'): {'steps': [{'do': 'lock'},
                {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queued&pos=10',
+                'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},
     ('headless', 'bulk: update web,nas/web, lock held, queue nearly full'): {'steps': [{'do': 'lock'},
                {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queued&pos=10',
+                'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},

@@ -580,6 +580,8 @@
   "web_update_same_running": "Este contentor está a ser atualizado agora mesmo — é a mesma atualização, não uma segunda.",
   "web_update_gone_title": "Nada para atualizar",
   "web_update_gone": "Esse contentor já não está na lista pendente — pode já ter sido atualizado, ou a lista foi recarregada entretanto.",
+  "web_update_host_unknown_title": "Host não gerido",
+  "web_update_host_unknown": "Nenhuma atualização foi iniciada: o Docksentry não gere (ou já não gere) esse host. Recarregue a página para ver a lista atual.",
   "update_refused_pin_list": "📌 Nenhuma atualização iniciada: não foi possível ler a lista de fixados (`pinned_containers.json`), então todos os contêineres contam como fixados. Repare ou remova o arquivo e tente novamente.",
   "check_pin_list_unreadable": "📌 Nada foi verificado: não foi possível ler a lista de fixados (`pinned_containers.json`), então todos os contêineres contam como fixados. Repare ou remova o arquivo e verifique novamente.",
   "web_update_pinlist_title": "Lista de fixados ilegível",

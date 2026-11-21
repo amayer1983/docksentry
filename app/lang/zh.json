@@ -580,6 +580,8 @@
   "web_update_same_running": "此容器正在更新中 — 这是同一个更新，不是第二个。",
   "web_update_gone_title": "没有可更新的内容",
   "web_update_gone": "该容器已不在待更新列表中 — 可能已经更新过，或者列表在此期间刷新了。",
+  "web_update_host_unknown_title": "未管理的主机",
+  "web_update_host_unknown": "未启动任何更新：Docksentry 不（再）管理该主机。请刷新页面查看当前列表。",
   "update_refused_pin_list": "📌 未开始任何更新：无法读取固定列表（`pinned_containers.json`），因此所有容器都按已固定处理。请修复或删除该文件后重试。",
   "check_pin_list_unreadable": "📌 未检查任何内容：无法读取固定列表（`pinned_containers.json`），因此所有容器都按已固定处理。请修复或删除该文件后重新检查。",
   "web_update_pinlist_title": "无法读取固定列表",

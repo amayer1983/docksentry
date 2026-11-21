@@ -580,6 +580,8 @@
   "web_update_same_running": "This container is being updated right now — that is the same update, not a second one.",
   "web_update_gone_title": "Nothing to update",
   "web_update_gone": "That container is no longer in the pending list — it may have been updated already, or the list was refreshed in the meantime.",
+  "web_update_host_unknown_title": "Host not managed",
+  "web_update_host_unknown": "No update was started: Docksentry does not manage that host (any more). Reload the page for the current list.",
   "update_refused_pin_list": "📌 No update was started: the pin list (`pinned_containers.json`) could not be read, so every container counts as pinned. Repair or remove the file, then try again.",
   "check_pin_list_unreadable": "📌 Nothing was checked: the pin list (`pinned_containers.json`) could not be read, so every container counts as pinned. Repair or remove the file, then check again.",
   "web_update_pinlist_title": "Pin list unreadable",
