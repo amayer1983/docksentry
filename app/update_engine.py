@@ -538,10 +538,15 @@ class UpdateEngine:
             k, None if k in running else positions[k]) for k in keys]
 
     def _in_group_order(self, keys):
-        """`keys` in the order one batch of them runs: hosts as they first
-        come up, and on each host the group members by group and place
-        before everything else, as `_process_update_batch` sorts them.
-        The rest keeps the order it came in. A host whose groups cannot
+        """`keys` in the order they go on the queue: hosts as they first
+        come up (the Web worker splits a selection the same way), and on
+        each host the group members by group and place before everything
+        else, as `_process_update_batch` sorts them. The rest keeps the
+        order it came in, which is the selection. That is not quite what
+        a free lock does: there the worker takes a host's containers in
+        pending-file order, so containers in no group run in the order
+        the pending file lists them, and the two match only when the
+        selection does too. Groups and hosts match. A host whose groups cannot
         be read keeps its keys as they are — the order is a courtesy,
         not a reason to refuse the request."""
         from container_store import split_host_key
