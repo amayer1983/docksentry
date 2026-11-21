@@ -489,6 +489,7 @@ class UpdateEngine:
           update_already_queued  {since_seconds}: it was on the queue
           update_queued          {pos}: it is on the queue now
           update_not_queued_pinned    {}: pinned, kept off the queue
+                                 (and taken off it, if it was waiting)
           update_not_queued_excluded  {}: excluded from updates, the same
           update_refused_pin_list     {}: the pin list cannot be read
                                  (`held_back`, Q16f)
@@ -511,6 +512,7 @@ class UpdateEngine:
         # the drainer would have updated it later, past the pin.
         why = self.held_back(container_key)
         if why is not None:
+            self._unqueue_held({container_key: why})
             return (False,) + self._held_answer(why)
         pos = self.enqueue_update(container_key)
         return (False,) + self._queue_answer(container_key, pos)
@@ -528,8 +530,9 @@ class UpdateEngine:
         gets `update_queue_full`, the running one and one already
         waiting too (that one keeps its place on the queue). With
         nothing new to place, each key is answered for itself. A pinned
-        or excluded key is not placed and gets its own answer (Q16f); an
-        unreadable pin list refuses the whole request, every key with
+        or excluded key is not placed and gets its own answer (Q16f), and
+        one already waiting is taken off, unless the request did not fit;
+        an unreadable pin list refuses the whole request, every key with
         `update_refused_pin_list`.
         """
         if self.claim_update():
@@ -564,6 +567,7 @@ class UpdateEngine:
         # as if part of the request had gone through.
         if -1 in positions.values():
             return False, [(k,) + self._queue_answer(k, -1) for k in keys]
+        self._unqueue_held(held)
         return False, [
             (k,) + (self._held_answer(held[k]) if k in held
                     else self._queue_answer(
@@ -630,6 +634,23 @@ class UpdateEngine:
             if flag(lab, "enable") is False or flag(lab, "exclude") is True:
                 return "excluded"
         return None
+
+    def _unqueue_held(self, held):
+        """Take the keys `held_back` just held off the queue, if one of
+        them was already waiting there.
+
+        `held` is `{key: why}`. The answer for such a key says "not
+        queued", so it must not stay on the queue: a container tapped,
+        then pinned, then tapped again was still waiting, and unpinning
+        it let the drain update it with nobody asking again (measured on
+        8556e4f). An unreadable pin list is left alone: its answer says
+        nothing was started, not that the entry is gone, and the drain
+        refuses the entry while the list stays unreadable.
+        """
+        drop = {k for k, why in held.items()
+                if why in ("pinned", "excluded")}
+        if drop:
+            self.drop_queued_updates(lambda k: k in drop)
 
     @staticmethod
     def _held_answer(why):

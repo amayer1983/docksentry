@@ -5725,6 +5725,25 @@ GUARDED = [
      '            why = None\n',
      'test_queue_held_back.py'),
 
+    ("…a key that was already waiting is taken off the queue when a tap "
+     "answers it is pinned — unpinning it later must not let the drain run it",
+     'app/update_engine.py',
+     '            self._unqueue_held({container_key: why})\n',
+     '            pass\n',
+     'test_queue_held_back.py'),
+
+    ("…the same for a batch that names it again",
+     'app/update_engine.py',
+     '        self._unqueue_held(held)\n',
+     '        pass\n',
+     'test_queue_held_back.py'),
+
+    ("…and for an exclusion as much as for a pin",
+     'app/update_engine.py',
+     '                if why in ("pinned", "excluded")}\n',
+     '                if why == "pinned"}\n',
+     'test_queue_held_back.py'),
+
     ("…an unreadable pin list refuses the whole batch at the claim",
      'app/update_engine.py',
      '        if "pin_list_unreadable" in held.values():\n',

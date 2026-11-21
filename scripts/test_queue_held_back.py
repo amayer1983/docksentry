@@ -80,6 +80,8 @@ def _env_step(bot, cfg, backends, step):
     kind, args = step[0], step[1:]
     if kind == "pin":
         bot._store_for(args[0]).pin(args[1])
+    elif kind == "unpin":
+        bot._store_for(args[0]).unpin(args[1])
     elif kind == "raw_pins":
         with open(cfg.pinned_file, "wb") as f:
             f.write(args[0])
@@ -161,6 +163,27 @@ def telegram_checks():
                     and "web@local" in _pending(rec)
                     and not rec["state"]["locked"],
                     f"state {rec['state']!r}"))
+        # Queued, pinned, tapped again: the answer says "not queued", so
+        # it must not be on the queue any more. Before the fix it still
+        # was, and unpinning it let the drain update it with no new tap
+        # (measured on 8556e4f, review of Q16f).
+        for hold, free, name, said in (
+                (("pin", "local", "web"), ("unpin", "local", "web"),
+                 "pinned", PIN_NQ),
+                (("exclude", ["we*"]), ("exclude", []), "excluded",
+                 EXCL_NQ)):
+            rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
+                                       hold, ("tap", "update_one:web"),
+                                       free, ("release",)])
+            out.append((f"[{setup}] tap queued, then {name}, tapped again, "
+                        f"then no longer {name}: the second answer says not "
+                        f"queued, and the drain updates nothing",
+                        st[3]["out"][-1:] == [said.format("web")]
+                        and _ran(st[-1]) == [] and not esc
+                        and rec["state"]["queue"] == []
+                        and "web@local" in _pending(rec),
+                        f"second tap {st[3]['out']!r}, release "
+                        f"{st[-1]['events']!r}, state {rec['state']!r}"))
         # The other direction: nothing pinned, the drain runs it.
         rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
                                    ("pin", "local", "db"), ("release",)])
@@ -265,6 +288,24 @@ def telegram_checks():
                     and SKIP_PIN.format("web") in st[-1]["out"]
                     and _pending(rec) == ["web@local"],
                     f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
+    # Update all queued, web@nas pinned, Update all tapped again: web@nas
+    # is named as not queued, so unpinning it must not let the drain run
+    # it. The local web keeps its place.
+    rec, st, esc = row("multi", [("notify", None), ("lock",),
+                                 ("tap", "update_all:<tok>"),
+                                 ("pin", "nas", "web"),
+                                 ("tap", "update_all:<tok>"),
+                                 ("unpin", "nas", "web"), ("release",)])
+    out.append(("[multi] Update all queued, web@nas pinned, Update all "
+                "again, then unpinned: web@nas named as not queued, only "
+                "the local web runs",
+                bool(st[4]["out"])
+                and LINE_PIN.format("web @nas") in st[4]["out"][-1]
+                and _ran(st[-1]) == ["update_container@local:web"]
+                and rec["state"]["queue"] == []
+                and _pending(rec) == ["web@nas"] and not esc,
+                f"second tap {st[4]['out']!r}, release {st[-1]['events']!r},"
+                f" state {rec['state']!r}"))
     # Pinned before a busy "Update all" on two hosts: the rest is queued,
     # the pinned one is named.
     rec, st, esc = row("multi", [("notify", None), ("pin", "nas", "web"),

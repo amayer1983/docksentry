@@ -198,6 +198,7 @@ class FakeEngine:
     # registry and no local checker here, nobody is held back.
     held_back = UpdateEngine.held_back
     _held_answer = UpdateEngine._held_answer
+    _unqueue_held = UpdateEngine._unqueue_held
     _checker_for_key = UpdateEngine._checker_for_key
     queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
     queued_updates = UpdateEngine.queued_updates

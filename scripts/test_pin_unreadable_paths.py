@@ -380,6 +380,7 @@ class _Engine:
     # registry and no local checker here, nobody is held back.
     held_back = UpdateEngine.held_back
     _held_answer = UpdateEngine._held_answer
+    _unqueue_held = UpdateEngine._unqueue_held
     _checker_for_key = UpdateEngine._checker_for_key
     # Queued keys go on in the batch's order (review of Q14); no store
     # here, so they keep the order asked.
