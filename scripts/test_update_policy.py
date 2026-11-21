@@ -161,6 +161,9 @@ def _int_bot(update_policy):
     # AttributeError rather than testing anything.
     bot._age_decision = lambda u, c: UpdateEngine._age_decision(bot, u, c)
     bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
+    # A manual entry is asked the pin check right before its update
+    # (Q16g); without it the stub fails the update, not the assertion.
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
     return bot
 
 

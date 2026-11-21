@@ -369,7 +369,8 @@ _lang = os.path.join(os.path.dirname(__file__), "..", "app", "lang", "en.json")
 with open(_lang, encoding="utf-8") as _f:
     _keys = _json.load(_f)
 for _what in ("started", "gone", "queued", "already_queued", "queue_full",
-              "same_running", "host_unknown", "pending_unreadable", "held"):
+              "same_running", "host_unknown", "pending_unreadable", "held",
+              "pinned"):
     checks[f"the '{_what}' answer has words to show"] = (
         bool(_keys.get(f"web_update_{_what}"))
         and bool(_keys.get(f"web_update_{_what}_title")))
@@ -462,6 +463,26 @@ checks["…but not when nothing was held back"] = (
 _page = _status_page("/?update=same_running")
 checks["…that it is the one updating now"] = (
     _fmt("web_update_same_running") in _page)
+# The one asked for is running and the rest was held back: both (Q16g).
+_page = _status_page("/?update=same_running&held=1")
+checks["…and that, with how many were held back, when both are so"] = (
+    _fmt("web_update_same_running") in _page
+    and _fmt("web_update_held", count=1) in _page)
+# A free lock (Q16g): everything asked for pinned or excluded is "not
+# updated", not "started"; part of it is counted under "started".
+_page = _status_page("/?update=pinned&n=2")
+checks["…that pinned or excluded containers were not updated, and how many"] = (
+    _fmt("web_update_pinned", count=2) in _page
+    and _fmt("web_update_pinned_title") in _page
+    and _fmt("web_update_started_title") not in _page)
+_page = _status_page("/?update=started&held=1")
+checks["…and the same under a started answer for the rest"] = (
+    _fmt("web_update_started") in _page
+    and _fmt("web_update_pinned", count=1) in _page)
+_page = _status_page("/?update=started")
+checks["…but not under started when nothing was held back"] = (
+    _fmt("web_update_started") in _page
+    and _fmt("web_update_pinned", count=1) not in _page)
 _page = _status_page("/?update=host_unknown")
 checks["…that the host is not one this instance manages"] = (
     _fmt("web_update_host_unknown") in _page

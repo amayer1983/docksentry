@@ -441,7 +441,8 @@ BUSY_MESSAGES = {
      "already_queued"): (4, "render: the banners the page knows, and "
                             "which of them carry a held-back count (Q16f)"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
-     "same_running"): (2, "render: the banners the page knows"),
+     "same_running"): (3, "render: the banners the page knows, and the "
+                          "one beside a held-back count (Q16g)"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
      "web_update_queued"): (1, "render: queued, with its place"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
@@ -451,8 +452,9 @@ BUSY_MESSAGES = {
     ("web_ui.py", "create_handler.WebHandler._page_status",
      "web_update_queue_full"): (1, "render: the queue was full"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
-     "t(web_update_…)"): (2, "render: title, and the sentences without "
-                             "numbers (same_running among them)"),
+     "t(web_update_…)"): (3, "render: title, the sentences without "
+                             "numbers (same_running among them), and the "
+                             "held-back counts (Q16f, Q16g)"),
     # claim_or_queue_many's answers, turned into the page's (Q14).
     ("web_ui.py", "create_handler.WebHandler._queue_redirect",
      "update_queue_full"): (2, "queue: the request did not fit"),
@@ -466,6 +468,9 @@ BUSY_MESSAGES = {
     ("web_ui.py", "create_handler.WebHandler._queue_redirect",
      "update_not_queued_excluded"): (1, "queue: excluded, counted as held "
                                         "back (Q16f)"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_same_running"): (1, "queue: the one running, said beside "
+                                 "what was held back (Q16g)"),
     ("web_ui.py", "create_handler.WebHandler._status_row",
      "web_check_one_busy"): (1, "other lock: the check-one button's text"),
     ("web_ui.py", "create_handler.WebHandler._api_check_one",
@@ -490,6 +495,10 @@ BUSY_MESSAGES = {
     ("update_engine.py", "UpdateEngine._drain_one",
      "update_queue_skipped_"): (1, "queue: pinned or excluded while it "
                                    "waited, not run (the key's prefix)"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_"): (1, "queue: pinned or excluded during its "
+                                   "wait in the drain, held right before "
+                                   "the update (Q16g)"),
     ("update_engine.py", "UpdateEngine.cleanup_guarded",
      "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle

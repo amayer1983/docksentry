@@ -4473,7 +4473,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             update_banner = ""
             if _upd in ("started", "gone", "pinlist", "queued",
                         "already_queued", "queue_full", "same_running",
-                        "host_unknown", "pending_unreadable", "held"):
+                        "host_unknown", "pending_unreadable", "held",
+                        "pinned"):
                 _calm = _upd in ("started", "queued", "already_queued",
                                  "same_running")
                 _kind = "card" if _calm else "card-warn"
@@ -4493,14 +4494,19 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                               since=_ago(_unum("since")))
                 elif _upd == "queue_full":
                     _text = t("web_update_queue_full", max=_unum("max"))
-                elif _upd == "held":
-                    _text = t("web_update_held", count=_unum("n"))
+                elif _upd in ("held", "pinned"):
+                    _text = t("web_update_" + _upd, count=_unum("n"))
                 else:
                     _text = t("web_update_" + _upd)
-                if _upd in ("queued", "already_queued") and _unum("held"):
+                if (_upd in ("queued", "already_queued", "same_running")
+                        and _unum("held")):
                     # Part of a selection was pinned or excluded and
                     # stayed off the queue (Q16f).
                     _text += " " + t("web_update_held",
+                                     count=_unum("held"))
+                if _upd == "started" and _unum("held"):
+                    # …or, on a free lock, is not updated (Q16g).
+                    _text += " " + t("web_update_pinned",
                                      count=_unum("held"))
                 update_banner = (
                     f'<div class="card {_kind}">'
@@ -7302,17 +7308,21 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # each entry's `host` key, but the checker that actually
                 # recreates a container is a single parameter, so a batch
                 # must not mix hosts.
-                results = []
+                # `held`: what the batch kept from running right before
+                # its update, pinned or excluded since the entry was
+                # written (Q16g). Those stay pending.
+                results, held = [], {}
                 for hname, hchecker, entries in batches:
                     r, _sc, _mp = engine._process_update_batch(
-                        entries, hchecker, auto=False)
+                        entries, hchecker, auto=False, held=held)
                     results.extend(r)
                 # Drop the processed containers from pending (atomic); the file
                 # may hold others this action didn't touch — including another
                 # host's entry for a container of the same name, hence the
                 # (host, name) pairs.
                 bot._remove_from_pending(
-                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets])
+                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets
+                     if (u.get("host") or _LOCAL_HOST, u["name"]) not in held])
                 if bot.enabled:
                     bot.send_message(bot.t("update_result") + "\n\n" + "\n".join(results))
             except Exception as e:
@@ -7337,13 +7347,29 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             claimed, outcomes = engine.claim_or_queue_many(keys)
             if not claimed:
                 return self._queue_redirect(outcomes)
+            started = False
             try:
-                threading.Thread(target=target, args=args).start()
-            except BaseException:
-                # No worker, so nobody else gives the claim back.
-                engine.release_update(after=bot._run_queued_selfupdate)
-                raise
-            return "/?update=started"
+                # Pinned or excluded since its entry was written (Q16g):
+                # the worker's batch holds it right before the update,
+                # labels included, and this tells the page, so it does
+                # not say "started" over nothing. The pin list and the
+                # setting only: the page is not kept waiting on a host
+                # for its labels. Nothing to run starts no worker.
+                held = [why for why in (engine.held_back(k) for k in keys)
+                        if why is not None]
+                if ("pin_list_unreadable" not in held
+                        and len(held) < len(keys)):
+                    threading.Thread(target=target, args=args).start()
+                    started = True
+            finally:
+                if not started:
+                    # No worker, so nobody else gives the claim back.
+                    engine.release_update(after=bot._run_queued_selfupdate)
+            if "pin_list_unreadable" in held:
+                return "/?update=pinlist"
+            if not started:
+                return f"/?update=pinned&n={len(held)}"
+            return "/?update=started" + (f"&held={len(held)}" if held else "")
 
         def _queue_redirect(self, outcomes):
             """The status-page answer for a request that was queued
@@ -7371,10 +7397,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             held = sum(a in ("update_not_queued_pinned",
                              "update_not_queued_excluded") for a in answers)
             if not waiting:
-                if held:
+                running = "update_same_running" in answers
+                if held and not running:
                     return f"/?update=held&n={held}"
-                # Everything asked for is the update running right now.
-                return "/?update=same_running"
+                # Everything asked for is the update running right now,
+                # or that and the rest held back: both are said.
+                return "/?update=same_running" + (f"&held={held}" if held
+                                                  else "")
             more = f"&held={held}" if held else ""
             if len(waiting) > 1:
                 return f"/?update=queued&n={len(waiting)}{more}"

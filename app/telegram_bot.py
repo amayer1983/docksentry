@@ -1924,6 +1924,12 @@ class TelegramBot:
         """The sentence for a tap the engine found nothing to run for:
         `why` is `run_keys`'s `msg` for a key that did not run. A queued
         key is the drainer's to say (`UpdateEngine._drain_skipped_text`)."""
+        if why in ("pinned", "pinned_label", "excluded",
+                   "pin_list_unreadable"):
+            # Held right before the update (Q16g): pinned or excluded
+            # since the notification, and its entry is still pending.
+            return self.t(f"update_held_{why}",
+                          name=f"`{self._key_label(container_key)}`")
         if why == "no_pending_updates":
             # No file, or one nothing can read: it used to raise inside
             # the thread, and the chat heard nothing after the toast.
@@ -2131,6 +2137,16 @@ class TelegramBot:
                 reply_markup=self._major_keyboard(host_key(host_name, name)))
             return
         try:
+            # Pinned or excluded since the prompt (Q16g): the same
+            # question the batch asks right before its update, labels
+            # included. The major stays deferred.
+            why = self.engine.held_back(container_key, labels=True,
+                                        checker=checker)
+            if why is not None:
+                self.send_message(self.t(
+                    f"update_held_{why}",
+                    name=f"`{self._key_label(container_key)}`"))
+                return
             image = pending.get("image", "")
             compose = pending.get("compose", {}) or {}
             # Resolve link once for both Telegram + Discord/webhook surfaces
@@ -3099,7 +3115,10 @@ class TelegramBot:
             for u in updates:
                 by_host.setdefault(pending_host(u), []).append(u)
             registry = getattr(self.engine, "hosts", None) or ()
-            results, cleaned = [], False
+            # What the batch held back right before its update (Q16g):
+            # pinned or excluded since the list was written. Those stay
+            # in the pending file.
+            results, cleaned, held = [], False, {}
             for host_name, entries in by_host.items():
                 host_checker = updater
                 if host_name != LOCAL_HOST:
@@ -3109,16 +3128,19 @@ class TelegramBot:
                             break
                 lines, _sc, _mp = self._process_update_batch(
                     entries, host_checker, auto=False,
-                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)
+                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,
+                    held=held)
                 results.extend(lines)
                 cleaned = cleaned or bool(
                     getattr(self.engine, "_batch_cleaned", False))
 
-            if from_snapshot:
+            if from_snapshot or held:
                 # Remove only the processed containers from pending —
                 # the file may hold others the snapshot didn't include,
-                # including same-named ones on other hosts (#7).
-                self._remove_from_pending([pending_key(u) for u in updates])
+                # including same-named ones on other hosts (#7) — and
+                # none the batch held back.
+                self._remove_from_pending([pending_key(u) for u in updates
+                                           if pending_key(u) not in held])
             else:
                 _pending.clear(pending_file)
 

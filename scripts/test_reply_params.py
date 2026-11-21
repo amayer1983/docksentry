@@ -378,6 +378,63 @@ checks["a busy /update <glob> says the other matches were not checked, in "
 if _gbad:
     print("  update_busy_glob_unchecked:", ", ".join(_gbad))
 
+# ── a container held right before its update (Q16g) ─────────────────
+# The batch, the tap and the major confirmation say `update_held_<why>`
+# with the container's name; a queued entry held there says the drain's
+# `update_queue_skipped_<why>`. Every reason `held_back` can give is
+# driven through the real `_single_update_skipped` and
+# `_drain_skipped_text`; the batch and the major confirmation build the
+# same `update_held_<why>` key with `name` alone.
+import inspect as _inspect  # noqa: E402
+import textwrap as _textwrap  # noqa: E402
+
+from telegram_bot import TelegramBot as _TB  # noqa: E402
+
+_hb = ast.parse(_textwrap.dedent(_inspect.getsource(_UE.held_back)))
+_whys = {n.value.value for n in ast.walk(_hb)
+         if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant)
+         and isinstance(n.value.value, str)}
+checks["held_back gives the four reasons I know"] = _whys == {
+    "pinned", "pinned_label", "excluded", "pin_list_unreadable"}
+
+
+class _Asked:
+    _key_label = _TB._key_label
+
+    def __init__(self):
+        self.asked = []
+
+    def t(self, key, **kw):
+        self.asked.append((key, set(kw)))
+        return key
+    _t = t
+
+
+_ha = _Asked()
+for _why in sorted(_whys):
+    _TB._single_update_skipped(_ha, "nas/web", _why)
+    _UE._drain_skipped_text(_ha, "nas/web", _why)
+    _ha.asked.append((f"update_held_{_why}", {"name"}))
+_hbad = []
+for key, given in _ha.asked:
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _hbad.append(f"{lang}: no {key}")
+        elif placeholders(strings[key]) != given:
+            _hbad.append(f"{lang}: {key} wants "
+                         f"{sorted(placeholders(strings[key]))}, gets "
+                         f"{sorted(given)}")
+checks["a container held right before its update is said in all "
+       "languages, placeholders filled"] = (
+    {k for k, _g in _ha.asked} >= {
+        "update_held_pinned", "update_held_pinned_label",
+        "update_held_excluded", "update_held_pin_list_unreadable",
+        "update_queue_skipped_pinned", "update_queue_skipped_pinned_label",
+        "update_queue_skipped_excluded", "update_refused_pin_list"}
+    and not _hbad)
+if _hbad:
+    print("  held right before the update:", "; ".join(sorted(set(_hbad))))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

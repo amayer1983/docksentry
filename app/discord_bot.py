@@ -2690,10 +2690,15 @@ class DiscordBot:
                 # and the notifier results all live there, and a
                 # front-end that bypassed it would quietly behave
                 # differently from the other two.
+                # `held`: pinned or excluded right before the update
+                # (Q16g). Its line says so, and its entry stays pending.
+                held = {}
                 results, _ok, _major = self.engine._process_update_batch(
-                    [target], checker, auto=False)
+                    [target], checker, auto=False, held=held)
                 lines.extend(results)
-                self._drop_pending([(host_name_of(host), target["name"])])
+                key = (host_name_of(host), target["name"])
+                if key not in held:
+                    self._drop_pending([key])
         finally:
             self._release_lock()
         return self._clip("**Update**\n" + "\n".join(lines))
@@ -2799,11 +2804,14 @@ class DiscordBot:
                 # from each entry's `host` key, but the checker that
                 # actually recreates is a single parameter — a batch must
                 # not mix hosts.
+                held = {}
                 results, _ok, _major = self.engine._process_update_batch(
-                    entries, checker, auto=False)
+                    entries, checker, auto=False, held=held)
                 lines.extend(results)
                 self._drop_pending([(host_name_of(host), u["name"])
-                                    for u in entries])
+                                    for u in entries
+                                    if (host_name_of(host), u["name"])
+                                    not in held])
         finally:
             self._release_lock()
         # The note goes at the TOP, not after the results: `_clip` cuts the

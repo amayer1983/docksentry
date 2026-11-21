@@ -174,7 +174,7 @@ GUARDED = [
     # Since Q14 the claim and its answer live in `_start_web_update`.
     ("clicking Update in the Web UI is answered, not swallowed",
      "app/web_ui.py",
-     "            return \"/?update=started\"\n",
+     "            return \"/?update=started\" + (f\"&held={len(held)}\" if held else \"\")\n",
      "            return \"/\"\n",
      "test_web_update_feedback.py"),
 
@@ -1423,8 +1423,8 @@ GUARDED = [
 
     ("…on the single update, which asks the batch for it",
      "app/update_engine.py",
-     "                    proactive_cleanup=False, snapshot_fails_entry=True)\n",
-     "                    proactive_cleanup=False)\n",
+     "                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=False,\n                    held=held)\n",
      "test_single_update_report.py"),
 
     ("…and nothing is recreated after it",
@@ -1472,8 +1472,8 @@ GUARDED = [
 
     ("'Updating …' is said before the single update runs, not after it",
      'app/update_engine.py',
-     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True)\n',
-     '                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True)\n                if starting is not None:\n                    starting(key, target)\n',
+     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                held = {}\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                held = {}\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n                if starting is not None:\n                    starting(key, target)\n',
      'test_single_update_report.py'),
 
     ("a failed single update names the group it takes out of the queue",
@@ -1547,8 +1547,8 @@ GUARDED = [
     # Q11c review: each applied by hand and red without a traceback.
     ("a single update does not run the batch's proactive disk prune",
      'app/update_engine.py',
-     '                    proactive_cleanup=False, snapshot_fails_entry=True)\n',
-     '                    proactive_cleanup=True, snapshot_fails_entry=True)\n',
+     '                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n',
+     '                    proactive_cleanup=True, snapshot_fails_entry=True,\n                    held=held)\n',
      'test_single_update_report.py'),
 
     ('…because the batch leaves that prune out when told to',
@@ -2605,8 +2605,8 @@ GUARDED = [
      "test_web_update_feedback.py"),
     ("…and a click on the container updating now is not a second job",
      "app/web_ui.py",
-     "                return \"/?update=same_running\"\n",
-     "                return \"/?update=queued&pos=0\"\n",
+     "                return \"/?update=same_running\" + (f\"&held={held}\" if held\n",
+     "                return \"/?update=queued&pos=0\" + (f\"&held={held}\" if held\n",
      "test_web_update_feedback.py"),
     # Q14b: a key with nothing pending is answered before anything is
     # claimed or queued. Applied by hand in a copy, each red without a
@@ -2650,8 +2650,8 @@ GUARDED = [
      'test_web_action_matrix.py'),
     ('…and the status page shows the host-not-managed answer',
      'app/web_ui.py',
-     '                        "host_unknown", "pending_unreadable", "held"):\n',
-     '                        "pending_unreadable", "held"):\n',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "pending_unreadable", "held",\n',
      'test_web_update_feedback.py'),
     ('…and has its words in every language',
      'app/lang/ja.json',
@@ -2688,8 +2688,8 @@ GUARDED = [
      'test_web_update_feedback.py'),
     ('…the status page shows the unreadable answer',
      'app/web_ui.py',
-     '                        "host_unknown", "pending_unreadable", "held"):\n',
-     '                        "host_unknown", "held"):\n',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "host_unknown", "held",\n',
      'test_web_update_feedback.py'),
     ('…and the unreadable answer has its words in every language',
      'app/lang/ja.json',
@@ -2761,10 +2761,10 @@ GUARDED = [
      "test_web_multihost.py"),
     ("a Web worker that cannot start gives the claim back",
      "app/web_ui.py",
-     "                # No worker, so nobody else gives the claim back.\n"
-     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
-     "                # No worker, so nobody else gives the claim back.\n"
-     "                pass\n",
+     "                    # No worker, so nobody else gives the claim back.\n"
+     "                    engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "                    # No worker, so nobody else gives the claim back.\n"
+     "                    pass\n",
      "test_web_update_feedback.py"),
     ("the status page says where a queued click went",
      "app/web_ui.py",
@@ -5299,14 +5299,14 @@ GUARDED = [
     ("Update all: a host that stops answering fails its own entry, the "
      "rest still report",
      "app/telegram_bot.py",
-     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
-     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
      "test_telegram_callback_matrix.py"),
 
     ("Update all prunes a full local disk once, not once per host batch",
      "app/telegram_bot.py",
-     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
-     "                    proactive_cleanup=True, snapshot_fails_entry=True)  # MUTATION\n",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=True, snapshot_fails_entry=True,  # MUTATION\n                    held=held)\n",
      "test_batch_host_routing.py"),
 
     ("…because it remembers that a host's batch pruned",
@@ -5343,16 +5343,16 @@ GUARDED = [
     ("Update all: a local daemon that hangs in the snapshot still ends "
      "with a summary",
      "app/telegram_bot.py",
-     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
-     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
      "test_batch_host_routing.py"),
 
     # Q12 second review: applied by hand, red without a traceback.
     ("/update <pattern>: a host that stops answering fails its own "
      "entries, and the host after it still updates",
      "app/telegram_bot.py",
-     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n",
-     "                    proactive_cleanup=not cleaned)  # MUTATION: the snapshot raises out\n",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
      "test_batch_host_routing.py"),
 
     # S1: the end of a scheduler pass has its own method, and the
@@ -5908,19 +5908,19 @@ GUARDED = [
 
     ("…the page knows the 'held' answer",
      'app/web_ui.py',
-     '                        "host_unknown", "pending_unreadable", "held"):\n',
-     '                        "host_unknown", "pending_unreadable"):\n',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "host_unknown", "pending_unreadable",\n',
      'test_web_update_feedback.py'),
 
     ("…says how many",
      'app/web_ui.py',
-     '                    _text = t("web_update_held", count=_unum("n"))\n',
-     '                    _text = t("web_update_held", count=0)\n',
+     '                    _text = t("web_update_" + _upd, count=_unum("n"))\n',
+     '                    _text = t("web_update_" + _upd, count=0)\n',
      'test_web_update_feedback.py'),
 
     ("…and says it under a queued answer for the rest",
      'app/web_ui.py',
-     '                if _upd in ("queued", "already_queued") and _unum("held"):\n',
+     '                if (_upd in ("queued", "already_queued", "same_running")\n                        and _unum("held")):\n',
      '                if False:\n',
      'test_web_update_feedback.py'),
 
@@ -5933,6 +5933,192 @@ GUARDED = [
     ("…and the batch line for it exists in every language",
      'app/lang/ja.json',
      '  "update_batch_line_pinned": "• `{name}` — 固定済みのため順番待ちに追加していません",\n',
+     '',
+     'test_lang_parity.py'),
+
+    # ── Q16g: the free path holds a pin set after the pending entry ──
+    ('every manual update asks the pin check right before update_container, '
+     'so a pin set after the pending entry was written holds (Q16g)',
+     'app/update_engine.py',
+     '                    why = self.held_back(host_key(u_host, u["name"]),\n'
+     '                                         labels=True, checker=u_checker)\n',
+     '                    why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…and reads the container's labels there",
+     'app/update_engine.py',
+     '                                         labels=True, checker=u_checker)\n',
+     '                                         labels=False, checker=u_checker)\n',
+     'test_queue_held_back.py'),
+
+    ('…its line says why it was held: pinned, the label, excluded, the pin '
+     'list',
+     'app/update_engine.py',
+     '                            f"update_held_{why}",\n',
+     '                            "update_held_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ('…and the caller learns which entries were held, so they stay pending',
+     'app/update_engine.py',
+     '                            held[(u_host, u["name"])] = why\n',
+     '                            pass\n',
+     'test_queue_held_back.py'),
+
+    ('a tap held right before its update says so and leaves its entry pending',
+     'app/update_engine.py',
+     '                if held:\n'
+     '                    # Pinned or excluded right before its update (Q16g):\n',
+     '                if False:\n'
+     '                    # Pinned or excluded right before its update (Q16g):\n',
+     'test_queue_held_back.py'),
+
+    ('…with the reason the check gave',
+     'app/update_engine.py',
+     '                                    next(iter(held.values())), None))\n',
+     '                                    "pinned", None))\n',
+     'test_queue_held_back.py'),
+
+    ('…Telegram says that reason for the tap',
+     'app/telegram_bot.py',
+     '        if why in ("pinned", "pinned_label", "excluded",\n'
+     '                   "pin_list_unreadable"):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ('a queued entry pinned during its wait in the drain is said as the '
+     "drain's skip",
+     'app/update_engine.py',
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ('…and an unreadable pin list there as the refusal',
+     'app/update_engine.py',
+     '        if why == "pin_list_unreadable":\n'
+     '            return self._t("update_refused_pin_list")\n'
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '        if False:\n'
+     '            return self._t("update_refused_pin_list")\n'
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     'test_queue_held_back.py'),
+
+    ('the major confirmation asks the pin check right before its update',
+     'app/telegram_bot.py',
+     '            why = self.engine.held_back(container_key, labels=True,\n'
+     '                                        checker=checker)\n',
+     '            why = None\n',
+     'test_queue_held_back.py'),
+
+    ('…labels included',
+     'app/telegram_bot.py',
+     '            why = self.engine.held_back(container_key, labels=True,\n',
+     '            why = self.engine.held_back(container_key, labels=False,\n',
+     'test_queue_held_back.py'),
+
+    ('"Update all" keeps a held entry in the pending file',
+     'app/telegram_bot.py',
+     '                                           if pending_key(u) not in held])\n',
+     '                                           ])\n',
+     'test_queue_held_back.py'),
+
+    ('…also when it read the whole file (bare update_all, /updateall), which '
+     'it used to clear',
+     'app/telegram_bot.py',
+     '            if from_snapshot or held:\n',
+     '            if from_snapshot:\n',
+     'test_queue_held_back.py'),
+
+    ("…because each host's batch hands back what it held",
+     'app/telegram_bot.py',
+     '                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n'
+     '                    held=held)\n',
+     '                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n',
+     'test_queue_held_back.py'),
+
+    ('Discord /update keeps a held entry pending',
+     'app/discord_bot.py',
+     '                if key not in held:\n',
+     '                if True:\n',
+     'test_queue_held_back.py'),
+
+    ('…and so does a confirmed /updateall',
+     'app/discord_bot.py',
+     '                                    not in held])\n',
+     '                                    not in {}])\n',
+     'test_queue_held_back.py'),
+
+    ('the Web UI worker keeps a held entry pending',
+     'app/web_ui.py',
+     '                     if (u.get("host") or _LOCAL_HOST, u["name"]) not in held])\n',
+     '                     if (u.get("host") or _LOCAL_HOST, u["name"]) not in {}])\n',
+     'test_queue_held_back.py'),
+
+    ("a Web UI click on a pinned container is answered 'not updated', not "
+     "'started'",
+     'app/web_ui.py',
+     '                held = [why for why in (engine.held_back(k) for k in keys)\n',
+     '                held = [why for why in (None for k in keys)\n',
+     'test_queue_held_back.py'),
+
+    ('…with how many',
+     'app/web_ui.py',
+     '                return f"/?update=pinned&n={len(held)}"\n',
+     '                return "/?update=started"\n',
+     'test_queue_held_back.py'),
+
+    ("…and a selection with some held is 'started' with the count",
+     'app/web_ui.py',
+     '            return "/?update=started" + (f"&held={len(held)}" if held else "")\n',
+     '            return "/?update=started"\n',
+     'test_queue_held_back.py'),
+
+    ('…an unreadable pin list at the claim is the pin-list answer',
+     'app/web_ui.py',
+     '            if "pin_list_unreadable" in held:\n'
+     '                return "/?update=pinlist"\n',
+     '            if False:\n'
+     '                return "/?update=pinlist"\n',
+     'test_queue_held_back.py'),
+
+    ('a busy Web request whose rest is running and held says both',
+     'app/web_ui.py',
+     '                if held and not running:\n',
+     '                if held:\n',
+     'test_queue_held_back.py'),
+
+    ("the page knows the 'pinned' answer",
+     'app/web_ui.py',
+     '                        "pinned"):\n',
+     '                        ):\n',
+     'test_web_update_feedback.py'),
+
+    ("…says the held count under 'already updating'",
+     'app/web_ui.py',
+     '                if (_upd in ("queued", "already_queued", "same_running")\n',
+     '                if (_upd in ("queued", "already_queued")\n',
+     'test_web_update_feedback.py'),
+
+    ("…and under 'started'",
+     'app/web_ui.py',
+     '                if _upd == "started" and _unum("held"):\n',
+     '                if False:\n',
+     'test_web_update_feedback.py'),
+
+    ('the held-back lines exist in every language',
+     'app/lang/ko.json',
+     '  "update_held_excluded": "🚫 {name}: 업데이트에서 제외됨 — 업데이트하지 않았습니다.",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ('…and name the container in every language',
+     'app/lang/fr.json',
+     '"📌 {name} : épinglé — pas mis à jour."',
+     '"📌 {container} : épinglé — pas mis à jour."',
+     'test_reply_params.py'),
+
+    ("…the page's 'not updated' sentence exists in every language",
+     'app/lang/pt.json',
+     '  "web_update_pinned": "{count} contêiner(es) não atualizados: fixados ou excluídos das atualizações.",\n',
      '',
      'test_lang_parity.py'),
 

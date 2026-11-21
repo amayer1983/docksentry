@@ -1758,9 +1758,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
+                                   '--format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1778,7 +1778,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1806,7 +1806,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -1834,7 +1834,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1869,9 +1869,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
+                                   '--format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1899,7 +1899,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -1940,9 +1940,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
+                                   '--format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format, inspect --format t=10, restart t=30'},
+                                 '--format, inspect --format t=10 ×2, restart t=30'},
                 'events': ['update_container@nas:web',
                            'wait_healthy@nas:web max=30',
                            'update_container@local:web'],
@@ -1979,7 +1979,7 @@ EXPECTED = {
                         '❌ `web` dependents: 1 FAILED\n'
                         '   • `media`: Error: No such container: media'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10 ×3, restart t=30'},
+                                   '--format, inspect --format t=10 ×4, restart t=30'},
                 'events': ['update_container@local:web', 'wait_healthy@local:web max=30'],
                 'raised': None}],
      'state': {'pending': None,
@@ -2027,11 +2027,11 @@ EXPECTED = {
                         "'{{.HostConfig.NetworkMode}}', 'web']' timed out after 30 "
                         'seconds'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
+                                   '--format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format',
+                                 '--format, inspect --format t=10',
                           'dead': 'inspect --format t=10, inspect --format t=5 ×2, inspect '
-                                  '--format'},
+                                  '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -2072,8 +2072,8 @@ EXPECTED = {
                         'host `dead` is not managed any more — skipped rather than acting '
                         'on the wrong machine'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5, '
-                                   'inspect --format'},
+                                   '--format, inspect --format t=10 ×2, inspect --format '
+                                   't=5, inspect --format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -2120,10 +2120,10 @@ EXPECTED = {
                         'host `gone` is not managed any more — skipped rather than acting '
                         'on the wrong machine'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5, '
-                                   'inspect --format',
+                                   '--format, inspect --format t=10 ×2, inspect --format '
+                                   't=5, inspect --format',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -2164,8 +2164,8 @@ EXPECTED = {
                         'host `gone` is not managed any more — skipped rather than acting '
                         'on the wrong machine'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5, '
-                                   'inspect --format'},
+                                   '--format, inspect --format t=10 ×2, inspect --format '
+                                   't=5, inspect --format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': None,
@@ -2297,9 +2297,9 @@ EXPECTED = {
                         'updated (stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
-                                   'inspect --format',
+                                   'inspect --format, inspect --format t=10',
                           'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -2332,7 +2332,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
-                                   'inspect --format'},
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -2533,7 +2533,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -2560,7 +2560,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -2592,7 +2592,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -2739,7 +2739,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap update_one:web',
@@ -2775,7 +2775,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap update_one:web',
@@ -2894,9 +2894,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
+                                   '--format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
@@ -2929,7 +2929,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': 'unreadable: b\'[{"name": "web", "image": "nginx:1.25", "ho\'',
@@ -3029,9 +3029,9 @@ EXPECTED = {
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5 ×2, '
-                                   'inspect --format',
+                                   'inspect --format, inspect --format t=10',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@nas:web', 'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3061,7 +3061,7 @@ EXPECTED = {
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5 ×2, '
-                                   'inspect --format'},
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3093,9 +3093,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
-                                   'inspect --format',
+                                   'inspect --format, inspect --format t=10',
                           'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:db', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3126,7 +3126,7 @@ EXPECTED = {
                         '✅ `web @nas` was already updated while this one waited. Nothing '
                         'left to do.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
-                                   'inspect --format'},
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3221,8 +3221,8 @@ EXPECTED = {
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10 ×2, inspect --format '
-                                   't=5 ×2, inspect --format'},
+                                   '--format, inspect --format t=10 ×3, inspect --format '
+                                   't=5 ×2, inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web',
                            'wait 60s',
                            'update_container@local:db'],
@@ -3262,8 +3262,8 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10 ×2, inspect --format '
-                                   't=5 ×2, inspect --format'},
+                                   '--format, inspect --format t=10 ×3, inspect --format '
+                                   't=5 ×2, inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web',
                            'wait 60s',
                            'update_container@local:db'],
@@ -3303,7 +3303,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -3335,7 +3335,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -3373,9 +3373,9 @@ EXPECTED = {
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10 ×2, inspect --format t=5 ×2, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10 ×2, restart t=30, '
+                                   'inspect --format t=10 ×2, inspect --format t=5 ×2, '
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web',
                            'wait_healthy@local:web max=30',
                            'wait 5s',
@@ -3417,9 +3417,9 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10 ×2, inspect --format t=5 ×2, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10 ×2, restart t=30, '
+                                   'inspect --format t=10 ×2, inspect --format t=5 ×2, '
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web',
                            'wait_healthy@local:web max=30',
                            'wait 5s',
@@ -3448,7 +3448,7 @@ EXPECTED = {
                         '<unbutton>',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@local', 'web@nas'],
@@ -3467,7 +3467,7 @@ EXPECTED = {
                         '<unbutton>',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3486,7 +3486,7 @@ EXPECTED = {
                         '<unbutton>',
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)'],
-                'hosts': {'nas': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'nas': 'inspect --format t=10 ×2, inspect --format t=5'},
                 'events': ['update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': ['web@local', 'web@nas'],
@@ -3671,7 +3671,7 @@ EXPECTED = {
                         '<unbutton>',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@local', 'web@nas'],
@@ -3702,7 +3702,7 @@ EXPECTED = {
                         '<unbutton>',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@local'],
@@ -3801,7 +3801,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
-                                   'inspect --format'},
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -3825,7 +3825,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
-                                   'inspect --format'},
+                                   'inspect --format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -3970,9 +3970,9 @@ EXPECTED = {
                         'updated (stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
-                                   'inspect --format',
+                                   'inspect --format, inspect --format t=10',
                           'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
-                                 '--format'},
+                                 '--format, inspect --format t=10'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -4325,7 +4325,7 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap noop', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
@@ -4353,7 +4353,7 @@ EXPECTED = {
                         '(stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                                   '--format, inspect --format t=10'},
                 'events': ['update_container@local:web'],
                 'raised': None},
                {'do': 'tap noop', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],

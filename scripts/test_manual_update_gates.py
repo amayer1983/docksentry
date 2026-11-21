@@ -84,6 +84,9 @@ def _run(how):
     # run_updates now delegates the per-container loop to the shared engine
     # (#2) — bind the real method so we still exercise the actual gate logic.
     bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
+    # A manual entry is asked the pin check right before its update
+    # (Q16g); without it the stub fails the update, not the assertion.
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
 
     # unsorted on purpose — run_updates should sort into group order
     updates = [{"name": "dep2", "image": "i"}, {"name": "head", "image": "i"},

@@ -233,7 +233,7 @@ class FakeEngine:
     def queued(self):
         return [k for k, _w in self.queued_updates()]
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def _process_update_batch(self, updates, checker, *, auto, held=None):
         self.batches.append(([u["name"] for u in updates], checker, auto))
         return ([f"✅ `{u['name']}`: updated" for u in updates],
                 len(updates), [])

@@ -574,7 +574,7 @@ class UpdateEngine:
                         k, None if k in running else positions[k]))
             for k in keys]
 
-    def held_back(self, key, *, labels=False, pins=None):
+    def held_back(self, key, *, labels=False, pins=None, checker=None):
         """Why the container behind `key` must not be updated now, or None.
 
           pin_list_unreadable  its host's pin list cannot be read, so
@@ -596,18 +596,22 @@ class UpdateEngine:
         ffbafc5 for the tap, "Update all", Discord and the Web UI).
 
         `labels` asks the host for the container's labels, one `inspect`.
-        Only the drain does that, right before it would update the
-        container anyway; putting a key on the queue asks no host while
-        another update runs (Q16). A label changes only with a recreate.
-        A label read that fails reads as no labels, as in a check.
-        `pins` is a dict to keep one pin read per checker across several
-        keys. A key whose host this engine does not know answers None:
-        `run_keys` refuses it on its own.
+        Only what is about to update the container asks that, right
+        before it would: the drain, and the batch every manual update
+        runs through (Q16g). Putting a key on the queue asks no host
+        while another update runs (Q16). A label changes only with a
+        recreate. A label read that fails reads as no labels, as in a
+        check. `pins` is a dict to keep one pin read per checker across
+        several keys. `checker` is the one that will do the update, when
+        the caller has it already; otherwise the key's host's. A key
+        whose host this engine does not know answers None: `run_keys`
+        refuses it on its own.
         """
         from container_store import split_host_key
         from update_checker import (EVERYTHING_PINNED, UpdateChecker,
                                     name_matches)
-        checker = self._checker_for_key(key)
+        if checker is None:
+            checker = self._checker_for_key(key)
         if checker is None:
             return None
         name = split_host_key(key)[1]
@@ -1104,6 +1108,13 @@ class UpdateEngine:
 
     def _drain_skipped_text(self, key, why):
         """The sentence for a queued key `run_keys` ran nothing for."""
+        if why == "pin_list_unreadable":
+            return self._t("update_refused_pin_list")
+        if why in ("pinned", "pinned_label", "excluded"):
+            # Held right before the update, after the drain's own
+            # question: pinned during its wait (Q16g).
+            return self._t(f"update_queue_skipped_{why}",
+                           name=self._key_label(key))
         if why == "no_pending_updates":
             return self._t("no_pending_updates")
         if why == "host_unknown":
@@ -1286,9 +1297,12 @@ class UpdateEngine:
         `(key, target, success, msg, last_group)`. `target` is the
         pending entry that ran, or None when nothing ran — then `msg` is
         `"no_pending_updates"` (no usable file at all), `"not_pending"`
-        (the file has no entry for this key) or `"host_unknown"` (it has
-        one, but for a host this engine does not manage) and `success` is
-        None. A raising `update_container` is a failure with its error as
+        (the file has no entry for this key), `"host_unknown"` (it has
+        one, but for a host this engine does not manage), or what
+        `held_back` answered right before the update (`"pinned"`,
+        `"pinned_label"`, `"excluded"`, `"pin_list_unreadable"`; the
+        entry stays in the file) and `success` is None. A raising
+        `update_container` is a failure with its error as
         `msg`, clipped the way the batch clips it (`errfmt.clip`; until
         Q11c the single update cut at 200 characters and lost the end).
         `last_group` is `group_of(key)` after a failure and None after a
@@ -1434,11 +1448,19 @@ class UpdateEngine:
                 # What the batch raises outside its per-container guard
                 # (a report that raised twice) ends the call, and the
                 # entry stays in the file.
+                held = {}
                 lines, _n, _m = self._process_update_batch(
                     [entry], ck, auto=False, enrich=lambda us: None,
                     checker_of=lambda u, ck=ck: ck,
                     on_result=on_result, marks=False,
-                    proactive_cleanup=False, snapshot_fails_entry=True)
+                    proactive_cleanup=False, snapshot_fails_entry=True,
+                    held=held)
+                if held:
+                    # Pinned or excluded right before its update (Q16g):
+                    # nothing ran, the entry stays in the file.
+                    results.append((key, None, None,
+                                    next(iter(held.values())), None))
+                    continue
                 if not outcome:
                     # One entry, not auto, in a batch of its own: the
                     # batch skips it only when it refuses the checker,
@@ -1799,7 +1821,7 @@ class UpdateEngine:
     def _process_update_batch(self, updates, checker, *, auto, enrich=None,
                               checker_of=None, on_result=None, marks=True,
                               proactive_cleanup=True,
-                              snapshot_fails_entry=False):
+                              snapshot_fails_entry=False, held=None):
         """Shared per-container update engine for BOTH the scheduled-auto
         path (handle_autoupdates) and the manual path (run_updates /
         "Update all"). This is the single source of truth that stops the
@@ -1859,6 +1881,21 @@ class UpdateEngine:
           queue stuck (Q11c review, measured); before Q11c the single
           update took no snapshot and the same timeout came up inside
           `update_container`, where it was a failure.
+        * `held` is a dict this fills with `{(host, name): why}` for the
+          entries the pin check below kept from running, so the caller
+          leaves their pending entries where they are.
+
+        Every manual entry (`auto` False) is asked `held_back`, labels
+        included, right before its `update_container` — after the
+        group's pause and the cooldown, not once for the batch: a pending
+        entry outlives a pin set after it was found, and every manual way
+        that acts on the pending list ran past that pin on a free lock
+        (Q16g, measured on main for the tap, "Update all", Discord and
+        the Web UI). A held entry gets a line saying why, is not
+        reported as a result, recreates nothing and does not abort its
+        group. An unreadable pin list holds every entry (fail closed).
+        The scheduled pass is left out: its check read the same pins and
+        labels moments before, and its own gates follow.
         """
         (enrich or self._enrich_with_source_url)(updates)
 
@@ -2032,6 +2069,20 @@ class UpdateEngine:
                         f"skipped rather than acting on the wrong machine")
                     prev_group = abort_key
                     continue
+                if not auto:
+                    # Pinned or excluded since its pending entry was
+                    # written, or by a label (Q16g): the same question the
+                    # drain asks, on the checker that would recreate it,
+                    # read fresh for every entry.
+                    why = self.held_back(host_key(u_host, u["name"]),
+                                         labels=True, checker=u_checker)
+                    if why is not None:
+                        results.append(self._t(
+                            f"update_held_{why}",
+                            name=self._display_name(u)))
+                        if held is not None:
+                            held[(u_host, u["name"])] = why
+                        continue
                 if (u_host, u["name"]) in snapshot_failed:
                     # Its netns snapshot raised: reported, carded and
                     # group-aborted by the except below, as a raising

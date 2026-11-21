@@ -190,7 +190,7 @@ class FakeEngine:
     kick_drain = UpdateEngine.kick_drain
     update_claimed = UpdateEngine.update_claimed
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def _process_update_batch(self, updates, checker, *, auto, held=None):
         # Record WHICH checker recreated WHICH containers — the whole
         # point of the routing under test.
         assert self._update_lock.locked(), "batch ran without the update lock"

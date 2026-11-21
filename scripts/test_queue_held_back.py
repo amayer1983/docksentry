@@ -34,6 +34,22 @@ does not fit sends the message's buttons back with "queue full", and its
 toast says what happened ("queued" / "not started") instead of "Updates
 are starting..." before anything was decided.
 
+The free path, too (Q16g). A pending entry passed the pins when it was
+found, and pinning a container does not touch the pending list. So the
+entry outlives the pin, and every manual way that acts on the pending
+list ran past it on a free lock: measured on d5efbc9 for `/updateall`
+(scratchpad q16rev/probe2.py), and on main (0779842, 2.19.1-beta.1) for
+the tap, "Update all" with and without a snapshot, the major
+confirmation, Discord `/update` and `/updateall`, and the Web UI row and
+bulk buttons (scratchpad q16g/probe/probe_main.py). Only a typed
+`/update <name|glob>` held, because it checks first and the check skips
+a pinned container. Now the batch every one of them runs through asks
+`held_back` (labels included) right before `update_container`, and the
+major confirmation asks right before its own. A held container is not
+updated, its line says why, and its pending entry (or deferred major)
+stays. Rows where the pin lands while the batch is already running,
+during a group's pause, pin "right before".
+
 Driven through the three matrix harnesses (T3, T4, T5), with steps that
 change only the environment — the pin file, the setting, a label on the
 stand-in daemon — never the decision.
@@ -72,6 +88,16 @@ HEAD = ("🕒 Another update is running right now. These wait in the queue "
 TOAST_START = "<toast> Updates are starting..."
 TOAST_QUEUED = "<toast> Queued — details in the chat."
 TOAST_NOT = "<toast> Not started — details in the chat."
+# The free path (Q16g): one line per container, in the shape of the
+# batch's result lines, so `{}` is the name as that line writes it.
+HELD_PIN = "📌 {}: pinned — not updated."
+HELD_PIN_LABEL = "📌 {}: has a `docksentry.pin` label — not updated."
+HELD_EXCL = "🚫 {}: excluded from updates — not updated."
+HELD_PINLIST = ("📌 {}: not updated — the pin list (`pinned_containers.json`)"
+                " could not be read, so every container counts as pinned.")
+#: How the batch's lines name `web` here (the stand-in resolves a link).
+LWEB = "[web](https://github.com/example/web/releases/latest)"
+NWEB = LWEB + " @nas"
 
 
 # ── extra environment steps, laid over each harness's own ──────────────
@@ -90,6 +116,17 @@ def _env_step(bot, cfg, backends, step):
     elif kind == "label":
         backends[args[0]].containers[args[1]]["Config"]["Labels"][
             args[2]] = args[3]
+    elif kind == "on_wait":
+        # The next time the engine waits (a group's pause, a cooldown),
+        # `args[0]` happens: a pin set while a batch is already running.
+        eng = bot.engine
+        before, todo = eng._sleep, [args[0]]
+
+        def sleep(seconds):
+            before(seconds)
+            if todo:
+                _env_step(bot, cfg, backends, todo.pop())
+        eng._sleep = sleep
     else:
         return False
     return True
@@ -255,6 +292,21 @@ def telegram_checks():
                     and SKIP_PIN.format("web") not in st[-1]["out"]
                     and "web@local" in _pending(rec),
                     f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
+        # Held by the drain's own question, before the wait and before
+        # "Updating …": a queued entry pinned or labelled since is not
+        # announced as running first (Q16f). The batch would hold it too
+        # (Q16g), but only after that line.
+        for env, name in ((("pin", "local", "web"), "pinned"),
+                          (("label", "local", "web", "docksentry.pin",
+                            "true"), "a docksentry.pin label")):
+            rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
+                                       env, ("release",)])
+            out.append((f"[{setup}] tap queued, then {name}: the drain "
+                        f"does not say it is updating it",
+                        _ran(st[-1]) == [] and not any(
+                            o.startswith("⏳ Updating `web`")
+                            for o in st[-1]["out"]),
+                        f"out {st[-1]['out']!r}"))
         # An unreadable pin list during the drain: refused, nothing runs,
         # the entry stays pending (already so before Q16f — pinned here).
         rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
@@ -480,6 +532,308 @@ def web_checks():
     return out
 
 
+# ── the free path (Q16g) ───────────────────────────────────────────────
+def _said(st, line):
+    return any(line in o for o in st.get("out", ()))
+
+
+def telegram_free_checks():
+    out = []
+
+    def row(setup, steps):
+        rec, esc = t3.run_scenario(setup, steps)
+        return rec, rec["steps"], esc
+
+    for setup in m.SETUPS:
+        # The tap on a notification from before the pin.
+        rec, st, esc = row(setup, [("pin", "local", "web"),
+                                   ("tap", "update_one:web")])
+        out.append((f"[{setup}] free: pinned, then its button tapped: not "
+                    f"updated, says pinned, still pending",
+                    _ran(st[-1]) == [] and not esc
+                    and _said(st[-1], HELD_PIN.format("`web`"))
+                    and "web@local" in _pending(rec)
+                    and not rec["state"]["locked"],
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}, escapes {esc!r}"))
+        # The same with EXCLUDE_CONTAINERS and with labels.
+        for env, said in (
+                (("exclude", ["we*"]), HELD_EXCL.format("`web`")),
+                (("label", "local", "web", "docksentry.pin", "true"),
+                 HELD_PIN_LABEL.format("`web`")),
+                (("label", "local", "web", "docksentry.exclude", "true"),
+                 HELD_EXCL.format("`web`")),
+                (("label", "local", "web", "docksentry.enable", "false"),
+                 HELD_EXCL.format("`web`"))):
+            rec, st, esc = row(setup, [env, ("tap", "update_one:web")])
+            out.append((f"[{setup}] free: {env[0]} {env[-2:]}, then its "
+                        f"button tapped: not updated, said, still pending",
+                        _ran(st[-1]) == [] and not esc
+                        and _said(st[-1], said)
+                        and "web@local" in _pending(rec),
+                        f"out {st[-1]['out']!r}, events "
+                        f"{st[-1]['events']!r}, escapes {esc!r}"))
+        # "Update all" from the notification, `update_all` bare and a
+        # typed /updateall: the last two read the pending file and used
+        # to clear it whole.
+        for name, steps in (
+                ("Update all", [("notify", None), ("pin", "local", "web"),
+                                ("tap", "update_all:<tok>")]),
+                ("bare update_all", [("pin", "local", "web"),
+                                     ("tap", "update_all")]),
+                # Bare, /updateall means the local host; @all is every one.
+                ("/updateall", [("pin", "local", "web"),
+                                ("type", "/updateall @all" if setup == "multi"
+                                 else "/updateall")])):
+            # On two hosts nas's web runs, the local one is held.
+            rec, st, esc = row(setup, steps)
+            want_ran = ([] if setup in SINGLE
+                        else ["update_container@nas:web"])
+            want_left = ["web@local"]
+            out.append((f"[{setup}] free: web pinned, then {name}: the "
+                        f"local web is not updated, said, still pending",
+                        _ran(st[-1]) == want_ran and not esc
+                        and _said(st[-1], HELD_PIN.format(LWEB))
+                        and _pending(rec) == want_left,
+                        f"out {st[-1]['out']!r}, events "
+                        f"{st[-1]['events']!r}, state {rec['state']!r}, "
+                        f"escapes {esc!r}"))
+        # The major confirmation runs its own update_container.
+        rec, st, esc = row(setup, [("major", "local", "web"),
+                                   ("pin", "local", "web"),
+                                   ("tap", "confirm_major:web")])
+        out.append((f"[{setup}] free: a deferred major, then pinned, then "
+                    f"confirmed: not updated, says pinned, the major stays",
+                    _ran(st[-1]) == [] and not esc
+                    and _said(st[-1], HELD_PIN.format("`web`"))
+                    and rec["state"]["majors"] == {"local": ["web"]}
+                    and not rec["state"]["locked"],
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+        # …and a label set since the prompt: the confirmation reads it.
+        rec, st, esc = row(setup, [("major", "local", "web"),
+                                   ("label", "local", "web",
+                                    "docksentry.pin", "true"),
+                                   ("tap", "confirm_major:web")])
+        out.append((f"[{setup}] free: a deferred major, then a "
+                    f"docksentry.pin label, then confirmed: not updated, "
+                    f"names the label, the major stays",
+                    _ran(st[-1]) == [] and not esc
+                    and _said(st[-1], HELD_PIN_LABEL.format("`web`"))
+                    and rec["state"]["majors"] == {"local": ["web"]},
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+        # A typed /update checks first, and the check skips a pinned
+        # container: already so before Q16g, kept here as the path the
+        # others now match.
+        rec, st, esc = row(setup, [("pin", "local", "web"),
+                                   ("type", "/update web")])
+        out.append((f"[{setup}] free: pinned, then /update web: not updated",
+                    _ran(st[-1]) == [] and "web@local" in _pending(rec),
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
+        # Pinned while the batch already runs: during the group's pause
+        # between db and web, after db was recreated.
+        rec, st, esc = row(setup, [
+            ("add_pending", "db", "postgres:16", "local"),
+            ("group", "local", "g1", ["db", "web"]), ("notify", ["local"]),
+            ("on_wait", ("pin", "local", "web")),
+            ("tap", "update_all:<tok>")])
+        out.append((f"[{setup}] free: Update all over db, web; web pinned "
+                    f"during the pause after db: db runs, web does not",
+                    _ran(st[-1]) == ["update_container@local:db"]
+                    and _said(st[-1], HELD_PIN.format(LWEB))
+                    and "web@local" in _pending(rec)
+                    and "db@local" not in _pending(rec) and not esc,
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+        # A tap that waits for the group's pause after the tap before.
+        for env, said, what in (
+                (("pin", "local", "web"), HELD_PIN.format("`web`"),
+                 "pinned"),
+                (("raw_pins", b'["db"'), HELD_PINLIST.format("`web`"),
+                 "the pin list unreadable")):
+            rec, st, esc = row(setup, [
+                ("add_pending", "db", "postgres:16", "local"),
+                ("group", "local", "g1", ["db", "web"]),
+                ("tap", "update_one:db"), ("on_wait", env),
+                ("tap", "update_one:web")])
+            out.append((f"[{setup}] free: db tapped, then web; {what} "
+                        f"during web's wait for the group's pause: web is "
+                        f"not updated, said, still pending",
+                        _ran(st[-1]) == [] and not esc
+                        and any(e.startswith("wait ")
+                                for e in st[-1]["events"])
+                        and _said(st[-1], said)
+                        and "web@local" in _pending(rec),
+                        f"out {st[-1]['out']!r}, events "
+                        f"{st[-1]['events']!r}, state {rec['state']!r}"))
+        # The drain: web queued behind db, pinned during its wait. The
+        # drain's own question before the wait found nothing.
+        rec, st, esc = row(setup, [
+            ("add_pending", "db", "postgres:16", "local"),
+            ("group", "local", "g1", ["db", "web"]), ("lock",),
+            ("tap", "update_one:db"), ("tap", "update_one:web"),
+            ("on_wait", ("pin", "local", "web")), ("release",)])
+        out.append((f"[{setup}] queued db, web; web pinned during its wait "
+                    f"in the drain: db runs, web does not, said",
+                    _ran(st[-1]) == ["update_container@local:db"]
+                    and _said(st[-1], SKIP_PIN.format("web"))
+                    and "web@local" in _pending(rec)
+                    and rec["state"]["queue"] == [] and not esc,
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+        # …and the pin list broken there: refused, fail closed.
+        rec, st, esc = row(setup, [
+            ("add_pending", "db", "postgres:16", "local"),
+            ("group", "local", "g1", ["db", "web"]), ("lock",),
+            ("tap", "update_one:db"), ("tap", "update_one:web"),
+            ("on_wait", ("raw_pins", b'["db"')), ("release",)])
+        out.append((f"[{setup}] queued db, web; the pin list unreadable "
+                    f"during web's wait in the drain: web does not run, "
+                    f"the refusal is said, still pending",
+                    _ran(st[-1]) == ["update_container@local:db"]
+                    and REFUSED in st[-1]["out"]
+                    and "web@local" in _pending(rec) and not esc,
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+
+    # Two hosts, nas's web pinned: the local one runs, nas's is named.
+    for name, steps in (
+            ("its button", [("pin", "nas", "web"),
+                            ("tap", "update_one:nas/web")]),
+            ("Update all", [("notify", None), ("pin", "nas", "web"),
+                            ("tap", "update_all:<tok>")]),
+            ("/updateall @all", [("pin", "nas", "web"),
+                                 ("type", "/updateall @all")])):
+        rec, st, esc = row("multi", steps)
+        one = name == "its button"
+        out.append((f"[multi] free: web@nas pinned, then {name}: web@nas is "
+                    f"not updated, said, still pending",
+                    _ran(st[-1]) == ([] if one
+                                     else ["update_container@local:web"])
+                    and _said(st[-1], HELD_PIN.format(
+                        "`web @nas`" if one else NWEB))
+                    and _pending(rec) == (["web@local", "web@nas"] if one
+                                          else ["web@nas"]) and not esc,
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}, "
+                    f"state {rec['state']!r}"))
+    return out
+
+
+def discord_free_checks():
+    out = []
+    for setup in t4.SETUPS:
+        for name, steps in (
+                ("/update web", [t4._c("update", ("container", "web"))]),
+                ("/updateall and the press", [t4._c("updateall"),
+                                              ("press", "updateall")])):
+            for env, said in ((("pin", "local", "web"),
+                               HELD_PIN.format(LWEB)),
+                              (("exclude", ["we*"]),
+                               HELD_EXCL.format(LWEB))):
+                rec, esc = t4.run_scenario(setup, [env] + steps)
+                last = rec["steps"][-1]
+                left = _pending(rec)
+                out.append((f"[{setup}] Discord free: {env[0]}, then "
+                            f"{name}: web is not updated, said, still "
+                            f"pending",
+                            "update_container@local:web" not in _ran(last)
+                            and _said(last, said) and "web@local" in left
+                            and not esc,
+                            f"out {last.get('out')!r}, events "
+                            f"{last.get('events')!r}, pending {left!r}, "
+                            f"escapes {esc!r}"))
+    return out
+
+
+def web_free_checks():
+    out = []
+    P = t5.P
+    rec, esc = t5.run_scenario("multi", [
+        ("pin", "local", "web"), P("/api/update", ("name", "web"))])
+    st = rec["steps"]
+    out.append(("[multi] Web free: pinned, then its Update button: not "
+                "updated, the page says not updated, still pending",
+                st[-1].get("http") == "303 | Location: /?update=pinned&n=1"
+                and _ran(st[-1]) == [] and "web@local" in _pending(rec)
+                and not esc,
+                f"http {st[-1].get('http')!r}, events "
+                f"{st[-1].get('events')!r}, pending {_pending(rec)!r}"))
+    rec, esc = t5.run_scenario("multi", [
+        ("pin", "nas", "web"),
+        P("/api/bulk", ("action", "update"), ("names", "web,nas/web"))])
+    st = rec["steps"]
+    out.append(("[multi] Web free: bulk web,nas/web with nas's pinned: the "
+                "local web runs, nas's does not and is said, the page "
+                "counts it",
+                st[-1].get("http")
+                == "303 | Location: /?update=started&held=1"
+                and _ran(st[-1]) == ["update_container@local:web"]
+                and _said(st[-1], HELD_PIN.format(NWEB))
+                and _pending(rec) == ["web@nas"] and not esc,
+                f"http {st[-1].get('http')!r}, out {st[-1].get('out')!r}, "
+                f"events {st[-1].get('events')!r}, "
+                f"pending {_pending(rec)!r}"))
+    # A label is read by the worker, right before the update; the page
+    # answered before that and could not know.
+    rec, esc = t5.run_scenario("multi", [
+        ("label", "local", "web", "docksentry.pin", "true"),
+        P("/api/update", ("name", "web"))])
+    st = rec["steps"]
+    out.append(("[multi] Web free: a docksentry.pin label, then its Update "
+                "button: not updated, the worker names the label",
+                _ran(st[-1]) == [] and _said(st[-1],
+                                             HELD_PIN_LABEL.format(LWEB))
+                and "web@local" in _pending(rec) and not esc,
+                f"http {st[-1].get('http')!r}, out {st[-1].get('out')!r}, "
+                f"events {st[-1].get('events')!r}"))
+    rec, esc = t5.run_scenario("multi", [
+        ("major", "local", "web"), ("pin", "local", "web"),
+        P("/api/major_confirm", ("name", "web"), ("action", "confirm"))])
+    st = rec["steps"]
+    major = rec["state"]["files"].get("major_confirmations.json", "")
+    out.append(("[multi] Web free: a deferred major, then pinned, then "
+                "confirmed: not updated, said, the major stays",
+                _ran(st[-1]) == [] and _said(st[-1],
+                                             HELD_PIN.format("`web`"))
+                and '"web"' in major and not esc,
+                f"out {st[-1].get('out')!r}, events "
+                f"{st[-1].get('events')!r}, majors {major!r}"))
+    # Busy, the one asked for running and another pinned: both are said
+    # (Q16f said only "held").
+    row = t5.Row("multi")
+    try:
+        to = row.handler._queue_redirect(
+            None, [("web", "update_same_running", {}),
+                   ("nas/web", "update_not_queued_pinned", {})])
+    finally:
+        shutil.rmtree(row.data, ignore_errors=True)
+    out.append(("Web: busy, one running and one pinned: the page says both",
+                to == "/?update=same_running&held=1", f"to {to!r}"))
+    # The pin list broken between the handler's question and the claim
+    # (the race): the page's pin-list answer, the claim given back, no
+    # worker started.
+    import contextlib
+    import io
+    row = t5.Row("multi")
+    try:
+        with open(row.cfg.pinned_file, "wb") as f:
+            f.write(b'["db"')
+        h = row.handler.__new__(row.handler)
+        started = []
+        with contextlib.redirect_stdout(io.StringIO()):
+            to = h._start_web_update(["web"], lambda *a: started.append(a),
+                                     "web")
+        locked = row.engine._update_lock.locked()
+    finally:
+        shutil.rmtree(row.data, ignore_errors=True)
+    out.append(("Web free: the pin list unreadable at the claim: the "
+                "pin-list answer, the lock given back, nothing started",
+                to == "/?update=pinlist" and not locked and started == [],
+                f"to {to!r}, locked {locked!r}, started {started!r}"))
+    return out
+
+
 # ── the engine, asked directly ─────────────────────────────────────────
 def engine_checks():
     """An unreadable pin list at the moment of queueing: every
@@ -544,7 +898,8 @@ def main():
     failed = 0
     try:
         for part in (telegram_checks, discord_checks, web_checks,
-                     engine_checks):
+                     telegram_free_checks, discord_free_checks,
+                     web_free_checks, engine_checks):
             for label, ok, detail in part():
                 print(f"  {'PASS' if ok else 'FAIL'}  {label}")
                 if not ok:

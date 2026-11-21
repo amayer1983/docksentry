@@ -198,6 +198,8 @@ def _tg(ck, cfg):
         resolve_container_link=lambda *a, **k: "")
     bot._process_update_batch = (
         lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k))
+    # The batch asks the pin check right before each update (Q16g).
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
     bot.mark_updating = bot.engine.mark_updating
     bot.clear_updating = bot.engine.clear_updating
     return bot, said
@@ -396,7 +398,7 @@ class _Engine:
         self._queued_at = {}
         self._updating = {}
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def _process_update_batch(self, updates, checker, *, auto, held=None):
         self.batches.append([u["name"] for u in updates])
         for u in updates:
             checker.update_container(u["name"], u["image"])
