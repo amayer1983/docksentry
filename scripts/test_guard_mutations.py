@@ -171,10 +171,11 @@ GUARDED = [
      "            if False:\n                raise _DamagedSettings(",
      "test_config_damage.py"),
 
+    # Since Q14 the claim and its answer live in `_start_web_update`.
     ("clicking Update in the Web UI is answered, not swallowed",
      "app/web_ui.py",
-     "                    self._send_redirect(\"/?update=started\")",
-     "                    self._send_redirect(\"/\")",
+     "            return \"/?update=started\"\n",
+     "            return \"/\"\n",
      "test_web_update_feedback.py"),
 
     ("the image's own start_period extends the health wait",
@@ -219,10 +220,11 @@ GUARDED = [
      '                msg = "Rate limit erreicht"',
      "test_pull_failure_report.py"),
 
+    # web_update_busy, the old anchor, went with Q14; its successor.
     ("a key left on the English string is caught, not just a missing one",
      "app/lang/ja.json",
-     '"web_update_busy": "別の更新がすでに実行中のため、これは開始されませんでした。完了してからもう一度お試しください。"',
-     '"web_update_busy": "Another update is already running, so this one was not started. Try again once it has finished."',
+     '"web_update_queue_full": "何も追加されませんでした：別の更新が実行中で、順番待ちがいっぱいです（{max}）。消化されてからもう一度お試しください。"',
+     '"web_update_queue_full": "Nothing was queued: another update is running and the queue is full ({max}). Try again once it has worked through."',
      "test_lang_parity.py"),
 
     ("the one writer of every JSON file names its encoding",
@@ -2162,14 +2164,14 @@ GUARDED = [
 
     ('…nor the Web UI update worker behind them',
      'app/web_ui.py',
-     '            if any(pin_list_unreadable(hc) for _h, hc, _e in batches):',
-     '            if False:',
+     '                if any(pin_list_unreadable(hc) for _h, hc, _e in batches):',
+     '                if False:',
      'test_pin_unreadable_paths.py'),
 
     ('…and the status page shows why',
      'app/web_ui.py',
-     '            if _upd in ("started", "busy", "gone", "pinlist"):',
-     '            if _upd in ("started", "busy", "gone"):',
+     '            if _upd in ("started", "gone", "pinlist", "queued",',
+     '            if _upd in ("started", "gone", "queued",',
      'test_pin_unreadable_paths.py'),
 
     ('the Web UI row check is not "up to date" when nothing was checked',
@@ -2530,7 +2532,9 @@ GUARDED = [
     # anchor there. Since Q3 the hand-over is the door's `after`.
     ("…and a Web update hands a queued self-update over after its release",
      "app/web_ui.py",
+     "            finally:\n"
      "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "            finally:\n"
      "                engine.release_update()\n",
      "test_web_action_matrix.py"),
 
@@ -2547,25 +2551,92 @@ GUARDED = [
      "        return False\n",
      "test_update_lock_door.py"),
 
-    ("the Web banner asks the engine whether an update holds the lock",
+    # Q14: the Web banner's look at the lock is gone; the handler claims
+    # or queues in `_start_web_update` and the worker only gives back.
+    ("the Web UI starts no update while somebody else holds the lock",
      "app/web_ui.py",
-     "                return bool(getattr(eng, \"update_claimed\", False))\n",
-     "                return False\n",
-     "test_web_update_feedback.py"),
-    ("the Web worker does no work while somebody else holds the lock",
-     "app/web_ui.py",
-     "            if not engine.claim_update():\n",
-     "            if False:\n",
+     "            claimed, outcomes = engine.claim_or_queue_many(keys)\n",
+     "            claimed, outcomes = True, []\n",
      "test_update_lock_sites.py"),
-    ("the Web worker claims through the engine's door, not the raw lock",
+    ("the Web UI claims through the engine's door, not the raw lock",
      "app/web_ui.py",
-     "            if not engine.claim_update():\n",
-     "            if not engine._update_lock.acquire(blocking=False):\n",
+     "            claimed, outcomes = engine.claim_or_queue_many(keys)\n",
+     "            claimed, outcomes = "
+     "engine._update_lock.acquire(blocking=False), []\n",
      "test_update_lock_sites.py"),
     ("a read of the door's update_claimed is noticed",
      "scripts/test_update_lock_sites.py",
      "                    ops[(rel, qual)].append(DOOR_READ)\n",
      "                    pass\n",
+     "test_update_lock_sites.py"),
+
+    # Q14: a Web update click while another update runs is queued, not
+    # thrown away, and the page says where it went. Applied by hand in a
+    # copy, each red without a traceback.
+    ("a busy Web update click is queued and told so, not thrown away",
+     "app/web_ui.py",
+     "                return self._queue_redirect(outcomes)\n",
+     "                return \"/\"\n",
+     "test_web_update_feedback.py"),
+    ("…a request that does not fit the queue is told it is full",
+     "app/web_ui.py",
+     "            if \"update_queue_full\" in answers:\n",
+     "            if False:\n",
+     "test_web_multihost.py"),
+    ("…a selection that queued several says how many wait",
+     "app/web_ui.py",
+     "            if len(waiting) > 1:\n",
+     "            if False:\n",
+     "test_web_multihost.py"),
+    ("…a click on a container already waiting says since when",
+     "app/web_ui.py",
+     "            if answer == \"update_queued\":\n",
+     "            if True:\n",
+     "test_web_update_feedback.py"),
+    ("…and a click on the container updating now is not a second job",
+     "app/web_ui.py",
+     "                return \"/?update=same_running\"\n",
+     "                return \"/?update=queued&pos=0\"\n",
+     "test_web_update_feedback.py"),
+    ("a Web bulk update claims or queues the whole selection at once",
+     "app/web_ui.py",
+     "                if action == \"update\" and keys:\n",
+     "                if False:\n",
+     "test_web_multihost.py"),
+    ("the Web worker gives back the claim it was handed, even with "
+     "nothing to do",
+     "app/web_ui.py",
+     "            finally:\n"
+     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "            finally:\n"
+     "                pass\n",
+     "test_web_multihost.py"),
+    ("a Web worker that cannot start gives the claim back",
+     "app/web_ui.py",
+     "                # No worker, so nobody else gives the claim back.\n"
+     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "                # No worker, so nobody else gives the claim back.\n"
+     "                pass\n",
+     "test_web_update_feedback.py"),
+    ("the status page says where a queued click went",
+     "app/web_ui.py",
+     "                    _text = t(\"web_update_queued\", pos=_unum(\"pos\"))\n",
+     "                    _text = t(\"web_update_started\")\n",
+     "test_web_update_feedback.py"),
+    ("…and reads the numbers off the URL as numbers only",
+     "app/web_ui.py",
+     "                    return max(0, int((_uq.get(name) or [\"0\"])[0]))\n",
+     "                    return (_uq.get(name) or [\"0\"])[0]\n",
+     "test_web_update_feedback.py"),
+    ("the Web matrix records what is left on the update queue",
+     "scripts/test_web_action_matrix.py",
+     "               \"queued\": [k for k, _w in self.engine.queued_updates()],\n",
+     "               \"queued\": [],\n",
+     "test_web_action_matrix.py"),
+    ("a call through a reader helper is still counted with none in app/",
+     "scripts/test_update_lock_sites.py",
+     "    LOCK_OPS[site] = (\"READER\", [\"update_claimed\"])\n",
+     "    LOCK_OPS[site] = (\"DOOR\", [\"update_claimed\"])\n",
      "test_update_lock_sites.py"),
 
     # Q4: update_running only looks. Applied by hand in a copy, red
@@ -2604,10 +2675,9 @@ GUARDED = [
      "        self._update_lock.release()\n",
      "test_update_lock_sites.py"),
 
-    # Follow-up to T6: asking the lock through the Web helper is counted
-    # per caller, so a new `_update_lock_held(bot)` is a new entry. The
-    # counter is the anchor; the one caller today sits in a pre-gate
-    # that Q14 rewrites.
+    # Follow-up to T6: asking the lock through a reader helper is counted
+    # per caller. Since Q14 took the Web's `_update_lock_held` away, the
+    # count is shown on a snippet with a reader listed for the walk.
     ("…and so is a new place that asks it through a reader helper",
      "scripts/test_update_lock_sites.py",
      "                        helpers[(rel, qual, c)] += 1\n",

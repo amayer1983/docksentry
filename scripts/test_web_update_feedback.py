@@ -17,11 +17,16 @@ pending list: `if not targets: return`, silently. The user saw a page
 that looked exactly as it had a moment earlier and no way to tell
 whether anything had happened (audit, 07.11.2026).
 
-The redirect now carries the answer and the status page renders it. The
-lock read is advisory on purpose: the real claim is still the engine's
-`claim_update()` in the worker, and this only decides which sentence to
-show. The read is the engine's `update_claimed` (Q3), so the engine
-here is a real one with its claim held, not a stand-in with `locked()`.
+The redirect now carries the answer and the status page renders it.
+
+Since Q14 the handler does not look at the lock and guess any more: it
+asks the engine's `claim_or_queue_many` once. A free lock is claimed for
+the worker, which gives it back when it is done (`/?update=started`); a
+held one queues the key, and the page says where it went
+(`/?update=queued&pos=N`, `already_queued`, `same_running`,
+`queue_full`). Until then a click during another update was answered
+"not started, try again" and thrown away. The engine here is a real one
+with a real queue, not a stand-in.
 
 Driven against the real handler — what matters is where it redirects to
 and whether a worker thread was started at all.
@@ -41,37 +46,38 @@ checks = {}
 
 
 def _engine():
-    """A real UpdateEngine with only the lock fields, as in the Q0
-    fixtures: what the handler asks is the engine's own answer, not a
-    stand-in's `locked()`."""
+    """A real UpdateEngine with the lock and queue fields only, as in the
+    Q0 fixtures: what the handler gets is the engine's own answer."""
     eng = UpdateEngine.__new__(UpdateEngine)
     eng._update_lock = threading.Lock()
     eng._queued_selfupdate = None
     eng._swap_in_flight = False
+    eng._update_queue = []
+    eng._update_queue_lock = threading.Lock()
+    eng._queued_at = {}
+    eng._updating = {}
     return eng
 
 
-def _post_update(name="db", lock_held=False, update_running=False,
-                 has_engine=True):
-    """POST /api/update; returns (redirect target, threads started).
+def _queued(engine):
+    return [k for k, _w in engine.queued_updates()]
 
-    `lock_held` claims the engine's update lock through its door for the
-    length of the request and gives it back afterwards."""
+
+def _let_go(engine):
+    """Give back whatever is held without starting a drainer: the queue
+    is what the checks look at afterwards."""
+    if engine._update_lock.locked():
+        engine._update_lock.release()
+
+
+def _post_update(name="db", engine=None, thread_fails=False):
+    """POST /api/update on `engine`; returns (redirect target, threads
+    started). A started thread is recorded, not run."""
     started = []
-    engine = _engine() if has_engine else None
-    if lock_held:
-        assert engine.claim_update(), "the fresh engine's lock was taken"
-    try:
-        return _post_update_on(engine, name, update_running, started)
-    finally:
-        if lock_held:
-            engine.release_update()
-
-
-def _post_update_on(engine, name, update_running, started):
+    engine = engine if engine is not None else _engine()
     bot = types.SimpleNamespace(
-        t=None, enabled=False, update_running=update_running,
-        engine=engine)
+        t=None, enabled=False, engine=engine,
+        _run_queued_selfupdate=lambda: None)
     handler_cls = web_ui.create_handler(
         types.SimpleNamespace(web_password="", web_username="", language="en"),
         checker=None, bot=bot, store=None)
@@ -82,14 +88,12 @@ def _post_update_on(engine, name, update_running, started):
                  "Origin": "http://x"}
     h.client_address = ("127.0.0.1", 0)
     h.rfile = types.SimpleNamespace(read=lambda n: body)
-    h.client_address = ("127.0.0.1", 0)
     h._session_user = lambda: "admin"
     h._check_csrf = lambda: True
     h._audit = lambda *a, **k: None
     seen = {}
     h._send_redirect = lambda loc: seen.setdefault("to", loc)
     h._send_auth_required = lambda p="": seen.setdefault("to", "auth-required")
-    h._api_update = lambda key: started.append(key)
 
     real_thread = web_ui.threading.Thread
 
@@ -98,11 +102,15 @@ def _post_update_on(engine, name, update_running, started):
             self._target, self._args = target, args
 
         def start(self):
+            if thread_fails:
+                raise RuntimeError("can't start new thread")
             started.append(self._args[0] if self._args else None)
 
     web_ui.threading.Thread = _Thread
     try:
         h.do_POST()
+    except RuntimeError as e:
+        seen.setdefault("to", f"raised {e}")
     finally:
         web_ui.threading.Thread = real_thread
     return seen.get("to", "nothing"), started
@@ -111,43 +119,76 @@ def _post_update_on(engine, name, update_running, started):
 # ── the happy path still works ───────────────────────────────────────
 # First, because everything below is about NOT starting work, and a
 # handler that never starts anything would satisfy all of it.
-_to, _started = _post_update()
+_eng = _engine()
+_to, _started = _post_update(engine=_eng)
 checks["a free lock starts the update"] = _started == ["db"]
 checks["…and the page is told it started"] = _to == "/?update=started"
+# The claim is the handler's and goes to the worker with the thread: the
+# worker gives it back when it is done (it is recorded here, not run).
+checks["…with the claim taken for the worker"] = _eng.update_claimed
+checks["…and nothing queued"] = _queued(_eng) == []
+_let_go(_eng)
 
-# ── …and the two silent paths now speak ──────────────────────────────
-_to, _started = _post_update(lock_held=True)
+# A thread that cannot start must not strand the claim it was given.
+_eng = _engine()
+_to, _started = _post_update(engine=_eng, thread_fails=True)
+checks["a worker that cannot start gives the claim back"] = (
+    not _eng.update_claimed and _started == [])
+
+# ── a busy lock queues the click instead of throwing it away (Q14) ────
+_eng = _engine()
+assert _eng.claim_update(), "the fresh engine's lock was taken"
+_to, _started = _post_update(engine=_eng)
 checks["a held lock does not start a second update"] = _started == []
-checks["…and the click is answered, not swallowed"] = _to == "/?update=busy"
+checks["…the click is queued, with its place"] = (
+    _to == "/?update=queued&pos=1" and _queued(_eng) == ["db"])
+checks["…and the holder's claim is left alone"] = _eng.update_claimed
 
-_to, _started = _post_update(update_running=True)
-checks["an update already running is reported too"] = _to == "/?update=busy"
-checks["…and starts nothing"] = _started == []
+# The same click again while it waits: it keeps its one place.
+_to, _started = _post_update(engine=_eng)
+checks["clicking it again says it already waits"] = (
+    _to.startswith("/?update=already_queued&since=")
+    and _queued(_eng) == ["db"] and _started == [])
 
-_to, _started = _post_update(name="")
-checks["an empty container name starts nothing"] = _started == []
-checks["…and says so rather than redirecting blank"] = _to == "/?update=gone"
+# A second container behind it gets the next place.
+_to, _started = _post_update(name="web", engine=_eng)
+checks["the next container is queued behind it"] = (
+    _to == "/?update=queued&pos=2" and _queued(_eng) == ["db", "web"])
+_let_go(_eng)
 
-# A Telegram-less install is the whole point, so the lock read must not
-# depend on a bot that has an engine at all.
-_to, _started = _post_update(has_engine=False)
-checks["no engine on the bot is not a crash"] = _to == "/?update=started"
-checks["…and the update still starts"] = _started == ["db"]
+# A lock taken by hand, not through the door, is just as busy.
+_eng = _engine()
+_eng._update_lock.acquire()
+_to, _started = _post_update(engine=_eng)
+checks["a lock held without the door queues too"] = (
+    _to == "/?update=queued&pos=1" and _started == [])
+_let_go(_eng)
 
-# Nor on an engine that is half built (the `__new__` fixtures elsewhere
-# leave fields out): the read is a best guess, never a crash.
-_to, _started = _post_update_on(UpdateEngine.__new__(UpdateEngine), "db",
-                               False, [])
-checks["an engine without its lock is not a crash either"] = (
-    _to == "/?update=started" and _started == ["db"])
-
-# The read only looks: the claim it found is still there afterwards,
-# and still the holder's to give back.
+# The container that is being updated right now is not a second job.
 _eng = _engine()
 _eng.claim_update()
-_post_update_on(_eng, "db", False, [])
-checks["asking about a held lock leaves it held"] = _eng._update_lock.locked()
-_eng.release_update()
+_eng._updating["db"] = "1.2"
+_to, _started = _post_update(engine=_eng)
+checks["clicking the container that is updating queues nothing"] = (
+    _to == "/?update=same_running" and _queued(_eng) == [] and _started == [])
+_let_go(_eng)
+
+# A full queue is said, and nothing goes on it.
+_eng = _engine()
+_eng.claim_update()
+_full = [f"c{i}" for i in range(UpdateEngine.UPDATE_QUEUE_MAX)]
+_eng.enqueue_updates(_full)
+_to, _started = _post_update(engine=_eng)
+checks["a full queue is reported, with its size"] = (
+    _to == f"/?update=queue_full&max={UpdateEngine.UPDATE_QUEUE_MAX}"
+    and _queued(_eng) == _full and _started == [])
+_let_go(_eng)
+
+_eng = _engine()
+_to, _started = _post_update(name="", engine=_eng)
+checks["an empty container name starts nothing"] = _started == []
+checks["…and says so rather than redirecting blank"] = _to == "/?update=gone"
+checks["…and takes no claim"] = not _eng.update_claimed
 
 # ── the page can say it ──────────────────────────────────────────────
 # A redirect target nobody renders is the same silence in a new place.
@@ -156,10 +197,95 @@ import json as _json  # noqa: E402
 _lang = os.path.join(os.path.dirname(__file__), "..", "app", "lang", "en.json")
 with open(_lang, encoding="utf-8") as _f:
     _keys = _json.load(_f)
-for _what in ("started", "busy", "gone"):
+for _what in ("started", "gone", "queued", "already_queued", "queue_full",
+              "same_running"):
     checks[f"the '{_what}' answer has words to show"] = (
         bool(_keys.get(f"web_update_{_what}"))
         and bool(_keys.get(f"web_update_{_what}_title")))
+checks["a request that queued several has words too"] = bool(
+    _keys.get("web_update_queued_many"))
+
+
+class _FakeStore:
+    def get_pinned(self): return []
+    def get_autoupdate(self): return []
+    def get_ask_before_major(self): return []
+    def get_groups(self): return {}
+    def get_notes(self): return {}
+    def get_links(self): return {}
+    def get_pending_major(self): return {}
+    def is_protect_stop(self, name): return False
+    def is_trust_running(self, name): return False
+    def get_cooldown(self, name): return 0
+
+
+class _PageChecker:
+    def _own_container_name(self): return "docksentry"
+    def get_disk_usage(self): return 42.0, 1, 2
+    def read_advisories(self): return {}
+
+
+def _status_page(path):
+    """The status page for `path`, as the browser gets it after the
+    redirect."""
+    missing = "/nonexistent/docksentry-test"
+    cfg = types.SimpleNamespace(
+        language="en", auto_selfupdate=False, ui_mode="advanced",
+        debug=False, disk_warn_percent=85, status_view="table",
+        pending_file=missing, history_file=missing, maintenance_file=missing)
+    bot = types.SimpleNamespace(engine=types.SimpleNamespace(updating={}))
+    cls = web_ui.create_handler(cfg, _PageChecker(), bot=bot,
+                                store=_FakeStore())
+    h = cls.__new__(cls)
+    h.path = path
+    out = {}
+    h._send_html = lambda html, status=200: out.update(html=html)
+    h._render_page = lambda content, active=None, wide=None: content
+    h._get_containers = lambda: []
+    h._get_pending = lambda host=None: []
+    import contextlib
+    import io
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            h._page_status()
+    except Exception as e:                                  # noqa: BLE001
+        return f"RAISED {type(e).__name__}: {e}"
+    return out.get("html", "")
+
+
+def _fmt(key, **kw):
+    """The English sentence, or a marker no page contains when the key
+    is missing (red, not a traceback)."""
+    if key not in _keys:
+        return "\0missing " + key
+    return _keys[key].format(**kw)
+
+
+_page = _status_page("/?update=queued&pos=3")
+checks["the page says where the click went in the queue"] = (
+    _fmt("web_update_queued", pos=3) in _page
+    and _fmt("web_update_queued_title") in _page)
+_page = _status_page("/?update=queued&n=4")
+checks["…and how many of a selection are waiting"] = (
+    _fmt("web_update_queued_many", count=4) in _page)
+_page = _status_page("/?update=already_queued&since=125")
+checks["…how long it has waited when it was there already"] = (
+    _fmt("web_update_already_queued", since="2m") in _page)
+_page = _status_page("/?update=queue_full&max=10")
+checks["…that the queue was full, and its size"] = (
+    _fmt("web_update_queue_full", max=10) in _page)
+_page = _status_page("/?update=same_running")
+checks["…that it is the one updating now"] = (
+    _fmt("web_update_same_running") in _page)
+# The numbers come from the URL, so a hand-made one must not break the
+# page or put words on it that nobody sent.
+_page = _status_page("/?update=queued&pos=%3Cb%3E")
+checks["a position that is not a number is not shown"] = (
+    not _page.startswith("RAISED") and "<b>" not in _page
+    and _fmt("web_update_queued_title") in _page)
+checks["no banner without an answer"] = (
+    _fmt("web_update_queued_title") not in _status_page("/")
+    and "web_update_queued_title" in _keys)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

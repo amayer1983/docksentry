@@ -10,8 +10,10 @@ entry), and the engine's own `cleanup_guarded`, which Telegram's and
 Discord's cleanup guards hand their work to (`engine.cleanup_guarded(...)`,
 counted as their claim). Telegram's per-container tap claims through
 `engine.claim_or_queue(...)` (Q7), which queues it when busy and hands
-back the answer as a key. The Web worker and `selfupdate.start` still claim by hand
-with `acquire(blocking=False)`. Each one has
+back the answer as a key; so do the Web UI's update click and bulk
+update since Q14 (`claim_or_queue_many`), whose worker thread then
+runs under that claim and gives it back. `selfupdate.start` still claims
+by hand with `acquire(blocking=False)`. Each one has
 its own answer for "somebody else holds it": Telegram's per-container
 tap queues, `/update all` and a confirmed major refuse, the scheduler
 skips its pass, a cleanup hands its caller a busy sentence, a
@@ -44,7 +46,7 @@ lists below:
   * every read of `update_running` (the pre-gates);
   * every call to a helper that only looks at the lock (a READER or
     PROBE below that is neither `update_running` nor a queue call —
-    today `WebHandler._update_lock_held`);
+    none since Q14 took the Web handler's `_update_lock_held` away);
   * every call that feeds or works off the container queue;
   * every busy sentence: a string constant that names a busy or queue
     key, a `t()` built from a prefix of one (the Web banner's
@@ -151,10 +153,12 @@ LOCK_OPS = {
     # key `cleanup_busy`; each chat says it in its own language.
     ("update_engine.py", "UpdateEngine.cleanup_guarded"):
         ("CLAIM", ["claim_update()", "release_update(after=after)"]),
-    # Through the door since Q3, with the same self-update hand-over as
-    # the chats.
-    ("web_ui.py", "create_handler.WebHandler._run_web_update_batch"):
-        ("CLAIM", ["claim_update()",
+    # The Web UI's update click and bulk update (Q14): one claim for the
+    # request through the engine's claim-or-queue, handed to the worker
+    # thread; busy, every key is queued and the page is told where. Its
+    # own release only runs when the thread cannot start.
+    ("web_ui.py", "create_handler.WebHandler._start_web_update"):
+        ("CLAIM", ["claim_or_queue_many(keys)",
                    "release_update(after=bot._run_queued_selfupdate)"]),
     # Sanctioned raw site (Q3): the self-update keeps its own raw claim by
     # design, because it keeps the lock past its own return once the
@@ -185,9 +189,6 @@ LOCK_OPS = {
     # a real claim landing in that moment was refused.
     ("update_engine.py", "UpdateEngine.update_running"):
         ("READER", ["locked"]),
-    # Asks the engine's door (Q3) instead of looking at the lock itself.
-    ("web_ui.py", "create_handler.WebHandler._update_lock_held"):
-        ("READER", ["update_claimed"]),
     # The sweep's rules are the engine's since Q9. Since Q13 the poll
     # loop, the scheduler's `_after_tick` and the drainer on its way out
     # all hand it `kick_drain`. Asks the door like the Web banner does.
@@ -198,6 +199,11 @@ LOCK_OPS = {
     # Discord's two update commands give the lock back only through here.
     ("discord_bot.py", "DiscordBot._release_lock"):
         ("RELEASE", ["release_update(after=self._hand_on_selfupdate)"]),
+    # The Web worker runs under the claim `_start_web_update` took for it
+    # and gives it back in its finally (Q14), with the same self-update
+    # hand-over as the chats. Driven through `_start_web_update`.
+    ("web_ui.py", "create_handler.WebHandler._run_web_update_batch"):
+        ("RELEASE", ["release_update(after=bot._run_queued_selfupdate)"]),
     # ── the door ──
     ("update_engine.py", "UpdateEngine.claim_update"):
         ("DOOR", ["acquire(blocking=False)"]),
@@ -246,7 +252,7 @@ UPDATE_RUNNING_READS = {
     ("discord_bot.py", "DiscordBot._run_lifecycle"):
         (1, "passed to lifecycle._guard"),
     ("web_ui.py", "create_handler.WebHandler.do_POST"):
-        (2, "pre-gate for /api/update (getattr), lifecycle passes it on"),
+        (1, "lifecycle passes it on"),
     ("web_ui.py", "create_handler.WebHandler._api_check"):
         (1, "pre-gate for GET /api/check"),
     ("web_ui.py", "create_handler.WebHandler._api_check_one"):
@@ -313,10 +319,9 @@ QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
 #: names in LOCK_OPS that are counted nowhere else (`update_running` has
 #: its own table, the queue helpers are in QUEUE_CALLS), so a new reader
 #: listed there brings its callers along.
-LOCK_HELPER_CALLS = {
-    ("web_ui.py", "create_handler.WebHandler.do_POST", "_update_lock_held"):
-        (1, "pre-gate for /api/update"),
-}
+#: Empty since Q14: the Web handler's `_update_lock_held` pre-gate is
+#: gone, the handler claims or queues instead.
+LOCK_HELPER_CALLS = {}
 
 
 def _helper_callees():
@@ -359,18 +364,34 @@ BUSY_MESSAGES = {
     ("discord_bot.py", "DiscordBot._refuse_busy._say",
      "chan_busy_capacity"): (1, "other lock: the worker pool is full"),
     # Web
-    ("web_ui.py", "create_handler.WebHandler.do_POST",
-     "/?update=busy"): (1, "pre-gate: /api/update"),
+    # The page's banners for a click that was queued (Q14): the kinds it
+    # knows, which of them are calm, and the sentences with numbers.
     ("web_ui.py", "create_handler.WebHandler._page_status",
-     "busy"): (1, "render: the banners the page knows"),
+     "already_queued"): (3, "render: the banners the page knows"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
-     "t(web_update_…)"): (2, "render: web_update_busy(_title)"),
+     "same_running"): (2, "render: the banners the page knows"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queued"): (1, "render: queued, with its place"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queued_many"): (1, "render: several of a selection queued"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_already_queued"): (1, "render: already waiting, since"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queue_full"): (1, "render: the queue was full"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "t(web_update_…)"): (2, "render: title, and the sentences without "
+                             "numbers (same_running among them)"),
+    # claim_or_queue_many's answers, turned into the page's (Q14).
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_queue_full"): (2, "queue: the request did not fit"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_queued"): (2, "queue: queued"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_already_queued"): (1, "queue: already waiting"),
     ("web_ui.py", "create_handler.WebHandler._status_row",
      "web_check_one_busy"): (1, "other lock: the check-one button's text"),
     ("web_ui.py", "create_handler.WebHandler._api_check_one",
      "busy"): (2, "other lock: _CHECK_LOCK's JSON answer"),
-    ("web_ui.py", "create_handler.WebHandler._run_web_update_batch",
-     "update_already_running"): (1, "claim"),
     # The engine
     # claim_or_queue(_many)'s answers, as keys (Q7); Telegram's tap
     # translates them and so will every connection that queues.
@@ -677,9 +698,30 @@ def enumeration_checks(found):
                     helpers.get(k, 0) == want_h.get(k, 0),
                     f"expected ×{want_h.get(k, 0)}"))
     out.append((f"the lock-helper callees are {_helper_callees()}",
-                _helper_callees() == ["_update_lock_held"],
+                _helper_callees() == [],
                 "a READER/PROBE was added or renamed in LOCK_OPS; "
                 "check LOCK_HELPER_CALLS"))
+    # No app code asks the lock through a helper any more (Q14 took the
+    # Web pre-gate's away), so the counting is shown on a snippet with a
+    # reader listed for the length of the walk: a new helper's callers
+    # must still turn up when somebody adds one.
+    tmp = tempfile.mkdtemp(prefix="lock-helper-")
+    site = ("peek.py", "Peek.held")
+    LOCK_OPS[site] = ("READER", ["update_claimed"])
+    try:
+        with open(os.path.join(tmp, "peek.py"), "w", encoding="utf-8") as f:
+            f.write("class Peek:\n"
+                    "    def held(self):\n"
+                    "        return self.engine.update_claimed\n"
+                    "def ask(p):\n"
+                    "    return p.held() or p.held()\n")
+        h_helpers = enumerate_sites(tmp)[5]
+    finally:
+        del LOCK_OPS[site]
+        shutil.rmtree(tmp, ignore_errors=True)
+    out.append(("a call through a listed reader helper is counted, by "
+                "caller", dict(h_helpers) == {("peek.py", "ask", "held"): 2},
+                f"helpers {dict(h_helpers)}"))
 
     # The door's three spellings, on a snippet: today no app code uses
     # `with update_claim(...)`, so without this nothing would notice the
@@ -864,6 +906,13 @@ def _telegram_off(w):
     w.row.cfg.bot_token = ""
 
 
+def _web_start(w, keys):
+    """The Web handlers' claim-or-queue with the real worker behind it,
+    as /api/update and /api/bulk call it (Q14). Returns the page."""
+    h = w.web()
+    return h._start_web_update(keys, h._run_web_update_batch, keys)
+
+
 #: (file, qualname) of the site → (label, prepare, call). Every entry of
 #: LOCK_OPS except the release helper has at least one drive.
 DRIVES = [
@@ -897,12 +946,15 @@ DRIVES = [
     (("update_engine.py", "UpdateEngine.cleanup_guarded"),
      "image cleanup, the engine's own answer", None,
      lambda w: w.engine.cleanup_guarded(w.local)),
-    (("web_ui.py", "create_handler.WebHandler._run_web_update_batch"),
-     "worker for nas/web, Telegram on", None,
-     lambda w: w.web()._run_web_update_batch(["nas/web"])),
-    (("web_ui.py", "create_handler.WebHandler._run_web_update_batch"),
-     "worker for nas/web, Telegram off", _telegram_off,
-     lambda w: w.web()._run_web_update_batch(["nas/web"])),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "update click for nas/web, Telegram on", None,
+     lambda w: _web_start(w, ["nas/web"])),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "update click for nas/web, Telegram off", _telegram_off,
+     lambda w: _web_start(w, ["nas/web"])),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "bulk update web,nas/web", None,
+     lambda w: _web_start(w, ["web", "nas/web"])),
     (("selfupdate.py", "start"),
      "/selfupdate", None,
      lambda w: __import__("selfupdate").start(w.ctx)),
@@ -914,9 +966,6 @@ DRIVES = [
     (("update_engine.py", "UpdateEngine.drain_queue"),
      "drain with web queued", _queued,
      lambda w: (w.engine.kick_drain(), None)[1]),
-    (("web_ui.py", "create_handler.WebHandler._update_lock_held"),
-     "status banner question", None,
-     lambda w: w.web()._update_lock_held(w.tg)),
     # As the poll loop and the scheduler's `_after_tick` call it (Q13).
     (("update_engine.py", "UpdateEngine.sweep_queue"),
      "poll-cycle sweep with web queued", _queued,
@@ -1248,15 +1297,24 @@ EXPECTED_BUSY = {
     (('update_engine.py', 'UpdateEngine.cleanup_guarded'),
      "image cleanup, the engine's own answer"):
         {'kind': 'SKIP_MSG', 'lock_after': 'held', 'returned': (None, 'cleanup_busy')},
-    (('web_ui.py', 'create_handler.WebHandler._run_web_update_batch'),
-     'worker for nas/web, Telegram on'):
-        {'keys': ['update_already_running'],
-         'kind': 'REJECT',
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'update click for nas/web, Telegram on'):
+        {'kind': 'QUEUE',
          'lock_after': 'held',
-         'said': ['⚠️ Update already in progress...']},
-    (('web_ui.py', 'create_handler.WebHandler._run_web_update_batch'),
-     'worker for nas/web, Telegram off'):
-        {'kind': 'SKIP', 'lock_after': 'held'},
+         'queue_after': ['nas/web'],
+         'returned': '/?update=queued&pos=1'},
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'update click for nas/web, Telegram off'):
+        {'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['nas/web'],
+         'returned': '/?update=queued&pos=1'},
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'bulk update web,nas/web'):
+        {'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web', 'nas/web'],
+         'returned': '/?update=queued&n=2'},
     (('selfupdate.py', 'start'),
      '/selfupdate'):
         {'keys': ['selfupdate_queued'],
@@ -1274,9 +1332,6 @@ EXPECTED_BUSY = {
     (('update_engine.py', 'UpdateEngine.drain_queue'),
      'drain with web queued'):
         {'kind': 'SKIP', 'lock_after': 'held', 'queue_after': ['web']},
-    (('web_ui.py', 'create_handler.WebHandler._update_lock_held'),
-     'status banner question'):
-        {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
     (('update_engine.py', 'UpdateEngine.sweep_queue'),
      'poll-cycle sweep with web queued'):
         {'kind': 'LEAVES_QUEUED', 'lock_after': 'held', 'queue_after': ['web']},

@@ -372,11 +372,20 @@ class _Engine:
     # starts nothing.
     kick_drain = UpdateEngine.kick_drain
     cleanup_guarded = UpdateEngine.cleanup_guarded
+    # The Web handlers claim or queue through the engine (Q14).
+    claim_or_queue_many = UpdateEngine.claim_or_queue_many
+    enqueue_updates = UpdateEngine.enqueue_updates
+    _queue_answer = UpdateEngine._queue_answer
+    updating = UpdateEngine.updating
 
     def __init__(self):
         self._update_lock = threading.Lock()
         self.update_running = False
         self.batches = []
+        self._update_queue = []
+        self._update_queue_lock = threading.Lock()
+        self._queued_at = {}
+        self._updating = {}
 
     def _process_update_batch(self, updates, checker, *, auto):
         self.batches.append([u["name"] for u in updates])
@@ -611,6 +620,8 @@ for pins, readable in ((DAMAGED, False), (HEALTHY, True)):
     wbot = _WebBot(ck)
     wbot.config = cfg
     h = _handler(ck, cfg, wbot)
+    # The worker runs under the claim its handler took (Q14).
+    wbot.engine.claim_update()
     _quiet(h._run_web_update_batch, ["db"])
     if not readable:
         checks["the Web UI worker refuses with an unreadable pin list"] = (

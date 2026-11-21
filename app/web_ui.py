@@ -119,6 +119,9 @@ _ICONS = {
     "calendar":  '<span class="ic">🗓️</span>',
     "package":   '<span class="ic">📦</span>',
     "arrow_up":  '<span class="ic">⬆️</span>',
+    # A click that waits its turn (Q14): the clock the chats' queue
+    # answers carry.
+    "queued":    '<span class="ic">🕒</span>',
 }
 
 
@@ -2680,21 +2683,16 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # the update started, was refused because another one
                 # holds the lock, or had nothing to act on at all.
                 #
-                # Advisory, not the gate: the real claim is still the
-                # engine's `claim_update()` in the worker, and a
-                # click that loses the race between here and there is
-                # reported by the history like any other.
+                # The claim is taken here, not guessed at (Q14): a free
+                # lock goes to the worker with the thread, a held one
+                # queues the click, and the page says which.
                 if not key:
                     self._send_redirect("/?update=gone")
                 elif _pins_unreadable_for([key]):
                     self._send_redirect("/?update=pinlist")
-                elif (getattr(bot, "update_running", False)
-                      or self._update_lock_held(bot)):
-                    self._send_redirect("/?update=busy")
                 else:
-                    threading.Thread(target=self._api_update,
-                                     args=(key,)).start()
-                    self._send_redirect("/?update=started")
+                    self._send_redirect(self._start_web_update(
+                        [key], self._api_update, key))
             elif path == "/api/check_one":
                 # Per-container update check from the Status table (#50).
                 # POST rather than GET so it inherits the auth + CSRF checks
@@ -3500,6 +3498,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 keys = [n for n in keys if n.strip()]
                 if action == "update" and keys and _pins_unreadable_for(keys):
                     self._send_redirect("/?update=pinlist")
+                    return
+                if action == "update" and keys:
+                    # One claim for the whole selection, or every key of
+                    # it on the queue (Q14) — before the redirect, so the
+                    # page can say which.
+                    self._send_redirect(self._start_web_update(
+                        keys, self._run_web_update_batch, keys))
                     return
                 if action and keys:
                     threading.Thread(
@@ -4393,16 +4398,46 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             # button therefore did nothing visible at all: a 302 back to
             # this page and no sign that the click had been dropped
             # (audit, 07.11.2026).
-            _upd = (parse_qs(urlparse(self.path).query).get("update")
-                    or [""])[0]
+            #
+            # Since Q14 a click during another update is queued, and the
+            # page says where it went. Only numbers ride along, and they
+            # are read back as numbers: the URL is anybody's to type.
+            _uq = parse_qs(urlparse(self.path).query)
+            _upd = (_uq.get("update") or [""])[0]
+
+            def _unum(name):
+                try:
+                    return max(0, int((_uq.get(name) or ["0"])[0]))
+                except ValueError:
+                    return 0
             update_banner = ""
-            if _upd in ("started", "busy", "gone", "pinlist"):
-                _kind = "card-warn" if _upd != "started" else "card"
-                _icon = _ICONS["alert" if _upd != "started" else "arrow_up"]
+            if _upd in ("started", "gone", "pinlist", "queued",
+                        "already_queued", "queue_full", "same_running"):
+                _calm = _upd in ("started", "queued", "already_queued",
+                                 "same_running")
+                _kind = "card" if _calm else "card-warn"
+                if _upd == "started":
+                    _icon = _ICONS["arrow_up"]
+                elif _calm:
+                    _icon = _ICONS["queued"]
+                else:
+                    _icon = _ICONS["alert"]
+                if _upd == "queued" and _unum("n") > 1:
+                    _text = t("web_update_queued_many", count=_unum("n"))
+                elif _upd == "queued":
+                    _text = t("web_update_queued", pos=_unum("pos"))
+                elif _upd == "already_queued":
+                    from notify_retry import _ago
+                    _text = t("web_update_already_queued",
+                              since=_ago(_unum("since")))
+                elif _upd == "queue_full":
+                    _text = t("web_update_queue_full", max=_unum("max"))
+                else:
+                    _text = t("web_update_" + _upd)
                 update_banner = (
                     f'<div class="card {_kind}">'
                     f'<h2>{_icon} {t("web_update_" + _upd + "_title")}</h2>'
-                    f'<p class="card-intro">{t("web_update_" + _upd)}</p>'
+                    f'<p class="card-intro">{_text}</p>'
                     f'</div>')
 
             leftover_banner = ""
@@ -7132,6 +7167,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             lock closes that divergence; the notifier fan-out and Telegram
             summary now match the bot path exactly.
 
+            Runs under the claim the handler took for it
+            (`_start_web_update`, Q14) and gives that claim back when it is
+            done, whatever happened — including when there was nothing to
+            do. Until Q14 the worker claimed for itself, and a click that
+            lost that claim was told "already running" in Telegram only.
+
             `keys` are host keys (#7) — bare names for the local host,
             `nas/nginx` for a remote one. Each host's entries come from ITS
             slice of the pending file and are updated through ITS checker;
@@ -7145,50 +7186,46 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             """
             from container_store import split_host_key
             engine = bot.engine
-            # host → the names asked for on it, in first-seen order so a
-            # single-host batch keeps the order it always had.
-            wanted, order = {}, []
-            for key in keys:
-                host_name, name = split_host_key(key)
-                if not name:
-                    continue
-                if host_name not in wanted:
-                    wanted[host_name] = set()
-                    order.append(host_name)
-                wanted[host_name].add(name)
-
-            batches = []          # (host, checker, [pending entries])
-            targets = []
-            for host_name in order:
-                resolved = _resolve_host(host_name)
-                if resolved is None:
-                    # A host we don't manage. Skipped in full — never
-                    # retried against the local one.
-                    print(f"Web UI update: unknown host {host_name!r} — skipped")
-                    continue
-                hname, _be, hchecker, _st = resolved
-                entries = [u for u in self._get_pending(hname)
-                           if u.get("name") in wanted[host_name]]
-                if entries:
-                    batches.append((hname, hchecker, entries))
-                    targets.extend(entries)
-            if not targets:
-                return
-            # The handlers refuse this before starting the worker; this is
-            # the same answer for anything that reaches the worker anyway.
-            from update_checker import pin_list_unreadable
-            if any(pin_list_unreadable(hc) for _h, hc, _e in batches):
-                print("Web UI update refused: the pin list could not be read")
-                if bot.enabled:
-                    bot.send_message(bot.t("update_refused_pin_list"))
-                return
-            # Atomic claim of the shared update mutex — same one the bot's
-            # run_updates / single-update / self-update flows use. Busy → bail.
-            if not engine.claim_update():
-                if bot.enabled:
-                    bot.send_message(bot.t("update_already_running"))
-                return
             try:
+                # host → the names asked for on it, in first-seen order so
+                # a single-host batch keeps the order it always had.
+                wanted, order = {}, []
+                for key in keys:
+                    host_name, name = split_host_key(key)
+                    if not name:
+                        continue
+                    if host_name not in wanted:
+                        wanted[host_name] = set()
+                        order.append(host_name)
+                    wanted[host_name].add(name)
+
+                batches = []          # (host, checker, [pending entries])
+                targets = []
+                for host_name in order:
+                    resolved = _resolve_host(host_name)
+                    if resolved is None:
+                        # A host we don't manage. Skipped in full — never
+                        # retried against the local one.
+                        print(f"Web UI update: unknown host {host_name!r} "
+                              "— skipped")
+                        continue
+                    hname, _be, hchecker, _st = resolved
+                    entries = [u for u in self._get_pending(hname)
+                               if u.get("name") in wanted[host_name]]
+                    if entries:
+                        batches.append((hname, hchecker, entries))
+                        targets.extend(entries)
+                if not targets:
+                    return
+                # The handlers refuse this before claiming; this is the
+                # same answer for anything that reaches the worker anyway.
+                from update_checker import pin_list_unreadable
+                if any(pin_list_unreadable(hc) for _h, hc, _e in batches):
+                    print("Web UI update refused: the pin list could not "
+                          "be read")
+                    if bot.enabled:
+                        bot.send_message(bot.t("update_refused_pin_list"))
+                    return
                 # All per-container work (enrich, group-order sort, netns
                 # snapshot, update, cascade, cooldown, notifier results) runs
                 # in the shared engine. auto=False: no ask-before-major gate —
@@ -7215,26 +7252,63 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             finally:
                 engine.release_update(after=bot._run_queued_selfupdate)
 
-        def _update_lock_held(self, _bot):
-            """True when the shared update mutex is taken right now.
+        def _start_web_update(self, keys, target, *args):
+            """Claim the update lock for `keys` and start `target(*args)`
+            on a thread holding that claim, or queue the keys (Q14).
 
-            Read-only and best-effort: the claim that matters is still
-            the engine's `claim_update()` in `_run_web_update_batch`.
-            This only decides which of two sentences the page shows, so
-            a lost race costs a word, not an update. Written defensively
-            because `bot` can be a Telegram-less stand-in with no engine
-            at all.
+            Returns where the page goes next. One claim for the whole
+            request (`claim_or_queue_many`): a free lock is the worker's,
+            which gives it back when it is done (`/?update=started`). A
+            held one puts every key on the engine's queue, all of them or
+            none, and the drainer works them off once the holder lets go
+            (Q13) — the results come through the broadcast like any
+            queued update's. Until Q14 such a click was answered "not
+            started, try again" and thrown away.
             """
-            eng = getattr(_bot, "engine", None)
+            engine = bot.engine
+            claimed, outcomes = engine.claim_or_queue_many(keys)
+            if not claimed:
+                return self._queue_redirect(outcomes)
             try:
-                return bool(getattr(eng, "update_claimed", False))
-            except Exception:                               # noqa: BLE001
-                return False
+                threading.Thread(target=target, args=args).start()
+            except BaseException:
+                # No worker, so nobody else gives the claim back.
+                engine.release_update(after=bot._run_queued_selfupdate)
+                raise
+            return "/?update=started"
+
+        def _queue_redirect(self, outcomes):
+            """The status-page answer for a request that was queued
+            instead of claimed: `claim_or_queue_many`'s outcomes, one
+            `(key, i18n key, params)` per container.
+
+            Only numbers go into the URL, never a name: the banner reads
+            them back off a link anybody can type.
+            """
+            answers = [a for _k, a, _p in outcomes]
+            if "update_queue_full" in answers:
+                # The engine answers a request that does not fit as a
+                # whole: nothing of it went on the queue.
+                full = next(p for _k, a, p in outcomes
+                            if a == "update_queue_full")
+                return f"/?update=queue_full&max={int(full.get('max', 0))}"
+            waiting = [(a, p) for _k, a, p in outcomes
+                       if a in ("update_queued", "update_already_queued")]
+            if not waiting:
+                # Everything asked for is the update running right now.
+                return "/?update=same_running"
+            if len(waiting) > 1:
+                return f"/?update=queued&n={len(waiting)}"
+            answer, params = waiting[0]
+            if answer == "update_queued":
+                return f"/?update=queued&pos={int(params.get('pos', 0))}"
+            return ("/?update=already_queued&since="
+                    f"{int(params.get('since_seconds', 0))}")
 
         def _api_update(self, key):
-            """Trigger update for a single container from Web UI. Runs through
-            the shared engine batch under the update lock (v1.60.5). `key` is
-            the host key the row's form carried."""
+            """Update a single container from the Web UI, under the claim
+            the handler took for it. Runs through the shared engine batch
+            (v1.60.5). `key` is the host key the row's form carried."""
             self._run_web_update_batch([key])
 
         def _api_check(self):
@@ -7436,9 +7510,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
         def _api_bulk(self, action, keys):
             """Apply a bulk action to a list of containers.
 
-            Supported actions: pin, unpin, autoupdate_on, autoupdate_off,
-            update. Update walks through the pending-updates list and runs
-            each matching update sequentially.
+            Supported actions: pin, unpin, autoupdate_on, autoupdate_off.
+            A bulk update does not come here: the handler claims or queues
+            it itself (`_start_web_update`, Q14), so the page can say which.
 
             `keys` are host keys (#7) — the checkbox values from the status
             table. A selection may span hosts, so the names are grouped by
@@ -7453,14 +7527,6 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if name:
                     by_host.setdefault(host_name, []).append(name)
             try:
-                if action == "update":
-                    # Route through the shared engine batch under the update
-                    # lock — same path as single-update and the bot (v1.60.5),
-                    # so bulk gets group ordering, netns, cascade, cooldown and
-                    # mutex protection instead of a bare update_container loop.
-                    # It does its own host resolution, on the raw keys.
-                    self._run_web_update_batch(keys)
-                    return
                 if action not in ("pin", "unpin", "autoupdate_on",
                                   "autoupdate_off"):
                     print(f"Web UI bulk: unknown action {action!r}")

@@ -145,6 +145,18 @@ class FakeEngine:
     def __init__(self):
         self._update_lock = threading.Lock()
         self.batches = []
+        self.claims = 0
+        # The engine's queue, for claim_or_queue_many (Q14).
+        self._update_queue = []
+        self._update_queue_lock = threading.Lock()
+        self._queued_at = {}
+        self._updating = {}
+
+    def claim_update(self):
+        # Counted, so "one claim runs the whole request" can be asked.
+        won = UpdateEngine.claim_update(self)
+        self.claims += won
+        return won
 
     @property
     def update_running(self):
@@ -155,8 +167,15 @@ class FakeEngine:
 
     # The engine's own door, borrowed rather than re-written: what the
     # Web worker and the banner ask is the real answer on this real Lock.
-    claim_update = UpdateEngine.claim_update
     release_update = UpdateEngine.release_update
+    # Claim or queue (Q14), with the queue it fills.
+    claim_or_queue_many = UpdateEngine.claim_or_queue_many
+    enqueue_updates = UpdateEngine.enqueue_updates
+    queued_updates = UpdateEngine.queued_updates
+    queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
+    _queue_answer = UpdateEngine._queue_answer
+    updating = UpdateEngine.updating
+    UPDATE_QUEUE_MAX = UpdateEngine.UPDATE_QUEUE_MAX
     # The release kicks the queue drain since Q13; with no queue here it
     # starts nothing.
     kick_drain = UpdateEngine.kick_drain
@@ -542,12 +561,16 @@ checks["update on a remote row runs that host's entry through its checker"] = (
 checks["update on a remote row drops only that host's pending entry"] = (
     m5.bot.removed == [("nas", "web")])
 
+# The worker runs under the claim the handler took for it (Q14) and
+# gives it back; reached directly, the claim is taken here first.
 m6 = build(tempfile.mkdtemp(), pending=PENDING)
+m6.bot.engine.claim_update()
 m6.h._run_web_update_batch(["web"])
 checks["update with no host given uses the local entry and local checker"] = (
     m6.bot.engine.batches == [("local", [("local", "web")])])
 
 m7 = build(tempfile.mkdtemp(), pending=PENDING)
+m7.bot.engine.claim_update()
 m7.h._run_web_update_batch(["web", "nas/plex"])
 checks["a mixed batch is one call per host, each with its own checker"] = (
     m7.bot.engine.batches == [("local", [("local", "web")]),
@@ -558,16 +581,59 @@ checks["the update lock is released again afterwards"] = (
     not m7.bot.engine._update_lock.locked())
 
 m8 = build(tempfile.mkdtemp(), pending=PENDING)
+m8.bot.engine.claim_update()
 m8.h._run_web_update_batch(["typo/web"])
 checks["an update naming an unmanaged host runs nothing at all"] = (
     m8.bot.engine.batches == [] and m8.bot.removed == [])
+checks["…and still gives the claim back"] = (
+    not m8.bot.engine._update_lock.locked())
 
+
+def _settle(env):
+    import time
+    for _ in range(100):
+        if not env.bot.engine._update_lock.locked():
+            return
+        time.sleep(0.02)
+
+
+# Three containers on two hosts, lock free: one claim for the request,
+# one engine batch per host, nothing on the queue.
+m8b = build(tempfile.mkdtemp(), pending=PENDING)
+post(m8b.h, "/api/bulk", "action=update&names=web%2Cnas%2Fweb%2Cnas%2Fplex")
+_settle(m8b)
+checks["a bulk update of three on a free lock is one claim"] = (
+    m8b.bot.engine.claims == 1 and m8b.h.redirects == ["/?update=started"])
+checks["…runs all three, one batch per host"] = (
+    m8b.bot.engine.batches == [("local", [("local", "web")]),
+                               ("nas", [("nas", "web"), ("nas", "plex")])])
+checks["…and queues nothing"] = m8b.bot.engine._update_queue == []
+checks["…and gives the lock back"] = not m8b.bot.engine._update_lock.locked()
+
+# A busy lock queues every key of the selection, all of them (Q14).
 m9 = build(tempfile.mkdtemp(), pending=PENDING)
 m9.bot.engine._update_lock.acquire()
-m9.h._run_web_update_batch(["nas/web"])
-checks["a busy update lock blocks the whole batch, not just one host"] = (
-    m9.bot.engine.batches == [])
+post(m9.h, "/api/bulk", "action=update&names=web%2Cnas%2Fweb")
+checks["a busy update lock queues the whole selection, both hosts"] = (
+    m9.bot.engine.batches == []
+    and m9.bot.engine._update_queue == ["web", "nas/web"])
+checks["…and the page says how many wait"] = (
+    m9.h.redirects == ["/?update=queued&n=2"])
+checks["…and the holder keeps its lock"] = m9.bot.engine._update_lock.locked()
 m9.bot.engine._update_lock.release()
+
+# A selection that does not fit goes nowhere, and the page says why.
+m9b = build(tempfile.mkdtemp(), pending=PENDING)
+m9b.bot.engine._update_lock.acquire()
+_others = [f"x{i}" for i in range(m9b.bot.engine.UPDATE_QUEUE_MAX - 1)]
+m9b.bot.engine.enqueue_updates(_others)
+post(m9b.h, "/api/bulk", "action=update&names=web%2Cnas%2Fweb")
+checks["a selection that does not fit the queue is reported full"] = (
+    m9b.h.redirects
+    == [f"/?update=queue_full&max={m9b.bot.engine.UPDATE_QUEUE_MAX}"])
+checks["…and none of it is queued"] = (
+    m9b.bot.engine._update_queue == _others and m9b.bot.engine.batches == [])
+m9b.bot.engine._update_lock.release()
 
 # ── 7. bulk actions across hosts ──────────────────────────────────────
 
