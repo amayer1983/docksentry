@@ -2555,14 +2555,30 @@ class DiscordBot:
     def _result_where(self):
         """Where the result of a queued update shows up. Not in this
         answer: the drainer runs it later and its card goes out through
-        the notifiers, which for Discord means the bot channel. That
-        channel is optional, and with none set (or switched off) the card
-        never reaches Discord — the answer says so instead of promising
-        it. Same two conditions `_post_to_channel` goes by."""
-        channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
-        if channel and getattr(self.config, "channel_discordbot_enabled", True):
+        the notifiers. Two of them reach Discord (`DISCORD_CHANNELS`):
+        the bot channel, by the same two conditions `_post_to_channel`
+        goes by, and the webhook, by its plugin's `active()`. With
+        neither, the card never reaches Discord, and the answer says
+        whether that is because nothing is set or because it is
+        switched off. Quiet hours and maintenance drop the card rather
+        than hold it (`Notifier._suppressed`), so in that window the
+        answer names no channel. Judged now, not when the drainer runs
+        it — hence "if they still are"."""
+        from notifier import suppressed
+        cfg = self.config
+        channel = (getattr(cfg, "discord_bot_channel", "") or "").strip()
+        hook = bool(getattr(cfg, "discord_webhook", ""))
+        bot_on = bool(channel) and getattr(cfg, "channel_discordbot_enabled", True)
+        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)
+        if not (bot_on or hook_on):
+            if channel or hook:
+                return self.t("chan_update_result_off")
+            return self.t("chan_update_result_no_channel")
+        if suppressed(cfg):
+            return self.t("chan_update_result_quiet")
+        if bot_on:
             return self.t("chan_update_result_channel", channel=channel)
-        return self.t("chan_update_result_no_channel")
+        return self.t("chan_update_result_webhook")
 
     def _queue_labels(self, pairs):
         """`{queue key: "web @nas"}` for `(host, name)` pairs — the key

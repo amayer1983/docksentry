@@ -520,20 +520,28 @@ GUARDED = [
      "test_container_scope.py"),
     ("quiet hours hold routine notifications back",
      "app/notifier.py",
-     "        if is_quiet_now(self.config):\n            return True",
-     "        if False:\n            return True",
+     "    if is_quiet_now(config):\n        return True",
+     "    if False:\n        return True",
      "test_quiet_enforcement.py"),
 
     ("…and the gate really asks about THIS config, not some other",
      "app/notifier.py",
-     "        if is_quiet_now(self.config):",
-     "        if is_quiet_now(None):",
+     "    if is_quiet_now(config):",
+     "    if is_quiet_now(None):",
+     "test_quiet_enforcement.py"),
+
+    # Since the Q15 review the gate is `notifier.suppressed(config)`, so
+    # the Discord bot can ask it too; the notifier hands it its own.
+    ("…and the notifier hands the gate its own config",
+     "app/notifier.py",
+     "        return suppressed(self.config)\n",
+     "        return suppressed(None)\n",
      "test_quiet_enforcement.py"),
 
     ("…and so does the maintenance half of the same gate",
      "app/notifier.py",
-     "            if _maint_active(self.config):",
-     "            if _maint_active(None):",
+     "        if _maint_active(config):",
+     "        if _maint_active(None):",
      "test_quiet_enforcement.py"),
 
     ("podman is asked for its cgroup version in podman's own words",
@@ -618,8 +626,8 @@ GUARDED = [
 
     ("maintenance mode holds routine notifications back too",
      "app/notifier.py",
-     "            if _maint_active(self.config):\n                return True",
-     "            if False:\n                return True",
+     "        if _maint_active(config):\n            return True",
+     "        if False:\n            return True",
      "test_quiet_enforcement.py"),
 
     ("the SMTP password is never sent to an unverified server",
@@ -4574,15 +4582,77 @@ GUARDED = [
 
     ("…and with no bot channel set says it won't show up in Discord",
      'app/discord_bot.py',
-     '        return self.t("chan_update_result_no_channel")\n',
-     '        return self.t("chan_update_result_channel", channel=channel)\n',
+     '            return self.t("chan_update_result_no_channel")\n',
+     '            return self.t("chan_update_result_channel", channel=channel)\n',
      'test_discord_bot.py'),
 
     ("…a bot channel that is switched off counts as none",
      'app/discord_bot.py',
-     '        if channel and getattr(self.config, "channel_discordbot_enabled", True):\n',
-     '        if channel:\n',
+     '        bot_on = bool(channel) and getattr(cfg, "channel_discordbot_enabled", True)\n',
+     '        bot_on = bool(channel)\n',
      'test_discord_bot.py'),
+
+    # Q15 review 2: the webhook is a Discord transport too, "off" is not
+    # "unset", and quiet hours drop the card rather than hold it.
+    ("…and is said to be switched off, not unset",
+     'app/discord_bot.py',
+     '            if channel or hook:\n'
+     '                return self.t("chan_update_result_off")\n',
+     '            if False:\n'
+     '                return self.t("chan_update_result_off")\n',
+     'test_discord_bot.py'),
+
+    ("a queued result that goes out through the Discord webhook says so",
+     'app/discord_bot.py',
+     '        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)\n',
+     '        hook_on = False\n',
+     'test_discord_bot.py'),
+
+    ("…in its own words",
+     'app/discord_bot.py',
+     '        return self.t("chan_update_result_webhook")\n',
+     '        return self.t("chan_update_result_no_channel")\n',
+     'test_discord_bot.py'),
+
+    ("…and a webhook that is switched off counts as none",
+     'app/discord_bot.py',
+     '        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)\n',
+     '        hook_on = hook\n',
+     'test_discord_bot.py'),
+
+    ("in quiet hours a queued Discord answer names no channel the card won't reach",
+     'app/discord_bot.py',
+     '        if suppressed(cfg):\n'
+     '            return self.t("chan_update_result_quiet")\n',
+     '        if False:\n'
+     '            return self.t("chan_update_result_quiet")\n',
+     'test_discord_bot.py'),
+
+    ("…and neither in maintenance mode, by the condition that drops the card",
+     'app/notifier.py',
+     '        if _maint_active(config):\n'
+     '            return True\n',
+     '        if False:\n'
+     '            return True\n',
+     'test_discord_bot.py'),
+
+    ("…the switched-off line in every language",
+     'app/lang/ja.json',
+     '  "chan_update_result_off": ',
+     '  "chan_update_result_off_x": ',
+     'test_lang_parity.py'),
+
+    ("…the webhook line in every language",
+     'app/lang/de.json',
+     '  "chan_update_result_webhook": ',
+     '  "chan_update_result_webhook_x": ',
+     'test_lang_parity.py'),
+
+    ("…the quiet-hours line in every language",
+     'app/lang/ko.json',
+     '  "chan_update_result_quiet": ',
+     '  "chan_update_result_quiet_x": ',
+     'test_lang_parity.py'),
 
     ("…the line comes with every answer that leaves something waiting",
      'app/discord_bot.py',

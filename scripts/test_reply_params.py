@@ -237,8 +237,23 @@ _said = _Said()
 _lines = getattr(DiscordBot, "_queued_lines", None)
 checks["Discord renders the engine's busy answers (_queued_lines)"] = (
     _lines is not None)
-for _chan in ("", "1234"):
-    _said.config.discord_bot_channel = _chan
+import datetime as _dt  # noqa: E402
+
+# Every branch of `_result_where`: nothing set, the bot channel, the bot
+# channel switched off, the webhook, and quiet hours.
+_branches = (
+    {"discord_bot_channel": ""},
+    {"discord_bot_channel": "1234"},
+    {"discord_bot_channel": "1234", "channel_discordbot_enabled": False},
+    {"discord_bot_channel": "", "discord_webhook": "https://x.invalid/h"},
+    {"discord_bot_channel": "1234",
+     "quiet_hours_start": (_dt.datetime.now()
+                           - _dt.timedelta(hours=1)).strftime("%H:%M"),
+     "quiet_hours_end": (_dt.datetime.now()
+                         + _dt.timedelta(hours=1)).strftime("%H:%M")},
+)
+for _branch in _branches:
+    _said.config = type("Cfg", (), dict(_branch))()
     for key, params in answers if _lines is not None else ():
         _lines(_said, [("web", key, params)], {"web": "web"})
 _dbad = []
@@ -255,7 +270,9 @@ checks["Discord says every busy answer, in all languages, placeholders "
     {k for k, _g in _said.asked} == {
         "chan_update_queued", "chan_update_already_queued",
         "chan_update_queue_full", "update_same_running",
-        "chan_update_result_channel", "chan_update_result_no_channel"}
+        "chan_update_result_channel", "chan_update_result_no_channel",
+        "chan_update_result_off", "chan_update_result_webhook",
+        "chan_update_result_quiet"}
     and not _dbad)
 if _dbad:
     print("  Discord busy lines:", "; ".join(_dbad))

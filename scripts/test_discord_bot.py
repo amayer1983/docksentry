@@ -895,11 +895,52 @@ out = call("update", container="web")
 checks["…and a container already waiting is told the same"] = (
     "`web` is already in the queue" in out
     and _IN_CHAN.replace("{channel}", "4242") in out)
+_OFF = _EN.get("chan_update_result_off", _MISSING)
+_HOOK = _EN.get("chan_update_result_webhook", _MISSING)
+_QUIET = _EN.get("chan_update_result_quiet", _MISSING)
 scfg2.channel_discordbot_enabled = False
 out = call("update", container="web")
-checks["a bot channel that is switched off counts as none"] = (
-    _NO_CHAN in out and "<#4242>" not in out)
+checks["a bot channel that is switched off is said to be off, not unset"] = (
+    _OFF in out and _NO_CHAN not in out and "<#4242>" not in out)
+# The webhook is the other way a card reaches Discord
+# (notifier.DISCORD_CHANNELS): with it set, the result does show up.
+scfg2.discord_webhook = "https://discord.invalid/hook"
+out = call("update", container="web")
+checks["bot channel off, webhook set: the result comes through the webhook"] = (
+    _HOOK in out and _OFF not in out and _NO_CHAN not in out)
 del scfg2.channel_discordbot_enabled
+del scfg2.discord_bot_channel
+out = call("update", container="web")
+checks["no bot channel, webhook set: the result comes through the webhook"] = (
+    _HOOK in out and _NO_CHAN not in out)
+scfg2.channel_discord_enabled = False
+out = call("update", container="web")
+checks["…and a webhook that is switched off is said to be off"] = (
+    _OFF in out and _HOOK not in out and _NO_CHAN not in out)
+del scfg2.channel_discord_enabled
+del scfg2.discord_webhook
+scfg2.discord_bot_channel = "4242"
+# Quiet hours and maintenance drop the card (Notifier._suppressed), they
+# do not hold it back: the answer must not name a channel it won't reach.
+import datetime as _dt  # noqa: E402
+_now = _dt.datetime.now()
+scfg2.quiet_hours_start = (_now - _dt.timedelta(hours=1)).strftime("%H:%M")
+scfg2.quiet_hours_end = (_now + _dt.timedelta(hours=1)).strftime("%H:%M")
+out = call("update", container="web")
+checks["queued in quiet hours: says the card is dropped, names no channel"] = (
+    _QUIET in out and "<#4242>" not in out)
+scfg2.quiet_hours_start = scfg2.quiet_hours_end = ""
+with open(scfg2.maintenance_file, "w") as f:
+    json.dump({"until": "forever"}, f)
+out = call("update", container="web")
+checks["…and so in maintenance mode"] = (
+    _QUIET in out and "<#4242>" not in out)
+with open(scfg2.maintenance_file, "w") as f:
+    json.dump({}, f)
+out = call("update", container="web")
+checks["…and once both are over, the channel is named again"] = (
+    _IN_CHAN.replace("{channel}", "4242") in out and _QUIET not in out)
+del scfg2.quiet_hours_start, scfg2.quiet_hours_end
 engine._update_queue.clear()
 engine.enqueue_updates(["web"] + [f"q{i}"
                                   for i in range(engine.UPDATE_QUEUE_MAX - 1)])

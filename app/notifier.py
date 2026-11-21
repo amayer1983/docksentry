@@ -27,6 +27,24 @@ from notifiers import build_all, version_str
 DISCORD_CHANNELS = ("discord", "discordbot")
 
 
+def suppressed(config):
+    """True if quiet hours OR maintenance is active right now.
+
+    `Notifier._suppressed` in a form that needs no notifier, so the
+    Discord bot can tell someone whose update it queues that the result
+    card is dropped in that window — by the same condition that drops it.
+    """
+    if is_quiet_now(config):
+        return True
+    try:
+        from maintenance import is_active as _maint_active
+        if _maint_active(config):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 class Notifier:
     """Dispatches notifications to every configured channel plugin."""
 
@@ -98,15 +116,7 @@ class Notifier:
         """True if quiet-hours OR maintenance is active right now — skip
         auto-notifications. Manual sends still go through (the caller would
         use a different code path for those)."""
-        if is_quiet_now(self.config):
-            return True
-        try:
-            from maintenance import is_active as _maint_active
-            if _maint_active(self.config):
-                return True
-        except Exception:
-            pass
-        return False
+        return suppressed(self.config)
 
     @staticmethod
     def _version_str(u):
