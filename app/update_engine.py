@@ -244,9 +244,13 @@ class UpdateEngine:
         #: the engines the tests construct on their own.
         self.broadcast = None
 
-    #: Most anyone can queue by tapping. Ten manual updates back to back
-    #: is already a long time to be holding someone's attention.
-    UPDATE_QUEUE_MAX = 10
+    #: How many containers the queue holds. It used to be ten, sized for
+    #: taps. Since Q16 a whole "Update all" goes on it when the lock is
+    #: busy, and one host's batch alone can be bigger than ten: my own
+    #: local host runs 20 containers (`docker ps`, 21.11.2026). Two such
+    #: batches back to back are 40; fifty holds them and a few taps on
+    #: top. A batch that does not fit is still answered as a whole.
+    UPDATE_QUEUE_MAX = 50
 
     def enqueue_update(self, key):
         """Queue a container key. Returns its 1-based position, or 0 when

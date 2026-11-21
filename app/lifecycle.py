@@ -42,6 +42,15 @@ def is_glob(pattern):
     return any(c in (pattern or "") for c in "*?[")
 
 
+def glob_filter(pattern, names):
+    """The names in `names` that `pattern` matches, case-insensitively,
+    sorted. The one glob rule: the two lookups below and Telegram's busy
+    /update (which matches against the pending list, not a host) go
+    through it."""
+    pl = (pattern or "").lower()
+    return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
+
+
 def match_glob(pattern, *, backend, include_stopped=True):
     """Every container name matching `pattern`, case-insensitively.
 
@@ -59,8 +68,7 @@ def match_glob(pattern, *, backend, include_stopped=True):
         return []
     names = [n.strip() for n in (getattr(result, "stdout", "") or "").strip().split("\n")
              if n.strip() and not n.strip().endswith("_old")]
-    pl = (pattern or "").lower()
-    return sorted(n for n in names if fnmatch.fnmatch(n.lower(), pl))
+    return glob_filter(pattern, names)
 
 
 def match_glob_checked(pattern, *, backend, include_stopped=True,
@@ -85,9 +93,7 @@ def match_glob_checked(pattern, *, backend, include_stopped=True,
     rc = getattr(result, "returncode", 0)
     if rc != 0:
         return [], (rc, getattr(result, "stderr", "") or "")
-    pl = (pattern or "").lower()
-    return sorted(n for n in _listed_names(result)
-                  if fnmatch.fnmatch(n.lower(), pl)), None
+    return glob_filter(pattern, _listed_names(result)), None
 
 
 def is_protected(name, checker, store):

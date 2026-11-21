@@ -141,8 +141,10 @@ LOCK_OPS = {
     # self-update on.
     ("telegram_bot.py", "TelegramBot.check_selfupdate_auto"):
         ("CLAIM", ["claim_update()", "release_update()"]),
+    # Busy, "Update all" and a typed /update queue their whole set
+    # through the engine's claim-or-queue (Q16); one claim runs it free.
     ("telegram_bot.py", "TelegramBot.run_updates"):
-        ("CLAIM", ["claim_update()",
+        ("CLAIM", ["claim_or_queue_many(keys)",
                    "release_update(after=self._run_queued_selfupdate)"]),
     # Discord's /update and confirmed /updateall claim through the
     # engine's claim-or-queue (Q15): busy, their containers are queued
@@ -350,10 +352,33 @@ BUSY_MESSAGES = {
     # The drain's and a failed tap's drop, since Q13 in one helper.
     ("update_engine.py", "UpdateEngine.drop_group_mates",
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
+    # A major confirmation still refuses when busy (my decision of
+    # 18.11.2026), and now says it was not queued.
     ("telegram_bot.py", "TelegramBot._confirm_major_update",
-     "update_already_running"): (1, "claim"),
-    ("telegram_bot.py", "TelegramBot.run_updates",
-     "update_already_running"): (1, "claim"),
+     "major_confirm_busy"): (1, "claim"),
+    # claim_or_queue_many's answers for "Update all", /updateall and a
+    # busy /update, turned into one message (Q16).
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_queue_full"): (1, "queue: the request did not fit"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queue_full"): (1, "queue: the request did not fit"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queued"): (1, "queue: the heading, nothing being updated"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queued_behind"): (1, "queue: the heading, with what is "
+                                        "being updated"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_queued"): (1, "queue: queued"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_queued"): (1, "queue: queued, with its place"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_already_queued"): (1, "queue: already waiting"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_already_queued"): (1, "queue: already waiting, "
+                                              "since"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_same_running"): (1, "queue: the one running "
+                                            "right now"),
     ("telegram_bot.py", "TelegramBot._handle_message",
      "update_already_running"): (4, "pre-gate: /check --dry-run, "
                                     "/check <name>, /update, /check"),
@@ -951,6 +976,10 @@ DRIVES = [
     (("telegram_bot.py", "TelegramBot.run_updates"),
      "Update all (snapshot web@local)", None,
      lambda w: w.tg.run_updates(w.local, updates=[w.pending()])),
+    (("telegram_bot.py", "TelegramBot.run_updates"),
+     "Update all (snapshot web@local, web@nas)", None,
+     lambda w: w.tg.run_updates(w.local, updates=[w.pending(),
+                                                  w.pending("nas")])),
     (("discord_bot.py", "DiscordBot._cmd_update"),
      "/update container:web host:nas", None,
      lambda w: w.discord._cmd_update({"container": "web", "host": "nas"})),
@@ -1255,13 +1284,16 @@ EXPECTED_BUSY = {
          'kind': 'QUEUE',
          'lock_after': 'held',
          'queue_after': ['web'],
-         'said': ['🕒 `web` queued — position 1. It starts when the current update finishes.']},
+         'said': ['🕒 `web` queued — position 1. It runs when its turn comes.']},
+    # Still refused, my decision of 18.11.2026 (Q16), in words that say
+    # it was not queued.
     (('telegram_bot.py', 'TelegramBot._confirm_major_update'),
      'confirm_major:web'):
-        {'keys': ['update_already_running'],
+        {'keys': ['major_confirm_busy'],
          'kind': 'REJECT',
          'lock_after': 'held',
-         'said': ['⚠️ Update already in progress...']},
+         'said': ['⚠️ Another update is running, so the major update of `web` did not '
+                  'start. It was not queue…']},
     (('telegram_bot.py', 'TelegramBot.handle_autoupdates'),
      'scheduler auto pass, web on auto'):
         {'kind': 'SKIP',
@@ -1283,12 +1315,23 @@ EXPECTED_BUSY = {
          'lock_after': 'held',
          'printed': ['Selfupdate check: skipped — another update flow is running.'],
          'returned': False},
+    # Queued since Q16, as a single tap is: one key, its sentence.
     (('telegram_bot.py', 'TelegramBot.run_updates'),
      'Update all (snapshot web@local)'):
-        {'keys': ['update_already_running'],
-         'kind': 'REJECT',
+        {'keys': ['update_queued'],
+         'kind': 'QUEUE',
          'lock_after': 'held',
-         'said': ['⚠️ Update already in progress...']},
+         'queue_after': ['web'],
+         'said': ['🕒 `web` queued — position 1. It runs when its turn comes.']},
+    # Two keys: one answer that lists them.
+    (('telegram_bot.py', 'TelegramBot.run_updates'),
+     'Update all (snapshot web@local, web@nas)'):
+        {'keys': ['update_batch_queued', 'update_batch_line_queued'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web', 'nas/web'],
+         'said': ['🕒 Another update is running right now. These wait in the queue and run '
+                  'when their turn com…']},
     (('discord_bot.py', 'DiscordBot._cmd_update'),
      '/update container:web host:nas'):
         {'keys': ['chan_update_queued', 'chan_update_result_channel'],

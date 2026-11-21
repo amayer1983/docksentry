@@ -5534,6 +5534,125 @@ GUARDED = [
      "            ctx.engine.kick_drain()\n",
      "test_update_lock_sites.py"),
 
+    # ── Q16: Telegram's "Update all", /updateall and a busy /update ──
+    ('a busy "Update all" on Telegram queues its set instead of refusing it',
+     'app/telegram_bot.py',
+     '        claimed, outcomes = self.engine.claim_or_queue_many(keys)\n',
+     '        claimed, outcomes = self.engine.claim_update(), []\n',
+     'test_update_lock_sites.py'),
+
+    ("…one queued container is told what a tap is told",
+     'app/telegram_bot.py',
+     '        if len(outcomes) == 1:\n',
+     '        if False:\n',
+     'test_update_lock_sites.py'),
+
+    ("…several get a heading that names the container being updated",
+     'app/telegram_bot.py',
+     '        running = [self._key_label(k) for k in self.engine.updating]\n',
+     '        running = []\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…a batch that does not fit is answered once, as a whole",
+     'app/telegram_bot.py',
+     '        if full is not None:\n'
+     '            return self.t("update_batch_queue_full", count=len(outcomes),\n',
+     '        if False:\n'
+     '            return self.t("update_batch_queue_full", count=len(outcomes),\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…each queued container in it is told its place",
+     'app/telegram_bot.py',
+     '                lines.append(self.t("update_batch_line_queued", name=name,\n'
+     '                                    pos=params.get("pos", 0)))\n',
+     '                lines.append(self.t("update_batch_line_queued", name=name,\n'
+     '                                    pos=1))\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…and one already waiting is told so, not given a place",
+     'app/telegram_bot.py',
+     '                    "update_batch_line_already_queued", name=name,\n',
+     '                    "update_batch_line_queued", name=name,\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…a busy "Update all" with nothing pending says so, not "busy"',
+     'app/telegram_bot.py',
+     '                              else self.t("no_pending_updates"))\n',
+     '                              else self.t("update_already_running"))\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("a busy /update checks nothing and asks no host (#26)",
+     'app/telegram_bot.py',
+     '            if self.update_running:\n'
+     '                # Busy (Q16): no lookup and no check now',
+     '            if False:\n'
+     '                # Busy (Q16): no lookup and no check now',
+     'test_check_glob_only.py'),
+
+    ("…and hands on what the pending list holds for the pattern",
+     'app/telegram_bot.py',
+     '                entries = self._pending_matching(arg, targets)\n',
+     '                entries = []\n',
+     'test_check_glob_only.py'),
+
+    ("…a plain name only exactly, never a prefix of a pending name",
+     'app/telegram_bot.py',
+     '        return [e for e in entries if e.get("name") == arg]\n',
+     '        return [e for e in entries\n'
+     '                if (e.get("name") or "").startswith(arg)]\n',
+     'test_check_glob_only.py'),
+
+    ("…a glob through the one glob rule, ignoring case like the free path",
+     'app/telegram_bot.py',
+     '            hit = set(lifecycle.glob_filter(\n'
+     '                arg, [e.get("name") or "" for e in entries]))\n',
+     '            hit = {e.get("name") for e in entries\n'
+     '                   if e.get("name") == arg}\n',
+     'test_check_glob_only.py'),
+
+    ("…on the hosts the command names, not only the local one",
+     'app/telegram_bot.py',
+     '        hosts = ([h.name for h in targets] if targets is not None\n'
+     '                 else [LOCAL_HOST])\n',
+     '        hosts = [LOCAL_HOST]\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("a busy major confirmation says it was not queued and still waits",
+     'app/telegram_bot.py',
+     '                "major_confirm_busy", name=name,\n',
+     '                "update_already_running", name=name,\n',
+     'test_update_lock_sites.py'),
+
+    ("the queue holds two hosts' 'Update all' of twenty, one after the other",
+     'app/update_engine.py',
+     '    UPDATE_QUEUE_MAX = 50\n',
+     '    UPDATE_QUEUE_MAX = 10\n',
+     'test_update_queue.py'),
+
+    ("a queued tap no longer promises the next turn",
+     'app/lang/en.json',
+     '  "update_queued": "🕒 `{name}` queued — position {pos}. It runs when its turn comes.",\n',
+     '  "update_queued": "🕒 `{name}` queued — position {pos}. It starts when the current update finishes.",\n',
+     'test_update_lock_sites.py'),
+
+    ("a queued batch's heading exists in every language",
+     'app/lang/ja.json',
+     '  "update_batch_queued": "🕒 いま別の更新が実行中です。以下は順番待ちに入り、順番が来たら実行します:",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ("…and each language's line fills the place it is given",
+     'app/lang/de.json',
+     '  "update_batch_line_queued": "• `{name}` — Platz {pos}",\n',
+     '  "update_batch_line_queued": "• `{name}` — Platz {position}",\n',
+     'test_reply_params.py'),
+
+    ("T3's release goes through the engine's door, so the drainer runs",
+     'scripts/test_telegram_callback_matrix.py',
+     '            bot.engine.release_update()\n',
+     '            bot._update_lock.release()\n',
+     'test_telegram_callback_matrix.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

@@ -14,12 +14,25 @@ and the plain name are resolved by the real `container_flags.find_on_hosts`
 `only` argument and counts remote lookups, and the /update thread is run
 synchronously so its `updates` payload is inspectable. Exits non-zero on
 any failure.
+
+The engine is a real UpdateEngine (lock and queue fields, as in the Q0
+fixtures), so "busy" is its lock being held, not a flag on a stand-in.
+Busy, a typed /update asks neither the CLI nor `check_all` (#26) and
+hands `run_updates` what the pending file already lists for the
+pattern (Q16); a name the file does not list gets "busy, try again".
 """
-import sys, os, types
+import json, sys, os, tempfile, threading, types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import telegram_bot
 from telegram_bot import TelegramBot
+from update_engine import UpdateEngine
+
+_TMP = tempfile.mkdtemp(prefix="check-glob-only-")
+PENDING_FILE = os.path.join(_TMP, "pending_updates.json")
+with open(PENDING_FILE, "w", encoding="utf-8") as _f:
+    json.dump([{"name": "web-1", "image": "reg/web-1:tag", "host": "local"},
+               {"name": "db", "image": "reg/db:tag", "host": "local"}], _f)
 
 
 # Running set is deliberately larger than the glob match, so "checked only
@@ -78,7 +91,16 @@ def _make_bot():
     bot.hosts = None
     bot.backend = _FakeBackend()
     bot.bot_username = ""
-    bot.engine = types.SimpleNamespace(update_running=False)
+    eng = UpdateEngine.__new__(UpdateEngine)
+    eng._update_lock = threading.Lock()
+    eng._queued_selfupdate = None
+    eng._swap_in_flight = False
+    eng._update_queue = []
+    eng._update_queue_lock = threading.Lock()
+    eng._queued_at = {}
+    eng._updating = {}
+    bot.engine = eng
+    bot.config = types.SimpleNamespace(pending_file=PENDING_FILE)
     bot.sent = []
     bot.notified = None
     bot.updated_with = "unset"
@@ -140,6 +162,59 @@ def main():
     checks["/update name: check_all got only={web-2}"] = chk.only_seen == {"web-2"}
     checks["/update name: web-2 has nothing pending, nothing runs"] = \
         bot.updated_with == "unset" and "update_scoped_none" in bot.sent
+
+    # ── busy: the lock is held by another update (Q16) ─────────────
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot.engine._update_lock.acquire()
+    bot._handle_message(_msg("/update web-*"), chk, None)
+    checks["/update glob, busy: check_all is NOT called"] = \
+        chk.only_seen == "unset"
+    checks["/update glob, busy: nothing is asked of the CLI"] = \
+        bot.backend.calls == []
+    checks["/update glob, busy: run_updates gets the pending match"] = \
+        isinstance(bot.updated_with, list) \
+        and [u["name"] for u in bot.updated_with] == ["web-1"]
+    checks["/update glob, busy: no 'busy' answer for it"] = \
+        "update_already_running" not in bot.sent
+    checks["/update glob, busy: the lock is still the holder's"] = \
+        bot.engine._update_lock.locked()
+
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot.engine._update_lock.acquire()
+    bot._handle_message(_msg("/update web-2"), chk, None)
+    checks["/update name not pending, busy: 'busy, try again'"] = \
+        bot.sent == ["update_already_running"]
+    checks["/update name not pending, busy: nothing checked or handed on"] = \
+        chk.only_seen == "unset" and bot.updated_with == "unset" \
+        and bot.backend.calls == []
+
+    # A plain name is matched exactly: `web` is not `web-1`, though the
+    # free path's prefix match would take it — it does that against the
+    # host's containers, which nobody asks while busy.
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot.engine._update_lock.acquire()
+    bot._handle_message(_msg("/update web"), chk, None)
+    checks["/update prefix of a pending name, busy: not that container"] = \
+        bot.sent == ["update_already_running"] and bot.updated_with == "unset"
+
+    # A glob ignores case, as `lifecycle.match_glob` does on a free lock.
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot.engine._update_lock.acquire()
+    bot._handle_message(_msg("/update WEB-*"), chk, None)
+    checks["/update glob in capitals, busy: still finds web-1"] = \
+        isinstance(bot.updated_with, list) \
+        and [u["name"] for u in bot.updated_with] == ["web-1"]
+
+    # The other way round: a free lock still checks first.
+    bot = _make_bot()
+    chk = _FakeChecker()
+    bot._handle_message(_msg("/update db"), chk, None)
+    checks["/update pending name, free: checked before it runs"] = \
+        chk.only_seen == {"db"} and bot.updated_with == "unset"
 
     for k, v in checks.items():
         print(("  ✅" if v else "  ❌"), k)

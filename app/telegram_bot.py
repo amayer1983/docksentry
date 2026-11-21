@@ -644,6 +644,28 @@ class TelegramBot:
         err = found.first_error
         return [], self.t(err.key, **err.params), None
 
+    def _pending_matching(self, arg, targets):
+        """The pending entries a typed `/update <arg>` means, read off
+        the pending file alone: no host is asked. `targets` as
+        `_resolve_targets` gave them (None: the local host). A glob
+        matches through `lifecycle.glob_filter`, as the lookups on a free
+        lock do (case-insensitively); a plain name only exactly — the prefix match `_select_containers` does
+        needs the host's container list, and a guess against the pending
+        list alone could pick another container than the free path
+        would."""
+        import lifecycle
+        import pending as _pending
+        from container_store import LOCAL_HOST
+        hosts = ([h.name for h in targets] if targets is not None
+                 else [LOCAL_HOST])
+        entries = _pending.entries_for(
+            _pending.read(self.config.pending_file), hosts)
+        if lifecycle.is_glob(arg):
+            hit = set(lifecycle.glob_filter(
+                arg, [e.get("name") or "" for e in entries]))
+            return [e for e in entries if (e.get("name") or "") in hit]
+        return [e for e in entries if e.get("name") == arg]
+
     def _lookup_tail(self, found_any, first_err, unreachable):
         """The message that closes a name lookup across hosts, or None.
 
@@ -1939,6 +1961,44 @@ class TelegramBot:
             kw["since"] = _ago(kw.pop("since_seconds"))
         return self.t(key, name=self._key_label(container_key), **kw)
 
+    def _queued_answer(self, outcomes):
+        """The message for a batch the engine queued instead of claiming:
+        `claim_or_queue_many`'s outcomes, one `(key, i18n key, params)`
+        per container.
+
+        One container gets the sentence a tap gets. Several get a heading
+        that says what is running — the container by name when the
+        engine is updating one right now, otherwise only that something
+        holds the lock (a check, a cleanup, a self-update) — and a line
+        each. A batch that did not fit was not queued at all and is
+        answered once: the engine answers it as a whole (my decision of
+        18.11.2026), so every outcome carries `update_queue_full`.
+        """
+        if len(outcomes) == 1:
+            return self._claim_answer(*outcomes[0])
+        full = next((p for _k, a, p in outcomes
+                     if a == "update_queue_full"), None)
+        if full is not None:
+            return self.t("update_batch_queue_full", count=len(outcomes),
+                          max=full.get("max", 0))
+        running = [self._key_label(k) for k in self.engine.updating]
+        lines = [self.t("update_batch_queued_behind",
+                        name="`, `".join(running)) if running
+                 else self.t("update_batch_queued")]
+        for key, answer, params in outcomes:
+            name = self._key_label(key)
+            if answer == "update_queued":
+                lines.append(self.t("update_batch_line_queued", name=name,
+                                    pos=params.get("pos", 0)))
+            elif answer == "update_already_queued":
+                from notify_retry import _ago
+                lines.append(self.t(
+                    "update_batch_line_already_queued", name=name,
+                    since=_ago(params.get("since_seconds", 0))))
+            else:
+                lines.append(self.t("update_batch_line_same_running", name=name))
+        return "\n".join(lines)
+
     def _key_label(self, container_key):
         """`portainer` locally, `portainer @srv30` on a remote host.
 
@@ -2030,8 +2090,15 @@ class TelegramBot:
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
         # a concurrent "Update all" or scheduler auto-update pass.
+        #
+        # Busy, it is still refused and not queued — my decision of
+        # 18.11.2026 (Q16): everything else that updates now waits its
+        # turn, so the answer says that this one did not, and that the
+        # major is still waiting for a yes.
         if not self.engine.claim_update():
-            self.send_message(self.t("update_already_running"))
+            self.send_message(self.t(
+                "major_confirm_busy", name=name,
+                tag=self._entry_host_tag({"host": host_name})))
             return
         try:
             image = pending.get("image", "")
@@ -2882,12 +2949,19 @@ class TelegramBot:
         callback, or programmatic callers), the current pending file is
         read and the whole file is cleared on completion as before.
         """
-        # Atomic claim of the shared update mutex. If any other update
-        # flow (single-container, major-confirm, or the scheduler's
-        # auto-update pass) holds it, bail. try/finally guarantees we
-        # always release — the old `update_running = False` only ran at
-        # the end, so an exception outside the inner loop would have left
-        # the flag stuck True forever, blocking all future updates.
+        # Atomic claim of the shared update mutex, or the queue. If any
+        # other update flow (single-container, major-confirm, the
+        # scheduler's auto-update pass, the Web UI, Discord) holds it,
+        # the whole set goes on the engine's queue and the drainer runs
+        # it once the lock is free (Q16). Until then this answered "an
+        # update is already running" and dropped it: tapping "Update all"
+        # under a second host's notification while the first host's
+        # batch ran threw the second one away, where tapping its single
+        # containers queued them (my own instance, 19.11.2026).
+        # try/finally guarantees we always release — the old
+        # `update_running = False` only ran at the end, so an exception
+        # outside the inner loop would have left the flag stuck True
+        # forever, blocking all future updates.
         #
         # The pin list first, before the lock and before the pending file
         # is read or cleared (see `pin_list_unreadable`).
@@ -2895,14 +2969,21 @@ class TelegramBot:
         if pin_list_unreadable(updater):
             self.send_message(self.t("update_refused_pin_list"))
             return
-        if not self.engine.claim_update():
-            self.send_message(self.t("update_already_running"))
+        import pending as _pending
+        from container_store import LOCAL_HOST, host_key
+        from_snapshot = updates is not None
+        pending_file = self.config.pending_file
+        # What would run: the snapshot, or the file as it is now. A free
+        # lock reads the file again below, under the claim, as it did.
+        asked = updates if from_snapshot else _pending.read(pending_file)
+        keys = [host_key(pending_host(u), u.get("name")) for u in asked
+                if isinstance(u, dict) and u.get("name")]
+        claimed, outcomes = self.engine.claim_or_queue_many(keys)
+        if not claimed:
+            self.send_message(self._queued_answer(outcomes) if outcomes
+                              else self.t("no_pending_updates"))
             return
         try:
-            import pending as _pending
-            from container_store import LOCAL_HOST
-            from_snapshot = updates is not None
-            pending_file = self.config.pending_file
             if not from_snapshot:
                 # A missing file and one nothing can read both come back
                 # empty and get the answer below; the unreadable one used
@@ -4029,9 +4110,6 @@ class TelegramBot:
             if len(parts) < 2:
                 self.send_message(self.t("update_usage"))
                 return
-            if self.update_running:
-                self.send_message(self.t("update_already_running"))
-                return
             raw_arg = parts[1].strip()
             # `/update` changes things, so with no `@host` token it stays on
             # the local machine (#7) — and says so, see `_host_hint`.
@@ -4045,6 +4123,22 @@ class TelegramBot:
                 # has always required a name or glob; `/update * @nas` is
                 # the "everything on nas" form.
                 self.send_message(self.t("update_usage"))
+                return
+            if self.update_running:
+                # Busy (Q16): no lookup and no check now — a check while
+                # an update runs sees the containers in flight as still
+                # outdated (#26). What the pending list already holds
+                # for the pattern goes to `run_updates`, which queues it
+                # behind the running update. A name the list does not
+                # hold gets "busy, try again" as before: nothing is
+                # remembered to be checked later (my decision of
+                # 18.11.2026).
+                entries = self._pending_matching(arg, targets)
+                if not entries:
+                    self.send_message(self.t("update_already_running"))
+                    return
+                threading.Thread(target=self.run_updates, args=(checker,),
+                                 kwargs={"updates": entries}).start()
                 return
             selections = []
             first_err = None

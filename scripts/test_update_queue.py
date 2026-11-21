@@ -91,6 +91,16 @@ checks["the queue is bounded"] = e.enqueue_update("one-too-many") == -1
 checks["…and the cap is a refusal, not a silent drop"] = (
     len(e._update_queue) == UpdateEngine.UPDATE_QUEUE_MAX)
 
+# Q16: a whole "Update all" goes on the queue when the lock is busy.
+# Two hosts of 20 containers each (my local host runs 20) must fit, one
+# after the other, as two requests.
+e = engine()
+_a = e.enqueue_updates([f"a{i}" for i in range(20)])
+_b = e.enqueue_updates([f"nas/b{i}" for i in range(20)])
+checks["two batches of twenty fit on the queue, one after the other"] = (
+    all(p > 0 for p in _a.values()) and all(p > 0 for p in _b.values())
+    and len(e._update_queue) == 40)
+
 # ── dropping by predicate, for the group rule ────────────────────────
 e = engine()
 for k in ("db", "app", "unrelated"):

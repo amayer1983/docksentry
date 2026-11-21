@@ -320,6 +320,12 @@ class Row:
             self.engine.release_update()
         elif kind == "enqueue":
             self.engine.enqueue_updates(list(args))
+        elif kind == "fill":
+            # The queue up to all but `args[0]` places, with filler keys
+            # (Q16 raised its size from 10 to 50).
+            self.engine.enqueue_updates([
+                f"q{i}" for i in range(
+                    self.engine.UPDATE_QUEUE_MAX - args[0])])
         elif kind == "age":
             import discord_bot
             CLOCK[0] += discord_bot.CONFIRM_TTL + 1
@@ -466,8 +472,36 @@ class Row:
                "queued_selfupdate": self.engine._queued_selfupdate,
                "shutdown_armed": self.bot._shutdown_after_answer,
                "audit": audit, "files": files}
+        out["queued"] = _compact_queue(out["queued"])
         return {k: v for k, v in out.items() if v not in (None, False, [], {})
                 or k == "pending"}
+
+
+def _compact_queue(keys):
+    """The queue as the table shows it: a run of the filler keys `q0`,
+    `q1`, … (the `fill` step) as one "q0…q48 (49)", the rest as they
+    are. The queue holds fifty since Q16, and fifty names in a row would
+    bury the one key a row is about."""
+    out, run = [], []
+
+    def flush():
+        if len(run) > 3:
+            out.append(f"{run[0]}…{run[-1]} ({len(run)})")
+        else:
+            out.extend(run)
+        del run[:]
+    for k in keys:
+        if re.fullmatch(r"q\d+", k) and (
+                not run or int(k[1:]) == int(run[-1][1:]) + 1):
+            run.append(k)
+            continue
+        flush()
+        if re.fullmatch(r"q\d+", k):
+            run.append(k)
+        else:
+            out.append(k)
+    flush()
+    return out
 
 
 def _join():
@@ -719,10 +753,10 @@ EXTRA = [
         ("lock",), _c("update", ("container", "web"), ("host", "all")),
         ("release",)]),
     ("lock: /update container:web, queue full", [
-        ("lock",), ("enqueue",) + tuple(f"q{i}" for i in range(10)),
+        ("lock",), ("fill", 0),
         _c("update", ("container", "web")), ("unlock",)]),
     ("lock: /update container:web host:all, queue nearly full", [
-        ("lock",), ("enqueue",) + tuple(f"q{i}" for i in range(9)),
+        ("lock",), ("fill", 1),
         _c("update", ("container", "web"), ("host", "all")), ("unlock",)]),
     # Three hosts with `web` pending on a free lock: one claim, every
     # host's batch under it, nothing queued.
@@ -7546,46 +7580,46 @@ EXPECTED = {
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web", "host": "all"}, "source": "discord"}']}},
     ('multi', 'lock: /update container:web, queue full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': 'fill 0'},
                {'do': "cmd /update container:'web'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        '⚠️ The update queue is full (50) — this request was not queued; '
                         'anything already waiting keeps its place. Run the command again '
                         'once it has worked through.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'queued': ['q0…q49 (50)'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web"}, "source": "discord"}']}},
     ('one', 'lock: /update container:web, queue full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': 'fill 0'},
                {'do': "cmd /update container:'web'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        '⚠️ The update queue is full (50) — this request was not queued; '
                         'anything already waiting keeps its place. Run the command again '
                         'once it has worked through.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'queued': ['q0…q49 (50)'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web"}, "source": "discord"}']}},
     ('multi', 'lock: /update container:web host:all, queue nearly full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': 'fill 1'},
                {'do': "cmd /update container:'web' host:'all'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        '⚠️ The update queue is full (50) — this request was not queued; '
                         'anything already waiting keeps its place. Run the command again '
                         'once it has worked through.\n'
                         '⚠️ No pending updates found. @dead\n'
@@ -7593,22 +7627,22 @@ EXPECTED = {
                         '⚠️ No pending updates found. @flaky  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
+               'queued': ['q0…q48 (49)'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web", "host": "all"}, "source": "discord"}']}},
     ('one', 'lock: /update container:web host:all, queue nearly full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': 'fill 1'},
                {'do': "cmd /update container:'web' host:'all'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 10. It runs when its turn comes.\n'
+                        '🕒 `web` is queued — position 50. It runs when its turn comes.\n'
                         'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
+               'queued': ['q0…q48 (49)', 'web'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web", "host": "all"}, "source": "discord"}']}},
     ('multi', '/update container:web host:all, three hosts pending'): {'steps': [{'do': 'add_pending web nginx:1.25 flaky'},

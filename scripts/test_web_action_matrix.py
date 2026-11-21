@@ -339,6 +339,12 @@ class Row:
             self.engine.release_update()
         elif kind == "enqueue":
             self.engine.enqueue_updates(list(args))
+        elif kind == "fill":
+            # The queue up to all but `args[0]` places, with filler keys
+            # (Q16 raised its size from 10 to 50).
+            self.engine.enqueue_updates([
+                f"q{i}" for i in range(
+                    self.engine.UPDATE_QUEUE_MAX - args[0])])
         elif kind == "check_lock":
             import web_ui
             web_ui._CHECK_LOCK.acquire()
@@ -485,8 +491,36 @@ class Row:
                "sessions": len(self.server.sessions._sessions),
                "telegram_says": None if said == self.english else said,
                "audit": audit, "files": files, "backups": backups}
+        out["queued"] = _compact_queue(out["queued"])
         return {k: v for k, v in out.items()
                 if v not in (None, False, [], {}, 0) or k == "pending"}
+
+
+def _compact_queue(keys):
+    """The queue as the table shows it: a run of the filler keys `q0`,
+    `q1`, … (the `fill` step) as one "q0…q48 (49)", the rest as they
+    are. The queue holds fifty since Q16, and fifty names in a row would
+    bury the one key a row is about."""
+    out, run = [], []
+
+    def flush():
+        if len(run) > 3:
+            out.append(f"{run[0]}…{run[-1]} ({len(run)})")
+        else:
+            out.extend(run)
+        del run[:]
+    for k in keys:
+        if re.fullmatch(r"q\d+", k) and (
+                not run or int(k[1:]) == int(run[-1][1:]) + 1):
+            run.append(k)
+            continue
+        flush()
+        if re.fullmatch(r"q\d+", k):
+            run.append(k)
+        else:
+            out.append(k)
+    flush()
+    return out
 
 
 def _maintenance_window(data):
@@ -742,7 +776,7 @@ def _rows():
         P("/api/update", ("name", "web")), P("/api/update", ("name", "web")),
         ("unlock",))
     add("update: lock held, queue full", ("lock",),
-        ("enqueue",) + tuple(f"q{i}" for i in range(10)),
+        ("fill", 0),
         P("/api/update", ("name", "web")), ("unlock",))
     add("update: pin list unreadable", ("corrupt_pins",),
         P("/api/update", ("name", "web")))
@@ -796,7 +830,7 @@ def _rows():
         "/api/bulk", ("action", "update"), ("names", "web,nas/web")),
         ("release",))
     add("bulk: update web,nas/web, lock held, queue nearly full", ("lock",),
-        ("enqueue",) + tuple(f"q{i}" for i in range(9)), P(
+        ("fill", 1), P(
         "/api/bulk", ("action", "update"), ("names", "web,nas/web")),
         ("unlock",))
     # A bulk that names a group's members out of order still runs the
@@ -1124,7 +1158,8 @@ _mark(PINNED_FOR, ["GET /api/check: cross-origin"],
 _mark(PINNED_FOR, ["update: name=web", "bulk: update web,nas/web"],
       "Q3/Q14: one claim of the update lock runs the whole batch")
 _mark(PINNED_FOR, ["major: confirm web, lock held"],
-      "Q16 (decided): confirming a major stays 'busy', it is not queued")
+      "Q16 (decided): confirming a major stays 'busy', it is not queued, "
+      "and the Telegram sentence says so")
 _mark(PINNED_FOR, ["selfupdate: lock held"],
       "T6: selfupdate.start queues itself behind a held lock")
 # Headless queues nothing (the self-update check just skips), so there
@@ -2424,32 +2459,32 @@ EXPECTED = {
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     ('multi', 'update: lock held, queue full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': 'fill 0'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queue_full&max=50'},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'queued': ['q0…q49 (50)'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     ('one', 'update: lock held, queue full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': 'fill 0'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queue_full&max=50'},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'queued': ['q0…q49 (50)'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     ('headless', 'update: lock held, queue full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': 'fill 0'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queue_full&max=50'},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'queued': ['q0…q49 (50)'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
@@ -3228,34 +3263,34 @@ EXPECTED = {
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},
     ('multi', 'bulk: update web,nas/web, lock held, queue nearly full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': 'fill 1'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queue_full&max=10'},
+                'http': '303 | Location: /?update=queue_full&max=50'},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
+               'queued': ['q0…q48 (49)'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},
     ('one', 'bulk: update web,nas/web, lock held, queue nearly full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': 'fill 1'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queued&pos=10',
+                'http': '303 | Location: /?update=queued&pos=50',
                 'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
+               'queued': ['q0…q48 (49)', 'web'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},
     ('headless', 'bulk: update web,nas/web, lock held, queue nearly full'): {'steps': [{'do': 'lock'},
-               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': 'fill 1'},
                {'do': 'POST /api/bulk action=update&names=web,nas/web',
-                'http': '303 | Location: /?update=queued&pos=10',
+                'http': '303 | Location: /?update=queued&pos=50',
                 'out': ["<log> Web UI update: unknown host 'nas' — skipped"]},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
-               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
+               'queued': ['q0…q48 (49)', 'web'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "web,nas/web"}, "source": "web"}'],
                'backups': 1}},
@@ -5718,7 +5753,9 @@ EXPECTED = {
                {'do': 'lock'},
                {'do': 'POST /api/major_confirm name=web&action=confirm',
                 'http': '303 | Location: /',
-                'out': ['<telegram> ⚠️ Update already in progress...']},
+                'out': ['<telegram> ⚠️ Another update is running, so the major update of '
+                        '`web` did not start. It was not queued either and still waits for '
+                        'your confirmation — confirm it again once that update is done.']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'audit': ['{"action": "/api/major_confirm", "actor": "admin", "detail": '
@@ -5732,7 +5769,9 @@ EXPECTED = {
                {'do': 'lock'},
                {'do': 'POST /api/major_confirm name=web&action=confirm',
                 'http': '303 | Location: /',
-                'out': ['<telegram> ⚠️ Update already in progress...']},
+                'out': ['<telegram> ⚠️ Another update is running, so the major update of '
+                        '`web` did not start. It was not queued either and still waits for '
+                        'your confirmation — confirm it again once that update is done.']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/major_confirm", "actor": "admin", "detail": '

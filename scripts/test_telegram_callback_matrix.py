@@ -81,6 +81,10 @@ _CUT = "cut off mid-write"
 #:   ("tap", data[, user[, chat]])  a press; "<tok>" in data is the token
 #:                              of the newest offered button that fits
 #:   ("lock",) / ("unlock",)    hold / release the shared update lock
+#:   ("release",)               give it back through the engine's door,
+#:                              which starts the drainer (Q16)
+#:   ("fill", n)                put `q0` … `q<n-1>` on the queue
+#:   ("mark_updating", key)     the engine counts `key` as being updated
 #:   ("age",)                   push live stop/restore offers past the TTL
 #:   ("major", host, name)      a deferred major in that host's store
 #:   ("group", host, gid, members)  a group with restart_dependents on
@@ -138,6 +142,16 @@ SCENARIOS = [
     ("update_all:<tok> stale", [("tap", "update_all:7")]),
     ("update_all lock held", [("notify", None), ("lock",),
                               ("tap", "update_all:<tok>"), ("unlock",)]),
+    # Q16: busy, the snapshot goes on the queue and the drainer runs it
+    # once the lock comes back through the door.
+    ("update_all lock held, then released",
+     [("notify", None), ("lock",), ("tap", "update_all:<tok>"),
+      ("release",)]),
+    ("update_all bare lock held", [("lock",), ("tap", "update_all"),
+                                   ("unlock",)]),
+    ("update_all lock held, web being updated",
+     [("notify", None), ("lock",), ("mark_updating", "web"),
+      ("tap", "update_all:<tok>"), ("unlock",)]),
     ("update_skip", [("notify", None), ("tap", "update_skip")]),
     # ── update one ──────────────────────────────────────────────────
     ("update_one:web", [("notify", None), ("tap", "update_one:web")]),
@@ -197,6 +211,21 @@ SCENARIOS = [
     ("confirm_major none pending", [("tap", "confirm_major:web")]),
     ("confirm_major lock held", [("major", "local", "web"), ("lock",),
                                  ("tap", "confirm_major:web"), ("unlock",)]),
+    # ── typed updates with the lock held (Q16) ──────────────────────
+    ("/update web lock held", [("lock",), ("type", "/update web"),
+                               ("unlock",)]),
+    ("/update web* lock held, then released",
+     [("lock",), ("type", "/update web*"), ("release",)]),
+    ("/update db lock held", [("lock",), ("type", "/update db"),
+                              ("unlock",)]),
+    ("/update web @all lock held", [("lock",), ("type", "/update web @all"),
+                                    ("unlock",)]),
+    ("/updateall lock held", [("lock",), ("type", "/updateall"),
+                              ("unlock",)]),
+    ("/updateall @nas lock held", [("lock",), ("type", "/updateall @nas"),
+                                   ("unlock",)]),
+    ("/updateall @all lock held, then released",
+     [("lock",), ("type", "/updateall @all"), ("release",)]),
     ("reject_major:web", [("major", "local", "web"),
                           ("tap", "reject_major:web")]),
     ("reject_major:nas/web", [("major", "nas", "web"),
@@ -259,7 +288,12 @@ BRANCH_NOTES = {
         "head's cascade (wait_healthy, the dependents' restart) go to the "
         "entry's own host. A host that stops answering fails its own entry "
         "from the snapshot; a host the registry does not know keeps the "
-        "caller's checker and the batch refuses it.",
+        "caller's checker and the batch refuses it. Since Q16 a busy lock "
+        "queues the whole set (snapshot, or the file for the bare form) "
+        "through `claim_or_queue_many` instead of 'already in progress'; "
+        "one key gets the tap's sentence, several a heading (naming what "
+        "is being updated, if anything) and a line each. Released through "
+        "the door, the drainer runs them.",
     "update_skip": ":3451 multi keeps the other hosts' entries, single "
         "deletes the file.",
     "update_one": ":3479 rebuilds the keyboard without the tapped button "
@@ -282,7 +316,8 @@ BRANCH_NOTES = {
         "tap) used to return before the drain, and the queued `db` waited "
         "for the next sweep. Now it runs right after.",
     "confirm_major": ":3497 on a thread, `_confirm_major_update`; busy "
-        "lock answers 'already running' and does not queue (Q16). A key "
+        "lock still refuses and does not queue (my decision for Q16), with "
+        "a sentence that says so and that the major still waits. A key "
         "whose host the registry does not know (`gone`, and `nas` on a "
         "single host) answers 'Unknown host' since Q11b, before anything "
         "is looked up; nothing runs and the deferred major stays.",
@@ -293,6 +328,16 @@ BRANCH_NOTES = {
         "so the local `web`'s deferred major went and the chat said "
         "'skipped'.",
     "lifecycle": ":3520 local only; a bad split or action is a toast.",
+    "/update": "typed, with the lock held (Q16): no lookup on a host and "
+        "no `check_all`; the pending entries the pattern names (exactly, "
+        "or as a glob) on the targeted hosts go to `run_updates` on a "
+        "thread, which queues them. A name the pending list does not hold "
+        "answers 'already in progress' as before. Without `@host` it "
+        "stays local, so nas's `web` is still pending after the release.",
+    "/updateall": "typed, with the lock held (Q16): the same set as the "
+        "free path (the file, or its `@host` part) goes through "
+        "`_handle_callback` to `run_updates` and is queued. Without "
+        "`@host` it is the local host on multi as well.",
     "restart_deps": ":3548 local group, needs two members; the cascade "
         "runs on a thread.",
     "noop": "no branch: nothing answers.",
@@ -436,6 +481,12 @@ class Row:
             bot._update_lock.acquire()
         elif kind == "unlock":
             bot._update_lock.release()
+        elif kind == "release":
+            bot.engine.release_update()
+        elif kind == "fill":
+            bot.engine.enqueue_updates([f"q{i}" for i in range(args[0])])
+        elif kind == "mark_updating":
+            bot.engine.mark_updating(args[0])
         elif kind == "age":
             for table in ("_pending_stops", "_pending_restores"):
                 for rec in (getattr(bot, table, None) or {}).values():
@@ -672,12 +723,180 @@ def q6_checks():
     return results
 
 
+#: Q16, written by hand before the change. With the lock held, "Update
+#: all" (the button, bare or with its snapshot), a typed /update and
+#: /updateall put their containers on the engine's queue instead of
+#: answering "already in progress"; the drainer runs them once the lock
+#: comes back through the door. A typed /update asks nobody while it is
+#: busy: no lookup on a host, no `check_all` (#26: a check during an
+#: update sees the containers in flight as outdated), so only what the
+#: pending list already holds is queued, and a name it does not hold
+#: gets today's "busy, try again" (my decision of 18.11.2026). A major
+#: confirmation is still refused, in words that say so (same decision).
+_Q16_HEAD = ("🕒 Another update is running right now. These wait in the "
+             "queue and run when their turn comes:")
+
+
+def _q16_head_behind(name):
+    return (f"🕒 `{name}` is being updated right now. These wait in the "
+            "queue and run when their turn comes:")
+
+
+def _q16_line(name, pos):
+    return f"• `{name}` — position {pos}"
+
+
+def _q16_one(name, pos):
+    return f"🕒 `{name}` queued — position {pos}. It runs when its turn comes."
+
+
+_Q16_BUSY = "⚠️ Update already in progress..."
+_Q16_MAJOR = ("⚠️ Another update is running, so the major update of `web` "
+              "did not start. It was not queued either and still waits for "
+              "your confirmation — confirm it again once that update is "
+              "done.")
+
+
+def _q16_spec():
+    from update_engine import UpdateEngine
+    mx = UpdateEngine.UPDATE_QUEUE_MAX
+    both = "\n".join([_Q16_HEAD, _q16_line("web", 1),
+                      _q16_line("web @nas", 2)])
+    full = (f"⚠️ The update queue is full ({mx}) — none of these 2 was "
+            "queued; anything already waiting keeps its place. Try again "
+            "once it has worked through.")
+    one = _q16_one("web", 1)
+    # (scenario, setups) → (index of the busy step, its last line,
+    # the queue after the row)
+    return {
+        ("update_all lock held", ("multi",)): (2, both, ["web", "nas/web"]),
+        ("update_all lock held", ("none", "one")): (2, one, ["web"]),
+        ("update_all bare lock held", ("multi",)):
+            (1, both, ["web", "nas/web"]),
+        ("update_all bare lock held", ("none", "one")): (1, one, ["web"]),
+        ("update_all lock held, web being updated", ("multi",)):
+            (3, "\n".join([_q16_head_behind("web"),
+                           "• `web` — that one is being updated right now",
+                           _q16_line("web @nas", 1)]), ["nas/web"]),
+        ("update_all lock held, web being updated", ("none", "one")):
+            (3, "🕒 `web` is being updated right now — that is the same "
+                "one, not a second job.", []),
+        ("/update web lock held", m.SETUPS): (1, one, ["web"]),
+        ("/update db lock held", m.SETUPS): (1, _Q16_BUSY, []),
+        ("/update web @all lock held", ("multi",)):
+            (1, both, ["web", "nas/web"]),
+        ("/update web @all lock held", ("none", "one")): (1, _Q16_BUSY, []),
+        ("/updateall lock held", m.SETUPS): (1, one, ["web"]),
+        ("/updateall @nas lock held", ("multi",)):
+            (1, _q16_one("web @nas", 1), ["nas/web"]),
+        ("confirm_major lock held", m.SETUPS): (2, _Q16_MAJOR, []),
+        # Not in the table: a key already waiting inside a batch, and a
+        # busy "Update all" with nothing pending at all.
+        ("already queued", ("multi",)):
+            (3, "\n".join([_Q16_HEAD,
+                           "• `web` — already waiting for 0s",
+                           _q16_line("web @nas", 2)]), ["web", "nas/web"]),
+        ("nothing pending", m.SETUPS):
+            (2, "⚠️ No pending updates found.", []),
+        # Not in the table: 49 queued keys would fill a screen of it.
+        ("queue full", ("multi",)): (3, full, [f"q{i}" for i in range(mx - 1)]),
+        ("queue full", ("none", "one")):
+            (3, _q16_one("web", mx), [f"q{i}" for i in range(mx - 1)]
+             + ["web"]),
+    }
+
+
+def _q16_steps(name):
+    if name == "already queued":
+        return [("notify", None), ("lock",), ("tap", "update_one:web"),
+                ("tap", "update_all:<tok>"), ("unlock",)]
+    if name == "nothing pending":
+        return [("drop_pending",), ("lock",), ("tap", "update_all"),
+                ("unlock",)]
+    if name == "queue full":
+        from update_engine import UpdateEngine
+        return [("notify", None), ("lock",),
+                ("fill", UpdateEngine.UPDATE_QUEUE_MAX - 1),
+                ("tap", "update_all:<tok>"), ("unlock",)]
+    return _STEPS[name]
+
+
+#: Released through the door: the drainer ran what was queued. A typed
+#: /update without `@host` stays on the local host, so nas's `web` is
+#: still pending afterwards (`_Q16_LEFT`).
+_Q16_LEFT = {("/update web* lock held, then released", "multi"): ["web@nas"]}
+_Q16_RELEASED = {
+    "update_all lock held, then released":
+        {"multi": ["update_container@local:web", "update_container@nas:web"],
+         "single": ["update_container@local:web"]},
+    "/update web* lock held, then released":
+        {"multi": ["update_container@local:web"],
+         "single": ["update_container@local:web"]},
+    "/updateall @all lock held, then released":
+        {"multi": ["update_container@local:web", "update_container@nas:web"]},
+}
+
+
+def q16_checks():
+    results = []
+    for (name, setups), (idx, want, queue) in _q16_spec().items():
+        for setup in setups:
+            rec, esc = run_scenario(setup, _q16_steps(name))
+            st = rec["steps"][idx]
+            last = st["out"][-1] if st["out"] else None
+            results.append((
+                f"Q16 [{setup}] {name}: the answer",
+                last == want and st["raised"] is None and not esc,
+                f"got {st['out']!r}, raised {st['raised']!r}, "
+                f"escapes {esc!r}"))
+            results.append((
+                f"Q16 [{setup}] {name}: nothing asked of a host, nothing "
+                f"checked or updated while busy",
+                st["hosts"] == {} and st["events"] == [],
+                f"hosts {st['hosts']!r}, events {st['events']!r}"))
+            results.append((
+                f"Q16 [{setup}] {name}: the queue afterwards",
+                rec["state"]["queue"] == queue,
+                f"queue {rec['state']['queue']!r}"))
+            if name == "confirm_major lock held":
+                results.append((
+                    f"Q16 [{setup}] {name}: the major still waits",
+                    rec["state"]["majors"] == {"local": ["web"]},
+                    f"majors {rec['state']['majors']!r}"))
+    for name, per in _Q16_RELEASED.items():
+        for setup in m.SETUPS:
+            want = per.get("multi" if setup == "multi" else "single")
+            if want is None:
+                continue
+            rec, esc = run_scenario(setup, _STEPS[name])
+            busy, rel = rec["steps"][-2], rec["steps"][-1]
+            results.append((
+                f"Q16 [{setup}] {name}: nothing ran while it was held",
+                busy["events"] == [] and busy["hosts"] == {},
+                f"events {busy['events']!r}, hosts {busy['hosts']!r}"))
+            ran = [e for e in rel["events"]
+                   if e.startswith("update_container@")]
+            results.append((
+                f"Q16 [{setup}] {name}: the release ran each of them once",
+                ran == want and not esc and rel["raised"] is None,
+                f"ran {ran!r}, events {rel['events']!r}, escapes {esc!r}"))
+            left = _Q16_LEFT.get((name, setup), [])
+            results.append((
+                f"Q16 [{setup}] {name}: nothing left queued or locked, "
+                f"pending only {left}",
+                rec["state"]["queue"] == []
+                and (rec["state"]["pending"] or []) == left
+                and not rec["state"]["locked"],
+                f"state {rec['state']!r}"))
+    return results
+
+
 def check():
     failed = 0
     for label, ok in trap_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
-    for label, ok, detail in q6_checks():
+    for label, ok, detail in q6_checks() + q16_checks():
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         if not ok:
             print(f"      → {detail}")
@@ -1444,6 +1663,11 @@ EXPECTED = {
     # dependents' restart) go to the entry's own host. A host that stops
     # answering fails its own entry from the snapshot; a host the registry
     # does not know keeps the caller's checker and the batch refuses it.
+    # Since Q16 a busy lock queues the whole set (snapshot, or the file for
+    # the bare form) through `claim_or_queue_many` instead of 'already in
+    # progress'; one key gets the tap's sentence, several a heading (naming
+    # what is being updated, if anything) and a line each. Released through
+    # the door, the drainer runs them.
     ('multi', 'update_all bare'): {'steps': [{'do': 'tap update_all',
                 'out': ['<unbutton>',
                         '<toast> Updates are starting...',
@@ -1920,13 +2144,16 @@ EXPECTED = {
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
                         '<toast> Updates are starting...',
-                        '⚠️ Update already in progress...'],
+                        '🕒 Another update is running right now. These wait in the queue '
+                        'and run when their turn comes:\n'
+                        '• `web` — position 1\n'
+                        '• `web @nas` — position 2'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
                {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
      'state': {'pending': ['web@local', 'web@nas'],
-               'queue': [],
+               'queue': ['web', 'nas/web'],
                'stops': 0,
                'restores': 0,
                'majors': {},
@@ -1945,7 +2172,188 @@ EXPECTED = {
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
                         '<toast> Updates are starting...',
-                        '⚠️ Update already in progress...'],
+                        '🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all lock held, then released'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 Another update is running right now. These wait in the queue '
+                        'and run when their turn comes:\n'
+                        '• `web` — position 1\n'
+                        '• `web @nas` — position 2'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release',
+                'out': ['⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '⏳ Updating `web @nas`...',
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all lock held, then released'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release',
+                'out': ['⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all bare lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_all',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 Another update is running right now. These wait in the queue '
+                        'and run when their turn comes:\n'
+                        '• `web` — position 1\n'
+                        '• `web @nas` — position 2'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['web', 'nas/web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all bare lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'tap update_all',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', 'update_all lock held, web being updated'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?\n'
+                        '• [web](https://github.com/example/web/releases/latest) @nas '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🔄 web @nas '
+                        '(?)→update_one:nas/web] [🚀 Update all→update_all:1 | ✋ '
+                        'Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5',
+                          'nas': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'mark_updating web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 `web` is being updated right now. These wait in the queue and '
+                        'run when their turn comes:\n'
+                        '• `web` — that one is being updated right now\n'
+                        '• `web @nas` — position 1'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['nas/web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', 'update_all lock held, web being updated'): {'steps': [{'do': 'notify None',
+                'out': ['🔄 *Docker Updates Available*\n'
+                        '\n'
+                        '• [web](https://github.com/example/web/releases/latest) '
+                        '(nginx:1.25) 🔖 v1.25.0 → v1.26.0\n'
+                        '  📦 ? | 🗓️ Current: ?  [🔄 web (?)→update_one:web] [🚀 Update '
+                        'all→update_all:1 | ✋ Manual→update_skip]'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5'},
+                'events': [],
+                'raised': None},
+               {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'mark_updating web',
+                'out': [],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'tap update_all:<tok>',
+                'out': ['<unbutton>',
+                        '<toast> Updates are starting...',
+                        '🕒 `web` is being updated right now — that is the same one, not a '
+                        'second job.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2015,7 +2423,13 @@ EXPECTED = {
     # key's host (:1798). Until Q7b it handed that one to the drain (:1929),
     # and `_checker_for` returns the caller's checker for the local host, so
     # a queued local key ran on nas's; now the drain gets the checker the
-    # tap was called with.
+    # tap was called with. A pending key whose host the registry does not
+    # know (`gone`) is refused in `run_keys` since Q11b: 'Unknown host',
+    # nothing runs, the entry stays. Since Q11c `run_keys` runs each key
+    # through the shared batch: the netns snapshot asks the tapped key's own
+    # host (the extra `inspect --format`), a group head's dependents are
+    # restarted, and a queued key waits the last recreate's cooldown and its
+    # group's pause first.
     ('multi', 'update_one:web'): {'steps': [{'do': 'notify None',
                 'out': ['🔄 *Docker Updates Available*\n'
                         '\n'
@@ -2507,11 +2921,12 @@ EXPECTED = {
                'majors': {},
                'locked': False}},
     # ── queue ───────────────────────────────────────────────────────
-    # :1825 lock busy → enqueue (position, then 'already in the queue'); the
-    # drain runs after the tap that held the lock — but only when that tap
-    # got past its early returns (no pending file, key not listed): those
-    # return inside the try and skip the drain, so on a single host the
-    # queued `db` is still waiting.
+    # :1825 lock busy → enqueue (position, then 'already in the queue').
+    # Since Q13 the engine's drainer works it off once the tap that held the
+    # lock releases it, whatever that tap did: one that ran nothing (key not
+    # listed, so on a single host the remote tap) used to return before the
+    # drain, and the queued `db` waited for the next sweep. Now it runs
+    # right after.
     ('multi', 'queue drain after a remote tap'): {'steps': [{'do': 'add_pending db postgres:16 local',
                 'out': [],
                 'hosts': {},
@@ -2521,8 +2936,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2556,8 +2970,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2587,8 +3000,7 @@ EXPECTED = {
                {'do': 'tap update_one:nas/web',
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `web @nas` queued — position 1. It starts when the current '
-                        'update finishes.'],
+                        '🕒 `web @nas` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2622,8 +3034,7 @@ EXPECTED = {
                {'do': 'tap update_one:nas/web',
                 'out': ['<toast> Update web...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `web @nas` queued — position 1. It starts when the current '
-                        'update finishes.'],
+                        '🕒 `web @nas` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2654,16 +3065,15 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` has been in the queue for 0s — it runs as soon as the '
-                        'current update finishes.'],
+                        '🕒 `db` has been in the queue for 0s — it runs when its turn '
+                        'comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2683,16 +3093,15 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` has been in the queue for 0s — it runs as soon as the '
-                        'current update finishes.'],
+                        '🕒 `db` has been in the queue for 0s — it runs when its turn '
+                        'comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2719,8 +3128,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2736,7 +3144,8 @@ EXPECTED = {
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, inspect --format t=5 '
                                    '×2, inspect --format'},
-                'events': ['update_container@local:web', 'wait 60s',
+                'events': ['update_container@local:web',
+                           'wait 60s',
                            'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -2759,8 +3168,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2777,7 +3185,8 @@ EXPECTED = {
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, inspect --format t=5 '
                                    '×2, inspect --format'},
-                'events': ['update_container@local:web', 'wait 60s',
+                'events': ['update_container@local:web',
+                           'wait 60s',
                            'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': [],
@@ -2870,8 +3279,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2887,9 +3295,12 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10, inspect --format t=5 ×2, inspect --format'},
-                'events': ['update_container@local:web', 'wait_healthy@local:web max=30',
-                           'wait 5s', 'update_container@local:db'],
+                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web',
+                           'wait_healthy@local:web max=30',
+                           'wait 5s',
+                           'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
                'queue': [],
@@ -2911,8 +3322,7 @@ EXPECTED = {
                {'do': 'tap update_one:db',
                 'out': ['<toast> Update db...',
                         '<api> editMessageReplyMarkup  []',
-                        '🕒 `db` queued — position 1. It starts when the current update '
-                        'finishes.'],
+                        '🕒 `db` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -2929,9 +3339,12 @@ EXPECTED = {
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10, inspect --format t=5 ×2, inspect --format'},
-                'events': ['update_container@local:web', 'wait_healthy@local:web max=30',
-                           'wait 5s', 'update_container@local:db'],
+                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web',
+                           'wait_healthy@local:web max=30',
+                           'wait 5s',
+                           'update_container@local:db'],
                 'raised': None}],
      'state': {'pending': [],
                'queue': [],
@@ -2940,8 +3353,12 @@ EXPECTED = {
                'majors': {},
                'locked': False}},
     # ── confirm_major ───────────────────────────────────────────────
-    # :3497 on a thread, `_confirm_major_update`; busy lock answers 'already
-    # running' and does not queue (Q16).
+    # :3497 on a thread, `_confirm_major_update`; busy lock still refuses
+    # and does not queue (my decision for Q16), with a sentence that says so
+    # and that the major still waits. A key whose host the registry does not
+    # know (`gone`, and `nas` on a single host) answers 'Unknown host' since
+    # Q11b, before anything is looked up; nothing runs and the deferred
+    # major stays.
     ('multi', 'confirm_major:web'): {'steps': [{'do': 'major local web',
                 'out': [],
                 'hosts': {},
@@ -3116,7 +3533,9 @@ EXPECTED = {
                {'do': 'tap confirm_major:web',
                 'out': ['<toast> Confirming major update for web…',
                         '<unbutton>',
-                        '⚠️ Update already in progress...'],
+                        '⚠️ Another update is running, so the major update of `web` did '
+                        'not start. It was not queued either and still waits for your '
+                        'confirmation — confirm it again once that update is done.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -3136,7 +3555,9 @@ EXPECTED = {
                {'do': 'tap confirm_major:web',
                 'out': ['<toast> Confirming major update for web…',
                         '<unbutton>',
-                        '⚠️ Update already in progress...'],
+                        '⚠️ Another update is running, so the major update of `web` did '
+                        'not start. It was not queued either and still waits for your '
+                        'confirmation — confirm it again once that update is done.'],
                 'hosts': {},
                 'events': [],
                 'raised': None},
@@ -3147,8 +3568,248 @@ EXPECTED = {
                'restores': 0,
                'majors': {'local': ['web']},
                'locked': False}},
+    # ── /update ─────────────────────────────────────────────────────
+    # typed, with the lock held (Q16): no lookup on a host and no
+    # `check_all`; the pending entries the pattern names (exactly, or as a
+    # glob) on the targeted hosts go to `run_updates` on a thread, which
+    # queues them. A name the pending list does not hold answers 'already in
+    # progress' as before. Without `@host` it stays local, so nas's `web` is
+    # still pending after the release.
+    ('multi', '/update web lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web',
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/update web lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web',
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', '/update web* lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web*',
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release',
+                'out': ['⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': ['web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/update web* lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web*',
+                'out': ['🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release',
+                'out': ['⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', '/update db lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update db',
+                'out': ['⚠️ Update already in progress...'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/update db lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update db',
+                'out': ['⚠️ Update already in progress...'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', '/update web @all lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web @all',
+                'out': ['🕒 Another update is running right now. These wait in the queue '
+                        'and run when their turn comes:\n'
+                        '• `web` — position 1\n'
+                        '• `web @nas` — position 2'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['web', 'nas/web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/update web @all lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /update web @all',
+                'out': ['⚠️ Update already in progress...'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    # ── /updateall ──────────────────────────────────────────────────
+    # typed, with the lock held (Q16): the same set as the free path (the
+    # file, or its `@host` part) goes through `_handle_callback` to
+    # `run_updates` and is queued. Without `@host` it is the local host on
+    # multi as well.
+    ('multi', '/updateall lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall',
+                'out': ['<toast> Updates are starting...',
+                        '🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/updateall lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall',
+                'out': ['<toast> Updates are starting...',
+                        '🕒 `web` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': ['web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', '/updateall @nas lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall @nas',
+                'out': ['<toast> Updates are starting...',
+                        '🕒 `web @nas` queued — position 1. It runs when its turn comes.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queue': ['nas/web'],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/updateall @nas lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall @nas',
+                'out': ['`/updateall` updates everything that has an update waiting. It '
+                        'takes a host (`@nas`, `@all`) and nothing else — for one '
+                        'container use `/update <name>`.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'unlock', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('multi', '/updateall @all lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall @all',
+                'out': ['<toast> Updates are starting...',
+                        '🕒 Another update is running right now. These wait in the queue '
+                        'and run when their turn comes:\n'
+                        '• `web` — position 1\n'
+                        '• `web @nas` — position 2'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release',
+                'out': ['⏳ Updating `web`...',
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '⏳ Updating `web @nas`...',
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)',
+                        '✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web'],
+                'raised': None}],
+     'state': {'pending': [],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
+    ('single', '/updateall @all lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
+               {'do': 'type /updateall @all',
+                'out': ['`/updateall` updates everything that has an update waiting. It '
+                        'takes a host (`@nas`, `@all`) and nothing else — for one '
+                        'container use `/update <name>`.'],
+                'hosts': {},
+                'events': [],
+                'raised': None},
+               {'do': 'release', 'out': [], 'hosts': {}, 'events': [], 'raised': None}],
+     'state': {'pending': ['web@local'],
+               'queue': [],
+               'stops': 0,
+               'restores': 0,
+               'majors': {},
+               'locked': False}},
     # ── reject_major ────────────────────────────────────────────────
-    # :3508 drops the deferred major in that host's store.
+    # :3508 drops the deferred major in that host's store. A key whose host
+    # the registry does not know (`gone`, and `nas` on a single host)
+    # answers 'Unknown host' since Q11b, like confirm_major: before,
+    # `_store_for` handed it the local store, so the local `web`'s deferred
+    # major went and the chat said 'skipped'.
     ('multi', 'reject_major:web'): {'steps': [{'do': 'major local web',
                 'out': [],
                 'hosts': {},
