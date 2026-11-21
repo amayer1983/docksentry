@@ -2,6 +2,32 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.20.0-beta.1] - 2026-11-21
+
+The first half of the core rework: the part every channel shares about
+hosts, the update lock and the queue now lives in one place instead of
+three. Telegram, Discord and the Web UI behave the same where they used to
+drift apart.
+
+### Changed
+- **A busy update is queued instead of refused.** Tapping Update, "Update all", `/updateall`, `/update <name>`, Discord `/update` and `/updateall`, or the Web UI's update buttons while another update runs now puts it in the queue and tells you its place. Before, most of those said "try again". The queue holds 50 containers instead of 10.
+- **The queue is worked off on every install.** It starts as soon as the running update ends, whoever started it, and also without Telegram. Results reach every channel.
+- **A tapped update behaves like "Update all".** Cooldowns, group pauses and dependents restarts apply to a single tap too, and the dependents of a container on another host are restarted on that host, not locally.
+
+### Fixed
+- **A pin holds, even after the update notification came.** Pinning a container after its update was found didn't stop the buttons, "Update all", `/updateall`, the major confirmation, Discord or the Web UI from updating it. Only a typed `/update <name>` checked. Every manual path and the queue now check right before the update, and the answer says why a container was left alone.
+- **A dead or refused host is called unreachable.** `/status`, `/check` and `/update` with a name or a pattern used to say "not found" or nothing. A host that just failed to answer isn't asked again for a minute on reads.
+- **The nightly run isn't cut short by a queued update.** On several hosts, an update queued during the run could take the lock between two hosts, and the next host skipped its automatic updates until the next night.
+- **A button for a host that left `DOCKER_HOSTS` is refused**, instead of updating a container with the same name on the local host.
+- **A damaged `pending_updates.json` no longer breaks `/updates`, Update or Update all.**
+- **A good update stays good when its dependents can't be restarted**, and the rest of its group carries on.
+- **Before a self-update restarts Docksentry, every channel hears which queued updates didn't run.** While it swaps, nothing new is queued, and the answer says why.
+- **A damaged exit marker is set aside** instead of hiding the next hard kill (#63).
+- **Discord:** `host:all` reaches every host on `/status`, `/check`, `/logs`, `/cleanup` and `/checkimages`, and `/status` lists the same containers as Telegram.
+
+### Internal
+- 248 procedures, 11266 checks. The mutation ratchet is at 930 guarded promises, nothing unguarded.
+
 ## [2.19.1-beta.1] - 2026-11-18
 
 Fixes for what 2.19.0 got wrong, found by a second audit of the tree
