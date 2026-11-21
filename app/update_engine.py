@@ -575,8 +575,12 @@ class UpdateEngine:
 
           pin_list_unreadable  its host's pin list cannot be read, so
                                every container counts as pinned
-          pinned               pinned (`/pin`, the Web UI), or, with
-                               `labels`, a `docksentry.pin` label
+          pinned               pinned (`/pin`, the Web UI)
+          pinned_label         only with `labels`: a `docksentry.pin`
+                               label. Told apart because a label is not
+                               read when a key is queued, so it may have
+                               been there before the tap, and "pinned
+                               while it waited" would be false
           excluded             `EXCLUDE_CONTAINERS`, or, with `labels`,
                                `docksentry.exclude` / `docksentry.enable=false`
 
@@ -622,7 +626,7 @@ class UpdateEngine:
             lab = get(name) if callable(get) else {}
             flag = UpdateChecker.label_bool
             if flag(lab, "pin") is True:
-                return "pinned"
+                return "pinned_label"
             if flag(lab, "enable") is False or flag(lab, "exclude") is True:
                 return "excluded"
         return None
@@ -997,16 +1001,11 @@ class UpdateEngine:
         Q16f) and its pending entry stays.
         """
         seam = self._seam()
-        checker = self._checker_for_key(key)
-        if checker is not None:
-            from update_checker import pin_list_unreadable
-            if pin_list_unreadable(checker):
-                seam.tell(self._t("update_refused_pin_list"))
-                return None
         # Pinned or excluded while it waited (Q16f): it was queued before
         # the pin, or a label says so now. Off the queue already (the
         # drain took it), said to every channel, and the pending entry
-        # stays where it is — the pin decides, not the queue.
+        # stays where it is — the pin decides, not the queue. The pin
+        # list is read once, here: an unreadable one refuses the entry.
         why = self.held_back(key, labels=True)
         if why == "pin_list_unreadable":
             seam.tell(self._t("update_refused_pin_list"))

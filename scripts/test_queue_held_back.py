@@ -60,6 +60,8 @@ LINE_PIN = "• `{}` — pinned, not queued"
 LINE_EXCL = "• `{}` — excluded from updates, not queued"
 SKIP_PIN = ("📌 `{}` was pinned while it waited in the queue — its update "
             "did not run.")
+SKIP_PIN_LABEL = ("📌 `{}` has a `docksentry.pin` label — its queued update "
+                  "did not run.")
 SKIP_EXCL = ("🚫 `{}` is excluded from updates — its queued update did not "
              "run.")
 REFUSED = ("📌 No update was started: the pin list (`pinned_containers.json`)"
@@ -204,7 +206,7 @@ def telegram_checks():
                     and "web@local" in _pending(rec),
                     f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
         # Labels, read from the host at the drain.
-        for label, value, want in (("docksentry.pin", "true", SKIP_PIN),
+        for label, value, want in (("docksentry.pin", "true", SKIP_PIN_LABEL),
                                    ("docksentry.exclude", "true", SKIP_EXCL),
                                    ("docksentry.enable", "false", SKIP_EXCL)):
             rec, st, esc = row(setup, [
@@ -213,9 +215,23 @@ def telegram_checks():
             out.append((f"[{setup}] tap queued, then {label}={value}: not "
                         f"updated, said",
                         _ran(st[-1]) == [] and want.format("web")
-                        in st[-1]["out"] and "web@local" in _pending(rec),
+                        in st[-1]["out"] and "web@local" in _pending(rec)
+                        and SKIP_PIN.format("web") not in st[-1]["out"],
                         f"out {st[-1]['out']!r}, events "
                         f"{st[-1]['events']!r}"))
+        # A label that was there before the tap: queueing asks no host
+        # (Q16), so it is queued and held at the drain. "Was pinned while
+        # it waited" would be false there; the line names the label.
+        rec, st, esc = row(setup, [
+            ("label", "local", "web", "docksentry.pin", "true"),
+            ("lock",), ("tap", "update_one:web"), ("release",)])
+        out.append((f"[{setup}] docksentry.pin label before the tap: queued, "
+                    f"the drain names the label, not a pin set meanwhile",
+                    _ran(st[-1]) == []
+                    and SKIP_PIN_LABEL.format("web") in st[-1]["out"]
+                    and SKIP_PIN.format("web") not in st[-1]["out"]
+                    and "web@local" in _pending(rec),
+                    f"out {st[-1]['out']!r}, events {st[-1]['events']!r}"))
         # An unreadable pin list during the drain: refused, nothing runs,
         # the entry stays pending (already so before Q16f — pinned here).
         rec, st, esc = row(setup, [("lock",), ("tap", "update_one:web"),
@@ -372,6 +388,34 @@ def web_checks():
                 == "303 | Location: /?update=queued&pos=1&held=1"
                 and _ran(st[3]) == ["update_container@local:web"],
                 f"http {st[2].get('http')!r}, release {st[3]!r}"))
+    # Several waiting, one held: the count goes on the multi answer.
+    rec, esc = t5.run_scenario("multi", [
+        ("add_pending", "db", "postgres:16", "local"),
+        ("pin", "nas", "web"), ("lock",),
+        P("/api/bulk", ("action", "update"),
+          ("names", "web,db,nas/web")),
+        ("release",)])
+    st = rec["steps"][1:]
+    out.append(("[multi] Web: bulk web,db,nas/web with nas's pinned, "
+                "busy: two queued, the page says one held back",
+                st[2].get("http")
+                == "303 | Location: /?update=queued&n=2&held=1",
+                f"http {st[2].get('http')!r}"))
+    # Already queued, one held: the count goes on that answer too. The
+    # seconds are the wall clock's, so only the shape is compared.
+    rec, esc = t5.run_scenario("multi", [
+        ("pin", "nas", "web"), ("lock",),
+        P("/api/update", ("name", "web")),
+        P("/api/bulk", ("action", "update"), ("names", "web,nas/web")),
+        ("release",)])
+    st = rec["steps"]
+    http = st[3].get("http") or ""
+    out.append(("[multi] Web: bulk web,nas/web with web already queued and "
+                "nas's pinned: already queued, the page says one held back",
+                http.startswith("303 | Location: /?update=already_queued"
+                                "&since=")
+                and http.endswith("&held=1"),
+                f"http {http!r}"))
     rec, esc = t5.run_scenario("multi", [
         ("lock",), P("/api/update", ("name", "web")),
         ("pin", "local", "web"), ("release",)])

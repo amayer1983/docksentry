@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ Czeka autoaktualizacja, Docksentry zaraz się zrestartuje. NIE wykonano: {names}. Dotknij ich ponownie później.",
   "update_queue_skipped_group": "⚠️ Pominięto resztę grupy `{group}` po powyższym błędzie: {names}. Kolejność ma powód — najpierw napraw ten, który zawiódł.",
   "update_queue_skipped_pinned": "📌 `{name}` został przypięty, gdy czekał w kolejce — jego aktualizacja nie została uruchomiona.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` ma etykietę `docksentry.pin` — jego aktualizacja z kolejki nie została uruchomiona.",
   "update_queue_skipped_excluded": "🚫 `{name}` jest wykluczony z aktualizacji — jego aktualizacja z kolejki nie została uruchomiona.",
   "web_hidden_active_title": "Aktywne ustawienia, których tu nie widać",
   "web_hidden_active_intro": "Tryb prosty ukrywa opcje zaawansowane, a {count} z nich nie ma wartości domyślnej — czyli coś na tej instancji robią, choć są poza stroną. Przełącz na tryb zaawansowany, aby je zobaczyć i zmienić.",

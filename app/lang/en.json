@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ A self-update is pending, so Docksentry is about to restart. NOT run: {names}. Tap them again afterwards.",
   "update_queue_skipped_group": "⚠️ Skipped the rest of group `{group}` after the failure above: {names}. They update in order for a reason — fix the one that failed first.",
   "update_queue_skipped_pinned": "📌 `{name}` was pinned while it waited in the queue — its update did not run.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` has a `docksentry.pin` label — its queued update did not run.",
   "update_queue_skipped_excluded": "🚫 `{name}` is excluded from updates — its queued update did not run.",
   "web_hidden_active_title": "Active settings you cannot see here",
   "web_hidden_active_intro": "Simple mode hides the advanced options, and {count} of them are not at their default — so they are doing something on this instance while being off the page. Switch to advanced to see and change them.",

@@ -5158,9 +5158,9 @@ GUARDED = [
     # under the drain's claim and never touches the lock itself.
     ("a drained entry does not claim for itself",
      "app/update_engine.py",
-     "        seam = self._seam()\n        checker = self._checker_for_key(key)\n",
+     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
      "        if not self.claim_update():\n            return None\n"
-     "        seam = self._seam()\n        checker = self._checker_for_key(key)\n",
+     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
      "test_update_queue.py"),
 
     ("…nor give back the drain's claim",
@@ -5785,6 +5785,20 @@ GUARDED = [
      '            seam.tell(self._t("update_queue_skipped_pinned",\n',
      'test_queue_held_back.py'),
 
+    ("…an unreadable pin list at the drain refuses the entry, said as such",
+     'app/update_engine.py',
+     '        if why == "pin_list_unreadable":\n'
+     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     '        if False:\n'
+     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     'test_queue_held_back.py'),
+
+    ("…a label hold names the label, not a pin set while it waited",
+     'app/update_engine.py',
+     '                return "pinned_label"\n',
+     '                return "pinned"\n',
+     'test_queue_held_back.py'),
+
     ("Telegram names a pinned member of a queued batch",
      'app/telegram_bot.py',
      '                lines.append(self.t("update_batch_line_pinned", name=name))\n',
@@ -5859,6 +5873,18 @@ GUARDED = [
      'app/web_ui.py',
      '            held = sum(a in ("update_not_queued_pinned",\n',
      '            held = 0 * sum(a in ("update_not_queued_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ("…and passes the count on with several queued",
+     'app/web_ui.py',
+     '                return f"/?update=queued&n={len(waiting)}{more}"\n',
+     '                return f"/?update=queued&n={len(waiting)}"\n',
+     'test_queue_held_back.py'),
+
+    ("…and with an already-queued answer",
+     'app/web_ui.py',
+     "                    f\"{int(params.get('since_seconds', 0))}{more}\")\n",
+     "                    f\"{int(params.get('since_seconds', 0))}\")\n",
      'test_queue_held_back.py'),
 
     ("…the page knows the 'held' answer",

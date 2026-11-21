@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ 有自我更新在等待，Docksentry 即将重启。未执行：{names}。重启后请重新点击。",
   "update_queue_skipped_group": "⚠️ 由于上面的失败，已跳过组 `{group}` 的其余部分：{names}。它们按顺序更新是有原因的 — 先修好失败的那个。",
   "update_queue_skipped_pinned": "📌 `{name}` 在队列中等待时被固定 — 其更新未运行。",
+  "update_queue_skipped_pinned_label": "📌 `{name}` 带有 `docksentry.pin` 标签 — 其排队的更新未运行。",
   "update_queue_skipped_excluded": "🚫 `{name}` 已排除在更新之外 — 队列中的更新未运行。",
   "web_hidden_active_title": "这里看不到的生效设置",
   "web_hidden_active_intro": "简单模式隐藏了高级选项，其中有 {count} 项不是默认值 —— 也就是说它们在这个实例上确实起着作用，却不在页面上。切换到高级模式即可查看和修改。",

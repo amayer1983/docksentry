@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ Bekleyen bir kendi kendine güncelleme var, Docksentry birazdan yeniden başlayacak. ÇALIŞMADI: {names}. Sonra tekrar dokun.",
   "update_queue_skipped_group": "⚠️ Yukarıdaki hatadan sonra `{group}` grubunun kalanı atlandı: {names}. Sırayla güncellenmelerinin bir nedeni var — önce hata vereni düzelt.",
   "update_queue_skipped_pinned": "📌 `{name}` kuyrukta beklerken sabitlendi — güncellemesi çalıştırılmadı.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` üzerinde `docksentry.pin` etiketi var — kuyruktaki güncellemesi çalıştırılmadı.",
   "update_queue_skipped_excluded": "🚫 `{name}` güncellemelerden hariç tutulmuş — kuyruktaki güncellemesi çalıştırılmadı.",
   "web_hidden_active_title": "Burada göremediğiniz etkin ayarlar",
   "web_hidden_active_intro": "Basit mod gelişmiş seçenekleri gizler ve bunlardan {count} tanesi varsayılan değerinde değil — yani sayfada görünmedikleri hâlde bu örnekte iş görüyorlar. Görmek ve değiştirmek için gelişmiş moda geçin.",

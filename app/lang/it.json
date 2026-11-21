@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ C'è un autoaggiornamento in attesa, Docksentry sta per riavviarsi. NON eseguiti: {names}. Toccali di nuovo dopo.",
   "update_queue_skipped_group": "⚠️ Saltato il resto del gruppo `{group}` dopo l'errore sopra: {names}. L'ordine c'è per un motivo — sistema prima quello fallito.",
   "update_queue_skipped_pinned": "📌 `{name}` è stato bloccato mentre aspettava in coda — il suo aggiornamento non è partito.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` ha l'etichetta `docksentry.pin` — il suo aggiornamento in coda non è partito.",
   "update_queue_skipped_excluded": "🚫 `{name}` è escluso dagli aggiornamenti — il suo aggiornamento in coda non è partito.",
   "web_hidden_active_title": "Impostazioni attive che qui non vedi",
   "web_hidden_active_intro": "La modalità semplice nasconde le opzioni avanzate, e {count} di esse non sono al valore predefinito: stanno quindi facendo qualcosa su questa istanza pur restando fuori dalla pagina. Passa alla modalità avanzata per vederle e cambiarle.",

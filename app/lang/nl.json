@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ Er staat een zelfupdate klaar, Docksentry herstart zo. NIET uitgevoerd: {names}. Tik ze daarna opnieuw aan.",
   "update_queue_skipped_group": "⚠️ Rest van groep `{group}` overgeslagen na de fout hierboven: {names}. Ze werken in volgorde bij met reden — repareer eerst de mislukte.",
   "update_queue_skipped_pinned": "📌 `{name}` is vastgezet terwijl het in de wachtrij stond — de update is niet uitgevoerd.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` heeft een `docksentry.pin`-label — de update uit de wachtrij is niet uitgevoerd.",
   "update_queue_skipped_excluded": "🚫 `{name}` is uitgesloten van updates — de update uit de wachtrij is niet uitgevoerd.",
   "web_hidden_active_title": "Actieve instellingen die je hier niet ziet",
   "web_hidden_active_intro": "De eenvoudige modus verbergt de geavanceerde opties, en {count} daarvan staan niet op hun standaardwaarde — ze doen dus iets op deze installatie terwijl ze niet op de pagina staan. Schakel over naar geavanceerd om ze te zien en te wijzigen.",

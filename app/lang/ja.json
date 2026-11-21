@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ 自己更新が控えているため、Docksentry はまもなく再起動します。実行されませんでした: {names}。あとでもう一度タップしてください。",
   "update_queue_skipped_group": "⚠️ 上の失敗を受けて、グループ `{group}` の残りを飛ばしました: {names}。順番には理由があります。まず失敗したものを直してください。",
   "update_queue_skipped_pinned": "📌 `{name}` は順番待ちの間に固定されました — その更新は実行していません。",
+  "update_queue_skipped_pinned_label": "📌 `{name}` には `docksentry.pin` ラベルがあります — 順番待ちの更新は実行していません。",
   "update_queue_skipped_excluded": "🚫 `{name}` は更新対象から除外されています — 順番待ちの更新は実行していません。",
   "web_hidden_active_title": "ここには表示されていない有効な設定",
   "web_hidden_active_intro": "シンプルモードでは詳細オプションが隠れますが、そのうち {count} 件が既定値ではありません — 画面に出ていないまま、このインスタンスで効いています。詳細モードに切り替えると確認・変更できます。",

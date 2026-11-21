@@ -827,6 +827,7 @@
   "update_queue_dropped_selfupdate": "⚠️ Une auto-mise à jour est en attente, Docksentry va redémarrer. NON exécutés : {names}. Retouchez-les ensuite.",
   "update_queue_skipped_group": "⚠️ Reste du groupe `{group}` ignoré après l'échec ci-dessus : {names}. L'ordre existe pour une raison — corrigez d'abord celui qui a échoué.",
   "update_queue_skipped_pinned": "📌 `{name}` a été épinglé pendant qu'il attendait dans la file — sa mise à jour n'a pas été lancée.",
+  "update_queue_skipped_pinned_label": "📌 `{name}` porte le label `docksentry.pin` — sa mise à jour en file n'a pas été lancée.",
   "update_queue_skipped_excluded": "🚫 `{name}` est exclu des mises à jour — sa mise à jour en file n'a pas été lancée.",
   "web_hidden_active_title": "Paramètres actifs que vous ne voyez pas ici",
   "web_hidden_active_intro": "Le mode simple masque les options avancées, et {count} d'entre elles ne sont pas à leur valeur par défaut — elles agissent donc sur cette instance tout en restant hors de la page. Passez en mode avancé pour les voir et les modifier.",
