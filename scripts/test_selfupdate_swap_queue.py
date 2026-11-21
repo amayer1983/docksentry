@@ -32,6 +32,24 @@ daemon stood in for: every `docker` call answers from a script, and the
 30-second wait for the helper's stop waits on an event instead. The
 helper's launch is where each row looks: what had been said, and what
 was on the queue, the moment the helper would have started.
+
+Q16i, from the review of 2ddd2a0 (scratchpad q16hrr/probe h1–h4),
+measured on 2ddd2a0:
+
+  * The queue was named "did not run" and dropped BEFORE the helper
+    started. A helper that then failed (rc≠0) or whose launch timed out
+    left the queue gone for a swap that never happened; the timeout said
+    nothing at all, only the log had it (h1).
+  * A helper that started but never stopped this process left the swap
+    flag up and the lock held after the 30-second wait: every later tap
+    was refused "updating itself" for the life of the process (h2 a).
+  * `claim_or_queue` read the flag before it queued; an entry that was
+    past the check when the swap began went onto the queue after the
+    drop (h2 b).
+  * "was already updated" came for every entry whose pending row was
+    gone — also for one the batch it waited behind had FAILED (h3).
+  * The drain's unreadable-pin-list refusal named no container, once per
+    entry (h4); `host_unknown` named only the host.
 """
 
 import contextlib
@@ -76,6 +94,21 @@ PENDING_UNREADABLE = ("⚠️ `{}` did not run from the queue: the list of "
                       "pending updates can't be read. The next check "
                       "writes it again.")
 NAMELESS = "⚠️ No pending updates found."
+NOT_LISTED = "ℹ️ `{}` is no longer in the update list — nothing to do."
+NOT_HAPPENED = ("❌ The self-update did not happen: the helper container "
+                "did not start ({}). Docksentry keeps running the current "
+                "version, and queued updates go on.")
+NOT_STOPPED = ("❌ The self-update did not happen: the helper started, but "
+               "Docksentry was still running 30 seconds later. It keeps "
+               "running the current version, and updates can be started "
+               "again.")
+PIN_LIST_SKIP = ("📌 `{}` did not run from the queue: the pin list "
+                 "(`pinned_containers.json`) could not be read, so every "
+                 "container counts as pinned. Repair or remove the file, then "
+                 "start it again.")
+REFUSED_PIN = "📌 No update was started: the pin list"
+HOST_SKIP = ("❌ `{}` did not run from the queue: host `{}` is not managed "
+             "here. Managed hosts: {}")
 HELD_PIN = "📌 `{}`: pinned — not updated."
 HELD_EXCL = "🚫 `{}`: excluded from updates — not updated."
 HELD_PIN_LABEL = "📌 `{}`: has a `docksentry.pin` label — not updated."
@@ -148,7 +181,12 @@ class World:
                 world.gate = None
                 g[1].set()
                 g[2].wait(20)
-            return world.orig_uc(ch, name, image, *a, **kw)
+            ok, msg = world.orig_uc(ch, name, image, *a, **kw)
+            # Into the update history, as the real `update_container`
+            # writes it on every outcome: the drain decides "already
+            # updated" from it (Q16i).
+            cls._save_history(ch, name, image, ok, msg)
+            return ok, msg
         cls.update_container = uc
         with open(self.cfg.pending_file, "w") as f:
             json.dump(rows, f)
@@ -202,6 +240,24 @@ class World:
     def queue(self):
         return [k for k, _ in self.eng.queued_updates()]
 
+    def history(self, name, success, host=None, ago=0):
+        """One update-history row, as `_save_history` writes it, `ago`
+        seconds in the past."""
+        try:
+            with open(self.cfg.history_file, encoding="utf-8") as f:
+                rows = json.load(f)
+        except (OSError, ValueError):
+            rows = []
+        row = {"timestamp": time.strftime(
+                   "%Y-%m-%d %H:%M:%S", time.localtime(time.time() - ago)),
+               "container": name, "image": "x", "success": success,
+               "detail": ""}
+        if host:
+            row["host"] = host
+        rows.append(row)
+        with open(self.cfg.history_file, "w", encoding="utf-8") as f:
+            json.dump(rows, f)
+
     def pending(self):
         import pending
         return sorted(f"{u.get('name')}@{u.get('host') or 'local'}"
@@ -226,11 +282,17 @@ class SelfUpdateEnv:
     here; the helper's launch records what the world looked like at that
     moment, and the 30-second wait for the stop waits on `stopped`.
     `found`: the pull brought a new image. `launch_ok`: the helper
-    started; "raise" makes its launch time out."""
+    started; "raise" makes its launch time out, "oserror" fail to run. `stops`: the helper stops
+    this process inside the wait — as main.py's SIGTERM handler does, the
+    stand-in writes the exit marker first (on `stopped`, or after 10 s);
+    False, the wait runs out with nothing having stopped it.
+    `at_wait` is the world when the wait began."""
 
-    def __init__(self, world, found=True, launch_ok=True):
+    def __init__(self, world, found=True, launch_ok=True, stops=True):
         self.world, self.found, self.launch_ok = world, found, launch_ok
+        self.stops = stops
         self.at_launch = None
+        self.at_wait = None
         self.stopped = threading.Event()
 
     def _run(self, args, **kw):
@@ -251,6 +313,8 @@ class SelfUpdateEnv:
             if self.launch_ok == "raise":
                 import subprocess
                 raise subprocess.TimeoutExpired(a, 30)
+            if self.launch_ok == "oserror":
+                raise OSError("docker: not found")
             if not self.launch_ok:
                 return types.SimpleNamespace(returncode=1, stdout="",
                                              stderr="helper refused")
@@ -277,12 +341,20 @@ class SelfUpdateEnv:
         UC._image_config = staticmethod(lambda *a, **k: {})
         UC._cgroup_version = classmethod(lambda cls, backend=None: 2)
         UC.image_version_label = staticmethod(lambda *a, **k: "")
-        stopped = self.stopped
+        stopped, env = self.stopped, self
 
         def sleep(seconds):
             # The helper stops this process inside the 30 s wait.
             if seconds >= 30:
+                w = env.world
+                env.at_wait = {"queue": w.queue(), "said": w.said(),
+                               "swap": bool(w.eng._swap_in_flight)}
+                if not env.stops:
+                    return
                 stopped.wait(10)
+                with open(w.cfg.last_exit_file, "w") as f:
+                    json.dump({"reason": "signal", "signal": "SIGTERM",
+                               "ts": time.time(), "done": False}, f)
                 return
             real_sleep(seconds)
         time.sleep = sleep
@@ -329,23 +401,29 @@ def swap_checks():
             queued = w.queue()
             release.set()
             end = time.time() + 10
-            while env.at_launch is None and time.time() < end:
+            while env.at_wait is None and time.time() < end:
                 time.sleep(0.05)
-            at = env.at_launch or {}
+            at, aw = env.at_launch or {}, env.at_wait or {}
             drop = DROP.format("`web @nas`, `db`")
-            out.append(("swap behind a tap: before the helper starts, every "
-                        "channel is told which queued updates did not run, "
-                        "with their hosts",
+            # Q16i: named and dropped once the helper has started, not
+            # before — a helper that fails must not have cost the queue.
+            out.append(("swap behind a tap: once the helper has started, "
+                        "every channel is told which queued updates did not "
+                        "run, with their hosts",
                         queued == ["nas/web", "db"]
-                        and _has([t for t in at.get("said", [])], drop)
-                        and sum(drop in t for t in at.get("said", [])) == 2,
-                        f"queued {queued!r}, said at launch "
-                        f"{at.get('said')!r}"))
-            out.append(("…and the queue is empty when the helper starts",
-                        at.get("queue") == [],
-                        f"queue at launch {at.get('queue')!r}"))
-            out.append(("…the swap flag is up by then, so nothing can queue "
-                        "in the launch's seconds",
+                        and sum(drop in t for t in aw.get("said", [])) == 2,
+                        f"queued {queued!r}, said when the wait began "
+                        f"{aw.get('said')!r}"))
+            out.append(("…not before: at the helper's launch the queue is "
+                        "still there and nothing has been said of it",
+                        at.get("queue") == ["nas/web", "db"]
+                        and not _has(at.get("said", []), drop),
+                        f"at launch {at!r}"))
+            out.append(("…and the queue is empty once it is named",
+                        aw.get("queue") == [],
+                        f"queue when the wait began {aw.get('queue')!r}"))
+            out.append(("…the swap flag is up already at the launch, so "
+                        "nothing can queue in the launch's seconds",
                         at.get("swap") is True, f"at launch {at!r}"))
             out.append(("…nothing of it ran, and both stay pending",
                         w.updated == ["local:web"]
@@ -379,8 +457,20 @@ def swap_checks():
                         f"said {all_tg!r}, toast {all_toast!r}"))
             out.append(("…and the queue stays empty through all of it",
                         w.queue() == [], f"queue {w.queue()!r}"))
+            n2 = len(w.events)
             env.stopped.set()
             w.settle(10)
+            # The helper stopped this process (the exit marker is there):
+            # nothing is said about a swap that is happening, and the
+            # lock stays with the process that is going away.
+            out.append(("a helper that stops the process: the flag stays "
+                        "up, the lock held, no 'did not happen'",
+                        w.eng._swap_in_flight is True
+                        and w.eng.update_claimed
+                        and not _has(w.said(since=n2), NOT_STOPPED),
+                        f"flag {w.eng._swap_in_flight!r}, held "
+                        f"{w.eng.update_claimed!r}, said "
+                        f"{w.said(since=n2)!r}"))
     finally:
         w.close()
 
@@ -398,14 +488,14 @@ def swap_checks():
                 kwargs={"after": w.tg._run_queued_selfupdate})
             th.start()
             end = time.time() + 10
-            while env.at_launch is None and time.time() < end:
+            while env.at_wait is None and time.time() < end:
                 time.sleep(0.05)
-            at = env.at_launch or {}
-            out.append(("swap behind a held scheduled pass: named before the "
-                        "helper starts, queue empty",
-                        _has(at.get("said", []), DROP.format("`web @nas`"))
-                        and at.get("queue") == [],
-                        f"at launch {at!r}"))
+            aw = env.at_wait or {}
+            out.append(("swap behind a held scheduled pass: named once the "
+                        "helper has started, queue empty",
+                        _has(aw.get("said", []), DROP.format("`web @nas`"))
+                        and aw.get("queue") == [],
+                        f"when the wait began {aw!r}"))
             env.stopped.set()
             th.join(10)
             w.eng.let_drain_go()
@@ -413,43 +503,113 @@ def swap_checks():
     finally:
         w.close()
 
-    # C: the helper does not start. The flag comes down again, the lock is
-    # given back, and the next tap runs instead of being refused.
-    w = World([P("web", "local"), P("web", "nas")])
+    # C: the helper does not start, or its launch times out (Q16i, h1).
+    # Behind a tap, with Discord and the Web UI queued: the queue is not
+    # named "did not run" and stays; the flag comes down, the lock is
+    # given back, every channel hears that the self-update did not
+    # happen, and the queued updates run.
+    for launch, err in ((False, "helper refused"),
+                        ("raise", "docker run timed out after 30 s")):
+        w = World([P("web", "local"), P("web", "nas"),
+                   P("db", "local", "postgres:16")])
+        try:
+            with SelfUpdateEnv(w, launch_ok=launch) as env:
+                entered, release = w.block_on("local:web")
+                w.tg_tap("update_one:web")
+                entered.wait(10)
+                w.discord("update", ("container", "web"), ("host", "nas"))
+                w.web_post("/api/update", ("name", "db"))
+                selfupdate.start(w.tg.selfupdate_ctx)
+                n0 = len(w.events)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    release.set()
+                    end = time.time() + 10
+                    while env.at_launch is None and time.time() < end:
+                        time.sleep(0.05)
+                    time.sleep(0.5)
+                    w.settle(10)
+                said = w.said(since=n0)
+                tg, plug = w.said("tg", n0), w.said("plug", n0)
+                flag, held = w.eng._swap_in_flight, w.eng.update_claimed
+                with open(w.cfg.pending_file, "w") as f:
+                    json.dump([P("web", "local")], f)
+                n1, u1 = len(w.events), len(w.updated)
+                w.tg_tap_join("update_one:web")
+                w.settle(10)
+                tap, again = w.said("tg", n1), w.updated[u1:]
+            what = ("does not start" if launch is False
+                    else "times out at its launch")
+            nh = NOT_HAPPENED.format(err)
+            out.append((f"a helper that {what}: every channel hears the "
+                        f"self-update did not happen",
+                        _has(tg, nh) and _has(plug, nh),
+                        f"telegram {tg!r}, plugins {plug!r}"))
+            out.append((f"…the queue is not called 'did not run', and it "
+                        f"runs: both queued updates are done",
+                        not _has(said, "queued updates did not run")
+                        and w.updated[:3] == ["local:web", "nas:web",
+                                              "local:db"],
+                        f"said {said!r}, updated {w.updated!r}"))
+            out.append((f"…flag down, lock free, the next tap runs",
+                        flag is False and held is False
+                        and again == ["local:web"]
+                        and not _has(tap, REFUSED_SU),
+                        f"flag {flag!r}, held {held!r}, "
+                        f"updated {w.updated!r}, said {tap!r}"))
+        finally:
+            w.close()
+
+    # C2: started directly on a free lock, a launch that times out or
+    # cannot run does not raise out of `start` any more: it is reported.
+    for launch, err in (("raise", "docker run timed out after 30 s"),
+                        ("oserror", "docker: not found")):
+        w = World([P("web", "local")])
+        try:
+            with SelfUpdateEnv(w, launch_ok=launch):
+                raised = None
+                with contextlib.redirect_stdout(io.StringIO()):
+                    try:
+                        selfupdate.start(w.tg.selfupdate_ctx)
+                    except Exception as e:              # noqa: BLE001
+                        raised = type(e).__name__
+                flag, held = w.eng._swap_in_flight, w.eng.update_claimed
+                said = w.said()
+            what = "times out" if launch == "raise" else "cannot run"
+            out.append((f"a helper launch that {what} on a free lock: "
+                        f"nothing raises, it is said, flag down, lock free",
+                        raised is None and flag is False and held is False
+                        and _has(said, NOT_HAPPENED.format(err)),
+                        f"raised {raised!r}, flag {flag!r}, held {held!r}, "
+                        f"said {said!r}"))
+        finally:
+            w.close()
+
+    # C3: the helper starts, and 30 s later this process is still running
+    # (Q16i, h2 a): flag down, lock free, said, and updates run again.
+    w = World([P("web", "local")])
     try:
-        with SelfUpdateEnv(w, launch_ok=False):
+        with SelfUpdateEnv(w, stops=False):
             with contextlib.redirect_stdout(io.StringIO()):
                 selfupdate.start(w.tg.selfupdate_ctx)
+            tg, plug = w.said("tg"), w.said("plug")
             flag, held = w.eng._swap_in_flight, w.eng.update_claimed
             n0 = len(w.events)
             w.tg_tap_join("update_one:web")
             w.settle(10)
             tap = w.said("tg", n0)
-        out.append(("a helper that does not start: flag down, lock free, "
-                    "the next tap runs",
+            r = w.web_post("/api/update", ("name", "web"))
+        out.append(("a helper that started but never stopped the process: "
+                    "every channel hears it did not happen",
+                    _has(tg, NOT_STOPPED) and _has(plug, NOT_STOPPED),
+                    f"telegram {tg!r}, plugins {plug!r}"))
+        out.append(("…flag down, lock free, the next tap runs, the Web UI "
+                    "is not sent to 'restarting'",
                     flag is False and held is False
-                    and w.updated == ["local:web"]
-                    and not _has(tap, REFUSED_SU),
+                    and w.updated[:1] == ["local:web"]
+                    and not _has(tap, REFUSED_SU)
+                    and r != "/?update=restarting",
                     f"flag {flag!r}, held {held!r}, updated {w.updated!r}, "
-                    f"said {tap!r}"))
-    finally:
-        w.close()
-
-    # C2: the helper's launch times out. The same: flag down, lock free.
-    w = World([P("web", "local")])
-    try:
-        with SelfUpdateEnv(w, launch_ok="raise"):
-            raised = None
-            with contextlib.redirect_stdout(io.StringIO()):
-                try:
-                    selfupdate.start(w.tg.selfupdate_ctx)
-                except Exception as e:                  # noqa: BLE001
-                    raised = type(e).__name__
-            flag, held = w.eng._swap_in_flight, w.eng.update_claimed
-        out.append(("a helper launch that times out: flag down, lock free",
-                    raised == "TimeoutExpired" and flag is False
-                    and held is False,
-                    f"raised {raised!r}, flag {flag!r}, held {held!r}"))
+                    f"said {tap!r}, web {r!r}"))
     finally:
         w.close()
 
@@ -480,6 +640,63 @@ def swap_checks():
                     f"outcomes {outcomes2!r}, one {one2!r}, queue {q2!r}"))
     finally:
         w.close()
+
+    # E: the flag goes up while a request is past its first look at it
+    # (Q16i, h2 b): stopped at the pin question, the swap begins, then it
+    # goes on. The queue itself refuses, under its own lock.
+    for swapping in (True, False):
+        for many in (False, True):
+            w = World([P("web", "local"), P("db", "local", "postgres:16")])
+            try:
+                eng = w.eng
+                eng.claim_update()
+                gate, go = threading.Event(), threading.Event()
+                orig = eng.held_back
+
+                def slow(key, *a, _o=orig, _g=gate, _go=go, **k):
+                    if key == "db":
+                        _g.set()
+                        _go.wait(5)
+                    return _o(key, *a, **k)
+                eng.held_back = slow
+                res = {}
+                call = ((lambda: eng.claim_or_queue_many(["web", "db"]))
+                        if many else (lambda: eng.claim_or_queue("db")))
+                th = threading.Thread(target=lambda: res.setdefault(
+                    "r", call()))
+                th.start()
+                gate.wait(5)
+                eng._swap_in_flight = swapping
+                go.set()
+                th.join(5)
+                q = w.queue()
+                eng._swap_in_flight = False
+                eng.drop_queued_updates()
+                eng._update_lock.release()
+            finally:
+                w.close()
+            r = res.get("r")
+            if many:
+                got = [a for _k, a, _p in (r[1] if r else [])]
+                want = (["update_refused_selfupdate"] * 2 if swapping
+                        else ["update_queued"] * 2)
+            else:
+                got = list(r[:2]) if r else None
+                want = ([False, "update_refused_selfupdate"] if swapping
+                        else [False, "update_queued"])
+            what = "several" if many else "one"
+            if swapping:
+                out.append((f"engine: the swap begins while a request for "
+                            f"{what} is past its first look: refused, "
+                            f"nothing queued",
+                            got == want and q == [],
+                            f"answer {r!r}, queue {q!r}"))
+            else:
+                out.append((f"engine: …the same request for {what} without "
+                            f"a swap is queued",
+                            got == want and sorted(q) == (
+                                ["db", "web"] if many else ["db"]),
+                            f"answer {r!r}, queue {q!r}"))
     return out
 
 
@@ -533,6 +750,8 @@ def already_done_checks():
     out = []
     # "Update all" runs web, db and nas/web; db and nas/web were queued
     # behind it from the Web UI and come off the queue with nothing left.
+    # The history has a success for each since they were queued, so
+    # "already updated" is a fact here (Q16i).
     w = World([P("web", "local"), P("db", "local", "postgres:16"),
                P("web", "nas")])
     try:
@@ -557,6 +776,92 @@ def already_done_checks():
                     not _has(tg + plug, NAMELESS), f"said {tg + plug!r}"))
     finally:
         w.close()
+
+    # Q16i (h3): the batch's update of db FAILED; "Update all" empties the
+    # pending list all the same. The queued db is not "already updated".
+    w = World([P("web", "local"), P("db", "local", "postgres:16")])
+    try:
+        orig = w.orig_uc
+
+        def uc(ch, name, image, *a, **kw):
+            if name == "db":
+                return False, "pull failed (stand-in)"
+            return orig(ch, name, image, *a, **kw)
+        w.orig_uc = uc
+        entered, release = w.block_on("local:web")
+        w.tg_tap("update_all")
+        entered.wait(10)
+        r = w.web_post("/api/update", ("name", "db"))
+        n0 = len(w.events)
+        release.set()
+        w.settle()
+        tg, plug = w.said("tg", n0), w.said("plug", n0)
+        out.append(("an entry whose update the batch FAILED is not called "
+                    "already updated: named as no longer listed, on every "
+                    "channel",
+                    r == "/?update=queued&pos=1"
+                    and not _has(tg + plug, ALREADY.format("db"))
+                    and _has(tg, NOT_LISTED.format("db"))
+                    and _has(plug, NOT_LISTED.format("db")),
+                    f"web {r!r}, telegram {tg!r}, plugins {plug!r}"))
+    finally:
+        w.close()
+
+    # The evidence has to be this key, since it was queued. Each row: the
+    # pending entry is gone (no file, or a file without it) and the
+    # history says something that is NOT that.
+    def gone(w, keys, setup, drop_file=True):
+        w.eng.claim_update()
+        w.eng.enqueue_updates(keys)
+        setup(w)
+        if drop_file:
+            os.unlink(w.cfg.pending_file)
+        else:
+            with open(w.cfg.pending_file, "w") as f:
+                json.dump([P("web", "local")], f)
+        n0 = len(w.events)
+        w.eng.release_update()
+        w.settle()
+        return w.said("plug", n0)
+
+    for what, keys, label, setup, drop_file in (
+            ("no history at all, a pending file without it",
+             ["db"], "db", lambda w: None, False),
+            ("a success for it from before it was queued",
+             ["db"], "db", lambda w: w.history("db", True, ago=3600), True),
+            ("a success for the same name on another host",
+             ["nas/web"], "web @nas", lambda w: w.history("web", True),
+             True),
+            ("only a failure for it since it was queued",
+             ["db"], "db", lambda w: w.history("db", False), True)):
+        w = World([P("web", "local"), P("db", "local", "postgres:16"),
+                   P("web", "nas")])
+        try:
+            said = gone(w, keys, setup, drop_file)
+        finally:
+            w.close()
+        out.append((f"gone from the pending list, {what}: named as no "
+                    f"longer listed, not as already updated",
+                    _has(said, NOT_LISTED.format(label))
+                    and not _has(said, ALREADY.format(label))
+                    and w.updated == [],
+                    f"said {said!r}, updated {w.updated!r}"))
+    # The other direction: a success for exactly this key since then.
+    for keys, label, setup in (
+            (["db"], "db", lambda w: w.history("db", True)),
+            (["nas/web"], "web @nas",
+             lambda w: w.history("web", True, host="nas"))):
+        w = World([P("web", "local"), P("db", "local", "postgres:16"),
+                   P("web", "nas")])
+        try:
+            said = gone(w, keys, setup)
+        finally:
+            w.close()
+        out.append((f"gone, and the history has a success for `{label}` "
+                    f"since it was queued: already updated",
+                    _has(said, ALREADY.format(label))
+                    and not _has(said, NOT_LISTED.format(label)),
+                    f"said {said!r}"))
     # The pending file unreadable while the entry waited: named, and not
     # called "already updated".
     w = World([P("web", "local"), P("db", "local", "postgres:16")])
@@ -609,6 +914,57 @@ def drain_words_checks():
                     _has(said, "`web @nas`, `web`"), f"said {said!r}"))
     finally:
         w.close()
+
+    # Q16i (h4): the pin list unreadable when the drain gets to two
+    # entries: each is named, not two nameless refusals.
+    w = World([P("web", "local"), P("web", "nas"),
+               P("db", "local", "postgres:16")])
+    try:
+        w.eng.claim_update()
+        w.eng.enqueue_updates(["nas/web", "db"])
+        with open(os.path.join(w.cfg.data_dir, "pinned_containers.json"),
+                  "w") as f:
+            f.write("{not json")
+        n0 = len(w.events)
+        w.eng.release_update()
+        w.settle()
+        tg, plug = w.said("tg", n0), w.said("plug", n0)
+        out.append(("the drain over an unreadable pin list names each "
+                    "entry, on every channel",
+                    all(_has(x, PIN_LIST_SKIP.format(n))
+                        for x in (tg, plug) for n in ("web @nas", "db"))
+                    and not _has(tg + plug, REFUSED_PIN)
+                    and w.updated == [],
+                    f"telegram {tg!r}, plugins {plug!r}, updated "
+                    f"{w.updated!r}"))
+        # The same where `run_keys` finds it (unreadable after the drain's
+        # own question): named too.
+        said = w.eng._drain_skipped_text("nas/web", "pin_list_unreadable")
+        out.append(("…and where the update's own pin check finds it",
+                    said == PIN_LIST_SKIP.format("web @nas"),
+                    f"said {said!r}"))
+    finally:
+        w.close()
+
+    # A queued entry whose host is no longer managed: the container is
+    # named, not only the host.
+    w = World([P("web", "local"), P("web", "nas"), P("web", "ghost")])
+    try:
+        w.eng.claim_update()
+        w.eng.enqueue_updates(["ghost/web"])
+        n0 = len(w.events)
+        w.eng.release_update()
+        w.settle()
+        said = w.said("plug", n0)
+        line = next((x for x in said if "ghost" in x), "")
+        out.append(("a queued entry whose host is gone is named with its "
+                    "container",
+                    line.startswith(HOST_SKIP.format("web @ghost", "ghost",
+                                                     ""))
+                    and "`nas`" in line and w.updated == [],
+                    f"said {said!r}, updated {w.updated!r}"))
+    finally:
+        w.close()
     from i18n import get_translator
     t = get_translator("en")
     words = {k: t(k) for k in ("update_queue_dropped_selfupdate",
@@ -618,7 +974,12 @@ def drain_words_checks():
                                "update_queue_skipped_pinned_label",
                                "update_queue_skipped_excluded",
                                "update_queue_skipped_pending_unreadable",
-                               "update_refused_selfupdate")}
+                               "update_refused_selfupdate",
+                               "update_queue_skipped_not_listed",
+                               "update_queue_skipped_pin_list",
+                               "update_queue_skipped_host_unknown",
+                               "selfupdate_not_happened",
+                               "selfupdate_not_stopped")}
     tapping = [k for k, v in words.items() if "tap" in v.lower()]
     out.append(("no drain sentence tells a channel to tap",
                 not tapping, f"say 'tap': {tapping!r}"))

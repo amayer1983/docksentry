@@ -513,6 +513,24 @@ BUSY_MESSAGES = {
      "update_queue_skipped_pending_unreadable"):
         (1, "queue: the pending list unreadable when its turn came, named "
             "instead of the nameless 'no pending updates' (Q16h)"),
+    # Q16i: the drain's lines name the entry, and "already updated" needs
+    # a success in the history since it was queued.
+    ("update_engine.py", "UpdateEngine._drain_one",
+     "update_queue_skipped_pin_list"):
+        (1, "queue: the pin list unreadable when its turn came, named "
+            "(was the nameless refusal, once per entry)"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_pin_list"):
+        (1, "queue: the pin list unreadable at the update's own check, "
+            "named"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_host_unknown"):
+        (1, "queue: its host is no longer managed, named with the "
+            "container"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_not_listed"):
+        (1, "queue: gone from the pending list with no success in the "
+            "history since it was queued — neutral, not 'already updated'"),
     ("update_engine.py", "UpdateEngine.cleanup_guarded",
      "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle

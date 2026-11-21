@@ -503,8 +503,10 @@ _drive(row, [("lock",), ("tap", "update_one:gone/web"), ("unlock",),
 said = _said(row)
 checks["queued, host gone: only the tapped local container runs"] = (
     [b for k, b, _ in row.log if k == "ran"] == ["local:web"])
+# Since Q16i the drain's line names the container too, not only the host.
 checks["…the drain says the host is unknown"] = any(
-    s.startswith("❌ Unknown host `gone`") for s in said)
+    s.startswith("❌ `web @gone` did not run from the queue: host `gone` "
+                 "is not managed here.") for s in said)
 checks["…nobody hears a result for it"] = (
     [r[0] for r in rec.results] == ["web"]
     and not _results(said, "web @gone"))

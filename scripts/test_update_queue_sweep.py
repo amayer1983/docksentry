@@ -645,7 +645,10 @@ checks["…Telegram hears 'Updating' and one result line per container"] = (
 checks["…and the result lines are not copied to the other channels"] = (
     not any(t.startswith("⏳") or "stand-in" in t for t, _on in rec.messages))
 from i18n import get_translator as _gt  # noqa: E402
-_already = _gt("en")("update_already_done", name="db")
+# `db` was never pending and nothing updated it: since Q16i that is the
+# neutral, named sentence — "already updated" needs a success for it in
+# the update history since it was queued.
+_already = _gt("en")("update_queue_skipped_not_listed", name="db")
 checks["…what did not run is told to every channel"] = (
     _already in _texts and (_already, True) in rec.messages)
 _close(row)
