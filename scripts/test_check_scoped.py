@@ -133,6 +133,26 @@ def main():
         chk.check_all(only={"a"})
     checks["corrupt file: treated as empty"] = [u["name"] for u in load(pf)] == ["a"]
 
+    # Bytes that are not UTF-8 are just as unreadable. The Web UI's banner
+    # for an unreadable list says the next check writes it again, so both
+    # kinds of check have to get past it and do that.
+    for label, only in (("scoped", {"a"}), ("full run", None)):
+        chk, pf, calls = make_checker(["a"], outdated={"a"})
+        with open(pf, "wb") as f:
+            f.write(b"\xff\xfe[]")
+        try:
+            with quiet:
+                chk.check_all(only=only)
+            raised = None
+        except Exception as e:  # noqa: BLE001 — the check must not raise
+            raised = e
+        checks[f"non-UTF-8 file, {label}: check does not raise"] = raised is None
+        try:
+            rewritten = [u["name"] for u in load(pf)]
+        except ValueError:
+            rewritten = None
+        checks[f"non-UTF-8 file, {label}: rewritten with the update"] = rewritten == ["a"]
+
     # ── 7. debug buffer holds only this run's lines ─────────────────
     chk, pf, calls = make_checker(["a", "b"], outdated={"a"}, debug=True)
     with quiet:

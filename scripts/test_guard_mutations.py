@@ -2686,6 +2686,16 @@ GUARDED = [
      '"web_update_pending_unreadable": "更新は開始されませんでした。保留中の更新の一覧を読み込めませんでした。次回のチェックで書き直されます。"',
      '"web_update_pending_unreadable": "No update was started: the list of pending updates could not be read. The next check writes it again."',
      'test_lang_parity.py'),
+    # Review of Q14b: that banner promises the next check writes the list
+    # again. A pending file that is not UTF-8 made the check raise before
+    # it got there, so the promise was false for it.
+    ("a check gets past a pending file that is not UTF-8 and writes it again",
+     "app/update_checker.py",
+     "            # \"pending list unreadable\" banner tells the user to expect.\n"
+     "            except (OSError, ValueError):\n",
+     "            # \"pending list unreadable\" banner tells the user to expect.\n"
+     "            except (OSError, json.JSONDecodeError):\n",
+     "test_check_scoped.py"),
     # Review of Q14: the drainer runs one queued key per run, so the
     # batch's group sort never saw two of them and a busy bulk ran a
     # group's dependent before its head.
