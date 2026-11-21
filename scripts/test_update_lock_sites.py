@@ -387,6 +387,13 @@ BUSY_MESSAGES = {
     ("telegram_bot.py", "TelegramBot._handle_message",
      "update_busy_glob_unchecked"): (1, "queue: a busy glob, the rest "
                                         "was not checked"),
+    # Not said, compared: the glob note goes only under an answer where
+    # something of it waits on the queue (Q16 review 2).
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_queued"): (1, "queue: does something wait (the glob note)"),
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_already_queued"): (1, "queue: does something wait (the glob "
+                                   "note)"),
     # Discord
     ("discord_bot.py", "DiscordBot._cmd_check",
      "web_check_one_busy"): (1, "pre-gate"),

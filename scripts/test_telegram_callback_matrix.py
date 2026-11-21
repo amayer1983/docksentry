@@ -824,6 +824,26 @@ def _q16_spec():
         ("queue full", ("none", "one")):
             (3, _q16_one("web", mx), [f"q{i}" for i in range(mx - 1)]
              + ["web"]),
+        # A busy glob whose match was not queued says why and nothing
+        # more: "were queued" under "queue full" or "that is the same
+        # one" reads as if part of it had gone through (Q16 review 2).
+        ("glob, queue full", m.SETUPS):
+            (2, f"⚠️ Queue is full ({mx}). Wait for it to work through, "
+                "then tap again.", [f"q{i}" for i in range(mx)]),
+        ("glob, web being updated", m.SETUPS):
+            (2, "🕒 `web` is being updated right now — that is the same "
+                "one, not a second job.", []),
+        # Something waits — queued now or earlier: then the note is true
+        # and stays.
+        ("glob, web already queued", m.SETUPS):
+            (2, "🕒 `web` has been in the queue for 0s — it runs when its "
+                "turn comes.\n" + _Q16_GLOB_NOTE, ["web"]),
+        ("glob @all, web being updated", ("multi",)):
+            (2, "\n".join([_q16_head_behind("web"),
+                           "• `web` — that one is being updated right now",
+                           _q16_line("web @nas", 1),
+                           _Q16_GLOB_NOTE.replace("web*", "web* @all")]),
+             ["nas/web"]),
     }
 
 
@@ -834,6 +854,19 @@ def _q16_steps(name):
     if name == "nothing pending":
         return [("drop_pending",), ("lock",), ("tap", "update_all"),
                 ("unlock",)]
+    if name == "glob, queue full":
+        from update_engine import UpdateEngine
+        return [("lock",), ("fill", UpdateEngine.UPDATE_QUEUE_MAX),
+                ("type", "/update web*"), ("unlock",)]
+    if name == "glob, web being updated":
+        return [("lock",), ("mark_updating", "web"),
+                ("type", "/update web*"), ("unlock",)]
+    if name == "glob, web already queued":
+        return [("lock",), ("type", "/update web"),
+                ("type", "/update web*"), ("unlock",)]
+    if name == "glob @all, web being updated":
+        return [("lock",), ("mark_updating", "web"),
+                ("type", "/update web* @all"), ("unlock",)]
     if name == "queue full":
         from update_engine import UpdateEngine
         return [("notify", None), ("lock",),

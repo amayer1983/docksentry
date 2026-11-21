@@ -5643,8 +5643,22 @@ GUARDED = [
     # matches was not checked, and the answer says so.
     ("a busy /update <glob> says the other matches were not checked",
      'app/telegram_bot.py',
-     '            if outcomes and queued_note:\n',
-     '            if False:\n',
+     '            if queued_note and any(\n',
+     '            if False and any(\n',
+     'test_telegram_callback_matrix.py'),
+
+    # Q16 review 2: nothing queued (queue full, or the match is the one
+    # running) gets no "were queued" under it.
+    ("…but only when something of it waits on the queue",
+     'app/telegram_bot.py',
+     '                    a in ("update_queued", "update_already_queued")\n',
+     '                    True\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…an earlier queued match counts as waiting too",
+     'app/telegram_bot.py',
+     '                    a in ("update_queued", "update_already_queued")\n',
+     '                    a == "update_queued"\n',
      'test_telegram_callback_matrix.py'),
 
     ("…the busy /update hands that line on to run_updates",

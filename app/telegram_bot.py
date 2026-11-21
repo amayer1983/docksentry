@@ -2965,8 +2965,9 @@ class TelegramBot:
         read and the whole file is cleared on completion as before.
 
         `queued_note` is a line added under the answer when the batch is
-        queued instead of run: a busy `/update <glob>` queues only what
-        the pending list holds and says that the rest was not checked.
+        queued instead of run and at least one of it waits on the queue:
+        a busy `/update <glob>` queues only what the pending list holds
+        and says that the rest was not checked.
         """
         # Atomic claim of the shared update mutex, or the queue. If any
         # other update flow (single-container, major-confirm, the
@@ -3001,7 +3002,13 @@ class TelegramBot:
         if not claimed:
             answer = (self._queued_answer(outcomes) if outcomes
                       else self.t("no_pending_updates"))
-            if outcomes and queued_note:
+            # Only under something that waits: a batch refused as a
+            # whole (queue full) or a match that is the one running put
+            # nothing on the queue, and "were queued" under that reads as
+            # if part of it had gone through.
+            if queued_note and any(
+                    a in ("update_queued", "update_already_queued")
+                    for _k, a, _p in outcomes):
                 answer += "\n" + queued_note
             self.send_message(answer)
             return
