@@ -147,14 +147,39 @@ def _ended(code, lines):
     return how + ("" if lines else ", no output at all")
 
 
+#: Per procedure. 30 minutes, not 15: the ratchet (test_guard_mutations.py)
+#: is one procedure that runs hundreds of others, and it outgrew 15 — 876 s
+#: on its own on 21.11.2026 with 768 entries, and past 900 s inside a full
+#: run. A test sets it lower to drive the timeout.
+PROC_TIMEOUT = 1800
+
+
+def _as_text(b):
+    if b is None:
+        return ""
+    return b.decode("utf-8", "replace") if isinstance(b, bytes) else b
+
+
+def _timed_out(e):
+    """A procedure that ran past PROC_TIMEOUT: FAIL, with what it had said
+    up to then. It used to escape as a TimeoutExpired traceback and end
+    the whole run — which is how 900 s ended one on 21.11.2026."""
+    out = _as_text(e.stdout) + _as_text(e.stderr)
+    checks = [(m.group(1) in ("✅", "PASS"), m.group(2))
+              for m in (CHECK_RE.match(l) for l in out.split("\n")) if m]
+    lines = [l.strip() for l in out.split("\n") if l.strip()]
+    tail = "\n".join(lines[-12:]
+                     + [f"timed out after {PROC_TIMEOUT} s and was killed"])
+    return "fail", checks, False, False, tail
+
+
 def run_one(path):
     """Run a procedure and return (status, checks, skipped)."""
-    # 30 minutes, not 15. The ratchet (test_guard_mutations.py) is one
-    # procedure that runs hundreds of others, and it outgrew 15: 876 s on
-    # its own on 21.11.2026 with 768 entries, and past 900 s inside a
-    # full run, which ended this file with a TimeoutExpired traceback.
-    r = subprocess.run([sys.executable, path], capture_output=True, text=True,
-                       cwd=ROOT, timeout=1800)
+    try:
+        r = subprocess.run([sys.executable, path], capture_output=True,
+                           text=True, cwd=ROOT, timeout=PROC_TIMEOUT)
+    except subprocess.TimeoutExpired as e:
+        return _timed_out(e)
     out = r.stdout + r.stderr
     checks = [(m.group(1) in ("✅", "PASS"), m.group(2))
               for m in (CHECK_RE.match(l) for l in out.split("\n")) if m]

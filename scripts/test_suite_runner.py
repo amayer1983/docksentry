@@ -42,7 +42,13 @@ _PROCS = {
     "test_silent_exit.py": "import sys\nsys.exit(3)\n",
     "test_said_a_bit.py": "print('loading the fixture')\nraise SystemExit(1)\n",
     "test_green.py": "print('  ✅ it works')\nprint('PASS')\n",
+    # Past the per-procedure timeout, after saying something first.
+    "test_slow.py": ("import time\nprint('  ✅ got this far', flush=True)\n"
+                     "time.sleep(60)\nprint('PASS')\n"),
 }
+# Low enough to drive the timeout here, high enough for a bare start-up.
+_saved_timeout = getattr(verify, "PROC_TIMEOUT", None)
+verify.PROC_TIMEOUT = 8
 try:
     for _n, _src in _PROCS.items():
         with open(os.path.join(_d, _n), "w", encoding="utf-8") as _f:
@@ -75,6 +81,14 @@ try:
     checks["a green procedure gets no note at all"] = (
         st == "pass" and tail == "" and len(ck) == 1)
 
+    st, ck, _sk, _dis, tail = _tail("test_slow.py")
+    checks["one that runs past the timeout is FAIL, not a traceback"] = (
+        st == "fail" and "timed out after 8 s" in tail)
+    checks["…and keeps what it said before it was killed"] = (
+        "got this far" in tail and len(ck) == 1)
+    if "timed out" not in tail:
+        print(f"      → tail was {tail!r}")
+
     # And through `collect`, which is what writes the log: the note has
     # to reach the printed lines, not stop inside the return value.
     _saved = verify.SCRIPTS
@@ -95,9 +109,15 @@ try:
         "SIGKILL" in _after("killed"))
     checks["…and the exit code under a silent one"] = (
         "exit code 3" in _after("silent_exit"))
+    _slow = next((i for i, l in enumerate(_log)
+                  if " slow " in l and "FAIL" in l), None)
+    checks["…and the timeout under one that ran too long"] = (
+        _slow is not None and any("| timed out after 8 s" in l
+                                  for l in _log[_slow + 1:_slow + 4]))
     if "SIGKILL" not in _after("killed"):
         print(f"      → the log was: {_log}")
 finally:
+    verify.PROC_TIMEOUT = _saved_timeout
     shutil.rmtree(_d, ignore_errors=True)
 
 # ── the sentence at the top of VERIFICATION.md ───────────────────────
