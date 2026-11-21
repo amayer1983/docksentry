@@ -538,12 +538,18 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
 
         A key on a host this instance does not manage is dropped like
         the worker drops it (never retried locally). `host_unknown` when
-        every named key was such a host, `gone` otherwise — an unreadable
-        pending file holds nothing, so it is `gone` too.
+        every named key was such a host; `pending_unreadable` when the
+        file is there but holds no usable list (the worker sees nothing
+        in it either, and "updated already" would be the wrong lead);
+        `gone` otherwise. No file at all is `gone`: an update that took
+        the last entry can delete it.
         """
         import pending as _pending
         from container_store import split_host_key
-        entries = _pending.read(config.pending_file)
+        path = config.pending_file
+        loaded = _pending.load(path)
+        unreadable = loaded is None and bool(path) and os.path.exists(path)
+        entries = loaded or []
         kept, named, unknown = [], 0, 0
         for key in keys:
             host_name, name = split_host_key(key)
@@ -564,6 +570,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             return kept, None
         if named and unknown == named:
             return [], "host_unknown"
+        if named and unreadable:
+            return [], "pending_unreadable"
         return [], "gone"
 
     class WebHandler(BaseHTTPRequestHandler):
@@ -4465,7 +4473,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             update_banner = ""
             if _upd in ("started", "gone", "pinlist", "queued",
                         "already_queued", "queue_full", "same_running",
-                        "host_unknown"):
+                        "host_unknown", "pending_unreadable"):
                 _calm = _upd in ("started", "queued", "already_queued",
                                  "same_running")
                 _kind = "card" if _calm else "card-warn"

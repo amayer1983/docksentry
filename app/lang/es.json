@@ -582,6 +582,8 @@
   "web_update_gone": "Ese contenedor ya no está en la lista de pendientes — puede que ya se haya actualizado o que la lista se haya recargado mientras tanto.",
   "web_update_host_unknown_title": "Host no gestionado",
   "web_update_host_unknown": "No se inició ninguna actualización: Docksentry no gestiona (o ya no gestiona) ese host. Recarga la página para ver la lista actual.",
+  "web_update_pending_unreadable_title": "Lista ilegible",
+  "web_update_pending_unreadable": "No se inició ninguna actualización: no se pudo leer la lista de actualizaciones pendientes. La próxima comprobación la vuelve a escribir.",
   "update_refused_pin_list": "📌 No se inició ninguna actualización: no se pudo leer la lista de fijados (`pinned_containers.json`), así que todos los contenedores cuentan como fijados. Repara o elimina el archivo y vuelve a intentarlo.",
   "check_pin_list_unreadable": "📌 No se comprobó nada: no se pudo leer la lista de fijados (`pinned_containers.json`), así que todos los contenedores cuentan como fijados. Repara o elimina el archivo y vuelve a comprobar.",
   "web_update_pinlist_title": "Lista de fijados ilegible",

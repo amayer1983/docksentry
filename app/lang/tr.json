@@ -582,6 +582,8 @@
   "web_update_gone": "Bu konteyner artık bekleyenler listesinde değil — ya çoktan güncellendi ya da liste bu arada yenilendi.",
   "web_update_host_unknown_title": "Ana makine yönetilmiyor",
   "web_update_host_unknown": "Güncelleme başlatılmadı: Docksentry bu ana makineyi yönetmiyor (artık). Güncel liste için sayfayı yenileyin.",
+  "web_update_pending_unreadable_title": "Liste okunamadı",
+  "web_update_pending_unreadable": "Güncelleme başlatılmadı: bekleyen güncellemeler listesi okunamadı. Sonraki kontrol onu yeniden yazar.",
   "update_refused_pin_list": "📌 Güncelleme başlatılmadı: sabitlenenler listesi (`pinned_containers.json`) okunamadı, bu yüzden her konteyner sabitlenmiş sayılıyor. Dosyayı onarın veya kaldırın, sonra tekrar deneyin.",
   "check_pin_list_unreadable": "📌 Hiçbir şey kontrol edilmedi: sabitlenenler listesi (`pinned_containers.json`) okunamadı, bu yüzden her konteyner sabitlenmiş sayılıyor. Dosyayı onarın veya kaldırın, sonra tekrar kontrol edin.",
   "web_update_pinlist_title": "Sabitlenenler listesi okunamıyor",

@@ -2640,13 +2640,51 @@ GUARDED = [
      'test_web_action_matrix.py'),
     ('…and the status page shows the host-not-managed answer',
      'app/web_ui.py',
-     '                        "host_unknown"):\n',
-     '                        ):\n',
+     '                        "host_unknown", "pending_unreadable"):\n',
+     '                        "pending_unreadable"):\n',
      'test_web_update_feedback.py'),
     ('…and has its words in every language',
      'app/lang/ja.json',
      '"web_update_host_unknown": "更新は開始されませんでした。Docksentry はこのホストを（もう）管理していません。ページを再読み込みすると現在の一覧が表示されます。"',
      '"web_update_host_unknown": "No update was started: Docksentry does not manage that host (any more). Reload the page for the current list."',
+     'test_lang_parity.py'),
+    # Review of Q14b: an unreadable pending file was answered `gone`,
+    # whose words send the user looking for an update that never ran.
+    ('a Web update on an unreadable pending file says it is the file',
+     'app/web_ui.py',
+     '        if named and unreadable:\n',
+     '        if False:\n',
+     'test_web_action_matrix.py'),
+    ('…while no pending file at all is still nothing to update',
+     'app/web_ui.py',
+     '        unreadable = loaded is None and bool(path) and os.path.exists(path)\n',
+     '        unreadable = loaded is None and bool(path)\n',
+     'test_web_update_feedback.py'),
+    ('…and a readable file is not called unreadable',
+     'app/web_ui.py',
+     '        unreadable = loaded is None and bool(path) and os.path.exists(path)\n',
+     '        unreadable = bool(path) and os.path.exists(path)\n',
+     'test_web_update_feedback.py'),
+    ('…a host nobody manages is still told first',
+     'app/web_ui.py',
+     '        if named and unknown == named:\n'
+     '            return [], "host_unknown"\n'
+     '        if named and unreadable:\n'
+     '            return [], "pending_unreadable"\n',
+     '        if named and unreadable:\n'
+     '            return [], "pending_unreadable"\n'
+     '        if named and unknown == named:\n'
+     '            return [], "host_unknown"\n',
+     'test_web_update_feedback.py'),
+    ('…the status page shows the unreadable answer',
+     'app/web_ui.py',
+     '                        "host_unknown", "pending_unreadable"):\n',
+     '                        "host_unknown"):\n',
+     'test_web_update_feedback.py'),
+    ('…and the unreadable answer has its words in every language',
+     'app/lang/ja.json',
+     '"web_update_pending_unreadable": "更新は開始されませんでした。保留中の更新の一覧を読み込めませんでした。次回のチェックで書き直されます。"',
+     '"web_update_pending_unreadable": "No update was started: the list of pending updates could not be read. The next check writes it again."',
      'test_lang_parity.py'),
     # Review of Q14: the drainer runs one queued key per run, so the
     # batch's group sort never saw two of them and a busy bulk ran a

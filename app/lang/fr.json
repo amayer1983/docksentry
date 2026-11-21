@@ -582,6 +582,8 @@
   "web_update_gone": "Ce conteneur n'est plus dans la liste en attente — il a peut-être déjà été mis à jour, ou la liste a été rechargée entre-temps.",
   "web_update_host_unknown_title": "Hôte non géré",
   "web_update_host_unknown": "Aucune mise à jour lancée : Docksentry ne gère pas (ou plus) cet hôte. Rechargez la page pour voir la liste actuelle.",
+  "web_update_pending_unreadable_title": "Liste illisible",
+  "web_update_pending_unreadable": "Aucune mise à jour lancée : la liste des mises à jour en attente n'a pas pu être lue. La prochaine vérification la réécrit.",
   "update_refused_pin_list": "📌 Aucune mise à jour lancée : la liste des épinglés (`pinned_containers.json`) est illisible, donc chaque conteneur compte comme épinglé. Réparez ou supprimez le fichier, puis réessayez.",
   "check_pin_list_unreadable": "📌 Rien n'a été vérifié : la liste des épinglés (`pinned_containers.json`) est illisible, donc chaque conteneur compte comme épinglé. Réparez ou supprimez le fichier, puis relancez la vérification.",
   "web_update_pinlist_title": "Liste des épinglés illisible",

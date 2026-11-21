@@ -77,9 +77,16 @@ def _let_go(engine):
 _TMP = tempfile.mkdtemp(prefix="web-update-feedback-")
 
 
+#: For `_pending_file`: no file at all.
+_NO_FILE = object()
+
+
 def _pending_file(entries):
-    """A pending file holding `entries`, or (a string) those bytes."""
+    """A pending file holding `entries`, or (a string) those bytes, or —
+    for `_NO_FILE` — the path of one that does not exist."""
     path = os.path.join(_TMP, f"pending-{len(os.listdir(_TMP))}.json")
+    if entries is _NO_FILE:
+        return path + ".missing"
     with open(path, "w", encoding="utf-8") as f:
         if isinstance(entries, str):
             f.write(entries)
@@ -239,10 +246,30 @@ _to, _started = _post_update(name="db", engine=_eng, pending=[
     {"name": "db", "image": "postgres:16", "host": "nas"}])
 checks["another host's entry of that name does not count"] = (
     _to == "/?update=gone" and _started == [] and not _eng.update_claimed)
+# An unreadable file is not "updated already, or refreshed": it is the
+# file, and the page says that (review of Q14b). No file at all is what
+# an update that took the last entry can leave behind, so that stays
+# `gone`.
 _eng = _engine()
 _to, _started = _post_update(name="db", engine=_eng, pending='[{"name"')
-checks["an unreadable pending file has nothing to update"] = (
+checks["an unreadable pending file is told as unreadable"] = (
+    _to == "/?update=pending_unreadable" and _started == []
+    and not _eng.update_claimed)
+_eng = _engine()
+_eng.claim_update()
+_to, _started = _post_update(name="db", engine=_eng, pending='[{"name"')
+checks["…and queues nothing behind a held lock"] = (
+    _to == "/?update=pending_unreadable" and _queued(_eng) == []
+    and _started == [])
+_let_go(_eng)
+_eng = _engine()
+_to, _started = _post_update(name="db", engine=_eng, pending=_NO_FILE)
+checks["no pending file at all is nothing to update"] = (
     _to == "/?update=gone" and _started == [] and not _eng.update_claimed)
+_eng = _engine()
+_to, _started = _post_update(name="db", engine=_eng, pending='{"name": 1}')
+checks["a file that holds no list is unreadable too"] = (
+    _to == "/?update=pending_unreadable" and _started == [])
 # A host this instance does not manage: no registry here, so anything
 # but the local host is one.
 _eng = _engine()
@@ -251,6 +278,12 @@ _to, _started = _post_update(name="zzz/db", engine=_eng, pending=[
 checks["a host nobody manages is told so"] = (
     _to == "/?update=host_unknown" and _started == []
     and not _eng.update_claimed and _queued(_eng) == [])
+# The host is the answer whatever the file holds: it would be dropped
+# with a readable one as well.
+_eng = _engine()
+_to, _started = _post_update(name="zzz/db", engine=_eng, pending='[{"n')
+checks["…even when the pending file is unreadable"] = (
+    _to == "/?update=host_unknown" and _started == [])
 
 # ── a queued selection keeps the order its batch would have run in ────
 # The drainer runs one key per run, so the batch's group sort never sees
@@ -331,7 +364,7 @@ _lang = os.path.join(os.path.dirname(__file__), "..", "app", "lang", "en.json")
 with open(_lang, encoding="utf-8") as _f:
     _keys = _json.load(_f)
 for _what in ("started", "gone", "queued", "already_queued", "queue_full",
-              "same_running", "host_unknown"):
+              "same_running", "host_unknown", "pending_unreadable"):
     checks[f"the '{_what}' answer has words to show"] = (
         bool(_keys.get(f"web_update_{_what}"))
         and bool(_keys.get(f"web_update_{_what}_title")))
@@ -414,6 +447,10 @@ _page = _status_page("/?update=host_unknown")
 checks["…that the host is not one this instance manages"] = (
     _fmt("web_update_host_unknown") in _page
     and _fmt("web_update_host_unknown_title") in _page)
+_page = _status_page("/?update=pending_unreadable")
+checks["…that the pending list could not be read"] = (
+    _fmt("web_update_pending_unreadable") in _page
+    and _fmt("web_update_pending_unreadable_title") in _page)
 # The numbers come from the URL, so a hand-made one must not break the
 # page or put words on it that nobody sent.
 _page = _status_page("/?update=queued&pos=%3Cb%3E")

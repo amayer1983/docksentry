@@ -582,6 +582,8 @@
   "web_update_gone": "Der Container steht nicht mehr in der Liste — vielleicht ist er schon aktualisiert, oder die Liste wurde zwischenzeitlich neu geladen.",
   "web_update_host_unknown_title": "Host nicht verwaltet",
   "web_update_host_unknown": "Kein Update gestartet: Diesen Host verwaltet Docksentry nicht (mehr). Lade die Seite neu, dann siehst du die aktuelle Liste.",
+  "web_update_pending_unreadable_title": "Liste nicht lesbar",
+  "web_update_pending_unreadable": "Kein Update gestartet: Die Liste der ausstehenden Updates ließ sich nicht lesen. Der nächste Check schreibt sie neu.",
   "update_refused_pin_list": "📌 Kein Update gestartet: Die Pin-Liste (`pinned_containers.json`) ließ sich nicht lesen, deshalb gilt jeder Container als gepinnt. Reparier oder entferne die Datei und probier es dann noch mal.",
   "check_pin_list_unreadable": "📌 Nichts geprüft: Die Pin-Liste (`pinned_containers.json`) ließ sich nicht lesen, deshalb gilt jeder Container als gepinnt. Reparier oder entferne die Datei und prüf dann noch mal.",
   "web_update_pinlist_title": "Pin-Liste nicht lesbar",

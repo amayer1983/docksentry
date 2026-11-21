@@ -746,7 +746,8 @@ def _rows():
         P("/api/update", ("name", "web")), ("unlock",))
     add("update: pin list unreadable", ("corrupt_pins",),
         P("/api/update", ("name", "web")))
-    # An unreadable pending file holds nothing to update (Q14b).
+    # An unreadable pending file holds nothing to update (Q14b), and the
+    # page says it is the file, not "updated already" (review of Q14b).
     add("update: pending file unreadable", ("corrupt_pending",),
         P("/api/update", ("name", "web")))
     # Nothing pending is answered before the lock is even asked (Q14b):
@@ -787,6 +788,8 @@ def _rows():
         "/api/bulk", ("action", "update"), ("names", "db,zzz/web")))
     add("bulk: update zzz/web", P("/api/bulk", ("action", "update"),
                                   ("names", "zzz/web")))
+    add("bulk: update web,db, pending file unreadable", ("corrupt_pending",),
+        P("/api/bulk", ("action", "update"), ("names", "web,db")))
     add("bulk: update, lock held", ("lock",), P(
         "/api/bulk", ("action", "update"), ("names", "web")), ("unlock",))
     add("bulk: update web,nas/web, lock held, then released", ("lock",), P(
@@ -1153,8 +1156,9 @@ BRANCH_NOTES = {
                    "changed Discord credential calls `restart_discord`.",
     "update": ":2699 pre-gate (empty → gone, pin list → pinlist, and "
               "since Q14b `_still_pending`: no entry in the key's host's "
-              "slice → gone, a host we don't manage → host_unknown, both "
-              "before the lock is asked). Since "
+              "slice → gone, a host we don't manage → host_unknown, a "
+              "pending file that is there but unreadable → "
+              "pending_unreadable, all before the lock is asked). Since "
               "Q14 `_start_web_update` asks `claim_or_queue_many([key])` "
               "once: free → a thread on `_run_web_update_batch` holding "
               "that claim (given back in its finally), ?update=started; "
@@ -1167,7 +1171,8 @@ BRANCH_NOTES = {
     "bulk": ":3516, no pre-gate except the pin list. update: since "
             "Q14b only the keys `_still_pending` keeps (pending on a host "
             "we manage; none left → gone, or host_unknown when every key "
-            "named such a host), then "
+            "named such a host, or pending_unreadable when the file is "
+            "there but unreadable), then "
             "`_start_web_update` over those keys, one claim or all of them "
             "queued (?update=queued&n when more than one waits), in "
             "the order the batch would run them, so a group's head goes "
@@ -2133,9 +2138,10 @@ EXPECTED = {
     # ── update ──────────────────────────────────────────────────────
     # :2699 pre-gate (empty → gone, pin list → pinlist, and since Q14b
     # `_still_pending`: no entry in the key's host's slice → gone, a host we
-    # don't manage → host_unknown, both before the lock is asked). Since Q14
-    # `_start_web_update` asks `claim_or_queue_many([key])` once: free → a
-    # thread on `_run_web_update_batch` holding that claim (given back in
+    # don't manage → host_unknown, a pending file that is there but
+    # unreadable → pending_unreadable, all before the lock is asked). Since
+    # Q14 `_start_web_update` asks `claim_or_queue_many([key])` once: free →
+    # a thread on `_run_web_update_batch` holding that claim (given back in
     # its finally), ?update=started; held → the key is queued and the page
     # told queued&pos, already_queued&since, same_running or queue_full&max.
     # The worker: per host from that host's pending slice, unknown host
@@ -2491,21 +2497,21 @@ EXPECTED = {
                'backups': 1}},
     ('multi', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=gone'}],
+                'http': '303 | Location: /?update=pending_unreadable'}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     ('one', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=gone'}],
+                'http': '303 | Location: /?update=pending_unreadable'}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
                'backups': 1}},
     ('headless', 'update: pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
                {'do': 'POST /api/update name=web',
-                'http': '303 | Location: /?update=gone'}],
+                'http': '303 | Location: /?update=pending_unreadable'}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
                          '"web"}, "source": "web", "target": "web"}'],
@@ -2670,7 +2676,8 @@ EXPECTED = {
     # ── bulk ────────────────────────────────────────────────────────
     # :3516, no pre-gate except the pin list. update: since Q14b only the
     # keys `_still_pending` keeps (pending on a host we manage; none left →
-    # gone, or host_unknown when every key named such a host), then
+    # gone, or host_unknown when every key named such a host, or
+    # pending_unreadable when the file is there but unreadable), then
     # `_start_web_update` over those keys, one claim or all of them queued
     # (?update=queued&n when more than one waits), in the order the batch
     # would run them, so a group's head goes before its dependents either
@@ -3104,6 +3111,27 @@ EXPECTED = {
      'state': {'pending': ['web@local'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
                          '"update", "names": "zzz/web"}, "source": "web"}'],
+               'backups': 1}},
+    ('multi', 'bulk: update web,db, pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=pending_unreadable'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
+               'backups': 1}},
+    ('one', 'bulk: update web,db, pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=pending_unreadable'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
+               'backups': 1}},
+    ('headless', 'bulk: update web,db, pending file unreadable'): {'steps': [{'do': 'corrupt_pending'},
+               {'do': 'POST /api/bulk action=update&names=web,db',
+                'http': '303 | Location: /?update=pending_unreadable'}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
+                         '"update", "names": "web,db"}, "source": "web"}'],
                'backups': 1}},
     ('multi', 'bulk: update, lock held'): {'steps': [{'do': 'lock'},
                {'do': 'POST /api/bulk action=update&names=web',

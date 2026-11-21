@@ -582,6 +582,8 @@
   "web_update_gone": "해당 컨테이너가 더 이상 대기 목록에 없습니다. 이미 업데이트되었거나 그 사이에 목록이 새로 고쳐졌을 수 있습니다.",
   "web_update_host_unknown_title": "관리하지 않는 호스트",
   "web_update_host_unknown": "업데이트가 시작되지 않았습니다. Docksentry는 이 호스트를 (더 이상) 관리하지 않습니다. 현재 목록을 보려면 페이지를 새로 고치세요.",
+  "web_update_pending_unreadable_title": "목록을 읽을 수 없음",
+  "web_update_pending_unreadable": "업데이트가 시작되지 않았습니다. 대기 중인 업데이트 목록을 읽을 수 없습니다. 다음 확인 때 다시 기록됩니다.",
   "update_refused_pin_list": "📌 업데이트가 시작되지 않았습니다: 고정 목록(`pinned_containers.json`)을 읽을 수 없어 모든 컨테이너가 고정된 것으로 처리됩니다. 파일을 복구하거나 삭제한 뒤 다시 시도하세요.",
   "check_pin_list_unreadable": "📌 아무것도 확인하지 않았습니다: 고정 목록(`pinned_containers.json`)을 읽을 수 없어 모든 컨테이너가 고정된 것으로 처리됩니다. 파일을 복구하거나 삭제한 뒤 다시 확인하세요.",
   "web_update_pinlist_title": "고정 목록을 읽을 수 없음",
