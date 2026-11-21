@@ -1254,10 +1254,11 @@ def _q6_spec():
         ("none", "/updates"): [en("no_pending")],
         ("one", "/updates"): [en("no_pending")],
         # A single host has no host filter, so /updateall is the bare
-        # "Update all" and run_updates reads the file itself.
-        ("none", "/updateall"): ["<toast> " + en("updates_starting_cb"),
+        # "Update all" and run_updates reads the file itself. The toast
+        # waits for what run_updates decides since Q16f: nothing ran.
+        ("none", "/updateall"): ["<toast> " + en("updates_not_started_cb"),
                                  none_found],
-        ("one", "/updateall"): ["<toast> " + en("updates_starting_cb"),
+        ("one", "/updateall"): ["<toast> " + en("updates_not_started_cb"),
                                 none_found],
         # Several hosts: /updateall filters by host through the tolerant
         # reader first (Q5) and never reaches run_updates' own read.

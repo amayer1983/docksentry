@@ -1989,18 +1989,30 @@ class TelegramBot:
         """
         if len(outcomes) == 1:
             return self._claim_answer(*outcomes[0])
+        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
+            # Refused as a whole: nobody can tell what is pinned (Q16f).
+            return self.t("update_refused_pin_list")
         full = next((p for _k, a, p in outcomes
                      if a == "update_queue_full"), None)
         if full is not None:
             return self.t("update_batch_queue_full", count=len(outcomes),
                           max=full.get("max", 0))
         running = [self._key_label(k) for k in self.engine.updating]
-        lines = [self.t("update_batch_queued_behind",
-                        name="`, `".join(running)) if running
-                 else self.t("update_batch_queued")]
+        waits = any(a in ("update_queued", "update_already_queued")
+                    for _k, a, _p in outcomes)
+        # The heading says "these wait in the queue"; with nothing
+        # waiting (pinned, excluded or the one running) the lines say it
+        # on their own.
+        lines = [] if not waits else [
+            self.t("update_batch_queued_behind", name="`, `".join(running))
+            if running else self.t("update_batch_queued")]
         for key, answer, params in outcomes:
             name = self._key_label(key)
-            if answer == "update_queued":
+            if answer == "update_not_queued_pinned":
+                lines.append(self.t("update_batch_line_pinned", name=name))
+            elif answer == "update_not_queued_excluded":
+                lines.append(self.t("update_batch_line_excluded", name=name))
+            elif answer == "update_queued":
                 lines.append(self.t("update_batch_line_queued", name=name,
                                     pos=params.get("pos", 0)))
             elif answer == "update_already_queued":
@@ -2953,7 +2965,8 @@ class TelegramBot:
         selfupdate.swap(self, config, own_name, own_image)
         return True
 
-    def run_updates(self, updater, updates=None, queued_note=None):
+    def run_updates(self, updater, updates=None, queued_note=None,
+                    decided=None, keyboard=None):
         """Run a batch of container updates.
 
         When `updates` is provided (a list of update dicts from a
@@ -2968,7 +2981,23 @@ class TelegramBot:
         queued instead of run and at least one of it waits on the queue:
         a busy `/update <glob>` queues only what the pending list holds
         and says that the rest was not checked.
+
+        `decided(how)` is called once, as soon as it is clear what
+        happens, before anything is said: "started", "queued" (something
+        of it waits on the queue) or "refused" (nothing runs and nothing
+        waits). The "Update all" button answers its toast from it: the
+        toast used to say "Updates are starting..." before any of this
+        was known, also over "queued" and "queue full" (Q16 review).
+        `keyboard` is the tapped message's own, sent back under "queue
+        full": the tap took the buttons away, and "tap again" needs one.
         """
+        told = []
+
+        def decide(how):
+            if decided is not None and not told:
+                told.append(how)
+                decided(how)
+
         # Atomic claim of the shared update mutex, or the queue. If any
         # other update flow (single-container, major-confirm, the
         # scheduler's auto-update pass, the Web UI, Discord) holds it,
@@ -2987,6 +3016,7 @@ class TelegramBot:
         # is read or cleared (see `pin_list_unreadable`).
         from update_checker import pin_list_unreadable
         if pin_list_unreadable(updater):
+            decide("refused")
             self.send_message(self.t("update_refused_pin_list"))
             return
         import pending as _pending
@@ -3002,15 +3032,20 @@ class TelegramBot:
         if not claimed:
             answer = (self._queued_answer(outcomes) if outcomes
                       else self.t("no_pending_updates"))
+            waits = any(a in ("update_queued", "update_already_queued")
+                        for _k, a, _p in outcomes)
+            decide("queued" if waits else "refused")
             # Only under something that waits: a batch refused as a
             # whole (queue full) or a match that is the one running put
             # nothing on the queue, and "were queued" under that reads as
             # if part of it had gone through.
-            if queued_note and any(
-                    a in ("update_queued", "update_already_queued")
-                    for _k, a, _p in outcomes):
+            if queued_note and waits:
                 answer += "\n" + queued_note
-            self.send_message(answer)
+            if keyboard and any(a == "update_queue_full"
+                                for _k, a, _p in outcomes):
+                self.send_message(answer, reply_markup=keyboard)
+            else:
+                self.send_message(answer)
             return
         try:
             if not from_snapshot:
@@ -3020,9 +3055,11 @@ class TelegramBot:
                 updates = _pending.read(pending_file)
 
             if not updates:
+                decide("refused")
                 self.send_message(self.t("no_pending_updates"))
                 return
 
+            decide("started")
             self.send_message(self.t("update_starting", count=len(updates)))
 
             # All per-container work (enrich, group-order sort, netns snapshot,
@@ -3490,9 +3527,21 @@ class TelegramBot:
                     return
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
-            self.answer_callback(callback["id"], self.t("updates_starting_cb"))
+            # The toast once `run_updates` knows what happens, not
+            # before (Q16 review): "starting" over "queued" or "queue
+            # full" was the first thing the tap said, and wrong.
+            toasts = {"started": "updates_starting_cb",
+                      "queued": "updates_queued_cb"}
+
+            def decided(how, cb_id=callback["id"]):
+                self.answer_callback(cb_id, self.t(
+                    toasts.get(how, "updates_not_started_cb")))
+            keyboard = (callback.get("message") or {}).get("reply_markup")
             t = threading.Thread(target=self.run_updates,
-                                 args=(checker,), kwargs={"updates": snapshot})
+                                 args=(checker,),
+                                 kwargs={"updates": snapshot,
+                                         "decided": decided,
+                                         "keyboard": keyboard})
             t.start()
         elif data == "update_skip":
             if msg_id and chat_id:

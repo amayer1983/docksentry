@@ -488,6 +488,10 @@ class UpdateEngine:
           update_queue_full      {max}: it did not fit
           update_already_queued  {since_seconds}: it was on the queue
           update_queued          {pos}: it is on the queue now
+          update_not_queued_pinned    {}: pinned, kept off the queue
+          update_not_queued_excluded  {}: excluded from updates, the same
+          update_refused_pin_list     {}: the pin list cannot be read
+                                 (`held_back`, Q16f)
 
         A key and its parameters, never a sentence: every connection
         adds the container's name and says it in its own words, and
@@ -501,8 +505,14 @@ class UpdateEngine:
         # emptied the pending list, and then reported "container not in
         # update list" directly under a green OK (seen on my local
         # instance, 08.10.2026).
-        pos = (None if container_key in self.updating
-               else self.enqueue_update(container_key))
+        if container_key in self.updating:
+            return (False,) + self._queue_answer(container_key, None)
+        # A pinned or excluded container does not go on the queue (Q16f):
+        # the drainer would have updated it later, past the pin.
+        why = self.held_back(container_key)
+        if why is not None:
+            return (False,) + self._held_answer(why)
+        pos = self.enqueue_update(container_key)
         return (False,) + self._queue_answer(container_key, pos)
 
     def claim_or_queue_many(self, keys):
@@ -517,12 +527,28 @@ class UpdateEngine:
         do not fit, the request is answered as a whole: every key of it
         gets `update_queue_full`, the running one and one already
         waiting too (that one keeps its place on the queue). With
-        nothing new to place, each key is answered for itself.
+        nothing new to place, each key is answered for itself. A pinned
+        or excluded key is not placed and gets its own answer (Q16f); an
+        unreadable pin list refuses the whole request, every key with
+        `update_refused_pin_list`.
         """
         if self.claim_update():
             return True, []
         keys = list(dict.fromkeys(keys))
         running = self.updating
+        # Pinned and excluded keys stay off the queue and are answered
+        # for themselves (Q16f); the rest goes on as before. One pin read
+        # per host for the whole request.
+        pins, held = {}, {}
+        for k in keys:
+            why = None if k in running else self.held_back(k, pins=pins)
+            if why is not None:
+                held[k] = why
+        if "pin_list_unreadable" in held.values():
+            # Nobody can tell what is pinned: the request as a whole is
+            # refused, as every connection refuses it before claiming.
+            return False, [(k,) + self._held_answer("pin_list_unreadable")
+                           for k in keys]
         # Onto the queue in the order the batch would have run them: the
         # drainer runs one key per run, so the batch's group sort never
         # sees two of them. Without this, the same Web bulk ran a group's
@@ -531,15 +557,84 @@ class UpdateEngine:
         # web → db on a free lock, db → web queued). The answers stay in
         # the order asked.
         positions = self.enqueue_updates(self._in_group_order(
-            [k for k in keys if k not in running]))
+            [k for k in keys if k not in running and k not in held]))
         # My decision for batches (18.11.2026): a batch that does not
         # fit is answered as a whole with "queue full". Telling one key
         # of it "already queued" next to "queue full" for the rest reads
         # as if part of the request had gone through.
         if -1 in positions.values():
             return False, [(k,) + self._queue_answer(k, -1) for k in keys]
-        return False, [(k,) + self._queue_answer(
-            k, None if k in running else positions[k]) for k in keys]
+        return False, [
+            (k,) + (self._held_answer(held[k]) if k in held
+                    else self._queue_answer(
+                        k, None if k in running else positions[k]))
+            for k in keys]
+
+    def held_back(self, key, *, labels=False, pins=None):
+        """Why the container behind `key` must not be updated now, or None.
+
+          pin_list_unreadable  its host's pin list cannot be read, so
+                               every container counts as pinned
+          pinned               pinned (`/pin`, the Web UI), or, with
+                               `labels`, a `docksentry.pin` label
+          excluded             `EXCLUDE_CONTAINERS`, or, with `labels`,
+                               `docksentry.exclude` / `docksentry.enable=false`
+
+        The same rules and the same reads `get_running_containers` uses
+        to leave a container out of a check (`_get_pinned`, `name_matches`,
+        `label_bool`), on the checker of the key's host. A pending entry
+        passed them when it was found, but a pin set since then never
+        reached the queue: a queued update ran past it (Q16f, measured on
+        ffbafc5 for the tap, "Update all", Discord and the Web UI).
+
+        `labels` asks the host for the container's labels, one `inspect`.
+        Only the drain does that, right before it would update the
+        container anyway; putting a key on the queue asks no host while
+        another update runs (Q16). A label changes only with a recreate.
+        A label read that fails reads as no labels, as in a check.
+        `pins` is a dict to keep one pin read per checker across several
+        keys. A key whose host this engine does not know answers None:
+        `run_keys` refuses it on its own.
+        """
+        from container_store import split_host_key
+        from update_checker import (EVERYTHING_PINNED, UpdateChecker,
+                                    name_matches)
+        checker = self._checker_for_key(key)
+        if checker is None:
+            return None
+        name = split_host_key(key)[1]
+        read = getattr(checker, "_get_pinned", None)
+        if callable(read):
+            if pins is None:
+                pins = {}
+            if id(checker) not in pins:
+                pins[id(checker)] = read()
+            pinned = pins[id(checker)]
+            if pinned is EVERYTHING_PINNED:
+                return "pin_list_unreadable"
+            if name in pinned:
+                return "pinned"
+        cfg = getattr(checker, "config", None) or self.config
+        if name_matches(name, getattr(cfg, "exclude_containers", None) or []):
+            return "excluded"
+        if labels:
+            get = getattr(checker, "get_container_labels", None)
+            lab = get(name) if callable(get) else {}
+            flag = UpdateChecker.label_bool
+            if flag(lab, "pin") is True:
+                return "pinned"
+            if flag(lab, "enable") is False or flag(lab, "exclude") is True:
+                return "excluded"
+        return None
+
+    @staticmethod
+    def _held_answer(why):
+        """`(i18n key, params)` for a key `held_back` kept off the queue."""
+        if why == "pin_list_unreadable":
+            return "update_refused_pin_list", {}
+        if why == "pinned":
+            return "update_not_queued_pinned", {}
+        return "update_not_queued_excluded", {}
 
     def _in_group_order(self, keys):
         """`keys` in the order they go on the queue: hosts as they first
@@ -897,7 +992,9 @@ class UpdateEngine:
         Telegram (`Broadcast.update_line`, beside "Updating …", the
         cascade and "all done"). Whatever did not run is told to every
         channel — a queued update that quietly does nothing is the
-        thing this queue exists to avoid.
+        thing this queue exists to avoid. A container pinned or excluded
+        since it was queued, or by a label, is not run (`held_back`,
+        Q16f) and its pending entry stays.
         """
         seam = self._seam()
         checker = self._checker_for_key(key)
@@ -906,6 +1003,18 @@ class UpdateEngine:
             if pin_list_unreadable(checker):
                 seam.tell(self._t("update_refused_pin_list"))
                 return None
+        # Pinned or excluded while it waited (Q16f): it was queued before
+        # the pin, or a label says so now. Off the queue already (the
+        # drain took it), said to every channel, and the pending entry
+        # stays where it is — the pin decides, not the queue.
+        why = self.held_back(key, labels=True)
+        if why == "pin_list_unreadable":
+            seam.tell(self._t("update_refused_pin_list"))
+            return None
+        if why is not None:
+            seam.tell(self._t(f"update_queue_skipped_{why}",
+                              name=self._key_label(key)))
+            return None
 
         def starting(k, target):
             seam.update_line(self._t("update_single_starting",

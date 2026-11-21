@@ -349,6 +349,11 @@ class _Hosts:
         st = self._stores.get(name)
         return types.SimpleNamespace(store=st) if st is not None else None
 
+    def __iter__(self):
+        # The registry iterates its hosts; these carry no checker, so
+        # the pin question (Q16f) has nothing to ask and queues as before.
+        return iter(())
+
 
 _c, _asked, _q = _order(
     ["nas/db", "db", "nas/web", "web"], _Groups({}),
@@ -364,7 +369,7 @@ _lang = os.path.join(os.path.dirname(__file__), "..", "app", "lang", "en.json")
 with open(_lang, encoding="utf-8") as _f:
     _keys = _json.load(_f)
 for _what in ("started", "gone", "queued", "already_queued", "queue_full",
-              "same_running", "host_unknown", "pending_unreadable"):
+              "same_running", "host_unknown", "pending_unreadable", "held"):
     checks[f"the '{_what}' answer has words to show"] = (
         bool(_keys.get(f"web_update_{_what}"))
         and bool(_keys.get(f"web_update_{_what}_title")))
@@ -440,6 +445,20 @@ checks["…how long it has waited when it was there already"] = (
 _page = _status_page("/?update=queue_full&max=10")
 checks["…that the queue was full, and its size"] = (
     _fmt("web_update_queue_full", max=10) in _page)
+# Pinned or excluded, kept off the queue (Q16f): alone, and under a
+# queued answer for the rest of a selection.
+_page = _status_page("/?update=held&n=2")
+checks["…that pinned or excluded containers were not queued, and how many"] = (
+    _fmt("web_update_held", count=2) in _page
+    and _fmt("web_update_held_title") in _page)
+_page = _status_page("/?update=queued&pos=1&held=1")
+checks["…and the same under a queued answer for the rest"] = (
+    _fmt("web_update_queued", pos=1) in _page
+    and _fmt("web_update_held", count=1) in _page)
+_page = _status_page("/?update=queued&pos=1")
+checks["…but not when nothing was held back"] = (
+    _fmt("web_update_queued", pos=1) in _page
+    and "not queued: pinned" not in _page)
 _page = _status_page("/?update=same_running")
 checks["…that it is the one updating now"] = (
     _fmt("web_update_same_running") in _page)

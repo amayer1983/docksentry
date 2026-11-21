@@ -7433,8 +7433,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
@@ -7458,8 +7458,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
@@ -7546,9 +7546,9 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web']}],
      'state': {'pending': [],
@@ -7573,8 +7573,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
@@ -8924,8 +8924,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
@@ -8960,8 +8960,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
@@ -9007,9 +9007,9 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web']}],
      'state': {'pending': [],
@@ -9046,8 +9046,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/updateall", "actor": "u7", "detail": {"host": '
@@ -9085,8 +9085,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['web@nas', 'db@local'],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
@@ -9123,8 +9123,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['db@local'],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},

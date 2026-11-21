@@ -188,6 +188,21 @@ checks["the engine's busy answers are the four I know"] = _given == {
     "update_same_running", "update_queue_full", "update_already_queued",
     "update_queued"}
 
+# A key kept off the queue by a pin, an exclusion or an unreadable pin
+# list (Q16f) gets the engine's own answer for that reason. Driven
+# below with the rest, through every connection's renderer.
+from update_engine import UpdateEngine as _UE  # noqa: E402
+
+_held = getattr(_UE, "_held_answer", None)
+_held_answers = ([_held(w) for w in ("pinned", "excluded",
+                                     "pin_list_unreadable")]
+                 if _held is not None else [])
+checks["the engine's held-back answers are the three I know"] = (
+    {k for k, _p in _held_answers} == {
+        "update_not_queued_pinned", "update_not_queued_excluded",
+        "update_refused_pin_list"})
+answers += _held_answers
+
 
 def _rendered(params):
     return {p[:-len("_seconds")] if p.endswith("_seconds") else p
@@ -270,6 +285,8 @@ checks["Discord says every busy answer, in all languages, placeholders "
     {k for k, _g in _said.asked} == {
         "chan_update_queued", "chan_update_already_queued",
         "chan_update_queue_full", "update_same_running",
+        "update_not_queued_pinned", "update_not_queued_excluded",
+        "update_refused_pin_list",
         "chan_update_result_channel", "chan_update_result_no_channel",
         "chan_update_result_off", "chan_update_result_webhook",
         "chan_update_result_quiet"}
@@ -301,10 +318,14 @@ class _TgSaid(_Said):
 _qa = getattr(TelegramBot, "_queued_answer", None)
 checks["Telegram renders a queued batch (_queued_answer)"] = _qa is not None
 _tg_asked = []
-_mix = [("web", k, p) for k, p in answers if k != "update_queue_full"]
+_mix = [("web", k, p) for k, p in answers
+        if k not in ("update_queue_full", "update_refused_pin_list")]
 _mix = [(f"c{i}", k, p) for i, (_w, k, p) in enumerate(_mix)]
 _fullbatch = [(f"c{i}", k, p) for i, (k, p) in enumerate(answers)
               if k == "update_queue_full"] * 2
+# An unreadable pin list refuses a batch as a whole (Q16f).
+_refusedbatch = [(f"c{i}", k, p) for i, (k, p) in enumerate(answers)
+                 if k == "update_refused_pin_list"] * 2
 for _upd in ((), ("db",)):
     _s = _TgSaid(updating=_upd)
     for key, params in answers if _qa is not None else ():
@@ -312,6 +333,7 @@ for _upd in ((), ("db",)):
     if _qa is not None:
         _qa(_s, _mix)
         _qa(_s, _fullbatch)
+        _qa(_s, _refusedbatch)
     _tg_asked += _s.asked
 _tbad = []
 for key, given in _tg_asked:
@@ -329,7 +351,9 @@ checks["Telegram says every queued batch, in all languages, placeholders "
         "update_same_running", "update_batch_queued",
         "update_batch_queued_behind", "update_batch_line_queued",
         "update_batch_line_already_queued", "update_batch_line_same_running",
-        "update_batch_queue_full"}
+        "update_batch_queue_full", "update_not_queued_pinned",
+        "update_not_queued_excluded", "update_refused_pin_list",
+        "update_batch_line_pinned", "update_batch_line_excluded"}
     and not _tbad)
 if _tbad:
     print("  Telegram batch lines:", "; ".join(sorted(set(_tbad))))

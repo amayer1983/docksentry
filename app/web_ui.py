@@ -4473,7 +4473,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             update_banner = ""
             if _upd in ("started", "gone", "pinlist", "queued",
                         "already_queued", "queue_full", "same_running",
-                        "host_unknown", "pending_unreadable"):
+                        "host_unknown", "pending_unreadable", "held"):
                 _calm = _upd in ("started", "queued", "already_queued",
                                  "same_running")
                 _kind = "card" if _calm else "card-warn"
@@ -4493,8 +4493,15 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                               since=_ago(_unum("since")))
                 elif _upd == "queue_full":
                     _text = t("web_update_queue_full", max=_unum("max"))
+                elif _upd == "held":
+                    _text = t("web_update_held", count=_unum("n"))
                 else:
                     _text = t("web_update_" + _upd)
+                if _upd in ("queued", "already_queued") and _unum("held"):
+                    # Part of a selection was pinned or excluded and
+                    # stayed off the queue (Q16f).
+                    _text += " " + t("web_update_held",
+                                     count=_unum("held"))
                 update_banner = (
                     f'<div class="card {_kind}">'
                     f'<h2>{_icon} {t("web_update_" + _upd + "_title")}</h2>'
@@ -7347,6 +7354,10 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             them back off a link anybody can type.
             """
             answers = [a for _k, a, _p in outcomes]
+            if "update_refused_pin_list" in answers:
+                # The pin list could not be read: refused as a whole,
+                # the same answer the handlers give before claiming.
+                return "/?update=pinlist"
             if "update_queue_full" in answers:
                 # The engine answers a request that does not fit as a
                 # whole: nothing of it went on the queue.
@@ -7355,16 +7366,24 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return f"/?update=queue_full&max={int(full.get('max', 0))}"
             waiting = [(a, p) for _k, a, p in outcomes
                        if a in ("update_queued", "update_already_queued")]
+            # Pinned or excluded, kept off the queue (Q16f): counted, and
+            # said under whatever else the page says.
+            held = sum(a in ("update_not_queued_pinned",
+                             "update_not_queued_excluded") for a in answers)
             if not waiting:
+                if held:
+                    return f"/?update=held&n={held}"
                 # Everything asked for is the update running right now.
                 return "/?update=same_running"
+            more = f"&held={held}" if held else ""
             if len(waiting) > 1:
-                return f"/?update=queued&n={len(waiting)}"
+                return f"/?update=queued&n={len(waiting)}{more}"
             answer, params = waiting[0]
             if answer == "update_queued":
-                return f"/?update=queued&pos={int(params.get('pos', 0))}"
+                return (f"/?update=queued&pos={int(params.get('pos', 0))}"
+                        + more)
             return ("/?update=already_queued&since="
-                    f"{int(params.get('since_seconds', 0))}")
+                    f"{int(params.get('since_seconds', 0))}{more}")
 
         def _api_update(self, key):
             """Update a single container from the Web UI, under the claim

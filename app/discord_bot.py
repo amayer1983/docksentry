@@ -2528,7 +2528,11 @@ class DiscordBot:
         (queue key → "web @nas"). A request that did not fit was not
         queued at all and says so once: the engine answers it as a whole
         (my decision of 18.11.2026). Anything that waits gets one more
-        line on where its result will show up (`_result_where`)."""
+        line on where its result will show up (`_result_where`). A pinned
+        or excluded container was kept off the queue and says so; an
+        unreadable pin list refuses the whole request (Q16f)."""
+        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
+            return [self.t("update_refused_pin_list")]
         full = next((p for _k, a, p in outcomes
                      if a == "update_queue_full"), None)
         if full is not None:
@@ -2536,7 +2540,10 @@ class DiscordBot:
         lines, waits = [], False
         for key, answer, params in outcomes:
             name = labels.get(key, key)
-            if answer == "update_queued":
+            if answer in ("update_not_queued_pinned",
+                          "update_not_queued_excluded"):
+                lines.append(self.t(answer, name=name))
+            elif answer == "update_queued":
                 waits = True
                 lines.append(self.t("chan_update_queued", name=name,
                                     pos=params.get("pos", 0)))

@@ -2377,8 +2377,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2397,8 +2397,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -2412,8 +2412,8 @@ EXPECTED = {
                         '"event": "update_result", "image": "nginx:1.25", "source_url": '
                         '"https://github.com/example/web/releases/latest", "success": '
                         'true}'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/update", "actor": "admin", "detail": {"name": '
@@ -3063,8 +3063,8 @@ EXPECTED = {
                         '<telegram> ✅ '
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
@@ -3083,8 +3083,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
@@ -3098,8 +3098,8 @@ EXPECTED = {
                         '"event": "update_result", "image": "nginx:1.25", "source_url": '
                         '"https://github.com/example/web/releases/latest", "success": '
                         'true}'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
@@ -3216,9 +3216,9 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web']}],
      'state': {'pending': [],
@@ -3239,8 +3239,8 @@ EXPECTED = {
                         '[web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
@@ -3255,8 +3255,8 @@ EXPECTED = {
                         '"event": "update_result", "image": "nginx:1.25", "source_url": '
                         '"https://github.com/example/web/releases/latest", "success": '
                         'true}'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/bulk", "actor": "admin", "detail": {"action": '
@@ -3407,9 +3407,9 @@ EXPECTED = {
                         '"https://hub.docker.com/_/postgres", "success": true}',
                         '<telegram> ✅ [db](https://hub.docker.com/_/postgres): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5 '
-                                   '×2, inspect --format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format, inspect --format t=10 ×2, inspect '
+                                   '--format t=5 ×2, inspect --format'},
                 'events': ['update_container@local:web', 'update_container@local:db']}],
      'state': {'pending': ['web@nas'],
                'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
@@ -3444,9 +3444,9 @@ EXPECTED = {
                         '<telegram> ✅ [db](https://hub.docker.com/_/postgres): updated '
                         '(stand-in)',
                         '<telegram> ✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5 '
-                                   '×2, inspect --format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format, inspect --format t=10 ×2, inspect '
+                                   '--format t=5 ×2, inspect --format'},
                 'events': ['update_container@local:web', 'update_container@local:db']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '
@@ -3473,9 +3473,9 @@ EXPECTED = {
                         '<webhook ok> {"container": "db", "detail": "updated (stand-in)", '
                         '"event": "update_result", "image": "postgres:16", "source_url": '
                         '"https://hub.docker.com/_/postgres", "success": true}'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5 '
-                                   '×2, inspect --format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format, inspect --format t=10 ×2, inspect '
+                                   '--format t=5 ×2, inspect --format'},
                 'events': ['update_container@local:web', 'update_container@local:db']}],
      'state': {'pending': [],
                'audit': ['{"action": "/api/group_save", "actor": "admin", "detail": '

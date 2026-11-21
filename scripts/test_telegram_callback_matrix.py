@@ -700,8 +700,9 @@ def _q6_spec():
             "<toast> Update web...",            # literal in the bot
             "<api> editMessageReplyMarkup  []",
             en("no_pending_updates")],
+        # The toast waits for the decision since Q16f: nothing ran.
         "update_all bare unreadable file": [
-            "<unbutton>", "<toast> " + en("updates_starting_cb"),
+            "<unbutton>", "<toast> " + en("updates_not_started_cb"),
             en("no_pending_updates")],
     }
 
@@ -774,6 +775,12 @@ _Q16_GLOB_NOTE = ("Only containers already known to have an update were "
                   "them too.")
 
 
+#: The multi notification's keyboard, as `_kb_str` writes it.
+_Q16_MULTI_KB = ("[🔄 web (?)→update_one:web] [🔄 web @nas (?)→"
+                 "update_one:nas/web] [🚀 Update all→update_all:1 | ✋ "
+                 "Manual→update_skip]")
+
+
 def _q16_spec():
     from update_engine import UpdateEngine
     mx = UpdateEngine.UPDATE_QUEUE_MAX
@@ -820,7 +827,10 @@ def _q16_spec():
         ("nothing pending", m.SETUPS):
             (2, "⚠️ No pending updates found.", []),
         # Not in the table: 49 queued keys would fill a screen of it.
-        ("queue full", ("multi",)): (3, full, [f"q{i}" for i in range(mx - 1)]),
+        # The tap took the notification's buttons away; "try again" comes
+        # with them (Q16f).
+        ("queue full", ("multi",)): (3, full + "  " + _Q16_MULTI_KB,
+                                     [f"q{i}" for i in range(mx - 1)]),
         ("queue full", ("none", "one")):
             (3, _q16_one("web", mx), [f"q{i}" for i in range(mx - 1)]
              + ["web"]),
@@ -2212,7 +2222,7 @@ EXPECTED = {
                {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 Another update is running right now. These wait in the queue '
                         'and run when their turn comes:\n'
                         '• `web` — position 1\n'
@@ -2240,7 +2250,7 @@ EXPECTED = {
                {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 `web` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -2270,7 +2280,7 @@ EXPECTED = {
                {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 Another update is running right now. These wait in the queue '
                         'and run when their turn comes:\n'
                         '• `web` — position 1\n'
@@ -2286,9 +2296,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
@@ -2311,7 +2321,7 @@ EXPECTED = {
                {'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 `web` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -2321,8 +2331,8 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -2334,7 +2344,7 @@ EXPECTED = {
     ('multi', 'update_all bare lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 Another update is running right now. These wait in the queue '
                         'and run when their turn comes:\n'
                         '• `web` — position 1\n'
@@ -2352,7 +2362,7 @@ EXPECTED = {
     ('single', 'update_all bare lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'tap update_all',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 `web` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -2387,7 +2397,7 @@ EXPECTED = {
                 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Queued — details in the chat.',
                         '🕒 `web` is being updated right now. These wait in the queue and '
                         'run when their turn comes:\n'
                         '• `web` — that one is being updated right now\n'
@@ -2420,7 +2430,7 @@ EXPECTED = {
                 'raised': None},
                {'do': 'tap update_all:<tok>',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Not started — details in the chat.',
                         '🕒 `web` is being updated right now — that is the same one, not a '
                         'second job.'],
                 'hosts': {},
@@ -2824,7 +2834,7 @@ EXPECTED = {
                 'raised': None},
                {'do': 'tap update_all',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Not started — details in the chat.',
                         '⚠️ No pending updates found.'],
                 'hosts': {},
                 'events': [],
@@ -2842,7 +2852,7 @@ EXPECTED = {
                 'raised': None},
                {'do': 'tap update_all',
                 'out': ['<unbutton>',
-                        '<toast> Updates are starting...',
+                        '<toast> Not started — details in the chat.',
                         '⚠️ No pending updates found.'],
                 'hosts': {},
                 'events': [],
@@ -3018,7 +3028,7 @@ EXPECTED = {
                         'updated (stand-in)',
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5 ×2, '
                                    'inspect --format',
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
                                  '--format'},
@@ -3050,7 +3060,7 @@ EXPECTED = {
                         '⚠️ Container `web @nas` not in update list.',
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5 ×2, '
                                    'inspect --format'},
                 'events': ['update_container@local:db'],
                 'raised': None}],
@@ -3084,7 +3094,7 @@ EXPECTED = {
                         'updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5 ×2, '
                                    'inspect --format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:db', 'update_container@nas:web'],
                 'raised': None}],
@@ -3211,8 +3221,8 @@ EXPECTED = {
                         '⏳ Updating `db`...',
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5 '
-                                   '×2, inspect --format'},
+                                   '--format, inspect --format t=10 ×2, inspect --format '
+                                   't=5 ×2, inspect --format'},
                 'events': ['update_container@local:web',
                            'wait 60s',
                            'update_container@local:db'],
@@ -3252,8 +3262,8 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)',
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format, inspect --format t=10, inspect --format t=5 '
-                                   '×2, inspect --format'},
+                                   '--format, inspect --format t=10 ×2, inspect --format '
+                                   't=5 ×2, inspect --format'},
                 'events': ['update_container@local:web',
                            'wait 60s',
                            'update_container@local:db'],
@@ -3364,7 +3374,7 @@ EXPECTED = {
                         '✅ [db](https://hub.docker.com/_/postgres): updated (stand-in)'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format t=10 ×2, inspect --format t=5 ×2, inspect '
                                    '--format'},
                 'events': ['update_container@local:web',
                            'wait_healthy@local:web max=30',
@@ -3408,7 +3418,7 @@ EXPECTED = {
                         '✅ All updates completed.'],
                 'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
                                    '--format, inspect --format t=10, restart t=30, inspect '
-                                   '--format t=10, inspect --format t=5 ×2, inspect '
+                                   '--format t=10 ×2, inspect --format t=5 ×2, inspect '
                                    '--format'},
                 'events': ['update_container@local:web',
                            'wait_healthy@local:web max=30',
@@ -3790,8 +3800,8 @@ EXPECTED = {
                 'out': ['⏳ Updating `web`...',
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': ['web@nas'],
@@ -3814,8 +3824,8 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest): updated '
                         '(stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format'},
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format'},
                 'events': ['update_container@local:web'],
                 'raised': None}],
      'state': {'pending': [],
@@ -3886,7 +3896,7 @@ EXPECTED = {
     # multi as well.
     ('multi', '/updateall lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /updateall',
-                'out': ['<toast> Updates are starting...',
+                'out': ['<toast> Queued — details in the chat.',
                         '🕒 `web` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -3900,7 +3910,7 @@ EXPECTED = {
                'locked': False}},
     ('single', '/updateall lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /updateall',
-                'out': ['<toast> Updates are starting...',
+                'out': ['<toast> Queued — details in the chat.',
                         '🕒 `web` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -3914,7 +3924,7 @@ EXPECTED = {
                'locked': False}},
     ('multi', '/updateall @nas lock held'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /updateall @nas',
-                'out': ['<toast> Updates are starting...',
+                'out': ['<toast> Queued — details in the chat.',
                         '🕒 `web @nas` queued — position 1. It runs when its turn comes.'],
                 'hosts': {},
                 'events': [],
@@ -3943,7 +3953,7 @@ EXPECTED = {
                'locked': False}},
     ('multi', '/updateall @all lock held, then released'): {'steps': [{'do': 'lock', 'out': [], 'hosts': {}, 'events': [], 'raised': None},
                {'do': 'type /updateall @all',
-                'out': ['<toast> Updates are starting...',
+                'out': ['<toast> Queued — details in the chat.',
                         '🕒 Another update is running right now. These wait in the queue '
                         'and run when their turn comes:\n'
                         '• `web` — position 1\n'
@@ -3959,9 +3969,9 @@ EXPECTED = {
                         '✅ [web](https://github.com/example/web/releases/latest) @nas: '
                         'updated (stand-in)',
                         '✅ All updates completed.'],
-                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
-                                   '--format',
-                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                'hosts': {'local': 'inspect --format t=10 ×2, inspect --format t=5, '
+                                   'inspect --format',
+                          'nas': 'inspect --format t=10 ×2, inspect --format t=5, inspect '
                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],

@@ -368,11 +368,18 @@ BUSY_MESSAGES = {
      "update_batch_queued_behind"): (1, "queue: the heading, with what is "
                                         "being updated"),
     ("telegram_bot.py", "TelegramBot._queued_answer",
-     "update_queued"): (1, "queue: queued"),
+     "update_queued"): (2, "queue: queued; does something wait (the "
+                           "heading, Q16f)"),
     ("telegram_bot.py", "TelegramBot._queued_answer",
      "update_batch_line_queued"): (1, "queue: queued, with its place"),
     ("telegram_bot.py", "TelegramBot._queued_answer",
-     "update_already_queued"): (1, "queue: already waiting"),
+     "update_already_queued"): (2, "queue: already waiting; does something "
+                                   "wait (the heading, Q16f)"),
+    # Pinned or excluded, kept off the queue (Q16f).
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_not_queued_pinned"): (1, "queue: pinned, not queued"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_not_queued_excluded"): (1, "queue: excluded, not queued"),
     ("telegram_bot.py", "TelegramBot._queued_answer",
      "update_batch_line_already_queued"): (1, "queue: already waiting, "
                                               "since"),
@@ -394,6 +401,13 @@ BUSY_MESSAGES = {
     ("telegram_bot.py", "TelegramBot.run_updates",
      "update_already_queued"): (1, "queue: does something wait (the glob "
                                    "note)"),
+    # Not said, compared: "queue full" sends the tapped message's buttons
+    # back (Q16f).
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_queue_full"): (1, "queue: did not fit, the buttons come back"),
+    # The "Update all" toast, once run_updates has decided (Q16f).
+    ("telegram_bot.py", "TelegramBot._handle_callback",
+     "updates_queued_cb"): (1, "queue: the toast for a queued Update all"),
     # Discord
     ("discord_bot.py", "DiscordBot._cmd_check",
      "web_check_one_busy"): (1, "pre-gate"),
@@ -413,13 +427,19 @@ BUSY_MESSAGES = {
      "chan_update_already_queued"): (1, "queue: already waiting, since"),
     ("discord_bot.py", "DiscordBot._queued_lines",
      "update_same_running"): (1, "queue: the one running right now"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_not_queued_pinned"): (1, "queue: pinned, not queued (Q16f)"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_not_queued_excluded"): (1, "queue: excluded, not queued "
+                                        "(Q16f)"),
     ("discord_bot.py", "DiscordBot._refuse_busy._say",
      "chan_busy_capacity"): (1, "other lock: the worker pool is full"),
     # Web
     # The page's banners for a click that was queued (Q14): the kinds it
     # knows, which of them are calm, and the sentences with numbers.
     ("web_ui.py", "create_handler.WebHandler._page_status",
-     "already_queued"): (3, "render: the banners the page knows"),
+     "already_queued"): (4, "render: the banners the page knows, and "
+                            "which of them carry a held-back count (Q16f)"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
      "same_running"): (2, "render: the banners the page knows"),
     ("web_ui.py", "create_handler.WebHandler._page_status",
@@ -440,6 +460,12 @@ BUSY_MESSAGES = {
      "update_queued"): (2, "queue: queued"),
     ("web_ui.py", "create_handler.WebHandler._queue_redirect",
      "update_already_queued"): (1, "queue: already waiting"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_not_queued_pinned"): (1, "queue: pinned, counted as held "
+                                      "back (Q16f)"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_not_queued_excluded"): (1, "queue: excluded, counted as held "
+                                        "back (Q16f)"),
     ("web_ui.py", "create_handler.WebHandler._status_row",
      "web_check_one_busy"): (1, "other lock: the check-one button's text"),
     ("web_ui.py", "create_handler.WebHandler._api_check_one",
@@ -455,6 +481,15 @@ BUSY_MESSAGES = {
      "update_already_queued"): (1, "claim: already on the queue"),
     ("update_engine.py", "UpdateEngine._queue_answer",
      "update_queued"): (1, "claim: queued"),
+    # Kept off the queue by a pin or an exclusion (Q16f), and what the
+    # drain says about an entry pinned or excluded while it waited.
+    ("update_engine.py", "UpdateEngine._held_answer",
+     "update_not_queued_pinned"): (1, "claim: pinned, not queued"),
+    ("update_engine.py", "UpdateEngine._held_answer",
+     "update_not_queued_excluded"): (1, "claim: excluded, not queued"),
+    ("update_engine.py", "UpdateEngine._drain_one",
+     "update_queue_skipped_"): (1, "queue: pinned or excluded while it "
+                                   "waited, not run (the key's prefix)"),
     ("update_engine.py", "UpdateEngine.cleanup_guarded",
      "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle

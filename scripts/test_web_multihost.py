@@ -174,6 +174,11 @@ class FakeEngine:
     queued_updates = UpdateEngine.queued_updates
     queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
     _queue_answer = UpdateEngine._queue_answer
+    # Pinned or excluded keys stay off the queue (Q16f); with no host
+    # registry and no local checker here, nobody is held back.
+    held_back = UpdateEngine.held_back
+    _held_answer = UpdateEngine._held_answer
+    _checker_for_key = UpdateEngine._checker_for_key
     # Queued keys go on in the batch's order (review of Q14); no store
     # here, so they keep the order asked.
     _in_group_order = UpdateEngine._in_group_order

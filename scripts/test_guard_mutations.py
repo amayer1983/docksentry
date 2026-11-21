@@ -1252,8 +1252,10 @@ GUARDED = [
 
     ("tapping the same update twice does not produce a bogus warning",
      "app/update_engine.py",
-     "        pos = (None if container_key in self.updating\n",
-     "        pos = (None if False\n",
+     "        if container_key in self.updating:\n"
+     "            return (False,) + self._queue_answer(container_key, None)\n",
+     "        if False:\n"
+     "            return (False,) + self._queue_answer(container_key, None)\n",
      "test_update_queue_duplicate.py"),
 
     # Q7: the engine claims or queues; a connection only translates.
@@ -2648,8 +2650,8 @@ GUARDED = [
      'test_web_action_matrix.py'),
     ('…and the status page shows the host-not-managed answer',
      'app/web_ui.py',
-     '                        "host_unknown", "pending_unreadable"):\n',
-     '                        "pending_unreadable"):\n',
+     '                        "host_unknown", "pending_unreadable", "held"):\n',
+     '                        "pending_unreadable", "held"):\n',
      'test_web_update_feedback.py'),
     ('…and has its words in every language',
      'app/lang/ja.json',
@@ -2686,8 +2688,8 @@ GUARDED = [
      'test_web_update_feedback.py'),
     ('…the status page shows the unreadable answer',
      'app/web_ui.py',
-     '                        "host_unknown", "pending_unreadable"):\n',
-     '                        "host_unknown"):\n',
+     '                        "host_unknown", "pending_unreadable", "held"):\n',
+     '                        "host_unknown", "held"):\n',
      'test_web_update_feedback.py'),
     ('…and the unreadable answer has its words in every language',
      'app/lang/ja.json',
@@ -2719,8 +2721,9 @@ GUARDED = [
      "test_web_action_matrix.py"),
     ("…while the answers stay in the order asked",
      "app/update_engine.py",
-     "            k, None if k in running else positions[k]) for k in keys]\n",
-     "            k, None if k in running else positions[k])\n"
+     "                        k, None if k in running else positions[k]))\n"
+     "            for k in keys]\n",
+     "                        k, None if k in running else positions[k]))\n"
      "            for k in self._in_group_order(keys)]\n",
      "test_web_update_feedback.py"),
     ("…containers in no group keep the order they were selected in",
@@ -5643,22 +5646,22 @@ GUARDED = [
     # matches was not checked, and the answer says so.
     ("a busy /update <glob> says the other matches were not checked",
      'app/telegram_bot.py',
-     '            if queued_note and any(\n',
-     '            if False and any(\n',
+     '            if queued_note and waits:\n',
+     '            if False and waits:\n',
      'test_telegram_callback_matrix.py'),
 
     # Q16 review 2: nothing queued (queue full, or the match is the one
     # running) gets no "were queued" under it.
     ("…but only when something of it waits on the queue",
      'app/telegram_bot.py',
-     '                    a in ("update_queued", "update_already_queued")\n',
-     '                    True\n',
+     '            waits = any(a in ("update_queued", "update_already_queued")\n',
+     '            waits = True or any(a in ("update_queued", "update_already_queued")\n',
      'test_telegram_callback_matrix.py'),
 
     ("…an earlier queued match counts as waiting too",
      'app/telegram_bot.py',
-     '                    a in ("update_queued", "update_already_queued")\n',
-     '                    a == "update_queued"\n',
+     '            waits = any(a in ("update_queued", "update_already_queued")\n',
+     '            waits = any(a in ("update_queued",)\n',
      'test_telegram_callback_matrix.py'),
 
     ("…the busy /update hands that line on to run_updates",
@@ -5708,6 +5711,185 @@ GUARDED = [
      '            bot.engine.release_update()\n',
      '            bot._update_lock.release()\n',
      'test_telegram_callback_matrix.py'),
+
+    # ── Q16f: a pin or an exclusion holds for a queued update too ──
+    ("a pinned container tapped while busy is not queued",
+     'app/update_engine.py',
+     '        why = self.held_back(container_key)\n',
+     '        why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…nor in a batch (Update all, a busy /update, Discord, the Web UI)",
+     'app/update_engine.py',
+     '            why = None if k in running else self.held_back(k, pins=pins)\n',
+     '            why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…an unreadable pin list refuses the whole batch at the claim",
+     'app/update_engine.py',
+     '        if "pin_list_unreadable" in held.values():\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the drain asks again right before it runs an entry",
+     'app/update_engine.py',
+     '        why = self.held_back(key, labels=True)\n',
+     '        why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…and there it reads the container's labels from its host",
+     'app/update_engine.py',
+     '        why = self.held_back(key, labels=True)\n',
+     '        why = self.held_back(key, labels=False)\n',
+     'test_queue_held_back.py'),
+
+    ("…a docksentry.pin label holds it",
+     'app/update_engine.py',
+     '            if flag(lab, "pin") is True:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…docksentry.exclude / enable=false hold it",
+     'app/update_engine.py',
+     '            if flag(lab, "enable") is False or flag(lab, "exclude") is True:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…EXCLUDE_CONTAINERS holds it",
+     'app/update_engine.py',
+     '        if name_matches(name, getattr(cfg, "exclude_containers", None) or []):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the pin list holds it",
+     'app/update_engine.py',
+     '            if name in pinned:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…an unreadable pin list is told apart from a pin",
+     'app/update_engine.py',
+     '            if pinned is EVERYTHING_PINNED:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the answer says pinned, not excluded",
+     'app/update_engine.py',
+     '            return "update_not_queued_pinned", {}\n',
+     '            return "update_not_queued_excluded", {}\n',
+     'test_queue_held_back.py'),
+
+    ("…the drain says why it skipped the entry",
+     'app/update_engine.py',
+     '            seam.tell(self._t(f"update_queue_skipped_{why}",\n',
+     '            seam.tell(self._t("update_queue_skipped_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ("Telegram names a pinned member of a queued batch",
+     'app/telegram_bot.py',
+     '                lines.append(self.t("update_batch_line_pinned", name=name))\n',
+     '                lines.append(self.t("update_batch_line_same_running", name=name))\n',
+     'test_queue_held_back.py'),
+
+    ("…says a batch refused for the pin list once",
+     'app/telegram_bot.py',
+     '        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):\n'
+     '            # Refused as a whole: nobody can tell what is pinned (Q16f).\n',
+     '        if False:\n'
+     '            # Refused as a whole: nobody can tell what is pinned (Q16f).\n',
+     'test_queue_held_back.py'),
+
+    ("…and puts no queue heading over a batch where nothing waits",
+     'app/telegram_bot.py',
+     '        lines = [] if not waits else [\n',
+     '        lines = [] if False else [\n',
+     'test_queue_held_back.py'),
+
+    ('the "Update all" toast says queued when it was queued',
+     'app/telegram_bot.py',
+     '                      "queued": "updates_queued_cb"}\n',
+     '                      "queued": "updates_starting_cb"}\n',
+     'test_queue_held_back.py'),
+
+    ("…and not started when nothing waits",
+     'app/telegram_bot.py',
+     '            decide("queued" if waits else "refused")\n',
+     '            decide("queued")\n',
+     'test_queue_held_back.py'),
+
+    ("…nor when the claim finds nothing pending",
+     'app/telegram_bot.py',
+     '                decide("refused")\n',
+     '                decide("started")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('a busy "Update all" that does not fit brings its buttons back',
+     'app/telegram_bot.py',
+     '            if keyboard and any(a == "update_queue_full"\n',
+     '            if False and any(a == "update_queue_full"\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…the tap hands run_updates the message's own keyboard",
+     'app/telegram_bot.py',
+     '                                         "keyboard": keyboard})\n',
+     '                                         "keyboard": None})\n',
+     'test_queue_held_back.py'),
+
+    ("Discord says a pinned or excluded container was not queued",
+     'app/discord_bot.py',
+     '                lines.append(self.t(answer, name=name))\n',
+     '                lines.append(self.t("update_same_running", name=name))\n',
+     'test_queue_held_back.py'),
+
+    ("…and a request refused for the pin list once",
+     'app/discord_bot.py',
+     '        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):\n'
+     '            return [self.t("update_refused_pin_list")]\n',
+     '        if False:\n'
+     '            return [self.t("update_refused_pin_list")]\n',
+     'test_reply_params.py'),
+
+    ("the Web UI sends a pin-list refusal at the claim to its banner",
+     'app/web_ui.py',
+     '            if "update_refused_pin_list" in answers:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…counts what was held back",
+     'app/web_ui.py',
+     '            held = sum(a in ("update_not_queued_pinned",\n',
+     '            held = 0 * sum(a in ("update_not_queued_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ("…the page knows the 'held' answer",
+     'app/web_ui.py',
+     '                        "host_unknown", "pending_unreadable", "held"):\n',
+     '                        "host_unknown", "pending_unreadable"):\n',
+     'test_web_update_feedback.py'),
+
+    ("…says how many",
+     'app/web_ui.py',
+     '                    _text = t("web_update_held", count=_unum("n"))\n',
+     '                    _text = t("web_update_held", count=0)\n',
+     'test_web_update_feedback.py'),
+
+    ("…and says it under a queued answer for the rest",
+     'app/web_ui.py',
+     '                if _upd in ("queued", "already_queued") and _unum("held"):\n',
+     '                if False:\n',
+     'test_web_update_feedback.py'),
+
+    ("the pinned answer names the container in every language",
+     'app/lang/de.json',
+     '"📌 `{name}` ist gepinnt — nicht eingereiht.',
+     '"📌 `{container}` ist gepinnt — nicht eingereiht.',
+     'test_reply_params.py'),
+
+    ("…and the batch line for it exists in every language",
+     'app/lang/ja.json',
+     '  "update_batch_line_pinned": "• `{name}` — 固定済みのため順番待ちに追加していません",\n',
+     '',
+     'test_lang_parity.py'),
 
 ]
 
