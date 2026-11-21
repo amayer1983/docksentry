@@ -4554,7 +4554,7 @@ GUARDED = [
 
     ("Discord's queue sentences exist in every language",
      'app/lang/ja.json',
-     '  "chan_update_queued": "🕒 `{name}` をキューに追加しました — {pos} 番目。順番が来たら実行します。結果はここではなく通知チャンネルに届きます。",\n',
+     '  "chan_update_queued": "🕒 `{name}` をキューに追加しました — {pos} 番目。順番が来たら実行します。",\n',
      '',
      'test_lang_parity.py'),
 
@@ -4563,6 +4563,74 @@ GUARDED = [
      '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {pos}.',
      '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {position}.',
      'test_reply_params.py'),
+
+    # Where a queued result shows up (Q15 review): the bot channel by
+    # name, or that there is none — never a promise with nothing behind it.
+    ("a queued Discord answer names the bot channel its result goes to",
+     'app/discord_bot.py',
+     '            return self.t("chan_update_result_channel", channel=channel)\n',
+     '            return self.t("chan_update_result_no_channel")\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and with no bot channel set says it won't show up in Discord",
+     'app/discord_bot.py',
+     '        return self.t("chan_update_result_no_channel")\n',
+     '        return self.t("chan_update_result_channel", channel=channel)\n',
+     'test_discord_bot.py'),
+
+    ("…a bot channel that is switched off counts as none",
+     'app/discord_bot.py',
+     '        if channel and getattr(self.config, "channel_discordbot_enabled", True):\n',
+     '        if channel:\n',
+     'test_discord_bot.py'),
+
+    ("…the line comes with every answer that leaves something waiting",
+     'app/discord_bot.py',
+     '        if waits:\n'
+     '            lines.append(self._result_where())\n',
+     '        if False:\n'
+     '            lines.append(self._result_where())\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…including one that was already waiting",
+     'app/discord_bot.py',
+     '                from notify_retry import _ago\n'
+     '                waits = True\n',
+     '                from notify_retry import _ago\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…in every language",
+     'app/lang/ko.json',
+     '  "chan_update_result_no_channel": ',
+     '  "chan_update_result_no_channel_x": ',
+     'test_lang_parity.py'),
+
+    ("…with the channel Discord fills in",
+     'app/lang/de.json',
+     '  "chan_update_result_channel": "Das Ergebnis kommt in <#{channel}>',
+     '  "chan_update_result_channel": "Das Ergebnis kommt in <#{kanal}>',
+     'test_reply_params.py'),
+
+    ("a full queue does not tell a waiting container 'nothing was queued'",
+     'app/lang/en.json',
+     '— this request was not queued; anything already waiting keeps its place.',
+     '— nothing was queued.',
+     'test_discord_bot.py'),
+
+    # ── the runner's own timeout ──────────────────────────────────────
+    ("a procedure past its timeout is FAIL in the run, not a traceback",
+     'scripts/verify.py',
+     '    except subprocess.TimeoutExpired as e:\n'
+     '        return _timed_out(e)\n',
+     '    except OSError as e:\n'
+     '        return _timed_out(e)\n',
+     'test_suite_runner.py'),
+
+    ("…and keeps what it said before it was killed",
+     'scripts/verify.py',
+     '    out = _as_text(e.stdout) + _as_text(e.stderr)\n',
+     '    out = ""\n',
+     'test_suite_runner.py'),
 
     ("the lock-site list sees a claim through the engine's cleanup guard",
      'scripts/test_update_lock_sites.py',

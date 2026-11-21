@@ -2527,25 +2527,42 @@ class DiscordBot:
         per container, as lines, each container named by `labels`
         (queue key → "web @nas"). A request that did not fit was not
         queued at all and says so once: the engine answers it as a whole
-        (my decision of 18.11.2026)."""
+        (my decision of 18.11.2026). Anything that waits gets one more
+        line on where its result will show up (`_result_where`)."""
         full = next((p for _k, a, p in outcomes
                      if a == "update_queue_full"), None)
         if full is not None:
             return [self.t("chan_update_queue_full", max=full.get("max", 0))]
-        lines = []
+        lines, waits = [], False
         for key, answer, params in outcomes:
             name = labels.get(key, key)
             if answer == "update_queued":
+                waits = True
                 lines.append(self.t("chan_update_queued", name=name,
                                     pos=params.get("pos", 0)))
             elif answer == "update_already_queued":
                 from notify_retry import _ago
+                waits = True
                 lines.append(self.t(
                     "chan_update_already_queued", name=name,
                     since=_ago(params.get("since_seconds", 0))))
             else:
                 lines.append(self.t("update_same_running", name=name))
+        if waits:
+            lines.append(self._result_where())
         return lines
+
+    def _result_where(self):
+        """Where the result of a queued update shows up. Not in this
+        answer: the drainer runs it later and its card goes out through
+        the notifiers, which for Discord means the bot channel. That
+        channel is optional, and with none set (or switched off) the card
+        never reaches Discord — the answer says so instead of promising
+        it. Same two conditions `_post_to_channel` goes by."""
+        channel = (getattr(self.config, "discord_bot_channel", "") or "").strip()
+        if channel and getattr(self.config, "channel_discordbot_enabled", True):
+            return self.t("chan_update_result_channel", channel=channel)
+        return self.t("chan_update_result_no_channel")
 
     def _queue_labels(self, pairs):
         """`{queue key: "web @nas"}` for `(host, name)` pairs — the key

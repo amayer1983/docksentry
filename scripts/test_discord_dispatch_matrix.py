@@ -7360,8 +7360,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'queued': ['web'],
@@ -7374,8 +7374,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'queued': ['web'],
@@ -7388,8 +7388,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -7412,8 +7412,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -7437,8 +7437,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': "cmd /update container:'web'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
@@ -7446,7 +7446,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit> **Update**\n'
                         '🕒 `web` is already in the queue (waiting 0s) — it runs when its '
-                        'turn comes.  []']},
+                        'turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'queued': ['web'],
@@ -7461,8 +7462,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': "cmd /update container:'web'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
@@ -7470,7 +7471,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit> **Update**\n'
                         '🕒 `web` is already in the queue (waiting 0s) — it runs when its '
-                        'turn comes.  []']},
+                        'turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'queued': ['web'],
@@ -7485,10 +7487,10 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.\n'
-                        '🕒 `web @nas` is queued — position 2. It runs when its turn comes; '
-                        'the result goes to the notification channels, not here.\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        '🕒 `web @nas` is queued — position 2. It runs when its turn '
+                        'comes.\n'
+                        'The result is posted in <#chan-1>, not here.\n'
                         '⚠️ No pending updates found. @dead\n'
                         '⚠️ No pending updates found. @refused\n'
                         '⚠️ No pending updates found. @flaky  []']},
@@ -7525,8 +7527,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -7551,8 +7553,9 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
-                        'command again once it has worked through.  []']},
+                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        'anything already waiting keeps its place. Run the command again '
+                        'once it has worked through.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
@@ -7566,8 +7569,9 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
-                        'command again once it has worked through.  []']},
+                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        'anything already waiting keeps its place. Run the command again '
+                        'once it has worked through.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
@@ -7581,8 +7585,9 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
-                        'command again once it has worked through.\n'
+                        '⚠️ The update queue is full (10) — this request was not queued; '
+                        'anything already waiting keeps its place. Run the command again '
+                        'once it has worked through.\n'
                         '⚠️ No pending updates found. @dead\n'
                         '⚠️ No pending updates found. @refused\n'
                         '⚠️ No pending updates found. @flaky  []']},
@@ -7599,8 +7604,8 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit> **Update**\n'
-                        '🕒 `web` is queued — position 10. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 10. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
@@ -8824,8 +8829,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
                'queued': ['web'],
@@ -8849,8 +8854,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
                'queued': ['web'],
@@ -8874,8 +8879,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -8909,8 +8914,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -8946,10 +8951,10 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.\n'
-                        '🕒 `web @nas` is queued — position 2. It runs when its turn comes; '
-                        'the result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        '🕒 `web @nas` is queued — position 2. It runs when its turn '
+                        'comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -8995,8 +9000,8 @@ EXPECTED = {
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
                         '<edit> **Update all**\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -9035,8 +9040,8 @@ EXPECTED = {
                         '<edit> **Update all**\n'
                         'ℹ 1 newly pending container(s) appeared after you were asked and '
                         'were NOT updated — run `/updateall` again for those.\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
@@ -9073,8 +9078,8 @@ EXPECTED = {
                         '<edit> **Update all**\n'
                         'ℹ 1 newly pending container(s) appeared after you were asked and '
                         'were NOT updated — run `/updateall` again for those.\n'
-                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
-                        'result goes to the notification channels, not here.  []']},
+                        '🕒 `web` is queued — position 1. It runs when its turn comes.\n'
+                        'The result is posted in <#chan-1>, not here.  []']},
                {'do': 'release',
                 'out': ['<telegram> ⏳ Updating `web`...',
                         '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '

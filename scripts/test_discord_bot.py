@@ -870,9 +870,47 @@ engine._update_lock.acquire()
 engine.enqueue_updates([f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)])
 out = call("update", container="web")
 checks["/update on a full queue says it is full"] = (
-    "queue is full" in out and "nothing was queued" in out)
+    "queue is full" in out and "this request was not queued" in out)
 checks["…and queues nothing"] = engine.queued() == [
     f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)]
+engine._update_lock.release()
+engine._update_queue.clear()
+
+# Where the result of a queued update shows up, said the way it is: the
+# drainer's card goes to the bot channel, and with none set (it is
+# optional) the answer must not promise that the result comes "there".
+_set_pending(BOTH_WEB)
+_MISSING = "\0missing key"
+_NO_CHAN = _EN.get("chan_update_result_no_channel", _MISSING)
+_IN_CHAN = _EN.get("chan_update_result_channel", _MISSING)
+engine._update_lock.acquire()
+out = call("update", container="web")
+checks["queued with no bot channel set: says it won't show up in Discord"] = (
+    _NO_CHAN in out and "notification channels, not here" not in out)
+scfg2.discord_bot_channel = "4242"
+out = call("update", container="web", host="nas")
+checks["queued with a bot channel: names the channel it goes to"] = (
+    _IN_CHAN.replace("{channel}", "4242") in out and _NO_CHAN not in out)
+out = call("update", container="web")
+checks["…and a container already waiting is told the same"] = (
+    "`web` is already in the queue" in out
+    and _IN_CHAN.replace("{channel}", "4242") in out)
+scfg2.channel_discordbot_enabled = False
+out = call("update", container="web")
+checks["a bot channel that is switched off counts as none"] = (
+    _NO_CHAN in out and "<#4242>" not in out)
+del scfg2.channel_discordbot_enabled
+engine._update_queue.clear()
+engine.enqueue_updates(["web"] + [f"q{i}"
+                                  for i in range(engine.UPDATE_QUEUE_MAX - 1)])
+out = call("update", container="web", host="all")
+checks["a full queue says the request was not queued, and no channel line"] = (
+    "queue is full" in out and "nothing was queued" not in out
+    and "<#4242>" not in out and _NO_CHAN not in out)
+checks["…while the one already waiting keeps its place"] = (
+    engine.queued()[0] == "web"
+    and len(engine.queued()) == engine.UPDATE_QUEUE_MAX)
+del scfg2.discord_bot_channel
 engine._update_lock.release()
 engine._update_queue.clear()
 

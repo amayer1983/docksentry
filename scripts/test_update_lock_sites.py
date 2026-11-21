@@ -1291,22 +1291,22 @@ EXPECTED_BUSY = {
          'said': ['⚠️ Update already in progress...']},
     (('discord_bot.py', 'DiscordBot._cmd_update'),
      '/update container:web host:nas'):
-        {'keys': ['chan_update_queued'],
+        {'keys': ['chan_update_queued', 'chan_update_result_channel'],
          'kind': 'QUEUE',
          'lock_after': 'held',
          'queue_after': ['nas/web'],
          'returned': '**Update**\n'
-                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes; the '
-                     'result go…'},
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes.\n'
+                     'The result is…'},
     (('discord_bot.py', 'DiscordBot._do_updateall'),
      'updateall confirmed, host:nas'):
-        {'keys': ['chan_update_queued'],
+        {'keys': ['chan_update_queued', 'chan_update_result_channel'],
          'kind': 'QUEUE',
          'lock_after': 'held',
          'queue_after': ['nas/web'],
          'returned': '**Update all**\n'
-                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes; the '
-                     'resul…'},
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes.\n'
+                     'The resul…'},
     (('discord_bot.py', 'DiscordBot._cleanup_guarded'),
      'image cleanup'):
         {'keys': ['cleanup_busy'],

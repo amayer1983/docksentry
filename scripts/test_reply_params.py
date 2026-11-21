@@ -220,8 +220,13 @@ from discord_bot import DiscordBot  # noqa: E402
 
 
 class _Said:
+    # The real one: it picks the line on where a queued result shows up
+    # from the bot channel setting, and is driven both ways below.
+    _result_where = getattr(DiscordBot, "_result_where", None)
+
     def __init__(self):
         self.asked = []
+        self.config = type("Cfg", (), {})()
 
     def t(self, key, **kw):
         self.asked.append((key, set(kw)))
@@ -232,8 +237,10 @@ _said = _Said()
 _lines = getattr(DiscordBot, "_queued_lines", None)
 checks["Discord renders the engine's busy answers (_queued_lines)"] = (
     _lines is not None)
-for key, params in answers if _lines is not None else ():
-    _lines(_said, [("web", key, params)], {"web": "web"})
+for _chan in ("", "1234"):
+    _said.config.discord_bot_channel = _chan
+    for key, params in answers if _lines is not None else ():
+        _lines(_said, [("web", key, params)], {"web": "web"})
 _dbad = []
 for key, given in _said.asked:
     for lang, strings in LANGS.items():
@@ -247,7 +254,8 @@ checks["Discord says every busy answer, in all languages, placeholders "
        "filled"] = (
     {k for k, _g in _said.asked} == {
         "chan_update_queued", "chan_update_already_queued",
-        "chan_update_queue_full", "update_same_running"}
+        "chan_update_queue_full", "update_same_running",
+        "chan_update_result_channel", "chan_update_result_no_channel"}
     and not _dbad)
 if _dbad:
     print("  Discord busy lines:", "; ".join(_dbad))
