@@ -2533,6 +2533,9 @@ class DiscordBot:
         unreadable pin list refuses the whole request (Q16f)."""
         if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
             return [self.t("update_refused_pin_list")]
+        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):
+            # A self-update is swapping (Q16h): nothing was queued.
+            return [self.t("update_refused_selfupdate")]
         full = next((p for _k, a, p in outcomes
                      if a == "update_queue_full"), None)
         if full is not None:

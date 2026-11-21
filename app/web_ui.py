@@ -3528,6 +3528,20 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     self._send_redirect("/?update=pinlist")
                     return
                 if target is not None and action == "confirm":
+                    # Pinned or excluded since the prompt (Q16h): the page
+                    # says so. The confirmation refuses it on its thread
+                    # too, but only in Telegram, so a click here came back
+                    # to a page that said nothing (Q16g review, measured).
+                    # The pin list and the setting, as the update buttons
+                    # ask (`_start_web_update`); a label is left to the
+                    # confirmation, which reads it from the host. Nothing
+                    # starts; the major stays deferred. An unreadable list
+                    # was answered just above.
+                    why = bot.engine.held_back(raw)
+                    if why in ("pinned", "excluded"):
+                        self._send_redirect("/?update=pinned&n=1")
+                        return
+                if target is not None and action == "confirm":
                     # `_confirm_major_update` takes the host key itself and
                     # resolves the checker for that host — the same call the
                     # Telegram button makes, so both surfaces resume the
@@ -4474,7 +4488,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             if _upd in ("started", "gone", "pinlist", "queued",
                         "already_queued", "queue_full", "same_running",
                         "host_unknown", "pending_unreadable", "held",
-                        "pinned"):
+                        "pinned", "restarting"):
                 _calm = _upd in ("started", "queued", "already_queued",
                                  "same_running")
                 _kind = "card" if _calm else "card-warn"
@@ -7384,6 +7398,9 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # The pin list could not be read: refused as a whole,
                 # the same answer the handlers give before claiming.
                 return "/?update=pinlist"
+            if "update_refused_selfupdate" in answers:
+                # A self-update is swapping and nothing was queued (Q16h).
+                return "/?update=restarting"
             if "update_queue_full" in answers:
                 # The engine answers a request that does not fit as a
                 # whole: nothing of it went on the queue.

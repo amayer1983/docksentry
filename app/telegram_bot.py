@@ -1998,6 +1998,10 @@ class TelegramBot:
         if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
             # Refused as a whole: nobody can tell what is pinned (Q16f).
             return self.t("update_refused_pin_list")
+        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):
+            # Refused as a whole: the process is about to be replaced
+            # (Q16h), and a queue would go with it.
+            return self.t("update_refused_selfupdate")
         full = next((p for _k, a, p in outcomes
                      if a == "update_queue_full"), None)
         if full is not None:
@@ -2114,9 +2118,15 @@ class TelegramBot:
         if not pending:
             self.send_message(self.t("major_none_pending", name=name))
             return
+        from container_store import host_key
         from update_checker import pin_list_unreadable
         if pin_list_unreadable(checker):
-            self.send_message(self.t("update_refused_pin_list"))
+            # The major stays deferred, and the tap took the prompt's
+            # buttons away: they come back with the answer (Q16h), as
+            # with the busy answer below.
+            self.send_message(
+                self.t("update_refused_pin_list"),
+                reply_markup=self._major_keyboard(host_key(host_name, name)))
             return
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
@@ -2130,7 +2140,6 @@ class TelegramBot:
         # without them "confirm it again" had nothing to tap on Telegram
         # until the next auto pass prompted again.
         if not self.engine.claim_update():
-            from container_store import host_key
             self.send_message(self.t(
                 "major_confirm_busy", name=name,
                 tag=self._entry_host_tag({"host": host_name})),
@@ -2143,9 +2152,14 @@ class TelegramBot:
             why = self.engine.held_back(container_key, labels=True,
                                         checker=checker)
             if why is not None:
+                # Confirm/Skip come back with it (Q16h): the major is
+                # still deferred, and once unpinned it can be confirmed
+                # from here again.
                 self.send_message(self.t(
                     f"update_held_{why}",
-                    name=f"`{self._key_label(container_key)}`"))
+                    name=f"`{self._key_label(container_key)}`"),
+                    reply_markup=self._major_keyboard(
+                        host_key(host_name, name)))
                 return
             image = pending.get("image", "")
             compose = pending.get("compose", {}) or {}

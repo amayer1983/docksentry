@@ -1360,7 +1360,9 @@ GUARDED = [
     # The engine's drainer says it for a queued key since Q13.
     ("…and finished work is not called a mistake",
      "app/update_engine.py",
+     '        # list" there would put a warning under a green result.\n'
      '        return self._t("update_already_done", name=self._key_label(key))\n',
+     '        # list" there would put a warning under a green result.\n'
      '        return self._t("container_not_in_list", name=self._key_label(key))\n',
      "test_update_queue_duplicate.py"),
 
@@ -2096,8 +2098,12 @@ GUARDED = [
 
     ('…and neither does the Telegram major confirmation',
      'app/telegram_bot.py',
-     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if pin_list_unreadable(checker):',
-     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if False:',
+     '        from update_checker import pin_list_unreadable\n'
+     '        if pin_list_unreadable(checker):\n'
+     "            # The major stays deferred, and the tap took the prompt's\n",
+     '        from update_checker import pin_list_unreadable\n'
+     '        if False:\n'
+     "            # The major stays deferred, and the tap took the prompt's\n",
      'test_pin_unreadable_paths.py'),
 
     ('…nor Telegram "Update all"',
@@ -5031,14 +5037,15 @@ GUARDED = [
 
     ("…and names the containers the drain reports",
      "app/update_engine.py",
-     '            kw["names"] = ", ".join(f"`{short(k)}`" for k in params["keys"])\n',
+     '            kw["names"] = ", ".join(f"`{self._key_label(k)}`"\n'
+     '                                    for k in params["keys"])\n',
      '            kw["names"] = ""\n',
      "test_update_queue.py"),
 
     ("…and cuts a raised error to 200 characters",
      "app/update_engine.py",
-     "{params['error'][:200]}\"\n",
-     "{params['error']}\"\n",
+     "{params['error'][:200]}\")\n",
+     "{params['error']}\")\n",
      "test_update_queue.py"),
 
     # Q10: the drain claims before it takes an entry, holds the claim
@@ -5632,13 +5639,17 @@ GUARDED = [
     # before it knows the lock is held, so the refusal brings them back.
     ("…and brings Confirm/Skip back, since the tap took the prompt's away",
      'app/telegram_bot.py',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
      '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
      '                reply_markup=None)\n',
      'test_telegram_callback_matrix.py'),
 
     ("…for that container on its own host",
      'app/telegram_bot.py',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
      '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
      '                reply_markup=self._major_keyboard(name))\n',
      'test_telegram_callback_matrix.py'),
 
@@ -5940,15 +5951,17 @@ GUARDED = [
     ('every manual update asks the pin check right before update_container, '
      'so a pin set after the pending entry was written holds (Q16g)',
      'app/update_engine.py',
-     '                    why = self.held_back(host_key(u_host, u["name"]),\n'
-     '                                         labels=True, checker=u_checker)\n',
+     '                    why = self.held_back(\n'
+     '                        host_key(u_host, u["name"]),\n'
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n'
+     '                        checker=u_checker)\n',
      '                    why = None\n',
      'test_queue_held_back.py'),
 
     ("…and reads the container's labels there",
      'app/update_engine.py',
-     '                                         labels=True, checker=u_checker)\n',
-     '                                         labels=False, checker=u_checker)\n',
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n',
+     '                        labels=False,\n',
      'test_queue_held_back.py'),
 
     ('…its line says why it was held: pinned, the label, excluded, the pin '
@@ -6088,8 +6101,8 @@ GUARDED = [
 
     ("the page knows the 'pinned' answer",
      'app/web_ui.py',
-     '                        "pinned"):\n',
-     '                        ):\n',
+     '                        "pinned", "restarting"):\n',
+     '                        "restarting"):\n',
      'test_web_update_feedback.py'),
 
     ("…says the held count under 'already updating'",
@@ -6122,6 +6135,206 @@ GUARDED = [
      '',
      'test_lang_parity.py'),
 
+    # ── Q16h: the queue around a self-update, the drain's words, a held major ──
+    ('a self-update names and drops the queue right before its helper starts'
+     ', whoever started it (Q16h)',
+     'app/selfupdate.py',
+     '    try:\n'
+     '        _drop_queue(ctx)\n'
+     '        result = subprocess.run(',
+     '    try:\n'
+     '        pass\n'
+     '        result = subprocess.run(',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…through the engine, which takes every entry off the queue',
+     'app/update_engine.py',
+     '            left = self.drop_queued_updates()\n'
+     '        except Exception as e:                              # noqa: BLE001\n'
+     '            print(f"Queue drop before the self-update failed',
+     '            left = []\n'
+     '        except Exception as e:                              # noqa: BLE001\n'
+     '            print(f"Queue drop before the self-update failed',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and names them to every channel, with their hosts',
+     'app/update_engine.py',
+     '                self._say_drain("update_queue_dropped_selfupdate",\n'
+     '                                {"keys": left})\n',
+     '                pass\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…the swap flag goes up before the helper starts, so nothing queues in '
+     'its last seconds',
+     'app/selfupdate.py',
+     '    ctx._swap_in_flight = True\n'
+     '    try:\n'
+     '        _drop_queue(ctx)\n',
+     '    try:\n'
+     '        _drop_queue(ctx)\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and comes down again when the helper does not start, so the lock is g'
+     'iven back',
+     'app/selfupdate.py',
+     '    if result.returncode != 0:\n'
+     '        ctx._swap_in_flight = False\n',
+     '    if result.returncode != 0:\n'
+     '        pass\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…or when its launch raises',
+     'app/selfupdate.py',
+     '    except BaseException:\n'
+     '        ctx._swap_in_flight = False\n'
+     '        raise\n',
+     '    except BaseException:\n'
+     '        raise\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('during the swap a single update is refused, not queued',
+     'app/update_engine.py',
+     '        if getattr(self, "_swap_in_flight", False):\n'
+     '            return False, "update_refused_selfupdate", {}\n',
+     '        if False:\n'
+     '            return False, "update_refused_selfupdate", {}\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and so is a request for several, as a whole',
+     'app/update_engine.py',
+     '        if getattr(self, "_swap_in_flight", False):\n'
+     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
+     '        if False:\n'
+     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…Telegram says the refusal once for a batch',
+     'app/telegram_bot.py',
+     '        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):\n',
+     '        if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…Discord says it',
+     'app/discord_bot.py',
+     '        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):\n',
+     '        if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…the Web UI sends the page to its banner',
+     'app/web_ui.py',
+     '            if "update_refused_selfupdate" in answers:\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…which the page knows',
+     'app/web_ui.py',
+     '                        "pinned", "restarting"):\n',
+     '                        "pinned"):\n',
+     'test_web_update_feedback.py'),
+
+    ('a self-update that gives its lock back by hand kicks the drainer, so w'
+     'hat queued meanwhile runs without waiting for a sweep (Q16h)',
+     'app/selfupdate.py',
+     '            ctx._update_lock.release()\n'
+     '            _kick_queue(ctx)\n',
+     '            ctx._update_lock.release()\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…through the engine of its context',
+     'app/selfupdate.py',
+     '            engine.kick_drain()\n',
+     '            pass\n',
+     'test_selfupdate_decoupled.py'),
+
+    ('a queued entry the batch already did is named as done, not the nameles'
+     's "no pending updates" (Q16h)',
+     'app/update_engine.py',
+     '                               name=self._key_label(key))\n'
+     '            return self._t("update_already_done", name=self._key_label(key))\n'
+     '        if why == "host_unknown":\n',
+     '                               name=self._key_label(key))\n'
+     '            return self._t("no_pending_updates")\n'
+     '        if why == "host_unknown":\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and one over an unreadable pending list is named as that, not as done',
+     'app/update_engine.py',
+     '            if path and os.path.exists(path):\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the drain names the containers it reports with their host (Q16h)',
+     'app/update_engine.py',
+     '            kw["names"] = ", ".join(f"`{self._key_label(k)}`"\n',
+     '            kw["names"] = ", ".join(f"`{k}`"\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and a drained entry that raised',
+     'app/update_engine.py',
+     '            text = (f"❌ `{self._key_label(params[\'key\'])}`: "\n',
+     '            text = (f"❌ `{params[\'key\']}`: "\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a Web major confirmation of a container pinned or excluded since the p'
+     'rompt says so on the page and starts nothing (Q16h)',
+     'app/web_ui.py',
+     '                    why = bot.engine.held_back(raw)\n',
+     '                    why = None\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…excluded as well as pinned',
+     'app/web_ui.py',
+     '                    if why in ("pinned", "excluded"):\n'
+     '                        self._send_redirect("/?update=pinned&n=1")\n',
+     '                    if why in ("pinned",):\n'
+     '                        self._send_redirect("/?update=pinned&n=1")\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a held major in Telegram brings Confirm/Skip back',
+     'app/telegram_bot.py',
+     '                    name=f"`{self._key_label(container_key)}`"),\n'
+     '                    reply_markup=self._major_keyboard(\n'
+     '                        host_key(host_name, name)))\n',
+     '                    name=f"`{self._key_label(container_key)}`"))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and so does one refused over an unreadable pin list',
+     'app/telegram_bot.py',
+     '                self.t("update_refused_pin_list"),\n'
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                self.t("update_refused_pin_list"))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('an entry whose netns snapshot failed is not asked for its labels on th'
+     'at host again',
+     'app/update_engine.py',
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n',
+     '                        labels=True,\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the swap refusal is in every language',
+     'app/lang/ko.json',
+     '  "update_refused_selfupdate": ',
+     '  "update_refused_selfupdate_x": ',
+     'test_lang_parity.py'),
+
+    ('…and the named unreadable-pending sentence',
+     'app/lang/pl.json',
+     '  "update_queue_skipped_pending_unreadable": ',
+     '  "update_queue_skipped_pending_unreadablex": ',
+     'test_lang_parity.py'),
+
+    ('…and the Web banner',
+     'app/lang/tr.json',
+     '  "web_update_restarting": ',
+     '  "web_update_restartingx": ',
+     'test_lang_parity.py'),
+
+    ('…and its title',
+     'app/lang/zh.json',
+     '  "web_update_restarting_title": ',
+     '  "web_update_restarting_titlex": ',
+     'test_lang_parity.py'),
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

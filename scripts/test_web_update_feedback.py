@@ -483,6 +483,13 @@ _page = _status_page("/?update=started")
 checks["…but not under started when nothing was held back"] = (
     _fmt("web_update_started") in _page
     and _fmt("web_update_pinned", count=1) not in _page)
+# A self-update is swapping (Q16h): nothing was queued, and the page
+# says why, in words written here rather than read from the file.
+_page = _status_page("/?update=restarting")
+checks["…that Docksentry is updating itself and nothing was queued"] = (
+    "Docksentry is updating itself right now and restarts in a moment — "
+    "nothing was queued. Try again once it's back." in _page
+    and "Updating itself" in _page and "card-warn" in _page)
 _page = _status_page("/?update=host_unknown")
 checks["…that the host is not one this instance manages"] = (
     _fmt("web_update_host_unknown") in _page

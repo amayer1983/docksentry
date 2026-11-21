@@ -792,13 +792,17 @@ def web_free_checks():
         P("/api/major_confirm", ("name", "web"), ("action", "confirm"))])
     st = rec["steps"]
     major = rec["state"]["files"].get("major_confirmations.json", "")
+    # Since Q16h the page says it (the pinned banner) and no thread is
+    # started, so Telegram says nothing for a click made on the page.
     out.append(("[multi] Web free: a deferred major, then pinned, then "
-                "confirmed: not updated, said, the major stays",
-                _ran(st[-1]) == [] and _said(st[-1],
-                                             HELD_PIN.format("`web`"))
+                "confirmed: not updated, the page says so, the major stays",
+                st[-1].get("http") == "303 | Location: /?update=pinned&n=1"
+                and _ran(st[-1]) == []
+                and not any(HELD_PIN.format("`web`") in o
+                            for o in (st[-1].get("out") or ()))
                 and '"web"' in major and not esc,
-                f"out {st[-1].get('out')!r}, events "
-                f"{st[-1].get('events')!r}, majors {major!r}"))
+                f"http {st[-1].get('http')!r}, out {st[-1].get('out')!r}, "
+                f"events {st[-1].get('events')!r}, majors {major!r}"))
     # Busy, the one asked for running and another pinned: both are said
     # (Q16f said only "held").
     row = t5.Row("multi")

@@ -311,6 +311,10 @@ QUEUE_CALLS = {
     ("scheduler.py", "Scheduler._resume_deferred_check._run_deferred",
      "let_drain_go"): 1,
     ("update_engine.py", "UpdateEngine.let_drain_go", "kick_drain"): 1,
+    # `selfupdate.start` gives its lock back by hand and then kicks the
+    # drainer itself (Q16h): a self-update that found nothing used to
+    # leave the queue to the next sweep (measured on f6824c8).
+    ("selfupdate.py", "_kick_queue", "kick_drain"): 1,
 }
 #: The two that feed the queue; the rest work it off. Telegram's old
 #: `_drain_update_queue` / `_sweep_update_queue` stay listed so a call
@@ -349,6 +353,12 @@ BUSY_MESSAGES = {
     # (Q10), which covers the end of each entry as well.
     ("update_engine.py", "UpdateEngine._drop_for_selfupdate",
      "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
+    # …and by the swap itself, right before its helper starts (Q16h):
+    # the drain never gets to say it when a release runs the self-update
+    # from its `after`, or a scheduled pass holds the drainer back.
+    ("update_engine.py", "UpdateEngine.drop_queue_for_swap",
+     "update_queue_dropped_selfupdate"): (1, "queue: dropped before the "
+                                             "self-update's helper starts"),
     # The drain's and a failed tap's drop, since Q13 in one helper.
     ("update_engine.py", "UpdateEngine.drop_group_mates",
      "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
@@ -499,6 +509,10 @@ BUSY_MESSAGES = {
      "update_queue_skipped_"): (1, "queue: pinned or excluded during its "
                                    "wait in the drain, held right before "
                                    "the update (Q16g)"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_pending_unreadable"):
+        (1, "queue: the pending list unreadable when its turn came, named "
+            "instead of the nameless 'no pending updates' (Q16h)"),
     ("update_engine.py", "UpdateEngine.cleanup_guarded",
      "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
     # Self-update and lifecycle
@@ -874,9 +888,10 @@ def enumeration_checks(found):
     drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS
               and k[0] != "update_engine.py"}
     out.append((f"only these files work the queue off: {sorted(drains)}",
-                drains == {"telegram_bot.py", "scheduler.py"},
+                drains == {"telegram_bot.py", "scheduler.py", "selfupdate.py"},
                 "Q13: Telegram's poll loop and tap, the scheduler's pass; "
-                "the drain itself is the engine's"))
+                "Q16h: the self-update's raw release; the drain itself is "
+                "the engine's"))
 
     want_b = {k: v[0] for k, v in BUSY_MESSAGES.items()}
     for k in sorted(set(busy) | set(want_b)):
@@ -1178,13 +1193,11 @@ def drive(prepare, call, held, during=False):
 #: Sites that give the lock back without starting the drainer, and why.
 #: Every other site that releases leads to exactly one drain (Q13).
 #: Checked both ways: an entry here whose site does start one is stale.
-NO_DRAIN = {
-    ("selfupdate.py", "start"):
-        "gives the lock back by hand, by design (Q3). The two sweeps pick "
-        "its queue up: the poll loop within seconds, the scheduler within "
-        "60 s. A self-update that queued behind another flow runs inside "
-        "that flow's release, whose kick comes right after it.",
-}
+#: Empty since Q16h. `selfupdate.start` stood here: it gives the lock
+#: back by hand (Q3), so what queued during a self-update that found
+#: nothing waited for a sweep — the poll loop, or the scheduler 30–60 s
+#: later. It kicks the drainer after that release now (`_kick_queue`).
+NO_DRAIN = {}
 
 
 def _busy_view(rec, role):

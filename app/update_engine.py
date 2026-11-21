@@ -21,6 +21,7 @@ constructs a second lock. A second lock would reopen the #53 TOCTOU window
 """
 
 import contextlib
+import os
 import threading
 import time
 
@@ -229,9 +230,11 @@ class UpdateEngine:
         # journal to sort it out, and a stale "updating…" surviving a
         # reboot would be a lie the UI could never clear.
         self._updating = {}
-        # True once the helper container is launched — the process is
-        # about to be stopped, so the wrapper keeps the update lock held
-        # (nothing may start an update in the final seconds).
+        # True from right before the helper container is launched (and
+        # down again if it does not start) — the process is about to be
+        # stopped, so the wrapper keeps the update lock held (nothing may
+        # start an update in the final seconds), and nothing is queued
+        # (Q16h).
         self._swap_in_flight = False
         # Notifier (Discord/webhook fan-out) — single-sourced here so the
         # orchestration methods that moved off the bot (_process_update_batch)
@@ -474,6 +477,41 @@ class UpdateEngine:
             if claimed:
                 self.release_update(after=after)
 
+    def drop_queue_for_swap(self):
+        """Take everything off the queue and name it, to every channel,
+        right before the self-update's helper starts (Q16h).
+
+        The helper stops this process within seconds, and the queue lives
+        in memory: whatever was on it went with the restart, and nobody
+        was told. Measured on f6824c8: a tap
+        held the lock, Discord and the Web UI queued `web @nas` and `db`,
+        `/selfupdate` queued behind them; the tap's release started the
+        self-update inside its `after`, and the helper launched with both
+        still queued. The drain never got to say anything, because the
+        release runs `after` before it kicks the drainer, and a held
+        scheduled pass keeps the kick back anyway. So the swap says it
+        itself, whoever started it. `selfupdate.swap` raises
+        `_swap_in_flight` first, so nothing new is queued from here on
+        (`claim_or_queue` refuses). The pending entries stay; the
+        restarted process finds them in the list.
+
+        Returns the keys it took off. Never raises: a sentence that fails
+        must not stop the self-update it is about.
+        """
+        try:
+            left = self.drop_queued_updates()
+        except Exception as e:                              # noqa: BLE001
+            print(f"Queue drop before the self-update failed: {clip(e)}")
+            return []
+        if left:
+            try:
+                self._say_drain("update_queue_dropped_selfupdate",
+                                {"keys": left})
+            except Exception as e:                          # noqa: BLE001
+                print(f"Could not name the queue the self-update drops: "
+                      f"{clip(e)}")
+        return left
+
     # ── Claim, or say why not and queue ────────────────────────────────
     def claim_or_queue(self, container_key):
         """Claim the update lock for one container, or queue it.
@@ -493,6 +531,8 @@ class UpdateEngine:
           update_not_queued_excluded  {}: excluded from updates, the same
           update_refused_pin_list     {}: the pin list cannot be read
                                  (`held_back`, Q16f)
+          update_refused_selfupdate   {}: Docksentry is swapping itself
+                                 for a new image, nothing is queued (Q16h)
 
         A key and its parameters, never a sentence: every connection
         adds the container's name and says it in its own words, and
@@ -500,6 +540,10 @@ class UpdateEngine:
         """
         if self.claim_update():
             return True, None, {}
+        # The self-update's helper is about to replace this process
+        # (Q16h): a queued update would go with it. Refused, and said so.
+        if getattr(self, "_swap_in_flight", False):
+            return False, "update_refused_selfupdate", {}
         # Tapping the SAME container again while it is running is not a
         # second piece of work — it is the same one. Queueing it meant
         # the drain picked it up after the update had finished and
@@ -533,11 +577,15 @@ class UpdateEngine:
         or excluded key is not placed and gets its own answer (Q16f), and
         one already waiting is taken off, unless the request did not fit;
         an unreadable pin list refuses the whole request, every key with
-        `update_refused_pin_list`.
+        `update_refused_pin_list`, and so does a self-update's swap, with
+        `update_refused_selfupdate` (Q16h).
         """
         if self.claim_update():
             return True, []
         keys = list(dict.fromkeys(keys))
+        if getattr(self, "_swap_in_flight", False):
+            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).
+            return False, [(k, "update_refused_selfupdate", {}) for k in keys]
         running = self.updating
         # Pinned and excluded keys stay off the queue and are answered
         # for themselves (Q16f); the rest goes on as before. One pin read
@@ -843,11 +891,11 @@ class UpdateEngine:
         date, or a failed pull, comes back without one, and then the rest
         of the queue runs. Named before it started, the rest was dropped
         for nothing under "about to restart" (Q10 review, measured).
-        Not measured, read from `selfupdate.swap`: the helper's stop is
-        meant to land inside its 30-second wait, so on a real restart the
-        drain usually never gets back here, and the rest goes with the
-        process unnamed, as before Q10. The entries stay in the pending
-        list either way.
+        On a real restart the drain usually never gets back here: the
+        helper's stop lands inside `swap`'s 30-second wait. Since Q16h the
+        swap names and drops the queue itself before the helper starts
+        (`drop_queue_for_swap`), so by then there is nothing left here.
+        The entries stay in the pending list either way.
         """
         try:
             swapping = bool(getattr(self, "_swap_in_flight", False))
@@ -1116,7 +1164,19 @@ class UpdateEngine:
             return self._t(f"update_queue_skipped_{why}",
                            name=self._key_label(key))
         if why == "no_pending_updates":
-            return self._t("no_pending_updates")
+            # No usable pending file. Without one at all, the batch the
+            # entry waited behind emptied it: "Update all" deletes the
+            # file when it is done. That used to come out as a nameless
+            # "No pending updates found", once per entry, under the green
+            # results of the very containers it meant (Q16h, measured on
+            # f6824c8: two of them under three results). A file that is
+            # there but cannot be read is not "already done": nobody can
+            # tell, and the entry is named with that.
+            path = getattr(self.config, "pending_file", None)
+            if path and os.path.exists(path):
+                return self._t("update_queue_skipped_pending_unreadable",
+                               name=self._key_label(key))
+            return self._t("update_already_done", name=self._key_label(key))
         if why == "host_unknown":
             from container_store import split_host_key
             hosts = getattr(self, "hosts", None)
@@ -1130,16 +1190,17 @@ class UpdateEngine:
 
     def _say_drain(self, key, params):
         """What the drain reports, to every channel. Containers are
-        named the short way, as Telegram's drain named them."""
-        from container_store import split_host_key
-
-        def short(k):
-            return split_host_key(k)[1]
+        named with their host (`web @nas`), as the result lines and the
+        other drain sentences name them. Until Q16h they were named the
+        short way Telegram's drain had, and on two hosts `web`, `web`
+        said nothing about which ones did not run."""
         if key == "entry_failed":
-            text = f"❌ `{short(params['key'])}`: {params['error'][:200]}"
+            text = (f"❌ `{self._key_label(params['key'])}`: "
+                    f"{params['error'][:200]}")
         else:
             kw = {k: v for k, v in params.items() if k != "keys"}
-            kw["names"] = ", ".join(f"`{short(k)}`" for k in params["keys"])
+            kw["names"] = ", ".join(f"`{self._key_label(k)}`"
+                                    for k in params["keys"])
             text = self._t(key, **kw)
         self._seam().tell(text)
 
@@ -1185,8 +1246,10 @@ class UpdateEngine:
         seconds — and since Q13 once per scheduler pass too, which is
         what an install without Telegram has (30 to 60 s, see
         `Scheduler._after_tick`). Every release kicks the drainer
-        anyway; the sweeps are for what a release does not cover
-        (`selfupdate.start` gives the lock back by hand). Cheap when
+        anyway; the sweeps are for what a release does not cover (a
+        drainer that lost its claim, or a kick that raised). Until Q16h
+        that included `selfupdate.start`, which gives the lock back by
+        hand; it kicks the drainer itself now. Cheap when
         there is nothing to do: one lock, one truth test.
 
         Never raises — this runs inside the listener loop, and taking
@@ -2074,8 +2137,15 @@ class UpdateEngine:
                     # written, or by a label (Q16g): the same question the
                     # drain asks, on the checker that would recreate it,
                     # read fresh for every entry.
-                    why = self.held_back(host_key(u_host, u["name"]),
-                                         labels=True, checker=u_checker)
+                    # Not the labels when its netns snapshot already
+                    # failed: that read went to the same host and timed
+                    # out, and asking it again only adds the label read's
+                    # 10 s before the same failure (Q16h). Pins and the
+                    # setting need no host.
+                    why = self.held_back(
+                        host_key(u_host, u["name"]),
+                        labels=(u_host, u["name"]) not in snapshot_failed,
+                        checker=u_checker)
                     if why is not None:
                         results.append(self._t(
                             f"update_held_{why}",

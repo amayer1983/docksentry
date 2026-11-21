@@ -2031,7 +2031,7 @@ EXPECTED = {
                           'nas': 'inspect --format t=10, inspect --format t=5, inspect '
                                  '--format, inspect --format t=10',
                           'dead': 'inspect --format t=10, inspect --format t=5 ×2, inspect '
-                                  '--format, inspect --format t=10'},
+                                  '--format'},
                 'events': ['update_container@local:web', 'update_container@nas:web'],
                 'raised': None}],
      'state': {'pending': None,

@@ -197,7 +197,7 @@ for k in ("one", "two"):
 _kick(eng)
 checks["a pending self-update stops the drain"] = b.updated == []
 checks["…and names what will not run"] = any(
-    "NOT run" in m and "`one`" in m and "`two`" in m for m in b.sent)
+    "did not run" in m and "`one`" in m and "`two`" in m for m in b.sent)
 checks["…leaving nothing queued to be lost by the restart"] = (
     eng._update_queue == [])
 
