@@ -168,21 +168,23 @@ checks["the order is fixed, so the message reads the same twice"] = (
     got == L(many, NO_IMAGE_HC))
 
 # ── the wiring: the note only exists when there is something to say ──
-import inspect as _inspect  # noqa: E402
+import srcslice  # noqa: E402
 from update_checker import UpdateChecker as U  # noqa: E402
 
-src = _inspect.getsource(U._update_compose)
+src = srcslice.method_source(U, "_update_compose")
 checks["the unreachable-file note is gated on a real loss"] = (
-    "lost = self._fallback_loss_note()" in src
+    src is not None
+    and "lost = self._fallback_loss_note()" in src
     and "if not lost:" in src)
 checks["the remote-host fallback got the same note"] = (
-    "compose_fallback_remote" in src)
+    src is not None and "compose_fallback_remote" in src)
+_uc_src = srcslice.method_source(U, "update_container")
 checks["a container with no config_files label got it too"] = (
-    "compose_fallback_nolabel" in _inspect.getsource(U.update_container))
+    _uc_src is not None and "compose_fallback_nolabel" in _uc_src)
 
-note = _inspect.getsource(U._fallback_loss_note)
+note = srcslice.method_source(U, "_fallback_loss_note")
 checks["no losses means an empty note, not a message"] = (
-    'return ""' in note)
+    note is not None and 'return ""' in note)
 
 # The text goes through the translations like every other user-facing
 # line, and the key has to exist in all sixteen.

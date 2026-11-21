@@ -34,6 +34,8 @@ import os
 import sys
 import tempfile
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import selfupdate  # noqa: E402
 
@@ -60,8 +62,12 @@ for step in ("docker rename", "docker run -d", "docker rm ",
 # that decides the timeout moved with it, so the check follows.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "selfupdate.py"), encoding="utf-8").read()
+# The 300 characters behind the call, as before.
+_build_at = "build_script(\n"
+_build = srcslice.section(src, _build_at, length=len(_build_at) + 300,
+                          label="selfupdate.py: the build_script call")
 checks["the timeout comes from DOCKER_STOP_TIMEOUT"] = (
-    'docker_stop_timeout' in src.split("build_script(\n")[1][:300])
+    _build is not None and 'docker_stop_timeout' in _build)
 checks["…with the same floor the rest of the shutdown path uses"] = (
     "max(30, int(getattr(ctx.config" in src)
 
@@ -77,16 +83,16 @@ checks["a shutdown that never finished is reported"] = (
 # Order matters: the first write has to happen before any service is
 # stopped, or a SIGKILL loses it entirely — which is why it is written
 # twice rather than once at the end.
-_first = main.index('"done": False')
-_stop = main.index("scheduler.stop()")
-_second = main.index('"done": True')
-checks["…the first write comes before anything is stopped"] = _first < _stop
-checks["…and the second after"] = _second > _stop
+checks["…the first write comes before anything is stopped"] = (
+    srcslice.in_order(main, '"done": False', "scheduler.stop()"))
+checks["…and the second after"] = (
+    srcslice.in_order(main, "scheduler.stop()", '"done": True'))
 
 # An older marker without the field must not be read as a kill.
-i = main.index("killed_stopping = not")
+_killed = srcslice.section(main, "killed_stopping = not", length=120,
+                           label="main.py: the killed_stopping read")
 checks["a marker from an older version is not mistaken for a kill"] = (
-    '_exit.get("done", True)' in main[i:i + 120])
+    _killed is not None and '_exit.get("done", True)' in _killed)
 
 # The message has to be honest about the consequence, which is "probably
 # nothing" — every file is written atomically. Crying wolf here would be

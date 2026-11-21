@@ -27,46 +27,52 @@ import os
 import re
 import sys
 
+import srcslice
+
 checks = {}
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 web = open(os.path.join(ROOT, "app", "web_ui.py"), encoding="utf-8").read()
-blk = web.split("def _compose_mount_block")[1].split("\n        def ")[0]
+blk = srcslice.section(web, "def _compose_mount_block", "\n        def ",
+                       label="web_ui.py: _compose_mount_block")
 
 # ── the refusal is about our data directory, nothing else ────────────
 checks["the refusal is measured against our data directory"] = (
-    'getattr(config, "data_dir"' in blk)
+    blk is not None and 'getattr(config, "data_dir"' in blk)
 checks["…and no longer against every mount we hold"] = (
-    "& self._own_mount_dests()" not in blk)
+    blk is not None and "& self._own_mount_dests()" not in blk)
 checks["…including a mount that merely contains it"] = (
-    "_data.startswith(" in blk)
+    blk is not None and "_data.startswith(" in blk)
 
 # ── an existing mount gets its own answer ────────────────────────────
 checks["a mount we already have is a different finding"] = (
-    "web_compose_mount_wrong_source" in blk)
+    blk is not None and "web_compose_mount_wrong_source" in blk)
 checks["…and it names the source to go and check"] = (
-    "_own_mount_sources(" in blk)
+    blk is not None and "_own_mount_sources(" in blk)
 # The daemon already told us which container holds the file, so the
 # right source is known. Saying only "yours is wrong" would throw that
 # away — which is what the clash branch did for three weeks.
 checks["…and the one that would work, when the daemon knows it"] = (
-    "web_compose_mount_use_instead" in blk)
+    blk is not None and "web_compose_mount_use_instead" in blk)
 # Against every name our own mount answers to, not one of them: a named
 # volume reads as `stacks` from the daemon and as the directory under
 # /var/lib/docker/volumes from our own inspect, so a single comparison
 # could never match and the page offered a mount that was already there.
 checks["…only when it differs from what they have"] = (
-    "_right not in _mine_at" in blk and "_own_mount_ids(" in blk)
+    blk is not None
+    and "_right not in _mine_at" in blk and "_own_mount_ids(" in blk)
 # And when the daemon names nobody — or names our own mount back at us
 # — the page says so instead of stopping at "wrong". @NotRetarded read
 # the short version three times on 21.09.: "nothing in that section
 # tells me where it really is."
 checks["…and says so when the daemon names nobody"] = (
-    "web_compose_mount_no_holder" in blk)
+    blk is not None and "web_compose_mount_no_holder" in blk)
 checks["…including when it names our own mount back at us"] = (
-    re.search(r"_right not in _mine_at(.|\n)*?else:(.|\n)*?"
-              r"web_compose_mount_no_holder", blk) is not None)
+    blk is not None
+    and re.search(r"_right not in _mine_at(.|\n)*?else:(.|\n)*?"
+                  r"web_compose_mount_no_holder", blk) is not None)
 checks["the refusal still comes first"] = (
-    blk.index("web_compose_mount_clash") < blk.index("web_compose_mount_wrong_source"))
+    srcslice.in_order(blk, "web_compose_mount_clash",
+                      "web_compose_mount_wrong_source"))
 
 # ── the wording says which of the three it is ────────────────────────
 import json                                                # noqa: E402
@@ -99,9 +105,10 @@ checks["…and so does the update note"] = (
 # Two implementations of "who holds this file" is two answers, and the
 # page and `/audit` disagreeing about one container is the thing that
 # sent somebody round the loop in the first place.
-exact = web.split("def _compose_mount_exact")[1].split("\n        @")[0]
+exact = srcslice.section(web, "def _compose_mount_exact", "\n        @",
+                         label="web_ui.py: _compose_mount_exact")
 checks["the page reads the holder from the shared helper"] = (
-    "from compose_paths import holder" in exact)
+    exact is not None and "from compose_paths import holder" in exact)
 checks["…and so does /audit"] = "compose_paths.holder(" in sc
 checks["…and neither keeps its own copy of the manager list"] = (
     "_MANAGER_HINTS" not in web and "MANAGER_HINTS" in open(

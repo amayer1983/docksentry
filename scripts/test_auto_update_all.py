@@ -26,7 +26,16 @@ def run(all_auto, auto_list):
     bot.store = types.SimpleNamespace(
         get_update_windows=lambda: {},
         get_autoupdate=lambda: set(auto_list))
-    bot._update_lock = threading.Lock()
+    # The lock lives on a real UpdateEngine, made without __init__ and
+    # given the three lock fields its constructor sets, and `_update_lock`
+    # points at the engine's, as TelegramBot's property does. Without an
+    # engine, the first lock method called on it would take this procedure
+    # down with an AttributeError instead of testing anything.
+    bot.engine = UpdateEngine.__new__(UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+    bot._update_lock = bot.engine._update_lock
     bot._run_queued_selfupdate = lambda: None
     bot._get_autoupdate = lambda: set(auto_list)
     bot.t = get_translator("en")

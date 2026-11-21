@@ -212,7 +212,13 @@ with tempfile.TemporaryDirectory() as _d:
 import ast  # noqa: E402
 
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
-SITES = {"scheduler.py": 1, "telegram_bot.py": 3, "discord_bot.py": 1}
+# status_render's one is the /status overview walk, which Telegram and,
+# since W5d, Discord both take; discord_bot's one is /hosts check.
+# container_flags has find_on_hosts' and, since W6, check_on_hosts' (the
+# arg-less Telegram /check asks it there); telegram_bot's one left is
+# the /hosts check pre-flight.
+SITES = {"scheduler.py": 1, "telegram_bot.py": 1, "discord_bot.py": 1,
+         "container_flags.py": 2, "status_render.py": 1}
 _found, _untranslated = {}, []
 for _file in SITES:
     _src = open(os.path.join(APP, _file), encoding="utf-8").read()
@@ -236,7 +242,7 @@ if _found != SITES:
 
 # The hint must never be the reason a check fails — at EVERY call
 # site, not at the first one. `"except Exception" in src[i:i+700]`
-# after the first `import hostdiag` was the check, and Telegram has
+# after the first `import hostdiag` was the check, and Telegram had
 # three: stripping the try/except from the third left it green.
 #
 # As a tree: every `hostdiag.hint` call has to sit inside a `Try` that

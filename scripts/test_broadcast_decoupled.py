@@ -17,6 +17,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
@@ -29,21 +31,23 @@ checks["broadcast.Broadcast.announce exists"] = callable(
 
 # ── the Telegram bot no longer owns the seam ─────────────────────────
 tsrc = open(os.path.join(APP, "telegram_bot.py"), encoding="utf-8").read()
-i = tsrc.index("    def announce(self")
-tg_ann = tsrc[i:tsrc.index("\n    def ", i + 10)]
+tg_ann = srcslice.section(tsrc, "    def announce(self", "\n    def ",
+                          label="telegram_bot.py: announce")
 checks["telegram_bot's announce is an adapter, not the seam"] = (
-    "notifier.send_message(" not in tg_ann
+    tg_ann is not None
+    and "notifier.send_message(" not in tg_ann
     and "has_channels()" not in tg_ann
     and "seam.announce(" in tg_ann)
 
 # ── Discord speaks through the seam, not through the Telegram bot ────
 dsrc = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
-i = dsrc.index("def _cmd_testchannel")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
+body = srcslice.section(dsrc, "def _cmd_testchannel", "\n    def ",
+                        label="discord_bot.py: _cmd_testchannel")
 checks["Discord's /testchannel goes through the seam"] = (
-    "seam.announce(" in body)
+    body is not None and "seam.announce(" in body)
 checks["…and stops borrowing announce from the Telegram bot"] = (
-    "bot.announce" not in body and "self.telegram" not in body)
+    body is not None
+    and "bot.announce" not in body and "self.telegram" not in body)
 
 # ── main.py builds ONE seam and hands it to both ─────────────────────
 msrc = open(os.path.join(APP, "main.py"), encoding="utf-8").read()

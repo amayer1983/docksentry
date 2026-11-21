@@ -31,7 +31,17 @@ def state(backend, name):
         cfg = json.loads(r.stdout)[0]
     except (subprocess.SubprocessError, json.JSONDecodeError, IndexError):
         return None
+    return state_of(backend, cfg)
 
+
+def state_of(backend, cfg):
+    """`state()` for an inspect dict already in hand.
+
+    The /status overview inspects every running container of a host in
+    one call (`status_render.collect_overview`) and shapes each result
+    here, so its lines say what `state()` would have said. `backend` is
+    still needed: the version label comes from the running image's own
+    inspect, one more call per container."""
     state = cfg.get("State", {}) or {}
     host = cfg.get("HostConfig", {}) or {}
     config = cfg.get("Config", {}) or {}

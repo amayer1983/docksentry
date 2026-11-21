@@ -127,6 +127,314 @@ checks[f"no value is measured and then dropped (known: {KNOWN_SPARE})"] = (
 if spare:
     print("  ungenutzt:", "; ".join(spare))
 
+# ── the engine's busy answers (Q7) ──────────────────────────────────
+# `claim_or_queue` and `claim_or_queue_many` answer with a key and its
+# parameters; every connection fills in the container's name itself and
+# renders a `<x>_seconds` value as `{x}` ("2m"). So for each answer the
+# engine can give, in every language: the key exists, every placeholder
+# is either one of those parameters or `name`, and no parameter is left
+# with nowhere to go. Driven, not read off the source: the keys are the
+# ones the engine actually returned, in every state it has.
+import glob  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+sys.path.insert(0, APP)
+from update_engine import UpdateEngine  # noqa: E402
+
+LANGS = {os.path.basename(f)[:-5]: json.load(open(f, encoding="utf-8"))
+         for f in sorted(glob.glob(os.path.join(APP, "lang", "*.json")))}
+
+
+def _eng(queued=(), updating=(), held=True):
+    e = UpdateEngine.__new__(UpdateEngine)
+    e._update_queue, e._queued_at = [], {}
+    e._update_queue_lock = threading.Lock()
+    e._update_lock = threading.Lock()
+    e._updating = {k: "" for k in updating}
+    e._queued_selfupdate = None
+    for k in queued:
+        e.enqueue_update(k)
+        e._queued_at[k] = time.time() - 90
+    if held:
+        e._update_lock.acquire()
+    return e
+
+
+answers = []          # (key, params), in the order the engine gave them
+_full = [f"c{i}" for i in range(UpdateEngine.UPDATE_QUEUE_MAX)]
+for coq in ("claim_or_queue", "claim_or_queue_many"):
+    for state, kw, keys in (
+            ("running", {"updating": ["web"]}, ["web"]),
+            ("full", {"queued": _full}, ["web"]),
+            ("already queued", {"queued": ["web"]}, ["web"]),
+            ("queued", {}, ["web"])):
+        e = _eng(**kw)
+        f = getattr(e, coq, None)
+        if f is None:
+            checks[f"{coq} exists"] = False
+            break
+        if coq == "claim_or_queue":
+            _c, key, params = f(keys[0])
+            got = [(key, params)]
+        else:
+            _c, outcomes = f(keys)
+            got = [(key, params) for _k, key, params in outcomes]
+        checks[f"{coq}, {state}: answers busy"] = _c is False and len(got) == 1
+        answers += got
+
+_given = {key for key, _p in answers}
+checks["the engine's busy answers are the four I know"] = _given == {
+    "update_same_running", "update_queue_full", "update_already_queued",
+    "update_queued"}
+
+# A key kept off the queue by a pin, an exclusion or an unreadable pin
+# list (Q16f) gets the engine's own answer for that reason. Driven
+# below with the rest, through every connection's renderer.
+from update_engine import UpdateEngine as _UE  # noqa: E402
+
+_held = getattr(_UE, "_held_answer", None)
+_held_answers = ([_held(w) for w in ("pinned", "excluded",
+                                     "pin_list_unreadable")]
+                 if _held is not None else [])
+checks["the engine's held-back answers are the three I know"] = (
+    {k for k, _p in _held_answers} == {
+        "update_not_queued_pinned", "update_not_queued_excluded",
+        "update_refused_pin_list"})
+answers += _held_answers
+
+
+def _rendered(params):
+    return {p[:-len("_seconds")] if p.endswith("_seconds") else p
+            for p in params}
+
+
+_bad = []
+for key, params in answers:
+    want = _rendered(params)
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _bad.append(f"{lang}: no {key}")
+            continue
+        have = placeholders(strings[key])
+        if have - want - {"name"}:
+            _bad.append(f"{lang}: {key} wants {sorted(have - want - {'name'})}")
+        if want - have:
+            _bad.append(f"{lang}: {key} drops {sorted(want - have)}")
+checks[f"…exist in all {len(LANGS)} languages with matching placeholders"] = (
+    bool(answers) and not _bad and len(LANGS) >= 16)
+if _bad:
+    print("  busy answers:", "; ".join(_bad))
+
+# ── Discord's lines for the same answers (Q15) ──────────────────────
+# A busy /update or confirmed /updateall renders the engine's answers
+# itself, in its own keys. Driven through the real `_queued_lines` on
+# every answer the engine gave above: each sentence it asks for exists
+# in every language with exactly the placeholders it fills.
+from discord_bot import DiscordBot  # noqa: E402
+
+
+class _Said:
+    # The real one: it picks the line on where a queued result shows up
+    # from the bot channel setting, and is driven both ways below.
+    _result_where = getattr(DiscordBot, "_result_where", None)
+
+    def __init__(self):
+        self.asked = []
+        self.config = type("Cfg", (), {})()
+
+    def t(self, key, **kw):
+        self.asked.append((key, set(kw)))
+        return key
+
+
+_said = _Said()
+_lines = getattr(DiscordBot, "_queued_lines", None)
+checks["Discord renders the engine's busy answers (_queued_lines)"] = (
+    _lines is not None)
+import datetime as _dt  # noqa: E402
+
+# Every branch of `_result_where`: nothing set, the bot channel, the bot
+# channel switched off, the webhook, and quiet hours.
+_branches = (
+    {"discord_bot_channel": ""},
+    {"discord_bot_channel": "1234"},
+    {"discord_bot_channel": "1234", "channel_discordbot_enabled": False},
+    {"discord_bot_channel": "", "discord_webhook": "https://x.invalid/h"},
+    {"discord_bot_channel": "1234",
+     "quiet_hours_start": (_dt.datetime.now()
+                           - _dt.timedelta(hours=1)).strftime("%H:%M"),
+     "quiet_hours_end": (_dt.datetime.now()
+                         + _dt.timedelta(hours=1)).strftime("%H:%M")},
+)
+for _branch in _branches:
+    _said.config = type("Cfg", (), dict(_branch))()
+    for key, params in answers if _lines is not None else ():
+        _lines(_said, [("web", key, params)], {"web": "web"})
+_dbad = []
+for key, given in _said.asked:
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _dbad.append(f"{lang}: no {key}")
+        elif placeholders(strings[key]) != given:
+            _dbad.append(f"{lang}: {key} wants "
+                         f"{sorted(placeholders(strings[key]))}, gets "
+                         f"{sorted(given)}")
+checks["Discord says every busy answer, in all languages, placeholders "
+       "filled"] = (
+    {k for k, _g in _said.asked} == {
+        "chan_update_queued", "chan_update_already_queued",
+        "chan_update_queue_full", "update_same_running",
+        "update_not_queued_pinned", "update_not_queued_excluded",
+        "update_refused_pin_list",
+        "chan_update_result_channel", "chan_update_result_no_channel",
+        "chan_update_result_off", "chan_update_result_webhook",
+        "chan_update_result_quiet"}
+    and not _dbad)
+if _dbad:
+    print("  Discord busy lines:", "; ".join(_dbad))
+
+# ── Telegram's answer for a queued batch (Q16) ─────────────────────
+# "Update all", /updateall and a busy /update hand several keys to
+# `claim_or_queue_many`; the real `_queued_answer` says the result. One
+# key gets the tap's sentence (`_claim_answer`), more get a heading and
+# a line each, a batch that did not fit one line. Driven over every
+# answer the engine gave above, alone and together, with and without a
+# container being updated right now.
+from telegram_bot import TelegramBot  # noqa: E402
+
+
+class _TgSaid(_Said):
+    _claim_answer = getattr(TelegramBot, "_claim_answer", None)
+
+    def __init__(self, updating=()):
+        super().__init__()
+        self.engine = _eng(updating=updating, held=False)
+
+    def _key_label(self, key):
+        return key
+
+
+_qa = getattr(TelegramBot, "_queued_answer", None)
+checks["Telegram renders a queued batch (_queued_answer)"] = _qa is not None
+_tg_asked = []
+_mix = [("web", k, p) for k, p in answers
+        if k not in ("update_queue_full", "update_refused_pin_list")]
+_mix = [(f"c{i}", k, p) for i, (_w, k, p) in enumerate(_mix)]
+_fullbatch = [(f"c{i}", k, p) for i, (k, p) in enumerate(answers)
+              if k == "update_queue_full"] * 2
+# An unreadable pin list refuses a batch as a whole (Q16f).
+_refusedbatch = [(f"c{i}", k, p) for i, (k, p) in enumerate(answers)
+                 if k == "update_refused_pin_list"] * 2
+for _upd in ((), ("db",)):
+    _s = _TgSaid(updating=_upd)
+    for key, params in answers if _qa is not None else ():
+        _qa(_s, [("web", key, params)])
+    if _qa is not None:
+        _qa(_s, _mix)
+        _qa(_s, _fullbatch)
+        _qa(_s, _refusedbatch)
+    _tg_asked += _s.asked
+_tbad = []
+for key, given in _tg_asked:
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _tbad.append(f"{lang}: no {key}")
+        elif placeholders(strings[key]) - {"name"} != given - {"name"}:
+            _tbad.append(f"{lang}: {key} wants "
+                         f"{sorted(placeholders(strings[key]))}, gets "
+                         f"{sorted(given)}")
+checks["Telegram says every queued batch, in all languages, placeholders "
+       "filled"] = (
+    {k for k, _g in _tg_asked} == {
+        "update_queued", "update_already_queued", "update_queue_full",
+        "update_same_running", "update_batch_queued",
+        "update_batch_queued_behind", "update_batch_line_queued",
+        "update_batch_line_already_queued", "update_batch_line_same_running",
+        "update_batch_queue_full", "update_not_queued_pinned",
+        "update_not_queued_excluded", "update_refused_pin_list",
+        "update_batch_line_pinned", "update_batch_line_excluded"}
+    and not _tbad)
+if _tbad:
+    print("  Telegram batch lines:", "; ".join(sorted(set(_tbad))))
+
+# The major confirmation stays refused while busy (Q16); its sentence
+# names the container and its host tag in every language.
+_mbad = [lang for lang, strings in LANGS.items()
+         if placeholders(strings.get("major_confirm_busy", ""))
+         != {"name", "tag"}]
+checks["a refused major confirmation names the container and its host in "
+       "all languages"] = not _mbad
+if _mbad:
+    print("  major_confirm_busy:", ", ".join(_mbad))
+
+# A busy `/update <glob>` queues only what is pending and says the rest
+# was not checked (Q16 review); the sentence names the typed pattern.
+_gbad = [lang for lang, strings in LANGS.items()
+         if placeholders(strings.get("update_busy_glob_unchecked", ""))
+         != {"pattern"}]
+checks["a busy /update <glob> says the other matches were not checked, in "
+       "all languages"] = not _gbad
+if _gbad:
+    print("  update_busy_glob_unchecked:", ", ".join(_gbad))
+
+# ── a container held right before its update (Q16g) ─────────────────
+# The batch, the tap and the major confirmation say `update_held_<why>`
+# with the container's name; a queued entry held there says the drain's
+# `update_queue_skipped_<why>`. Every reason `held_back` can give is
+# driven through the real `_single_update_skipped` and
+# `_drain_skipped_text`; the batch and the major confirmation build the
+# same `update_held_<why>` key with `name` alone.
+import inspect as _inspect  # noqa: E402
+import textwrap as _textwrap  # noqa: E402
+
+from telegram_bot import TelegramBot as _TB  # noqa: E402
+
+_hb = ast.parse(_textwrap.dedent(_inspect.getsource(_UE.held_back)))
+_whys = {n.value.value for n in ast.walk(_hb)
+         if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant)
+         and isinstance(n.value.value, str)}
+checks["held_back gives the four reasons I know"] = _whys == {
+    "pinned", "pinned_label", "excluded", "pin_list_unreadable"}
+
+
+class _Asked:
+    _key_label = _TB._key_label
+
+    def __init__(self):
+        self.asked = []
+
+    def t(self, key, **kw):
+        self.asked.append((key, set(kw)))
+        return key
+    _t = t
+
+
+_ha = _Asked()
+for _why in sorted(_whys):
+    _TB._single_update_skipped(_ha, "nas/web", _why)
+    _UE._drain_skipped_text(_ha, "nas/web", _why)
+    _ha.asked.append((f"update_held_{_why}", {"name"}))
+_hbad = []
+for key, given in _ha.asked:
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _hbad.append(f"{lang}: no {key}")
+        elif placeholders(strings[key]) != given:
+            _hbad.append(f"{lang}: {key} wants "
+                         f"{sorted(placeholders(strings[key]))}, gets "
+                         f"{sorted(given)}")
+checks["a container held right before its update is said in all "
+       "languages, placeholders filled"] = (
+    {k for k, _g in _ha.asked} >= {
+        "update_held_pinned", "update_held_pinned_label",
+        "update_held_excluded", "update_held_pin_list_unreadable",
+        "update_queue_skipped_pinned", "update_queue_skipped_pinned_label",
+        "update_queue_skipped_excluded", "update_refused_pin_list"}
+    and not _hbad)
+if _hbad:
+    print("  held right before the update:", "; ".join(sorted(set(_hbad))))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")

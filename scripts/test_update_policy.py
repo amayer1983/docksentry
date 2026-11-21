@@ -120,7 +120,16 @@ def _int_bot(update_policy):
         get_autoupdate=lambda: set(),
         get_groups=lambda: {},
         get_ask_before_major=lambda: set())
-    bot._update_lock = threading.Lock()
+    # The lock lives on a real UpdateEngine, made without __init__ and
+    # given the three lock fields its constructor sets, and `_update_lock`
+    # points at the engine's, as TelegramBot's property does. Without an
+    # engine, the first lock method called on it would take this procedure
+    # down with an AttributeError instead of testing anything.
+    bot.engine = UpdateEngine.__new__(UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+    bot._update_lock = bot.engine._update_lock
     bot._run_queued_selfupdate = lambda: None
     bot._get_autoupdate = lambda: set()
     bot.t = get_translator("en")
@@ -152,6 +161,9 @@ def _int_bot(update_policy):
     # AttributeError rather than testing anything.
     bot._age_decision = lambda u, c: UpdateEngine._age_decision(bot, u, c)
     bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
+    # A manual entry is asked the pin check right before its update
+    # (Q16g); without it the stub fails the update, not the assertion.
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
     return bot
 
 

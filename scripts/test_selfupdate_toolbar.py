@@ -20,10 +20,11 @@ selected. Nothing here touches Docker or a socket: the handler class is
 built via create_handler() and instantiated with __new__, the way
 scripts/test_web_selfupdate_row.py does it.
 """
-import inspect
 import os
 import sys
 import types
+
+import srcslice
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
@@ -97,12 +98,14 @@ def main():
     # ── It points at the real self-updater ───────────────────────────
     # Not a new path invented for the button: the handler must already
     # dispatch it.
-    routed = ENDPOINT in inspect.getsource(handler_cls.do_POST)
+    _post = srcslice.method_source(handler_cls, "do_POST")
+    routed = _post is not None and ENDPOINT in _post
     checks["the endpoint is one the server actually handles"] = routed
 
     # …and the old door is still there, so nobody's bookmark breaks.
+    _settings = srcslice.method_source(handler_cls, "_page_settings")
     checks["Settings still offers it too"] = (
-        ENDPOINT in inspect.getsource(handler_cls._page_settings))
+        _settings is not None and ENDPOINT in _settings)
 
     # ── It still asks first ──────────────────────────────────────────
     # A self-update takes the Web UI offline for a moment. The one in

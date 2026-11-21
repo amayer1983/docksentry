@@ -15,9 +15,12 @@ import threading
 import time
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from discord_bot import DiscordBot, COMMANDS   # noqa: E402
+from update_engine import UpdateEngine   # noqa: E402
 from container_backend import ContainerBackend   # noqa: E402
 
 checks = {}
@@ -73,15 +76,36 @@ class FakeBackend(ContainerBackend):
     seven `/logs` checks failed on a stub gap rather than on anything
     about Discord. Inheriting means the argv these checks assert on is
     built by the same code the real bot builds it with, and a fake that
-    is missing a method now cannot pass by accident."""
+    is missing a method now cannot pass by accident.
 
-    def __init__(self, names, log_text=None):
+    `ps -q` and a plain `inspect` answer too, since the /status overview
+    walks `status_render.collect_overview` like Telegram's (W5d); a
+    `fail` host raises on every call, the way a dead one times out."""
+
+    def __init__(self, names, log_text=None, images=None, fail=False):
         self.names = list(names)
         self.log_text = log_text
+        self.images = dict(images or {})
+        self.fail = fail
         self.calls = []
 
     def run(self, args, **kw):
         self.calls.append(list(args))
+        if self.fail:
+            raise OSError("host down")
+        if args[:2] == ["ps", "-q"]:
+            return types.SimpleNamespace(
+                returncode=0, stdout="\n".join(self.names) + "\n", stderr="")
+        refs = [a for a in args[1:] if not a.startswith("-")]
+        if args and args[0] == "inspect" and "--format" not in args \
+                and refs and all(r in self.names for r in refs):
+            import json as _json
+            return types.SimpleNamespace(returncode=0, stderr="",
+                stdout=_json.dumps([{
+                    "Name": "/" + r,
+                    "Config": {"Image": self.images.get(r, "?")},
+                    "State": {"Status": "running", "Running": True}}
+                    for r in refs]))
         if args and args[0] == "ps":
             return types.SimpleNamespace(
                 returncode=0, stdout="\n".join(self.names) + "\n", stderr="")
@@ -99,7 +123,10 @@ class FakeChecker:
     def __init__(self, containers, fail=False):
         self._c = containers
         self.fail = fail
-        self.backend = FakeBackend([c["name"] for c in containers])
+        self.backend = FakeBackend(
+            [c["name"] for c in containers],
+            images={c["name"]: c.get("image", "?") for c in containers},
+            fail=fail)
         # Lifecycle / cleanup bookkeeping for the stage-2 checks.
         self.stopped = []
         self.cleanups = 0
@@ -155,12 +182,58 @@ class FakeEngine:
     nothing at all.
     """
 
+    # The engine's own door, run on this real lock: the claims and the
+    # cleanup guard the Discord bot goes through are the production
+    # code, not a copy of it.
+    release_update = UpdateEngine.release_update
+    update_claim = UpdateEngine.update_claim
+    cleanup_guarded = UpdateEngine.cleanup_guarded
+    # The engine's queue, for real (Q15): a busy /update and a confirmed
+    # /updateall put their containers on it through claim_or_queue_many.
+    claim_or_queue_many = UpdateEngine.claim_or_queue_many
+    enqueue_updates = UpdateEngine.enqueue_updates
+    _queue_answer = UpdateEngine._queue_answer
+    _in_group_order = UpdateEngine._in_group_order
+    # Pinned or excluded keys stay off the queue (Q16f); with no host
+    # registry and no local checker here, nobody is held back.
+    held_back = UpdateEngine.held_back
+    _held_answer = UpdateEngine._held_answer
+    _unqueue_held = UpdateEngine._unqueue_held
+    _checker_for_key = UpdateEngine._checker_for_key
+    queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
+    queued_updates = UpdateEngine.queued_updates
+    updating = UpdateEngine.updating
+    UPDATE_QUEUE_MAX = UpdateEngine.UPDATE_QUEUE_MAX
+
     def __init__(self):
         self._update_lock = threading.Lock()
         self.update_running = False
         self.batches = []
+        self._update_queue = []
+        self._queued_at = {}
+        self._update_queue_lock = threading.Lock()
+        self._updating = {}
+        #: Successful claims, so "one claim for the whole request" is
+        #: something this file can count.
+        self.claims = 0
+        #: What was on the queue each time a release kicked the drainer.
+        self.kicks = []
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def claim_update(self):
+        ok = UpdateEngine.claim_update(self)
+        self.claims += bool(ok)
+        return ok
+
+    def kick_drain(self, after=None):
+        """The release's hand-off to the engine's drainer, recorded. The
+        drainer itself is the engine's and runs for real in the Discord
+        matrix (T4, the `… then released` rows)."""
+        self.kicks.append([k for k, _w in self.queued_updates()])
+
+    def queued(self):
+        return [k for k, _w in self.queued_updates()]
+
+    def _process_update_batch(self, updates, checker, *, auto, held=None):
         self.batches.append(([u["name"] for u in updates], checker, auto))
         return ([f"✅ `{u['name']}`: updated" for u in updates],
                 len(updates), [])
@@ -301,9 +374,9 @@ def _await_calls(fake_rest, kind, count=1, timeout=5.0):
 acks = _await_calls(bot.rest, "ack")
 checks["interaction is acknowledged immediately"] = len(acks) == 1
 # …and the loop is free again straight away: the ack is not on it.
-import inspect as _inspect   # noqa: E402
+_on_event_src = srcslice.method_source(DiscordBot, "_on_event")
 checks["the ack is dispatched off the gateway loop"] = (
-    "_ack_then" in _inspect.getsource(DiscordBot._on_event))
+    _on_event_src is not None and "_ack_then" in _on_event_src)
 checks["acknowledgement is deferred (buys 15 minutes)"] = acks[0][2] is True
 
 # ── host resolution ──────────────────────────────────────────────────
@@ -699,7 +772,7 @@ checks["…and a rejected duration changed nothing"] = "**off**" in out
 # Stage-2 command surface: the commands that CHANGE things.
 #
 # Three properties carry most of the weight here:
-#   * one shared lock — held elsewhere means refuse, never queue;
+#   * one shared lock — held elsewhere means queue, never wait (Q15);
 #   * writes default to the LOCAL host;
 #   * an unknown host changes NOTHING, on any of them.
 # Each is asserted by looking at what was actually done (the engine's
@@ -767,19 +840,138 @@ checks["…and starts no update"] = engine.batches == []
 checks["…and leaves the pending file untouched"] = (
     _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
 
-# the lock is held → refuse, do not queue, do not wait
+# the lock is held → queue it with its place, run nothing now, never wait
+# (Q15; until then: "nothing was started, try again")
 engine._update_lock.acquire()
 engine.batches.clear()
 out = call("update", container="web")
-checks["/update refuses while the shared lock is held"] = (
-    "already running" in out)
+checks["/update queues while the shared lock is held"] = (
+    "`web` is queued — position 1" in out)
 checks["…and starts nothing"] = engine.batches == []
 checks["…and the pending file is untouched"] = (
     _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
-engine._update_lock.release()
-checks["…and the refusal did not swallow the lock"] = (
+checks["…and the container is on the engine's queue"] = (
+    engine.queued() == ["web"])
+out = call("update", container="web", host="nas")
+checks["another host's container queues behind it, position 2"] = (
+    "`web @nas` is queued — position 2" in out
+    and engine.queued() == ["web", "nas/web"])
+out = call("update", container="web")
+checks["the same one again says it is already waiting"] = (
+    "`web` is already in the queue" in out
+    and engine.queued() == ["web", "nas/web"])
+engine.kicks.clear()
+engine.release_update()
+checks["giving the lock back hands what was queued to the drainer"] = (
+    engine.kicks == [["web", "nas/web"]])
+checks["…and queueing did not take the lock"] = (
     engine._update_lock.acquire(blocking=False))
 engine._update_lock.release()
+checks["…and nothing ran here: the drainer runs it, not the command"] = (
+    engine.batches == [])
+engine._update_queue.clear()
+
+# a full queue takes nothing and says so
+engine._update_lock.acquire()
+engine.enqueue_updates([f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)])
+out = call("update", container="web")
+checks["/update on a full queue says it is full"] = (
+    "queue is full" in out and "this request was not queued" in out)
+checks["…and queues nothing"] = engine.queued() == [
+    f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)]
+engine._update_lock.release()
+engine._update_queue.clear()
+
+# Where the result of a queued update shows up, said the way it is: the
+# drainer's card goes to the bot channel, and with none set (it is
+# optional) the answer must not promise that the result comes "there".
+_set_pending(BOTH_WEB)
+_MISSING = "\0missing key"
+_NO_CHAN = _EN.get("chan_update_result_no_channel", _MISSING)
+_IN_CHAN = _EN.get("chan_update_result_channel", _MISSING)
+engine._update_lock.acquire()
+out = call("update", container="web")
+checks["queued with no bot channel set: says it won't show up in Discord"] = (
+    _NO_CHAN in out and "notification channels, not here" not in out)
+scfg2.discord_bot_channel = "4242"
+out = call("update", container="web", host="nas")
+checks["queued with a bot channel: names the channel it goes to"] = (
+    _IN_CHAN.replace("{channel}", "4242") in out and _NO_CHAN not in out)
+out = call("update", container="web")
+checks["…and a container already waiting is told the same"] = (
+    "`web` is already in the queue" in out
+    and _IN_CHAN.replace("{channel}", "4242") in out)
+_OFF = _EN.get("chan_update_result_off", _MISSING)
+_HOOK = _EN.get("chan_update_result_webhook", _MISSING)
+_QUIET = _EN.get("chan_update_result_quiet", _MISSING)
+scfg2.channel_discordbot_enabled = False
+out = call("update", container="web")
+checks["a bot channel that is switched off is said to be off, not unset"] = (
+    _OFF in out and _NO_CHAN not in out and "<#4242>" not in out)
+# The webhook is the other way a card reaches Discord
+# (notifier.DISCORD_CHANNELS): with it set, the result does show up.
+scfg2.discord_webhook = "https://discord.invalid/hook"
+out = call("update", container="web")
+checks["bot channel off, webhook set: the result comes through the webhook"] = (
+    _HOOK in out and _OFF not in out and _NO_CHAN not in out)
+del scfg2.channel_discordbot_enabled
+del scfg2.discord_bot_channel
+out = call("update", container="web")
+checks["no bot channel, webhook set: the result comes through the webhook"] = (
+    _HOOK in out and _NO_CHAN not in out)
+scfg2.channel_discord_enabled = False
+out = call("update", container="web")
+checks["…and a webhook that is switched off is said to be off"] = (
+    _OFF in out and _HOOK not in out and _NO_CHAN not in out)
+del scfg2.channel_discord_enabled
+del scfg2.discord_webhook
+scfg2.discord_bot_channel = "4242"
+# Quiet hours and maintenance drop the card (Notifier._suppressed), they
+# do not hold it back: the answer must not name a channel it won't reach.
+import datetime as _dt  # noqa: E402
+_now = _dt.datetime.now()
+scfg2.quiet_hours_start = (_now - _dt.timedelta(hours=1)).strftime("%H:%M")
+scfg2.quiet_hours_end = (_now + _dt.timedelta(hours=1)).strftime("%H:%M")
+out = call("update", container="web")
+checks["queued in quiet hours: says the card is dropped, names no channel"] = (
+    _QUIET in out and "<#4242>" not in out)
+scfg2.quiet_hours_start = scfg2.quiet_hours_end = ""
+with open(scfg2.maintenance_file, "w") as f:
+    json.dump({"until": "forever"}, f)
+out = call("update", container="web")
+checks["…and so in maintenance mode"] = (
+    _QUIET in out and "<#4242>" not in out)
+with open(scfg2.maintenance_file, "w") as f:
+    json.dump({}, f)
+out = call("update", container="web")
+checks["…and once both are over, the channel is named again"] = (
+    _IN_CHAN.replace("{channel}", "4242") in out and _QUIET not in out)
+del scfg2.quiet_hours_start, scfg2.quiet_hours_end
+engine._update_queue.clear()
+engine.enqueue_updates(["web"] + [f"q{i}"
+                                  for i in range(engine.UPDATE_QUEUE_MAX - 1)])
+out = call("update", container="web", host="all")
+checks["a full queue says the request was not queued, and no channel line"] = (
+    "queue is full" in out and "nothing was queued" not in out
+    and "<#4242>" not in out and _NO_CHAN not in out)
+checks["…while the one already waiting keeps its place"] = (
+    engine.queued()[0] == "web"
+    and len(engine.queued()) == engine.UPDATE_QUEUE_MAX)
+del scfg2.discord_bot_channel
+engine._update_lock.release()
+engine._update_queue.clear()
+
+# a free lock: one claim for every host the request names, nothing queued
+_set_pending(BOTH_WEB)
+engine.batches.clear()
+engine.claims = 0
+out = call("update", container="web", host="all")
+checks["/update host:all on a free lock takes ONE claim for both hosts"] = (
+    engine.claims == 1 and [b[1] for b in engine.batches]
+    == [LOCAL_CHECKER, NAS_CHECKER])
+checks["…and queues nothing"] = engine.queued() == []
+checks["…and gives the lock back"] = not engine._update_lock.locked()
+_set_pending(BOTH_WEB)
 
 # ── /updateall: confirmation required ────────────────────────────────
 engine.batches.clear()
@@ -846,17 +1038,38 @@ checks["/updateall on an unknown host errors"] = "Unknown host" in out
 checks["…and offers no button at all"] = not getattr(out, "components", None)
 checks["…and parks no confirmation"] = len(sbot._confirmations) == before_tokens
 
-# confirming while the lock is held: refuse, run nothing
+# confirming while the lock is held: queue what was approved, run nothing
+# now (Q15)
 _set_pending(BOTH_WEB)
 reply = call("updateall")
 confirm_id = reply.components[0]["components"][0]["custom_id"]
 engine.batches.clear()
 engine._update_lock.acquire()
 out = press(confirm_id)
-checks["a confirmed /updateall still refuses while the lock is held"] = (
-    "already running" in out)
+checks["a confirmed /updateall queues while the lock is held"] = (
+    "`web` is queued — position 1" in out)
 checks["…and updates nothing"] = engine.batches == []
+checks["…and queues exactly what it previewed (the local web)"] = (
+    engine.queued() == ["web"])
+checks["…and leaves the pending file to the drainer"] = (
+    _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
+engine.kicks.clear()
+engine.release_update()
+checks["…which gets it when the lock is given back"] = (
+    engine.kicks == [["web"]])
+engine._update_queue.clear()
+
+# host:all, held: both hosts' approved containers, in one request
+_set_pending(BOTH_WEB)
+reply = call("updateall", host="all")
+confirm_id = reply.components[0]["components"][0]["custom_id"]
+engine._update_lock.acquire()
+out = press(confirm_id)
+checks["a confirmed /updateall host:all queues every approved container"] = (
+    engine.queued() == ["web", "nas/web", "nas/plex"]
+    and "`plex @nas` is queued — position 3" in out)
 engine._update_lock.release()
+engine._update_queue.clear()
 
 # the confirmation is bound to the person who asked
 who = {"member": {"user": {"id": "111"}}, "data": {"name": "updateall",
@@ -1323,6 +1536,26 @@ checks["…and explains that, rather than claiming nothing was pending"] = (
     "Nothing left to update" in out)
 checks["…and leaves the unapproved entry alone"] = (
     _pending_keys() == [("local", "db")])
+
+# The same rule on a held lock (Q15): only what was approved and is still
+# pending goes on the queue — not what a check found since, not what left.
+_set_pending([{"name": "web", "image": "nginx:2", "host": "local"},
+              {"name": "db", "image": "pg:16", "host": "local"}])
+reply = call("updateall")
+_uid = reply.components[0]["components"][0]["custom_id"]
+_set_pending([{"name": "db", "image": "pg:16", "host": "local"},
+              {"name": "cache", "image": "redis:7", "host": "local"}])
+engine.batches.clear()
+engine._update_lock.acquire()
+out = press(_uid)
+checks["a held /updateall queues only the approved containers still pending"] = (
+    engine.queued() == ["db"])
+checks["…says that one approved is gone and one is new"] = (
+    "no longer pending" in out and "appeared after" in out
+    and "`db` is queued — position 1" in out)
+checks["…and runs nothing now"] = engine.batches == []
+engine._update_lock.release()
+engine._update_queue.clear()
 
 
 # ═════════════════════════════════════════════════════════════════════

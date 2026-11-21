@@ -44,6 +44,7 @@ import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
+from broadcast import Broadcast  # noqa: E402
 from i18n import get_translator  # noqa: E402
 from telegram_bot import TelegramBot  # noqa: E402
 from update_engine import UpdateEngine  # noqa: E402
@@ -93,6 +94,23 @@ def _bot(pending_entries, on_update=None):
     eng._updating = {}
     eng._queued_selfupdate = None
     eng._swap_in_flight = False
+    # The registry the `_host_by_name` stand-in above answers from: srv30
+    # is managed. Since Q11b run_keys refuses a host it does not know.
+    # Its checker is the one below: since Q13 the engine's drainer runs a
+    # queued entry and looks its host's checker up here.
+    srv30 = types.SimpleNamespace(name="srv30", checker=None)
+    eng.hosts = [srv30]
+    # Since Q11c a single update runs through the shared batch, which
+    # reads the host's groups and cooldowns and the disk setting.
+    eng.store = types.SimpleNamespace(get_groups=lambda: {},
+                                      get_cooldown=lambda name: 0)
+    eng.config = types.SimpleNamespace(disk_warn_auto_cleanup=False,
+                                       pending_file=pending)
+    eng._enrich_with_source_url = lambda ups: None
+    # What the drainer says goes through the broadcast seam; Telegram's
+    # leg of it is the same transcript the bot writes to.
+    eng.broadcast = Broadcast(telegram=types.SimpleNamespace(
+        enabled=True, send_message=lambda m, **kw: said.append(m)))
     bot.engine = eng
     bot.notifier = None
 
@@ -107,13 +125,29 @@ def _bot(pending_entries, on_update=None):
 
         fired = False
 
+        def netns_target_name(self, name):
+            return None
+
         def update_container(self, name, image, **kw):
             if on_update is not None and not _Checker.fired:
                 _Checker.fired = True
                 on_update(bot)
             return True, "OK"
 
-    return bot, _Checker(), said
+    srv30.checker = _Checker()
+    return bot, srv30.checker, said
+
+
+def _drained(eng):
+    """Wait for the engine's drainer (Q13), and any it started."""
+    for _ in range(200):
+        t = getattr(eng, "_drainer", None)
+        if t is None:
+            return
+        try:
+            t.join(0.05)
+        except RuntimeError:              # not started: a mutated kick
+            pass
 
 
 ENTRY = [{"name": "portainer", "image": "portainer/portainer-ce:latest",
@@ -129,6 +163,7 @@ def _tap_again(b):
 bot, checker, said = _bot(ENTRY, on_update=_tap_again)
 _tap_again.checker = checker
 bot._run_single_update(checker, KEY)
+_drained(bot.engine)
 
 _text = "\n".join(said)
 checks["a second tap during the update is told it is the same one"] = (
@@ -167,9 +202,11 @@ checks["…and stops saying it once the update is done"] = (
 
 # ── a queued duplicate that got through anyway ───────────────────────
 # A different route, a restart, a race: the drain must not call finished
-# work a mistake.
+# work a mistake. The engine's drainer since Q13.
 bot3, checker3, said3 = _bot([])          # nothing pending any more
-bot3._run_single_update(checker3, KEY, from_queue=True)
+bot3.engine.enqueue_update(KEY)
+getattr(bot3.engine, "kick_drain", lambda: None)()   # red, not a crash, without it
+_drained(bot3.engine)
 _t3 = "\n".join(said3)
 checks["a queued entry whose work is done says exactly that"] = (
     "already updated" in _t3 and "not in update list" not in _t3)
@@ -193,6 +230,7 @@ TWO = ENTRY + [{"name": "other", "image": "other:1", "host": "srv30"}]
 bot5, checker5, said5 = _bot(TWO, on_update=_tap_other)
 _tap_other.checker = checker5
 bot5._run_single_update(checker5, KEY)
+_drained(bot5.engine)
 _t5 = "\n".join(said5)
 checks["a different container tapped meanwhile is still queued and run"] = (
     "queued" in _t5.lower() or "other" in _t5)

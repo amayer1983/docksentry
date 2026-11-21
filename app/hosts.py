@@ -19,6 +19,9 @@ Its state keys stay unprefixed, so existing installs need no migration.
 Pure standard library, like the rest of the project.
 """
 
+import collections
+import math
+import re
 import threading
 import time
 
@@ -329,3 +332,201 @@ def forget_unreachable():
     with _unreachable_lock:
         _unreachable.clear()
         _failures.clear()
+
+
+# The chat walks (find_on_hosts, check_on_hosts, collect_overview) take
+# the same memory, but only for READS: a /status or a /check right after
+# a host failed should not wait out its timeout again, while an /update
+# must always ask — a host that came back a second ago is exactly the one
+# somebody is trying to update. And only for remote hosts, like the page:
+# the cooldown is for a machine at the far end of a wire, not for our own
+# daemon, which nothing marks. A walk without the cache (every write)
+# never skips a host and never marks one dead, but a host that answers
+# it is forgotten all the same: an /update that just reached nas must
+# not leave the next /status calling nas unreachable for the rest of its
+# cooldown. Discord's reads take the cache since W7d, the Web's Check
+# Updates since W7w; Discord's name lookup and container autocomplete
+# read the memory directly (the autocomplete never writes to it). It is
+# one memory: a host a Telegram, Discord or Web Check read found dead is
+# skipped by the other two and by the Web status page's `walk` too, with
+# the words that read remembered, and each such failure moves the same
+# backoff (test_status_overview_core pins it). So the words are kept in
+# no language — the CLI's own line, clipped — and every reader says them
+# in its own through `skipped_words`; the status page shows them as the
+# CLI said them. (Until the review of W7w the check and the lookup kept a
+# reader's words: a Web click, then a German /check said "no answer
+# within 30 seconds (vom letzten Versuch, …)".)
+
+def _remote_name(host):
+    if host is None or getattr(host, "is_local", False):
+        return ""
+    return getattr(host, "name", "") or ""
+
+
+def remembered_dead(host):
+    """`(reason, retry_in)` while a remote `host` is still in its cooldown
+    — the words it failed with and the seconds left, rounded up: a host
+    with 0.4 s to go is still skipped, so it must not say "0s". The
+    local host and the single-host pseudo-host None never are."""
+    name = _remote_name(host)
+    if not name:
+        return None
+    left, reason = unreachable_for(name)
+    if left > 0:
+        return reason, math.ceil(left)
+    return None
+
+
+def remember(host, failed_with):
+    """A read's outcome for a remote `host`: the words it failed with, or
+    None when it answered. The local host is left alone."""
+    name = _remote_name(host)
+    if not name:
+        return
+    if failed_with is None:
+        mark_reachable(name)
+    else:
+        mark_unreachable(name, failed_with)
+
+
+#: A lookup that exited ≠ 0 with nothing on stderr is remembered as
+#: `container_flags._exit_text(rc, None)`: these words, untranslated.
+_EXIT_CODE = re.compile(r"exit code (\d+)")
+
+
+def skipped_words(reason, retry_in, t=None):
+    """What to say for a host skipped because its last try failed: its
+    remembered words, and that it is not asked again for `retry_in` s.
+    Nothing about how old the words are: with the backoff a host can be
+    skipped for fifteen minutes, so "a moment ago" was not always true.
+
+    The words go through errfmt.human first, in `t`'s language. The
+    memory holds the CLI's raw line in no language — every walk keeps it
+    that way, because the Web (English) and the chats (their bot's
+    language) read the same memory — and for a timeout that line is
+    Python's argv; once the seconds clause is behind it, errfmt.human
+    can no longer tell it is a timeout and would quote the argv at the
+    reader. A lookup's bare "exit code N" is said in `t`'s language too.
+    Words that already are a person's pass through unchanged. They come
+    first in every language for the same reason: a line that ENDS in
+    "timed out after N seconds" reads as a bare timeout."""
+    import errfmt
+    try:
+        reason = errfmt.human(reason or "", t)
+    except Exception:                                       # noqa: BLE001
+        reason = errfmt.human(reason or "")
+    code = _EXIT_CODE.fullmatch(reason)
+    if code and t is not None:
+        try:
+            reason = t("error_exit_code", code=int(code.group(1)))
+        except Exception:                                   # noqa: BLE001
+            pass
+    if t is not None:
+        try:
+            return t("host_skipped_retry", error=reason, seconds=retry_in)
+        except Exception:                                   # noqa: BLE001
+            pass
+    return f"{reason} (from the last try, not asked again for {retry_in}s)"
+
+
+def skipped_hint(host, reason, t=None):
+    """hostdiag's sentence for a skipped `host`, from the words it failed
+    with — the one a fresh failure with those words gets. The hint only
+    looks at the words and at this container's ~/.ssh, so a host nobody
+    asked still gets it. "" when there is none; a hint that throws costs
+    the hint, never the walk."""
+    try:
+        import hostdiag
+        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",
+                             t=t) or ""
+    except Exception:                                       # noqa: BLE001
+        return ""
+
+
+class StillUnreachable(Exception):
+    """A host a read did not ask, because its last try failed and it is
+    still in its cooldown. `str()` is `skipped_words`; `reason` and
+    `retry_in` are its parts."""
+
+    def __init__(self, words, reason="", retry_in=0):
+        super().__init__(words)
+        self.reason = reason
+        self.retry_in = retry_in
+
+
+#: One host's part of a `walk`, as data — no wording, no markup.
+#:
+#: `result` is what `fetch` returned for a host that answered. A host
+#: that did not answer has `reason`, the words for it: the remembered
+#: ones when it was `skipped` (still in its cooldown, `retry_in` whole
+#: seconds left), or `describe(error)` when it failed just now. A host
+#: that answered has neither.
+HostWalk = collections.namedtuple(
+    "HostWalk", "host result skipped reason retry_in error",
+    defaults=(None, False, None, None, None))
+
+
+#: How many hosts a walk asks at once.
+MAX_WALK_WORKERS = 8
+
+
+def walk(targets, fetch, *, max_workers=MAX_WALK_WORKERS, use_cache=True,
+         describe=str):
+    """Ask every host in `targets` with `fetch(host)`, side by side, and
+    hand back one `HostWalk` per host in the order given.
+
+    This is the walk the status page used to carry itself: a host
+    still in its cooldown is not asked (unless `use_cache` is False), a
+    host whose `fetch` raises is remembered with `describe(error)`, and a
+    host that answers is forgotten. The memory is read for every host
+    before any is asked, and written for all of them, in the order
+    given, once all have answered and before the caller builds anything
+    from the answers. The page used to write each mark while it built
+    that host's row, so a row that raised left the hosts after it
+    unmarked; now they are remembered either way.
+
+    `fetch` runs in worker threads and may raise; that is how it says a
+    host is dead. It must not touch anything the caller changes
+    meanwhile.
+    """
+    targets = list(targets or ())
+    skip = {}
+    todo = []
+    for i, host in enumerate(targets):
+        if use_cache:
+            left, cached = unreachable_for(host.name)
+            if left > 0:
+                skip[i] = (cached, int(left))
+                continue
+        todo.append(i)
+
+    def _one(i):
+        try:
+            return fetch(targets[i]), None
+        except Exception as exc:                   # noqa: BLE001
+            return None, exc
+
+    got = {}
+    if todo:
+        import concurrent.futures as _cf
+        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))
+        with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+            for i, out in zip(todo, ex.map(_one, todo)):
+                got[i] = out
+
+    walked = []
+    for i, host in enumerate(targets):
+        if i in skip:
+            cached, left = skip[i]
+            walked.append(HostWalk(host, skipped=True, reason=cached,
+                                   retry_in=left))
+            continue
+        result, err = got[i]
+        if err is not None:
+            why = describe(err)
+            mark_unreachable(host.name, why)
+            walked.append(HostWalk(host, reason=why, error=err))
+            continue
+        mark_reachable(host.name)
+        walked.append(HostWalk(host, result=result))
+    return walked

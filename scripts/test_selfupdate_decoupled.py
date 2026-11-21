@@ -63,9 +63,18 @@ needed = sorted({n.attr for n in ast.walk(tree)
 # shipped once each: reporting only to Telegram left a Discord
 # /selfupdate silent after "started", and reporting everything through
 # the seam made one command answer in both chats fourteen times over.
+#
+# `engine` is the eighth (Q16h), on purpose: the queue the lock guards
+# is the engine's, and two things only the module knows the moment of
+# need it. `start` gives its lock back by hand, so nothing kicked the
+# drainer after a self-update that found nothing — the queue waited for
+# the next sweep. And the swap stops this process within seconds of the
+# helper starting, so whatever was queued went with it unnamed. Both
+# contexts that drive a self-update (`Context`, the Telegram bot) carry
+# `engine` already; it is read in two small helpers that never raise.
 ALLOWED = ["_queued_selfupdate", "_swap_in_flight", "_update_lock",
-           "config", "send_message", "t", "tell"]
-checks["the module asks its caller for exactly seven names"] = needed == ALLOWED
+           "config", "engine", "send_message", "t", "tell"]
+checks["the module asks its caller for exactly eight names"] = needed == ALLOWED
 if needed != ALLOWED:
     print(f"  → verlangt: {needed}")
     print(f"  → erlaubt : {ALLOWED}")
@@ -142,6 +151,12 @@ class Engine:
         self._update_lock = threading.Lock()
         self._queued_selfupdate = None
         self._swap_in_flight = False
+        self.kicks = 0
+
+    def kick_drain(self, after=None):
+        # Counted, not run: whether the drain then works is the engine's
+        # (test_selfupdate_swap_queue drives the real one).
+        self.kicks += 1
 
 class Telegram:
     enabled = True
@@ -182,6 +197,8 @@ try:
     checks["…marked urgent, so quiet hours cannot swallow it"] = (
         others.urgent == [True])
     checks["…and the lock is free afterwards"] = not ctx._update_lock.locked()
+    checks["…and the release kicks the engine's drainer once (Q16h)"] = (
+        ctx.engine.kicks == 1)
 
     tg.sent.clear(); others.sent.clear()
     ctx._update_lock.acquire()
@@ -190,6 +207,7 @@ try:
         ctx._queued_selfupdate == ("1.2.3",))
     checks["…and says so on every channel"] = (
         len(tg.sent) == 1 and others.sent == tg.sent)
+    checks["…and kicks nothing: it released nothing"] = ctx.engine.kicks == 1
     ctx._update_lock.release()
 finally:
     selfupdate.run = _real_run

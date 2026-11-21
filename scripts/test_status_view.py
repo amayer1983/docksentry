@@ -30,6 +30,8 @@ import os
 import sys
 import tempfile
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from config import (Config, PERSISTENT_ENV_DEFAULTS,  # noqa: E402
@@ -90,9 +92,11 @@ checks["…offering both, and only both"] = (
     and web_src.count('<option value="list"') == 1)
 checks["…and the form that saves settings accepts it"] = (
     'if _sv in ("table", "list"):' in web_src)
+_sv_at = srcslice.position(web_src, 'name="status_view"',
+                           label="web_ui.py: the status view chooser")
 checks["it is not hidden behind the advanced mode"] = (
-    "adv-only" not in web_src[web_src.index('name="status_view"') - 400:
-                              web_src.index('name="status_view"')])
+    _sv_at is not None
+    and "adv-only" not in web_src[_sv_at - 400:_sv_at])
 checks["the page says which layout it drew"] = 'data-ui="{ui_gen}"' in web_src
 checks["…and the list view is what asks for its stylesheet"] = (
     'v2 = getattr(config, "status_view", "table") == "list"' in web_src)
@@ -122,17 +126,22 @@ checks["the old WEB_UI_V2 switch is gone"] = "WEB_UI_V2" not in docs and (
 # Matched on the table's id, not on the exact class list: the wrapper
 # gained `has-tiles` when the hide rule was narrowed to it, and pinning
 # the whole attribute made this fail for a change that was the point.
-i = web_src.index('<table id="ctbl">')
-i = web_src.rindex('<div class="table-scroll', 0, i)
-j = web_src.index('<div class="tile-list" id="ctblTiles">', i)
-between = web_src[i:j]
+_lbl = "web_ui.py: the status table and its cards"
+i = srcslice.position(web_src, '<table id="ctbl">', label=_lbl)
+i = (None if i is None else
+     srcslice.last_position(web_src, '<div class="table-scroll', i,
+                            label=_lbl))
+j = (None if i is None else
+     srcslice.position(web_src, '<div class="tile-list" id="ctblTiles">', i,
+                       label=_lbl))
+between = None if j is None else web_src[i:j]
 # `.table-scroll` (which is display:none on a phone) must wrap the table
 # ALONE, closing before the tile-list opens — otherwise the mobile card
 # list is a child of a hidden element and vanishes. The `</table></div>`
 # is that early close; without it the tile-list is nested and the phone
 # view shows nothing.
 checks["the scroll wrapper closes right after the table, not around the cards"] = (
-    "</table></div>" in between)
+    between is not None and "</table></div>" in between)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

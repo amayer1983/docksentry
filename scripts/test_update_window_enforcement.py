@@ -170,11 +170,17 @@ def _auto_applied(windows, when_open):
     bot._process_update_batch = lambda ups, checker, auto=False: (
         applied.extend(u["name"] for u in ups) or ([], 0, []))
     import threading
-    bot.engine = types.SimpleNamespace(_update_lock=threading.Lock(),
-                                       _queued_selfupdate=None,
-                                       _swap_in_flight=False)
-
     import update_engine
+    # A real UpdateEngine, made without __init__ and given the three lock
+    # fields its constructor sets. A SimpleNamespace holds the same fields
+    # but none of the engine's methods, so the first lock method called on
+    # the engine would take this procedure down with an AttributeError
+    # instead of testing anything.
+    bot.engine = update_engine.UpdateEngine.__new__(update_engine.UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+
     real_store = update_engine.host_store
     update_engine.host_store = lambda scope, host: _Store(windows)
     real_open = update_window.is_window_open

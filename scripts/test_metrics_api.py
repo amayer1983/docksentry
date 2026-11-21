@@ -248,8 +248,11 @@ def main():
     # ── reading, never triggering ────────────────────────────────
     # An endpoint that ran a check would let anyone with a scrape interval
     # drive the update loop.
-    state_src = src.split("def _machine_state")[1].split("def ")[0]
-    checks["gathering does not start a check"] = "check_all" not in state_src
+    import srcslice
+    state_src = srcslice.section(src, "def _machine_state", "def ",
+                                 label="web_ui.py: _machine_state")
+    checks["gathering does not start a check"] = (
+        state_src is not None and "check_all" not in state_src)
 
     # ── a host that is down is reported as ITSELF ────────────────
     # The view for an unreachable host carried `unreachable` but no
@@ -258,13 +261,16 @@ def main():
     # dropped the one that actually was. An alert about the wrong box,
     # on exactly the multi-host installs where one being off is normal.
     # Shipped from 2026-08-01 until it turned up in a four-host test.
-    views_src = src.split("def _host_views")[1].split("@staticmethod")[0]
+    views_src = srcslice.section(src, "def _host_views", "@staticmethod",
+                                 label="web_ui.py: _host_views")
     checks["every failed-host view names itself"] = (
-        views_src.count('"unreachable": _host.name,')
+        views_src is not None
+        and views_src.count('"unreachable": _host.name,')
         == views_src.count('"host": _host.name,')
         and views_src.count('"host": _host.name,') >= 1)
     checks["…and the reader never guesses local for it"] = (
-        'v.get("host") or v.get("unreachable") or LOCAL_HOST' in state_src)
+        state_src is not None
+        and 'v.get("host") or v.get("unreachable") or LOCAL_HOST' in state_src)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

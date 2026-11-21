@@ -70,8 +70,10 @@ def main():
     # token — two schemes reach this now, and letting each call site
     # prepend "Bearer " is how one of them ends up sending Bearer in front
     # of Basic credentials.
-    src2 = _i.getsource(UpdateChecker._negotiate_token)
-    checks["the return value is a full header"] = 'f"Bearer {token}"' in src2
+    import srcslice
+    src2 = srcslice.method_source(UpdateChecker, "_negotiate_token")
+    checks["the return value is a full header"] = (
+        src2 is not None and 'f"Bearer {token}"' in src2)
 
     # ── Discord's 25-field cap ───────────────────────────────────
     # Discord rejects an embed with more than 25 fields — with a 400, so

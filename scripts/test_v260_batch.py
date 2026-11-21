@@ -29,6 +29,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_engine import UpdateEngine  # noqa: E402
@@ -65,17 +67,21 @@ def main():
 
     # …and the bot puts it in the first line, not a fourth message.
     tb = src("telegram_bot.py")
-    i = tb.index('self.t("autoupdate_done")')
-    seg = tb[i - 600:i + 400]
+    i = srcslice.position(tb, 'self.t("autoupdate_done")',
+                          label="telegram_bot.py: the auto-update heading")
+    seg = None if i is None else tb[i - 600:i + 400]
     checks["the bot builds the count into the heading"] = (
-        "count_results" in seg and "_head" in seg)
+        seg is not None and "count_results" in seg and "_head" in seg)
 
     # ── the podman auto-update badge ─────────────────────────────
     web = src("web_ui.py")
-    i = web.index("io.containers.autoupdate")
-    seg = web[i - 400:i + 700]
-    checks["a claimed container is badged"] = 'badge badge-yellow' in seg
-    checks["…from labels the row already has"] = 'c.get("labels")' in seg
+    i = srcslice.position(web, "io.containers.autoupdate",
+                          label="web_ui.py: the auto-update badge")
+    seg = None if i is None else web[i - 400:i + 700]
+    checks["a claimed container is badged"] = (
+        seg is not None and 'badge badge-yellow' in seg)
+    checks["…from labels the row already has"] = (
+        seg is not None and 'c.get("labels")' in seg)
     # Reporting, not acting. Nothing about this label may skip, pin or
     # otherwise change what Docksentry does — that is the user's call and
     # the whole difference between this and monitor-only.
@@ -89,8 +95,8 @@ def main():
         and "io.containers.autoupdate" not in src("update_engine.py"))
 
     # ── the context hint ─────────────────────────────────────────
-    i = web.index("_CONTEXT_FORMATS")
-    seg = web[i:web.index("def _ctx_hint")]
+    seg = srcslice.section(web, "_CONTEXT_FORMATS", "def _ctx_hint",
+                           label="web_ui.py: the context formats")
     # Both CLIs keep a context list and neither accepts the other's field
     # name. Measured: podman rejects `.DockerEndpoint` with exit 125, and
     # docker rejects `.URI` with exit **0** and an error in the output —
@@ -98,26 +104,34 @@ def main():
     # nothing on Podman and would have handed an error string back as an
     # endpoint on Docker.
     checks["both CLIs' endpoint fields are tried"] = (
-        "{{.Name}}|{{.DockerEndpoint}}" in seg and "{{.Name}}|{{.URI}}" in seg)
+        seg is not None
+        and "{{.Name}}|{{.DockerEndpoint}}" in seg and "{{.Name}}|{{.URI}}" in seg)
     checks["…and a failed template is caught by its text, not its exit code"] = (
-        "can't evaluate field" in seg)
-    checks["…exit code still counts too"] = "returncode" in seg
-    checks["…best-effort, never raised"] = "except Exception" in seg
+        seg is not None and "can't evaluate field" in seg)
+    checks["…exit code still counts too"] = (
+        seg is not None and "returncode" in seg)
+    checks["…best-effort, never raised"] = (
+        seg is not None and "except Exception" in seg)
     # A half-parsed line ("name" with no endpoint) is not an answer.
     checks["…and a line without an endpoint is dropped"] = (
-        "endpoint.strip()" in seg and "sep and" in seg)
+        seg is not None and "endpoint.strip()" in seg and "sep and" in seg)
 
-    i = web.index("def _ctx_hint")
-    seg = web[i:i + 900]
-    checks["the hint skips the default context"] = 'n != "default"' in seg
-    checks["…and the endpoint that just failed"] = 'view.get("endpoint")' in seg
-    checks["…and says nothing when there is nothing to say"] = 'return ""' in seg
+    seg = srcslice.section(web, "def _ctx_hint", length=900,
+                           label="web_ui.py: _ctx_hint")
+    checks["the hint skips the default context"] = (
+        seg is not None and 'n != "default"' in seg)
+    checks["…and the endpoint that just failed"] = (
+        seg is not None and 'view.get("endpoint")' in seg)
+    checks["…and says nothing when there is nothing to say"] = (
+        seg is not None and 'return ""' in seg)
     # Only on failure. If this ever became a source of hosts there would
     # be two places to keep in step, which is how they drift apart.
+    _ctx_at = srcslice.position(web, "_docker_contexts()",
+                                label="web_ui.py: the context lookup")
     checks["contexts are only consulted for an unreachable host"] = (
-        web.count("_docker_contexts()") == 1
-        and '"unreachable"' in web[web.index("_docker_contexts()") - 400:
-                                   web.index("_docker_contexts()") + 100])
+        _ctx_at is not None
+        and web.count("_docker_contexts()") == 1
+        and '"unreachable"' in web[_ctx_at - 400:_ctx_at + 100])
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

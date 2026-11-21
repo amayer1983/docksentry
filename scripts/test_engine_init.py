@@ -44,6 +44,8 @@ import tempfile
 import threading
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from config import Config  # noqa: E402
@@ -60,10 +62,16 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Everything the constructor promises, on a real instance.
     for attr in ("_update_lock", "_update_queue", "_update_queue_lock",
-                 "_queued_selfupdate", "_swap_in_flight", "notifier"):
+                 "_queued_selfupdate", "_swap_in_flight", "notifier",
+                 # The queue drain's (Q13): its one thread, the local
+                 # checker for an engine without a registry, and the
+                 # self-update context it hands a queued one on through.
+                 "_drainer", "local_checker", "selfupdate_ctx"):
         checks[f"__init__ sets {attr}"] = hasattr(engine, attr)
 
     checks["…and the lock starts free"] = engine.update_running is False
+    checks["…and no drainer is running on a fresh engine"] = (
+        getattr(engine, "_drainer", "unset") is None)
     checks["…the queue starts empty"] = engine._update_queue == []
     checks["…nothing is mid-swap on a fresh engine"] = (
         engine._swap_in_flight is False)
@@ -72,21 +80,30 @@ with tempfile.TemporaryDirectory() as tmp:
     checks["the queue still queues"] = engine.enqueue_update("a") == 1
     checks["…and hands entries back"] = engine.take_queued_update() == "a"
     engine.enqueue_update("x")
+    _drop = srcslice.attr(engine, "drop_queued_updates",
+                          label="UpdateEngine.drop_queued_updates")
     checks["…and drops them by predicate"] = (
-        engine.drop_queued_updates() == ["x"])
+        _drop is not None and _drop() == ["x"])
     # The orphaned lines must not have landed inside one of them.
-    import inspect  # noqa: E402
-    body = inspect.getsource(UpdateEngine.drop_queued_updates)
+    body = srcslice.method_source(UpdateEngine, "drop_queued_updates")
     checks["no constructor code is stranded after a return"] = (
-        "_swap_in_flight" not in body and "self.notifier" not in body)
+        body is not None
+        and "_swap_in_flight" not in body and "self.notifier" not in body)
 
 
 # ── the lock release cannot be stopped by anything ───────────────────
-class Boom:
-    """An engine whose `_swap_in_flight` raises, like the broken one did."""
+class Boom(UpdateEngine):
+    """An engine whose `_swap_in_flight` raises, like the broken one did.
+
+    A real UpdateEngine underneath, because the scheduled path takes the
+    lock through the engine's door (`claim_update`/`release_update`).
+    A bare object here made that path raise AttributeError before it
+    claimed anything, and the check below passed on a lock nobody took.
+    """
 
     def __init__(self):
         self._update_lock = threading.Lock()
+        self._queued_selfupdate = None
 
     @property
     def _swap_in_flight(self):
@@ -144,15 +161,18 @@ checks["…and so does the scheduled one"] = (
     eng2._update_lock.acquire(blocking=False))
 
 # The self-update coordination moved into the neutral module (#63); the
-# auto path is still on the bot. Both guards are checked where they live.
+# auto path takes the lock through the engine's door, so its guard lives
+# in `UpdateEngine.release_update`. Both are checked where they live.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
-                        "telegram_bot.py"), encoding="utf-8").read()
+                        "update_engine.py"), encoding="utf-8").read()
 susrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                           "selfupdate.py"), encoding="utf-8").read()
+tgsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
+                          "telegram_bot.py"), encoding="utf-8").read()
 checks["no release is guarded by a bare attribute read"] = (
-    "if not self._swap_in_flight:\n                self._update_lock.release()"
-    not in src
-    and "if not ctx._swap_in_flight:" not in susrc)
+    "if not self._swap_in_flight:\n" not in src
+    and "if not ctx._swap_in_flight:" not in susrc
+    and "_swap_in_flight:" not in tgsrc)
 checks["…they read it defensively instead"] = (
     src.count('swap = bool(getattr(self, "_swap_in_flight", False))')
     + susrc.count('swap = bool(getattr(ctx, "_swap_in_flight", False))') == 2)

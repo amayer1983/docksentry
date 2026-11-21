@@ -31,6 +31,8 @@ import ast
 import os
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 from telegram_bot import TelegramBot  # noqa: E402
@@ -100,16 +102,19 @@ if written != {"t"}:
     print(f"  → geschrieben: {sorted(written)}")
 
 # The three commands that were broken, each now on the core.
-i = dsrc.index("def _cmd_selfupdate")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
+body = srcslice.section(dsrc, "def _cmd_selfupdate", "\n    def ",
+                        label="discord_bot.py: _cmd_selfupdate")
 checks["/selfupdate drives the shared self-update"] = (
-    "selfupdate.start" in body and "check_selfupdate(" not in body)
-i = dsrc.index("def _cmd_changelog")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
-checks["/changelog reads the shared changelog"] = "changelog." in body
-i = dsrc.index("def _cmd_restart_self")
-body = dsrc[i:dsrc.index("\n    def ", i + 10)]
-checks["/restart asks the shared restart guard"] = "selfrestart.policy" in body
+    body is not None
+    and "selfupdate.start" in body and "check_selfupdate(" not in body)
+body = srcslice.section(dsrc, "def _cmd_changelog", "\n    def ",
+                        label="discord_bot.py: _cmd_changelog")
+checks["/changelog reads the shared changelog"] = (
+    body is not None and "changelog." in body)
+body = srcslice.section(dsrc, "def _cmd_restart_self", "\n    def ",
+                        label="discord_bot.py: _cmd_restart_self")
+checks["/restart asks the shared restart guard"] = (
+    body is not None and "selfrestart.policy" in body)
 
 # The scan must see the forms the regex could not. Both are real call
 # sites in the file; if the extraction removes them, this check is what

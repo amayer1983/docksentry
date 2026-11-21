@@ -1169,16 +1169,36 @@ class DiscordBot:
         opts = (data.get("data") or {}).get("options") or []
         return {o["name"]: o.get("value") for o in opts}
 
+    @staticmethod
+    def _host_token(name):
+        """A `host` option as the core reads it: nothing named is None,
+        `all` in any case is `hosts.ALL_HOSTS`, anything else a name."""
+        from hosts import ALL_HOSTS
+        if not name:
+            return None
+        return ALL_HOSTS if name.strip().lower() == "all" else name
+
     def _hosts_for(self, name):
         """Resolve a host option to a list of hosts, or None when the
         name isn't one we manage. Mirrors the Telegram rule: no host
         given means every host for read commands."""
         if not self.hosts:
             return [None]
-        if not name:
-            return list(self.hosts)
-        host = self.hosts.get(name)
-        return [host] if host else None
+        if not getattr(self.hosts, "is_multi", False):
+            # One host: its own path, kept as it was — the registry's one
+            # host rather than the core's `[None]`, and `all` is not a
+            # name there.
+            if not name:
+                return list(self.hosts)
+            host = self.hosts.get(name)
+            return [host] if host else None
+        # Through the core, like `_write_hosts_for`: before, `host: all`
+        # on /status, /check, /logs and friends was looked up as a name
+        # and answered "unknown host `all`".
+        import container_flags
+        targets, fatal = container_flags.targets_for_read(
+            self.hosts, self._host_token(name))
+        return None if fatal else targets
 
     def _write_hosts_for(self, name):
         """`_hosts_for` for a command that CHANGES something.
@@ -1193,11 +1213,8 @@ class DiscordBot:
         # this used to look the name up directly and had no branch for the
         # sentinel, so `host: all` came back as an unknown host (#63).
         import container_flags
-        from hosts import ALL_HOSTS
-        token = None
-        if name:
-            token = ALL_HOSTS if name.strip().lower() == "all" else name
-        targets, fatal = container_flags.targets_for_write(self.hosts, token)
+        targets, fatal = container_flags.targets_for_write(
+            self.hosts, self._host_token(name))
         return None if fatal else targets
 
     def _checker_for(self, host):
@@ -1256,16 +1273,39 @@ class DiscordBot:
             return ""
         return f" @{host.name}"
 
-    def _resolve_container(self, partial, backend):
+    def _resolve_container(self, partial, backend, host=None):
         """Partial container name → `(full_name, error)`, mirroring the
         Telegram resolver: running *and* stopped (you want `/logs` of the
-        container that just died), minus our `_old` rollback leftovers."""
+        container that just died), minus our `_old` rollback leftovers.
+
+        The name lookup of `/status container:…`, its only caller, and a
+        read (W7d): a remote `host` gets ten seconds, like Telegram's
+        lookup, the local one the backend's default. What the listing
+        shows of a remote host goes into the dead-host memory — the words
+        when it raised or exited non-zero, a clean slate when it
+        answered — so the overview after it does not ask a dead host a
+        second time, and the next read does not ask it at all. Skipping a
+        host the memory already holds is the caller's: it has the
+        overview to name it. A non-zero exit was "not found" until W7d
+        and is "could not list" now; the caller moves on to the next host
+        either way."""
+        import hosts as hostslib
         if backend is None:
             return None, self.t("chan_no_backend")
+        cmd = ["ps", "-a", "--format", "{{.Names}}"]
+        remote = host is not None and not getattr(host, "is_local", False)
         try:
-            result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
+            result = (backend.run(cmd, timeout=10) if remote
+                      else backend.run(cmd))
         except Exception as e:
+            hostslib.remember(host, clip(str(e)))
             return None, self.t("chan_list_failed", error=str(e)[:80])
+        rc = getattr(result, "returncode", 0)
+        if rc != 0:
+            words = clip(getattr(result, "stderr", "") or "") or f"exit {rc}"
+            hostslib.remember(host, words)
+            return None, self.t("chan_list_failed", error=words[:80])
+        hostslib.remember(host, None)
         names = [n.strip() for n in (result.stdout or "").strip().split("\n")
                  if n.strip() and not n.strip().endswith("_old")]
         if partial in names:
@@ -1331,13 +1371,27 @@ class DiscordBot:
         Not every host: this runs while someone is typing, and walking
         five hosts' container lists inside three seconds is a race we
         would lose. Fill the host in first and the list follows it.
+        `all` counts as not filled in: it would otherwise hand us every
+        host, and this asks for the local one by name instead of trusting
+        that it comes first.
+
+        Three seconds for the `ps -a`, on every host: Discord drops a later
+        answer anyway, and without it a dead SSH host held the worker for
+        the backend's 30 s (W7d). A remote host the dead-host memory still
+        holds is not asked at all. Nothing here marks a host dead: three
+        seconds is shorter than any read waits, so a miss is no evidence.
+        A timeout still raises into `_autocomplete`, which logs it and
+        suggests nothing.
         """
-        hosts = self._hosts_for(host_name) if host_name else None
+        import hosts as hostslib
+        named = self._host_token(host_name) not in (None, hostslib.ALL_HOSTS)
+        hosts = self._hosts_for(host_name) if named else None
         host = hosts[0] if hosts else (self.hosts.local if self.hosts else None)
         backend = self._backend_for(host)
-        if backend is None:
+        if backend is None or hostslib.remembered_dead(host) is not None:
             return []
-        result = backend.run(["ps", "-a", "--format", "{{.Names}}"])
+        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],
+                             timeout=3)
         return [n.strip() for n in (result.stdout or "").strip().split("\n")
                 if n.strip() and not n.strip().endswith("_old")]
 
@@ -1452,7 +1506,9 @@ class DiscordBot:
         `/status <name>` uses — `status_render` — so the two front ends
         cannot drift apart field by field, which is exactly what
         @NotRetarded photographed. The only difference either is allowed
-        is the bold marker.
+        is the bold marker. The overview walks the hosts with Telegram's
+        walk, `status_render.collect_overview`, so both chats list the
+        same containers; the line is `status_render.overview_line`.
         """
         import status_render
         wanted = (opts.get("container") or "").strip()
@@ -1465,10 +1521,22 @@ class DiscordBot:
         # matching three things keeps listing three things, as it always
         # has, rather than answering "not found".
         if wanted:
+            import hosts as hostslib
             for host in targets:
+                # Still in its cooldown: not asked for the name either.
+                # The overview below names it with its words (W7d).
+                if hostslib.remembered_dead(host) is not None:
+                    continue
                 backend = self._backend_for(host)
-                name, err = self._resolve_container(wanted, backend)
+                name, err = self._resolve_container(wanted, backend, host)
                 if err:
+                    # Never the answer on its own: a dead or refused host
+                    # comes back here as "could not list" (a refused one
+                    # said "not found" until W7d). The overview below names
+                    # either as unreachable — I measured that for W3d,
+                    # test_discord_dispatch_matrix pins it — from what
+                    # this lookup left in the dead-host memory, without
+                    # asking it again.
                     continue
                 info = container_info.state(backend, name)
                 if not info:
@@ -1492,36 +1560,40 @@ class DiscordBot:
             # Not resolved anywhere: the overview below, narrowed.
 
         # ── everyone: the overview ──────────────────────────────────
+        # The walk is the one Telegram's /status takes (W5d):
+        # `status_render.collect_overview`, `ps -q` and one `inspect` per
+        # host at ten seconds each. That lists every running container —
+        # ourselves included, and pinned or excluded ones too: this is a
+        # read, not the update list, and a status that hides containers
+        # confused its reporter twice over (#2). The update path keeps
+        # its filters, PID 1 among them (#16). A dead or refused host is
+        # one line, with the SSH hint under it when hostdiag has one.
+        # With the dead-host memory, as Telegram's /status (W7d): a remote
+        # host that just failed — here, in the lookup above or in any
+        # other read — is not asked again until its cooldown is over, and
+        # its line says so.
+        from container_store import LOCAL_HOST
+        overview = status_render.collect_overview(
+            targets, backend_for=self._backend_for, t=self.t,
+            use_cache=True)
+        gone = dict(overview.unreachable)
         lines = []
         for host in targets:
-            checker = self._checker_for(host)
-            if checker is None:
-                continue
-            try:
-                # include_self: /status is a read, and a status that
-                # hides the very container answering it confused its
-                # reporter twice over. The update path keeps the filter
-                # that protects PID 1 (#16).
-                # 10s like the Web UI and Telegram overview — a dead
-                # host is caught below, but must not cost 30s first.
-                containers = checker.get_running_containers(
-                    include_self=True, timeout=10)
-            except Exception as e:
+            host_name = getattr(host, "name", "") or LOCAL_HOST
+            if host_name in gone:
                 lines.append(self.t("host_unreachable_short",
-                                    host=getattr(host, "name", "local"),
-                                    error=clip(e)))
+                                    host=host_name, error=gone[host_name]))
                 continue
             tag = self._label(host)
-            for c in containers:
-                nm = c["name"]
+            for seen_on, cfg in overview.inspected:
+                if seen_on is not host:
+                    continue
+                nm = (cfg.get("Name") or "?").lstrip("/")
                 if wanted and wanted.lower() not in nm.lower():
                     continue
-                si = container_info.state(self._backend_for(host), nm)
-                if si:
-                    lines.append(status_render.overview_line(
-                        nm, si, host_tag=tag))
-                else:
-                    lines.append(f"⚪ `{nm}`{tag} — `{c.get('image', '?')}`")
+                lines.append(status_render.overview_line(
+                    nm, container_info.state_of(self._backend_for(host), cfg),
+                    host_tag=tag))
         if not lines:
             return self.t("chan_no_containers")
         return self._clip("\n".join(lines))
@@ -1532,24 +1604,40 @@ class DiscordBot:
             return self._unknown_host(opts.get("host"))
         if self.engine.update_running:
             return self.t("web_check_one_busy")
+        import container_flags
         found = []
         pins_unreadable = False
-        for host in targets:
-            checker = self._checker_for(host)
-            if checker is None:
-                continue
-            try:
-                updates = checker.check_all()
-            except Exception as e:
+        # The same walk as Telegram's /check. Discord asks for no hint and
+        # never lets a failure out of the handler, not even on a
+        # single-host install: a failed host is one line, cut to 80
+        # characters, under the same heading.
+        #
+        # A host without a checker is skipped, as the old loop did. Only a
+        # bot built without one gets here (main.py always passes it), and
+        # it then still says "up to date" without having checked anything
+        # — kept as measured, not endorsed. With nothing left the walk is
+        # not started at all: check_on_hosts would turn [] into the
+        # single pseudo-host and check that instead.
+        #
+        # A read, so with the dead-host memory (W7d): a remote host whose
+        # listing just failed is not checked again until its cooldown is
+        # over; a check the daemon answered but the registry failed is
+        # not remembered (check_on_hosts decides that).
+        walk = [h for h in targets if self._checker_for(h) is not None]
+        for hc in container_flags.check_on_hosts(
+                walk, checker_for=self._checker_for, hint=False,
+                raise_alone=False, use_cache=True,
+                t=self.t) if walk else ():
+            if hc.error is not None:
                 found.append(self.t("host_check_failed",
-                                    host=getattr(host, "name", "local"),
-                                    error=str(e)[:80]))
+                                    host=getattr(hc.host, "name", "local"),
+                                    error=self._check_error(hc.error)))
                 continue
-            if getattr(updates, "pin_list_unreadable", False):
+            if getattr(hc.updates, "pin_list_unreadable", False):
                 pins_unreadable = True
                 continue
-            for u in updates:
-                found.append(f"• `{u['name']}`{self._label(host)} — {u['image']}")
+            for u in hc.updates:
+                found.append(f"• `{u['name']}`{self._label(hc.host)} — {u['image']}")
         # Nothing was checked, so "everything is up to date" would be the
         # wrong answer. The pin list is one file for every host, so no
         # host found anything either; what is left are failure lines.
@@ -1560,18 +1648,29 @@ class DiscordBot:
             return self.t("chan_all_up_to_date")
         return self._clip("**Updates available**\n" + "\n".join(found))
 
+    def _check_error(self, error):
+        """A failed host's words for /check, cut to 80 characters. For a
+        host skipped because its last try failed, the cut is made on its
+        words and the clause saying so comes after whole: cut at 80, the
+        seconds until the next try would be the part that goes. The
+        words are made a person's first, so the cut cannot hide that
+        Python's argv was a timeout. A cut there ends in an ellipsis:
+        with the clause behind it, "…port 22: Con (from the last try…"
+        read the stub as a word."""
+        import errfmt
+        import hosts as hostslib
+        if isinstance(error, hostslib.StillUnreachable):
+            words = errfmt.human(error.reason or "", self.t)
+            if len(words) > 80:
+                words = words[:79].rstrip() + "…"
+            return hostslib.skipped_words(words, error.retry_in, t=self.t)
+        return str(error)[:80]
+
     def _cmd_updates(self):
-        import json
-        import os
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return self.t("no_pending_updates")
-        try:
-            with open(path, encoding="utf-8") as f:
-                pending = json.load(f)
-        except (OSError, ValueError):
-            return self.t("no_pending_updates")
-        if not isinstance(pending, list) or not pending:
+        import pending as _pending
+        # Every entry, not `_pending()`: a nameless one is still listed as `?`.
+        pending = _pending.read(getattr(self.config, "pending_file", ""))
+        if not pending:
             return self.t("no_pending_updates")
         from container_store import LOCAL_HOST, entry_host
         lines = []
@@ -2395,20 +2494,23 @@ class DiscordBot:
 
     # ── the commands that change things ───────────────────────────
     # Everything below either holds the engine's update mutex while it
-    # works, or refuses to work because something else holds it. There is
-    # exactly ONE such lock in the process — `UpdateEngine._update_lock`,
+    # works, or does not work now because something else holds it. There
+    # is exactly ONE such lock in the process — `UpdateEngine._update_lock`,
     # the same object `TelegramBot.run_updates` and the Web UI's update
-    # button claim — and nothing in this file ever constructs another. A
-    # second lock would put a Discord `/update` and a scheduled
-    # auto-update inside the same container's recreate at the same time,
-    # which is the #53 window all over again.
+    # button claim — and this file only ever reaches it through the
+    # engine's door (`claim_update` / `claim_or_queue_many` /
+    # `release_update`). A second lock
+    # would put a Discord `/update` and a scheduled auto-update inside the
+    # same container's recreate at the same time, which is the #53 window
+    # all over again.
     #
-    # And when the lock is held we say so and stop. No queue, no wait: a
-    # slash command that silently sits on a mutex for six minutes and
-    # then acts is worse than one that tells you to try again.
-
-    def _lock(self):
-        return self.engine._update_lock
+    # When an update holds the lock, /update and a confirmed /updateall
+    # do not wait on it: their containers go on the engine's queue
+    # (`claim_or_queue_many`, Q15) and the answer says where each one
+    # stands. The engine's drainer runs them once the lock is given back
+    # (Q13), and the result comes through the broadcast like any queued
+    # update's — never as an edit of this answer, which is spent by then.
+    # Until Q15 the answer was "nothing was started, try again".
 
     def _release_lock(self):
         """Release the shared mutex, then hand on any self-update that
@@ -2417,7 +2519,90 @@ class DiscordBot:
         Without the handoff a `/selfupdate` queued behind a
         Discord-triggered update would sit there until some other
         front-end happened to release the lock next."""
-        self._lock().release()
+        self.engine.release_update(after=self._hand_on_selfupdate)
+
+    def _queued_lines(self, outcomes, labels):
+        """What a request the engine queued instead of claiming is told:
+        `claim_or_queue_many`'s outcomes, one `(key, i18n key, params)`
+        per container, as lines, each container named by `labels`
+        (queue key → "web @nas"). A request that did not fit was not
+        queued at all and says so once: the engine answers it as a whole
+        (my decision of 18.11.2026). Anything that waits gets one more
+        line on where its result will show up (`_result_where`). A pinned
+        or excluded container was kept off the queue and says so; an
+        unreadable pin list refuses the whole request (Q16f)."""
+        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
+            return [self.t("update_refused_pin_list")]
+        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):
+            # A self-update is swapping (Q16h): nothing was queued.
+            return [self.t("update_refused_selfupdate")]
+        full = next((p for _k, a, p in outcomes
+                     if a == "update_queue_full"), None)
+        if full is not None:
+            return [self.t("chan_update_queue_full", max=full.get("max", 0))]
+        lines, waits = [], False
+        for key, answer, params in outcomes:
+            name = labels.get(key, key)
+            if answer in ("update_not_queued_pinned",
+                          "update_not_queued_excluded"):
+                lines.append(self.t(answer, name=name))
+            elif answer == "update_queued":
+                waits = True
+                lines.append(self.t("chan_update_queued", name=name,
+                                    pos=params.get("pos", 0)))
+            elif answer == "update_already_queued":
+                from notify_retry import _ago
+                waits = True
+                lines.append(self.t(
+                    "chan_update_already_queued", name=name,
+                    since=_ago(params.get("since_seconds", 0))))
+            else:
+                lines.append(self.t("update_same_running", name=name))
+        if waits:
+            lines.append(self._result_where())
+        return lines
+
+    def _result_where(self):
+        """Where the result of a queued update shows up. Not in this
+        answer: the drainer runs it later and its card goes out through
+        the notifiers. Two of them reach Discord (`DISCORD_CHANNELS`):
+        the bot channel, by the same two conditions `_post_to_channel`
+        goes by, and the webhook, by its plugin's `active()`. With
+        neither, the card never reaches Discord, and the answer says
+        whether that is because nothing is set or because it is
+        switched off. Quiet hours and maintenance drop the card rather
+        than hold it (`Notifier._suppressed`), so in that window the
+        answer names no channel. Judged now, not when the drainer runs
+        it — hence "if they still are"."""
+        from notifier import suppressed
+        cfg = self.config
+        channel = (getattr(cfg, "discord_bot_channel", "") or "").strip()
+        hook = bool(getattr(cfg, "discord_webhook", ""))
+        bot_on = bool(channel) and getattr(cfg, "channel_discordbot_enabled", True)
+        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)
+        if not (bot_on or hook_on):
+            if channel or hook:
+                return self.t("chan_update_result_off")
+            return self.t("chan_update_result_no_channel")
+        if suppressed(cfg):
+            return self.t("chan_update_result_quiet")
+        if bot_on:
+            return self.t("chan_update_result_channel", channel=channel)
+        return self.t("chan_update_result_webhook")
+
+    def _queue_labels(self, pairs):
+        """`{queue key: "web @nas"}` for `(host, name)` pairs — the key
+        the engine's queue and drainer know a container by, and the
+        name the way this chat tags hosts (`_label`)."""
+        from container_store import host_key
+        from update_engine import host_name_of
+        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"
+                for h, n in pairs}
+
+    def _hand_on_selfupdate(self):
+        """Start a self-update that queued behind our update or cleanup.
+        It is `release_update`'s `after`, so it runs once the lock has
+        been given back."""
         ctx = getattr(self, "selfupdate_ctx", None)
         if ctx is None:
             return
@@ -2433,54 +2618,24 @@ class DiscordBot:
     # updating one must not make the other's entry disappear.
 
     def _pending(self):
-        import json
-        import os
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return []
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return []
-        if not isinstance(data, list):
-            return []
-        return [u for u in data if isinstance(u, dict) and u.get("name")]
+        """Every host's pending entries that carry a name — the only
+        ones a Discord command can act on."""
+        import pending as _pending
+        return _pending.read(getattr(self.config, "pending_file", ""),
+                             named_only=True)
 
     def _drop_pending(self, keys):
         """Remove the given `(host, name)` pairs from the pending file
         (atomic write; the file is deleted when nothing is left, which is
         what every other reader treats as "nothing pending")."""
-        import json
-        import os
-        from container_store import atomic_write_json, entry_host
-        path = getattr(self.config, "pending_file", "")
-        if not path or not os.path.exists(path):
-            return
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return
-        if not isinstance(data, list):
-            return
-        wanted = {tuple(k) for k in keys}
-        remaining = [u for u in data
-                     if not isinstance(u, dict)
-                     or (entry_host(u), u.get("name")) not in wanted]
-        if remaining:
-            atomic_write_json(path, remaining)
-        else:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        import pending as _pending
+        _pending.remove(getattr(self.config, "pending_file", ""), keys,
+                        delete_when_empty=True)
 
     def _pending_for(self, host):
-        from container_store import entry_host
+        import pending as _pending
         from update_engine import host_name_of
-        name = host_name_of(host)
-        return [u for u in self._pending() if entry_host(u) == name]
+        return _pending.entries_for(self._pending(), [host_name_of(host)])
 
     # ── /update ───────────────────────────────────────────────────
     def _cmd_update(self, opts):
@@ -2521,8 +2676,11 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):
             return self.t("update_refused_pin_list")
-        if not self._lock().acquire(blocking=False):
-            return self.t("chan_update_busy")
+        labels = self._queue_labels((h, t["name"]) for h, t in jobs)
+        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))
+        if not claimed:
+            return self._clip("**Update**\n" + "\n".join(
+                self._queued_lines(outcomes, labels) + errors))
         try:
             lines = list(errors)
             for host, target in jobs:
@@ -2535,10 +2693,15 @@ class DiscordBot:
                 # and the notifier results all live there, and a
                 # front-end that bypassed it would quietly behave
                 # differently from the other two.
+                # `held`: pinned or excluded right before the update
+                # (Q16g). Its line says so, and its entry stays pending.
+                held = {}
                 results, _ok, _major = self.engine._process_update_batch(
-                    [target], checker, auto=False)
+                    [target], checker, auto=False, held=held)
                 lines.extend(results)
-                self._drop_pending([(host_name_of(host), target["name"])])
+                key = (host_name_of(host), target["name"])
+                if key not in held:
+                    self._drop_pending([key])
         finally:
             self._release_lock()
         return self._clip("**Update**\n" + "\n".join(lines))
@@ -2625,8 +2788,14 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):
             return self.t("update_refused_pin_list")
-        if not self._lock().acquire(blocking=False):
-            return self.t("chan_update_busy")
+        # Only what was approved and is still pending goes on the queue:
+        # `batches` is exactly that.
+        labels = self._queue_labels(
+            (h, u["name"]) for h, entries in batches for u in entries)
+        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))
+        if not claimed:
+            return self._clip("**Update all**" + note + "\n" + "\n".join(
+                self._queued_lines(outcomes, labels)))
         try:
             lines = []
             for host, entries in batches:
@@ -2638,11 +2807,14 @@ class DiscordBot:
                 # from each entry's `host` key, but the checker that
                 # actually recreates is a single parameter — a batch must
                 # not mix hosts.
+                held = {}
                 results, _ok, _major = self.engine._process_update_batch(
-                    entries, checker, auto=False)
+                    entries, checker, auto=False, held=held)
                 lines.extend(results)
                 self._drop_pending([(host_name_of(host), u["name"])
-                                    for u in entries])
+                                    for u in entries
+                                    if (host_name_of(host), u["name"])
+                                    not in held])
         finally:
             self._release_lock()
         # The note goes at the TOP, not after the results: `_clip` cuts the
@@ -2751,14 +2923,14 @@ class DiscordBot:
 
     def _cleanup_guarded(self, checker):
         """`(ok, message)` from a prune, or `(None, busy)` if an update
-        flow holds the mutex — the same contract as the Telegram bot's
-        `cleanup_guarded`, which the scheduler and the Web UI also use."""
-        if not self._lock().acquire(blocking=False):
-            return None, self.t("cleanup_busy")
-        try:
-            return checker.cleanup_images()
-        finally:
-            self._release_lock()
+        flow holds the mutex — the engine's `cleanup_guarded`, the same
+        guard the Telegram bot, the scheduler and the Web UI go through,
+        with our own words and our own self-update handoff."""
+        ok, msg = self.engine.cleanup_guarded(
+            checker, after=self._hand_on_selfupdate)
+        if ok is None:
+            return None, self.t(msg)
+        return ok, msg
 
     @staticmethod
     def _human_size(num):

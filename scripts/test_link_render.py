@@ -334,17 +334,20 @@ def main():
     # /releases/latest in Telegram and to the repo front page in the browser.
     # @LeeNX spotted it on Docksentry's own row. This pins the two together.
     import re as _re                                        # noqa: E402
-    import inspect as _inspect                              # noqa: E402
-    _src = _inspect.getsource(web_ui.create_handler)
-    _row_link_src = _src[_src.find("def _row_link"):]
-    _row_link_src = _row_link_src[:_row_link_src.find("def _link_anchor")]
+    import srcslice                                         # noqa: E402
+    _src = srcslice.method_source(web_ui, "create_handler")
+    _row_link_src = srcslice.section(_src, "def _row_link", "def _link_anchor",
+                                     label="web_ui.py: _row_link")
     checks["web UI applies prefer_release_url to auto-detected links"] = (
-        "prefer_release_url" in _row_link_src)
+        _row_link_src is not None and "prefer_release_url" in _row_link_src)
     # …and only to the auto-detected ones: an explicit label or /setlink is
     # the user's decision and must come back untouched.
-    _before_oci = _row_link_src[:_row_link_src.find("org.opencontainers.image.source")]
+    _oci_at = srcslice.position(_row_link_src,
+                                "org.opencontainers.image.source",
+                                label="_row_link: the OCI source label")
     checks["web UI leaves an explicit link alone"] = (
-        "prefer_release_url" not in _before_oci)
+        _oci_at is not None
+        and "prefer_release_url" not in _row_link_src[:_oci_at])
 
 
     # ── 1. A javascript: value in the store never becomes an href ──────

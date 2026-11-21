@@ -42,6 +42,8 @@ import sys
 import types
 import urllib.error
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import backup  # noqa: E402
@@ -138,10 +140,12 @@ checks["a refused upload raises rather than looking successful"] = ok
 # channel is worse than an error the user can act on.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "discord_rest.py"), encoding="utf-8").read()
-up = src[src.index("def upload("):src.index("def upload_to_channel")]
-checks["…and is not retried into a duplicate"] = "for attempt in" not in up
+up = srcslice.section(src, "def upload(", "def upload_to_channel",
+                      label="discord_rest.py: upload")
+checks["…and is not retried into a duplicate"] = (
+    up is not None and "for attempt in" not in up)
 checks["the untested part is labelled as untested"] = (
-    "Not verified against the live API" in up)
+    up is not None and "Not verified against the live API" in up)
 
 dsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "discord_bot.py"), encoding="utf-8").read()
@@ -278,25 +282,29 @@ checks["…and not after one that applied nothing"] = (
 # read there, and the ORDER is read here, in the Telegram adapter that
 # still owns what Telegram says.
 _h = tsrc_head()
-_restart = _h[_h.index("    def restart_self(self"):]
-_restart = _restart[:_restart.index("\n    def ", 10)]
+_restart = srcslice.section(_h, "    def restart_self(self", "\n    def ",
+                            label="telegram_bot.py: restart_self")
 _srsrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                            "selfrestart.py"), encoding="utf-8").read()
-_down = _srsrc[_srsrc.index("def go_down("):]
+_down = srcslice.section(_srsrc, "def go_down(",
+                         label="selfrestart.py: go_down")
 # Match on the statements, not on the prose. The docstring explains why
 # SIGTERM is the mechanism, and the first version of this check found
 # that sentence and concluded the code ran in the wrong order.
-_code = _down.split('"""')[2] if _down.count('"""') >= 2 else _down
+_code = (_down.split('"""')[2] if _down is not None and _down.count('"""') >= 2
+         else _down)
 checks["the restart goes through our own shutdown handler"] = (
-    "signal.SIGTERM" in _code and "os.kill" in _code)
+    _code is not None and "signal.SIGTERM" in _code and "os.kill" in _code)
 # `docker restart` on ourselves would ask the daemon to stop the process
 # making the request, and the reply would die with it.
 checks["…rather than asking the daemon to stop us mid-reply"] = (
-    "backend.run" not in _down and "restart\"" not in _down)
-_tg = _restart.split('"""')[2] if _restart.count('"""') >= 2 else _restart
-checks["…and the answer is sent before the process goes"] = (
-    _tg.index('self.send_message(self.t("restart_going_down"')
-    < _tg.index("selfrestart.go_down()"))
+    _down is not None
+    and "backend.run" not in _down and "restart\"" not in _down)
+_tg = (_restart.split('"""')[2]
+       if _restart is not None and _restart.count('"""') >= 2 else _restart)
+checks["…and the answer is sent before the process goes"] = srcslice.in_order(
+    _tg, 'self.send_message(self.t("restart_going_down"',
+    "selfrestart.go_down()")
 
 # The bundle's own claims are not trusted.
 checks["an unknown settings key is dropped"] = not hasattr(
@@ -385,10 +393,11 @@ checks["a requested restart is told apart from an external stop"] = (
     "requested_restart" in msrc and "startup_reason_requested" in msrc)
 # Scoped to the block, not to a fixed window after the first mention —
 # the first attempt sliced 600 characters and missed the guard by a line.
-_req_block = msrc[msrc.index("    requested_restart = False"):]
-_req_block = _req_block[:_req_block.index("\n\n    ", 10)]
+_req_block = srcslice.section(msrc, "    requested_restart = False",
+                              "\n\n    ",
+                              label="main.py: the restart request block")
 checks["…and a stale request cannot mask a real one an hour later"] = (
-    "< 3600" in _req_block)
+    _req_block is not None and "< 3600" in _req_block)
 checks["…the marker is consumed, not left to fire twice"] = (
     "os.unlink(config.restart_request_file)" in msrc)
 
@@ -427,21 +436,23 @@ for other in ("stop", "start"):
 # explains the old borrow by name, so the check was satisfied by an
 # explanation of the very thing it exists to forbid.
 _dc = dsrc_now()
-_dcr = _dc[_dc.index("    def _cmd_restart_self(self):"):]
-_dcr = _dcr[:_dcr.index("\n    def ", 10)]
-_dcr_code = _dcr.split('"""')[2] if _dcr.count('"""') >= 2 else _dcr
+_dcr = srcslice.section(_dc, "    def _cmd_restart_self(self):", "\n    def ",
+                        label="discord_bot.py: _cmd_restart_self")
+_dcr_code = (_dcr.split('"""')[2]
+             if _dcr is not None and _dcr.count('"""') >= 2 else _dcr)
 checks["restarting Docksentry from Discord asks the same guard"] = (
-    "selfrestart.policy(" in _dcr_code)
+    _dcr_code is not None and "selfrestart.policy(" in _dcr_code)
 checks["…rather than growing a second copy of the rule"] = (
     "HostConfig.RestartPolicy" not in _dc)
 # The answer has to be POSTED before the process goes — Discord's reply
 # is only returned from the handler, so arming the timer inside it would
 # race the message announcing the restart.
 checks["…and Discord goes down only after its answer is out"] = (
-    "selfrestart.go_down()" not in _dcr_code
+    _dcr_code is not None
+    and "selfrestart.go_down()" not in _dcr_code
     and "_shutdown_after_answer = True" in _dcr_code
-    and _dc.index("self._deliver(data, started, text)")
-    < _dc.index("self._shutdown_if_asked()"))
+    and srcslice.in_order(_dc, "self._deliver(data, started, text)",
+                          "self._shutdown_if_asked()"))
 # Telegram offers a button; Discord has no buttons on an ephemeral
 # reply, so it says the same thing in words — from the shared
 # translations, so the sentence lives in one place (#63).
@@ -453,23 +464,25 @@ checks["a Discord restore points at the restart too"] = (
 # attachment" — a message that says nothing, on a fetch that sent no
 # User-Agent. The attachment does not come from the API; it comes from
 # Discord's CDN behind Cloudflare, which answers Python-urllib with 403.
-_fetch = dsrc_now()[dsrc_now().index("def _cmd_restore"):]
-_fetch = _fetch[:_fetch.index("\n    def ", 10)]
+_fetch = srcslice.section(dsrc_now(), "def _cmd_restore", "\n    def ",
+                          label="discord_bot.py: _cmd_restore")
 checks["the attachment fetch identifies itself"] = (
-    'headers={"User-Agent": USER_AGENT}' in _fetch)
+    _fetch is not None and 'headers={"User-Agent": USER_AGENT}' in _fetch)
 checks["…with the same agent every other call uses"] = (
-    "from discord_rest import USER_AGENT" in _fetch)
+    _fetch is not None and "from discord_rest import USER_AGENT" in _fetch)
 # Checked by KEY, not by wording: every Discord reply reads from the
 # shared translations now (#63), so the sentence lives in one place and a
 # test that re-typed it would be the second place it could drift. What
 # matters is that the failure still carries its detail — the status code,
 # the error text — which is what the old silent message did not.
 checks["an HTTP refusal reports its status code"] = (
-    'chan_attachment_http", code=e.code' in _fetch)
+    _fetch is not None and 'chan_attachment_http", code=e.code' in _fetch)
 checks["…and a network failure reports what went wrong"] = (
-    "chan_attachment_failed" in _fetch and "str(e)[:120]" in _fetch)
+    _fetch is not None
+    and "chan_attachment_failed" in _fetch and "str(e)[:120]" in _fetch)
 checks["…and a file that is not JSON says which part failed"] = (
-    "restore_not_json" in _fetch and "str(e)[:100]" in _fetch)
+    _fetch is not None
+    and "restore_not_json" in _fetch and "str(e)[:100]" in _fetch)
 # The old message told the user nothing and put the reason in a log they
 # had no reason to open. That is the failure mode this whole thread has
 # been about.

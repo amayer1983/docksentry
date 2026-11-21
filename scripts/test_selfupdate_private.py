@@ -37,6 +37,8 @@ import textwrap
 import time
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import selfupdate  # noqa: E402
@@ -240,9 +242,11 @@ checks["the notifier can withhold one message from named channels"] = (
 
 import selfupdate as _su_mod
 SELFUPDATE_SRC = open(_su_mod.__file__).read()
-locked = SELFUPDATE_SRC.split("def run(")[1].split("\ndef ")[0]
+locked = srcslice.section(SELFUPDATE_SRC, "def run(", "\ndef ",
+                          label="selfupdate.py: run")
 checks["the pre-restart 'restarting' notice skips them as well"] = (
-    "skip=DISCORD_CHANNELS if reply_to else ()" in locked)
+    locked is not None
+    and "skip=DISCORD_CHANNELS if reply_to else ()" in locked)
 
 
 # ── 4b. only the ANSWER takes the private route ───────────────────────
@@ -252,16 +256,17 @@ checks["the pre-restart 'restarting' notice skips them as well"] = (
 # it in the DMs of whoever last ran /selfupdate — who may not be them.
 MAIN_SRC = open(os.path.join(os.path.dirname(__file__), "..",
                              "app", "main.py"), encoding="utf-8").read()
-_ba = MAIN_SRC[MAIN_SRC.index("def boot_announce("):]
-_ba = _ba[:_ba.index("\n    # ")]
+_ba = srcslice.section(MAIN_SRC, "def boot_announce(", "\n    # ",
+                       label="main.py: boot_announce")
 
 checks["a boot notice is public unless it is marked as the answer"] = (
-    "def boot_announce(text, reply=False)" in _ba
+    _ba is not None
+    and "def boot_announce(text, reply=False)" in _ba
     and "private = bool(reply and selfupdate_reply_to)" in _ba)
 checks["…and only that one is skipped for the channel"] = (
-    "skip=DISCORD_CHANNELS if private else ()" in _ba)
+    _ba is not None and "skip=DISCORD_CHANNELS if private else ()" in _ba)
 checks["…and only that one is sent as a direct message"] = (
-    "if private:" in _ba and "deliver_private(text)" in _ba)
+    _ba is not None and "if private:" in _ba and "deliver_private(text)" in _ba)
 
 _calls = [ln.strip() for ln in MAIN_SRC.split("\n")
           if "boot_announce(" in ln and "def " not in ln]
@@ -311,45 +316,54 @@ finally:
 # "Something went wrong" after telling the user it had started. The work
 # lives in the neutral module now, so what this guards is that the
 # command reaches it — and still records a route only when it should.
-cmd = DISCORD_SRC.split("def _cmd_selfupdate(")[1].split("\n    def ")[0]
-called = sorted(set(part.split("(")[0] for part in cmd.split("bot.")[1:]))
+cmd = srcslice.section(DISCORD_SRC, "def _cmd_selfupdate(", "\n    def ",
+                       label="discord_bot.py: _cmd_selfupdate")
+called = ([] if cmd is None else
+          sorted(set(part.split("(")[0] for part in cmd.split("bot.")[1:])))
 # `called` is empty today, so `all()` was vacuously true and the
 # check would survive the command growing a call that does not exist.
 checks["/selfupdate on Discord calls nothing TelegramBot lacks"] = (
-    not called or all(hasattr(TelegramBot, m) for m in called))
+    cmd is not None
+    and (not called or all(hasattr(TelegramBot, m) for m in called)))
 checks["…and borrows nothing from the Telegram bot at all today"] = (
-    called == [])
+    cmd is not None and called == [])
 checks["…and hands the work to the module that does it"] = (
-    "selfupdate.start" in cmd)
+    cmd is not None and "selfupdate.start" in cmd)
 # The running commentary follows the same rule as the restart notice.
 # Measured on a real run: "🔄 Checking update for localhost:5000/…" landed
 # in the channel for a request answered ephemerally — giving away the same
 # thing the ephemeral answer was hiding, one message before the notice we
 # already suppress.
 checks["a private request keeps its progress out of the channel"] = (
-    "send_private(self.config" in cmd and '"reply": _reply' in cmd)
+    cmd is not None
+    and "send_private(self.config" in cmd and '"reply": _reply' in cmd)
 # The answer goes back to the interaction it came from, ephemerally —
 # where the person typed the command, not into a channel they may have
 # silenced and not into a DM thread they never opened. The channel
 # switch covers everything again, the way Telegram has always had it.
 checks["…and a public one answers on the interaction"] = (
-    "self.rest.followup(" in cmd)
+    cmd is not None and "self.rest.followup(" in cmd)
 # Ephemeral follows the operator's own `DISCORD_PUBLIC_REPLIES` — that
 # setting exists so a team can keep the commentary in the channel as a
 # record, and hardcoding it took that away. But a switched-off channel
 # beats a preference for posting in it, so the flag is forced then.
 checks["…ephemeral or not as the operator chose"] = (
-    "ephemeral=_eph" in cmd and "ephemeral=True" not in cmd)
+    cmd is not None
+    and "ephemeral=_eph" in cmd and "ephemeral=True" not in cmd)
 checks["…and a switched-off channel forces it either way"] = (
-    "_replies_private()" in cmd and "channel_discordbot_enabled" in cmd)
+    cmd is not None
+    and "_replies_private()" in cmd and "channel_discordbot_enabled" in cmd)
 checks["…with the channel only as the last resort"] = (
-    "self.announce(text)" in cmd and "reply=True" not in cmd)
+    cmd is not None
+    and "self.announce(text)" in cmd and "reply=True" not in cmd)
+_dm_at = srcslice.position(cmd, "send_private(self.config, _uid, text",
+                           label="_cmd_selfupdate: the private answer")
+_ch_at = srcslice.last_position(cmd, "self.announce(text)",
+                                label="_cmd_selfupdate: the channel answer")
 checks["…and a DM that will not open falls back rather than vanishing"] = (
-    "send_private(self.config, _uid, text" in cmd
-    and cmd.index("send_private(self.config, _uid, text")
-    < cmd.rindex("self.announce(text)"))
+    _dm_at is not None and _ch_at is not None and _dm_at < _ch_at)
 checks["…and only records a reply route when replies are private"] = (
-    "self._replies_private()" in cmd)
+    cmd is not None and "self._replies_private()" in cmd)
 
 
 for k, v in checks.items():

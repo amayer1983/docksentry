@@ -28,7 +28,8 @@ answer per host while Discord joins into one clipped blob, and what keeps
 the shared translations the single source of wording.
 """
 
-from dataclasses import dataclass, field
+from collections import namedtuple
+from dataclasses import dataclass, field, replace
 
 
 #: How a name is matched. `/unpin` matches against the stored list; the
@@ -144,24 +145,40 @@ def _is_local(host):
     return host is None or bool(getattr(host, "is_local", False))
 
 
-def targets_for_write(registry, host_token):
-    """Which hosts a state-changing command acts on.
+#: What a command does to the hosts it reaches — the one thing that picks
+#: the default when nobody named a host.
+TARGET_MODES = ("read", "write")
+
+
+def targets_for(mode, registry, host_token):
+    """Which hosts a command acts on — the one place that decides it.
 
     `host_token` is already parsed — `@nas` on Telegram, a `host:` option
     on Discord, both arriving here as a name, `hosts.ALL_HOSTS`, or None.
     Parsing the syntax is the connection's job; deciding what the answer
     MEANS is not, which is why Discord had no `@all` until this moved.
 
+    `mode` picks the no-token default, and that is the whole rule: a
+    command that only LOOKS ("read") defaults to every host, one that
+    CHANGES something ("write") stays on the local one. Turning
+    auto-update on for `nginx` because no host was named must not turn it
+    on for every host's `nginx` — the #7 state collision.
+
     Returns `(targets, fatal)`. `targets` is `[None]` on a single-host
     install — the pseudo-host every call site already walks, and what
-    keeps single-host replies byte-for-byte what they were.
+    keeps single-host replies byte-for-byte what they were. `fatal` is a
+    `Reply` when the named host isn't one we manage, with `targets == []`;
+    callers send it and do nothing else, because falling back to "all" or
+    to local would act on the wrong box.
     """
+    if mode not in TARGET_MODES:
+        raise ValueError(f"unknown target mode {mode!r}")
     multi = registry is not None and getattr(registry, "is_multi", False)
     if not multi:
         return [None], None
     from hosts import ALL_HOSTS
     if host_token is None:
-        return [registry.local], None
+        return (list(registry) if mode == "read" else [registry.local]), None
     if host_token == ALL_HOSTS:
         return list(registry), None
     host = registry.get(host_token)
@@ -170,6 +187,18 @@ def targets_for_write(registry, host_token):
         return [], Reply("host_unknown", {"name": host_token, "hosts": names},
                          ok=False)
     return [host], None
+
+
+def targets_for_read(registry, host_token):
+    """`targets_for` for a command that only looks: no host named means
+    every host."""
+    return targets_for("read", registry, host_token)
+
+
+def targets_for_write(registry, host_token):
+    """`targets_for` for a command that changes something: no host named
+    means the local one."""
+    return targets_for("write", registry, host_token)
 
 
 def resolve_container(partial, *, backend=None, names=None):
@@ -202,6 +231,334 @@ def resolve_container(partial, *, backend=None, names=None):
                            {"names": ", ".join(f"`{m}`" for m in matches)},
                            ok=False)
     return None, Reply("resolve_not_found", {"name": partial}, ok=False)
+
+
+def _listed_names(result):
+    """The names a `ps --format {{.Names}}` printed, minus our own `_old`
+    rollback leftovers — an implementation detail of the update path."""
+    return [n.strip() for n in (getattr(result, "stdout", "") or "").strip().split("\n")
+            if n.strip() and not n.strip().endswith("_old")]
+
+
+def resolve_container_checked(partial, *, backend, timeout=None):
+    """`resolve_container`, but a host that did not answer says so.
+
+    Returns `(name, reply, failure)`. `failure` is set when the listing
+    itself failed — the exception the backend raised, or `(returncode,
+    stderr)` when the CLI exited non-zero — and then `name` and `reply`
+    are both None: nothing was looked at, so nothing is "not found".
+
+    `resolve_container` reads a non-zero exit as an empty host, so a host
+    whose SSH refuses answers "Container `web` not found." — measured in
+    test_find_on_hosts, where it stays pinned, because that function
+    keeps its callers until they move here.
+
+    A plain name always looks at stopped containers too, like every
+    partial-name lookup in both chats. `timeout` None leaves the CLI's
+    own default and passes nothing.
+    """
+    cmd = ["ps", "-a", "--format", "{{.Names}}"]
+    try:
+        result = (backend.run(cmd) if timeout is None
+                  else backend.run(cmd, timeout=timeout))
+    except Exception as e:                                  # noqa: BLE001
+        return None, None, e
+    rc = getattr(result, "returncode", 0)
+    if rc != 0:
+        return None, None, (rc, getattr(result, "stderr", "") or "")
+    name, reply = resolve_container(partial, names=_listed_names(result))
+    return name, reply, None
+
+
+class Unreachable(namedtuple("Unreachable", "host error hint")):
+    """A host that did not answer: `(host, error_text, hint)`.
+
+    `error` is meant for a person (a timeout says how long we waited);
+    `hint` is hostdiag's sentence for an SSH host, or "". `reply()` is
+    the `host_unreachable_short` one-liner Discord builds by hand; since
+    W3 Telegram's `/status`, `/check` and `/update <name>` render it, the
+    hint goes underneath. Only Telegram's plain `/status` overview still
+    says `status_host_unreachable`.
+    """
+    __slots__ = ()
+
+    def reply(self):
+        from container_store import LOCAL_HOST
+        return Reply("host_unreachable_short",
+                     {"host": getattr(self.host, "name", "") or LOCAL_HOST,
+                      "error": self.error},
+                     host=self.host, host_is_local=_is_local(self.host),
+                     ok=False)
+
+
+#: One host's answer, as `on_host` sees it: exactly one of `names`
+#: (non-empty), `error` (a Reply: none there, or ambiguous) and
+#: `unreachable` is set.
+HostFind = namedtuple("HostFind", "host names error unreachable")
+
+
+@dataclass(frozen=True)
+class FindResult:
+    #: `(host, names)` for every host with a match, in walk order.
+    found: tuple = ()
+    #: One Reply per host that answered without a match, `host` set —
+    #: or that has no backend at all (`chan_no_backend`).
+    errors: tuple = ()
+    #: One `Unreachable` per host that did not answer.
+    unreachable: tuple = ()
+
+    @property
+    def first_error(self):
+        """What to say when nothing was found anywhere: `errors[0]`, in
+        walk order. That is the first host that answered without a match
+        — OR the first host that had no backend (`chan_no_backend`),
+        whichever came first. A host without a backend never answered,
+        so a later host's `resolve_not_found` can stand behind it; a
+        caller that wants the first real "not there" filters `errors`
+        itself. None when `errors` is empty (every host found it or was
+        unreachable) — then there is nothing to call "not found"."""
+        return self.errors[0] if self.errors else None
+
+
+def _exit_text(rc, t):
+    """A non-zero exit that said nothing on stderr, for a person."""
+    if t is not None:
+        try:
+            return t("error_exit_code", code=rc)
+        except Exception:                                   # noqa: BLE001
+            pass
+    return f"exit code {rc}"
+
+
+def _human(err, t):
+    import errfmt
+    try:
+        return errfmt.human(err, t=t)
+    except Exception:                                       # noqa: BLE001
+        return errfmt.human(err)
+
+
+def find_on_hosts(targets, *, backend_for, arg, include_stopped=True,
+                  on_host=None, timeout=None, remote_timeout=None,
+                  use_cache=False, t):
+    """Find `arg` — a plain partial name or a glob — on each of `targets`.
+
+    The hosts are asked one after the other, in the order given, and
+    `on_host(HostFind)` runs for each before the next one is touched, so
+    a chat can send a host's answer as soon as it has it. An exception
+    from `on_host` is the caller's and is not swallowed.
+
+    Unreachable is an exception from the backend OR a CLI exit ≠ 0: a
+    dead host raises its timeout, a refused SSH returns 255 with empty
+    output, and neither may come back as "not found" or take the whole
+    command down. Nothing a host does is raised from here — but a bad
+    argument from the caller is: only `backend_for` and the backend's
+    own `run` are treated as the host's doing.
+
+    `backend_for` answering None is "no backend", like the old
+    resolvers say it (`chan_no_backend` in `errors`), not unreachable.
+
+    `include_stopped` applies to a glob; a plain name always looks at
+    stopped containers too (`resolve_container_checked`). `t` translates
+    the timeout line and hostdiag's hint.
+
+    `timeout` goes to every host's listing (None passes nothing);
+    `remote_timeout`, when given, replaces it for every host that is not
+    the local one — the short probe a chat read uses (W7).
+
+    `use_cache=True` is for reads only (W7): a remote host still in its
+    cooldown (`hosts.remembered_dead`) is not asked and comes back as
+    unreachable with its remembered words, the seconds until it is asked
+    again and the hint those words get, and every remote host that is
+    asked leaves its outcome in the memory. The default — every write,
+    and every caller that has not moved yet — skips nobody and marks
+    nobody dead, but a host that answers is forgotten either way.
+    """
+    import errfmt
+    import hosts as _hosts
+    import lifecycle
+    is_glob = lifecycle.is_glob(arg)
+    found, errors, unreachable = [], [], []
+    for host in targets:
+        names, reply, failure = [], None, None
+        dead = _hosts.remembered_dead(host) if use_cache else None
+        if dead is not None:
+            gone = Unreachable(host, _hosts.skipped_words(*dead, t=t),
+                               _hosts.skipped_hint(host, dead[0], t=t))
+            unreachable.append(gone)
+            if on_host is not None:
+                on_host(HostFind(host, (), None, gone))
+            continue
+        probe = (remote_timeout if remote_timeout is not None
+                 and not _is_local(host) else timeout)
+        try:
+            backend = backend_for(host)
+        except Exception as e:                              # noqa: BLE001
+            backend, failure = None, e
+        if failure is not None:
+            pass
+        elif backend is None:
+            reply = Reply("chan_no_backend", ok=False)
+        elif is_glob:
+            names, failure = lifecycle.match_glob_checked(
+                arg, backend=backend, include_stopped=include_stopped,
+                timeout=probe)
+            if failure is None and not names:
+                reply = Reply("glob_no_match", {"pattern": arg}, ok=False)
+        else:
+            name, reply, failure = resolve_container_checked(
+                arg, backend=backend, timeout=probe)
+            names = [name] if name else []
+        gone = None
+        if failure is not None:
+            if isinstance(failure, tuple):
+                rc, stderr = failure
+                raw = stderr
+                text = (_human(stderr, t) if stderr.strip()
+                        else _exit_text(rc, t))
+                kept = stderr if stderr.strip() else _exit_text(rc, None)
+            else:
+                raw = str(failure)
+                text = _human(failure, t)
+                kept = raw
+            hint = ""
+            try:
+                import hostdiag
+                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,
+                                     t=t) or ""
+            except Exception:                               # noqa: BLE001
+                hint = ""
+            gone = Unreachable(host, text, hint)
+            unreachable.append(gone)
+            names, reply = [], None
+        elif names:
+            found.append((host, tuple(names)))
+        else:
+            reply = replace(reply, host=host, host_is_local=_is_local(host))
+            errors.append(reply)
+        # A host without a backend was never asked: nothing to remember.
+        # Only a read marks a host dead; an answer clears the mark for
+        # every caller (a write that reached it, too). What is kept is
+        # the CLI's words, in no language: see check_on_hosts.
+        if gone is not None:
+            if use_cache:
+                _hosts.remember(host, errfmt.clip(kept))
+        elif backend is not None:
+            _hosts.remember(host, None)
+        if on_host is not None:
+            on_host(HostFind(host, tuple(names), reply, gone))
+    return FindResult(tuple(found), tuple(errors), tuple(unreachable))
+
+
+def _lost_host(error):
+    """True when `error` says the host itself did not answer: its listing
+    timed out or failed (`ContainerListUnavailable`). Anything else came
+    from a daemon that answered."""
+    import subprocess
+    from update_checker import ContainerListUnavailable
+    return isinstance(error, (subprocess.TimeoutExpired,
+                              ContainerListUnavailable))
+
+
+#: One host's update check, as `on_host` sees it and `check_on_hosts`
+#: returns it: `updates` is what `check_all` returned (None when it
+#: raised), `error` the exception (None when it did not), `hint`
+#: hostdiag's sentence for that error or "", `checker` the one asked.
+HostCheck = namedtuple("HostCheck", "host updates error hint checker")
+
+
+def check_on_hosts(targets, *, checker_for, only_for=None, debug_sink=None,
+                   hint=False, on_host=None, raise_alone=True,
+                   use_cache=False, t):
+    """`check_all` on each of `targets`, one after the other, in order.
+
+    `on_host(HostCheck)` runs for each host before the next host's
+    `check_all` starts, so a chat can say "nas: up to date" the moment
+    nas is done instead of after the slowest machine (#2). The answers
+    also come back as a list in the same order.
+
+    A host that raises is reported, not raised: one unreachable host
+    must not stop the others from being checked (#7, the scheduler's
+    rule). Except on a single-host install — `targets` None (or empty,
+    or just the pseudo-host None): there the exception goes up exactly
+    as it did before there were hosts; `raise_alone=False` reports it
+    there too, as the pseudo-host None's failure (Discord's /check and
+    the Web's Check Updates never raised, not even alone). A host whose
+    `checker_for` raises counts as that host's failure.
+
+    `only_for(host)` is the set of names to scope that host's check to
+    (`/check web*` matches different containers on different hosts);
+    without it `only=` is not passed at all. `debug_sink` is handed to
+    `check_all` as `bot=`, which uses it only to send the debug trace;
+    without one `bot=` is not passed, and with neither `check_all()`
+    gets no arguments at all. `hint=True` asks
+    hostdiag for a sentence under each failure, in `t`'s language; a
+    hint that throws costs the hint, never the walk. An exception from
+    `on_host` is the caller's and is not swallowed.
+
+    `use_cache=True` is for reads only (W7): a remote host still in its
+    cooldown is not asked — no checker, no `check_all` — and comes back
+    as a failure whose `error` is a `hosts.StillUnreachable` saying its
+    remembered words and the seconds until it is asked again; with
+    `hint=True` its hint is the one those words get. After a check, a
+    host that could not list its containers (a timeout,
+    `ContainerListUnavailable`) is remembered with the CLI's words
+    for it — `errfmt.clip`, in no language, because the Web and the chats
+    share the memory and each says it in its own (review of W7w). A
+    check that failed for any other reason is left out of the
+    memory: that daemon answered, and a /status a moment later must still
+    ask it. Without the cache nobody is skipped or marked dead. A host
+    that checked fine is forgotten either way.
+    """
+    import hosts as _hosts
+    walk = list(targets) if targets else [None]
+    alone = len(walk) == 1 and walk[0] is None
+    out = []
+    for host in walk:
+        dead = _hosts.remembered_dead(host) if use_cache else None
+        if dead is not None:
+            answer = HostCheck(host, None, _hosts.StillUnreachable(
+                _hosts.skipped_words(*dead, t=t), *dead),
+                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",
+                None)
+            out.append(answer)
+            if on_host is not None:
+                on_host(answer)
+            continue
+        kw = {}
+        if debug_sink is not None:
+            kw["bot"] = debug_sink
+        if only_for is not None:
+            kw["only"] = only_for(host)
+        checker = None
+        try:
+            checker = checker_for(host)
+            updates, error = checker.check_all(**kw), None
+        except Exception as e:                              # noqa: BLE001
+            if alone and raise_alone:
+                raise
+            updates, error = None, e
+        why = ""
+        if error is not None and hint:
+            try:
+                import hostdiag
+                why = hostdiag.hint(getattr(host, "endpoint", ""), error,
+                                    t=t) or ""
+            except Exception:                               # noqa: BLE001
+                why = ""
+        if error is None:
+            _hosts.remember(host, None)
+        elif use_cache and _lost_host(error):
+            # The CLI's words, not a reader's: the memory is shared by
+            # readers in different languages (the Web passes t=None), and
+            # `skipped_words` says them in each one's own.
+            import errfmt
+            _hosts.remember(host, errfmt.clip(error))
+        answer = HostCheck(host, updates, error, why, checker)
+        out.append(answer)
+        if on_host is not None:
+            on_host(answer)
+    return out
 
 
 def apply_flag(spec, targets, *, store_for, backend_for=None, partial=None,

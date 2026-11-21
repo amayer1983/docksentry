@@ -23,31 +23,40 @@ import os
 import re
 import sys
 
+import srcslice
+
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "update_checker.py"), encoding="utf-8").read()
 
 checks = {}
 
 # The one place debug_log is handed to the bot.
-i = src.index("bot.send_message(f\"```\\n{chunk}\\n```\")")
+_lbl = "update_checker.py: the debug dump"
+i = srcslice.position(src, "bot.send_message(f\"```\\n{chunk}\\n```\")",
+                      label=_lbl)
 # The guarding `if` is the nearest one above it.
-guard = src.rindex("if self.config.debug", 0, i)
-cond = src[guard:src.index(":", guard)]
+guard = (None if i is None else
+         srcslice.last_position(src, "if self.config.debug", i, label=_lbl))
+_colon = (None if guard is None else
+          srcslice.position(src, ":", guard, label=_lbl))
+cond = None if _colon is None else src[guard:_colon]
 
 checks["the Telegram debug dump is gated on a real failure"] = (
-    "failed_checks" in cond)
+    cond is not None and "failed_checks" in cond)
 checks["…and is not the old unconditional dump"] = (
-    cond.strip() != "if self.config.debug and bot and self.debug_log")
+    cond is not None
+    and cond.strip() != "if self.config.debug and bot and self.debug_log")
 checks["…it still requires debug on and a bot to send through"] = (
-    "self.config.debug" in cond and "bot" in cond)
+    cond is not None and "self.config.debug" in cond and "bot" in cond)
 
 # `failed_checks` must be in scope where the dump runs — same function.
-fn_start = src.rindex("\n    def ", 0, guard)
-fn_head = src[fn_start:fn_start + 60]
+fn_start = (None if guard is None else
+            srcslice.last_position(src, "\n    def ", guard, label=_lbl))
+fn_head = None if fn_start is None else src[fn_start:fn_start + 60]
 checks["the dump sits inside check_all, where failed_checks lives"] = (
-    "def check_all" in fn_head)
+    fn_head is not None and "def check_all" in fn_head)
 checks["…and failed_checks is populated on a failed container check"] = (
-    "failed_checks.add(" in src[fn_start:i])
+    fn_start is not None and "failed_checks.add(" in src[fn_start:i])
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

@@ -55,7 +55,16 @@ def _run(how):
     """One batch through the real engine loop; who got updated?"""
     up = _Updater(how)
     bot = types.SimpleNamespace()
-    bot._update_lock = threading.Lock()
+    # The lock lives on a real UpdateEngine, made without __init__ and
+    # given the three lock fields its constructor sets, and `_update_lock`
+    # points at the engine's, as TelegramBot's property does. Without an
+    # engine, the first lock method called on it would take this procedure
+    # down with an AttributeError instead of testing anything.
+    bot.engine = UpdateEngine.__new__(UpdateEngine)
+    bot.engine._update_lock = threading.Lock()
+    bot.engine._queued_selfupdate = None
+    bot.engine._swap_in_flight = False
+    bot._update_lock = bot.engine._update_lock
     bot._run_queued_selfupdate = lambda: None
     bot.config = types.SimpleNamespace(pending_file=os.path.join(tempfile.mkdtemp(), "p.json"))
     bot.store = _Store()
@@ -75,6 +84,9 @@ def _run(how):
     # run_updates now delegates the per-container loop to the shared engine
     # (#2) — bind the real method so we still exercise the actual gate logic.
     bot._process_update_batch = lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k)
+    # A manual entry is asked the pin check right before its update
+    # (Q16g); without it the stub fails the update, not the assertion.
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
 
     # unsorted on purpose — run_updates should sort into group order
     updates = [{"name": "dep2", "image": "i"}, {"name": "head", "image": "i"},

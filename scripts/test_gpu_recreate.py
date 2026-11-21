@@ -28,6 +28,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_checker import UpdateChecker as U  # noqa: E402
@@ -69,10 +71,10 @@ checks["two requests are not squeezed into one flag"] = G(
 # ── wired into the recreate, not just written next to it ─────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "update_checker.py"), encoding="utf-8").read()
-i = src.index("def _build_run_args")
-body = src[i:src.index("\n    def ", i + 10)]
+body = srcslice.section(src, "def _build_run_args", "\n    def ",
+                        label="update_checker.py: _build_run_args")
 checks["the recreate carries the flag"] = (
-    '_gpus_args(host.get("DeviceRequests"))' in body)
+    body is not None and '_gpus_args(host.get("DeviceRequests"))' in body)
 
 # The full path: an inspect dict with a GPU goes in, --gpus comes out.
 inspect = {
@@ -167,11 +169,11 @@ checks["a real skipped field is still reported"] = (
 # — the skip section is policy, not a coverage gap.
 _t = open(os.path.join(os.path.dirname(__file__), "..", "app",
                        "telegram_bot.py"), encoding="utf-8").read()
-_a = _t[_t.index('elif text.startswith("/audit")'):]
-_a = _a[:_a.index('elif text.startswith("/setlink")')]
-checks["the issue-plea is gated on unknown findings"] = (
-    "if host_keys or cfg_keys:" in _a
-    and _a.index("if host_keys or cfg_keys:") < _a.index('audit_footer'))
+_a = srcslice.section(_t, 'elif text.startswith("/audit")',
+                      'elif text.startswith("/setlink")',
+                      label="telegram_bot.py: /audit branch")
+checks["the issue-plea is gated on unknown findings"] = srcslice.in_order(
+    _a, "if host_keys or cfg_keys:", "audit_footer")
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

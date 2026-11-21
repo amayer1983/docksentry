@@ -17,6 +17,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import i18n  # noqa: E402
@@ -25,16 +27,20 @@ checks = {}
 
 src = open(os.path.join(os.path.dirname(__file__), "..",
                         "app", "selfupdate.py")).read()
-i = src.index('ctx.t("selfupdate_failed_pull"')
-block = src[i - 400:i + 700]
+i = srcslice.position(src, 'ctx.t("selfupdate_failed_pull"',
+                      label="selfupdate.py: the failed-pull message")
+block = None if i is None else src[i - 400:i + 700]
 
 checks["the hint is only added when the pull was denied"] = (
-    "access denied" in block and "repository does not exist" in block)
-checks["…matched without caring about case"] = (".lower()" in block)
+    block is not None
+    and "access denied" in block and "repository does not exist" in block)
+checks["…matched without caring about case"] = (
+    block is not None and ".lower()" in block)
 checks["…and it rides along with the raw error, not instead of it"] = (
-    "selfupdate_failed_pull" in block and "selfupdate_pull_denied_hint" in block)
+    block is not None
+    and "selfupdate_failed_pull" in block and "selfupdate_pull_denied_hint" in block)
 checks["a pull that failed for another reason is unchanged"] = (
-    block.index("selfupdate_failed_pull") < block.index("access denied"))
+    srcslice.in_order(block, "selfupdate_failed_pull", "access denied"))
 
 en = i18n.get_translator("en")
 hint = en("selfupdate_pull_denied_hint", image="ds/ds:latest")

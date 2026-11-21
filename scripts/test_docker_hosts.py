@@ -49,6 +49,19 @@ for reserved in RESERVED_HOST_NAMES:
 # `all` in particular: `@all` means "every host" in commands, so a host
 # named `all` could be configured but never addressed on its own.
 checks["'all' is reserved"] = "all" in RESERVED_HOST_NAMES
+# Since A2 Discord's `host: all` means every host too, so the host list
+# has to say so when it drops one — in the log, at load, in any case.
+import contextlib                                    # noqa: E402
+import io                                            # noqa: E402
+for _spelling in ("all", "ALL"):
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        _kept = p(f"{_spelling}:ssh://h, nas:ssh://n")
+    checks[f"a host named {_spelling!r} is dropped, its neighbour kept"] = (
+        _kept == [{"name": "nas", "endpoint": "ssh://n"}])
+    checks[f"…and the log says {_spelling!r} is reserved for every host"] = (
+        "'all' is reserved" in _buf.getvalue()
+        and "every host" in _buf.getvalue())
 
 # ── a checker can be pointed at another host ─────────────────────────
 sent = []

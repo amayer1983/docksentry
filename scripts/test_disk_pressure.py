@@ -33,6 +33,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from update_engine import UpdateEngine  # noqa: E402
@@ -196,11 +198,12 @@ checks["the once-per-batch mark resets for the next batch"] = (
 # ── the deadlock that must never be built ────────────────────────────
 esrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
                          "update_engine.py"), encoding="utf-8").read()
-i = esrc.index("def _process_update_batch")
-body = esrc[i:esrc.index("\n    def ", i + 10)]
+body = srcslice.section(esrc, "def _process_update_batch", "\n    def ",
+                        label="update_engine.py: _process_update_batch")
 checks["the batch never calls cleanup_guarded (it holds the lock)"] = (
-    "cleanup_guarded" not in body)
-checks["…it calls cleanup_images directly"] = "cleanup_images()" in body
+    body is not None and "cleanup_guarded" not in body)
+checks["…it calls cleanup_images directly"] = (
+    body is not None and "cleanup_images()" in body)
 
 # ── the doomed layer, said before it dies ────────────────────────────
 csrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
@@ -208,17 +211,20 @@ csrc = open(os.path.join(os.path.dirname(__file__), "..", "app",
 checks["one measurement, shared by both recreate paths"] = (
     csrc.count("self._layer_farewell(name)") == 2)
 def _method_body(src, name):
-    i = src.index(f"def {name}")
+    i = srcslice.position(src, f"def {name}",
+                          label=f"update_checker.py: {name}")
+    if i is None:
+        return None
     j = src.find("\n    def ", i + 10)
     return src[i:j if j != -1 else len(src)]
 
 
 sbody = _method_body(csrc, "_update_standalone")
 checks["…standalone measures before the recreate"] = (
-    sbody.index("_layer_farewell") < sbody.index("Recreating container"))
+    srcslice.in_order(sbody, "_layer_farewell", "Recreating container"))
 cbody = _method_body(csrc, "_update_compose")
 checks["…compose measures before force-recreate"] = (
-    cbody.index("_layer_farewell") < cbody.index("--force-recreate"))
+    srcslice.in_order(cbody, "_layer_farewell", "--force-recreate"))
 checks["…and both success messages carry the note"] = (
     csrc.count("{layer_note}") == 2)
 

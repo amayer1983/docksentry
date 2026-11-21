@@ -16,6 +16,8 @@ nothing at all — which is what the first version of this did.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from update_checker import UpdateChecker as U  # noqa: E402
 
@@ -55,11 +57,11 @@ checks["…and only the loop is folded"] = out.count("crash") == 1
 # ── it is actually wired into the log tail ───────────────────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "update_checker.py"), encoding="utf-8").read()
-i = src.index("def _tail_logs")
-body = src[i:src.index("\n    @staticmethod", i)]
+body = srcslice.section(src, "def _tail_logs", "\n    @staticmethod",
+                        label="update_checker.py: _tail_logs")
 checks["_tail_logs folds before it truncates"] = (
-    "_collapse_repeats(text)" in body
-    and body.index("_collapse_repeats") < body.index("text[-1500:]"))
+    body is not None and "_collapse_repeats(text)" in body
+    and srcslice.in_order(body, "_collapse_repeats", "text[-1500:]"))
 
 # ── and an empty health reads as nothing, not as `health=` ───────────
 # tika has no health probe, so every crash-loop message about it printed

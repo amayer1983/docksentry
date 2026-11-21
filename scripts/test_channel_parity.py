@@ -29,6 +29,8 @@ import ast
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from discord_bot import COMMANDS  # noqa: E402
@@ -62,10 +64,12 @@ checks["every Telegram command has a handler"] = not missing_tg
 if missing_tg:
     print(f"  → no Telegram handler: {missing_tg}")
 
-dispatch = dsrc[dsrc.index("    def _dispatch(self, data):"):]
-dispatch = dispatch[:dispatch.index("\n    def ", 10)]
-missing_dc = [n for n in sorted(dc) if f'"{n}"' not in dispatch]
-checks["every Discord command is dispatched"] = not missing_dc
+dispatch = srcslice.section(dsrc, "    def _dispatch(self, data):", "\n    def ",
+                            label="discord_bot.py: _dispatch")
+missing_dc = [n for n in sorted(dc)
+              if dispatch is None or f'"{n}"' not in dispatch]
+checks["every Discord command is dispatched"] = (
+    dispatch is not None and not missing_dc)
 if missing_dc:
     print(f"  → not dispatched: {missing_dc}")
 
@@ -155,24 +159,32 @@ if stray:
 # the Discord side had to reach into that instance to be heard at all.
 # Same checks, pointed at where the seam lives now.
 bsrc = open(os.path.join(APP, "broadcast.py"), encoding="utf-8").read()
-i = bsrc.index("    def announce(self")
-ann = bsrc[i:]
-checks["the seam sends to Telegram"] = "send_message(text" in ann
-checks["…and to every other channel"] = "notifier.send_message(" in ann
-checks["…and asks whether there are any first"] = "has_channels()" in ann
+ann = srcslice.section(bsrc, "    def announce(self",
+                       label="broadcast.py: announce")
+checks["the seam sends to Telegram"] = (
+    ann is not None and "send_message(text" in ann)
+checks["…and to every other channel"] = (
+    ann is not None and "notifier.send_message(" in ann)
+checks["…and asks whether there are any first"] = (
+    ann is not None and "has_channels()" in ann)
 checks["…and a failing channel cannot stop the others"] = (
-    "except Exception" in ann)
+    ann is not None and "except Exception" in ann)
 # A button is Telegram's alone; inventing a second-class version of it
 # for e-mail would be worse than leaving it out.
+# The 80 characters behind the plugin send, as before.
+_plugin_send = srcslice.section(
+    ann, "notifier.send_message(", length=len("notifier.send_message(") + 80,
+    label="broadcast.py: announce's plugin send")
 checks["a keyboard is not forced on channels that have none"] = (
-    "reply_markup" in ann and "reply_markup" not in ann.split(
-        "notifier.send_message(")[1][:80])
+    _plugin_send is not None
+    and "reply_markup" in ann and "reply_markup" not in _plugin_send)
 # And the Telegram bot's `announce` is now the adapter onto it, so every
 # existing caller (and every test that builds a bare bot) still works.
-i = tsrc.index("    def announce(self")
-tg_ann = tsrc[i:tsrc.index("\n    def ", i + 10)]
+tg_ann = srcslice.section(tsrc, "    def announce(self", "\n    def ",
+                          label="telegram_bot.py: announce")
 checks["TelegramBot.announce delegates to the seam"] = (
-    "seam.announce(" in tg_ann and "notifier.send_message(" not in tg_ann)
+    tg_ann is not None
+    and "seam.announce(" in tg_ann and "notifier.send_message(" not in tg_ann)
 
 # ═══ what a delivery-only channel can still do ═══════════════════════
 # E-mail is the only one of the seven that can carry a file, and a

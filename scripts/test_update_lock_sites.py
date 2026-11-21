@@ -1,0 +1,1473 @@
+#!/usr/bin/env python3
+"""Every place that takes, gives back or looks at the update lock, listed and driven.
+
+There is one update lock, `UpdateEngine._update_lock`. Thirteen functions
+claim it. Eleven go through the engine's door (`claim_update()` /
+`release_update(after=...)`, Q1/Q2): Telegram's four update flows and
+its scheduled self-update check, Discord's two update commands (whose
+claim is `claim_or_queue_many` since Q15), the engine's queue drain (Q10: it holds each entry's claim through that
+entry), and the engine's own `cleanup_guarded`, which Telegram's and
+Discord's cleanup guards hand their work to (`engine.cleanup_guarded(...)`,
+counted as their claim). Telegram's per-container tap claims through
+`engine.claim_or_queue(...)` (Q7), which queues it when busy and hands
+back the answer as a key; so do the Web UI's update click and bulk
+update since Q14 (`claim_or_queue_many`), whose worker thread then
+runs under that claim and gives it back, and Discord's /update and
+confirmed /updateall since Q15. `selfupdate.start` still claims
+by hand with `acquire(blocking=False)`. Each one has
+its own answer for "somebody else holds it": Telegram's per-container
+tap, the Web UI's update and Discord's /update and /updateall queue,
+`/update all` and a confirmed major refuse, the scheduler
+skips its pass, a cleanup hands its caller a busy sentence, a
+self-update queues itself. The core split replaces the hand-written
+claims with one claim/release pair. Before that moves anything, this
+writes down what each site does today, so a site that is forgotten,
+added or quietly changes its answer turns red instead of slipping
+through.
+
+Two halves.
+
+The enumeration walks every app/*.py (and the packages under it) with
+`ast` and compares what it finds, by qualified name, with the explicit
+lists below:
+
+  * lock operations: `.acquire(` / `.release(` / `.locked(` and `with`
+    on the update lock, whether it is spelled `self._update_lock`,
+    `engine._update_lock`, `ctx._update_lock`, Discord's `self._lock()`,
+    a local name assigned from one of those, or `getattr(x,
+    "_update_lock")`; plus calls to Discord's `_release_lock()`, and
+    every call to the engine's door — `claim_update()`,
+    `claim_or_queue(...)` / `claim_or_queue_many(...)`,
+    `release_update(...)` with what it hands `after`, `with
+    update_claim(...)`, `cleanup_guarded(...)` called on an engine, and
+    every read of `update_claimed` — recorded under the caller's
+    qualified name;
+  * every function that mentions the lock at all (the accessors and
+    every caller of the door too, so a new alias or a new door user is
+    a new entry);
+  * every read of `update_running` (the pre-gates);
+  * every call to a helper that only looks at the lock (a READER or
+    PROBE below that is neither `update_running` nor a queue call —
+    none since Q14 took the Web handler's `_update_lock_held` away);
+  * every call that feeds or works off the container queue;
+  * every busy sentence: a string constant that names a busy or queue
+    key, a `t()` built from a prefix of one (the Web banner's
+    `t("web_update_" + _upd)`), and the `?update=busy` redirect, each
+    labelled claim-site answer, pre-gate, queue, render or not-this-lock.
+
+The drive builds the Discord matrix's world (T4's `Row("multi")`: a real
+UpdateEngine, TelegramBot, DiscordBot, selfupdate.Context, Broadcast and
+the five-host registry, wired as main.py wires them) plus a Web handler
+on the same bot, and calls each claim, probe and reader directly twice:
+once with the real lock held by this test, once with it free. Held, the
+site must do no work, must not give back a lock it did not take, and
+must answer with its kind:
+
+  QUEUE       the key is on the engine's queue (Telegram tap)
+  QUEUE_SELF  the self-update is remembered for later
+  REJECT      the person is told, nothing is remembered
+  SKIP        nobody is told (a log line at most), nothing is remembered
+  SKIP_MSG    returns `(None, busy sentence)` for its caller to use
+
+Free, the work runs with the lock held and the lock is free afterwards.
+And once more free, with a key queued at the site's first piece of work
+(as a tap would while it holds the lock): every site that gives the lock
+back then leads to exactly one drain by the engine's drainer and leaves
+the queue empty (Q13), except the ones in NO_DRAIN, each with its
+reason — and an exemption whose site does drain is stale and red. The
+template is core/catchup 2e64a4f's list of releasers.
+The busy record (kind, i18n keys, what was said or returned, log lines,
+queue, lock) is compared with the table at the bottom; that table was
+taken from main (8a74ba7) with `--app`.
+
+Stand-ins beyond T2/T4's (see test_telegram_dispatch_matrix.py and
+test_discord_dispatch_matrix.py for theirs): every host checker's
+`update_container` and `cleanup_images` record whether the lock was held
+and answer success; `selfupdate.run` and the bot's
+`_check_selfupdate_auto_locked` (the pull-and-swap body behind the
+wrapper) do the same; `i18n.get_translator` hands out the real
+translator with a recorder in front, so the keys a site used are seen.
+
+`python3 scripts/test_update_lock_sites.py --snapshot [--app DIR]`
+prints the enumeration and the busy records from DIR's app code.
+"""
+
+import ast
+import collections
+import contextlib
+import glob
+import io
+import os
+import pprint
+import re
+import shutil
+import sys
+import tempfile
+
+import test_telegram_dispatch_matrix as m
+import test_discord_dispatch_matrix as dm
+
+APP = m.APP
+
+# ═══════════════════════════════════════════════════════════════════════
+# The explicit lists, keyed by qualified name (never by line).
+# ═══════════════════════════════════════════════════════════════════════
+
+#: (file, qualname) → (role, lock operations in that function, sorted).
+#: Roles: CLAIM takes the lock to do work under it; PROBE takes it and
+#: gives it straight back to learn whether it was free; READER only
+#: looks (`.locked()`); RELEASE gives back a lock somebody else took;
+#: DOOR is the engine's claim/release pair everybody else goes through
+#: (driven by test_update_lock_door.py, not here).
+LOCK_OPS = {
+    # ── claims ──
+    # Claims through the engine's claim-or-queue (Q7): busy, the engine
+    # queues the tap and this only translates the answer.
+    ("telegram_bot.py", "TelegramBot._run_single_update"):
+        ("CLAIM", ["claim_or_queue(container_key)",
+                   "release_update(after=self._run_queued_selfupdate)"]),
+    ("telegram_bot.py", "TelegramBot._confirm_major_update"):
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
+    ("telegram_bot.py", "TelegramBot.handle_autoupdates"):
+        ("CLAIM", ["claim_update()",
+                   "release_update(after=self._run_queued_selfupdate)"]),
+    # The two chats' cleanup guards claim through the engine's guard
+    # and only translate its key (Q2).
+    ("telegram_bot.py", "TelegramBot.cleanup_guarded"):
+        ("CLAIM", ["cleanup_guarded(checker, "
+                   "after=self._run_queued_selfupdate)"]),
+    # No `after` here, as before Q1: this path never handed a queued
+    # self-update on.
+    ("telegram_bot.py", "TelegramBot.check_selfupdate_auto"):
+        ("CLAIM", ["claim_update()", "release_update()"]),
+    # Busy, "Update all" and a typed /update queue their whole set
+    # through the engine's claim-or-queue (Q16); one claim runs it free.
+    ("telegram_bot.py", "TelegramBot.run_updates"):
+        ("CLAIM", ["claim_or_queue_many(keys)",
+                   "release_update(after=self._run_queued_selfupdate)"]),
+    # Discord's /update and confirmed /updateall claim through the
+    # engine's claim-or-queue (Q15): busy, their containers are queued
+    # and the answer says where.
+    ("discord_bot.py", "DiscordBot._cmd_update"):
+        ("CLAIM", ["_release_lock()", "claim_or_queue_many(list(labels))"]),
+    ("discord_bot.py", "DiscordBot._do_updateall"):
+        ("CLAIM", ["_release_lock()", "claim_or_queue_many(list(labels))"]),
+    ("discord_bot.py", "DiscordBot._cleanup_guarded"):
+        ("CLAIM", ["cleanup_guarded(checker, "
+                   "after=self._hand_on_selfupdate)"]),
+    # The guard both chats hand their cleanup to. Its busy answer is the
+    # key `cleanup_busy`; each chat says it in its own language.
+    ("update_engine.py", "UpdateEngine.cleanup_guarded"):
+        ("CLAIM", ["claim_update()", "release_update(after=after)"]),
+    # The Web UI's update click and bulk update (Q14): one claim for the
+    # request through the engine's claim-or-queue, handed to the worker
+    # thread; busy, every key is queued and the page is told where. Its
+    # own release only runs when the thread cannot start.
+    ("web_ui.py", "create_handler.WebHandler._start_web_update"):
+        ("CLAIM", ["claim_or_queue_many(keys)",
+                   "release_update(after=bot._run_queued_selfupdate)"]),
+    # Sanctioned raw site (Q3): the self-update keeps its own raw claim by
+    # design, because it keeps the lock past its own return once the
+    # helper container is launched. RAW_CLAIMS below says it is the only
+    # one outside the engine.
+    ("selfupdate.py", "start"):
+        ("CLAIM", ["acquire(blocking=False)", "release"]),
+    # The drain loop is the engine's since Q8; Telegram's
+    # `_drain_update_queue` only hands it run_one, group_of, say and
+    # after. A probe until Q10 (take, give straight back, let the run
+    # claim again); now it claims per entry and is that entry's one
+    # releaser: after the run, after a crash and when the queue was
+    # emptied under it. A self-update queued during an entry rides on
+    # the release after the run (no fourth release since the Q10
+    # review). Its releases do not kick the drainer (`kick=False`,
+    # Q13): this loop is the drain. Driven through the engine's one
+    # drainer (`kick_drain`) below. The second claim and fourth release
+    # (Q13 review) hand on a self-update that waits with the lock free,
+    # stranded behind a release that passed no `after`.
+    ("update_engine.py", "UpdateEngine.drain_queue"):
+        ("CLAIM", ["claim_update()", "claim_update()",
+                   "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)",
+                   "release_update(after=after, kick=False)"]),
+    # ── readers ──
+    # Only looks since Q4. As a probe it took the lock for a moment, and
+    # a real claim landing in that moment was refused.
+    ("update_engine.py", "UpdateEngine.update_running"):
+        ("READER", ["locked"]),
+    # The sweep's rules are the engine's since Q9. Since Q13 the poll
+    # loop, the scheduler's `_after_tick` and the drainer on its way out
+    # all hand it `kick_drain`. Asks the door like the Web banner does.
+    ("update_engine.py", "UpdateEngine.sweep_queue"):
+        ("READER", ["update_claimed"]),
+    # ── release helper ──
+    # Release through the door, then hand on a queued self-update.
+    # Discord's two update commands give the lock back only through here.
+    ("discord_bot.py", "DiscordBot._release_lock"):
+        ("RELEASE", ["release_update(after=self._hand_on_selfupdate)"]),
+    # The Web worker runs under the claim `_start_web_update` took for it
+    # and gives it back in its finally (Q14), with the same self-update
+    # hand-over as the chats. Driven through `_start_web_update`.
+    ("web_ui.py", "create_handler.WebHandler._run_web_update_batch"):
+        ("RELEASE", ["release_update(after=bot._run_queued_selfupdate)"]),
+    # ── the door ──
+    ("update_engine.py", "UpdateEngine.claim_update"):
+        ("DOOR", ["acquire(blocking=False)"]),
+    ("update_engine.py", "UpdateEngine.release_update"):
+        ("DOOR", ["release"]),
+    ("update_engine.py", "UpdateEngine.update_claim"):
+        ("DOOR", ["claim_update()", "release_update(after=after)"]),
+    ("update_engine.py", "UpdateEngine.update_claimed"):
+        ("DOOR", ["locked"]),
+    # Claim, or queue and say why not (Q7). Driven by test_update_queue.py
+    # (every answer, single and many) and, through Telegram's tap, by the
+    # drive below.
+    ("update_engine.py", "UpdateEngine.claim_or_queue"):
+        ("DOOR", ["claim_update()"]),
+    ("update_engine.py", "UpdateEngine.claim_or_queue_many"):
+        ("DOOR", ["claim_update()"]),
+}
+
+#: Functions outside update_engine.py that take the lock with a raw
+#: `acquire` to do work under it (any role but PROBE). Everything else
+#: claims through the door.
+RAW_CLAIMS = {("selfupdate.py", "start")}
+
+#: Functions that mention the lock without operating on it.
+LOCK_MENTIONS = {
+    ("update_engine.py", "UpdateEngine.__init__"): "builds the one lock",
+    ("telegram_bot.py", "TelegramBot._update_lock"):
+        "read-only property onto engine._update_lock",
+    ("selfupdate.py", "Context._update_lock"):
+        "read-only property onto engine._update_lock",
+}
+
+#: (file, qualname) → how often it reads `update_running`, and why.
+UPDATE_RUNNING_READS = {
+    ("update_engine.py", "UpdateEngine.update_running"): (0, "the reader itself"),
+    ("telegram_bot.py", "TelegramBot.update_running"):
+        (1, "property onto engine.update_running"),
+    ("telegram_bot.py", "TelegramBot._handle_callback"):
+        (2, "lifecycle buttons pass it to lifecycle._guard"),
+    ("telegram_bot.py", "TelegramBot._handle_message"):
+        (5, "pre-gates: /check --dry-run, /check <name>, /update, /check; "
+            "/start|stop|restart pass it to lifecycle"),
+    ("discord_bot.py", "DiscordBot._cmd_check"): (1, "pre-gate for /check"),
+    ("discord_bot.py", "DiscordBot._cmd_lifecycle"):
+        (1, "passed to lifecycle._guard"),
+    ("discord_bot.py", "DiscordBot._run_lifecycle"):
+        (1, "passed to lifecycle._guard"),
+    ("web_ui.py", "create_handler.WebHandler.do_POST"):
+        (1, "lifecycle passes it on"),
+    ("web_ui.py", "create_handler.WebHandler._api_check"):
+        (1, "pre-gate for GET /api/check"),
+    ("web_ui.py", "create_handler.WebHandler._api_check_one"):
+        (1, "pre-gate for /api/check_one"),
+    ("monitor.py", "ContainerMonitor.tick"):
+        (1, "no restart alerts while an update recreates containers"),
+}
+# The reader's own definition holds no read; it is listed with 0 so the
+# table names every function on the lock's side and the check below only
+# compares the non-zero ones.
+
+#: (file, qualname, callee) → count. Who feeds the container queue and
+#: who works it off. Since Q13 the engine's one drainer does the work;
+#: the connections only kick it, sweep for it, or drop a failed tap's
+#: group-mates off it.
+QUEUE_CALLS = {
+    # Telegram's tap queues through the engine's claim_or_queue (Q7).
+    ("update_engine.py", "UpdateEngine.claim_or_queue", "enqueue_update"): 1,
+    # One request, all of it or none of it.
+    ("update_engine.py", "UpdateEngine.claim_or_queue_many",
+     "enqueue_updates"): 1,
+    # A failed tap takes its queued group-mates off before it releases,
+    # so the drainer that release starts finds them gone (Q13).
+    ("telegram_bot.py", "TelegramBot._run_single_update",
+     "drop_group_mates"): 1,
+    # Every release kicks the one drainer (Q13).
+    ("update_engine.py", "UpdateEngine.release_update", "kick_drain"): 1,
+    # The drainer runs the engine's loop and sweeps once on its way out,
+    # handing the sweep a kick of its own (the lambda is counted here).
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "drain_queue"): 1,
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "sweep_queue"): 1,
+    ("update_engine.py", "UpdateEngine._drain_on_thread", "kick_drain"): 1,
+    ("update_engine.py", "UpdateEngine.drain_queue", "drop_group_mates"): 1,
+    ("update_engine.py", "UpdateEngine.drain_queue",
+     "take_queued_update"): 1,
+    # No `enqueue_update` in the drain since Q10: it claims before it
+    # takes, so a lost claim leaves the entry at the head.
+    # The two sweeps hand the engine's sweep `engine.kick_drain` (not a
+    # call, so only the sweep is counted).
+    ("telegram_bot.py", "TelegramBot.listen", "sweep_queue"): 1,
+    ("scheduler.py", "Scheduler._after_tick", "sweep_queue"): 1,
+    # A scheduled pass (and the deferred check after a restart) holds the
+    # drainer back between its steps; the last let-go starts the kick it
+    # kept (Q13 review). Driven in test_scheduler_pass_queue.py.
+    ("scheduler.py", "Scheduler._hold_queue", "hold_drain"): 1,
+    ("scheduler.py", "Scheduler._let_queue_go", "let_drain_go"): 1,
+    ("scheduler.py", "Scheduler._resume_deferred_check._run_deferred",
+     "hold_drain"): 1,
+    ("scheduler.py", "Scheduler._resume_deferred_check._run_deferred",
+     "let_drain_go"): 1,
+    ("update_engine.py", "UpdateEngine.let_drain_go", "kick_drain"): 1,
+    # `selfupdate.start` gives its lock back by hand and then kicks the
+    # drainer itself (Q16h): a self-update that found nothing used to
+    # leave the queue to the next sweep (measured on f6824c8).
+    ("selfupdate.py", "_kick_queue", "kick_drain"): 1,
+}
+#: The two that feed the queue; the rest work it off. Telegram's old
+#: `_drain_update_queue` / `_sweep_update_queue` stay listed so a call
+#: to either coming back is counted.
+QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")
+QUEUE_CALLEES = QUEUE_FEEDERS + ("take_queued_update", "drain_queue",
+                 "_drain_update_queue", "sweep_queue",
+                 "_sweep_update_queue", "kick_drain", "drop_group_mates",
+                 "hold_drain", "let_drain_go")
+
+#: (file, qualname, callee) → (count, why). Who asks the lock through a
+#: helper that only looks at it. The callees are the READER and PROBE
+#: names in LOCK_OPS that are counted nowhere else (`update_running` has
+#: its own table, the queue helpers are in QUEUE_CALLS), so a new reader
+#: listed there brings its callers along.
+#: Empty since Q14: the Web handler's `_update_lock_held` pre-gate is
+#: gone, the handler claims or queues instead.
+LOCK_HELPER_CALLS = {}
+
+
+def _helper_callees():
+    return sorted({q.rsplit(".", 1)[-1] for (_f, q), (role, _o)
+                   in LOCK_OPS.items() if role in ("READER", "PROBE")}
+                  - set(QUEUE_CALLEES) - {"update_running"})
+
+#: (file, qualname, key) → (count, label). `key` is the string constant,
+#: or `t(<prefix>…)` for a key built at run time. Labels: claim = the
+#: answer when that function's own acquire fails; pre-gate = asked of
+#: `update_running` before (or instead of) a claim; queue = what a queued
+#: request is told; render = the Web page turning `?update=busy` into
+#: the sentence; other lock = not the update lock.
+BUSY_MESSAGES = {
+    # Telegram
+    # The engine's drain hands these keys to Telegram's `_say_drain`.
+    # Said by the drain's helper, once per turn at the top of the loop
+    # (Q10), which covers the end of each entry as well.
+    ("update_engine.py", "UpdateEngine._drop_for_selfupdate",
+     "update_queue_dropped_selfupdate"): (1, "queue: dropped for a self-update"),
+    # …and by the swap itself, right before its helper starts (Q16h):
+    # the drain never gets to say it when a release runs the self-update
+    # from its `after`, or a scheduled pass holds the drainer back.
+    ("update_engine.py", "UpdateEngine.drop_queue_for_swap",
+     "update_queue_dropped_selfupdate"): (1, "queue: dropped before the "
+                                             "self-update's helper starts"),
+    # The drain's and a failed tap's drop, since Q13 in one helper.
+    ("update_engine.py", "UpdateEngine.drop_group_mates",
+     "update_queue_skipped_group"): (1, "queue: group-mates of a failure"),
+    # A major confirmation still refuses when busy (my decision of
+    # 18.11.2026), and now says it was not queued.
+    ("telegram_bot.py", "TelegramBot._confirm_major_update",
+     "major_confirm_busy"): (1, "claim"),
+    # claim_or_queue_many's answers for "Update all", /updateall and a
+    # busy /update, turned into one message (Q16).
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_queue_full"): (1, "queue: the request did not fit"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queue_full"): (1, "queue: the request did not fit"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queued"): (1, "queue: the heading, nothing being updated"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_queued_behind"): (1, "queue: the heading, with what is "
+                                        "being updated"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_queued"): (2, "queue: queued; does something wait (the "
+                           "heading, Q16f)"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_queued"): (1, "queue: queued, with its place"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_already_queued"): (2, "queue: already waiting; does something "
+                                   "wait (the heading, Q16f)"),
+    # Pinned or excluded, kept off the queue (Q16f).
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_not_queued_pinned"): (1, "queue: pinned, not queued"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_not_queued_excluded"): (1, "queue: excluded, not queued"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_already_queued"): (1, "queue: already waiting, "
+                                              "since"),
+    ("telegram_bot.py", "TelegramBot._queued_answer",
+     "update_batch_line_same_running"): (1, "queue: the one running "
+                                            "right now"),
+    ("telegram_bot.py", "TelegramBot._handle_message",
+     "update_already_running"): (4, "pre-gate: /check --dry-run, "
+                                    "/check <name>, /update, /check"),
+    ("telegram_bot.py", "TelegramBot._handle_message",
+     "status_queued"): (1, "queue: /status shows it"),
+    ("telegram_bot.py", "TelegramBot._handle_message",
+     "update_busy_glob_unchecked"): (1, "queue: a busy glob, the rest "
+                                        "was not checked"),
+    # Not said, compared: the glob note goes only under an answer where
+    # something of it waits on the queue (Q16 review 2).
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_queued"): (1, "queue: does something wait (the glob note)"),
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_already_queued"): (1, "queue: does something wait (the glob "
+                                   "note)"),
+    # Not said, compared: "queue full" sends the tapped message's buttons
+    # back (Q16f).
+    ("telegram_bot.py", "TelegramBot.run_updates",
+     "update_queue_full"): (1, "queue: did not fit, the buttons come back"),
+    # The "Update all" toast, once run_updates has decided (Q16f).
+    ("telegram_bot.py", "TelegramBot._handle_callback",
+     "updates_queued_cb"): (1, "queue: the toast for a queued Update all"),
+    # Discord
+    ("discord_bot.py", "DiscordBot._cmd_check",
+     "web_check_one_busy"): (1, "pre-gate"),
+    # claim_or_queue_many's answers for /update and a confirmed
+    # /updateall, turned into lines (Q15).
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_queue_full"): (1, "queue: the request did not fit"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_queue_full"): (1, "queue: the request did not fit"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_queued"): (1, "queue: queued"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_queued"): (1, "queue: queued, with its place"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_already_queued"): (1, "queue: already waiting"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_already_queued"): (1, "queue: already waiting, since"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_same_running"): (1, "queue: the one running right now"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_not_queued_pinned"): (1, "queue: pinned, not queued (Q16f)"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_not_queued_excluded"): (1, "queue: excluded, not queued "
+                                        "(Q16f)"),
+    ("discord_bot.py", "DiscordBot._refuse_busy._say",
+     "chan_busy_capacity"): (1, "other lock: the worker pool is full"),
+    # Web
+    # The page's banners for a click that was queued (Q14): the kinds it
+    # knows, which of them are calm, and the sentences with numbers.
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "already_queued"): (4, "render: the banners the page knows, and "
+                            "which of them carry a held-back count (Q16f)"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "same_running"): (3, "render: the banners the page knows, and the "
+                          "one beside a held-back count (Q16g)"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queued"): (1, "render: queued, with its place"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queued_many"): (1, "render: several of a selection queued"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_already_queued"): (1, "render: already waiting, since"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "web_update_queue_full"): (1, "render: the queue was full"),
+    ("web_ui.py", "create_handler.WebHandler._page_status",
+     "t(web_update_…)"): (3, "render: title, the sentences without "
+                             "numbers (same_running among them), and the "
+                             "held-back counts (Q16f, Q16g)"),
+    # claim_or_queue_many's answers, turned into the page's (Q14).
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_queue_full"): (2, "queue: the request did not fit"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_queued"): (2, "queue: queued"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_already_queued"): (1, "queue: already waiting"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_not_queued_pinned"): (1, "queue: pinned, counted as held "
+                                      "back (Q16f)"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_not_queued_excluded"): (1, "queue: excluded, counted as held "
+                                        "back (Q16f)"),
+    ("web_ui.py", "create_handler.WebHandler._queue_redirect",
+     "update_same_running"): (1, "queue: the one running, said beside "
+                                 "what was held back (Q16g)"),
+    ("web_ui.py", "create_handler.WebHandler._status_row",
+     "web_check_one_busy"): (1, "other lock: the check-one button's text"),
+    ("web_ui.py", "create_handler.WebHandler._api_check_one",
+     "busy"): (2, "other lock: _CHECK_LOCK's JSON answer"),
+    # The engine
+    # claim_or_queue(_many)'s answers, as keys (Q7); Telegram's tap
+    # translates them and so will every connection that queues.
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_same_running"): (1, "claim: same container tapped again"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_queue_full"): (1, "claim: queue at UPDATE_QUEUE_MAX"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_already_queued"): (1, "claim: already on the queue"),
+    ("update_engine.py", "UpdateEngine._queue_answer",
+     "update_queued"): (1, "claim: queued"),
+    # Kept off the queue by a pin or an exclusion (Q16f), and what the
+    # drain says about an entry pinned or excluded while it waited.
+    ("update_engine.py", "UpdateEngine._held_answer",
+     "update_not_queued_pinned"): (1, "claim: pinned, not queued"),
+    ("update_engine.py", "UpdateEngine._held_answer",
+     "update_not_queued_excluded"): (1, "claim: excluded, not queued"),
+    ("update_engine.py", "UpdateEngine._drain_one",
+     "update_queue_skipped_"): (1, "queue: pinned or excluded while it "
+                                   "waited, not run (the key's prefix)"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_"): (1, "queue: pinned or excluded during its "
+                                   "wait in the drain, held right before "
+                                   "the update (Q16g)"),
+    ("update_engine.py", "UpdateEngine._drain_skipped_text",
+     "update_queue_skipped_pending_unreadable"):
+        (1, "queue: the pending list unreadable when its turn came, named "
+            "instead of the nameless 'no pending updates' (Q16h)"),
+    ("update_engine.py", "UpdateEngine.cleanup_guarded",
+     "cleanup_busy"): (1, "claim: the key; Telegram and Discord translate it"),
+    # Self-update and lifecycle
+    ("selfupdate.py", "start", "selfupdate_queued"): (1, "claim: queued"),
+    ("selfupdate.py", "run_queued", "selfupdate_queue_cancelled"):
+        (1, "queue: a crashed batch cancels the queued self-update"),
+    ("lifecycle.py", "_guard", "lifecycle_busy"):
+        (1, "pre-gate: start/stop/restart refused while update_running"),
+}
+
+#: Which string constants count as busy or queue sentences. Wider than
+#: the five keys the plan names, on purpose: a new key is far more
+#: likely to be called `…_busy` than to reuse an old one.
+BUSY_RE = re.compile(r"busy|already_running|same_running|_queued|_queue_")
+
+# ═══════════════════════════════════════════════════════════════════════
+# Enumeration
+# ═══════════════════════════════════════════════════════════════════════
+LOCK = "_update_lock"
+# DiscordBot._lock() used to return engine._update_lock (gone in Q2);
+# still recognised, so it cannot come back unnoticed.
+ACCESSORS = ("_lock",)
+RELEASE_HELPERS = ("_release_lock",)
+#: The engine's door (Q1). A call to any of these is a lock operation of
+#: the caller, whatever object it is spelled on.
+DOOR_CLAIM = "claim_update"
+DOOR_RELEASE = "release_update"
+DOOR_WITH = "update_claim"
+#: The door's look-only answer (Q3): reading it, as `x.update_claimed` or
+#: `getattr(x, "update_claimed")`, is a lock operation of the reader.
+DOOR_READ = "update_claimed"
+#: The engine's cleanup guard: a claim of the caller's when it is called
+#: on an engine (`self.engine.cleanup_guarded(...)`). Calls on the bot —
+#: the scheduler's and the Web UI's — go through the bot's delegator,
+#: which is counted there.
+DOOR_GUARDED = "cleanup_guarded"
+#: Claim, or queue and say why not (Q7): a claim of the caller's,
+#: whatever object it is spelled on, like `claim_update`.
+DOOR_QUEUE = ("claim_or_queue", "claim_or_queue_many")
+_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _sources(app=None):
+    app = app or APP
+    for path in sorted(glob.glob(os.path.join(app, "**", "*.py"),
+                                 recursive=True)):
+        rel = os.path.relpath(path, app).replace(os.sep, "/")
+        with open(path, encoding="utf-8") as f:
+            yield rel, f.read()
+
+
+def _scopes(tree):
+    """(qualname, node) for the module and every def and class in it."""
+    out = [("<module>", tree)]
+
+    def rec(node, prefix):
+        for c in ast.iter_child_nodes(node):
+            if isinstance(c, _DEFS):
+                q = prefix + [c.name]
+                out.append((".".join(q), c))
+                rec(c, q)
+            else:
+                rec(c, prefix)
+    rec(tree, [])
+    return out
+
+
+def _own(scope):
+    """The nodes of `scope`, without the bodies of defs nested in it."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        n = stack.pop()
+        yield n
+        if not isinstance(n, _DEFS):
+            stack.extend(ast.iter_child_nodes(n))
+
+
+def _callee(call):
+    f = call.func
+    if isinstance(f, ast.Attribute):
+        return f.attr
+    if isinstance(f, ast.Name):
+        return f.id
+    return None
+
+
+def _names_lock(n):
+    """`x._update_lock`, `getattr(x, "_update_lock")`, `self._lock()`."""
+    return ((isinstance(n, ast.Attribute) and n.attr == LOCK)
+            or (isinstance(n, ast.Constant) and n.value == LOCK)
+            or (isinstance(n, ast.Call) and _callee(n) in ACCESSORS
+                and not n.args and not n.keywords))
+
+
+def _is_lock(expr, aliases):
+    return any(_names_lock(n) or (isinstance(n, ast.Name)
+                                  and n.id in aliases)
+               for n in ast.walk(expr))
+
+
+def _aliases(nodes):
+    """Local names bound to the lock (`lock = getattr(eng, "_update_lock")`)."""
+    found = set()
+    for _ in range(3):                      # a = lock; b = a
+        before = len(found)
+        for n in nodes:
+            if isinstance(n, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) \
+                    and n.value is not None and _is_lock(n.value, found):
+                targets = n.targets if isinstance(n, ast.Assign) \
+                    else [n.target]
+                for t in targets:
+                    for x in ast.walk(t):
+                        if isinstance(x, ast.Name):
+                            found.add(x.id)
+        if len(found) == before:
+            break
+    return found
+
+
+def _acquire_form(call):
+    blocking = None
+    if call.args:
+        blocking = call.args[0]
+    for k in call.keywords:
+        if k.arg == "blocking":
+            blocking = k.value
+    if isinstance(blocking, ast.Constant) and blocking.value is False:
+        return "acquire(blocking=False)"
+    return "acquire()" if blocking is None else \
+        f"acquire({ast.unparse(blocking)})"
+
+
+def _on_engine(func):
+    """`engine.x` or `<anything>.engine.x`."""
+    v = func.value if isinstance(func, ast.Attribute) else None
+    return (isinstance(v, ast.Name) and v.id == "engine") or (
+        isinstance(v, ast.Attribute) and v.attr == "engine")
+
+
+def _door_form(call):
+    """How a call to the door is recorded: what it hands over, spelled out."""
+    c = _callee(call)
+    if c == DOOR_CLAIM:
+        return "claim_update()"
+    args = [ast.unparse(a) for a in call.args] + [
+        f"{k.arg}={ast.unparse(k.value)}" if k.arg else
+        f"**{ast.unparse(k.value)}" for k in call.keywords]
+    return f"{c}({', '.join(args)})"
+
+
+def _busy_sites(node):
+    """The busy-sentence key `node` stands for, or None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        v = node.value
+        if re.fullmatch(r"[a-z][a-z0-9_]*", v) and BUSY_RE.search(v):
+            return v
+        if "=busy" in v:
+            return v
+        return None
+    if isinstance(node, ast.Call) and _callee(node) == "t" and node.args \
+            and not isinstance(node.args[0], ast.Constant):
+        arg = node.args[0]
+        head = arg
+        while isinstance(head, ast.BinOp):
+            head = head.left
+        if isinstance(head, ast.JoinedStr) and head.values:
+            head = head.values[0]
+        if isinstance(head, ast.Constant) and isinstance(head.value, str) \
+                and any(k.startswith(head.value) for k in _busy_keys()):
+            return f"t({head.value}…)"
+    return None
+
+
+_KEYS = []
+
+
+def _busy_keys():
+    if not _KEYS:
+        import json
+        with open(os.path.join(APP, "lang", "en.json"),
+                  encoding="utf-8") as f:
+            _KEYS.extend(k for k in json.load(f) if BUSY_RE.search(k))
+    return _KEYS
+
+
+def enumerate_sites(app=None):
+    ops = collections.defaultdict(list)
+    mentions = set()
+    running = collections.Counter()
+    queue = collections.Counter()
+    helpers = collections.Counter()
+    busy = collections.Counter()
+    helper_callees = set(_helper_callees())
+    for rel, src in _sources(app):
+        tree = ast.parse(src)
+        docstrings = {id(b.value) for _q, s in _scopes(tree)
+                      for b in getattr(s, "body", [])[:1]
+                      if isinstance(b, ast.Expr)
+                      and isinstance(b.value, ast.Constant)}
+        for qual, scope in _scopes(tree):
+            nodes = list(_own(scope))
+            aliases = _aliases(nodes)
+            for n in nodes:
+                if _names_lock(n):
+                    mentions.add((rel, qual))
+                if (isinstance(n, ast.Attribute) and n.attr == DOOR_READ
+                        and isinstance(n.ctx, ast.Load)) or (
+                        isinstance(n, ast.Constant)
+                        and n.value == DOOR_READ):
+                    ops[(rel, qual)].append(DOOR_READ)
+                    mentions.add((rel, qual))
+                if isinstance(n, ast.Call):
+                    c = _callee(n)
+                    f = n.func
+                    if isinstance(f, ast.Attribute) and c in (
+                            "acquire", "release", "locked") \
+                            and _is_lock(f.value, aliases):
+                        ops[(rel, qual)].append(
+                            _acquire_form(n) if c == "acquire" else c)
+                    elif c in RELEASE_HELPERS:
+                        ops[(rel, qual)].append(c + "()")
+                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (
+                            c == DOOR_GUARDED and _on_engine(f)):
+                        ops[(rel, qual)].append(_door_form(n))
+                        mentions.add((rel, qual))
+                    elif c in DOOR_QUEUE:
+                        ops[(rel, qual)].append(_door_form(n))
+                        mentions.add((rel, qual))
+                    if c in QUEUE_CALLEES:
+                        queue[(rel, qual, c)] += 1
+                    if c in helper_callees:
+                        helpers[(rel, qual, c)] += 1
+                if isinstance(n, (ast.With, ast.AsyncWith)):
+                    for item in n.items:
+                        e = item.context_expr
+                        if isinstance(e, ast.Call) \
+                                and _callee(e) == DOOR_WITH:
+                            ops[(rel, qual)].append(
+                                "with " + _door_form(e))
+                            mentions.add((rel, qual))
+                        elif _is_lock(e, aliases):
+                            ops[(rel, qual)].append("with")
+                if (isinstance(n, ast.Attribute)
+                        and n.attr == "update_running") or (
+                        isinstance(n, ast.Constant)
+                        and n.value == "update_running"):
+                    running[(rel, qual)] += 1
+                if id(n) not in docstrings:
+                    key = _busy_sites(n)
+                    if key is not None:
+                        busy[(rel, qual, key)] += 1
+    ops = {k: sorted(v) for k, v in ops.items()}
+    return ops, mentions, running, queue, busy, helpers
+
+
+def enumeration_checks(found):
+    ops, mentions, running, queue, busy, helpers = found
+    out = []
+
+    want_ops = {k: v[1] for k, v in LOCK_OPS.items()}
+    for k in sorted(set(ops) | set(want_ops)):
+        role = LOCK_OPS.get(k, ("NEW",))[0]
+        label = f"lock ops {k[0]}:{k[1]} ({role}): {ops.get(k)}"
+        out.append((label, ops.get(k) == want_ops.get(k),
+                    f"expected {want_ops.get(k)}"))
+
+    want_m = set(LOCK_MENTIONS) | set(LOCK_OPS)
+    for k in sorted(mentions | want_m):
+        ok = k in mentions and k in want_m
+        what = "listed but gone" if k not in mentions else \
+            "mentions the lock and is in no list"
+        out.append((f"mentions the lock: {k[0]}:{k[1]}", ok, what))
+
+    want_r = {k: v[0] for k, v in UPDATE_RUNNING_READS.items() if v[0]}
+    for k in sorted(set(running) | set(want_r)):
+        out.append((f"reads update_running: {k[0]}:{k[1]} ×{running.get(k, 0)}",
+                    running.get(k, 0) == want_r.get(k, 0),
+                    f"expected ×{want_r.get(k, 0)}"))
+    out.append(("the update_running table names its own reader",
+                ("update_engine.py", "UpdateEngine.update_running")
+                in UPDATE_RUNNING_READS
+                and ("update_engine.py", "UpdateEngine.update_running")
+                in ops, "the reader moved"))
+
+    for k in sorted(set(queue) | set(QUEUE_CALLS)):
+        out.append((f"queue call {k[0]}:{k[1]} → {k[2]} ×{queue.get(k, 0)}",
+                    queue.get(k, 0) == QUEUE_CALLS.get(k, 0),
+                    f"expected ×{QUEUE_CALLS.get(k, 0)}"))
+    want_h = {k: v[0] for k, v in LOCK_HELPER_CALLS.items()}
+    for k in sorted(set(helpers) | set(want_h)):
+        out.append((f"asks the lock through {k[2]}: {k[0]}:{k[1]} "
+                    f"×{helpers.get(k, 0)}",
+                    helpers.get(k, 0) == want_h.get(k, 0),
+                    f"expected ×{want_h.get(k, 0)}"))
+    out.append((f"the lock-helper callees are {_helper_callees()}",
+                _helper_callees() == [],
+                "a READER/PROBE was added or renamed in LOCK_OPS; "
+                "check LOCK_HELPER_CALLS"))
+    # No app code asks the lock through a helper any more (Q14 took the
+    # Web pre-gate's away), so the counting is shown on a snippet with a
+    # reader listed for the length of the walk: a new helper's callers
+    # must still turn up when somebody adds one.
+    tmp = tempfile.mkdtemp(prefix="lock-helper-")
+    site = ("peek.py", "Peek.held")
+    LOCK_OPS[site] = ("READER", ["update_claimed"])
+    try:
+        with open(os.path.join(tmp, "peek.py"), "w", encoding="utf-8") as f:
+            f.write("class Peek:\n"
+                    "    def held(self):\n"
+                    "        return self.engine.update_claimed\n"
+                    "def ask(p):\n"
+                    "    return p.held() or p.held()\n")
+        h_helpers = enumerate_sites(tmp)[5]
+    finally:
+        del LOCK_OPS[site]
+        shutil.rmtree(tmp, ignore_errors=True)
+    out.append(("a call through a listed reader helper is counted, by "
+                "caller", dict(h_helpers) == {("peek.py", "ask", "held"): 2},
+                f"helpers {dict(h_helpers)}"))
+
+    # The door's three spellings, on a snippet: today no app code uses
+    # `with update_claim(...)`, so without this nothing would notice the
+    # enumeration going blind to it.
+    tmp = tempfile.mkdtemp(prefix="lock-door-")
+    try:
+        with open(os.path.join(tmp, "door.py"), "w", encoding="utf-8") as f:
+            f.write("def a(engine, f):\n"
+                    "    with engine.update_claim(after=f) as ok:\n"
+                    "        pass\n"
+                    "def b(self):\n"
+                    "    if self.engine.claim_update():\n"
+                    "        self.engine.release_update(after=self.g)\n"
+                    "def c(self, ck):\n"
+                    "    return self.engine.cleanup_guarded(ck, after=self.g)\n"
+                    "def d(engine, ck):\n"
+                    "    return engine.cleanup_guarded(ck)\n"
+                    "def e(self, ck):\n"
+                    "    return self.bot.cleanup_guarded(ck)\n"
+                    "def f(eng):\n"
+                    "    return getattr(eng, \"update_claimed\", False)\n"
+                    "def g(self):\n"
+                    "    return self.engine.update_claimed\n"
+                    "def h(self, k):\n"
+                    "    return self.engine.claim_or_queue(k)\n"
+                    "def i(engine, ks):\n"
+                    "    return engine.claim_or_queue_many(ks)\n")
+        d_ops, d_mentions, *_ = enumerate_sites(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    want_d = {("door.py", "a"): ["with update_claim(after=f)"],
+              ("door.py", "b"): ["claim_update()",
+                                 "release_update(after=self.g)"],
+              ("door.py", "c"): ["cleanup_guarded(ck, after=self.g)"],
+              ("door.py", "d"): ["cleanup_guarded(ck)"],
+              ("door.py", "f"): ["update_claimed"],
+              ("door.py", "g"): ["update_claimed"],
+              ("door.py", "h"): ["claim_or_queue(k)"],
+              ("door.py", "i"): ["claim_or_queue_many(ks)"]}
+    out.append(("the enumeration sees every spelling of the door, "
+                "by caller", d_ops == want_d and d_mentions == set(want_d),
+                f"ops {d_ops}, mentions {sorted(d_mentions)}"))
+
+    raw = {k for k, v in ops.items() if k[0] != "update_engine.py"
+           and any(o.startswith("acquire") for o in v)
+           and LOCK_OPS.get(k, ("NEW",))[0] != "PROBE"}
+    out.append((f"raw claims outside the engine: {sorted(raw)}",
+                raw == RAW_CLAIMS,
+                f"expected {sorted(RAW_CLAIMS)}; everything else claims "
+                "through the door"))
+
+    # The engine's own loop (Q8) is not a connection working it off;
+    # who calls that loop is.
+    drains = {k[0] for k in queue if k[2] not in QUEUE_FEEDERS
+              and k[0] != "update_engine.py"}
+    out.append((f"only these files work the queue off: {sorted(drains)}",
+                drains == {"telegram_bot.py", "scheduler.py", "selfupdate.py"},
+                "Q13: Telegram's poll loop and tap, the scheduler's pass; "
+                "Q16h: the self-update's raw release; the drain itself is "
+                "the engine's"))
+
+    want_b = {k: v[0] for k, v in BUSY_MESSAGES.items()}
+    for k in sorted(set(busy) | set(want_b)):
+        lab = BUSY_MESSAGES.get(k, (0, "NEW, unlabelled"))[1]
+        out.append((f"busy sentence {k[0]}:{k[1]} {k[2]!r} ×{busy.get(k, 0)}"
+                    f" [{lab}]", busy.get(k, 0) == want_b.get(k, 0),
+                    f"expected ×{want_b.get(k, 0)}"))
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Drive
+# ═══════════════════════════════════════════════════════════════════════
+KEYS = []          # i18n keys translated during a drive, in order
+WORK = []          # (what, lock held at the time)
+#: Called once at the first piece of work a drive does, while the site
+#: holds the lock: queues a key the way a tap would meanwhile.
+DURING_WORK = []
+_I18N = []
+
+
+def _patch_i18n():
+    import i18n
+    if _I18N:
+        return
+    real = i18n.get_translator
+    _I18N.append(real)
+
+    def get_translator(language="en"):
+        t = real(language)
+
+        def recording(key, **kw):
+            KEYS.append(key)
+            return t(key, **kw)
+        return recording
+    i18n.get_translator = get_translator
+
+
+class World:
+    """T4's multi-host world, plus a Web handler on the same bot."""
+
+    def __init__(self):
+        _patch_i18n()
+        import selfupdate
+        import web_ui
+        dm.CLOCK[0] = 10_000.0
+        self.row = dm.Row("multi")
+        self.engine = self.row.engine
+        self.lock = self.engine._update_lock
+        self.discord = self.row.bot
+        self.tg = self.discord.telegram
+        self.ctx = self.tg.selfupdate_ctx
+        self.registry = self.engine.hosts
+        self.local = self.registry.local.checker
+        for h in self.registry:
+            self._record(h.name, h.checker)
+        self.tg._check_selfupdate_auto_locked = self._work(
+            "selfupdate check body", False)
+        self._run = selfupdate.run
+        selfupdate.run = self._work("selfupdate.run", None)
+        self.handler = web_ui.create_handler(
+            self.row.cfg, self.local, self.tg, self.engine.store, None,
+            self.registry.local.backend, self.registry)
+
+    def close(self):
+        import selfupdate
+        selfupdate.run = self._run
+        if self.lock.locked():
+            self.lock.release()
+        shutil.rmtree(self.row.data, ignore_errors=True)
+
+    def _work(self, what, answer):
+        def f(*a, **k):
+            WORK.append((what, self.lock.locked()))
+            _during()
+            return answer
+        return f
+
+    def _record(self, host, checker):
+        def update_container(name, image, *a, **k):
+            WORK.append((f"update_container@{host}:{name}",
+                         self.lock.locked()))
+            _during()
+            return True, "updated (stand-in)"
+
+        def cleanup_images(*a, **k):
+            WORK.append((f"cleanup_images@{host}", self.lock.locked()))
+            _during()
+            return True, "Total reclaimed space: 0B"
+        checker.update_container = update_container
+        checker.cleanup_images = cleanup_images
+
+    def web(self):
+        return self.handler.__new__(self.handler)
+
+    def pending(self, host="local", name="web"):
+        return {"name": name, "image": "nginx:1.25", "host": host,
+                "old_version": "1.25.0", "new_version": "1.26.0"}
+
+
+def _during():
+    while DURING_WORK:
+        DURING_WORK.pop(0)()
+
+
+def _major(w):
+    w.tg._store_for("local").add_pending_major("web", {
+        "image": "nginx:1.25", "current": "1.25.0", "latest": "2.0.0"})
+
+
+def _auto(w):
+    w.tg._store_for("local").save_autoupdate(["web"])
+
+
+def _queued(w):
+    # `web` because it is the local entry in the pending file: a queued
+    # key that is not pending returns before the update (T3's note on
+    # the early returns), and the free drive would see no work.
+    w.engine.enqueue_update("web")
+
+
+def _telegram_off(w):
+    w.row.cfg.bot_token = ""
+
+
+def _web_start(w, keys):
+    """The Web handlers' claim-or-queue with the real worker behind it,
+    as /api/update and /api/bulk call it (Q14). Returns the page."""
+    h = w.web()
+    return h._start_web_update(keys, h._run_web_update_batch, keys)
+
+
+#: (file, qualname) of the site → (label, prepare, call). Every entry of
+#: LOCK_OPS except the release helper has at least one drive.
+DRIVES = [
+    (("telegram_bot.py", "TelegramBot._run_single_update"),
+     "tap update_one:web", None,
+     lambda w: w.tg._run_single_update(w.local, "web")),
+    (("telegram_bot.py", "TelegramBot._confirm_major_update"),
+     "confirm_major:web", _major,
+     lambda w: w.tg._confirm_major_update(w.local, "web")),
+    (("telegram_bot.py", "TelegramBot.handle_autoupdates"),
+     "scheduler auto pass, web on auto", _auto,
+     lambda w: w.tg.handle_autoupdates([w.pending()], w.local)),
+    (("telegram_bot.py", "TelegramBot.cleanup_guarded"),
+     "image cleanup", None,
+     lambda w: w.tg.cleanup_guarded(w.local)),
+    (("telegram_bot.py", "TelegramBot.check_selfupdate_auto"),
+     "scheduled self-update check", None,
+     lambda w: w.tg.check_selfupdate_auto()),
+    (("telegram_bot.py", "TelegramBot.run_updates"),
+     "Update all (snapshot web@local)", None,
+     lambda w: w.tg.run_updates(w.local, updates=[w.pending()])),
+    (("telegram_bot.py", "TelegramBot.run_updates"),
+     "Update all (snapshot web@local, web@nas)", None,
+     lambda w: w.tg.run_updates(w.local, updates=[w.pending(),
+                                                  w.pending("nas")])),
+    (("discord_bot.py", "DiscordBot._cmd_update"),
+     "/update container:web host:nas", None,
+     lambda w: w.discord._cmd_update({"container": "web", "host": "nas"})),
+    (("discord_bot.py", "DiscordBot._do_updateall"),
+     "updateall confirmed, host:nas", None,
+     lambda w: w.discord._do_updateall({"host": "nas"})),
+    (("discord_bot.py", "DiscordBot._cleanup_guarded"),
+     "image cleanup", None,
+     lambda w: w.discord._cleanup_guarded(w.local)),
+    (("update_engine.py", "UpdateEngine.cleanup_guarded"),
+     "image cleanup, the engine's own answer", None,
+     lambda w: w.engine.cleanup_guarded(w.local)),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "update click for nas/web, Telegram on", None,
+     lambda w: _web_start(w, ["nas/web"])),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "update click for nas/web, Telegram off", _telegram_off,
+     lambda w: _web_start(w, ["nas/web"])),
+    (("web_ui.py", "create_handler.WebHandler._start_web_update"),
+     "bulk update web,nas/web", None,
+     lambda w: _web_start(w, ["web", "nas/web"])),
+    (("selfupdate.py", "start"),
+     "/selfupdate", None,
+     lambda w: __import__("selfupdate").start(w.ctx)),
+    (("update_engine.py", "UpdateEngine.update_running"),
+     "busy question", None,
+     lambda w: w.engine.update_running),
+    # The engine's one drainer (Q13): a thread of its own, joined by the
+    # drive like every thread a site starts.
+    (("update_engine.py", "UpdateEngine.drain_queue"),
+     "drain with web queued", _queued,
+     lambda w: (w.engine.kick_drain(), None)[1]),
+    # As the poll loop and the scheduler's `_after_tick` call it (Q13).
+    (("update_engine.py", "UpdateEngine.sweep_queue"),
+     "poll-cycle sweep with web queued", _queued,
+     lambda w: w.engine.sweep_queue(w.engine.kick_drain)),
+]
+
+
+def _kind(rec, role="CLAIM"):
+    if rec["work"]:
+        return "RAN"
+    if role in ("PROBE", "READER"):
+        # These never act; what they say is "busy" (True) or, for the
+        # queue's two, that they left the queue for later.
+        if rec.get("returned") is True:
+            return "SAYS_BUSY"
+        if rec.get("queue_after"):
+            return "LEAVES_QUEUED"
+        return "SAYS_FREE"
+    if rec.get("queue"):
+        return "QUEUE"
+    if rec.get("queued_selfupdate"):
+        return "QUEUE_SELF"
+    ret = rec.get("returned")
+    if isinstance(ret, tuple) and ret and ret[0] is None:
+        return "SKIP_MSG"
+    if rec.get("said") or isinstance(ret, str):
+        return "REJECT"
+    return "SKIP"
+
+
+def _short(v):
+    if isinstance(v, str) and len(v) > 90:
+        return v[:90] + "…"
+    if isinstance(v, tuple):
+        return tuple(_short(x) for x in v)
+    return v
+
+
+#: The key queued during a site's work for the drain rows: pending in
+#: the multi world, on another host than most sites' own work.
+QKEY = "nas/web"
+
+
+def drive(prepare, call, held, during=False):
+    """One call. Returns the record (with the lock held by us when
+    `held`), plus whatever escaped the stand-ins. `during`: queue QKEY
+    at the site's first piece of work, while it holds the lock."""
+    m.EVENTS.clear()
+    del m.ESCAPES[:]
+    del m.STARTED[:]
+    del m.THREAD_ERRORS[:]
+    del dm.LOG[:]
+    del DURING_WORK[:]
+    w = World()
+    try:
+        if prepare:
+            prepare(w)
+        _queue_before = [k for k, _s in w.engine.queued_updates()]
+        del KEYS[:]
+        del WORK[:]
+        del dm.LOG[:]
+        # Every drain the call leads to, counted where the engine's
+        # drainer runs it; observed, not replaced.
+        drains = []
+        _real_dq = w.engine.drain_queue
+
+        def _counting(*a, **k):
+            drains.append(1)
+            return _real_dq(*a, **k)
+        w.engine.drain_queue = _counting
+        if during:
+            DURING_WORK.append(lambda: w.engine.enqueue_update(QKEY))
+        if held:
+            w.lock.acquire()
+        sink = io.StringIO()
+        raised = None
+        with contextlib.redirect_stdout(sink), \
+                contextlib.redirect_stderr(sink):
+            try:
+                ret = call(w)
+            except Exception as e:                  # noqa: BLE001
+                ret, raised = None, f"{type(e).__name__}: {e}"
+            hung = dm._join()
+        still = w.lock.locked()
+        rec = {
+            "keys": list(dict.fromkeys(KEYS)),
+            "said": [_short(p) for k, p in dm.LOG if k == "telegram"],
+            "returned": _short(ret),
+            "printed": [ln for ln in sink.getvalue().splitlines() if ln],
+            "work": list(WORK),
+            "queue": [k for k, _s in w.engine.queued_updates()
+                      if k not in _queue_before],
+            "queue_after": [k for k, _s in w.engine.queued_updates()],
+            "queued_selfupdate": w.engine._queued_selfupdate,
+            "lock_after": "held" if still else "free",
+            "drains": len(drains),
+        }
+        if raised:
+            rec["raised"] = raised
+        if hung:
+            rec["hung"] = hung
+        if m.THREAD_ERRORS:
+            rec["thread_errors"] = list(m.THREAD_ERRORS)
+        return rec, list(m.ESCAPES)
+    finally:
+        del DURING_WORK[:]
+        w.close()
+
+
+#: Sites that give the lock back without starting the drainer, and why.
+#: Every other site that releases leads to exactly one drain (Q13).
+#: Checked both ways: an entry here whose site does start one is stale.
+#: Empty since Q16h. `selfupdate.start` stood here: it gives the lock
+#: back by hand (Q3), so what queued during a self-update that found
+#: nothing waited for a sweep — the poll loop, or the scheduler 30–60 s
+#: later. It kicks the drainer after that release now (`_kick_queue`).
+NO_DRAIN = {}
+
+
+def _busy_view(rec, role):
+    v = {"kind": _kind(rec, role)}
+    for k in ("keys", "said", "returned", "printed", "queue_after",
+              "queued_selfupdate", "lock_after", "raised", "hung",
+              "thread_errors"):
+        if rec.get(k) not in (None, [], ""):
+            v[k] = rec[k]
+    return v
+
+
+def drive_checks():
+    out = []
+    driven = set()
+    releasers = set()
+    for site, label, prepare, call in DRIVES:
+        driven.add(site)
+        role = LOCK_OPS.get(site, ("?",))[0]
+        name = f"{site[0]}:{site[1].rsplit('.', 1)[-1]} — {label}"
+
+        rec, esc = drive(prepare, call, held=True)
+        view = _busy_view(rec, role)
+        want = EXPECTED_BUSY.get((site, label))
+        why = []
+        if esc:
+            why.append(f"escaped the stand-ins: {esc}")
+        if want is None:
+            why.append("no expectation for this drive")
+        elif view != want:
+            for k in sorted(set(view) | set(want)):
+                if view.get(k) != want.get(k):
+                    why.append(f"{k}: expected {want.get(k)!r}, "
+                               f"got {view.get(k)!r}")
+        out.append((f"held: {name} → {view['kind']}", not why,
+                    "; ".join(why)))
+
+        # A claim that loses must not give back the lock somebody else
+        # holds: that would let a third flow in mid-update. Named on its
+        # own so the reason is readable without the record.
+        out.append((f"held: {name} leaves the holder's lock alone",
+                    rec["lock_after"] == "held" and not rec["work"],
+                    f"lock {rec['lock_after']}, work {rec['work']}"))
+
+        rec, esc = drive(prepare, call, held=False)
+        if role == "CLAIM" or site[1].endswith((".drain_queue",
+                                                ".sweep_queue")):
+            ok = (bool(rec["work"]) and all(h for _w, h in rec["work"])
+                  and rec["lock_after"] == "free" and not esc
+                  and "raised" not in rec and not rec["queue_after"])
+            out.append((f"free: {name} works under the lock and gives it back",
+                        ok, f"work {rec['work']}, lock {rec['lock_after']}, "
+                            f"queue {rec['queue_after']}, "
+                            f"raised {rec.get('raised')}, escaped {esc}"))
+        else:
+            ok = (not rec["work"] and rec["lock_after"] == "free"
+                  and not esc and "raised" not in rec
+                  and rec["returned"] is False)
+            out.append((f"free: {name} answers False and leaves it free",
+                        ok, f"returned {rec['returned']!r}, "
+                            f"lock {rec['lock_after']}, work {rec['work']}"))
+
+        # Work queued while the site holds the lock is worked off once
+        # it lets go: exactly one drain, and nothing left on the queue
+        # (Q13). Before, only a Telegram single update and the poll loop
+        # ever drained, so this row was 0 for every other site.
+        if role == "CLAIM" or site[1].endswith(".sweep_queue"):
+            releasers.add(site)
+            rec, esc = drive(prepare, call, held=False, during=True)
+            want = 0 if site in NO_DRAIN else 1
+            left = [QKEY] if site in NO_DRAIN else []
+            ok = (rec["drains"] == want and rec["queue_after"] == left
+                  and not esc and "raised" not in rec
+                  and not rec.get("thread_errors"))
+            out.append((f"queued meanwhile: {name} → {rec['drains']} drain(s)",
+                        ok, f"drains {rec['drains']} (want {want}), queue "
+                            f"{rec['queue_after']} (want {left}), raised "
+                            f"{rec.get('raised')}, thread errors "
+                            f"{rec.get('thread_errors')}, escaped {esc}"))
+
+    for site in sorted(NO_DRAIN):
+        out.append((f"exempt from the drain: {site[0]}:{site[1]} is a "
+                    "driven releaser", site in releasers,
+                    "stale exemption: no such releasing site is driven"))
+    for site, (role, _ops) in sorted(LOCK_OPS.items()):
+        if role in ("RELEASE", "DOOR"):
+            continue
+        out.append((f"driven: {site[0]}:{site[1]}", site in driven,
+                    "a listed site has no drive"))
+    for key in sorted(k for k in EXPECTED_BUSY
+                      if k not in {(s, lab) for s, lab, _p, _c in DRIVES}):
+        out.append((f"expectation without a drive: {key!r}", False, ""))
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════
+def snapshot():
+    found = enumerate_sites()
+    ops, mentions, running, queue, busy, helpers = found
+    print("# lock ops");  pprint.pprint(ops, width=100)
+    print("# mentions");  pprint.pprint(sorted(mentions), width=100)
+    print("# update_running"); pprint.pprint(dict(running), width=100)
+    print("# queue");     pprint.pprint(dict(queue), width=100)
+    print("# lock helpers"); pprint.pprint(dict(helpers), width=100)
+    print("# busy");      pprint.pprint(dict(busy), width=100)
+    print("EXPECTED_BUSY = {")
+    for site, label, prepare, call in DRIVES:
+        rec, esc = drive(prepare, call, held=True)
+        print(f"    ({site!r},\n     {label!r}):")
+        role = LOCK_OPS.get(site, ("?",))[0]
+        print(textwrap_indent(pprint.pformat(_busy_view(rec, role), width=88),
+                              "        ") + ",")
+        if esc:
+            print(f"    # ESCAPED: {esc}")
+    print("}")
+    return 0
+
+
+def textwrap_indent(text, pad):
+    return "\n".join(pad + ln for ln in text.splitlines())
+
+
+def check():
+    failed = 0
+    for label, ok, why in enumeration_checks(enumerate_sites()) \
+            + drive_checks():
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        if not ok:
+            failed += 1
+            if why:
+                print(f"      → {why}")
+    print("FAIL" if failed else "PASS")
+    return 1 if failed else 0
+
+
+def main():
+    m._TMP_ROOT = tempfile.mkdtemp(prefix="lock-sites-")
+    try:
+        if "--snapshot" in sys.argv:
+            return snapshot()
+        return check()
+    finally:
+        shutil.rmtree(m._TMP_ROOT, ignore_errors=True)
+
+
+# ── busy records, generated by --snapshot from main (8a74ba7), reviewed ──
+EXPECTED_BUSY = {
+    (('telegram_bot.py', 'TelegramBot._run_single_update'),
+     'tap update_one:web'):
+        {'keys': ['update_queued'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web'],
+         'said': ['🕒 `web` queued — position 1. It runs when its turn comes.']},
+    # Still refused, my decision of 18.11.2026 (Q16), in words that say
+    # it was not queued.
+    (('telegram_bot.py', 'TelegramBot._confirm_major_update'),
+     'confirm_major:web'):
+        {'keys': ['major_confirm_busy'],
+         'kind': 'REJECT',
+         'lock_after': 'held',
+         'said': ['⚠️ Another update is running, so the major update of `web` did not '
+                  'start. It was not queue…']},
+    (('telegram_bot.py', 'TelegramBot.handle_autoupdates'),
+     'scheduler auto pass, web on auto'):
+        {'kind': 'SKIP',
+         'lock_after': 'held',
+         'printed': ['Auto-update skipped: another update flow is running (will retry next '
+                     'tick)'],
+         'returned': 0},
+    (('telegram_bot.py', 'TelegramBot.cleanup_guarded'),
+     'image cleanup'):
+        {'keys': ['cleanup_busy'],
+         'kind': 'SKIP_MSG',
+         'lock_after': 'held',
+         'returned': (None,
+                      "⏳ Updates in progress — cleanup skipped so it can't delete a freshly "
+                      'pulled image. Try aga…')},
+    (('telegram_bot.py', 'TelegramBot.check_selfupdate_auto'),
+     'scheduled self-update check'):
+        {'kind': 'SKIP',
+         'lock_after': 'held',
+         'printed': ['Selfupdate check: skipped — another update flow is running.'],
+         'returned': False},
+    # Queued since Q16, as a single tap is: one key, its sentence.
+    (('telegram_bot.py', 'TelegramBot.run_updates'),
+     'Update all (snapshot web@local)'):
+        {'keys': ['update_queued'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web'],
+         'said': ['🕒 `web` queued — position 1. It runs when its turn comes.']},
+    # Two keys: one answer that lists them.
+    (('telegram_bot.py', 'TelegramBot.run_updates'),
+     'Update all (snapshot web@local, web@nas)'):
+        {'keys': ['update_batch_queued', 'update_batch_line_queued'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web', 'nas/web'],
+         'said': ['🕒 Another update is running right now. These wait in the queue and run '
+                  'when their turn com…']},
+    (('discord_bot.py', 'DiscordBot._cmd_update'),
+     '/update container:web host:nas'):
+        {'keys': ['chan_update_queued', 'chan_update_result_channel'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['nas/web'],
+         'returned': '**Update**\n'
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes.\n'
+                     'The result is…'},
+    (('discord_bot.py', 'DiscordBot._do_updateall'),
+     'updateall confirmed, host:nas'):
+        {'keys': ['chan_update_queued', 'chan_update_result_channel'],
+         'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['nas/web'],
+         'returned': '**Update all**\n'
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes.\n'
+                     'The resul…'},
+    (('discord_bot.py', 'DiscordBot._cleanup_guarded'),
+     'image cleanup'):
+        {'keys': ['cleanup_busy'],
+         'kind': 'SKIP_MSG',
+         'lock_after': 'held',
+         'returned': (None,
+                      "⏳ Updates in progress — cleanup skipped so it can't delete a freshly "
+                      'pulled image. Try aga…')},
+    (('update_engine.py', 'UpdateEngine.cleanup_guarded'),
+     "image cleanup, the engine's own answer"):
+        {'kind': 'SKIP_MSG', 'lock_after': 'held', 'returned': (None, 'cleanup_busy')},
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'update click for nas/web, Telegram on'):
+        {'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['nas/web'],
+         'returned': '/?update=queued&pos=1'},
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'update click for nas/web, Telegram off'):
+        {'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['nas/web'],
+         'returned': '/?update=queued&pos=1'},
+    (('web_ui.py', 'create_handler.WebHandler._start_web_update'),
+     'bulk update web,nas/web'):
+        {'kind': 'QUEUE',
+         'lock_after': 'held',
+         'queue_after': ['web', 'nas/web'],
+         'returned': '/?update=queued&n=2'},
+    (('selfupdate.py', 'start'),
+     '/selfupdate'):
+        {'keys': ['selfupdate_queued'],
+         'kind': 'QUEUE_SELF',
+         'lock_after': 'held',
+         'queued_selfupdate': (None,),
+         'said': ['⏳ Container updates in progress — self-update queued, it will start '
+                  'automatically once the…']},
+    (('update_engine.py', 'UpdateEngine.update_running'),
+     'busy question'):
+        {'kind': 'SAYS_BUSY', 'lock_after': 'held', 'returned': True},
+    # Q10: the drain claims now, so held it is a claim that skips —
+    # nothing said, nothing run, the entry still at the head. Same record
+    # as the probe's apart from the kind.
+    (('update_engine.py', 'UpdateEngine.drain_queue'),
+     'drain with web queued'):
+        {'kind': 'SKIP', 'lock_after': 'held', 'queue_after': ['web']},
+    (('update_engine.py', 'UpdateEngine.sweep_queue'),
+     'poll-cycle sweep with web queued'):
+        {'kind': 'LEAVES_QUEUED', 'lock_after': 'held', 'queue_after': ['web']},
+}
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -25,6 +25,8 @@ import types
 import urllib.error
 from contextlib import redirect_stdout
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import notifiers.gotify as gotify_mod          # noqa: E402
@@ -169,11 +171,11 @@ finally:
 # for fifteen minutes — invisible in a test that only raises one of the two.
 _src = open(gotify_mod.__file__, encoding="utf-8").read()
 checks["the HTTPError clause comes before the network one"] = (
-    _src.index("except urllib.error.HTTPError")
-    < _src.index("except (urllib.error.URLError"))
+    srcslice.in_order(_src, "except urllib.error.HTTPError",
+                      "except (urllib.error.URLError"))
 checks["…and the clause order decides which statuses are held"] = (
-    _src.index("except urllib.error.HTTPError")
-    < _src.index("except (urllib.error.URLError"))
+    srcslice.in_order(_src, "except urllib.error.HTTPError",
+                      "except (urllib.error.URLError"))
 # It used to read `_src.count("on_network_failure()") == 1` — "only the
 # network clause signals the queue". That rule is gone on purpose: a
 # `429` and a `503` are held too now, so there are two call sites, and

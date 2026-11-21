@@ -3669,7 +3669,11 @@ class UpdateChecker:
             try:
                 with open(self.config.pending_file, encoding="utf-8") as f:
                     data = json.load(f)
-            except (OSError, json.JSONDecodeError):
+            # ValueError covers broken JSON and bytes that are not UTF-8
+            # alike. Either way the list is unreadable, this check treats it
+            # as empty and writes it again, which is what the Web UI's
+            # "pending list unreadable" banner tells the user to expect.
+            except (OSError, ValueError):
                 return []
             return data if isinstance(data, list) else []
 

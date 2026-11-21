@@ -21,6 +21,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from broadcast import Broadcast                             # noqa: E402
@@ -76,9 +78,10 @@ checks["a plain announcement still reaches both alike"] = (
 # per-container cards were never a duplicate.
 src = open(os.path.join(ROOT, "app", "telegram_bot.py"),
            encoding="utf-8").read()
-_auto = src.split("def handle_autoupdates")[1].split("\n    def ")[0]
+_auto = srcslice.section(src, "def handle_autoupdates", "\n    def ",
+                         label="telegram_bot.py: handle_autoupdates")
 checks["the auto-update summary splits head from results"] = (
-    'self.announce(_head, detail=' in _auto)
+    _auto is not None and 'self.announce(_head, detail=' in _auto)
 checks["…and no longer glues them together for everyone"] = (
     'self.announce(_head + "\\n\\n"' not in src)
 
@@ -86,9 +89,14 @@ for name, where in (("run_updates", src),
                     ("_run_web_update_batch",
                      open(os.path.join(ROOT, "app", "web_ui.py"),
                           encoding="utf-8").read())):
-    body = where.split(f"def {name}")[1].split("\n        def ")[0][:4000]
+    _start = f"def {name}"
+    body = srcslice.section(where, _start, label=f"{name}: its definition")
+    # Up to its first nested def, at most 4000 characters, as before.
+    if body is not None:
+        body = body[len(_start):].split("\n        def ")[0][:4000]
     checks[f"{name} still reports to Telegram alone"] = (
-        "self.announce(" not in body and "bot.announce(" not in body)
+        body is not None
+        and "self.announce(" not in body and "bot.announce(" not in body)
 
 bad = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

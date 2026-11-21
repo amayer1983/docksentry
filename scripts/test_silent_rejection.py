@@ -51,6 +51,8 @@ import urllib.error
 import urllib.parse
 from contextlib import redirect_stdout
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import telegram_bot  # noqa: E402
@@ -181,10 +183,14 @@ checks["…and the first one still stands"] = (
 # It is not persisted — that would make a corrected CHAT_ID unusable.
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "telegram_bot.py"), encoding="utf-8").read()
-i = src.index("def _note_migration")
-note = src[i:src.index("\n    def ", i + 10)]
+note = srcslice.section(src, "def _note_migration", "\n    def ",
+                        label="telegram_bot.py: _note_migration")
+# Behind its docstring, which talks about settings on purpose.
+_note_code = (note.split('"""')[2]
+              if note is not None and note.count('"""') >= 2 else None)
 checks["the new id is not written to persistent settings"] = (
-    "save_persistent" not in note and "settings" not in note.split('"""')[2])
+    _note_code is not None
+    and "save_persistent" not in note and "settings" not in _note_code)
 
 # ── and commands from the new id are accepted ───────────────────────
 b = bot()
@@ -274,10 +280,10 @@ _, log = auth(b, "-52123456", "4242")
 checks["DEBUG still prints its per-message detail"] = "Auth fail" in log
 
 # ── it stays in the log, never in the chat ───────────────────────────
-i = src.index("def _warn_rejected_once")
-warn = src[i:src.index("\n    def ", i + 10)]
+warn = srcslice.section(src, "def _warn_rejected_once", "\n    def ",
+                        label="telegram_bot.py: _warn_rejected_once")
 checks["the rejection notice is printed, not sent to the chat"] = (
-    "print(" in warn and "send_message" not in warn)
+    warn is not None and "print(" in warn and "send_message" not in warn)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

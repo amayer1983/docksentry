@@ -28,6 +28,8 @@ import urllib.error
 import urllib.parse
 from contextlib import redirect_stdout
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import monitor as monitor_mod          # noqa: E402
@@ -209,9 +211,16 @@ try:
     # ═══ 4. nothing survives a restart ═══════════════════════════════
     src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                             "notify_retry.py"), encoding="utf-8").read()
-    code = src.split('"""', 2)[2]
-    checks["the queue is memory only — nothing is written to disk"] = not any(
-        w in code for w in ("open(", "json.dump", "os.path", "settings.json"))
+    # Everything behind the module docstring.
+    _q1 = srcslice.position(src, '"""', label="notify_retry.py: docstring")
+    _q2 = (None if _q1 is None else
+           srcslice.position(src, '"""', _q1 + 3,
+                             label="notify_retry.py: docstring end"))
+    code = None if _q2 is None else src[_q2 + 3:]
+    checks["the queue is memory only — nothing is written to disk"] = (
+        code is not None and not any(
+            w in code
+            for w in ("open(", "json.dump", "os.path", "settings.json")))
 
     # ═══ 5. a rejection is not repeated, and it is logged ════════════
     notify_retry.queue.clear()
@@ -378,9 +387,8 @@ checks["flush takes the batch out under it, not in place"] = (
 checks["…and merges survivors back under it too"] = (
     "self._items = keep + self._items" in _src)
 checks["the send itself happens OUTSIDE the lock"] = (
-    _src.index("batch, self._items")
-    < _src.index('held["send"]')
-    < _src.index("keep + self._items"))
+    srcslice.in_order(_src, "batch, self._items", 'held["send"]',
+                      "keep + self._items"))
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

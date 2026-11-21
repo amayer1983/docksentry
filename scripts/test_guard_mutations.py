@@ -60,16 +60,43 @@ ROOT = os.path.dirname(HERE)
 #: apply is a check that passed without running, which is the whole
 #: thing being hunted here.
 GUARDED = [
+    # Since Q13 the poll loop hands the engine's sweep the engine's own
+    # drainer; Telegram keeps no drain of its own.
     ("queued work is picked up even when nobody drains it",
      "app/telegram_bot.py",
-     "                self._sweep_update_queue(checker)",
+     "                self.engine.sweep_queue(self.engine.kick_drain)",
      "                pass",
      "test_update_queue_sweep.py"),
 
+    # The sweep's rules are the engine's since Q9.
     ("the sweep leaves the queue alone while somebody holds the lock",
-     "app/telegram_bot.py",
-     "            if self._update_lock.locked():\n                return",
+     "app/update_engine.py",
+     "            if self.update_claimed:\n                return",
      "            if False:\n                return",
+     "test_update_queue_sweep.py"),
+
+    ("the sweep does not call the drain when nothing is queued",
+     "app/update_engine.py",
+     "        try:\n            if not self.has_queued_updates():\n                return",
+     "        try:\n            if False:\n                return",
+     "test_update_queue_sweep.py"),
+
+    ("…and does call it when something is queued and the lock is free",
+     "app/update_engine.py",
+     "            drain()\n        except",
+     "            pass\n        except",
+     "test_update_queue_sweep.py"),
+
+    ("a failing drain does not take the listener loop down with it",
+     "app/update_engine.py",
+     '            print(f"Queue sweep failed: {e}")',
+     "            raise",
+     "test_update_queue_sweep.py"),
+
+    ("the poll loop's sweep goes through the engine's rules, not its own",
+     "app/telegram_bot.py",
+     "                self.engine.sweep_queue(self.engine.kick_drain)",
+     "                self.engine.kick_drain()",
      "test_update_queue_sweep.py"),
 
     ("a queue entry remembers when it was queued",
@@ -144,10 +171,11 @@ GUARDED = [
      "            if False:\n                raise _DamagedSettings(",
      "test_config_damage.py"),
 
+    # Since Q14 the claim and its answer live in `_start_web_update`.
     ("clicking Update in the Web UI is answered, not swallowed",
      "app/web_ui.py",
-     "                    self._send_redirect(\"/?update=started\")",
-     "                    self._send_redirect(\"/\")",
+     "            return \"/?update=started\" + (f\"&held={len(held)}\" if held else \"\")\n",
+     "            return \"/\"\n",
      "test_web_update_feedback.py"),
 
     ("the image's own start_period extends the health wait",
@@ -192,10 +220,11 @@ GUARDED = [
      '                msg = "Rate limit erreicht"',
      "test_pull_failure_report.py"),
 
+    # web_update_busy, the old anchor, went with Q14; its successor.
     ("a key left on the English string is caught, not just a missing one",
      "app/lang/ja.json",
-     '"web_update_busy": "別の更新がすでに実行中のため、これは開始されませんでした。完了してからもう一度お試しください。"',
-     '"web_update_busy": "Another update is already running, so this one was not started. Try again once it has finished."',
+     '"web_update_queue_full": "何も追加されませんでした：別の更新が実行中で、順番待ちがいっぱいです（{max}）。消化されてからもう一度お試しください。"',
+     '"web_update_queue_full": "Nothing was queued: another update is running and the queue is full ({max}). Try again once it has worked through."',
      "test_lang_parity.py"),
 
     ("the one writer of every JSON file names its encoding",
@@ -491,20 +520,28 @@ GUARDED = [
      "test_container_scope.py"),
     ("quiet hours hold routine notifications back",
      "app/notifier.py",
-     "        if is_quiet_now(self.config):\n            return True",
-     "        if False:\n            return True",
+     "    if is_quiet_now(config):\n        return True",
+     "    if False:\n        return True",
      "test_quiet_enforcement.py"),
 
     ("…and the gate really asks about THIS config, not some other",
      "app/notifier.py",
-     "        if is_quiet_now(self.config):",
-     "        if is_quiet_now(None):",
+     "    if is_quiet_now(config):",
+     "    if is_quiet_now(None):",
+     "test_quiet_enforcement.py"),
+
+    # Since the Q15 review the gate is `notifier.suppressed(config)`, so
+    # the Discord bot can ask it too; the notifier hands it its own.
+    ("…and the notifier hands the gate its own config",
+     "app/notifier.py",
+     "        return suppressed(self.config)\n",
+     "        return suppressed(None)\n",
      "test_quiet_enforcement.py"),
 
     ("…and so does the maintenance half of the same gate",
      "app/notifier.py",
-     "            if _maint_active(self.config):",
-     "            if _maint_active(None):",
+     "        if _maint_active(config):",
+     "        if _maint_active(None):",
      "test_quiet_enforcement.py"),
 
     ("podman is asked for its cgroup version in podman's own words",
@@ -589,8 +626,8 @@ GUARDED = [
 
     ("maintenance mode holds routine notifications back too",
      "app/notifier.py",
-     "            if _maint_active(self.config):\n                return True",
-     "            if False:\n                return True",
+     "        if _maint_active(config):\n            return True",
+     "        if False:\n            return True",
      "test_quiet_enforcement.py"),
 
     ("the SMTP password is never sent to an unverified server",
@@ -1214,22 +1251,487 @@ GUARDED = [
      "test_update_policy.py"),
 
     ("tapping the same update twice does not produce a bogus warning",
-     "app/telegram_bot.py",
-     "            if container_key in self.engine.updating:",
-     "            if False:",
+     "app/update_engine.py",
+     "        if container_key in self.updating:\n"
+     "            return (False,) + self._queue_answer(container_key, None)\n",
+     "        if False:\n"
+     "            return (False,) + self._queue_answer(container_key, None)\n",
      "test_update_queue_duplicate.py"),
 
+    # Q7: the engine claims or queues; a connection only translates.
+    ("a tap on a free lock claims it in the engine",
+     "app/update_engine.py",
+     "        if self.claim_update():\n            return True, None, {}\n",
+     "        if False:\n            return True, None, {}\n",
+     "test_update_queue.py"),
+
+    ("a request for several containers takes one claim, and queues nothing",
+     "app/update_engine.py",
+     "        if self.claim_update():\n            return True, []\n",
+     "        if False:\n            return True, []\n",
+     "test_update_queue.py"),
+
+    ("a batch goes on the queue whole or not at all",
+     "app/update_engine.py",
+     "            if len(self._update_queue) + len(new) > self.UPDATE_QUEUE_MAX:\n",
+     "            if False:\n",
+     "test_update_queue.py"),
+
+    ("…and one that fits exactly goes in",
+     "app/update_engine.py",
+     "            if len(self._update_queue) + len(new) > self.UPDATE_QUEUE_MAX:\n",
+     "            if len(self._update_queue) + len(new) >= self.UPDATE_QUEUE_MAX:\n",
+     "test_update_queue.py"),
+
+    ("…in the order it was asked for",
+     "app/update_engine.py",
+     "                self._update_queue.append(k)\n",
+     "                self._update_queue.insert(0, k)\n",
+     "test_update_queue.py"),
+
+    ("…and each key of it knows since when it waits",
+     "app/update_engine.py",
+     "                self._queued_at[k] = now\n",
+     "                pass\n",
+     "test_update_queue.py"),
+
+    ("…and the container being updated is not queued behind itself",
+     "app/update_engine.py",
+     "        running = self.updating\n",
+     "        running = {}\n",
+     "test_update_queue.py"),
+
+    ("…and a batch that does not fit is answered as a whole",
+     "app/update_engine.py",
+     "        if -1 in positions.values():\n",
+     "        if False:\n",
+     "test_update_queue.py"),
+
+    ("'already queued' hands over raw seconds, not a rendered time",
+     "app/update_engine.py",
+     '                "since_seconds": waited if waited is not None else 0}\n',
+     '                "since_seconds": 0}\n',
+     "test_update_queue.py"),
+
+    ("every busy answer carries what its sentence needs",
+     "app/update_engine.py",
+     '            return "update_queue_full", {"max": self.UPDATE_QUEUE_MAX}\n',
+     '            return "update_queue_full", {}\n',
+     "test_reply_params.py"),
+
+    ("Telegram's tap asks the engine instead of deciding itself",
+     "app/telegram_bot.py",
+     "        claimed, busy, params = self.engine.claim_or_queue(container_key)\n",
+     "        claimed, busy, params = (self.engine.claim_update(), \"update_queued\", {\"pos\": 1})\n",
+     "test_update_queue.py"),
+
+    ("…renders how long an entry has waited",
+     "app/telegram_bot.py",
+     '            kw["since"] = _ago(kw.pop("since_seconds"))\n',
+     '            kw["since"] = kw.pop("since_seconds")\n',
+     "test_update_queue.py"),
+
+    ("…and names the container, host included",
+     "app/telegram_bot.py",
+     "        return self.t(key, name=self._key_label(container_key), **kw)\n",
+     "        return self.t(key, **kw)\n",
+     "test_update_queue.py"),
+
+    ("the lock-site list sees a claim through claim_or_queue",
+     "scripts/test_update_lock_sites.py",
+     "                    elif c in DOOR_QUEUE:\n",
+     "                    elif False:\n",
+     "test_update_lock_sites.py"),
+
+    ("…and a batch feeding the queue",
+     "scripts/test_update_lock_sites.py",
+     'QUEUE_FEEDERS = ("enqueue_update", "enqueue_updates")\n',
+     'QUEUE_FEEDERS = ("enqueue_update",)\n',
+     "test_update_lock_sites.py"),
+
+    # The single update's body is the engine's run_keys since Q11a;
+    # Telegram keeps the sentences.
     ("…which needs the single-update path to say what it is doing",
-     "app/telegram_bot.py",
-     "            self.engine.mark_updating(container_key,\n                                      target.get(\"new_version\") or \"\")",
-     "            pass  # MUTATION: nothing says what is running",
+     "app/update_engine.py",
+     "                self.mark_updating(key, target.get(\"new_version\") or \"\")\n",
+     "                pass  # MUTATION: nothing says what is running\n",
      "test_update_queue_duplicate.py"),
 
+    # The engine's drainer says it for a queued key since Q13.
     ("…and finished work is not called a mistake",
-     "app/telegram_bot.py",
-     '                    "update_already_done" if from_queue else "container_not_in_list",',
-     '                    "container_not_in_list",',
+     "app/update_engine.py",
+     '        # list" there would put a warning under a green result.\n'
+     '        return self._t("update_already_done", name=self._key_label(key))\n',
+     '        # list" there would put a warning under a green result.\n'
+     '        return self._t("container_not_in_list", name=self._key_label(key))\n',
      "test_update_queue_duplicate.py"),
+
+    # Q11a: run_keys runs the single update; Telegram says how it went.
+    # Each of these goes red in test_single_update_report, which drives
+    # the real tap and drain with a recording notifier and Broadcast.
+    # Since Q11c the card for the other channels is the batch's, through
+    # the broadcast seam; Telegram's own renderer only says the line.
+    ("a single update is reported to the other channels",
+     "app/update_engine.py",
+     "                _report_result(self, u[\"name\"], u[\"image\"], success, msg,\n                               u.get(\"source_url\", \"\"))\n                if on_result is not None:\n",
+     "                if on_result is not None:\n",
+     "test_single_update_report.py"),
+
+    ("…and Telegram does not send that card a second time",
+     "app/telegram_bot.py",
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n',
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n'
+     '        if self.notifier:\n'
+     '            self.notifier.send_update_result(target["name"], target.get("image", "?"), success, msg)\n',
+     "test_single_update_report.py"),
+
+    ("…and said on Telegram",
+     "app/telegram_bot.py",
+     '        self.send_message(f"{status} {self._display_name(target)}: {msg}")\n',
+     "        pass  # MUTATION: no result line\n",
+     "test_single_update_report.py"),
+
+    ("…each of them once, not twice",
+     "app/update_engine.py",
+     "                    if report is not None:\n                        report(key, entry, success, msg)\n",
+     "                    if report is not None:\n                        report(key, entry, success, msg)\n                        report(key, entry, success, msg)\n",
+     "test_single_update_report.py"),
+
+    ("…an update that raises is reported, as a failure",
+     "app/update_engine.py",
+     "                if on_result is not None:\n                    on_result(u, False, clip(e))\n",
+     "                pass  # MUTATION: a crash goes unreported\n",
+     "test_single_update_report.py"),
+
+    ("…and the report does not wait for the pending file to be rewritten",
+     "app/update_engine.py",
+     "                lines, _n, _m = self._process_update_batch(\n",
+     "                _pending.write(pending_file, [u for u in updates if _pending.key_of(u) != (host_name, name)])\n                lines, _n, _m = self._process_update_batch(\n",
+     "test_single_update_report.py"),
+
+    # Q11c review: a host that stops answering, and a link lookup that
+    # raises, on the single update.
+    ("A netns snapshot that raises is that container's failure, not the batch's",
+     "app/update_engine.py",
+     '                snapshot_failed[(_host_of(u), u["name"])] = e\n                continue\n',
+     '                raise  # MUTATION: the snapshot takes the batch with it\n',
+     "test_single_update_report.py"),
+
+    ("…and only when asked: without it the batch raises, as it always has",
+     "app/update_engine.py",
+     "                if not snapshot_fails_entry:\n                    raise\n",
+     "                if False:  # MUTATION: every caller gets the guard\n                    raise\n",
+     "test_single_update_report.py"),
+
+    ("…on the single update, which asks the batch for it",
+     "app/update_engine.py",
+     "                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=False,\n                    held=held)\n",
+     "test_single_update_report.py"),
+
+    ("…and nothing is recreated after it",
+     "app/update_engine.py",
+     '                    raise snapshot_failed[(u_host, u["name"])]\n',
+     '                    pass  # MUTATION: runs without the owner\'s name\n',
+     "test_single_update_report.py"),
+
+    ("A single update looks up its link before 'Updating …' is said",
+     "app/update_engine.py",
+     "                entry = dict(target)\n                try:\n                    enrich([entry])\n",
+     "                entry = dict(target)\n                try:\n                    pass  # MUTATION: no lookup before the mark\n",
+     "test_single_update_report.py"),
+
+    # Q11c follow-up: what goes wrong after a good recreate, or in the
+    # link lookup, is not the update's failure.
+    ("…and a lookup that raises is logged, the key runs without a link",
+     "app/update_engine.py",
+     '                except Exception as e:              # noqa: BLE001\n'
+     '                    print(f"Link lookup for {key} failed, updating "\n',
+     '                except Exception as e:              # noqa: BLE001\n'
+     '                    raise  # MUTATION: the lookup ends the call\n'
+     '                    print(f"Link lookup for {key} failed, updating "\n',
+     "test_single_update_report.py"),
+
+    ("A head's health check that raises leaves its ✅ alone and the "
+     "dependents are fixed anyway",
+     "app/update_engine.py",
+     "        try:\n"
+     "            outcome, _, _ = checker._wait_healthy(head_name, max_wait)\n"
+     "        except Exception as e:                      # noqa: BLE001\n",
+     "        try:\n"
+     "            outcome, _, _ = checker._wait_healthy(head_name, max_wait)\n"
+     "        except ImportError as e:  # MUTATION: the raise reaches the batch\n",
+     "test_single_update_report.py"),
+
+    ("A dependent whose fix raises anything is that dependent's failure, "
+     "not the head's",
+     "app/update_engine.py",
+     "            except Exception as e:                  # noqa: BLE001\n"
+     "                # Any exception, not only a subprocess one: a missing CLI\n",
+     "            except OSError as e:  # MUTATION: only some of them\n"
+     "                # Any exception, not only a subprocess one: a missing CLI\n",
+     "test_single_update_report.py"),
+
+    ("'Updating …' is said before the single update runs, not after it",
+     'app/update_engine.py',
+     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                held = {}\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                # Through the shared batch (Q11c), so a tap gets what\n                # "Update all" gives the same container: the netns\n                # snapshot, the ENOSPC cleanup, the group head\'s cascade\n                # and the report to the other channels. The link is on\n                # `entry` already, so the batch looks up none. A netns\n                # snapshot that raises is that container\'s failure there.\n                outcome = []\n\n                def on_result(u, success, msg, key=key, entry=entry):\n                    outcome.append((success, msg))\n                    if report is not None:\n                        report(key, entry, success, msg)\n                # What the batch raises outside its per-container guard\n                # (a report that raised twice) ends the call, and the\n                # entry stays in the file.\n                held = {}\n                lines, _n, _m = self._process_update_batch(\n                    [entry], ck, auto=False, enrich=lambda us: None,\n                    checker_of=lambda u, ck=ck: ck,\n                    on_result=on_result, marks=False,\n                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n                if starting is not None:\n                    starting(key, target)\n',
+     'test_single_update_report.py'),
+
+    ("a failed single update names the group it takes out of the queue",
+     "app/update_engine.py",
+     "                last_group = None if success else group_of(key)\n",
+     "                last_group = None\n",
+     "test_single_update_report.py"),
+
+    # Q11c: the single update runs through the shared batch. Each of
+    # these was applied by hand and went red without a traceback.
+    ('a queued container waits the cooldown of the one that ran before it',
+     'app/update_engine.py',
+     '        cooldown = host_store(self, l_host).get_cooldown(l_name) or 0\n',
+     '        cooldown = 0\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…and a queued group-mate waits the group's pause after it",
+     'app/update_engine.py',
+     '                pause = int(g.get("wait_seconds", 0) or 0)\n',
+     '                pause = 0\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…counted from when that recreate finished, not waited again',
+     'app/update_engine.py',
+     '        elapsed = _now(self) - at\n',
+     '        elapsed = 0\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch remembers its last recreate past its end',
+     'app/update_engine.py',
+     '            self._last_recreate = (u_host, cur_group, u["name"], _now(self))\n',
+     '            pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and the waiting container counts as in flight while it waits',
+     'app/update_engine.py',
+     '                self.mark_updating(key, target.get("new_version") or "")\n                # Said before the wait, not after: a cooldown can be\n                # minutes, and the chat would show nothing but the toast\n                # until it was over (Q11c review). The Web UI\'s badge\n                # already says "updating" from the mark above.\n                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n',
+     '                # Said before the wait, not after: a cooldown can be\n                # minutes, and the chat would show nothing but the toast\n                # until it was over (Q11c review). The Web UI\'s badge\n                # already says "updating" from the mark above.\n                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n                self.mark_updating(key, target.get("new_version") or "")\n',
+     'test_single_update_report.py'),
+
+    ('a single update runs on the checker its caller hands it, remote too',
+     'app/update_engine.py',
+     '                    checker_of=lambda u, ck=ck: ck,\n',
+     '                    checker_of=None,\n',
+     'test_single_update_report.py'),
+
+    ('…and a key nobody can reach runs nothing and stays pending',
+     'app/update_engine.py',
+     '                if ck is None:\n',
+     '                if False:\n',
+     'test_single_update_report.py'),
+
+    ("the single update keeps its in-flight mark through 'all done'",
+     'app/update_engine.py',
+     '                    on_result=on_result, marks=False,\n',
+     '                    on_result=on_result, marks=True,\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch leaves the mark alone when told to',
+     'app/update_engine.py',
+     '                finally:\n                    if marks:\n                        self.clear_updating(_u_key)\n',
+     '                finally:\n                    self.clear_updating(_u_key)\n',
+     'test_single_update_report.py'),
+
+    ('the batch hands each result to its caller',
+     'app/update_engine.py',
+     '                if on_result is not None:\n                    on_result(u, success, msg)\n',
+     '                pass  # MUTATION: no result handed on\n',
+     'test_single_update_report.py'),
+
+    # Q11c review: each applied by hand and red without a traceback.
+    ("a single update does not run the batch's proactive disk prune",
+     'app/update_engine.py',
+     '                    proactive_cleanup=False, snapshot_fails_entry=True,\n                    held=held)\n',
+     '                    proactive_cleanup=True, snapshot_fails_entry=True,\n                    held=held)\n',
+     'test_single_update_report.py'),
+
+    ('…because the batch leaves that prune out when told to',
+     'app/update_engine.py',
+     '                    elif (proactive_cleanup\n',
+     '                    elif (True\n',
+     'test_single_update_report.py'),
+
+    ("…and 'Updating' is said before the wait for the last recreate",
+     'app/update_engine.py',
+     '                if starting is not None:\n                    starting(key, target)\n                self._wait_after_last_recreate(host_name, name)\n',
+     '                self._wait_after_last_recreate(host_name, name)\n                if starting is not None:\n                    starting(key, target)\n',
+     'test_single_update_report.py'),
+
+    ("no group pause for another host's member of the same group id",
+     'app/update_engine.py',
+     '        if l_group and host_name == l_host:\n',
+     '        if l_group:\n',
+     'test_single_update_report.py'),
+
+    ("a group head's cascade after a tap is said on Telegram",
+     'app/telegram_bot.py',
+     '                note=lambda key, line: self.send_message(line),\n',
+     '                note=None,\n',
+     'test_single_update_report.py'),
+
+    ('…handed on by run_keys',
+     'app/update_engine.py',
+     '                            note(key, line)\n',
+     '                            pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…without the result line a second time',
+     'app/update_engine.py',
+     '                        if line not in said:\n',
+     '                        if True:\n',
+     'test_single_update_report.py'),
+
+    ("Telegram's drain finds a queued container's group",
+     'app/telegram_bot.py',
+     '            return gid or None\n',
+     '            return None\n',
+     'test_single_update_report.py'),
+
+    ("the single update stops saying a container is in flight once done",
+     "app/update_engine.py",
+     "            finally:\n                self.clear_updating(key)\n",
+     "            finally:\n                pass\n",
+     "test_update_queue_duplicate.py"),
+
+    # Since 11d1e45 the "all done" line goes through done(); these two
+    # hold run_keys' all_done answer, which Q11b/Q11c/Q13 may read.
+    ("run_keys answers all_done after the call that took the last entry",
+     "app/update_engine.py",
+     "        return results, (written and not updates)\n",
+     "        return results, False\n",
+     "test_single_update_report.py"),
+
+    ("…and not all_done while another entry is still pending",
+     "app/update_engine.py",
+     "        return results, (written and not updates)\n",
+     "        return results, written\n",
+     "test_single_update_report.py"),
+
+    ("Telegram hands the engine the tapped key's own checker",
+     "app/telegram_bot.py",
+     "                checker_for=lambda key: checker,\n",
+     "                checker_for=lambda key: (self.hosts.local.checker\n"
+     "                                         if self.hosts else checker),\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and its own link lookup, so the result line carries the link",
+     "app/telegram_bot.py",
+     "                enrich=self._enrich_with_source_url,\n",
+     "                enrich=lambda updates: None,\n",
+     "test_telegram_callback_matrix.py"),
+
+    # Q11a review: "all done" goes out while the tapped container still
+    # counts as in flight, so a second tap during it is "the same one"
+    # instead of a queued job the drain then calls already updated.
+    ("'all done' is said while the tapped container is still in flight",
+     "app/telegram_bot.py",
+     '                done=lambda: self.send_message(self.t("update_all_done")),\n',
+     '                done=lambda: (self.engine.clear_updating(container_key),\n                              self.send_message(self.t("update_all_done"))),\n',
+     "test_single_update_report.py"),
+
+    ("…because run_keys calls done before the mark goes",
+     "app/update_engine.py",
+     "                    done()\n            finally:\n",
+     "                    self.clear_updating(key)\n                    done()\n            finally:\n",
+     "test_single_update_report.py"),
+
+    ("…and only once the file is empty",
+     "app/update_engine.py",
+     "                if not updates and done is not None:\n",
+     "                if done is not None:\n",
+     "test_single_update_report.py"),
+
+    # Q11b: a tapped or queued key whose host has left the registry is
+    # refused in run_keys instead of running on the local checker.
+    ("a pending key whose host left the registry is refused, not run locally",
+     "app/update_engine.py",
+     "                if not self._manages_host(host_name):\n",
+     "                if False:\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…a queued one too, when the drain comes to it",
+     "app/update_engine.py",
+     "                if not self._manages_host(host_name):\n",
+     "                if False:\n",
+     "test_single_update_report.py"),
+
+    ("…and without any registry every host but the local one is unknown",
+     "app/update_engine.py",
+     "        if name in (None, \"\", LOCAL_HOST):\n            return True\n",
+     "        if name in (None, \"\", LOCAL_HOST) or not self.hosts:\n            return True\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…while the local host is always known, registry or not",
+     "app/update_engine.py",
+     "        if name in (None, \"\", LOCAL_HOST):\n            return True\n",
+     "        if name in (None, \"\"):\n            return True\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…the refused entry stays in the pending file",
+     "app/update_engine.py",
+     "                    # that is not pending still answers \"not pending\".\n                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "                    # that is not pending still answers \"not pending\".\n                    _pending.write(pending_file, [u for u in updates if u is not target])\n                    results.append((key, None, None, \"host_unknown\", None))\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and a key that is not pending still says so, whatever its host",
+     "app/update_engine.py",
+     "                if not target:\n                    results.append((key, None, None, \"not_pending\", None))\n                    continue\n",
+     "                if not self._manages_host(host_name):\n                    results.append((key, None, None, \"host_unknown\", None))\n                    continue\n                if not target:\n                    results.append((key, None, None, \"not_pending\", None))\n                    continue\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("Telegram answers the refusal with the unknown-host sentence",
+     "app/telegram_bot.py",
+     "        if why == \"host_unknown\":\n",
+     "        if False:\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("a confirm_major key for a host the registry does not know is refused",
+     "app/telegram_bot.py",
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "",
+     "test_telegram_callback_matrix.py"),
+
+    ("…with the unknown-host sentence",
+     "app/telegram_bot.py",
+     "            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…before the deferred majors are looked up",
+     "app/telegram_bot.py",
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n"
+     "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n",
+     "        host = self._host_by_name(host_name)\n        checker = self._checker_for(host, checker)\n        store = self._store_for(host_name)\n        pending = store.get_pending_major().get(name)\n        if not pending:\n            self.send_message(self.t(\"major_none_pending\", name=name))\n            return\n"
+     "        if not self.engine._manages_host(host_name):\n            self.send_message(self._unknown_host_text(host_name))\n            return\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("a reject_major key for a host the registry does not know is refused",
+     "app/telegram_bot.py",
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n",
+     "",
+     "test_telegram_callback_matrix.py"),
+
+    ("…with the unknown-host sentence, not 'skipped'",
+     "app/telegram_bot.py",
+     "                self.send_message(self._unknown_host_text(host_name))\n",
+     "                self.send_message(self.t(\"major_skipped\", name=name, tag=self._entry_host_tag({\"host\": host_name})))\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…before the deferred major is dropped from a store",
+     "app/telegram_bot.py",
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n"
+     "            self._store_for(host_name).remove_pending_major(name)\n",
+     "            self._store_for(host_name).remove_pending_major(name)\n"
+     "            if not self.engine._manages_host(host_name):\n                self.send_message(self._unknown_host_text(host_name))\n                return\n",
+     "test_telegram_callback_matrix.py"),
 
     ("a server that answers after the body is believed over a guess",
      "app/notifiers/smtp.py",
@@ -1596,8 +2098,12 @@ GUARDED = [
 
     ('…and neither does the Telegram major confirmation',
      'app/telegram_bot.py',
-     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if pin_list_unreadable(checker):',
-     '            self.send_message(self.t("major_none_pending", name=name))\n            return\n        from update_checker import pin_list_unreadable\n        if False:',
+     '        from update_checker import pin_list_unreadable\n'
+     '        if pin_list_unreadable(checker):\n'
+     "            # The major stays deferred, and the tap took the prompt's\n",
+     '        from update_checker import pin_list_unreadable\n'
+     '        if False:\n'
+     "            # The major stays deferred, and the tap took the prompt's\n",
      'test_pin_unreadable_paths.py'),
 
     ('…nor Telegram "Update all"',
@@ -1620,19 +2126,19 @@ GUARDED = [
 
     ('…and so does /check --dry-run',
      'app/telegram_bot.py',
-     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
-     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.send_message(self._build_dry_run(updates,',
      'test_pin_unreadable_paths.py'),
 
     ('…and /check <name>',
      'app/telegram_bot.py',
-     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
-     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    continue\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            if not found and not pins_said:',
+     '                if getattr(updates, "pin_list_unreadable", False):\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            container_flags.check_on_hosts(',
+     '                if False:\n                    if not pins_said:\n                        self.send_message(\n                            self.t("check_pin_list_unreadable"))\n                        pins_said = True\n                    return\n                if updates:\n                    found = True\n                    self.notify_updates(updates)\n            container_flags.check_on_hosts(',
      'test_pin_unreadable_paths.py'),
 
     ('Discord /check says nothing was checked when the pin list is unreadable',
      'app/discord_bot.py',
-     '            if getattr(updates, "pin_list_unreadable", False):\n                pins_unreadable = True',
+     '            if getattr(hc.updates, "pin_list_unreadable", False):\n                pins_unreadable = True',
      '            if False:\n                pins_unreadable = True',
      'test_pin_unreadable_paths.py'),
 
@@ -1674,14 +2180,14 @@ GUARDED = [
 
     ('…nor the Web UI update worker behind them',
      'app/web_ui.py',
-     '            if any(pin_list_unreadable(hc) for _h, hc, _e in batches):',
-     '            if False:',
+     '                if any(pin_list_unreadable(hc) for _h, hc, _e in batches):',
+     '                if False:',
      'test_pin_unreadable_paths.py'),
 
     ('…and the status page shows why',
      'app/web_ui.py',
-     '            if _upd in ("started", "busy", "gone", "pinlist"):',
-     '            if _upd in ("started", "busy", "gone"):',
+     '            if _upd in ("started", "gone", "pinlist", "queued",',
+     '            if _upd in ("started", "gone", "queued",',
      'test_pin_unreadable_paths.py'),
 
     ('the Web UI row check is not "up to date" when nothing was checked',
@@ -1756,14 +2262,14 @@ GUARDED = [
     ("maintenance mode stops the scheduled run: no self-update, no "
      "auto-update",
      "app/scheduler.py",
-     "                if _maint_active(self.config):",
-     "                if False:",
+     "                    if _maint_active(self.config):",
+     "                    if False:",
      "test_scheduler_maintenance.py"),
 
     ("…and keeps the monitor quiet while it lasts",
      "app/scheduler.py",
-     "                            and not _maint_active2(self.config)):",
-     "                            ):",
+     "                                and not _maint_active2(self.config)):",
+     "                                ):",
      "test_scheduler_maintenance.py"),
 
     ("a scheduled auto-update touches nothing while a manual update holds "
@@ -1776,7 +2282,7 @@ GUARDED = [
 
     ("…because it claims the lock instead of assuming it is free",
      "app/telegram_bot.py",
-     "            if self._update_lock.acquire(blocking=False):\n"
+     "            if self.engine.claim_update():\n"
      "                auto_lock_held = True",
      "            if True:\n"
      "                auto_lock_held = False",
@@ -1899,6 +2405,3948 @@ GUARDED = [
      "    shutil.rmtree(tree, ignore_errors=True)\n",
      "test_ratchet_copy.py"),
 
+    # The source-reading procedures cut app/ code through srcslice so a
+    # moved anchor reads as a red check, not as a traceback this file
+    # can only score as [cannot run]. On an untouched tree no procedure
+    # takes the missing-anchor path, so test_srcslice drives it.
+    ("a source slice whose anchor is gone is None, not a ValueError",
+     "scripts/srcslice.py",
+     "    i = -1 if src is None else src.find(needle, start)",
+     "    i = src.index(needle, start)",
+     "test_srcslice.py"),
+
+    ("…and says which anchor it was, in a FAIL line",
+     "scripts/srcslice.py",
+     '    print(f"  FAIL  {label}: anchor not found")',
+     "    pass",
+     "test_srcslice.py"),
+
+    ("…and a missing end anchor is not read as 'to the end of the file'",
+     "scripts/srcslice.py",
+     "    j = position(src, end, i + len(start), label=label)\n"
+     "    if j is None:\n        return None\n",
+     "    j = src.find(end, i + len(start))\n",
+     "test_srcslice.py"),
+
+    ("…and the end anchor is looked for behind the start, not inside it",
+     "scripts/srcslice.py",
+     "i + len(start), label=label)",
+     "i, label=label)",
+     "test_srcslice.py"),
+
+    ("a method that has moved is None, not an AttributeError",
+     "scripts/srcslice.py",
+     "    except AttributeError:\n        _fail(label or",
+     "    except KeyError:\n        _fail(label or",
+     "test_srcslice.py"),
+
+    ("an order check over a missing needle is False, not a pass",
+     "scripts/srcslice.py",
+     "    return all(i >= 0 for i in at) and all(",
+     "    return all(",
+     "test_srcslice.py"),
+
+    ("walking back to a marker that is gone is None, not a ValueError",
+     "scripts/srcslice.py",
+     "    i = -1 if src is None else src.rfind(needle, 0, stop)",
+     "    i = src.rindex(needle, 0, stop)",
+     "test_srcslice.py"),
+
+    ("…and it only walks back from where it was told to start",
+     "scripts/srcslice.py",
+     "src.rfind(needle, 0, stop)",
+     "src.rfind(needle)",
+     "test_srcslice.py"),
+
+    # The Telegram command matrix (core split, T2). Bare `/restart` is
+    # the one branch whose position in the elif chain is its meaning:
+    # below the lifecycle prefix it answers with a usage line. D7 and D9
+    # move this condition; re-point the anchor when they do.
+    ("a typed command is answered from the branch its word names",
+     "app/telegram_bot.py",
+     '        elif text == "/restart":\n',
+     "        elif False:\n",
+     "test_telegram_dispatch_matrix.py"),
+
+    ("…and a call that gets past the matrix's stand-ins turns it red",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '        ESCAPES.append(f"{kind}({what!r})"[:200])',
+     "        pass",
+     "test_telegram_dispatch_matrix.py"),
+
+    # The trap covers raw sockets too (follow-up to T2): hostcheck's TLS
+    # probe, the websocket client and smtplib dial past urlopen.
+    ("…and so does a raw socket.create_connection",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    socket.create_connection = _escape("socket.create_connection")\n',
+     "    pass\n",
+     "test_telegram_dispatch_matrix.py"),
+
+    ("…and a bare socket.connect",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    socket.socket.connect = _escape_method("socket.connect")\n',
+     "    pass\n",
+     "test_telegram_dispatch_matrix.py"),
+
+    # The Telegram callback matrix (core split, T3). With `stop_cancel`
+    # switched off the press falls through every branch and nothing
+    # answers — only that family's rows go red, measured.
+    ("a button press is answered from the branch its data names",
+     "app/telegram_bot.py",
+     '        if data == "stop_cancel":\n',
+     "        if False:\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…and an exception inside the thread a press starts turns it red",
+     "scripts/test_telegram_dispatch_matrix.py",
+     '    THREAD_ERRORS.append(f"{args.exc_type.__name__} in thread")',
+     "    pass",
+     "test_telegram_callback_matrix.py"),
+
+    # The Discord matrix (core split, T4). Without the action check a
+    # stop token pressed as "updateall" runs an update with the stop's
+    # parameters — exactly the two "pressed as updateall" rows go red,
+    # measured. Inside `_on_component`, which D11 does not move.
+    ("a Discord confirmation only answers the action it was issued for",
+     "app/discord_bot.py",
+     '        if rec is None or rec["action"] != action:\n',
+     "        if rec is None:\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("…the restore fetch's stand-in still hands everything else to the trap",
+     "scripts/test_discord_dispatch_matrix.py",
+     "        return trap(req, *a, **kw)",
+     '        return _Body(b"")',
+     "test_discord_dispatch_matrix.py"),
+
+    ("…and what the bot sends to Discord is what the matrix compares",
+     "scripts/test_discord_dispatch_matrix.py",
+     '            LOG.append(("rest", (self.who, method, path,\n',
+     '            (("rest", (self.who, method, path,\n',
+     "test_discord_dispatch_matrix.py"),
+
+    # The Web action matrix (core split, T5). /api/unpin calling the
+    # store's `pin` instead turns exactly the unpin rows red (7 of 612,
+    # measured). A flag branch, so none of the queue, walk or cleanup
+    # slices moves it.
+    ("a Web request acts through the store method its path names",
+     "app/web_ui.py",
+     "                    target[4].unpin(target[1])\n",
+     "                    target[4].pin(target[1])\n",
+     "test_web_action_matrix.py"),
+
+    ("…the webhook stand-in still hands every other URL to the trap",
+     "scripts/test_web_action_matrix.py",
+     "        return trap(req, *a, **kw)",
+     "        return _Resp()",
+     "test_web_action_matrix.py"),
+
+    ("…the docker-pull stand-in still hands every other command to the trap",
+     "scripts/test_web_action_matrix.py",
+     "        return trap(args, *a, **kw)",
+     '        return subprocess.CompletedProcess(args, 0, "", "")',
+     "test_web_action_matrix.py"),
+
+    ("…and what reaches Telegram is what the Web matrix compares",
+     "scripts/test_web_action_matrix.py",
+     '                LOG.append(("telegram", (data.get("text", ""), n)))',
+     "                pass",
+     "test_web_action_matrix.py"),
+
+    # Follow-up to T5: a self-update queued behind the lock is handed
+    # over by the Web worker once it releases. Dropping the hand-over or
+    # running it before the release both turn the two "hands over" rows
+    # red, measured. Q14 rewrites this claim and release — re-point the
+    # anchor there. Since Q3 the hand-over is the door's `after`.
+    ("…and a Web update hands a queued self-update over after its release",
+     "app/web_ui.py",
+     "            finally:\n"
+     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "            finally:\n"
+     "                engine.release_update()\n",
+     "test_web_action_matrix.py"),
+
+    # Q3: the Web worker and the banner's question go through the
+    # engine's door. Each one applied by hand in a copy, red without a
+    # traceback.
+    ("the engine's update_claimed answers what the lock says",
+     "app/update_engine.py",
+     "        returned; the claim that decides is still `claim_update`.\n"
+     "        \"\"\"\n"
+     "        return self._update_lock.locked()\n",
+     "        returned; the claim that decides is still `claim_update`.\n"
+     "        \"\"\"\n"
+     "        return False\n",
+     "test_update_lock_door.py"),
+
+    # Q14: the Web banner's look at the lock is gone; the handler claims
+    # or queues in `_start_web_update` and the worker only gives back.
+    ("the Web UI starts no update while somebody else holds the lock",
+     "app/web_ui.py",
+     "            claimed, outcomes = engine.claim_or_queue_many(keys)\n",
+     "            claimed, outcomes = True, []\n",
+     "test_update_lock_sites.py"),
+    ("the Web UI claims through the engine's door, not the raw lock",
+     "app/web_ui.py",
+     "            claimed, outcomes = engine.claim_or_queue_many(keys)\n",
+     "            claimed, outcomes = "
+     "engine._update_lock.acquire(blocking=False), []\n",
+     "test_update_lock_sites.py"),
+    ("a read of the door's update_claimed is noticed",
+     "scripts/test_update_lock_sites.py",
+     "                    ops[(rel, qual)].append(DOOR_READ)\n",
+     "                    pass\n",
+     "test_update_lock_sites.py"),
+
+    # Q14: a Web update click while another update runs is queued, not
+    # thrown away, and the page says where it went. Applied by hand in a
+    # copy, each red without a traceback.
+    ("a busy Web update click is queued and told so, not thrown away",
+     "app/web_ui.py",
+     "                return self._queue_redirect(outcomes)\n",
+     "                return \"/\"\n",
+     "test_web_update_feedback.py"),
+    ("…a request that does not fit the queue is told it is full",
+     "app/web_ui.py",
+     "            if \"update_queue_full\" in answers:\n",
+     "            if False:\n",
+     "test_web_multihost.py"),
+    ("…a selection that queued several says how many wait",
+     "app/web_ui.py",
+     "            if len(waiting) > 1:\n",
+     "            if False:\n",
+     "test_web_multihost.py"),
+    ("…a click on a container already waiting says since when",
+     "app/web_ui.py",
+     "            if answer == \"update_queued\":\n",
+     "            if True:\n",
+     "test_web_update_feedback.py"),
+    ("…and a click on the container updating now is not a second job",
+     "app/web_ui.py",
+     "                return \"/?update=same_running\" + (f\"&held={held}\" if held\n",
+     "                return \"/?update=queued&pos=0\" + (f\"&held={held}\" if held\n",
+     "test_web_update_feedback.py"),
+    # Q14b: a key with nothing pending is answered before anything is
+    # claimed or queued. Applied by hand in a copy, each red without a
+    # traceback.
+    ('a Web update click for a container no longer pending is told so, '
+     'before anything is claimed or queued',
+     'app/web_ui.py',
+     '                    if not _left:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     '                    if False:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     'test_web_update_feedback.py'),
+    ('…a Web bulk update with nothing pending left says so too',
+     'app/web_ui.py',
+     '                    if not keys:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     '                    if False:\n'
+     '                        self._send_redirect("/?update=" + _why)\n',
+     'test_web_action_matrix.py'),
+    ('…and of a selection only what is still pending is claimed or queued',
+     'app/web_ui.py',
+     '                    keys, _why = _still_pending(keys)\n',
+     '                    _why = _still_pending(keys)[1]\n',
+     'test_web_action_matrix.py'),
+    ("…a container on a host nobody manages is told that, not 'gone'",
+     'app/web_ui.py',
+     '        if named and unknown == named:\n',
+     '        if False:\n',
+     'test_web_update_feedback.py'),
+    ("…another host's entry of the same name is not this one pending",
+     'app/web_ui.py',
+     '                   for e in _pending.entries_for(entries, [resolved[0]])):\n',
+     '                   for e in entries if isinstance(e, dict)):\n',
+     'test_web_update_feedback.py'),
+    ('…the host nobody manages is still logged where it is dropped',
+     'app/web_ui.py',
+     "                # The worker's own words for it, said where it is dropped.\n"
+     '                print(',
+     "                # The worker's own words for it, said where it is dropped.\n"
+     '                (',
+     'test_web_action_matrix.py'),
+    ('…and the status page shows the host-not-managed answer',
+     'app/web_ui.py',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "pending_unreadable", "held",\n',
+     'test_web_update_feedback.py'),
+    ('…and has its words in every language',
+     'app/lang/ja.json',
+     '"web_update_host_unknown": "更新は開始されませんでした。Docksentry はこのホストを（もう）管理していません。ページを再読み込みすると現在の一覧が表示されます。"',
+     '"web_update_host_unknown": "No update was started: Docksentry does not manage that host (any more). Reload the page for the current list."',
+     'test_lang_parity.py'),
+    # Review of Q14b: an unreadable pending file was answered `gone`,
+    # whose words send the user looking for an update that never ran.
+    ('a Web update on an unreadable pending file says it is the file',
+     'app/web_ui.py',
+     '        if named and unreadable:\n',
+     '        if False:\n',
+     'test_web_action_matrix.py'),
+    ('…while no pending file at all is still nothing to update',
+     'app/web_ui.py',
+     '        unreadable = loaded is None and bool(path) and os.path.exists(path)\n',
+     '        unreadable = loaded is None and bool(path)\n',
+     'test_web_update_feedback.py'),
+    ('…and a readable file is not called unreadable',
+     'app/web_ui.py',
+     '        unreadable = loaded is None and bool(path) and os.path.exists(path)\n',
+     '        unreadable = bool(path) and os.path.exists(path)\n',
+     'test_web_update_feedback.py'),
+    ('…a host nobody manages is still told first',
+     'app/web_ui.py',
+     '        if named and unknown == named:\n'
+     '            return [], "host_unknown"\n'
+     '        if named and unreadable:\n'
+     '            return [], "pending_unreadable"\n',
+     '        if named and unreadable:\n'
+     '            return [], "pending_unreadable"\n'
+     '        if named and unknown == named:\n'
+     '            return [], "host_unknown"\n',
+     'test_web_update_feedback.py'),
+    ('…the status page shows the unreadable answer',
+     'app/web_ui.py',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "host_unknown", "held",\n',
+     'test_web_update_feedback.py'),
+    ('…and the unreadable answer has its words in every language',
+     'app/lang/ja.json',
+     '"web_update_pending_unreadable": "更新は開始されませんでした。保留中の更新の一覧を読み込めませんでした。次回のチェックで書き直されます。"',
+     '"web_update_pending_unreadable": "No update was started: the list of pending updates could not be read. The next check writes it again."',
+     'test_lang_parity.py'),
+    # Review of Q14b: that banner promises the next check writes the list
+    # again. A pending file that is not UTF-8 made the check raise before
+    # it got there, so the promise was false for it.
+    ("a check gets past a pending file that is not UTF-8 and writes it again",
+     "app/update_checker.py",
+     "            # \"pending list unreadable\" banner tells the user to expect.\n"
+     "            except (OSError, ValueError):\n",
+     "            # \"pending list unreadable\" banner tells the user to expect.\n"
+     "            except (OSError, json.JSONDecodeError):\n",
+     "test_check_scoped.py"),
+    # Review of Q14: the drainer runs one queued key per run, so the
+    # batch's group sort never saw two of them and a busy bulk ran a
+    # group's dependent before its head.
+    ("a queued selection goes on the queue in the order its batch runs",
+     "app/update_engine.py",
+     "        positions = self.enqueue_updates(self._in_group_order(\n",
+     "        positions = self.enqueue_updates((\n",
+     "test_web_update_feedback.py"),
+    ("…and a busy bulk of a group runs its head first, as a free one does",
+     "app/update_engine.py",
+     "        positions = self.enqueue_updates(self._in_group_order(\n",
+     "        positions = self.enqueue_updates((\n",
+     "test_web_action_matrix.py"),
+    ("…while the answers stay in the order asked",
+     "app/update_engine.py",
+     "                        k, None if k in running else positions[k]))\n"
+     "            for k in keys]\n",
+     "                        k, None if k in running else positions[k]))\n"
+     "            for k in self._in_group_order(keys)]\n",
+     "test_web_update_feedback.py"),
+    ("…containers in no group keep the order they were selected in",
+     "app/update_engine.py",
+     "                return (0,) + gp if gp else (1, \"\", 0)\n",
+     "                return (0,) + gp if gp else (1, k, 0)\n",
+     "test_web_update_feedback.py"),
+    ("…each host's keys by that host's groups",
+     "app/update_engine.py",
+     "                groups = host_store(self, h).get_groups() or {}\n",
+     "                groups = self.store.get_groups() or {}\n",
+     "test_web_update_feedback.py"),
+    ("…the hosts in the order they first come up",
+     "app/update_engine.py",
+     "        for h in hosts:\n            mine = by_host[h]\n",
+     "        for h in sorted(hosts):\n            mine = by_host[h]\n",
+     "test_web_update_feedback.py"),
+    ("…and groups that cannot be read do not refuse the request",
+     "app/update_engine.py",
+     "                out.extend(mine)\n                continue\n",
+     "                raise\n",
+     "test_web_update_feedback.py"),
+    ("a Web bulk update claims or queues the whole selection at once",
+     "app/web_ui.py",
+     "                if action == \"update\" and keys:\n",
+     "                if False:\n",
+     "test_web_multihost.py"),
+    ("the Web worker gives back the claim it was handed, even with "
+     "nothing to do",
+     "app/web_ui.py",
+     "            finally:\n"
+     "                engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "            finally:\n"
+     "                pass\n",
+     "test_web_multihost.py"),
+    ("a Web worker that cannot start gives the claim back",
+     "app/web_ui.py",
+     "                    # No worker, so nobody else gives the claim back.\n"
+     "                    engine.release_update(after=bot._run_queued_selfupdate)\n",
+     "                    # No worker, so nobody else gives the claim back.\n"
+     "                    pass\n",
+     "test_web_update_feedback.py"),
+    ("the status page says where a queued click went",
+     "app/web_ui.py",
+     "                    _text = t(\"web_update_queued\", pos=_unum(\"pos\"))\n",
+     "                    _text = t(\"web_update_started\")\n",
+     "test_web_update_feedback.py"),
+    ("…and reads the numbers off the URL as numbers only",
+     "app/web_ui.py",
+     "                    return max(0, int((_uq.get(name) or [\"0\"])[0]))\n",
+     "                    return (_uq.get(name) or [\"0\"])[0]\n",
+     "test_web_update_feedback.py"),
+    ("the Web matrix records what is left on the update queue",
+     "scripts/test_web_action_matrix.py",
+     "               \"queued\": [k for k, _w in self.engine.queued_updates()],\n",
+     "               \"queued\": [],\n",
+     "test_web_action_matrix.py"),
+    ("a call through a reader helper is still counted with none in app/",
+     "scripts/test_update_lock_sites.py",
+     "    LOCK_OPS[site] = (\"READER\", [\"update_claimed\"])\n",
+     "    LOCK_OPS[site] = (\"DOOR\", [\"update_claimed\"])\n",
+     "test_update_lock_sites.py"),
+
+    # Q4: update_running only looks. Applied by hand in a copy, red
+    # without a traceback.
+    ("update_running only looks at the lock, so a claim landing while "
+     "it asks is not refused",
+     "app/update_engine.py",
+     "        although nobody was updating.\"\"\"\n"
+     "        return self._update_lock.locked()\n",
+     "        although nobody was updating.\"\"\"\n"
+     "        locked = self._update_lock.acquire(blocking=False)\n"
+     "        if locked:\n"
+     "            self._update_lock.release()\n"
+     "            return False\n"
+     "        return True\n",
+     "test_update_lock_door.py"),
+    ("…and T6 lists update_running as a reader, not a probe",
+     "app/update_engine.py",
+     "        although nobody was updating.\"\"\"\n"
+     "        return self._update_lock.locked()\n",
+     "        although nobody was updating.\"\"\"\n"
+     "        if self._update_lock.acquire(blocking=False):\n"
+     "            self._update_lock.release()\n"
+     "        return self._update_lock.locked()\n",
+     "test_update_lock_sites.py"),
+
+    # The update-lock sites (core split, T6). A claim added anywhere in
+    # app/ shows up as an unlisted function in the AST enumeration; the
+    # construction line is the anchor because the claim/release slices
+    # replace every site but keep the one lock.
+    ("a new place that takes the update lock is noticed",
+     "app/update_engine.py",
+     "        self._update_lock = threading.Lock()\n",
+     "        self._update_lock = threading.Lock()\n"
+     "        self._update_lock.acquire(blocking=False)\n"
+     "        self._update_lock.release()\n",
+     "test_update_lock_sites.py"),
+
+    # Follow-up to T6: asking the lock through a reader helper is counted
+    # per caller. Since Q14 took the Web's `_update_lock_held` away, the
+    # count is shown on a snippet with a reader listed for the walk.
+    ("…and so is a new place that asks it through a reader helper",
+     "scripts/test_update_lock_sites.py",
+     "                        helpers[(rel, qual, c)] += 1\n",
+     "                        pass\n",
+     "test_update_lock_sites.py"),
+
+    # selfupdate.start stays a raw claim by design (Q3), so this anchor
+    # survives the split. Dropping the queue turns QUEUE_SELF into REJECT.
+    ("a self-update asked for while the lock is held is remembered",
+     "app/selfupdate.py",
+     "        ctx._queued_selfupdate = (target, reply_to) if reply_to else (target,)\n",
+     "        ctx._queued_selfupdate = None\n",
+     "test_update_lock_sites.py"),
+
+    # Discord's worker-pool refusal: not the update lock, and nothing in
+    # the split moves it. Swapping the key is a busy sentence the list
+    # does not know.
+    ("a new busy sentence anywhere in app/ is noticed",
+     "app/discord_bot.py",
+     'self.t("chan_busy_capacity")',
+     'self.t("chan_update_busy")',
+     "test_update_lock_sites.py"),
+
+    ("…the lock-site drive still sees the work a claim does",
+     "scripts/test_update_lock_sites.py",
+     '            WORK.append((f"update_container@{host}:{name}",\n'
+     "                         self.lock.locked()))\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
+    # Q1: the engine's door to the update lock. Telegram's six claims go
+    # through it; the promises are the door's own.
+    ("the update lock stays held while the self-update swaps",
+     "app/update_engine.py",
+     "        if not swap:\n"
+     "            try:\n"
+     "                self._update_lock.release()\n",
+     "        if True:\n"
+     "            try:\n"
+     "                self._update_lock.release()\n",
+     "test_update_lock_door.py"),
+
+    ("…and a swap flag that raises does not keep it held instead",
+     "app/update_engine.py",
+     "        try:\n"
+     '            swap = bool(getattr(self, "_swap_in_flight", False))\n'
+     "        except Exception:\n"
+     "            swap = False\n",
+     "        swap = bool(self._swap_in_flight)\n",
+     "test_update_lock_door.py"),
+
+    ("giving back a lock nobody holds never raises out of a finally",
+     "app/update_engine.py",
+     "            except RuntimeError:\n"
+     '                print("release_update: the update lock was not held "\n',
+     "            except ZeroDivisionError:\n"
+     '                print("release_update: the update lock was not held "\n',
+     "test_update_lock_door.py"),
+
+    ("…what comes after a flow runs once it has given the lock back",
+     "app/update_engine.py",
+     "            if after is not None:\n"
+     "                after()\n",
+     "            pass\n",
+     "test_update_lock_door.py"),
+
+    ("a claim on the update lock never waits",
+     "app/update_engine.py",
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "        return self._update_lock.acquire(timeout=1)\n",
+     "test_update_lock_door.py"),
+
+    ("giving back a lock nobody holds leaves it free for the next claim",
+     "app/update_engine.py",
+     "                print(\"release_update: the update lock was not held \"\n"
+     "                      \"— nothing to give back\")\n",
+     "                print(\"release_update: the update lock was not held \"\n"
+     "                      \"— nothing to give back\")\n"
+     "                self._update_lock.acquire()\n",
+     "test_update_lock_door.py"),
+
+    ("the door keeps no state of its own next to the lock",
+     "app/update_engine.py",
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "        self._door_claims = 1\n"
+     "        return self._update_lock.acquire(blocking=False)\n",
+     "test_update_lock_door.py"),
+
+    ("…and a `with update_claim()` that lost gives back nobody's lock",
+     "app/update_engine.py",
+     "            if claimed:\n"
+     "                self.release_update(after=after)\n",
+     "            if True:\n"
+     "                self.release_update(after=after)\n",
+     "test_update_lock_door.py"),
+
+    ("the bot's update lock is the engine's, not one of its own",
+     "app/telegram_bot.py",
+     "        return self.engine._update_lock\n",
+     "        return threading.Lock()\n",
+     "test_update_lock_door.py"),
+
+    ("…and the bot's update_running reads the engine's",
+     "app/telegram_bot.py",
+     "        return self.engine.update_running\n",
+     "        return False\n",
+     "test_update_lock_door.py"),
+
+    ("a new caller of the update-lock door is noticed",
+     "scripts/test_update_lock_sites.py",
+     "                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (\n",
+     "                    elif False and (\n",
+     "test_update_lock_sites.py"),
+
+    ("…including one that spells it as a with block",
+     "scripts/test_update_lock_sites.py",
+     "                        if isinstance(e, ast.Call) \\\n"
+     "                                and _callee(e) == DOOR_WITH:\n",
+     "                        if False:\n",
+     "test_update_lock_sites.py"),
+
+    ("…and which sentence a busy site picked",
+     "scripts/test_update_lock_sites.py",
+     "            KEYS.append(key)\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
+    # A1: which hosts a command reaches is decided once, in the core, and
+    # Telegram only parses and renders. Both halves of the no-host rule
+    # sit on one line of targets_for, so each gets its own mutation.
+    ("a read with no host named reaches every host",
+     "app/container_flags.py",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else [registry.local]), None\n",
+     "    if host_token is None:\n"
+     "        return ([registry.local] if mode == \"read\" else [registry.local]), None\n",
+     "test_target_resolution_shared.py"),
+
+    ("…and a write with no host named stays on the local one",
+     "app/container_flags.py",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else [registry.local]), None\n",
+     "    if host_token is None:\n"
+     "        return (list(registry) if mode == \"read\" else list(registry)), None\n",
+     "test_target_resolution_shared.py"),
+
+    ("a target mode the core does not know is refused, not read as a write",
+     "app/container_flags.py",
+     "    if mode not in TARGET_MODES:\n",
+     "    if False:\n",
+     "test_target_resolution_shared.py"),
+
+    ("a one-host install's @-token stays in the text, unparsed",
+     "app/telegram_bot.py",
+     "        if not self._multi():\n"
+     "            return arg_text, None, None\n"
+     "        import container_flags\n",
+     "        import container_flags\n",
+     "test_target_resolution_shared.py"),
+
+    # A2: Discord reads go through the same core on multi, and `all` is
+    # the every-host sentinel there. Handing the core the raw name makes
+    # `host: all` an unknown host again.
+    ("Discord `host: all` on a read reaches every host (multi-host)",
+     "app/discord_bot.py",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, self._host_token(name))\n",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, name)\n",
+     "test_target_resolution_shared.py"),
+
+    ("…and the Discord matrix sees it: `host: all` rows equal the no-host rows",
+     "app/discord_bot.py",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, self._host_token(name))\n",
+     "        targets, fatal = container_flags.targets_for_read(\n"
+     "            self.hosts, name)\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("Discord's `all` is `all` in any case, for reads and writes",
+     "app/discord_bot.py",
+     '        return ALL_HOSTS if name.strip().lower() == "all" else name\n',
+     '        return ALL_HOSTS if name == "all" else name\n',
+     "test_target_resolution_shared.py"),
+
+    ("a one-host Discord read keeps its own path; `all` stays unknown there",
+     "app/discord_bot.py",
+     '        if not getattr(self.hosts, "is_multi", False):\n',
+     "        if False:\n",
+     "test_target_resolution_shared.py"),
+
+    ("Discord autocomplete with `host: all` asks the local host only",
+     "app/discord_bot.py",
+     "        named = self._host_token(host_name) not in (None, hostslib.ALL_HOSTS)\n",
+     "        named = bool(host_name)\n",
+     "test_target_resolution_shared.py"),
+
+    # …which only holds while no host can be called `all`. The host list
+    # drops one at load and says so in the log.
+    ("the log says why a host named `all` was dropped at load",
+     "app/config.py",
+     '            print(f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "\n',
+     '            (f"DOCKER_HOSTS: skipping {entry!r} — {name!r} is reserved: "\n',
+     "test_docker_hosts.py"),
+
+    # The host walk lives once, in hosts.walk (W1); the Web UI's
+    # _host_views is its first caller.
+    ("a host found dead is not waited for again within its cooldown",
+     "app/hosts.py",
+     "            if left > 0:\n                skip[i] = (cached, int(left))\n",
+     "            if False:\n                skip[i] = (cached, int(left))\n",
+     "test_dead_host_memory.py"),
+
+    ("the status page skips a host still in its cooldown, via the walk",
+     "app/hosts.py",
+     "            if left > 0:\n                skip[i] = (cached, int(left))\n",
+     "            if False:\n                skip[i] = (cached, int(left))\n",
+     "test_host_views_parallel.py"),
+
+    ("the walk remembers a host that did not answer",
+     "app/hosts.py",
+     "            mark_unreachable(host.name, why)\n",
+     "            pass\n",
+     "test_dead_host_memory.py"),
+
+    ("the walk forgets a host's failures once it answers",
+     "app/hosts.py",
+     "        mark_reachable(host.name)\n        walked.append",
+     "        walked.append",
+     "test_dead_host_memory.py"),
+
+    ("the walk asks at most eight hosts at once",
+     "app/hosts.py",
+     "        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))\n",
+     "        workers = len(todo)\n",
+     "test_dead_host_memory.py"),
+
+    ("a walk with use_cache=False asks a host inside its cooldown",
+     "app/hosts.py",
+     "        if use_cache:\n",
+     "        if True:\n",
+     "test_dead_host_memory.py"),
+
+    ("a skipped host's retry_in is whole seconds, rounded down",
+     "app/hosts.py",
+     "                skip[i] = (cached, int(left))\n",
+     "                skip[i] = (cached, int(left) + 1)\n",
+     "test_dead_host_memory.py"),
+
+    ("a caller's max_workers cannot lift the walk above eight",
+     "app/hosts.py",
+     "        workers = min(max_workers, MAX_WALK_WORKERS, len(todo))\n",
+     "        workers = min(max_workers, len(todo))\n",
+     "test_dead_host_memory.py"),
+
+    ("a skipped host keeps its place in the walk's order",
+     "app/hosts.py",
+     "    return walked\n",
+     "    walked.sort(key=lambda w: not w.skipped)\n    return walked\n",
+     "test_dead_host_memory.py"),
+
+    ("use_cache=False still remembers a host that fails",
+     "app/hosts.py",
+     "            mark_unreachable(host.name, why)\n",
+     "            if use_cache:\n                mark_unreachable(host.name, why)\n",
+     "test_dead_host_memory.py"),
+
+    ("use_cache=False still forgets a host that answers",
+     "app/hosts.py",
+     "        mark_reachable(host.name)\n        walked.append",
+     "        if use_cache:\n            mark_reachable(host.name)\n        walked.append",
+     "test_dead_host_memory.py"),
+
+    ("the status page hands the walk its own words for a dead host",
+     "app/web_ui.py",
+     "                    describe=self._why):\n",
+     "                    describe=str):\n",
+     "test_dead_host_memory.py"),
+
+    # Finding a container across hosts (W2): unreachable is named, never
+    # folded into "not found". test_find_on_hosts drives the core; since
+    # W3 Telegram's /status, /check and /update <name> call it too.
+    ('a host that does not answer is named, not called empty',
+     'app/container_flags.py',
+     '    if rc != 0:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     'test_find_on_hosts.py'),
+
+    ("a glob on a host that does not answer is unreachable, not 'no match'",
+     'app/lifecycle.py',
+     '    if rc != 0:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     'test_find_on_hosts.py'),
+
+    ("a backend that raises is the checked resolver's failure, not a crash",
+     'app/container_flags.py',
+     '    except Exception as e:                                  # noqa: BLE001\n        return None, None, e\n',
+     '    except ZeroDivisionError as e:                          # noqa: BLE001\n        return None, None, e\n',
+     'test_find_on_hosts.py'),
+
+    ('find_on_hosts never raises for a host, whatever it throws',
+     'app/container_flags.py',
+     '        except Exception as e:                              # noqa: BLE001\n            backend, failure = None, e\n',
+     '        except ZeroDivisionError as e:                      # noqa: BLE001\n            backend, failure = None, e\n',
+     'test_find_on_hosts.py'),
+
+    ("a host with no backend is chan_no_backend, not unreachable",
+     'app/container_flags.py',
+     '        elif backend is None:\n            reply = Reply("chan_no_backend", ok=False)\n',
+     '        elif False:\n            reply = Reply("chan_no_backend", ok=False)\n',
+     'test_find_on_hosts.py'),
+
+    ("a caller's mistake raises from find_on_hosts, it is no dead host",
+     'app/container_flags.py',
+     '            name, reply, failure = resolve_container_checked(\n                arg, backend=backend, timeout=probe)\n',
+     '            try:\n                name, reply, failure = resolve_container_checked(\n                    arg, backend=backend, timeout=probe)\n            except Exception as e:                          # noqa: BLE001\n                name, reply, failure = None, None, e\n',
+     'test_find_on_hosts.py'),
+
+    ("a bare non-zero exit is named in the reader's language",
+     'app/container_flags.py',
+     '                        else _exit_text(rc, t))\n',
+     '                        else _exit_text(rc, None))\n',
+     'test_find_on_hosts.py'),
+
+    ('find_on_hosts hands every host to on_host',
+     'app/container_flags.py',
+     '        if on_host is not None:\n            on_host(HostFind(host, tuple(names), reply, gone))\n',
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("an unreachable host's SSH hint is in the reader's language",
+     'app/container_flags.py',
+     '                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,\n                                     t=t) or ""\n',
+     '                hint = hostdiag.hint(getattr(host, "endpoint", ""), raw,\n                                     t=None) or ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a dead host's error says how long we waited, not the argv",
+     'app/container_flags.py',
+     '                text = _human(failure, t)\n',
+     '                text = str(failure)\n',
+     'test_find_on_hosts.py'),
+
+    ("nothing found anywhere answers with the first host's Reply",
+     'app/container_flags.py',
+     '        return self.errors[0] if self.errors else None\n',
+     '        return None\n',
+     'test_find_on_hosts.py'),
+
+    ("a per-host 'not found' says which host it is about",
+     'app/container_flags.py',
+     '            reply = replace(reply, host=host, host_is_local=_is_local(host))\n',
+     '            reply = reply\n',
+     'test_find_on_hosts.py'),
+
+    ("a plain name on two hosts is found on both, not just the first",
+     'app/container_flags.py',
+     '            found.append((host, tuple(names)))\n',
+     '            if is_glob or not found:\n                found.append((host, tuple(names)))\n',
+     'test_find_on_hosts.py'),
+
+    # W3: Telegram's plain-name /status, /check and /update go through
+    # find_on_hosts, so the W2 promise now guards a production path and
+    # the Telegram matrix sees it break.
+    ("…and Telegram says a refused host is unreachable, not 'not found'",
+     'app/container_flags.py',
+     '    if rc != 0:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return None, None, (rc, getattr(result, "stderr", "") or "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check and /update <name> keep an unreachable host apart from 'not found'",
+     'app/telegram_bot.py',
+     '        if found.unreachable:\n            return [], None, found.unreachable[0]\n',
+     '        if found.unreachable:\n            return [], self.t("resolve_not_found", name=arg), None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '                    on_host=_show, t=self.t).unreachable\n',
+     '                    on_host=_show, t=self.t).unreachable[:0]\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '            # before the check starts on the ones that did.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, unreachable)\n',
+     '            # before the check starts on the ones that did.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, [])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /update <name> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '            # the lookup ends, before anything is checked or updated.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, unreachable)\n',
+     '            # the lookup ends, before anything is checked or updated.\n'
+     '            tail = self._lookup_tail(bool(selections), first_err, [])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("found nowhere that answered: Telegram's 'not found' leads the unreachable lines",
+     'app/telegram_bot.py',
+     '        lines = [] if found_any or not first_err else [first_err]\n',
+     '        lines = []\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram shows an unreachable host's SSH hint under its line",
+     'app/telegram_bot.py',
+     '                         + ("\\n" + gone.hint if gone.hint else ""))\n',
+     '                         + "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    # The behavioural half of command_host_coverage drives /logs and
+    # /audit through _handle_message now. Both mutations keep the text
+    # the static half looks for (`backend_for=self._backend_for`), so
+    # only a real dispatch to a remote-only container sees them; the old
+    # hand-built sweep stayed green under both (measured on 1403ec1).
+    ("Telegram /logs <name> looks on every host the token names",
+     "app/telegram_bot.py",
+     "                log_targets or [None], backend_for=self._backend_for,",
+     "                [None], backend_for=self._backend_for,",
+     "test_command_host_coverage.py"),
+
+    ("Telegram /audit <name> looks on every host the token names",
+     "app/telegram_bot.py",
+     "                audit_targets or [None], backend_for=self._backend_for,",
+     "                [None], backend_for=self._backend_for,",
+     "test_command_host_coverage.py"),
+
+    # W3d: Discord /status <container> names a dead or refused host as
+    # unreachable and never answers "not found" for it. Two lines carry
+    # that: the lookup error is not the answer, and the overview it
+    # falls into writes the unreachable line. Measured on f713111, the
+    # plan expected "not found" there and it was not.
+    ("Discord /status <container>: a lookup error falls into the overview, "
+     "never the answer",
+     "app/discord_bot.py",
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
+     "                if err:\n",
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
+     "                if err:\n"
+     "                    return err\n",
+     "test_discord_dispatch_matrix.py"),
+
+    # The handler raising there is caught by the dispatcher and still
+    # makes one edit ("Something went wrong"), so the W3d "nothing
+    # raised" check has to look at the log line, not only at `raised`.
+    ("Discord /status <container>: a lookup error never ends in "
+     "\"Something went wrong\"",
+     "app/discord_bot.py",
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
+     "                if err:\n",
+     "                name, err = self._resolve_container(wanted, backend, host)\n"
+     "                if err:\n"
+     "                    raise RuntimeError(err)\n",
+     "test_discord_dispatch_matrix.py"),
+
+    ("Discord /status: a host that does not answer the overview is named "
+     "unreachable",
+     "app/discord_bot.py",
+     "            if host_name in gone:\n"
+     "                lines.append(self.t(\"host_unreachable_short\",\n"
+     "                                    host=host_name, error=gone[host_name]))\n"
+     "                continue\n",
+     "            if host_name in gone:\n"
+     "                continue\n",
+     "test_discord_dispatch_matrix.py"),
+
+    # W4: Telegram's glob /status, /check and /update go through
+    # find_on_hosts too, so a dead or refused host is named instead of
+    # reading as "no containers match". The two failure lines of
+    # match_glob_checked now guard a chat path, and the two glob call
+    # sites each get a mutation that puts the old shortcut back.
+    ("…and Telegram says a refused host is unreachable for a glob, not 'no match'",
+     'app/lifecycle.py',
+     '    if rc != 0:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     '    if False:\n        return [], (rc, getattr(result, "stderr", "") or "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and Telegram says a dead host is unreachable for a glob, not 'no match'",
+     'app/lifecycle.py',
+     '    except Exception as e:                                  # noqa: BLE001\n'
+     '        return [], e\n',
+     '    except Exception as e:                                  # noqa: BLE001\n'
+     '        return [], None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check and /update <glob> keep an unreachable host apart from 'no match'",
+     'app/telegram_bot.py',
+     '        /update leaves it False: a write always asks."""\n'
+     '        import container_flags\n',
+     '        /update leaves it False: a write always asks."""\n'
+     '        if self._is_glob(arg):\n'
+     '            import lifecycle\n'
+     '            names = lifecycle.match_glob(arg, backend=backend or self.backend)\n'
+     '            if not names:\n'
+     '                return [], self.t("glob_no_match", pattern=arg), None\n'
+     '            return names, None, None\n'
+     '        import container_flags\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <glob> names the hosts that did not answer",
+     'app/telegram_bot.py',
+     '                    on_host=_show, t=self.t).unreachable\n',
+     '                    on_host=_show, t=self.t).unreachable[:0 if glob else None]\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    # W5: the /status overview's host walk moved out of Telegram into
+    # status_render.collect_overview, unchanged. Each line of the walk
+    # that decides what the overview says about a host gets broken here,
+    # and test_status_overview_core drives the walk on T2's hosts.
+    ("the /status overview lists a host whose ps raises (dead host) as unreachable",
+     'app/status_render.py',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            pass\n',
+     'test_status_overview_core.py'),
+
+    ("…and a host whose ps exits non-zero (refused SSH) too",
+     'app/status_render.py',
+     '        if getattr(ids_p, "returncode", 0) != 0:\n',
+     '        if False:\n',
+     'test_status_overview_core.py'),
+
+    ("…and a host whose inspect raises",
+     'app/status_render.py',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            pass\n',
+     'test_status_overview_core.py'),
+
+    ("the /status overview asks each host's ps for ten seconds, not the backend's 30",
+     'app/status_render.py',
+     '_b.run(["ps", "-q"], timeout=10)',
+     '_b.run(["ps", "-q"], timeout=30)',
+     'test_status_overview_core.py'),
+
+    ("…and its inspect for ten seconds",
+     'app/status_render.py',
+     '_b.run(["inspect", *ids], timeout=10)',
+     '_b.run(["inspect", *ids], timeout=30)',
+     'test_status_overview_core.py'),
+
+    ("an unreachable host in the /status overview gets its SSH hint in the reader's language",
+     'app/status_render.py',
+     '_h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)',
+     '_h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=None)',
+     'test_status_overview_core.py'),
+
+    ("…and a hint that raises costs the hint, not the overview",
+     'app/status_render.py',
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n',
+     '        if True:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n',
+     'test_status_overview_core.py'),
+
+    ("a single-host install's unreachable daemon is called local in the overview",
+     'app/status_render.py',
+     '(getattr(_host, "name", "") or LOCAL_HOST, _why))',
+     '(getattr(_host, "name", ""), _why))',
+     'test_status_overview_core.py'),
+
+    ("a refused host with nothing on stderr says its exit code",
+     'app/status_render.py',
+     '                or f"exit {ids_p.returncode}")\n',
+     '                or "")\n',
+     'test_status_overview_core.py'),
+
+    ("a refused host's words are clipped like every other host line",
+     'app/status_render.py',
+     '                clip(getattr(ids_p, "stderr", "") or "")\n',
+     '                (getattr(ids_p, "stderr", "") or "")\n',
+     'test_status_overview_core.py'),
+
+    ("…and so are a raising ps's",
+     'app/status_render.py',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ids_p = _b.run(["ps", "-q"], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, str(_e))\n',
+     'test_status_overview_core.py'),
+
+    ("…and a raising inspect's",
+     'app/status_render.py',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, clip(str(_e)))\n',
+     '            ins_p = _b.run(["inspect", *ids], timeout=10)\n'
+     '        except Exception as _e:\n'
+     '            _mark_unreachable(_host, str(_e))\n',
+     'test_status_overview_core.py'),
+
+    ("an inspect that answers null leaves the overview standing",
+     'app/status_render.py',
+     '_cfgs = json.loads(ins_p.stdout) or []',
+     '_cfgs = json.loads(ins_p.stdout)',
+     'test_status_overview_core.py'),
+
+    ("the /status overview walks the hosts in registry order",
+     'app/status_render.py',
+     '    for _host in (targets or [None]):\n',
+     '    for _host in reversed(targets or [None]):\n',
+     'test_status_overview_core.py'),
+
+    ("Telegram /status renders what the core walk found",
+     'app/telegram_bot.py',
+     '            inspected, unreachable = status_render.collect_overview(\n'
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
+     '            inspected, unreachable = [], []\n',
+     'test_status_overview_core.py'),
+
+    ("…and so do T2's /status rows",
+     'app/telegram_bot.py',
+     '            inspected, unreachable = status_render.collect_overview(\n'
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
+     '            inspected, unreachable = [], []\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    # W5d: Discord's /status overview walks collect_overview too, so both
+    # chats list the same containers and a dead or refused host carries
+    # its SSH hint. T4's W5d checks compare Discord's answer with
+    # Telegram's own /status in the same world.
+    ("Discord /status lists pinned and excluded containers, like Telegram",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm not in {c["name"] for c in self._checker_for(host)\n'
+     '                              .get_running_containers(include_self=True)}:\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and test_status_parity sees a Discord back on the update path's list",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm not in {c["name"] for c in self._checker_for(host)\n'
+     '                              .get_running_containers(include_self=True)}:\n'
+     '                    continue\n',
+     'test_status_parity.py'),
+
+    ("Discord /status lists containers opted out by docksentry label",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                lab = (cfg.get("Config") or {}).get("Labels") or {}\n'
+     '                if lab.get("docksentry.enable") == "false" or lab.get("docksentry.exclude") == "true":\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status lists EXCLUDE_CONTAINERS, on one host and on many",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if nm in (self.config.exclude_containers or ()):\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status lists the container that answers it",
+     'app/discord_bot.py',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n',
+     '                nm = (cfg.get("Name") or "?").lstrip("/")\n'
+     '                if cfg.get("Id", "")[:12] == __import__("os").environ.get("HOSTNAME"):\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status puts the SSH hint under an unreachable host's line",
+     'app/discord_bot.py',
+     'host=host_name, error=gone[host_name]))',
+     'host=host_name, error=gone[host_name].split("\\n")[0]))',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <name> that does not resolve still narrows the overview",
+     'app/discord_bot.py',
+     '                if wanted and wanted.lower() not in nm.lower():\n'
+     '                    continue\n'
+     '                lines.append(status_render.overview_line(\n',
+     '                lines.append(status_render.overview_line(\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status overview keeps the image's version label",
+     'app/discord_bot.py',
+     'nm, container_info.state_of(self._backend_for(host), cfg),',
+     'nm, dict(container_info.state_of(self._backend_for(host), cfg), version=""),',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and test_status_parity drives that label through Discord too",
+     'app/discord_bot.py',
+     'nm, container_info.state_of(self._backend_for(host), cfg),',
+     'nm, dict(container_info.state_of(self._backend_for(host), cfg), version=""),',
+     'test_status_parity.py'),
+
+    ("…and each line is the shared overview line",
+     'app/discord_bot.py',
+     '                lines.append(status_render.overview_line(\n'
+     '                    nm, container_info.state_of(self._backend_for(host), cfg),\n'
+     '                    host_tag=tag))\n',
+     '                lines.append(f"{nm}{tag}")\n',
+     'test_status_parity.py'),
+
+    # W6: Telegram's four check walks are container_flags.check_on_hosts.
+    ("a single-host install's check still raises as it always did",
+     'app/container_flags.py',
+     '            if alone and raise_alone:\n                raise\n',
+     '            if False:\n                raise\n',
+     'test_check_on_hosts.py'),
+
+    ("one host failing its check does not stop the others (Telegram)",
+     'app/container_flags.py',
+     '            updates, error = None, e\n',
+     '            raise\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the check walk asks for a hint only when the caller wants one",
+     'app/container_flags.py',
+     '        if error is not None and hint:\n',
+     '        if error is not None:\n',
+     'test_check_on_hosts.py'),
+
+    ("…in the reader's language",
+     'app/container_flags.py',
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=t) or ""\n',
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=None) or ""\n',
+     'test_check_on_hosts.py'),
+
+    ("…and a hint that throws costs the hint, not the check",
+     'app/container_flags.py',
+     '            try:\n'
+     '                import hostdiag\n'
+     '                why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                    t=t) or ""\n'
+     '            except Exception:                               # noqa: BLE001\n'
+     '                why = ""\n',
+     '            import hostdiag\n'
+     '            why = hostdiag.hint(getattr(host, "endpoint", ""), error,\n'
+     '                                t=t) or ""\n',
+     'test_check_on_hosts.py'),
+
+    ("a host's check result is handed on before the next host is checked",
+     'app/container_flags.py',
+     '        out.append(answer)\n'
+     '        if on_host is not None:\n'
+     '            on_host(answer)\n'
+     '    return out\n',
+     '        out.append(answer)\n'
+     '    for answer in out:\n'
+     '        if on_host is not None:\n'
+     '            on_host(answer)\n'
+     '    return out\n',
+     'test_check_on_hosts.py'),
+
+    ("a scoped check asks each host only about its own matches",
+     'app/container_flags.py',
+     '            kw["only"] = only_for(host)\n',
+     '            pass\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the check walk hands the debug sink to check_all",
+     'app/container_flags.py',
+     '            kw["bot"] = debug_sink\n',
+     '            pass\n',
+     'test_check_on_hosts.py'),
+
+    ("a host without a checker is that host's failure, not the walk's",
+     'app/container_flags.py',
+     '        checker = None\n        try:\n            checker = checker_for(host)\n',
+     '        checker = checker_for(host)\n        try:\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check asks for the SSH hint under a failed host",
+     'app/telegram_bot.py',
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            debug_sink=self, hint=False, on_host=_report, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and puts it under the failure",
+     'app/telegram_bot.py',
+     '                if hc.hint:\n                    _detail += "\\n\\n" + hc.hint\n',
+     '                if False:\n                    _detail += "\\n\\n" + hc.hint\n',
+     'test_check_on_hosts.py'),
+
+    ("…and sends the debug trace through the bot",
+     'app/telegram_bot.py',
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            debug_sink=None, hint=True, on_host=_report, t=self.t)\n',
+     'test_check_per_host.py'),
+
+    ("the dry run says a failed host without a hint, as it always did",
+     'app/telegram_bot.py',
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     '                debug_sink=self, hint=True, on_host=_dry, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and so does /check <name>",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                only_for=scoped.__getitem__, debug_sink=self, hint=True,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check <name> scopes each host's check to its matches",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                only_for=None, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and so does /update <name>",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     '                only_for=None, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    # W6d: Discord's /check walk is check_on_hosts too.
+    ("raise_alone=False reports a single-host install's failed check",
+     'app/container_flags.py',
+     '            if alone and raise_alone:\n                raise\n',
+     '            if alone:\n                raise\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check never raises out of the handler, not even alone",
+     'app/discord_bot.py',
+     '                raise_alone=False, use_cache=True,\n',
+     '                raise_alone=True, use_cache=True,\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check asks for no SSH hint",
+     'app/discord_bot.py',
+     '                walk, checker_for=self._checker_for, hint=False,\n',
+     '                walk, checker_for=self._checker_for, hint=True,\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check lists the hosts in the order they were asked",
+     'app/discord_bot.py',
+     '                walk, checker_for=self._checker_for, hint=False,\n',
+     '                walk[::-1], checker_for=self._checker_for, hint=False,\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check skips a host without a checker, as it always did",
+     'app/discord_bot.py',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]\n',
+     '        walk = list(targets)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and with nothing left starts no walk at all",
+     'app/discord_bot.py',
+     '                t=self.t) if walk else ():\n',
+     '                t=self.t):\n',
+     'test_check_on_hosts.py'),
+
+    ("…not even for the pseudo-host check_on_hosts makes of []",
+     'app/discord_bot.py',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]\n',
+     '        walk = [h for h in targets if self._checker_for(h) is not None]'
+     ' or [None]\n',
+     'test_check_on_hosts.py'),
+
+    ("Discord /check cuts a host's error to 80 characters",
+     'app/discord_bot.py',
+     '        return str(error)[:80]\n',
+     '        return str(error)\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check names the host that could not be checked",
+     'app/discord_bot.py',
+     '                                    host=getattr(hc.host, "name", "local"),\n',
+     '                                    host="local",\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check tags an update with its host",
+     'app/discord_bot.py',
+     '{self._label(hc.host)} — ',
+     '{self._label(None)} — ',
+     'test_discord_dispatch_matrix.py'),
+
+    # W7d: Discord's reads and its container autocomplete take the
+    # dead-host memory and a short probe.
+    ("Discord /status skips a remote host found dead a moment ago",
+     'app/discord_bot.py',
+     '            targets, backend_for=self._backend_for, t=self.t,\n'
+     '            use_cache=True)\n',
+     '            targets, backend_for=self._backend_for, t=self.t,\n'
+     '            use_cache=False)\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check skips a remote host found dead a moment ago",
+     'app/discord_bot.py',
+     '                raise_alone=False, use_cache=True,\n',
+     '                raise_alone=False, use_cache=False,\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /check keeps a skipped host's clause whole after the cut",
+     'app/discord_bot.py',
+     '            return hostslib.skipped_words(words, error.retry_in, t=self.t)\n',
+     '            return str(error)[:80]\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and cuts the skipped host's words to 80, as a fresh failure's",
+     'app/discord_bot.py',
+     '            if len(words) > 80:\n'
+     '                words = words[:79].rstrip() + "…"\n',
+     '            if False:\n'
+     '                words = words[:79].rstrip() + "…"\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…with an ellipsis at the cut, so the stub before the clause is not "
+     "read as a word",
+     'app/discord_bot.py',
+     '                words = words[:79].rstrip() + "…"\n',
+     '                words = words[:80]\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…after making them a person's, so the cut cannot leave the argv",
+     'app/discord_bot.py',
+     '            words = errfmt.human(error.reason or "", self.t)\n'
+     '            if len(words) > 80:\n',
+     '            words = error.reason or ""\n'
+     '            if len(words) > 80:\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <container> does not ask a remembered host for the name",
+     'app/discord_bot.py',
+     '                if hostslib.remembered_dead(host) is not None:\n'
+     '                    continue\n',
+     '                if False:\n'
+     '                    continue\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord /status <container> gives a remote host ten seconds",
+     'app/discord_bot.py',
+     '            result = (backend.run(cmd, timeout=10) if remote\n',
+     '            result = (backend.run(cmd) if remote\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and the local host its backend's default",
+     'app/discord_bot.py',
+     '        remote = host is not None and not getattr(host, "is_local", False)\n',
+     '        remote = host is not None\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…remembers a remote host whose listing raised",
+     'app/discord_bot.py',
+     '            hostslib.remember(host, clip(str(e)))\n',
+     '            pass\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…remembers a remote host whose listing exited non-zero",
+     'app/discord_bot.py',
+     '            hostslib.remember(host, words)\n',
+     '            pass\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and clears the record of a host that answered",
+     'app/discord_bot.py',
+     '        hostslib.remember(host, None)\n        names = [',
+     '        names = [',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord autocomplete gives `ps -a` three seconds",
+     'app/discord_bot.py',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                             timeout=3)\n',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"])\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…does not ask a host found dead a moment ago",
+     'app/discord_bot.py',
+     '        if backend is None or hostslib.remembered_dead(host) is not None:\n',
+     '        if backend is None:\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and marks no host dead itself",
+     'app/discord_bot.py',
+     '        result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                             timeout=3)\n',
+     '        try:\n'
+     '            result = backend.run(["ps", "-a", "--format", "{{.Names}}"],\n'
+     '                                 timeout=3)\n'
+     '        except Exception as e:\n'
+     '            hostslib.remember(host, str(e))\n'
+     '            raise\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Web Check Updates walks every host, not only the first",
+     'app/web_ui.py',
+     '                    list(hosts) if hosts else None,\n',
+     '                    list(hosts)[:1] if hosts else None,\n',
+     'test_web_action_matrix.py'),
+
+    ("…each host with its own checker",
+     'app/web_ui.py',
+     '                    checker_for=lambda h: checker if h is None else h.checker,\n',
+     '                    checker_for=lambda h: checker,\n',
+     'test_manual_check_hosts.py'),
+
+    ("Web Check Updates asks for no SSH hint",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=True, raise_alone=False, use_cache=True,\n',
+     'test_check_on_hosts.py'),
+
+    ("…hands check_all no bot, so DEBUG does not send a click's trace",
+     'app/web_ui.py',
+     '                    on_host=_report, t=None)\n',
+     '                    on_host=_report, t=None, debug_sink=bot)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and never raises, not even without a registry",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=False, raise_alone=True, use_cache=True,\n',
+     'test_check_on_hosts.py'),
+
+    ("…and skips a remote host found dead a moment ago (W7w)",
+     'app/web_ui.py',
+     '                    hint=False, raise_alone=False, use_cache=True,\n',
+     '                    hint=False, raise_alone=False, use_cache=False,\n',
+     'test_web_action_matrix.py'),
+
+    ("Web Check Updates logs a host's failure on one host too",
+     'app/web_ui.py',
+     '                    if hc.error is not None:\n'
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     '                    if hc.error is not None and named:\n'
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     'test_check_on_hosts.py'),
+
+    ("…naming the host only on a multi-host install",
+     'app/web_ui.py',
+     '                named = bool(hosts) and hosts.is_multi\n',
+     '                named = bool(hosts)\n',
+     'test_check_on_hosts.py'),
+
+    ("…and naming the host that failed",
+     'app/web_ui.py',
+     '                        where = f" on {hc.host.name}" if named else ""\n',
+     '                        where = f" on {hosts.local.name}" if named else ""\n',
+     'test_web_action_matrix.py'),
+
+    ("Web Check Updates notifies what the hosts found",
+     'app/web_ui.py',
+     '                        found.extend(hc.updates)\n',
+     '                        found.extend(hc.updates[:0])\n',
+     'test_web_action_matrix.py'),
+
+    # W7: Telegram's reads (/status, /status <name>, /check, /check
+    # --dry-run, /check <name>) take the dead-host memory and give a
+    # remote lookup ten seconds; /update never does. Every mutation was
+    # applied by hand in a scratch copy and turned its procedure red
+    # without a traceback.
+    ("a chat command does not wait 30 s on a host found dead a moment ago",
+     'app/container_flags.py',
+     '    for host in walk:\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in walk:\n'
+     '        dead = None\n',
+     'test_check_on_hosts.py'),
+
+    ("…and /status then /check on Telegram does not ask the dead host again",
+     'app/container_flags.py',
+     '    for host in walk:\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in walk:\n'
+     '        dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    # Review of W7w: the memory is shared by readers in different
+    # languages (the Web's check passes t=None, the chats their bot's), so
+    # every walk keeps the CLI's words and `skipped_words` translates.
+    ("a check remembers the CLI's words, not a reader's (Web, then German chat)",
+     'app/container_flags.py',
+     '            _hosts.remember(host, errfmt.clip(error))\n',
+     '            _hosts.remember(host, _human(error, t))\n',
+     'test_check_on_hosts.py'),
+
+    ("a lookup remembers the CLI's words, not a reader's",
+     'app/container_flags.py',
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     '                _hosts.remember(host, gone.error)\n',
+     'test_find_on_hosts.py'),
+
+    ("a lookup's bare exit is remembered as \"exit code N\", untranslated",
+     'app/container_flags.py',
+     '                kept = stderr if stderr.strip() else _exit_text(rc, None)\n',
+     '                kept = stderr if stderr.strip() else _exit_text(rc, t)\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's remembered \"exit code N\" is said in the reader's language",
+     'app/hosts.py',
+     '    if code and t is not None:\n',
+     '    if False:\n',
+     'test_find_on_hosts.py'),
+
+    ("a check that failed with its daemon answering is not remembered as dead",
+     'app/container_flags.py',
+     '        elif use_cache and _lost_host(error):\n',
+     '        elif use_cache:\n',
+     'test_check_on_hosts.py'),
+
+    ("…so /status after /check still asks that host (T2)",
+     'app/container_flags.py',
+     '        elif use_cache and _lost_host(error):\n',
+     '        elif use_cache:\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a host that could not list its containers is remembered after a check",
+     'app/container_flags.py',
+     '    return isinstance(error, (subprocess.TimeoutExpired,\n'
+     '                              ContainerListUnavailable))\n',
+     '    return isinstance(error, (subprocess.TimeoutExpired,))\n',
+     'test_check_on_hosts.py'),
+
+    ("a host that checked fine is forgotten",
+     'app/container_flags.py',
+     '        if error is None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        if False:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_check_on_hosts.py'),
+
+    # Review of W7: a host that answers a walk without the cache (every
+    # write, Discord, the Web's check) is forgotten too — /update reached
+    # nas and the next /status still skipped it as dead.
+    ("a host that checked fine without the cache is forgotten too",
+     'app/container_flags.py',
+     '        if error is None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        if use_cache and error is None:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_check_on_hosts.py'),
+
+    ("a skipped check says the remembered words and the seconds left",
+     'app/container_flags.py',
+     '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
+     '                _hosts.skipped_words(*dead, t=t), *dead),\n',
+     '            answer = HostCheck(host, None, _hosts.StillUnreachable(\n'
+     '                dead[0], *dead),\n',
+     'test_check_on_hosts.py'),
+
+    # Review of W7: hostdiag's hint is a check of the remembered words
+    # and of this container's ~/.ssh, so a skipped host keeps it.
+    ("a skipped check keeps hostdiag's hint when hints are asked for",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                "",\n',
+     'test_check_on_hosts.py'),
+
+    ("…and /status then /check on Telegram shows it under the refused host",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                "",\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("…and only when hints are asked for",
+     'app/container_flags.py',
+     '                _hosts.skipped_hint(host, dead[0], t=t) if hint else "",\n',
+     '                _hosts.skipped_hint(host, dead[0], t=t),\n',
+     'test_check_on_hosts.py'),
+
+    ("a skipped lookup keeps hostdiag's hint",
+     'app/container_flags.py',
+     '                               _hosts.skipped_hint(host, dead[0], t=t))\n',
+     '                               "")\n',
+     'test_find_on_hosts.py'),
+
+    ("…and /status then /status web on Telegram shows it",
+     'app/container_flags.py',
+     '                               _hosts.skipped_hint(host, dead[0], t=t))\n',
+     '                               "")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a skipped check still reaches on_host, in its place",
+     'app/container_flags.py',
+     '            out.append(answer)\n'
+     '            if on_host is not None:\n'
+     '                on_host(answer)\n'
+     '            continue\n',
+     '            out.append(answer)\n'
+     '            continue\n',
+     'test_check_on_hosts.py'),
+
+    ("a lookup skips a remote host found dead a moment ago",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = None\n',
+     'test_find_on_hosts.py'),
+
+    ("…and /status then /status web on Telegram names it without asking",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a lookup without the cache (every write) asks a remembered host",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host)\n',
+     'test_find_on_hosts.py'),
+
+    ("…so /update right after /status asks the dead host again (T2)",
+     'app/container_flags.py',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host) if use_cache else None\n',
+     '    for host in targets:\n'
+     '        names, reply, failure = [], None, None\n'
+     '        dead = _hosts.remembered_dead(host)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a skipped lookup still reaches on_host, in its place",
+     'app/container_flags.py',
+     '            unreachable.append(gone)\n'
+     '            if on_host is not None:\n'
+     '                on_host(HostFind(host, (), None, gone))\n'
+     '            continue\n',
+     '            unreachable.append(gone)\n'
+     '            continue\n',
+     'test_find_on_hosts.py'),
+
+    ("a lookup leaves what it learnt for the next read",
+     'app/container_flags.py',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     '            if False:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     'test_find_on_hosts.py'),
+
+    ("…so /status after /status web skips the dead host (T2)",
+     'app/container_flags.py',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     '            if False:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a lookup without the cache marks no host dead",
+     'app/container_flags.py',
+     '            if use_cache:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     '            if True:\n'
+     '                _hosts.remember(host, errfmt.clip(kept))\n',
+     'test_find_on_hosts.py'),
+
+    ("a host without a backend is not remembered as answered or dead",
+     'app/container_flags.py',
+     '        elif backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        else:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_find_on_hosts.py'),
+
+    ("a host that answers a lookup without the cache (/update's) is "
+     "forgotten",
+     'app/container_flags.py',
+     '        elif backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
+     '        elif use_cache and backend is not None:\n'
+     '            _hosts.remember(host, None)\n',
+     'test_find_on_hosts.py'),
+
+    ("a remote lookup gets the short probe, the local one does not",
+     'app/container_flags.py',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 and not _is_local(host) else timeout)\n',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 else timeout)\n',
+     'test_find_on_hosts.py'),
+
+    ("Telegram's read lookups ask a remote host with ten seconds (T2 rows)",
+     'app/container_flags.py',
+     '        probe = (remote_timeout if remote_timeout is not None\n'
+     '                 and not _is_local(host) else timeout)\n',
+     '        probe = timeout\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the /status overview skips a remote host found dead a moment ago",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = None\n',
+     'test_status_overview_core.py'),
+
+    ("…and /status then /status on Telegram does not ask it again",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = None\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("the overview without the cache skips nobody",
+     'app/status_render.py',
+     '        _dead = _hosts.remembered_dead(_host) if use_cache else None\n',
+     '        _dead = _hosts.remembered_dead(_host)\n',
+     'test_status_overview_core.py'),
+
+    ("a skipped overview host is listed with its words and the seconds left",
+     'app/status_render.py',
+     '            _skip = _hosts.skipped_words(*_dead, t=t)\n',
+     '            _skip = _dead[0]\n',
+     'test_status_overview_core.py'),
+
+    ("a skipped overview host keeps its SSH hint under the words",
+     'app/status_render.py',
+     '            _h = _hosts.skipped_hint(_host, _dead[0], t=t)\n',
+     '            _h = ""\n',
+     'test_status_overview_core.py'),
+
+    ("…and /status then /status on Telegram shows it",
+     'app/status_render.py',
+     '            _h = _hosts.skipped_hint(_host, _dead[0], t=t)\n',
+     '            _h = ""\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("hostdiag's hint for a skipped host is in the reader's language",
+     'app/hosts.py',
+     '        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",\n'
+     '                             t=t) or ""\n',
+     '        return hostdiag.hint(getattr(host, "endpoint", ""), reason or "",\n'
+     '                             t=None) or ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a hint that throws costs a skipped host the hint, not the walk",
+     'app/hosts.py',
+     '                             t=t) or ""\n'
+     '    except Exception:                                       # noqa: BLE001\n'
+     '        return ""\n',
+     '                             t=t) or ""\n'
+     '    except LookupError:\n'
+     '        return ""\n',
+     'test_find_on_hosts.py'),
+
+    ("the overview remembers a host that did not answer, without its hint",
+     'app/status_render.py',
+     '    def _mark_unreachable(_host, _why):\n'
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n',
+     '    def _mark_unreachable(_host, _why):\n'
+     '        pass\n',
+     'test_status_overview_core.py'),
+
+    ("…the words of its line, not the hint under them",
+     'app/status_render.py',
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n'
+     '        # The host\'s own diagnostic hint (SSH auth, wrong socket …)\n'
+     '        # appended when hostdiag has one.\n'
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n',
+     '        # The host\'s own diagnostic hint (SSH auth, wrong socket …)\n'
+     '        # appended when hostdiag has one.\n'
+     '        try:\n'
+     '            import hostdiag\n'
+     '            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)\n'
+     '            if _h:\n'
+     '                _why += "\\n" + _h\n'
+     '        except Exception:\n'
+     '            pass\n'
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, _why)\n',
+     'test_status_overview_core.py'),
+
+    ("the overview forgets a host with nothing running: it answered",
+     'app/status_render.py',
+     '        if not ids:\n'
+     '            _hosts.remember(_host, None)\n'
+     '            continue\n',
+     '        if not ids:\n'
+     '            continue\n',
+     'test_status_overview_core.py'),
+
+    ("…without the cache too",
+     'app/status_render.py',
+     '        if not ids:\n'
+     '            _hosts.remember(_host, None)\n'
+     '            continue\n',
+     '        if not ids:\n'
+     '            if use_cache:\n'
+     '                _hosts.remember(_host, None)\n'
+     '            continue\n',
+     'test_status_overview_core.py'),
+
+    ("the overview forgets a host that answered",
+     'app/status_render.py',
+     '        _hosts.remember(_host, None)\n'
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     'test_status_overview_core.py'),
+
+    ("the overview without the cache forgets a host that answered",
+     'app/status_render.py',
+     '        _hosts.remember(_host, None)\n'
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     '        if use_cache:\n'
+     '            _hosts.remember(_host, None)\n'
+     '        try:\n'
+     '            _cfgs = json.loads(ins_p.stdout) or []\n',
+     'test_status_overview_core.py'),
+
+    ("the local host is never skipped or marked",
+     'app/hosts.py',
+     '    if host is None or getattr(host, "is_local", False):\n'
+     '        return ""\n',
+     '    if host is None:\n'
+     '        return ""\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's seconds are whole",
+     'app/hosts.py',
+     '        return reason, math.ceil(left)\n',
+     '        return reason, left\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's seconds are rounded up: never \"0s\" while skipped",
+     'app/hosts.py',
+     '        return reason, math.ceil(left)\n',
+     '        return reason, int(left)\n',
+     'test_status_overview_core.py'),
+
+    ("a skipped host's remembered words are said as errfmt.human says them",
+     'app/hosts.py',
+     '    try:\n'
+     '        reason = errfmt.human(reason or "", t)\n',
+     '    try:\n'
+     '        reason = reason or ""\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("a Telegram read's failure moves the backoff the Web page sees",
+     'app/hosts.py',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with)\n',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with, cooldown=UNREACHABLE_COOLDOWN)\n',
+     'test_status_overview_core.py'),
+
+    ("answering clears a host's mark and its backoff",
+     'app/hosts.py',
+     '    if failed_with is None:\n'
+     '        mark_reachable(name)\n',
+     '    if failed_with is None:\n'
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("failing marks a host with the words it gave",
+     'app/hosts.py',
+     '    else:\n'
+     '        mark_unreachable(name, failed_with)\n',
+     '    else:\n'
+     '        pass\n',
+     'test_find_on_hosts.py'),
+
+    ("a skipped host's line is in the reader's language",
+     'app/hosts.py',
+     '            return t("host_skipped_retry", error=reason, seconds=retry_in)\n',
+     '            raise LookupError("no translation")\n',
+     'test_find_on_hosts.py'),
+
+    ("the remembered words come first in the skipped line",
+     'app/lang/de.json',
+     '"host_skipped_retry": "{error} (vom letzten Versuch, wird {seconds} s lang nicht erneut gefragt)"',
+     '"host_skipped_retry": "(vom letzten Versuch, wird {seconds} s lang nicht erneut gefragt) {error}"',
+     'test_check_on_hosts.py'),
+
+    # Review of W7: with the backoff a host is skipped up to 900 s, so
+    # the clause claims nothing about the words' age.
+    ("a skipped host's line does not claim its words are a moment old",
+     'app/lang/en.json',
+     '"host_skipped_retry": "{error} (from the last try, not asked again for {seconds}s)"',
+     '"host_skipped_retry": "{error} (from a moment ago, not asked again for {seconds}s)"',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status takes the cache",
+     'app/telegram_bot.py',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=True)\n',
+     '                status_targets, backend_for=self._backend_for, t=self.t,\n'
+     '                use_cache=False)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check takes the cache",
+     'app/telegram_bot.py',
+     '            use_cache=True,\n'
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     '            use_cache=False,\n'
+     '            debug_sink=self, hint=True, on_host=_report, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check --dry-run takes the cache",
+     'app/telegram_bot.py',
+     '                use_cache=True,\n'
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     '                use_cache=False,\n'
+     '                debug_sink=self, on_host=_dry, t=self.t)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /check <name>'s check takes the cache",
+     'app/telegram_bot.py',
+     '                use_cache=True,\n'
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     '                use_cache=False,\n'
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_scoped_check, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /update <name>'s check never takes the cache",
+     'app/telegram_bot.py',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                on_host=_batch, t=self.t)\n',
+     '                only_for=scoped.__getitem__, debug_sink=self,\n'
+     '                use_cache=True, on_host=_batch, t=self.t)\n',
+     'test_check_on_hosts.py'),
+
+    ("Telegram /check <name>'s lookup is a read",
+     'app/telegram_bot.py',
+     '                    arg, backend=self._backend_for(host), host=host,\n'
+     '                    read=True)\n',
+     '                    arg, backend=self._backend_for(host), host=host)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> takes the cache",
+     'app/telegram_bot.py',
+     '                    use_cache=True, remote_timeout=10,\n',
+     '                    use_cache=False, remote_timeout=10,\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /status <name> asks a remote host with ten seconds",
+     'app/telegram_bot.py',
+     '                    use_cache=True, remote_timeout=10,\n',
+     '                    use_cache=True,\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ("Telegram /update <name>'s lookup is a write: no cache, no short probe",
+     'app/telegram_bot.py',
+     '            arg=arg, use_cache=read, remote_timeout=10 if read else None,\n',
+     '            arg=arg, use_cache=True, remote_timeout=10,\n',
+     'test_telegram_dispatch_matrix.py'),
+
+
+    # Q2: Discord's claims and both cleanup guards go through the engine's
+    # door; the engine's guard answers busy with the key, each chat says
+    # it in its own language and hands on its own queued self-update.
+    ('a cleanup never prunes while an update holds the lock',
+     'app/update_engine.py',
+     '        if not self.claim_update():\n'
+     '            return None, "cleanup_busy"\n',
+     '        if not self.claim_update():\n'
+     '            pass\n',
+     'test_op_coordination.py'),
+
+    ('…and the busy answer is the key, each chat says it itself',
+     'app/update_engine.py',
+     '            return None, "cleanup_busy"\n',
+     '            return None, "⏳ Updates in progress — cleanup skipped."\n',
+     'test_op_coordination.py'),
+
+    ('a cleanup hands on a queued self-update once the lock is back',
+     'app/update_engine.py',
+     '        finally:\n'
+     '            self.release_update(after=after)\n',
+     '        finally:\n'
+     '            self.release_update()\n',
+     'test_op_coordination.py'),
+
+    ('a crashing prune still gives the update lock back',
+     'app/update_engine.py',
+     '            return checker.cleanup_images()\n'
+     '        finally:\n'
+     '            self.release_update(after=after)\n',
+     '            res = checker.cleanup_images()\n'
+     '            self.release_update(after=after)\n'
+     '            return res\n'
+     '        finally:\n'
+     '            pass\n',
+     'test_op_coordination.py'),
+
+    ("Telegram's cleanup says busy in Telegram's language",
+     'app/telegram_bot.py',
+     '        if ok is None:\n'
+     '            return None, self.t(msg)\n'
+     '        return ok, msg\n',
+     '        if ok is None:\n'
+     '            return None, msg\n'
+     '        return ok, msg\n',
+     'test_op_coordination.py'),
+
+    ("…and hands on Telegram's queued self-update",
+     'app/telegram_bot.py',
+     '            checker, after=self._run_queued_selfupdate)\n',
+     '            checker)\n',
+     'test_op_coordination.py'),
+
+    ("Discord's cleanup says busy in Discord's language",
+     'app/discord_bot.py',
+     '        if ok is None:\n'
+     '            return None, self.t(msg)\n'
+     '        return ok, msg\n',
+     '        if ok is None:\n'
+     '            return None, msg\n'
+     '        return ok, msg\n',
+     'test_op_coordination.py'),
+
+    ("…and hands on Discord's queued self-update",
+     'app/discord_bot.py',
+     '            checker, after=self._hand_on_selfupdate)\n',
+     '            checker)\n',
+     'test_op_coordination.py'),
+
+    ('a Discord update hands a queued self-update on through the door',
+     'app/discord_bot.py',
+     '        self.engine.release_update(after=self._hand_on_selfupdate)\n',
+     '        self.engine.release_update()\n',
+     'test_discord_bot.py'),
+
+    # Q15: a busy /update and a confirmed /updateall are queued on the
+    # engine and told where, instead of "nothing was started". Taking
+    # the claim alone (no queue) is what they did before.
+    ('Discord /update queues a busy request on the engine and says where',
+     'app/discord_bot.py',
+     '        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update**\\n"',
+     '        claimed, outcomes = self.engine.claim_update(), []\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update**\\n"',
+     'test_update_lock_sites.py'),
+
+    ('…and so does a confirmed Discord /updateall',
+     'app/discord_bot.py',
+     '        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update all**" + note',
+     '        claimed, outcomes = self.engine.claim_update(), []\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update all**" + note',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…a queued /updateall still says what it left out and why",
+     'app/discord_bot.py',
+     '            return self._clip("**Update all**" + note + "\\n" + "\\n".join(\n',
+     '            return self._clip("**Update all**\\n" + "\\n".join(\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and queues only what was approved and is still pending",
+     'app/discord_bot.py',
+     '            (h, u["name"]) for h, entries in batches for u in entries)\n',
+     '            (h, u["name"]) for h in targets for u in self._pending_for(h))\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("a queued container is told its place in the queue",
+     'app/discord_bot.py',
+     '                lines.append(self.t("chan_update_queued", name=name,\n'
+     '                                    pos=params.get("pos", 0)))\n',
+     '                lines.append(self.t("chan_update_queued", name=name,\n'
+     '                                    pos=1))\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…a request that does not fit says the queue is full",
+     'app/discord_bot.py',
+     '        if full is not None:\n'
+     '            return [self.t("chan_update_queue_full", max=full.get("max", 0))]\n',
+     '        if False:\n'
+     '            return []\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…one already waiting says so, not 'queued'",
+     'app/discord_bot.py',
+     '            elif answer == "update_already_queued":\n'
+     '                from notify_retry import _ago\n',
+     '            elif False:\n'
+     '                from notify_retry import _ago\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…each queued container is named with its host",
+     'app/discord_bot.py',
+     '        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"\n',
+     '        return {host_key(host_name_of(h), n): n\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and queued under its host's key, so the drainer runs it there",
+     'app/discord_bot.py',
+     '        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"\n',
+     '        return {n: f"{n}{self._label(h)}"\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("the Discord matrix's release goes through the door and drains",
+     'scripts/test_discord_dispatch_matrix.py',
+     '            # what Discord queued (Q15).\n'
+     '            self.engine.release_update()\n',
+     '            # what Discord queued (Q15).\n'
+     '            self.engine._update_lock.release()\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and its state shows what is still queued",
+     'scripts/test_discord_dispatch_matrix.py',
+     '               "queued": [k for k, _w in self.engine.queued_updates()],\n',
+     '               "queued": [],\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord's queue sentences exist in every language",
+     'app/lang/ja.json',
+     '  "chan_update_queued": "🕒 `{name}` をキューに追加しました — {pos} 番目。順番が来たら実行します。",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ("…with the placeholders Discord fills",
+     'app/lang/de.json',
+     '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {pos}.',
+     '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {position}.',
+     'test_reply_params.py'),
+
+    # Where a queued result shows up (Q15 review): the bot channel by
+    # name, or that there is none — never a promise with nothing behind it.
+    ("a queued Discord answer names the bot channel its result goes to",
+     'app/discord_bot.py',
+     '            return self.t("chan_update_result_channel", channel=channel)\n',
+     '            return self.t("chan_update_result_no_channel")\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and with no bot channel set says it won't show up in Discord",
+     'app/discord_bot.py',
+     '            return self.t("chan_update_result_no_channel")\n',
+     '            return self.t("chan_update_result_channel", channel=channel)\n',
+     'test_discord_bot.py'),
+
+    ("…a bot channel that is switched off counts as none",
+     'app/discord_bot.py',
+     '        bot_on = bool(channel) and getattr(cfg, "channel_discordbot_enabled", True)\n',
+     '        bot_on = bool(channel)\n',
+     'test_discord_bot.py'),
+
+    # Q15 review 2: the webhook is a Discord transport too, "off" is not
+    # "unset", and quiet hours drop the card rather than hold it.
+    ("…and is said to be switched off, not unset",
+     'app/discord_bot.py',
+     '            if channel or hook:\n'
+     '                return self.t("chan_update_result_off")\n',
+     '            if False:\n'
+     '                return self.t("chan_update_result_off")\n',
+     'test_discord_bot.py'),
+
+    ("a queued result that goes out through the Discord webhook says so",
+     'app/discord_bot.py',
+     '        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)\n',
+     '        hook_on = False\n',
+     'test_discord_bot.py'),
+
+    ("…in its own words",
+     'app/discord_bot.py',
+     '        return self.t("chan_update_result_webhook")\n',
+     '        return self.t("chan_update_result_no_channel")\n',
+     'test_discord_bot.py'),
+
+    ("…and a webhook that is switched off counts as none",
+     'app/discord_bot.py',
+     '        hook_on = hook and getattr(cfg, "channel_discord_enabled", True)\n',
+     '        hook_on = hook\n',
+     'test_discord_bot.py'),
+
+    ("in quiet hours a queued Discord answer names no channel the card won't reach",
+     'app/discord_bot.py',
+     '        if suppressed(cfg):\n'
+     '            return self.t("chan_update_result_quiet")\n',
+     '        if False:\n'
+     '            return self.t("chan_update_result_quiet")\n',
+     'test_discord_bot.py'),
+
+    ("…and neither in maintenance mode, by the condition that drops the card",
+     'app/notifier.py',
+     '        if _maint_active(config):\n'
+     '            return True\n',
+     '        if False:\n'
+     '            return True\n',
+     'test_discord_bot.py'),
+
+    ("…the switched-off line in every language",
+     'app/lang/ja.json',
+     '  "chan_update_result_off": ',
+     '  "chan_update_result_off_x": ',
+     'test_lang_parity.py'),
+
+    ("…the webhook line in every language",
+     'app/lang/de.json',
+     '  "chan_update_result_webhook": ',
+     '  "chan_update_result_webhook_x": ',
+     'test_lang_parity.py'),
+
+    ("…the quiet-hours line in every language",
+     'app/lang/ko.json',
+     '  "chan_update_result_quiet": ',
+     '  "chan_update_result_quiet_x": ',
+     'test_lang_parity.py'),
+
+    ("…the line comes with every answer that leaves something waiting",
+     'app/discord_bot.py',
+     '        if waits:\n'
+     '            lines.append(self._result_where())\n',
+     '        if False:\n'
+     '            lines.append(self._result_where())\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…including one that was already waiting",
+     'app/discord_bot.py',
+     '                from notify_retry import _ago\n'
+     '                waits = True\n',
+     '                from notify_retry import _ago\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…in every language",
+     'app/lang/ko.json',
+     '  "chan_update_result_no_channel": ',
+     '  "chan_update_result_no_channel_x": ',
+     'test_lang_parity.py'),
+
+    ("…with the channel Discord fills in",
+     'app/lang/de.json',
+     '  "chan_update_result_channel": "Das Ergebnis kommt in <#{channel}>',
+     '  "chan_update_result_channel": "Das Ergebnis kommt in <#{kanal}>',
+     'test_reply_params.py'),
+
+    ("a full queue does not tell a waiting container 'nothing was queued'",
+     'app/lang/en.json',
+     '— this request was not queued; anything already waiting keeps its place.',
+     '— nothing was queued.',
+     'test_discord_bot.py'),
+
+    # ── the runner's own timeout ──────────────────────────────────────
+    ("a procedure past its timeout is FAIL in the run, not a traceback",
+     'scripts/verify.py',
+     '    except subprocess.TimeoutExpired as e:\n'
+     '        return _timed_out(e)\n',
+     '    except OSError as e:\n'
+     '        return _timed_out(e)\n',
+     'test_suite_runner.py'),
+
+    ("…and keeps what it said before it was killed",
+     'scripts/verify.py',
+     '    out = _as_text(e.stdout) + _as_text(e.stderr)\n',
+     '    out = ""\n',
+     'test_suite_runner.py'),
+
+    ("the lock-site list sees a claim through the engine's cleanup guard",
+     'scripts/test_update_lock_sites.py',
+     '                    elif c in (DOOR_CLAIM, DOOR_RELEASE) or (\n'
+     '                            c == DOOR_GUARDED and _on_engine(f)):\n',
+     '                    elif c in (DOOR_CLAIM, DOOR_RELEASE):\n',
+     'test_update_lock_sites.py'),
+
+    ("…but not the bot's delegator called by the scheduler and the Web UI",
+     'scripts/test_update_lock_sites.py',
+     '                            c == DOOR_GUARDED and _on_engine(f)):\n',
+     '                            c == DOOR_GUARDED):\n',
+     'test_update_lock_sites.py'),
+
+    # Q5: one reader and one writer for pending_updates.json. Each line
+    # that decides what a caller gets out of the file, or what a removal
+    # leaves in it, is broken here; test_pending_file drives the core and
+    # every caller on missing, corrupt, wrongly-shaped and valid files.
+    ('a corrupt pending file reads as nothing pending, not a crash',
+     'app/pending.py',
+     '    except (OSError, ValueError):\n        return None\n',
+     '    except OSError:\n        return None\n',
+     'test_pending_file.py'),
+
+    ('…and so does a pending file that is not a list',
+     'app/pending.py',
+     '    return data if isinstance(data, list) else None\n',
+     '    return data\n',
+     'test_pending_file.py'),
+
+    ('named_only keeps only the pending entries that carry a name',
+     'app/pending.py',
+     '    if named_only:\n        return [e for e in data if isinstance(e, dict) and e.get("name")]\n',
+     '    if named_only:\n        return data\n',
+     'test_pending_file.py'),
+
+    ("entries_for hands out only the asked hosts' pending entries",
+     'app/pending.py',
+     '            if isinstance(e, dict) and entry_host(e) in names]\n',
+     '            if isinstance(e, dict)]\n',
+     'test_pending_file.py'),
+
+    ('a pending entry is identified by (host, name), not the name',
+     'app/pending.py',
+     '    return entry_host(entry), entry.get("name")\n',
+     '    return LOCAL_HOST, entry.get("name")\n',
+     'test_pending_file.py'),
+
+    ('a bare name in a pending removal means the local host',
+     'app/pending.py',
+     '    wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)\n              for k in keys}\n',
+     '    wanted = {tuple(k)\n              for k in keys}\n',
+     'test_pending_file.py'),
+
+    ('a pending removal keeps entries that are not dicts',
+     'app/pending.py',
+     '                 if not isinstance(e, dict) or key_of(e) not in wanted]\n',
+     '                 if isinstance(e, dict) and key_of(e) not in wanted]\n',
+     'test_pending_file.py'),
+
+    ('a pending removal leaves a file it cannot read alone',
+     'app/pending.py',
+     '    data = load(path)\n    if data is None:\n        return None\n    wanted',
+     '    data = load(path)\n    if data is None:\n        data = []\n    wanted',
+     'test_pending_file.py'),
+
+    ('a pending removal that empties the file deletes it when asked',
+     'app/pending.py',
+     '    if remaining or not delete_when_empty:\n',
+     '    if True:\n',
+     'test_pending_file.py'),
+
+    ('the pending file is written atomically',
+     'app/pending.py',
+     '    atomic_write_json(path, entries)\n',
+     '    with open(path, "w") as fh:\n        json.dump(entries, fh)\n',
+     'test_pending_file.py'),
+
+    ("Telegram's pending removal deletes the emptied file",
+     'app/telegram_bot.py',
+     '        _pending.remove(self.config.pending_file, keys,\n                        delete_when_empty=True)\n',
+     '        _pending.remove(self.config.pending_file, keys,\n                        delete_when_empty=False)\n',
+     'test_pending_file.py'),
+
+    ("Telegram's read_pending hands back every entry",
+     'app/telegram_bot.py',
+     '    return _pending.read(path)\n',
+     '    return _pending.read(path, named_only=True)\n',
+     'test_pending_file.py'),
+
+    ("Discord's pending removal deletes the emptied file",
+     'app/discord_bot.py',
+     '        _pending.remove(getattr(self.config, "pending_file", ""), keys,\n                        delete_when_empty=True)\n',
+     '        _pending.remove(getattr(self.config, "pending_file", ""), keys,\n                        delete_when_empty=False)\n',
+     'test_pending_file.py'),
+
+    ('Discord reads only named pending entries',
+     'app/discord_bot.py',
+     '        return _pending.read(getattr(self.config, "pending_file", ""),\n                             named_only=True)\n',
+     '        return _pending.read(getattr(self.config, "pending_file", ""),\n                             named_only=False)\n',
+     'test_pending_file.py'),
+
+    ("Discord's pending list for a host is that host's",
+     'app/discord_bot.py',
+     '        return _pending.entries_for(self._pending(), [host_name_of(host)])\n',
+     '        return _pending.entries_for(self._pending(), ["local"])\n',
+     'test_pending_file.py'),
+
+    ("the Web UI's pending list for a host is that host's",
+     'app/web_ui.py',
+     '                                        [host or LOCAL_HOST])\n',
+     '                                        [LOCAL_HOST])\n',
+     'test_pending_file.py'),
+
+    ("Discord's /updates lists every pending entry, nameless ones too",
+     'app/discord_bot.py',
+     '        pending = _pending.read(getattr(self.config, "pending_file", ""))\n',
+     '        pending = _pending.read(getattr(self.config, "pending_file", ""),\n                                named_only=True)\n',
+     'test_pending_file.py'),
+
+    # Q6: Telegram's update flows read and write pending_updates.json
+    # through app/pending.py. An unreadable file is answered as nothing
+    # pending instead of raising (T2 q6_checks, T3 q6_checks), and the
+    # moved writes keep what they wrote before (T3 rows).
+    # The single update reads and rewrites through the engine's
+    # run_keys since Q11a.
+    ('a single update answers an unreadable pending file instead of raising',
+     'app/update_engine.py',
+     '        updates = _pending.load(pending_file)\n',
+     '        updates = (__import__("json").load(open(pending_file, encoding="utf-8"))\n                   if __import__("os").path.exists(pending_file) else None)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and tells it from a file that holds [], which is "not in the list"',
+     'app/update_engine.py',
+     '                if updates is None:\n',
+     '                if not updates:\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('a single update that takes the last entry leaves [], not no file',
+     'app/update_engine.py',
+     '                _pending.write(pending_file, updates)\n',
+     '                _pending.remove(pending_file,\n                                [(host_name, name)],\n                                delete_when_empty=True)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('the bare "Update all" answers an unreadable pending file instead of raising',
+     'app/telegram_bot.py',
+     '                updates = _pending.read(pending_file)\n',
+     '                with open(pending_file, encoding="utf-8") as f:\n                    updates = json.load(f)\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('…and deletes the pending file when it is done',
+     'app/telegram_bot.py',
+     '                _pending.clear(pending_file)\n',
+     '                pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('/updates answers an unreadable pending file instead of raising',
+     'app/telegram_bot.py',
+     '            pending = _pending.read(self.config.pending_file)\n',
+     '            pending = json.load(open(self.config.pending_file, encoding="utf-8"))\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('/updates @host lists that host\'s pending entries only',
+     'app/telegram_bot.py',
+     '                                               [h.name for h in targets])\n',
+     '                                               ["local"])\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('"I\'ll do it manually" keeps the other hosts\' pending entries',
+     'app/telegram_bot.py',
+     '                    pending_store.write(self.config.pending_file, keep)\n',
+     '                    pending_store.clear(self.config.pending_file)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and deletes the pending file on a single host',
+     'app/telegram_bot.py',
+     '            else:\n                pending_store.clear(self.config.pending_file)\n',
+     '            else:\n                pass\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('pending.clear is fine with a file that is already gone',
+     'app/pending.py',
+     '    try:\n        os.remove(path)\n    except OSError:\n        pass\n',
+     '    os.remove(path)\n',
+     'test_pending_file.py'),
+
+    ('…and with no path',
+     'app/pending.py',
+     '    if not path:\n        return\n    try:\n',
+     '    try:\n',
+     'test_pending_file.py'),
+
+    ('a pending removal that empties the file really deletes it',
+     'app/pending.py',
+     '        clear(path)\n',
+     '        pass\n',
+     'test_pending_file.py'),
+
+    ('the command matrix really seeds an unreadable pending file for Q6',
+     'scripts/test_telegram_dispatch_matrix.py',
+     '        with open(cfg.pending_file, "wb") as f:\n            f.write(PENDING_RAW[0])\n        return\n',
+     '        pass\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('the callback matrix records an unreadable pending file as its bytes',
+     'scripts/test_telegram_callback_matrix.py',
+     '                else f"unreadable: {raw!r}"\n',
+     '                else []\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("the auto-update batch carries the other hosts' pending entries over",
+     'app/telegram_bot.py',
+     '                _pending.write(self.config.pending_file, others + remaining)\n',
+     '                _pending.write(self.config.pending_file, remaining)\n',
+     'test_host_state_wiring.py'),
+
+    # Q7b: the drain after a single update gets the checker the tap was
+    # called with, so a queued local key no longer runs on the tapped
+    # remote host's checker (T3 "queue drain after a remote tap"); the
+    # reverse row ("…after a local tap") holds that a queued remote key
+    # still runs on its own host's.
+    # Since Q13 the engine's drainer looks each queued key's checker up
+    # in the registry itself; there is no tapped checker to hand on.
+    ('a drained entry runs on its own host\'s checker, not the tapped one\'s',
+     'app/update_engine.py',
+     '            for h in hosts:\n                if getattr(h, "is_local", False):\n',
+     '            for h in hosts:\n                if not getattr(h, "is_local", False):\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and a queued remote key runs on its own host\'s checker',
+     'app/update_engine.py',
+     '        for h in hosts:\n            if getattr(h, "name", None) == host_name:\n',
+     '        for h in hosts:\n            if getattr(h, "is_local", False):\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and a tapped remote key runs on its own host\'s checker',
+     'app/telegram_bot.py',
+     '        host = self._host_by_name(split_host_key(container_key)[0])\n'
+     '        checker = self._checker_for(host, checker)\n',
+     '        host = self._host_by_name(split_host_key(container_key)[0])\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…and an engine without a registry finds the local checker it was given',
+     'app/update_engine.py',
+     '            return getattr(self, "local_checker", None)\n',
+     '            return None\n',
+     'test_telegram_callback_matrix.py'),
+
+    # Q8: the drain loop moved into UpdateEngine.drain_queue. Its rules
+    # had no guard of their own before; test_update_queue drives the
+    # engine with a run_one recorder, and Telegram's wrapper on top.
+    ("the drain stops for a pending self-update",
+     "app/update_engine.py",
+     "        if not self._queued_selfupdate and not swapping:\n"
+     "            return False\n",
+     "        if True:\n"
+     "            return False\n",
+     "test_update_queue.py"),
+
+    ("…and names what it dropped",
+     "app/update_engine.py",
+     '            say("update_queue_dropped_selfupdate", {"keys": left})\n',
+     "            pass\n",
+     "test_update_queue.py"),
+
+    ("a failure in the drain takes its group-mates off the queue",
+     "app/update_engine.py",
+     "            if last_group:\n"
+     "                self.drop_group_mates(last_group, group_of=group_of, say=say)\n",
+     "            if False:\n"
+     "                self.drop_group_mates(last_group, group_of=group_of, say=say)\n",
+     "test_update_queue.py"),
+
+    ("…and says which, with the group",
+     "app/update_engine.py",
+     '            say("update_queue_skipped_group", {"group": group, "keys": mates})\n',
+     "            pass\n",
+     "test_update_queue.py"),
+
+    ("the group a drained run leaves is the one its failure takes down",
+     "app/update_engine.py",
+     "                last_group = run_one(key)\n",
+     "                run_one(key)\n",
+     "test_update_queue.py"),
+
+    # Q10 replaced the probe and its re-enqueue ("a drained entry that
+    # loses the race goes back on the queue", "…and the per-entry probe
+    # gives the lock straight back") with a claim held through each
+    # entry; their entries are further down.
+
+    ("a drained run that raises is said and the drain goes on",
+     "app/update_engine.py",
+     "                last_group = None\n                continue\n",
+     "                return\n",
+     "test_update_queue.py"),
+
+    ("…said, with the key and the error",
+     "app/update_engine.py",
+     '                say("entry_failed", {"key": key, "error": str(e)})\n',
+     "                pass\n",
+     "test_update_queue.py"),
+
+    # Q13: Telegram's drain is gone. A failed tap drops its own queued
+    # group-mates before it lets go of the lock, and the engine's drainer
+    # names what its loop reports, the way Telegram's `_say_drain` did.
+    ("a failed tap takes its queued group-mates off before it lets go",
+     "app/telegram_bot.py",
+     "                if last_group:\n"
+     "                    # A failed container takes its queued group-mates\n",
+     "                if False:\n"
+     "                    # A failed container takes its queued group-mates\n",
+     "test_single_update_report.py"),
+
+    ("…and a drained run's failed group, from the run itself",
+     "app/update_engine.py",
+     "            return last_group\n        return None\n\n    def _seam(self):",
+     "            return None\n        return None\n\n    def _seam(self):",
+     "test_update_queue_sweep.py"),
+
+    ("…found through the engine's own group lookup",
+     "app/update_engine.py",
+     "            return gid or None\n",
+     "            return None\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and names the containers the drain reports",
+     "app/update_engine.py",
+     '            kw["names"] = ", ".join(f"`{self._key_label(k)}`"\n'
+     '                                    for k in params["keys"])\n',
+     '            kw["names"] = ""\n',
+     "test_update_queue.py"),
+
+    ("…and cuts a raised error to 200 characters",
+     "app/update_engine.py",
+     "{params['error'][:200]}\")\n",
+     "{params['error']}\")\n",
+     "test_update_queue.py"),
+
+    # Q10: the drain claims before it takes an entry, holds the claim
+    # through it and is its one releaser. Before, it took the lock, gave
+    # it straight back and let the run claim again; a claim landing in
+    # between sent the entry to the back with a second "queued".
+    ("a drained entry whose claim is lost keeps its place at the head",
+     "app/update_engine.py",
+     "            if not self.claim_update():\n"
+     "                # Something else holds it.",
+     "            if not self.claim_update():\n"
+     "                self.enqueue_update(self.take_queued_update())\n"
+     "                return\n"
+     "                # Something else holds it.",
+     "test_update_queue.py"),
+
+    ("…and the drain holds its claim through the entry",
+     "app/update_engine.py",
+     "            key = self.take_queued_update()\n            if key is None:\n"
+     "                # Emptied between",
+     "            self._update_lock.release()\n"
+     "            key = self.take_queued_update()\n            if key is None:\n"
+     "                # Emptied between",
+     "test_update_queue.py"),
+
+    ("…and gives it back after each entry",
+     "app/update_engine.py",
+     "            self.release_update(after=after, kick=False)\n\n"
+     "    def _drop_for_selfupdate(",
+     "            pass\n\n"
+     "    def _drop_for_selfupdate(",
+     "test_update_queue.py"),
+
+    ("…handing each release the connection's after()",
+     "app/update_engine.py",
+     "            self.release_update(after=after, kick=False)\n\n"
+     "    def _drop_for_selfupdate(",
+     "            self.release_update(after=None, kick=False)\n\n"
+     "    def _drop_for_selfupdate(",
+     "test_update_queue.py"),
+
+    ("…and does not claim at all for an empty queue",
+     "app/update_engine.py",
+     "            if not self.has_queued_updates():\n                return\n"
+     "            # Claimed per entry",
+     "            # Claimed per entry",
+     "test_update_queue.py"),
+
+    ("a queue emptied between the drain's look and its claim gives the claim back",
+     "app/update_engine.py",
+     "                # Emptied between the look and the claim.\n"
+     "                self.release_update(after=after, kick=False)\n",
+     "                # Emptied between the look and the claim.\n",
+     "test_update_queue.py"),
+
+    # Q10 review: the rest was named and dropped before the self-update
+    # had run, under the drain's claim. A self-update that came back
+    # without a restart lost b and c for nothing, and a `say` that raised
+    # there kept the update lock for good.
+    ("a drained entry is given back before anything is said about it",
+     "app/update_engine.py",
+     "            # this entry runs from this release, through `after`, and the\n"
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            self.release_update(after=after, kick=False)\n",
+     "            # this entry runs from this release, through `after`, and the\n"
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            if self._drop_for_selfupdate(say):\n"
+     "                self.release_update(after=after, kick=False)\n"
+     "                return\n"
+     "            self.release_update(after=after, kick=False)\n",
+     "test_update_queue.py"),
+
+    ("…a self-update after a drained entry that does not restart drops nothing",
+     "app/update_engine.py",
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            self.release_update(after=after, kick=False)\n",
+     "            # top of the loop then sees whether it is restarting.\n"
+     "            _su = self._queued_selfupdate\n"
+     "            self.release_update(after=after, kick=False)\n"
+     "            if _su:\n"
+     "                self.drop_queued_updates()\n"
+     "                return\n",
+     "test_update_queue.py"),
+
+    ("…and a swap under way names the rest it takes with it",
+     "app/update_engine.py",
+     "        if not self._queued_selfupdate and not swapping:\n",
+     "        if not self._queued_selfupdate:\n",
+     "test_update_queue.py"),
+
+    ("a drained entry that crashed is given back inside the crash, so after() sees it",
+     "app/update_engine.py",
+     "            except BaseException as e:\n"
+     "                # Given back inside the handler",
+     "            except BaseException as _crash:\n"
+     "                e = _crash\n"
+     "            else:\n"
+     "                e = None\n"
+     "            if e is not None:\n"
+     "                # Given back inside the handler",
+     "test_update_queue.py"),
+
+    ("…and a drained run that exits is not swallowed",
+     "app/update_engine.py",
+     "                if not isinstance(e, Exception):\n                    raise\n",
+     "                if False:\n                    raise\n",
+     "test_update_queue.py"),
+
+    ("…nor left holding the lock",
+     "app/update_engine.py",
+     "                self.release_update(after=after, kick=False)\n"
+     "                if not isinstance(e, Exception):\n",
+     "                if not isinstance(e, Exception):\n",
+     "test_update_queue.py"),
+
+    # Since Q13 a drained entry is the engine's `_drain_one`, which runs
+    # under the drain's claim and never touches the lock itself.
+    ("a drained entry does not claim for itself",
+     "app/update_engine.py",
+     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
+     "        if not self.claim_update():\n            return None\n"
+     "        seam = self._seam()\n        # Pinned or excluded while it waited (Q16f)",
+     "test_update_queue.py"),
+
+    ("…nor give back the drain's claim",
+     "app/update_engine.py",
+     "        for k, target, _success, msg, last_group in results:\n",
+     "        self.release_update()\n"
+     "        for k, target, _success, msg, last_group in results:\n",
+     "test_update_queue.py"),
+
+    ("…and the drainer hands each release the engine's self-update hand-over",
+     "app/update_engine.py",
+     "                             after=after or self._hand_on_selfupdate)\n",
+     "                             after=after)\n",
+     "test_update_queue.py"),
+
+    ("…or the after() of the release that kicked it",
+     "app/update_engine.py",
+     "                             after=after or self._hand_on_selfupdate)\n",
+     "                             after=self._hand_on_selfupdate)\n",
+     "test_update_queue.py"),
+
+    ("…which starts a self-update queued behind a drained entry",
+     "app/update_engine.py",
+     "            selfupdate.run_queued(ctx)\n",
+     "            pass\n",
+     "test_update_queue.py"),
+
+    # Q13 review: a release with no `after` (check_selfupdate_auto) left
+    # a queued self-update waiting, and the drainer dropped the queue
+    # "because a self-update restarts first". It hands it on itself now,
+    # once, before it looks at the queue.
+    ("a self-update stranded behind a release with no after() is handed on by the drainer",
+     "app/update_engine.py",
+     "                if self.claim_update():\n"
+     "                    self.release_update(after=after, kick=False)\n"
+     "                    continue\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…once: a hand-over that leaves it waiting falls through to the drop",
+     "app/update_engine.py",
+     "                handed_on = True\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
+    # Q13 review 2: a scheduled pass claims and releases once per step
+    # (self-update check, each host, both cleanups), and every release
+    # kicked the drainer — a queued key took the lock between two hosts
+    # and the next host's batch was skipped. The pass holds the drainer
+    # back until _after_tick. Each applied by hand, red without a
+    # traceback.
+    ("a scheduled pass keeps the drainer out of the gaps between its "
+     "hosts",
+     "app/scheduler.py",
+     "                    self._hold_queue()\n",
+     "                    pass  # MUTATION: no hold\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…a kick while the drainer is held starts nothing",
+     "app/update_engine.py",
+     '                if getattr(self, "_drain_holds", 0):\n',
+     "                if False:  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…the end of the pass lets the kept kick go",
+     "app/scheduler.py",
+     "                self._let_queue_go()\n"
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…and letting the hold go starts the drainer it kept",
+     "app/update_engine.py",
+     "        return self.kick_drain(after=kept[0])\n",
+     "        return None  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    # Every way out of `_run` lets the pass's hold go, in one `finally`:
+    # the applied self-update's `return` and an error out of the loop.
+    # Before, the `return` let go by itself and an error left the hold
+    # counted for good (followup to cbd4790: a raising host list froze
+    # the queue for every front end). Applied by hand: the self-update
+    # row and the three raising-pass rows go red, no traceback.
+    ("…an applied self-update leaves no hold behind, and neither does "
+     "a pass that raises out of the loop",
+     "app/scheduler.py",
+     "        finally:\n            self._let_queue_go()\n",
+     "        finally:\n            pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…the deferred check after a restart holds the drainer too",
+     "app/scheduler.py",
+     "                    engine.hold_drain()\n",
+     "                    pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…and lets it go after its last host",
+     "app/scheduler.py",
+     "                        engine.let_drain_go()\n",
+     "                        pass  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    ("…holds are counted: a pass and a deferred check both let go first",
+     "app/update_engine.py",
+     '                self._drain_holds = getattr(self, "_drain_holds", 0) + 1\n',
+     "                self._drain_holds = 1  # MUTATION\n",
+     "test_scheduler_pass_queue.py"),
+
+    # Q12: Telegram's "Update all" runs one batch per host, each with
+    # that host's checker, so the netns snapshot and a group head's
+    # cascade reach the entry's own host.
+    ("Update all splits a mixed snapshot into one batch per host",
+     "app/telegram_bot.py",
+     "                by_host.setdefault(pending_host(u), []).append(u)\n",
+     "                by_host.setdefault(LOCAL_HOST, []).append(u)  # MUTATION: one batch\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…driven with a stand-in bot: one batch per host, in host order",
+     "app/telegram_bot.py",
+     "                by_host.setdefault(pending_host(u), []).append(u)\n",
+     "                by_host.setdefault(LOCAL_HOST, []).append(u)  # MUTATION: one batch\n",
+     "test_batch_host_routing.py"),
+
+    ("…each host's batch takes that host's checker, not the caller's",
+     "app/telegram_bot.py",
+     "                            host_checker = getattr(host, \"checker\", None) or updater\n",
+     "                            host_checker = updater  # MUTATION: the caller's checker\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("…so a remote group head's dependents restart on that host",
+     "app/telegram_bot.py",
+     "                            host_checker = getattr(host, \"checker\", None) or updater\n",
+     "                            host_checker = updater  # MUTATION: the caller's checker\n",
+     "test_batch_host_routing.py"),
+
+    ("Update all: a host that stops answering fails its own entry, the "
+     "rest still report",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
+     "test_telegram_callback_matrix.py"),
+
+    ("Update all prunes a full local disk once, not once per host batch",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=True, snapshot_fails_entry=True,  # MUTATION\n                    held=held)\n",
+     "test_batch_host_routing.py"),
+
+    ("…because it remembers that a host's batch pruned",
+     "app/telegram_bot.py",
+     "                cleaned = cleaned or bool(\n"
+     "                    getattr(self.engine, \"_batch_cleaned\", False))\n",
+     "                cleaned = False  # MUTATION: forgets the prune\n",
+     "test_batch_host_routing.py"),
+
+    # Q12 review: the three batch sites that take the batch's checker for
+    # an entry's host. Each mutation hands that site the LOCAL host's
+    # checker instead, which is what a mixed batch did before Q12. Each
+    # applied by hand and red without a traceback.
+    ("Update all: a remote head that rolls back has its dependents kicked "
+     "on its own host",
+     "app/update_engine.py",
+     '                                           u["name"], members[1:], checker, max_wait=wait_s))\n',
+     '                                           u["name"], members[1:], next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker), max_wait=wait_s))  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("…a remote head that updates has its dependents restarted on its own "
+     "host",
+     "app/update_engine.py",
+     '                                u["name"], deps, checker, max_wait=wait_s))\n',
+     '                                u["name"], deps, next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker), max_wait=wait_s))  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("…and a remote entry's netns owner is asked of its own host",
+     "app/update_engine.py",
+     '                tn = checker.netns_target_name(u["name"])\n',
+     '                tn = next((h.checker for h in (getattr(self, "hosts", None) or ()) if getattr(h, "is_local", False)), checker).netns_target_name(u["name"])  # MUTATION\n',
+     "test_batch_host_routing.py"),
+
+    ("Update all: a local daemon that hangs in the snapshot still ends "
+     "with a summary",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
+     "test_batch_host_routing.py"),
+
+    # Q12 second review: applied by hand, red without a traceback.
+    ("/update <pattern>: a host that stops answering fails its own "
+     "entries, and the host after it still updates",
+     "app/telegram_bot.py",
+     "                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n                    held=held)\n",
+     "                    proactive_cleanup=not cleaned,  # MUTATION: the snapshot raises out\n                    held=held)\n",
+     "test_batch_host_routing.py"),
+
+    # S1: the end of a scheduler pass has its own method, and the
+    # scheduler holds the engine. Each applied by hand, red without a
+    # traceback.
+    ("the scheduler takes the bot's engine when it is not handed one",
+     "app/scheduler.py",
+     '                       else getattr(bot, "engine", None))\n',
+     '                       else None)  # MUTATION\n',
+     "test_scheduler_after_tick.py"),
+
+    ("…and an engine handed in wins over the bot's",
+     "app/scheduler.py",
+     '        self.engine = (engine if engine is not None\n'
+     '                       else getattr(bot, "engine", None))\n',
+     '        self.engine = getattr(bot, "engine", None)  # MUTATION\n',
+     "test_scheduler_after_tick.py"),
+
+    ("main.py hands the scheduler the engine it built",
+     "app/main.py",
+     "    scheduler = Scheduler(config, checker, bot, hosts=host_registry,\n"
+     "                          engine=engine)\n",
+     "    scheduler = Scheduler(config, checker, bot, hosts=host_registry)\n",
+     "test_scheduler_after_tick.py"),
+
+    ("every pass of the scheduler loop ends in _after_tick, before the "
+     "sleep",
+     "app/scheduler.py",
+     "                self._after_tick()\n\n                time.sleep(30)\n",
+     "                time.sleep(30)  # MUTATION: no end-of-pass work\n",
+     "test_scheduler_after_tick.py"),
+
+    ("_after_tick gives held notifications their next go",
+     "app/scheduler.py",
+     "            notify_retry.flush()\n",
+     "            pass  # MUTATION: nothing is resent\n",
+     "test_scheduler_after_tick.py"),
+
+    ("…and a flush that raises stays in the log instead of ending the "
+     "scheduler thread",
+     "app/scheduler.py",
+     "        except Exception as e:\n"
+     "            print(f\"Notify retry error: {e}\")\n",
+     "        except ImportError as e:  # MUTATION\n"
+     "            print(f\"Notify retry error: {e}\")\n",
+     "test_scheduler_after_tick.py"),
+
+    ("the cron minute in maintenance mode skips _after_tick",
+     "app/scheduler.py",
+     "                        print(f\"Scheduled check at {current_minute} "
+     "skipped — maintenance mode active\")\n"
+     "                        time.sleep(30)\n",
+     "                        print(f\"Scheduled check at {current_minute} "
+     "skipped — maintenance mode active\")\n"
+     "                        self._after_tick()  # MUTATION\n"
+     "                        time.sleep(30)\n",
+     "test_scheduler_after_tick.py"),
+
+    ("an applied self-update leaves the loop without _after_tick",
+     "app/scheduler.py",
+     "                                print(\"Self-update applied, exiting "
+     "tick — check will resume after restart\")\n"
+     "                                return\n",
+     "                                print(\"Self-update applied, exiting "
+     "tick — check will resume after restart\")\n"
+     "                                self._after_tick()  # MUTATION\n"
+     "                                return\n",
+     "test_scheduler_after_tick.py"),
+
+    # Q13: one drainer, the engine's, kicked by every release and by
+    # both sweeps, on every install. Each goes red in the procedure named;
+    # the drainer's rows are in test_update_queue_sweep.py, the
+    # releasers in test_update_lock_sites.py.
+    ("queued work runs on an install without a Telegram poll loop",
+     "app/scheduler.py",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and the scheduler's sweep still keeps the sweep's rules",
+     "app/scheduler.py",
+     "                engine.sweep_queue(engine.kick_drain)\n",
+     "                engine.kick_drain()\n",
+     "test_update_queue_sweep.py"),
+
+    ("two kicks at once start one drainer",
+     "app/update_engine.py",
+     "                if (getattr(self, \"_drainer\", None) is not None\n"
+     "                        or not self._update_queue):\n",
+     "                if not self._update_queue:\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and the drainer gives the slot back when it is done",
+     "app/update_engine.py",
+     "            with self._update_queue_lock:\n"
+     "                self._drainer = None\n"
+     "        # Not after a drain that raised",
+     "            pass\n"
+     "        # Not after a drain that raised",
+     "test_update_queue_sweep.py"),
+
+    ("every release works off what queued behind it",
+     "app/update_engine.py",
+     "            if kick:\n                self.kick_drain(after=after)\n",
+     "            pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("…which the lock-site drive sees for every releasing site",
+     "app/update_engine.py",
+     "            if kick:\n                self.kick_drain(after=after)\n",
+     "            pass\n",
+     "test_update_lock_sites.py"),
+
+    ("…after its own after(): a queued self-update goes first",
+     "app/update_engine.py",
+     "        try:\n"
+     "            if after is not None:\n"
+     "                after()\n"
+     "        finally:\n"
+     "            if kick:\n"
+     "                self.kick_drain(after=after)\n",
+     "        if kick:\n"
+     "            self.kick_drain(after=after)\n"
+     "        if after is not None:\n"
+     "            after()\n",
+     "test_update_queue_sweep.py"),
+
+    ("a release that lands while the drainer leaves is not lost",
+     "app/update_engine.py",
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "            pass\n",
+     "test_update_queue_sweep.py"),
+
+    ("a drain that raised is not restarted by itself",
+     "app/update_engine.py",
+     "        if finished:\n"
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "        if True:\n"
+     "            self.sweep_queue(lambda: self.kick_drain(after=after))\n",
+     "test_update_queue_sweep.py"),
+
+    ("a drained update is said on Telegram, beside the plugins' card",
+     "app/update_engine.py",
+     "            starting=starting, report=report,\n",
+     "            starting=starting, report=None,\n",
+     "test_update_queue_sweep.py"),
+
+    ("…and what did not run is told to every channel",
+     "app/update_engine.py",
+     "                seam.tell(self._drain_skipped_text(k, msg))\n",
+     "                seam.update_line(self._drain_skipped_text(k, msg))\n",
+     "test_update_queue_sweep.py"),
+
+    ("…while the result line stays Telegram's, not a second card",
+     "app/broadcast.py",
+     "        if tg is not None and getattr(tg, \"enabled\", False):\n"
+     "            tg.send_message(text)\n\n"
+     "    def tell(self, text, skip=()):",
+     "        if tg is not None and getattr(tg, \"enabled\", False):\n"
+     "            tg.send_message(text)\n"
+     "        if self.notifier is not None:\n"
+     "            self.notifier.send_message(text)\n\n"
+     "    def tell(self, text, skip=()):",
+     "test_update_queue_sweep.py"),
+
+    ("…and the drain's notices go to every channel",
+     "app/update_engine.py",
+     "        self._seam().tell(text)\n",
+     "        self._seam().update_line(text)\n",
+     "test_update_queue_sweep.py"),
+
+    ("main.py hands the engine the shared self-update context",
+     "app/main.py",
+     "    engine.selfupdate_ctx = su_ctx\n",
+     "",
+     "test_update_queue_sweep.py"),
+
+    ("selfupdate.start's raw release is the one releaser exempt from the drain",
+     "app/selfupdate.py",
+     "        if not swap:\n            ctx._update_lock.release()\n",
+     "        if not swap:\n            ctx._update_lock.release()\n"
+     "            ctx.engine.kick_drain()\n",
+     "test_update_lock_sites.py"),
+
+    # ── Q16: Telegram's "Update all", /updateall and a busy /update ──
+    ('a busy "Update all" on Telegram queues its set instead of refusing it',
+     'app/telegram_bot.py',
+     '        claimed, outcomes = self.engine.claim_or_queue_many(keys)\n',
+     '        claimed, outcomes = self.engine.claim_update(), []\n',
+     'test_update_lock_sites.py'),
+
+    ("…one queued container is told what a tap is told",
+     'app/telegram_bot.py',
+     '        if len(outcomes) == 1:\n',
+     '        if False:\n',
+     'test_update_lock_sites.py'),
+
+    ("…several get a heading that names the container being updated",
+     'app/telegram_bot.py',
+     '        running = [self._key_label(k) for k in self.engine.updating]\n',
+     '        running = []\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…a batch that does not fit is answered once, as a whole",
+     'app/telegram_bot.py',
+     '        if full is not None:\n'
+     '            return self.t("update_batch_queue_full", count=len(outcomes),\n',
+     '        if False:\n'
+     '            return self.t("update_batch_queue_full", count=len(outcomes),\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…each queued container in it is told its place",
+     'app/telegram_bot.py',
+     '                lines.append(self.t("update_batch_line_queued", name=name,\n'
+     '                                    pos=params.get("pos", 0)))\n',
+     '                lines.append(self.t("update_batch_line_queued", name=name,\n'
+     '                                    pos=1))\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…and one already waiting is told so, not given a place",
+     'app/telegram_bot.py',
+     '                    "update_batch_line_already_queued", name=name,\n',
+     '                    "update_batch_line_queued", name=name,\n',
+     'test_telegram_callback_matrix.py'),
+
+    ('…a busy "Update all" with nothing pending says so, not "busy"',
+     'app/telegram_bot.py',
+     '            answer = (self._queued_answer(outcomes) if outcomes\n'
+     '                      else self.t("no_pending_updates"))\n',
+     '            answer = (self._queued_answer(outcomes) if outcomes\n'
+     '                      else self.t("update_already_running"))\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("a busy /update checks nothing and asks no host (#26)",
+     'app/telegram_bot.py',
+     '            if self.update_running:\n'
+     '                # Busy (Q16): no lookup and no check now',
+     '            if False:\n'
+     '                # Busy (Q16): no lookup and no check now',
+     'test_check_glob_only.py'),
+
+    ("…and hands on what the pending list holds for the pattern",
+     'app/telegram_bot.py',
+     '                entries = self._pending_matching(arg, targets)\n',
+     '                entries = []\n',
+     'test_check_glob_only.py'),
+
+    ("…a plain name only exactly, never a prefix of a pending name",
+     'app/telegram_bot.py',
+     '        return [e for e in entries if e.get("name") == arg]\n',
+     '        return [e for e in entries\n'
+     '                if (e.get("name") or "").startswith(arg)]\n',
+     'test_check_glob_only.py'),
+
+    ("…a glob through the one glob rule, ignoring case like the free path",
+     'app/telegram_bot.py',
+     '            hit = set(lifecycle.glob_filter(\n'
+     '                arg, [e.get("name") or "" for e in entries]))\n',
+     '            hit = {e.get("name") for e in entries\n'
+     '                   if e.get("name") == arg}\n',
+     'test_check_glob_only.py'),
+
+    ("…on the hosts the command names, not only the local one",
+     'app/telegram_bot.py',
+     '        hosts = ([h.name for h in targets] if targets is not None\n'
+     '                 else [LOCAL_HOST])\n',
+     '        hosts = [LOCAL_HOST]\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("a busy major confirmation says it was not queued and still waits",
+     'app/telegram_bot.py',
+     '                "major_confirm_busy", name=name,\n',
+     '                "update_already_running", name=name,\n',
+     'test_update_lock_sites.py'),
+
+    # Q16 review: the confirm callback takes the prompt's buttons away
+    # before it knows the lock is held, so the refusal brings them back.
+    ("…and brings Confirm/Skip back, since the tap took the prompt's away",
+     'app/telegram_bot.py',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
+     '                reply_markup=None)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…for that container on its own host",
+     'app/telegram_bot.py',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                tag=self._entry_host_tag({"host": host_name})),\n'
+     '                reply_markup=self._major_keyboard(name))\n',
+     'test_telegram_callback_matrix.py'),
+
+    # Q16 review: a busy glob queues only what is pending; the rest it
+    # matches was not checked, and the answer says so.
+    ("a busy /update <glob> says the other matches were not checked",
+     'app/telegram_bot.py',
+     '            if queued_note and waits:\n',
+     '            if False and waits:\n',
+     'test_telegram_callback_matrix.py'),
+
+    # Q16 review 2: nothing queued (queue full, or the match is the one
+    # running) gets no "were queued" under it.
+    ("…but only when something of it waits on the queue",
+     'app/telegram_bot.py',
+     '            waits = any(a in ("update_queued", "update_already_queued")\n',
+     '            waits = True or any(a in ("update_queued", "update_already_queued")\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…an earlier queued match counts as waiting too",
+     'app/telegram_bot.py',
+     '            waits = any(a in ("update_queued", "update_already_queued")\n',
+     '            waits = any(a in ("update_queued",)\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…the busy /update hands that line on to run_updates",
+     'app/telegram_bot.py',
+     '                                         "queued_note": note}).start()\n',
+     '                                         "queued_note": None}).start()\n',
+     'test_check_glob_only.py'),
+
+    ("…only for a glob, not for a plain pending name",
+     'app/telegram_bot.py',
+     '                        if lifecycle.is_glob(arg) else None)\n',
+     '                        if True else None)\n',
+     'test_check_glob_only.py'),
+
+    ("…and names the typed pattern in every language",
+     'app/lang/de.json',
+     '"Eingereiht ist nur, was schon als Update bekannt war. Weitere Treffer für `{pattern}` wurden',
+     '"Eingereiht ist nur, was schon als Update bekannt war. Weitere Treffer für `{muster}` wurden',
+     'test_reply_params.py'),
+
+    ("the queue holds two hosts' 'Update all' of twenty, one after the other",
+     'app/update_engine.py',
+     '    UPDATE_QUEUE_MAX = 50\n',
+     '    UPDATE_QUEUE_MAX = 10\n',
+     'test_update_queue.py'),
+
+    ("a queued tap no longer promises the next turn",
+     'app/lang/en.json',
+     '  "update_queued": "🕒 `{name}` queued — position {pos}. It runs when its turn comes.",\n',
+     '  "update_queued": "🕒 `{name}` queued — position {pos}. It starts when the current update finishes.",\n',
+     'test_update_lock_sites.py'),
+
+    ("a queued batch's heading exists in every language",
+     'app/lang/ja.json',
+     '  "update_batch_queued": "🕒 いま別の更新が実行中です。以下は順番待ちに入り、順番が来たら実行します:",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ("…and each language's line fills the place it is given",
+     'app/lang/de.json',
+     '  "update_batch_line_queued": "• `{name}` — Platz {pos}",\n',
+     '  "update_batch_line_queued": "• `{name}` — Platz {position}",\n',
+     'test_reply_params.py'),
+
+    ("T3's release goes through the engine's door, so the drainer runs",
+     'scripts/test_telegram_callback_matrix.py',
+     '            bot.engine.release_update()\n',
+     '            bot._update_lock.release()\n',
+     'test_telegram_callback_matrix.py'),
+
+    # ── Q16f: a pin or an exclusion holds for a queued update too ──
+    ("a pinned container tapped while busy is not queued",
+     'app/update_engine.py',
+     '        why = self.held_back(container_key)\n',
+     '        why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…nor in a batch (Update all, a busy /update, Discord, the Web UI)",
+     'app/update_engine.py',
+     '            why = None if k in running else self.held_back(k, pins=pins)\n',
+     '            why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…a key that was already waiting is taken off the queue when a tap "
+     "answers it is pinned — unpinning it later must not let the drain run it",
+     'app/update_engine.py',
+     '            self._unqueue_held({container_key: why})\n',
+     '            pass\n',
+     'test_queue_held_back.py'),
+
+    ("…the same for a batch that names it again",
+     'app/update_engine.py',
+     '        self._unqueue_held(held)\n',
+     '        pass\n',
+     'test_queue_held_back.py'),
+
+    ("…and for an exclusion as much as for a pin",
+     'app/update_engine.py',
+     '                if why in ("pinned", "excluded")}\n',
+     '                if why == "pinned"}\n',
+     'test_queue_held_back.py'),
+
+    ("…an unreadable pin list refuses the whole batch at the claim",
+     'app/update_engine.py',
+     '        if "pin_list_unreadable" in held.values():\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the drain asks again right before it runs an entry",
+     'app/update_engine.py',
+     '        why = self.held_back(key, labels=True)\n',
+     '        why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…and there it reads the container's labels from its host",
+     'app/update_engine.py',
+     '        why = self.held_back(key, labels=True)\n',
+     '        why = self.held_back(key, labels=False)\n',
+     'test_queue_held_back.py'),
+
+    ("…a docksentry.pin label holds it",
+     'app/update_engine.py',
+     '            if flag(lab, "pin") is True:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…docksentry.exclude / enable=false hold it",
+     'app/update_engine.py',
+     '            if flag(lab, "enable") is False or flag(lab, "exclude") is True:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…EXCLUDE_CONTAINERS holds it",
+     'app/update_engine.py',
+     '        if name_matches(name, getattr(cfg, "exclude_containers", None) or []):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the pin list holds it",
+     'app/update_engine.py',
+     '            if name in pinned:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…an unreadable pin list is told apart from a pin",
+     'app/update_engine.py',
+     '            if pinned is EVERYTHING_PINNED:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…the answer says pinned, not excluded",
+     'app/update_engine.py',
+     '            return "update_not_queued_pinned", {}\n',
+     '            return "update_not_queued_excluded", {}\n',
+     'test_queue_held_back.py'),
+
+    ("…the drain says why it skipped the entry",
+     'app/update_engine.py',
+     '            seam.tell(self._t(f"update_queue_skipped_{why}",\n',
+     '            seam.tell(self._t("update_queue_skipped_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ("…an unreadable pin list at the drain refuses the entry, said as such",
+     'app/update_engine.py',
+     '        if why == "pin_list_unreadable":\n'
+     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     '        if False:\n'
+     '            seam.tell(self._t("update_refused_pin_list"))\n',
+     'test_queue_held_back.py'),
+
+    ("…a label hold names the label, not a pin set while it waited",
+     'app/update_engine.py',
+     '                return "pinned_label"\n',
+     '                return "pinned"\n',
+     'test_queue_held_back.py'),
+
+    ("Telegram names a pinned member of a queued batch",
+     'app/telegram_bot.py',
+     '                lines.append(self.t("update_batch_line_pinned", name=name))\n',
+     '                lines.append(self.t("update_batch_line_same_running", name=name))\n',
+     'test_queue_held_back.py'),
+
+    ("…says a batch refused for the pin list once",
+     'app/telegram_bot.py',
+     '        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):\n'
+     '            # Refused as a whole: nobody can tell what is pinned (Q16f).\n',
+     '        if False:\n'
+     '            # Refused as a whole: nobody can tell what is pinned (Q16f).\n',
+     'test_queue_held_back.py'),
+
+    ("…and puts no queue heading over a batch where nothing waits",
+     'app/telegram_bot.py',
+     '        lines = [] if not waits else [\n',
+     '        lines = [] if False else [\n',
+     'test_queue_held_back.py'),
+
+    ('the "Update all" toast says queued when it was queued',
+     'app/telegram_bot.py',
+     '                      "queued": "updates_queued_cb"}\n',
+     '                      "queued": "updates_starting_cb"}\n',
+     'test_queue_held_back.py'),
+
+    ("…and not started when nothing waits",
+     'app/telegram_bot.py',
+     '            decide("queued" if waits else "refused")\n',
+     '            decide("queued")\n',
+     'test_queue_held_back.py'),
+
+    ("…nor when the claim finds nothing pending",
+     'app/telegram_bot.py',
+     '                decide("refused")\n',
+     '                decide("started")\n',
+     'test_telegram_dispatch_matrix.py'),
+
+    ('a busy "Update all" that does not fit brings its buttons back',
+     'app/telegram_bot.py',
+     '            if keyboard and any(a == "update_queue_full"\n',
+     '            if False and any(a == "update_queue_full"\n',
+     'test_telegram_callback_matrix.py'),
+
+    ("…the tap hands run_updates the message's own keyboard",
+     'app/telegram_bot.py',
+     '                                         "keyboard": keyboard})\n',
+     '                                         "keyboard": None})\n',
+     'test_queue_held_back.py'),
+
+    ("Discord says a pinned or excluded container was not queued",
+     'app/discord_bot.py',
+     '                lines.append(self.t(answer, name=name))\n',
+     '                lines.append(self.t("update_same_running", name=name))\n',
+     'test_queue_held_back.py'),
+
+    ("…and a request refused for the pin list once",
+     'app/discord_bot.py',
+     '        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):\n'
+     '            return [self.t("update_refused_pin_list")]\n',
+     '        if False:\n'
+     '            return [self.t("update_refused_pin_list")]\n',
+     'test_reply_params.py'),
+
+    ("the Web UI sends a pin-list refusal at the claim to its banner",
+     'app/web_ui.py',
+     '            if "update_refused_pin_list" in answers:\n',
+     '            if False:\n',
+     'test_queue_held_back.py'),
+
+    ("…counts what was held back",
+     'app/web_ui.py',
+     '            held = sum(a in ("update_not_queued_pinned",\n',
+     '            held = 0 * sum(a in ("update_not_queued_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ("…and passes the count on with several queued",
+     'app/web_ui.py',
+     '                return f"/?update=queued&n={len(waiting)}{more}"\n',
+     '                return f"/?update=queued&n={len(waiting)}"\n',
+     'test_queue_held_back.py'),
+
+    ("…and with an already-queued answer",
+     'app/web_ui.py',
+     "                    f\"{int(params.get('since_seconds', 0))}{more}\")\n",
+     "                    f\"{int(params.get('since_seconds', 0))}\")\n",
+     'test_queue_held_back.py'),
+
+    ("…the page knows the 'held' answer",
+     'app/web_ui.py',
+     '                        "host_unknown", "pending_unreadable", "held",\n',
+     '                        "host_unknown", "pending_unreadable",\n',
+     'test_web_update_feedback.py'),
+
+    ("…says how many",
+     'app/web_ui.py',
+     '                    _text = t("web_update_" + _upd, count=_unum("n"))\n',
+     '                    _text = t("web_update_" + _upd, count=0)\n',
+     'test_web_update_feedback.py'),
+
+    ("…and says it under a queued answer for the rest",
+     'app/web_ui.py',
+     '                if (_upd in ("queued", "already_queued", "same_running")\n                        and _unum("held")):\n',
+     '                if False:\n',
+     'test_web_update_feedback.py'),
+
+    ("the pinned answer names the container in every language",
+     'app/lang/de.json',
+     '"📌 `{name}` ist gepinnt — nicht eingereiht.',
+     '"📌 `{container}` ist gepinnt — nicht eingereiht.',
+     'test_reply_params.py'),
+
+    ("…and the batch line for it exists in every language",
+     'app/lang/ja.json',
+     '  "update_batch_line_pinned": "• `{name}` — 固定済みのため順番待ちに追加していません",\n',
+     '',
+     'test_lang_parity.py'),
+
+    # ── Q16g: the free path holds a pin set after the pending entry ──
+    ('every manual update asks the pin check right before update_container, '
+     'so a pin set after the pending entry was written holds (Q16g)',
+     'app/update_engine.py',
+     '                    why = self.held_back(\n'
+     '                        host_key(u_host, u["name"]),\n'
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n'
+     '                        checker=u_checker)\n',
+     '                    why = None\n',
+     'test_queue_held_back.py'),
+
+    ("…and reads the container's labels there",
+     'app/update_engine.py',
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n',
+     '                        labels=False,\n',
+     'test_queue_held_back.py'),
+
+    ('…its line says why it was held: pinned, the label, excluded, the pin '
+     'list',
+     'app/update_engine.py',
+     '                            f"update_held_{why}",\n',
+     '                            "update_held_pinned",\n',
+     'test_queue_held_back.py'),
+
+    ('…and the caller learns which entries were held, so they stay pending',
+     'app/update_engine.py',
+     '                            held[(u_host, u["name"])] = why\n',
+     '                            pass\n',
+     'test_queue_held_back.py'),
+
+    ('a tap held right before its update says so and leaves its entry pending',
+     'app/update_engine.py',
+     '                if held:\n'
+     '                    # Pinned or excluded right before its update (Q16g):\n',
+     '                if False:\n'
+     '                    # Pinned or excluded right before its update (Q16g):\n',
+     'test_queue_held_back.py'),
+
+    ('…with the reason the check gave',
+     'app/update_engine.py',
+     '                                    next(iter(held.values())), None))\n',
+     '                                    "pinned", None))\n',
+     'test_queue_held_back.py'),
+
+    ('…Telegram says that reason for the tap',
+     'app/telegram_bot.py',
+     '        if why in ("pinned", "pinned_label", "excluded",\n'
+     '                   "pin_list_unreadable"):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ('a queued entry pinned during its wait in the drain is said as the '
+     "drain's skip",
+     'app/update_engine.py',
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '        if False:\n',
+     'test_queue_held_back.py'),
+
+    ('…and an unreadable pin list there as the refusal',
+     'app/update_engine.py',
+     '        if why == "pin_list_unreadable":\n'
+     '            return self._t("update_refused_pin_list")\n'
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     '        if False:\n'
+     '            return self._t("update_refused_pin_list")\n'
+     '        if why in ("pinned", "pinned_label", "excluded"):\n',
+     'test_queue_held_back.py'),
+
+    ('the major confirmation asks the pin check right before its update',
+     'app/telegram_bot.py',
+     '            why = self.engine.held_back(container_key, labels=True,\n'
+     '                                        checker=checker)\n',
+     '            why = None\n',
+     'test_queue_held_back.py'),
+
+    ('…labels included',
+     'app/telegram_bot.py',
+     '            why = self.engine.held_back(container_key, labels=True,\n',
+     '            why = self.engine.held_back(container_key, labels=False,\n',
+     'test_queue_held_back.py'),
+
+    ('"Update all" keeps a held entry in the pending file',
+     'app/telegram_bot.py',
+     '                                           if pending_key(u) not in held])\n',
+     '                                           ])\n',
+     'test_queue_held_back.py'),
+
+    ('…also when it read the whole file (bare update_all, /updateall), which '
+     'it used to clear',
+     'app/telegram_bot.py',
+     '            if from_snapshot or held:\n',
+     '            if from_snapshot:\n',
+     'test_queue_held_back.py'),
+
+    ("…because each host's batch hands back what it held",
+     'app/telegram_bot.py',
+     '                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,\n'
+     '                    held=held)\n',
+     '                    proactive_cleanup=not cleaned, snapshot_fails_entry=True)\n',
+     'test_queue_held_back.py'),
+
+    ('Discord /update keeps a held entry pending',
+     'app/discord_bot.py',
+     '                if key not in held:\n',
+     '                if True:\n',
+     'test_queue_held_back.py'),
+
+    ('…and so does a confirmed /updateall',
+     'app/discord_bot.py',
+     '                                    not in held])\n',
+     '                                    not in {}])\n',
+     'test_queue_held_back.py'),
+
+    ('the Web UI worker keeps a held entry pending',
+     'app/web_ui.py',
+     '                     if (u.get("host") or _LOCAL_HOST, u["name"]) not in held])\n',
+     '                     if (u.get("host") or _LOCAL_HOST, u["name"]) not in {}])\n',
+     'test_queue_held_back.py'),
+
+    ("a Web UI click on a pinned container is answered 'not updated', not "
+     "'started'",
+     'app/web_ui.py',
+     '                held = [why for why in (engine.held_back(k) for k in keys)\n',
+     '                held = [why for why in (None for k in keys)\n',
+     'test_queue_held_back.py'),
+
+    ('…with how many',
+     'app/web_ui.py',
+     '                return f"/?update=pinned&n={len(held)}"\n',
+     '                return "/?update=started"\n',
+     'test_queue_held_back.py'),
+
+    ("…and a selection with some held is 'started' with the count",
+     'app/web_ui.py',
+     '            return "/?update=started" + (f"&held={len(held)}" if held else "")\n',
+     '            return "/?update=started"\n',
+     'test_queue_held_back.py'),
+
+    ('…an unreadable pin list at the claim is the pin-list answer',
+     'app/web_ui.py',
+     '            if "pin_list_unreadable" in held:\n'
+     '                return "/?update=pinlist"\n',
+     '            if False:\n'
+     '                return "/?update=pinlist"\n',
+     'test_queue_held_back.py'),
+
+    ('a busy Web request whose rest is running and held says both',
+     'app/web_ui.py',
+     '                if held and not running:\n',
+     '                if held:\n',
+     'test_queue_held_back.py'),
+
+    ("the page knows the 'pinned' answer",
+     'app/web_ui.py',
+     '                        "pinned", "restarting"):\n',
+     '                        "restarting"):\n',
+     'test_web_update_feedback.py'),
+
+    ("…says the held count under 'already updating'",
+     'app/web_ui.py',
+     '                if (_upd in ("queued", "already_queued", "same_running")\n',
+     '                if (_upd in ("queued", "already_queued")\n',
+     'test_web_update_feedback.py'),
+
+    ("…and under 'started'",
+     'app/web_ui.py',
+     '                if _upd == "started" and _unum("held"):\n',
+     '                if False:\n',
+     'test_web_update_feedback.py'),
+
+    ('the held-back lines exist in every language',
+     'app/lang/ko.json',
+     '  "update_held_excluded": "🚫 {name}: 업데이트에서 제외됨 — 업데이트하지 않았습니다.",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ('…and name the container in every language',
+     'app/lang/fr.json',
+     '"📌 {name} : épinglé — pas mis à jour."',
+     '"📌 {container} : épinglé — pas mis à jour."',
+     'test_reply_params.py'),
+
+    ("…the page's 'not updated' sentence exists in every language",
+     'app/lang/pt.json',
+     '  "web_update_pinned": "{count} contêiner(es) não atualizados: fixados ou excluídos das atualizações.",\n',
+     '',
+     'test_lang_parity.py'),
+
+    # ── Q16h: the queue around a self-update, the drain's words, a held major ──
+    ('a self-update names and drops the queue right before its helper starts'
+     ', whoever started it (Q16h)',
+     'app/selfupdate.py',
+     '    try:\n'
+     '        _drop_queue(ctx)\n'
+     '        result = subprocess.run(',
+     '    try:\n'
+     '        pass\n'
+     '        result = subprocess.run(',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…through the engine, which takes every entry off the queue',
+     'app/update_engine.py',
+     '            left = self.drop_queued_updates()\n'
+     '        except Exception as e:                              # noqa: BLE001\n'
+     '            print(f"Queue drop before the self-update failed',
+     '            left = []\n'
+     '        except Exception as e:                              # noqa: BLE001\n'
+     '            print(f"Queue drop before the self-update failed',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and names them to every channel, with their hosts',
+     'app/update_engine.py',
+     '                self._say_drain("update_queue_dropped_selfupdate",\n'
+     '                                {"keys": left})\n',
+     '                pass\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…the swap flag goes up before the helper starts, so nothing queues in '
+     'its last seconds',
+     'app/selfupdate.py',
+     '    ctx._swap_in_flight = True\n'
+     '    try:\n'
+     '        _drop_queue(ctx)\n',
+     '    try:\n'
+     '        _drop_queue(ctx)\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and comes down again when the helper does not start, so the lock is g'
+     'iven back',
+     'app/selfupdate.py',
+     '    if result.returncode != 0:\n'
+     '        ctx._swap_in_flight = False\n',
+     '    if result.returncode != 0:\n'
+     '        pass\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…or when its launch raises',
+     'app/selfupdate.py',
+     '    except BaseException:\n'
+     '        ctx._swap_in_flight = False\n'
+     '        raise\n',
+     '    except BaseException:\n'
+     '        raise\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('during the swap a single update is refused, not queued',
+     'app/update_engine.py',
+     '        if getattr(self, "_swap_in_flight", False):\n'
+     '            return False, "update_refused_selfupdate", {}\n',
+     '        if False:\n'
+     '            return False, "update_refused_selfupdate", {}\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and so is a request for several, as a whole',
+     'app/update_engine.py',
+     '        if getattr(self, "_swap_in_flight", False):\n'
+     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
+     '        if False:\n'
+     '            # Refused as a whole, as `claim_or_queue` refuses one (Q16h).\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…Telegram says the refusal once for a batch',
+     'app/telegram_bot.py',
+     '        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):\n',
+     '        if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…Discord says it',
+     'app/discord_bot.py',
+     '        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):\n',
+     '        if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…the Web UI sends the page to its banner',
+     'app/web_ui.py',
+     '            if "update_refused_selfupdate" in answers:\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…which the page knows',
+     'app/web_ui.py',
+     '                        "pinned", "restarting"):\n',
+     '                        "pinned"):\n',
+     'test_web_update_feedback.py'),
+
+    ('a self-update that gives its lock back by hand kicks the drainer, so w'
+     'hat queued meanwhile runs without waiting for a sweep (Q16h)',
+     'app/selfupdate.py',
+     '            ctx._update_lock.release()\n'
+     '            _kick_queue(ctx)\n',
+     '            ctx._update_lock.release()\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…through the engine of its context',
+     'app/selfupdate.py',
+     '            engine.kick_drain()\n',
+     '            pass\n',
+     'test_selfupdate_decoupled.py'),
+
+    ('a queued entry the batch already did is named as done, not the nameles'
+     's "no pending updates" (Q16h)',
+     'app/update_engine.py',
+     '                               name=self._key_label(key))\n'
+     '            return self._t("update_already_done", name=self._key_label(key))\n'
+     '        if why == "host_unknown":\n',
+     '                               name=self._key_label(key))\n'
+     '            return self._t("no_pending_updates")\n'
+     '        if why == "host_unknown":\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and one over an unreadable pending list is named as that, not as done',
+     'app/update_engine.py',
+     '            if path and os.path.exists(path):\n',
+     '            if False:\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the drain names the containers it reports with their host (Q16h)',
+     'app/update_engine.py',
+     '            kw["names"] = ", ".join(f"`{self._key_label(k)}`"\n',
+     '            kw["names"] = ", ".join(f"`{k}`"\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and a drained entry that raised',
+     'app/update_engine.py',
+     '            text = (f"❌ `{self._key_label(params[\'key\'])}`: "\n',
+     '            text = (f"❌ `{params[\'key\']}`: "\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a Web major confirmation of a container pinned or excluded since the p'
+     'rompt says so on the page and starts nothing (Q16h)',
+     'app/web_ui.py',
+     '                    why = bot.engine.held_back(raw)\n',
+     '                    why = None\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…excluded as well as pinned',
+     'app/web_ui.py',
+     '                    if why in ("pinned", "excluded"):\n'
+     '                        self._send_redirect("/?update=pinned&n=1")\n',
+     '                    if why in ("pinned",):\n'
+     '                        self._send_redirect("/?update=pinned&n=1")\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('a held major in Telegram brings Confirm/Skip back',
+     'app/telegram_bot.py',
+     '                    name=f"`{self._key_label(container_key)}`"),\n'
+     '                    reply_markup=self._major_keyboard(\n'
+     '                        host_key(host_name, name)))\n',
+     '                    name=f"`{self._key_label(container_key)}`"))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('…and so does one refused over an unreadable pin list',
+     'app/telegram_bot.py',
+     '                self.t("update_refused_pin_list"),\n'
+     '                reply_markup=self._major_keyboard(host_key(host_name, name)))\n',
+     '                self.t("update_refused_pin_list"))\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('an entry whose netns snapshot failed is not asked for its labels on th'
+     'at host again',
+     'app/update_engine.py',
+     '                        labels=(u_host, u["name"]) not in snapshot_failed,\n',
+     '                        labels=True,\n',
+     'test_selfupdate_swap_queue.py'),
+
+    ('the swap refusal is in every language',
+     'app/lang/ko.json',
+     '  "update_refused_selfupdate": ',
+     '  "update_refused_selfupdate_x": ',
+     'test_lang_parity.py'),
+
+    ('…and the named unreadable-pending sentence',
+     'app/lang/pl.json',
+     '  "update_queue_skipped_pending_unreadable": ',
+     '  "update_queue_skipped_pending_unreadablex": ',
+     'test_lang_parity.py'),
+
+    ('…and the Web banner',
+     'app/lang/tr.json',
+     '  "web_update_restarting": ',
+     '  "web_update_restartingx": ',
+     'test_lang_parity.py'),
+
+    ('…and its title',
+     'app/lang/zh.json',
+     '  "web_update_restarting_title": ',
+     '  "web_update_restarting_titlex": ',
+     'test_lang_parity.py'),
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

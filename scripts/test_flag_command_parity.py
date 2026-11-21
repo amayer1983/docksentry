@@ -21,6 +21,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 import container_flags as cf  # noqa: E402
@@ -180,13 +182,16 @@ db = open(os.path.join(APP, "discord_bot.py"), encoding="utf-8").read()
 for cmd, key in (("/trustrunning", 'FLAGS["trustrunning"]'),
                  ("/askmajor", 'FLAGS["askmajor"]'),
                  ("/cooldown", "set_cooldown(")):
-    i = tb.index(f'elif text.startswith("{cmd}")')
-    body = tb[i:tb.index("\n        elif text", i + 10)]
-    checks[f"Telegram {cmd} goes through the core"] = key in body
+    body = srcslice.section(tb, f'elif text.startswith("{cmd}")',
+                            "\n        elif text",
+                            label=f"telegram_bot.py: {cmd} branch")
+    checks[f"Telegram {cmd} goes through the core"] = (
+        body is not None and key in body)
     # And nothing is assembled beside it: no store call, no hand-built
     # bullet line, no second copy of the resolve.
     checks[f"Telegram {cmd} keeps no logic of its own"] = (
-        "self._store_for(host)" not in body
+        body is not None
+        and "self._store_for(host)" not in body
         and "self._resolve_container(" not in body)
 
 checks["Discord /cooldown can list too"] = (

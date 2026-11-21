@@ -16,6 +16,8 @@ because that is a new incident rather than the old one continuing.
 import os
 import sys
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 from monitor import ContainerMonitor  # noqa: E402
@@ -76,14 +78,17 @@ checks["a long quiet spell starts the count over"] = (
 # crash loop; the backoff written for it never applied to it, and a live
 # install ran paperless-ngx to restart #2091 at a full alert every half
 # hour. So both gates are asserted, by name.
-_deaths = src.split("deaths = [")[1].split("mass = (")[0]
-_others = src.split("for kind, name, detail in others:")[1].split("return sent")[0]
+_deaths = srcslice.section(src, "deaths = [", "mass = (",
+                           label="monitor.py: the crash gate")
+_others = srcslice.section(src, "for kind, name, detail in others:",
+                           "return sent", label="monitor.py: the other gate")
 checks["the crash gate asks for the grown wait"] = (
-    "self._cooldown_for((n, k))" in _deaths)
+    _deaths is not None and "self._cooldown_for((n, k))" in _deaths)
 checks["…and so does every other kind"] = (
-    "self._cooldown_for(key)" in _others)
+    _others is not None and "self._cooldown_for(key)" in _others)
 checks["neither gate uses the flat wait any more"] = (
-    "< self.COOLDOWN_SECONDS" not in _deaths
+    _deaths is not None and _others is not None
+    and "< self.COOLDOWN_SECONDS" not in _deaths
     and "< self.COOLDOWN_SECONDS" not in _others)
 
 # ── and the count is kept in ONE place ───────────────────────────────

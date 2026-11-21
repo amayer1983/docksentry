@@ -56,14 +56,17 @@ def main():
 
     # The crawl is bounded, and the cache exists — a compose stack with
     # five containers from one image must not walk 44 pages five times.
-    import inspect as _i
-    src = _i.getsource(UpdateChecker._list_remote_tags)
-    checks["the crawl is bounded"] = "pages < 60" in src
-    checks["a repeated url breaks the loop"] = "seen_urls" in src
-    checks["results are cached per run"] = "_tag_list_cache" in src
+    import srcslice
+    src = srcslice.method_source(UpdateChecker, "_list_remote_tags")
+    checks["the crawl is bounded"] = src is not None and "pages < 60" in src
+    checks["a repeated url breaks the loop"] = (
+        src is not None and "seen_urls" in src)
+    checks["results are cached per run"] = (
+        src is not None and "_tag_list_cache" in src)
     # A failed continuation must keep the pages already fetched rather
     # than throwing the first one away too.
-    checks["a failed page keeps what was fetched"] = "pagination stopped" in src
+    checks["a failed page keeps what was fetched"] = (
+        src is not None and "pagination stopped" in src)
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

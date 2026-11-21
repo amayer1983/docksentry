@@ -27,6 +27,8 @@ import os
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 import web_ui  # noqa: E402
@@ -97,36 +99,40 @@ checks["…and leaves no password set (open, as chosen)"] = (
 # ── the skip endpoint cannot jump the password by URL ───────────────
 src = open(os.path.join(os.path.dirname(__file__), "..", "app",
                         "web_ui.py"), encoding="utf-8").read()
-i = src.index('elif path == "/api/wizard_skip":')
-skip = src[i:i + 700]
+skip = srcslice.section(src, 'elif path == "/api/wizard_skip":', length=700,
+                        label="web_ui.py: /api/wizard_skip")
 checks["the skip endpoint refuses to open a passwordless dashboard"] = (
-    'if not (getattr(config, "web_password"' in skip
+    skip is not None
+    and 'if not (getattr(config, "web_password"' in skip
     and 'self._send_redirect("/setup")' in skip)
 # And it is no longer linked from the wizard — the in-step tick is the
 # only escape now.
-i = src.index("def _page_setup")
-page = src[i:src.index("\n        def ", i + 10)]
+page = srcslice.section(src, "def _page_setup", "\n        def ",
+                        label="web_ui.py: _page_setup")
 checks["the blanket skip link is gone from the wizard"] = (
-    "/api/wizard_skip" not in page)
+    page is not None and "/api/wizard_skip" not in page)
 
 # ── the wizard renders the password step, first, with its parts ─────
-checks["the wizard has five steps now"] = page.count('data-step-pane=') == 5
+checks["the wizard has five steps now"] = (
+    page is not None and page.count('data-step-pane=') == 5)
 checks["…step one is the password"] = (
-    page.index('data-step-pane="1"') < page.index('name="web_password"')
-    < page.index('data-step-pane="2"'))
+    srcslice.in_order(page, 'data-step-pane="1"', 'name="web_password"',
+                      'data-step-pane="2"'))
 checks["…with a confirm field and the no-password tick"] = (
-    'name="web_password_confirm"' in page and 'name="no_password"' in page)
+    page is not None
+    and 'name="web_password_confirm"' in page and 'name="no_password"' in page)
 checks["…and the password field is a password input, not text"] = (
-    'type="password" name="web_password"' in page)
+    page is not None and 'type="password" name="web_password"' in page)
 
 # ── the logout button is an SVG, not a glyph that may be missing ────
 # It shipped as ⏻ (U+23FB) and rendered as a tofu box in @NotRetarded's
 # font (#60). The theme toggle beside it was already an SVG.
-i = src.index("logout_html = ")
-lo = src[i:i + 900]
+lo = srcslice.section(src, "logout_html = ", length=900,
+                      label="web_ui.py: logout_html")
 checks["the logout control is an SVG, not the power glyph"] = (
-    "<svg" in lo and "⏻" not in lo)
-checks["…and still carries an accessible label"] = "aria-label" in lo
+    lo is not None and "<svg" in lo and "⏻" not in lo)
+checks["…and still carries an accessible label"] = (
+    lo is not None and "aria-label" in lo)
 
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():

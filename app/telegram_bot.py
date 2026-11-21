@@ -172,21 +172,17 @@ def pending_key(entry):
 
     The pending file is a single flat list holding EVERY managed host's
     entries, so this pair, not the name alone, is what removals have to
-    match on: two boxes may each run an `nginx`."""
-    return pending_host(entry), entry.get("name")
+    match on: two boxes may each run an `nginx`. The rule is
+    `pending.key_of`; this name stays for the call sites."""
+    import pending as _pending
+    return _pending.key_of(entry)
 
 
 def read_pending(path):
     """`pending_updates.json` as a list. Empty when missing or corrupt —
-    same tolerance every other reader of this file applies."""
-    if not path or not os.path.exists(path):
-        return []
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return []
-    return data if isinstance(data, list) else []
+    the tolerance lives in `pending.read`, shared by every caller."""
+    import pending as _pending
+    return _pending.read(path)
 
 
 class TelegramBot:
@@ -581,6 +577,13 @@ class TelegramBot:
         opt out via `include_stopped=False`.
 
         `backend` picks the host to look on (#7); default is the local one.
+
+        Only `/changelog <name>` still comes here, and it only ever looks
+        at the local host. Everything that looks across hosts goes through
+        `container_flags.find_on_hosts`, which tells a host that did not
+        answer from one that has no such container — this one cannot: a
+        refused SSH exits non-zero with nothing on stdout and reads as
+        "not found", and a dead host's timeout raises straight through.
         """
         # argv without the CLI name — the backend prepends it, so the
         # "-a" insert index shifts down by one accordingly.
@@ -612,29 +615,71 @@ class TelegramBot:
         import lifecycle
         return lifecycle.is_glob(s)
 
-    def _match_glob(self, pattern, include_stopped=True, backend=None):
-        """Sorted container names matching a glob (#40, @LeeNX).
-        `backend` picks the host to match on (#7); default is the local
-        one. The matching is `lifecycle.match_glob` — shared, so `/stop
-        web*` means the same set of containers in either chat."""
-        import lifecycle
-        return lifecycle.match_glob(pattern, backend=backend or self.backend,
-                                    include_stopped=include_stopped)
-
-    def _select_containers(self, arg, backend=None):
+    def _select_containers(self, arg, backend=None, host=None, read=False):
         """Resolve a /check or /update argument to a list of container names.
         Glob (`*?[`) → all matches; plain → single partial-resolved name.
-        Returns (names, error_msg); error_msg is None on success (#40).
-        `backend` picks the host to select on (#7); default is the local one."""
-        if self._is_glob(arg):
-            names = self._match_glob(arg, backend=backend)
-            if not names:
-                return [], self.t("glob_no_match", pattern=arg)
-            return names, None
-        resolved, err = self._resolve_container(arg, backend=backend)
-        if err:
-            return [], err
-        return [resolved], None
+        Returns (names, error_msg, unreachable): error_msg is None on
+        success (#40); `unreachable` is the `container_flags.Unreachable`
+        of a host that did not answer the lookup, else None.
+        `host` is the host asked (None on a single-host install) and
+        `backend` its backend; default is the local one (#7).
+
+        A plain name and a glob both go through `find_on_hosts`, so a
+        dead or refused host is said to be unreachable instead of raising
+        its timeout through the dispatch or reading as "not found" or "no
+        containers match" (W4).
+
+        `read=True` is /check's lookup (W7): a remote host gets the short
+        probe and a host found dead a moment ago is not asked again.
+        /update leaves it False: a write always asks."""
+        import container_flags
+        found = container_flags.find_on_hosts(
+            [host], backend_for=lambda _h: backend or self.backend,
+            arg=arg, use_cache=read, remote_timeout=10 if read else None,
+            t=self.t)
+        if found.unreachable:
+            return [], None, found.unreachable[0]
+        if found.found:
+            return list(found.found[0][1]), None, None
+        err = found.first_error
+        return [], self.t(err.key, **err.params), None
+
+    def _pending_matching(self, arg, targets):
+        """The pending entries a typed `/update <arg>` means, read off
+        the pending file alone: no host is asked. `targets` as
+        `_resolve_targets` gave them (None: the local host). A glob
+        matches through `lifecycle.glob_filter`, as the lookups on a free
+        lock do (case-insensitively); a plain name only exactly — the prefix match `_select_containers` does
+        needs the host's container list, and a guess against the pending
+        list alone could pick another container than the free path
+        would."""
+        import lifecycle
+        import pending as _pending
+        from container_store import LOCAL_HOST
+        hosts = ([h.name for h in targets] if targets is not None
+                 else [LOCAL_HOST])
+        entries = _pending.entries_for(
+            _pending.read(self.config.pending_file), hosts)
+        if lifecycle.is_glob(arg):
+            hit = set(lifecycle.glob_filter(
+                arg, [e.get("name") or "" for e in entries]))
+            return [e for e in entries if (e.get("name") or "") in hit]
+        return [e for e in entries if e.get("name") == arg]
+
+    def _lookup_tail(self, found_any, first_err, unreachable):
+        """The message that closes a name lookup across hosts, or None.
+
+        Each host that did not answer gets its own line (its SSH hint
+        underneath, when hostdiag has one). When nothing was found on
+        the hosts that did answer, their "not found" leads, so a miss
+        never stands alone while a host nobody could ask may have had
+        the container all along."""
+        lines = [] if found_any or not first_err else [first_err]
+        for gone in unreachable:
+            r = gone.reply()
+            lines.append(self.t(r.key, **r.params)
+                         + ("\n" + gone.hint if gone.hint else ""))
+        return "\n".join(lines) or None
 
     # ── Multi-host command targeting (#7) ──────────────────────────────
     # One instance, N hosts: a command may be aimed at one of them with a
@@ -669,23 +714,23 @@ class TelegramBot:
             back to "all" or to local would act on the wrong box.
 
         `write=True` marks the intervening commands, whose no-token
-        default is the local host; reads default to every host.
+        default is the local host; reads default to every host. That
+        rule is the core's (`container_flags.targets_for`); this method
+        only parses the `@host` token and renders the answer.
         """
+        # Single-host first, before any parsing: the `@host` token stays
+        # in the text untouched, so these installs keep their pre-#7 path
+        # and their output verbatim.
         if not self._multi():
             return arg_text, None, None
-        from hosts import ALL_HOSTS, split_host_target
+        import container_flags
+        from hosts import split_host_target
         cleaned, target = split_host_target(arg_text)
-        if target is None:
-            return cleaned, ([self.hosts.local] if write
-                             else list(self.hosts)), None
-        if target == ALL_HOSTS:
-            return cleaned, list(self.hosts), None
-        host = self.hosts.get(target)
-        if host is None:
-            return cleaned, None, self.t(
-                "host_unknown", name=target,
-                hosts=", ".join(f"`{n}`" for n in self.hosts.names))
-        return cleaned, [host], None
+        targets, fatal = container_flags.targets_for(
+            "write" if write else "read", self.hosts, target)
+        if fatal is not None:
+            return cleaned, None, self.t(fatal.key, **fatal.params)
+        return cleaned, targets, None
 
     def _host_hint(self, arg_text):
         """The line appended to a *write* command's reply when it defaulted
@@ -841,36 +886,31 @@ class TelegramBot:
         hosts each one gets its own "Updates Available" notification;
         the container lines carry the `@host` marker via `_display_name`.
         """
+        import container_flags
         self.send_message(self.t("checking_updates"))
         found = False
         pins_said = False
-        for host in (targets or [None]):
-            try:
-                updates = self._checker_for(host, checker).check_all(bot=self)
-            except Exception as e:
-                if not self._multi():
-                    raise
+
+        def _report(hc):
+            nonlocal found, pins_said
+            host, updates = hc.host, hc.updates
+            if hc.error is not None:
                 # One unreachable host must not stop the others from being
-                # reported — same rule the scheduler follows (#7).
-                _detail = human(e, self.t)
-                try:
-                    import hostdiag
-                    _extra = hostdiag.hint(getattr(host, "endpoint", ""), e,
-                                           t=self.t)
-                    if _extra:
-                        _detail += "\n\n" + _extra
-                except Exception:
-                    pass
+                # reported — same rule the scheduler follows (#7). On a
+                # single-host install the walk raises instead, as before.
+                _detail = human(hc.error, self.t)
+                if hc.hint:
+                    _detail += "\n\n" + hc.hint
                 self.send_message(self.t("host_check_failed",
                                          host=host.name, error=_detail))
-                continue
+                return
             # Nothing was checked, so neither "up to date" below may be
             # said. Once: the pin list is one file for every host.
             if getattr(updates, "pin_list_unreadable", False):
                 if not pins_said:
                     self.send_message(self.t("check_pin_list_unreadable"))
                     pins_said = True
-                continue
+                return
             if updates:
                 found = True
                 self.notify_updates(updates)
@@ -886,6 +926,15 @@ class TelegramBot:
                 # original single summary untouched.
                 self.send_message(self.t("host_check_uptodate",
                                          host=getattr(host, "name", "local")))
+
+        # The only one of the four walks that puts hostdiag's hint under
+        # a failed host; /check <name>, /update <name> and the dry run
+        # never had it.
+        # A read (W7): a host found dead a moment ago is not waited on.
+        container_flags.check_on_hosts(
+            targets, checker_for=lambda h: self._checker_for(h, checker),
+            use_cache=True,
+            debug_sink=self, hint=True, on_host=_report, t=self.t)
         if not found and not self._multi() and not pins_said:
             self.notify_no_updates()
         # Docksentry-selfupdate hint (#2, @famewolf): the regular
@@ -1716,6 +1765,17 @@ class TelegramBot:
             "reply_markup": json.dumps(keyboard)
         })
 
+    @staticmethod
+    def _major_keyboard(key):
+        """Confirm/Skip for the deferred major update `key` (a host key).
+        The prompt carries it, and so does a confirmation refused because
+        the lock was held: tapping Confirm takes the prompt's buttons
+        away, and nothing else offers them again."""
+        return {"inline_keyboard": [[
+            {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
+            {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
+        ]]}
+
     def _update_one_key(self, entry):
         """The `update_one:` / `confirm_major:` payload identifying ONE
         container on ONE host (#7).
@@ -1784,17 +1844,22 @@ class TelegramBot:
 
         return {"inline_keyboard": keyboard}
 
-    def _run_single_update(self, checker, container_key, from_queue=False):
+    def _run_single_update(self, checker, container_key):
         """Update a single container.
 
         `container_key` is the `update_one:` payload: a bare container name
         for the local host, `nas/nginx` for a remote one (#7). It has to
         carry the host — the pending file holds every host's entries and
         two of them may both list an `nginx`, so a name alone would update
-        (and then delete) whichever happened to come first."""
+        (and then delete) whichever happened to come first.
+
+        What queued behind this update is the engine's drainer's once the
+        lock goes back (Q13): `release_update` kicks it. This used to
+        drain the queue itself, here, after the release — which made a
+        Telegram tap the one thing besides the poll loop that ever worked
+        the queue off."""
         from container_store import split_host_key
-        host_name, container_name = split_host_key(container_key)
-        host = self._host_by_name(host_name)
+        host = self._host_by_name(split_host_key(container_key)[0])
         checker = self._checker_for(host, checker)
         # Before the lock and the queue: a tap that is refused must not
         # come back later off the queue, and must leave the pending
@@ -1806,223 +1871,168 @@ class TelegramBot:
         # Claim the shared update mutex — before v1.23.1 this path took
         # no lock at all, so tapping "update searxng" while an "Update
         # all" was running recreated containers concurrently.
-        if not self._update_lock.acquire(blocking=False):
-            # Tapping the SAME container again while it is running is not
-            # a second piece of work — it is the same one. Queueing it
-            # meant the drain picked it up after the update had finished
-            # and emptied the pending list, and then reported "container
-            # not in update list" directly under a green OK (seen on the
-            # local instance, 08.10.2026).
-            if container_key in self.engine.updating:
-                self.send_message(self.t("update_same_running",
-                                         name=self._key_label(container_key)))
-                return
-            # Anything else: queue it rather than drop it. Tapping four containers in
-            # the notification used to run one and discard three, with an
-            # "an update is already running" for each — so you had to come
-            # back and tap them again, one at a time, and nothing told you
-            # which ones had not run.
-            pos = self.engine.enqueue_update(container_key)
-            if pos == -1:
-                self.send_message(self.t("update_queue_full",
-                                         max=self.engine.UPDATE_QUEUE_MAX))
-            elif pos == 0:
-                # How long it has been sitting there, because "already in
-                # the queue" alone reads as "you already pressed this" —
-                # and the entry may have been stranded since another day
-                # (see `_sweep_update_queue`). A genuine double tap says
-                # "for 2s", which is also the truth.
-                from notify_retry import _ago
-                waited = self.engine.queued_waiting_seconds(container_key)
-                self.send_message(self.t(
-                    "update_already_queued",
-                    name=self._key_label(container_key),
-                    since=_ago(waited if waited is not None else 0)))
-            else:
-                self.send_message(self.t("update_queued",
-                                         name=self._key_label(container_key),
-                                         pos=pos))
+        #
+        # Busy, the engine decides what happens to the tap (Q7) and this
+        # only says it: queued rather than dropped, because tapping four
+        # containers in the notification used to run one and discard
+        # three, with an "an update is already running" for each — so you
+        # had to come back and tap them again, one at a time, and nothing
+        # told you which ones had not run.
+        claimed, busy, params = self.engine.claim_or_queue(container_key)
+        if not claimed:
+            self.send_message(
+                self._claim_answer(container_key, busy, params))
             return
-        # Reset per attempt: a stale value from a previous failure would
-        # make the drain skip a group that has nothing to do with this run.
-        self._last_update_group = None
         try:
-            if not os.path.exists(self.config.pending_file):
-                self.send_message(self.t("no_pending_updates"))
-                return
-
-            with open(self.config.pending_file, encoding="utf-8") as f:
-                updates = json.load(f)
-
-            target = next((u for u in updates
-                           if self._pending_key(u) == (host_name, container_name)),
-                          None)
-            if not target:
-                # Two different things, and they used to read the same.
-                # Off the queue it almost always means the update already
-                # happened while this entry waited — saying "not in the
-                # update list" there puts a warning under a green result
-                # for work that succeeded. Typed by hand it really is a
-                # name that is not pending.
-                self.send_message(self.t(
-                    "update_already_done" if from_queue else "container_not_in_list",
-                    name=self._key_label(container_key)))
-                return
-
-            # Enrich source_url so both the inline send_message line and
-            # the Discord/webhook send_update_result carry the link
-            # (parity with the auto-update + bulk-update flows, fixed in
-            # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
-            self._enrich_with_source_url([target])
-            # Say what is running, where the rest of the program can see
-            # it. The batch path has always done this; the single path
-            # never did — so the Web UI showed no "updating" badge for a
-            # container updated from a chat, and a second tap had no way
-            # to know it was already in flight.
-            self.engine.mark_updating(container_key,
-                                      target.get("new_version") or "")
-            # The host here too: this line sits directly above a result
-            # line that names it, and `portainer` alone is ambiguous the
-            # moment two machines run one.
-            self.send_message(self.t("update_single_starting",
-                                     name=self._key_label(container_key)))
-
-            try:
-                compose_kwargs = {k: target[k] for k in target if k.startswith("compose_")}
-                success, msg = checker.update_container(target["name"], target["image"], **compose_kwargs)
-                # Remembered for the drain: a failure takes its group-mates
-                # out of the queue, an success does not.
-                self._last_update_group = (
-                    None if success else self._group_of(container_key))
-                status = "✅" if success else "❌"
-                self.send_message(f"{status} {self._display_name(target)}: {msg}")
-                if self.notifier:
-                    self.notifier.send_update_result(container_name, target["image"], success, msg,
-                                                     source_url=target.get("source_url", ""))
-            except Exception as e:
-                self._last_update_group = self._group_of(container_key)
-                self.send_message(f"❌ {self._display_name(target)}: {str(e)[:200]}")
-                if self.notifier:
-                    self.notifier.send_update_result(container_name, target.get("image", "?"), False, str(e)[:200],
-                                                     source_url=target.get("source_url", ""))
-
-            # Remove from pending list (atomic write — v1.22.1). Matched on
-            # (host, name): another host's same-named entry must survive.
-            remaining = [u for u in updates
-                         if self._pending_key(u) != (host_name, container_name)]
-            from container_store import atomic_write_json
-            atomic_write_json(self.config.pending_file, remaining)
-
-            if not remaining:
-                self.send_message(self.t("update_all_done"))
+            # The engine runs it (Q11a): pending lookup, the in-flight
+            # mark, `update_container`, the entry out of the file. What
+            # is said about it stays here.
+            results, _all_done = self.engine.run_keys(
+                [container_key],
+                checker_for=lambda key: checker,
+                group_of=self._group_of,
+                enrich=self._enrich_with_source_url,
+                # The host here too: this line sits directly above a
+                # result line that names it, and `portainer` alone is
+                # ambiguous the moment two machines run one.
+                starting=lambda key, target: self.send_message(self.t(
+                    "update_single_starting", name=self._key_label(key))),
+                report=self._report_single_update,
+                # Said inside run_keys, while the container still counts
+                # as in flight: a second tap during this line is "the
+                # same one", not a job for the queue.
+                done=lambda: self.send_message(self.t("update_all_done")),
+                # What the batch says beside the result: the cascade of a
+                # group head, the cleanup after a full disk.
+                note=lambda key, line: self.send_message(line),
+                pending_file=self.config.pending_file)
+            for key, target, success, msg, last_group in results:
+                if target is None:
+                    self.send_message(self._single_update_skipped(key, msg))
+                    return
+                if last_group:
+                    # A failed container takes its queued group-mates
+                    # with it. Done here, before the release: the drainer
+                    # that release starts finds them gone. It used to be
+                    # handed to Telegram's own drain after the release.
+                    self.engine.drop_group_mates(last_group,
+                                                 group_of=self._group_of)
         finally:
-            self.engine.clear_updating(container_key)
-            self._update_lock.release()
-            self._run_queued_selfupdate()
-        # Only after the lock is back: whoever ran gets to work off what
-        # arrived while they held it. Re-acquired per entry rather than
-        # held across the whole queue, so the scheduler and a queued
-        # self-update can still get in — holding it for five containers
-        # would lock everything else out for ten minutes, and re-taking it
-        # per entry keeps the concurrency guard that v1.23.1 added.
-        if not from_queue:
-            self._drain_update_queue(
-                checker, last_group=getattr(self, "_last_update_group", None))
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
-    def _sweep_update_queue(self, checker):
-        """Pick up queued work that nobody is going to drain.
+    def _single_update_skipped(self, container_key, why):
+        """The sentence for a tap the engine found nothing to run for:
+        `why` is `run_keys`'s `msg` for a key that did not run. A queued
+        key is the drainer's to say (`UpdateEngine._drain_skipped_text`)."""
+        if why in ("pinned", "pinned_label", "excluded",
+                   "pin_list_unreadable"):
+            # Held right before the update (Q16g): pinned or excluded
+            # since the notification, and its entry is still pending.
+            return self.t(f"update_held_{why}",
+                          name=f"`{self._key_label(container_key)}`")
+        if why == "no_pending_updates":
+            # No file, or one nothing can read: it used to raise inside
+            # the thread, and the chat heard nothing after the toast.
+            return self.t("no_pending_updates")
+        if why == "host_unknown":
+            from container_store import split_host_key
+            return self._unknown_host_text(split_host_key(container_key)[0])
+        # A tap really names a container that is not pending. Off the
+        # queue the same answer means the update already happened while
+        # the entry waited; the drainer says that one.
+        return self.t("container_not_in_list",
+                      name=self._key_label(container_key))
 
-        `_drain_update_queue` runs in exactly one place: at the end of a
-        Telegram single update, once it has let go of the lock. The lock
-        itself is taken in eleven places — the scheduled run, the Web UI,
-        a self-update and six further Telegram paths among them. Queue
-        something while one of THOSE is holding it and the entry waits
-        for the next Telegram single update to finish, however long that
-        takes.
+    def _unknown_host_text(self, host_name):
+        """The same sentence a command aimed at an unknown host gets,
+        with the hosts there are now."""
+        from container_store import LOCAL_HOST
+        names = [h.name for h in self.hosts] if self.hosts else [LOCAL_HOST]
+        return self.t("host_unknown", name=host_name,
+                      hosts=", ".join(f"`{n}`" for n in names))
 
-        Measured on my own instance, 23.10.2026: three
-        buttons pressed at 19:15:17, :21 and :22 (audit log). The second
-        came back "queued — position 2" and the third "already in the
-        queue", neither of which made sense for a first press. The queue
-        had been holding an entry since an earlier day, and both
-        portainers were then updated within the same minute once an
-        unrelated 2.3 GB update happened to end. Nothing was lost; it
-        simply sat there, and the person pressing the button was told
-        something that read like a correction.
+    def _report_single_update(self, container_key, target, success, msg):
+        """One finished single update: the result line here.
 
-        Called once per poll cycle, so a stranded entry now waits
-        seconds. Cheap when there is nothing to do: one lock, one
-        truth test.
+        The card for the other channels is the batch's now (Q11c): the
+        engine reports it through the broadcast seam before this is
+        called, exactly as for "Update all". Sending it here as well is
+        the double report test_single_update_report counts.
 
-        Never raises — this runs inside the listener loop, and taking
-        that down to retry a queued update would be a far worse trade.
+        Enriched with `source_url` before this is called, so the line
+        carries the link (parity with the auto-update + bulk-update
+        flows, fixed in v1.19.2/v1.19.3 after @NotRetarded surfaced the
+        gap)."""
+        status = "✅" if success else "❌"
+        self.send_message(f"{status} {self._display_name(target)}: {msg}")
+
+    def _claim_answer(self, container_key, key, params):
+        """The sentence for a claim the engine answered with `key`.
+
+        The engine's parameters, plus the container's name the way the
+        buttons say it, and `since_seconds` rendered as "2m".
         """
-        try:
-            if not self.engine.has_queued_updates():
-                return
-            # Somebody is working: they will either drain it themselves
-            # or leave it for the next sweep. Racy by nature and
-            # harmless — `_drain_update_queue` re-acquires per entry and
-            # puts the entry back if it loses.
-            if self._update_lock.locked():
-                return
-            self._drain_update_queue(checker)
-        except Exception as e:                              # pragma: no cover
-            print(f"Queue sweep failed: {e}")
+        kw = dict(params)
+        if "since_seconds" in kw:
+            from notify_retry import _ago
+            kw["since"] = _ago(kw.pop("since_seconds"))
+        return self.t(key, name=self._key_label(container_key), **kw)
 
-    def _drain_update_queue(self, checker, last_group=None):
-        """Run whatever was queued while an update held the lock.
+    def _queued_answer(self, outcomes):
+        """The message for a batch the engine queued instead of claiming:
+        `claim_or_queue_many`'s outcomes, one `(key, i18n key, params)`
+        per container.
 
-        Never raises: a queue is a convenience and must not be able to
-        take down the update that finished successfully before it.
+        One container gets the sentence a tap gets. Several get a heading
+        and a line each. The heading names the container the engine is
+        updating right now; with none, `update_batch_queued` says
+        "another update is running". That is not quite true when a
+        cleanup or the scheduled self-update holds the lock
+        (`claim_update` lists who takes it) — the old "Update already in
+        progress" said the same, and I have not changed it here. A batch that did not fit was not queued at all and is
+        answered once: the engine answers it as a whole (my decision of
+        18.11.2026), so every outcome carries `update_queue_full`.
         """
-        while True:
-            # A pending self-update restarts the process, which would take
-            # the rest of the queue with it. Stop and NAME what is not
-            # going to run — dropping work quietly is the bug this whole
-            # change exists to fix, and doing it here would be worse than
-            # never having queued at all.
-            if self._queued_selfupdate:
-                left = self.engine.drop_queued_updates()
-                if left:
-                    self.send_message(self.t(
-                        "update_queue_dropped_selfupdate",
-                        names=", ".join(f"`{self._short_key(k)}`" for k in left)))
-                return
-            # A failed container takes its group-mates with it: the group
-            # order exists because they depend on each other, and updating
-            # the next one against a head that just failed is how you get
-            # an app talking to a database that rolled back. Same rule the
-            # automatic batch already follows.
-            if last_group:
-                mates = self.engine.drop_queued_updates(
-                    lambda k: self._group_of(k) == last_group)
-                if mates:
-                    self.send_message(self.t(
-                        "update_queue_skipped_group", group=last_group,
-                        names=", ".join(f"`{self._short_key(k)}`" for k in mates)))
-                last_group = None
-            key = self.engine.take_queued_update()
-            if key is None:
-                return
-            if not self._update_lock.acquire(blocking=False):
-                # Something else claimed it first — hand the entry back and
-                # let whoever holds it now do the draining.
-                self.engine.enqueue_update(key)
-                return
-            self._update_lock.release()
-            try:
-                self._run_single_update(checker, key, from_queue=True)
-            except Exception as e:                          # pragma: no cover
-                self.send_message(f"❌ `{self._short_key(key)}`: {str(e)[:200]}")
-                last_group = None
-                continue
-            last_group = getattr(self, "_last_update_group", None)
-
-    @staticmethod
-    def _short_key(container_key):
-        from container_store import split_host_key
-        return split_host_key(container_key)[1]
+        if len(outcomes) == 1:
+            return self._claim_answer(*outcomes[0])
+        if any(a == "update_refused_pin_list" for _k, a, _p in outcomes):
+            # Refused as a whole: nobody can tell what is pinned (Q16f).
+            return self.t("update_refused_pin_list")
+        if any(a == "update_refused_selfupdate" for _k, a, _p in outcomes):
+            # Refused as a whole: the process is about to be replaced
+            # (Q16h), and a queue would go with it.
+            return self.t("update_refused_selfupdate")
+        full = next((p for _k, a, p in outcomes
+                     if a == "update_queue_full"), None)
+        if full is not None:
+            return self.t("update_batch_queue_full", count=len(outcomes),
+                          max=full.get("max", 0))
+        running = [self._key_label(k) for k in self.engine.updating]
+        waits = any(a in ("update_queued", "update_already_queued")
+                    for _k, a, _p in outcomes)
+        # The heading says "these wait in the queue"; with nothing
+        # waiting (pinned, excluded or the one running) the lines say it
+        # on their own.
+        lines = [] if not waits else [
+            self.t("update_batch_queued_behind", name="`, `".join(running))
+            if running else self.t("update_batch_queued")]
+        for key, answer, params in outcomes:
+            name = self._key_label(key)
+            if answer == "update_not_queued_pinned":
+                lines.append(self.t("update_batch_line_pinned", name=name))
+            elif answer == "update_not_queued_excluded":
+                lines.append(self.t("update_batch_line_excluded", name=name))
+            elif answer == "update_queued":
+                lines.append(self.t("update_batch_line_queued", name=name,
+                                    pos=params.get("pos", 0)))
+            elif answer == "update_already_queued":
+                from notify_retry import _ago
+                lines.append(self.t(
+                    "update_batch_line_already_queued", name=name,
+                    since=_ago(params.get("since_seconds", 0))))
+            else:
+                lines.append(self.t("update_batch_line_same_running", name=name))
+        return "\n".join(lines)
 
     def _key_label(self, container_key):
         """`portainer` locally, `portainer @srv30` on a remote host.
@@ -2038,13 +2048,21 @@ class TelegramBot:
         return name if host == LOCAL_HOST else f"{name} @{host}"
 
     def _group_of(self, container_key):
-        """The group name a queued container belongs to, or None."""
+        """The id of the group a queued container belongs to on its own
+        host, or None. The same id the batch names a group by.
+
+        Until Q11c this was None for every container: the store's
+        `get_group_for_container` returns `(gid, group)`, the lookup
+        read it as a dict, raised on the tuple, and the `except` turned
+        that into None — so the drain never dropped a failed
+        container's queued group-mates through Telegram (measured
+        20.11.2026, test_single_update_report)."""
         try:
             from container_store import split_host_key
             host_name, name = split_host_key(container_key)
-            store = self._store_for(self._host_by_name(host_name))
-            g = store.get_group_for_container(name)
-            return (g or {}).get("name") or (g or {}).get("id") or None
+            gid, _group = self._store_for(host_name).get_group_for_container(
+                name)
+            return gid or None
         except Exception:
             return None
 
@@ -2086,6 +2104,13 @@ class TelegramBot:
         keys) can pass one straight through."""
         from container_store import split_host_key
         host_name, name = split_host_key(container_key)
+        # A key for a host that left DOCKER_HOSTS (or `nas/…` on a single
+        # host) is refused before anything is looked up: `_checker_for`
+        # would hand back the local checker and update a namesake there,
+        # and on a single host `_store_for` reads the local entries.
+        if not self.engine._manages_host(host_name):
+            self.send_message(self._unknown_host_text(host_name))
+            return
         host = self._host_by_name(host_name)
         checker = self._checker_for(host, checker)
         store = self._store_for(host_name)
@@ -2093,17 +2118,49 @@ class TelegramBot:
         if not pending:
             self.send_message(self.t("major_none_pending", name=name))
             return
+        from container_store import host_key
         from update_checker import pin_list_unreadable
         if pin_list_unreadable(checker):
-            self.send_message(self.t("update_refused_pin_list"))
+            # The major stays deferred, and the tap took the prompt's
+            # buttons away: they come back with the answer (Q16h), as
+            # with the busy answer below.
+            self.send_message(
+                self.t("update_refused_pin_list"),
+                reply_markup=self._major_keyboard(host_key(host_name, name)))
             return
         # Claim the shared update mutex (v1.23.1) — this path previously
         # took no lock, so confirming a major update could collide with
         # a concurrent "Update all" or scheduler auto-update pass.
-        if not self._update_lock.acquire(blocking=False):
-            self.send_message(self.t("update_already_running"))
+        #
+        # Busy, it is still refused and not queued — my decision of
+        # 18.11.2026 (Q16): everything else that updates now waits its
+        # turn, so the answer says that this one did not, and that the
+        # major is still waiting for a yes. The callback has already
+        # taken the prompt's buttons away, so the answer brings them back:
+        # without them "confirm it again" had nothing to tap on Telegram
+        # until the next auto pass prompted again.
+        if not self.engine.claim_update():
+            self.send_message(self.t(
+                "major_confirm_busy", name=name,
+                tag=self._entry_host_tag({"host": host_name})),
+                reply_markup=self._major_keyboard(host_key(host_name, name)))
             return
         try:
+            # Pinned or excluded since the prompt (Q16g): the same
+            # question the batch asks right before its update, labels
+            # included. The major stays deferred.
+            why = self.engine.held_back(container_key, labels=True,
+                                        checker=checker)
+            if why is not None:
+                # Confirm/Skip come back with it (Q16h): the major is
+                # still deferred, and once unpinned it can be confirmed
+                # from here again.
+                self.send_message(self.t(
+                    f"update_held_{why}",
+                    name=f"`{self._key_label(container_key)}`"),
+                    reply_markup=self._major_keyboard(
+                        host_key(host_name, name)))
+                return
             image = pending.get("image", "")
             compose = pending.get("compose", {}) or {}
             # Resolve link once for both Telegram + Discord/webhook surfaces
@@ -2122,8 +2179,7 @@ class TelegramBot:
             if success:
                 store.remove_pending_major(name)
         finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
     def _restart_group_dependents(self, *a, **k):
         return self.engine._restart_group_dependents(*a, **k)
@@ -2247,7 +2303,7 @@ class TelegramBot:
         # containers.
         auto_lock_held = False
         if auto_updates:
-            if self._update_lock.acquire(blocking=False):
+            if self.engine.claim_update():
                 auto_lock_held = True
             else:
                 print("Auto-update skipped: another update flow is running "
@@ -2328,18 +2384,17 @@ class TelegramBot:
                 # UpdateChecker.check_all merges its own result in. On a
                 # single-host install nothing is foreign, so this writes
                 # byte-for-byte what it always wrote.
-                from container_store import atomic_write_json
-                others = [e for e in read_pending(self.config.pending_file)
+                import pending as _pending
+                others = [e for e in _pending.read(self.config.pending_file)
                           if _host_of(e) not in batch_hosts]
-                atomic_write_json(self.config.pending_file, others + remaining)
+                _pending.write(self.config.pending_file, others + remaining)
         finally:
             # Release the update mutex if we claimed it for this batch.
             # try/finally guarantees release even if a send_message /
             # atomic_write above raised — otherwise the lock would leak and
             # block every future update.
             if auto_lock_held:
-                self._update_lock.release()
-                self._run_queued_selfupdate()
+                self.engine.release_update(after=self._run_queued_selfupdate)
 
         # Said once per state, not once per run. `policy_blocked`,
         # `age_blocked` and `skipped_window` are recomputed from the
@@ -2395,11 +2450,8 @@ class TelegramBot:
         # resolve to the local one; it stays the bare name for local
         # containers, which is every container on a single-host install.
         for name, old_ver, new_ver, host_name in major_pending_now:
-            key = self._update_one_key({"name": name, "host": host_name})
-            keyboard = {"inline_keyboard": [[
-                {"text": "✅ Confirm", "callback_data": f"confirm_major:{key}"},
-                {"text": "❌ Skip", "callback_data": f"reject_major:{key}"},
-            ]]}
+            keyboard = self._major_keyboard(
+                self._update_one_key({"name": name, "host": host_name}))
             # The keyboard is Telegram's and stays Telegram's; the seam
             # hands the markup to that leg only. Everyone else at least
             # learns that a confirmation is waiting, which they could not
@@ -2774,27 +2826,18 @@ class TelegramBot:
                          reply=self.send_message, reply_to=reply_to)
 
     def cleanup_guarded(self, checker):
-        """Run image cleanup under the shared update mutex (#2 follow-up,
-        @famewolf). `docker image prune -a` filters on image CREATION
-        time, so an image built upstream days ago but pulled seconds ago
-        is fair game — pruning during an update's pull→run window would
-        delete the image the update is about to run. Serializing through
-        the same lock closes that window for every trigger (Telegram
-        /cleanup, Web UI button, disk-warning auto-cleanup, post-update
-        auto-cleanup).
+        """Image cleanup under the update lock — `UpdateEngine.cleanup_guarded`
+        with Telegram's words and Telegram's self-update handoff.
 
-        Returns (ok, msg) from cleanup_images, or (None, busy-msg) when
-        an update flow holds the lock — callers decide how loudly to
-        report the skip. A skipped cleanup is never dangerous: the next
-        trigger simply runs it.
+        Kept here because the scheduler and the Web UI reach it through
+        the bot. Returns (ok, msg) from cleanup_images, or (None,
+        busy sentence) when an update flow holds the lock.
         """
-        if not self._update_lock.acquire(blocking=False):
-            return None, self.t("cleanup_busy")
-        try:
-            return checker.cleanup_images()
-        finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+        ok, msg = self.engine.cleanup_guarded(
+            checker, after=self._run_queued_selfupdate)
+        if ok is None:
+            return None, self.t(msg)
+        return ok, msg
 
     def _run_queued_selfupdate(self):
         """Run a self-update that queued behind a container batch.
@@ -2820,27 +2863,18 @@ class TelegramBot:
         the next scheduled tick simply retries. Holds the lock through
         its own pull+swap so no batch can start mid-self-update.
         """
-        if not self._update_lock.acquire(blocking=False):
+        if not self.engine.claim_update():
             print("Selfupdate check: skipped — another update flow is running.")
             return False
         try:
             return self._check_selfupdate_auto_locked(defer_check)
         finally:
-            # Nothing in here may stop the release. This block raised
-            # once — `_swap_in_flight` had been orphaned out of
-            # UpdateEngine.__init__ by an unrelated edit, so reading it
-            # threw AttributeError *before* release() was reached, and
-            # the update lock stayed held for the life of the process.
-            # Every later update on that instance answered "an update is
-            # already running" and queued behind a batch that had
-            # finished 40 minutes earlier. One attribute wedged the whole
-            # machine, silently.
-            try:
-                swap = bool(getattr(self, "_swap_in_flight", False))
-            except Exception:
-                swap = False
-            if not swap:
-                self._update_lock.release()
+            # Kept held once the helper is swapping the container, and
+            # nothing in the release may raise — both live in the door
+            # now (see UpdateEngine.release_update for why). No `after`,
+            # as before: this path has never handed a queued self-update
+            # on.
+            self.engine.release_update()
 
     def _check_selfupdate_auto_locked(self, defer_check=False):
         """Body of check_selfupdate_auto; only ever called with the
@@ -2961,7 +2995,8 @@ class TelegramBot:
         selfupdate.swap(self, config, own_name, own_image)
         return True
 
-    def run_updates(self, updater, updates=None):
+    def run_updates(self, updater, updates=None, queued_note=None,
+                    decided=None, keyboard=None):
         """Run a batch of container updates.
 
         When `updates` is provided (a list of update dicts from a
@@ -2971,37 +3006,90 @@ class TelegramBot:
         actually showed. When `updates` is None (legacy bare-"update_all"
         callback, or programmatic callers), the current pending file is
         read and the whole file is cleared on completion as before.
+
+        `queued_note` is a line added under the answer when the batch is
+        queued instead of run and at least one of it waits on the queue:
+        a busy `/update <glob>` queues only what the pending list holds
+        and says that the rest was not checked.
+
+        `decided(how)` is called once, as soon as it is clear what
+        happens, before anything is said: "started", "queued" (something
+        of it waits on the queue) or "refused" (nothing runs and nothing
+        waits). The "Update all" button answers its toast from it: the
+        toast used to say "Updates are starting..." before any of this
+        was known, also over "queued" and "queue full" (Q16 review).
+        `keyboard` is the tapped message's own, sent back under "queue
+        full": the tap took the buttons away, and "tap again" needs one.
         """
-        # Atomic claim of the shared update mutex. If any other update
-        # flow (single-container, major-confirm, or the scheduler's
-        # auto-update pass) holds it, bail. try/finally guarantees we
-        # always release — the old `update_running = False` only ran at
-        # the end, so an exception outside the inner loop would have left
-        # the flag stuck True forever, blocking all future updates.
+        told = []
+
+        def decide(how):
+            if decided is not None and not told:
+                told.append(how)
+                decided(how)
+
+        # Atomic claim of the shared update mutex, or the queue. If any
+        # other update flow (single-container, major-confirm, the
+        # scheduler's auto-update pass, the Web UI, Discord) holds it,
+        # the whole set goes on the engine's queue and the drainer runs
+        # it once the lock is free (Q16). Until then this answered "an
+        # update is already running" and dropped it: tapping "Update all"
+        # under a second host's notification while the first host's
+        # batch ran threw the second one away, where tapping its single
+        # containers queued them (my own instance, 19.11.2026).
+        # try/finally guarantees we always release — the old
+        # `update_running = False` only ran at the end, so an exception
+        # outside the inner loop would have left the flag stuck True
+        # forever, blocking all future updates.
         #
         # The pin list first, before the lock and before the pending file
         # is read or cleared (see `pin_list_unreadable`).
         from update_checker import pin_list_unreadable
         if pin_list_unreadable(updater):
+            decide("refused")
             self.send_message(self.t("update_refused_pin_list"))
             return
-        if not self._update_lock.acquire(blocking=False):
-            self.send_message(self.t("update_already_running"))
+        import pending as _pending
+        from container_store import LOCAL_HOST, host_key
+        from_snapshot = updates is not None
+        pending_file = self.config.pending_file
+        # What would run: the snapshot, or the file as it is now. A free
+        # lock reads the file again below, under the claim, as it did.
+        asked = updates if from_snapshot else _pending.read(pending_file)
+        keys = [host_key(pending_host(u), u.get("name")) for u in asked
+                if isinstance(u, dict) and u.get("name")]
+        claimed, outcomes = self.engine.claim_or_queue_many(keys)
+        if not claimed:
+            answer = (self._queued_answer(outcomes) if outcomes
+                      else self.t("no_pending_updates"))
+            waits = any(a in ("update_queued", "update_already_queued")
+                        for _k, a, _p in outcomes)
+            decide("queued" if waits else "refused")
+            # Only under something that waits: a batch refused as a
+            # whole (queue full) or a match that is the one running put
+            # nothing on the queue, and "were queued" under that reads as
+            # if part of it had gone through.
+            if queued_note and waits:
+                answer += "\n" + queued_note
+            if keyboard and any(a == "update_queue_full"
+                                for _k, a, _p in outcomes):
+                self.send_message(answer, reply_markup=keyboard)
+            else:
+                self.send_message(answer)
             return
         try:
-            from_snapshot = updates is not None
-            pending_file = self.config.pending_file
             if not from_snapshot:
-                if not os.path.exists(pending_file):
-                    self.send_message(self.t("no_pending_updates"))
-                    return
-                with open(pending_file, encoding="utf-8") as f:
-                    updates = json.load(f)
+                # A missing file and one nothing can read both come back
+                # empty and get the answer below; the unreadable one used
+                # to raise inside the thread, after the toast.
+                updates = _pending.read(pending_file)
 
             if not updates:
+                decide("refused")
                 self.send_message(self.t("no_pending_updates"))
                 return
 
+            decide("started")
             self.send_message(self.t("update_starting", count=len(updates)))
 
             # All per-container work (enrich, group-order sort, netns snapshot,
@@ -3010,23 +3098,69 @@ class TelegramBot:
             # filter (already applied at candidate selection) and the
             # ask-before-major gate — tapping "Update all" is itself the
             # explicit "do it now / yes to majors".
-            results, _sc, _mp = self._process_update_batch(updates, updater, auto=False)
+            #
+            # One batch per host, in the order the hosts first turn up,
+            # each with that host's checker — as the Web UI and Discord do.
+            # The batch takes ONE checker for its netns snapshot and for a
+            # group head's cascade, and with the local one and a mixed list
+            # it asked the local daemon about nas's containers and
+            # restarted nas's dependents on this machine (T3, measured
+            # before Q12). A host the registry does not know keeps the
+            # caller's checker; the batch refuses its entries itself.
+            #
+            # `snapshot_fails_entry`: the snapshot now reaches the remote
+            # host, and one that stops answering raises there. That is its
+            # own entries' failure, not the end of "Update all" with no
+            # summary and nothing taken off the list. The same holds for
+            # the local daemon, so a single-host install changes too: a
+            # daemon that hangs in the snapshot used to end "Update all"
+            # silently with the list untouched; now each container gets
+            # its failure line and the snapshot leaves pending, as every
+            # other outcome of "Update all" does (batch_host_routing).
+            # /update <pattern> runs through here as well, with one host's
+            # checker and list: a host that hung in the snapshot ended it
+            # the same way, and over several hosts the loop in
+            # `_run_batches` never reached the hosts after it. Now that
+            # host's entries fail and the next host runs (batch_host_routing).
+            # `proactive_cleanup` only until one batch has pruned: it
+            # reads the local disk, whichever host the batch is for, so
+            # "once per batch" must stay once per "Update all".
+            by_host = {}
+            for u in updates:
+                by_host.setdefault(pending_host(u), []).append(u)
+            registry = getattr(self.engine, "hosts", None) or ()
+            # What the batch held back right before its update (Q16g):
+            # pinned or excluded since the list was written. Those stay
+            # in the pending file.
+            results, cleaned, held = [], False, {}
+            for host_name, entries in by_host.items():
+                host_checker = updater
+                if host_name != LOCAL_HOST:
+                    for host in registry:
+                        if getattr(host, "name", None) == host_name:
+                            host_checker = getattr(host, "checker", None) or updater
+                            break
+                lines, _sc, _mp = self._process_update_batch(
+                    entries, host_checker, auto=False,
+                    proactive_cleanup=not cleaned, snapshot_fails_entry=True,
+                    held=held)
+                results.extend(lines)
+                cleaned = cleaned or bool(
+                    getattr(self.engine, "_batch_cleaned", False))
 
-            if from_snapshot:
+            if from_snapshot or held:
                 # Remove only the processed containers from pending —
                 # the file may hold others the snapshot didn't include,
-                # including same-named ones on other hosts (#7).
-                self._remove_from_pending([pending_key(u) for u in updates])
+                # including same-named ones on other hosts (#7) — and
+                # none the batch held back.
+                self._remove_from_pending([pending_key(u) for u in updates
+                                           if pending_key(u) not in held])
             else:
-                try:
-                    os.remove(pending_file)
-                except OSError:
-                    pass
+                _pending.clear(pending_file)
 
             self.send_message(self.t("update_result") + "\n\n" + "\n".join(results))
         finally:
-            self._update_lock.release()
-            self._run_queued_selfupdate()
+            self.engine.release_update(after=self._run_queued_selfupdate)
 
     # ── pending_updates.json, keyed by (host, container) ───────────────
     # The file holds EVERY managed host's pending updates in one flat list
@@ -3050,27 +3184,12 @@ class TelegramBot:
         if the file is missing or unreadable.
 
         `keys` are `(host, name)` pairs; a bare string is accepted and read
-        as the local host, so older/simple callers keep working."""
-        from container_store import LOCAL_HOST
-        pending_file = self.config.pending_file
-        if not os.path.exists(pending_file):
-            return
-        try:
-            with open(pending_file, encoding="utf-8") as f:
-                pending = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return
-        wanted = {(LOCAL_HOST, k) if isinstance(k, str) else tuple(k)
-                  for k in keys}
-        remaining = [u for u in pending if self._pending_key(u) not in wanted]
-        from container_store import atomic_write_json
-        if remaining:
-            atomic_write_json(pending_file, remaining)
-        else:
-            try:
-                os.remove(pending_file)
-            except OSError:
-                pass
+        as the local host, so older/simple callers keep working. The file
+        is deleted when nothing is left (the Web update worker removes
+        through here too)."""
+        import pending as _pending
+        _pending.remove(self.config.pending_file, keys,
+                        delete_when_empty=True)
 
     # Long-polling timing for getUpdates. Telegram holds the request open
     # for LONG_POLL_TIMEOUT seconds; the HTTP socket gets a generous extra
@@ -3221,10 +3340,10 @@ class TelegramBot:
                     if message:
                         self._handle_message(message, checker, scheduler)
 
-                # Anything queued while somebody OTHER than a Telegram
-                # single update held the lock gets picked up here. See
-                # `_sweep_update_queue` for why that is not a rare case.
-                self._sweep_update_queue(checker)
+                # Anything queued that no release has worked off yet gets
+                # picked up here, by the engine's one drainer. See
+                # `UpdateEngine.sweep_queue` for why that is not a rare case.
+                self.engine.sweep_queue(self.engine.kick_drain)
 
             except Exception as e:
                 print(f"Bot listener error: {e}")
@@ -3444,9 +3563,21 @@ class TelegramBot:
                     return
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
-            self.answer_callback(callback["id"], self.t("updates_starting_cb"))
+            # The toast once `run_updates` knows what happens, not
+            # before (Q16 review): "starting" over "queued" or "queue
+            # full" was the first thing the tap said, and wrong.
+            toasts = {"started": "updates_starting_cb",
+                      "queued": "updates_queued_cb"}
+
+            def decided(how, cb_id=callback["id"]):
+                self.answer_callback(cb_id, self.t(
+                    toasts.get(how, "updates_not_started_cb")))
+            keyboard = (callback.get("message") or {}).get("reply_markup")
             t = threading.Thread(target=self.run_updates,
-                                 args=(checker,), kwargs={"updates": snapshot})
+                                 args=(checker,),
+                                 kwargs={"updates": snapshot,
+                                         "decided": decided,
+                                         "keyboard": keyboard})
             t.start()
         elif data == "update_skip":
             if msg_id and chat_id:
@@ -3459,23 +3590,18 @@ class TelegramBot:
             # never saw, and they only reappeared on that host's next scan
             # (#7). Without a registry there is exactly one host and this
             # is the old behaviour.
+            # (`_pending` here is the live stop offers, hence the alias.)
+            import pending as pending_store
             if self.hosts and getattr(self.hosts, "is_multi", False):
                 from container_store import LOCAL_HOST as _LOCAL
-                keep = [u for u in read_pending(self.config.pending_file)
+                keep = [u for u in pending_store.read(self.config.pending_file)
                         if pending_host(u) != _LOCAL]
                 if keep:
-                    from container_store import atomic_write_json
-                    atomic_write_json(self.config.pending_file, keep)
+                    pending_store.write(self.config.pending_file, keep)
                 else:
-                    try:
-                        os.remove(self.config.pending_file)
-                    except OSError:
-                        pass
+                    pending_store.clear(self.config.pending_file)
             else:
-                try:
-                    os.remove(self.config.pending_file)
-                except OSError:
-                    pass
+                pending_store.clear(self.config.pending_file)
         elif data.startswith("update_one:"):
             # The payload is a host key (#7): `nginx` locally, `nas/nginx`
             # for a remote host. `_run_single_update` splits it; only the
@@ -3513,6 +3639,13 @@ class TelegramBot:
                                  self.t("major_skipping", name=name))
             if msg_id and chat_id:
                 self.remove_buttons(chat_id, msg_id)
+            # Same refusal as confirm_major: for a host that left
+            # DOCKER_HOSTS (or `nas/…` on a single host) `_store_for`
+            # hands back the local store, and the local namesake's
+            # deferred major would go.
+            if not self.engine._manages_host(host_name):
+                self.send_message(self._unknown_host_text(host_name))
+                return
             self._store_for(host_name).remove_pending_major(name)
             tag = self._entry_host_tag({"host": host_name})
             self.send_message(self.t("major_skipped", name=name, tag=tag))
@@ -3585,6 +3718,95 @@ class TelegramBot:
             if ref - float(edited.get("edit_date", 0) or 0) <= 120:
                 return edited
         return {}
+
+    def _send_glob_status(self, host, pattern, names):
+        """`/status <glob>`: one line per match on `host`, in one message.
+
+        Called per host while `find_on_hosts` is still walking, like
+        `_send_status_detail`. A match whose inspect comes back empty
+        (gone since the listing) is left out; the header still counts it,
+        as it always has."""
+        backend = self._backend_for(host)
+        tag = self._host_tag(host)
+        lines = [self.t("glob_status_header", count=len(names), pattern=pattern)]
+        for nm in names:
+            si = container_info.state(backend, nm)
+            if not si:
+                continue
+            icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
+            health = f" ({si['health']})" if si["health"] else ""
+            lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
+        self.send_message("\n".join(lines))
+
+    def _send_status_detail(self, host, resolved, checker):
+        """`/status <name>`: send one container's detail on `host`.
+
+        Returns None once sent, or the "not found" text when the container
+        has gone between the lookup and the inspect. Called per host while
+        `find_on_hosts` is still walking, so a host's detail goes out as
+        soon as that host has answered."""
+        backend = self._backend_for(host)
+        tag = self._host_tag(host)
+        info = container_info.state(backend, resolved)
+        if not info:
+            return self.t("resolve_not_found", name=resolved)
+        # Assembled ONCE, rendered per front end (#2). I
+        # assumed replies were generated once and sent
+        # per connection — true for notifications since
+        # announce(), and now true here: Discord's detail
+        # calls this same collector and renderer, so the two
+        # cannot drift apart field by field.
+        import status_render
+        hstore = self._store_for(host)
+        probe = ""
+        if info.get("health") == "unhealthy":
+            try:
+                probe = self._checker_for(host, checker)\
+                    ._health_output(resolved, entries=1)
+            except Exception:
+                probe = ""
+        detail = status_render.collect(
+            resolved, info,
+            stats=container_info.stats(backend, resolved)
+            if info.get("running") else None,
+            store=hstore,
+            pending=resolved in [
+                u.get("name") for u in
+                read_pending(self.config.pending_file)],
+            probe=probe,
+            disk=container_info.disk_facts(backend, resolved))
+        lines = status_render.lines(detail, bold="*",
+                                    host_tag=tag)
+        # Build inline keyboard based on current state. Only for
+        # the local host: the lifecycle callbacks carry a bare
+        # container name and act locally, so a Stop button under
+        # a remote container would stop the wrong box's
+        # container. Remote detail stays read-only until the
+        # callbacks learn about hosts.
+        if host is not None and not host.is_local:
+            self.send_message("\n".join(lines))
+            return None
+        buttons = []
+        if info["running"]:
+            buttons.append({"text": self.t("lifecycle_btn_restart"),
+                            "callback_data": f"lifecycle:restart:{resolved}"})
+            # Stop hidden for protected containers (#38). The callback is
+            # also guarded in lifecycle.act, so a stale button can't
+            # slip a stop through either.
+            if not self._is_protected(resolved,
+                                      self._checker_for(host, checker),
+                                      self._store_for(host)):
+                buttons.append({"text": self.t("lifecycle_btn_stop"),
+                                "callback_data": f"lifecycle:stop:{resolved}"})
+        else:
+            buttons.append({"text": self.t("lifecycle_btn_start"),
+                            "callback_data": f"lifecycle:start:{resolved}"})
+
+        self.send_message(
+            "\n".join(lines),
+            reply_markup={"inline_keyboard": [buttons]},
+        )
+        return None
 
     def _handle_message(self, message, checker, scheduler):
         text = message.get("text", "")
@@ -3680,97 +3902,43 @@ class TelegramBot:
                 # behind it (#7).
                 shown = False
                 first_err = None
-                for host in (status_targets or [None]):
-                    backend = self._backend_for(host)
-                    tag = self._host_tag(host)
-                    # Glob → a compact one-line-per-match overview (#40, @LeeNX).
-                    # Read-only, so no action buttons; use /status <name> for the
-                    # full single-container detail.
-                    if self._is_glob(partial):
-                        names = self._match_glob(partial, backend=backend)
-                        if not names:
-                            first_err = first_err or self.t("glob_no_match",
-                                                            pattern=partial)
-                            continue
-                        shown = True
-                        lines = [self.t("glob_status_header", count=len(names), pattern=partial)]
-                        for nm in names:
-                            si = container_info.state(backend, nm)
-                            if not si:
-                                continue
-                            icon = "🟢" if si["running"] else ("⏸" if si["state"] == "paused" else "⏹")
-                            health = f" ({si['health']})" if si["health"] else ""
-                            lines.append(f"{icon} `{nm}`{tag} — {si['state']}{health}")
-                        self.send_message("\n".join(lines))
-                        continue
-                    resolved, err = self._resolve_container(partial, backend=backend)
-                    if not resolved:
-                        first_err = first_err or err
-                        continue
-                    info = container_info.state(backend, resolved)
-                    if not info:
-                        first_err = first_err or self.t("resolve_not_found",
-                                                        name=resolved)
-                        continue
-                    shown = True
-                    # Assembled ONCE, rendered per front end (#2). I
-                    # assumed replies were generated once and sent
-                    # per connection — true for notifications since
-                    # announce(), and now true here: Discord's detail
-                    # calls this same collector and renderer, so the two
-                    # cannot drift apart field by field.
-                    import status_render
-                    hstore = self._store_for(host)
-                    probe = ""
-                    if info.get("health") == "unhealthy":
-                        try:
-                            probe = self._checker_for(host, checker)\
-                                ._health_output(resolved, entries=1)
-                        except Exception:
-                            probe = ""
-                    detail = status_render.collect(
-                        resolved, info,
-                        stats=container_info.stats(backend, resolved)
-                        if info.get("running") else None,
-                        store=hstore,
-                        pending=resolved in [
-                            u.get("name") for u in
-                            read_pending(self.config.pending_file)],
-                        probe=probe,
-                        disk=container_info.disk_facts(backend, resolved))
-                    lines = status_render.lines(detail, bold="*",
-                                                host_tag=tag)
-                    # Build inline keyboard based on current state. Only for
-                    # the local host: the lifecycle callbacks carry a bare
-                    # container name and act locally, so a Stop button under
-                    # a remote container would stop the wrong box's
-                    # container. Remote detail stays read-only until the
-                    # callbacks learn about hosts.
-                    if host is not None and not host.is_local:
-                        self.send_message("\n".join(lines))
-                        continue
-                    buttons = []
-                    if info["running"]:
-                        buttons.append({"text": self.t("lifecycle_btn_restart"),
-                                        "callback_data": f"lifecycle:restart:{resolved}"})
-                        # Stop hidden for protected containers (#38). The callback is
-                        # also guarded in lifecycle.act, so a stale button can't
-                        # slip a stop through either.
-                        if not self._is_protected(resolved,
-                                                  self._checker_for(host, checker),
-                                                  self._store_for(host)):
-                            buttons.append({"text": self.t("lifecycle_btn_stop"),
-                                            "callback_data": f"lifecycle:stop:{resolved}"})
-                    else:
-                        buttons.append({"text": self.t("lifecycle_btn_start"),
-                                        "callback_data": f"lifecycle:start:{resolved}"})
+                import container_flags
+                # Glob → a compact one-line-per-match overview (#40, @LeeNX).
+                # Read-only, so no action buttons; use /status <name> for the
+                # full single-container detail.
+                glob = self._is_glob(partial)
 
-                    self.send_message(
-                        "\n".join(lines),
-                        reply_markup={"inline_keyboard": [buttons]},
-                    )
-                if not shown:
-                    self.send_message(first_err)
+                def _show(one):
+                    nonlocal shown, first_err
+                    if one.error is not None:
+                        first_err = first_err or self.t(
+                            one.error.key, **one.error.params)
+                    if not one.names:
+                        return
+                    if glob:
+                        self._send_glob_status(one.host, partial, one.names)
+                        shown = True
+                        return
+                    gone = self._send_status_detail(
+                        one.host, one.names[0], checker)
+                    if gone:
+                        first_err = first_err or gone
+                    else:
+                        shown = True
+                # A dead host's timeout and a refused SSH come back as
+                # `unreachable` instead of raising out of here or reading
+                # as "not found" / "no containers match" (W3, W4); the
+                # walk goes on to the next host either way.
+                # A read (W7): ten seconds for a remote host's listing, and
+                # a host found dead a moment ago is named, not waited on.
+                unreachable = container_flags.find_on_hosts(
+                    status_targets or [None],
+                    backend_for=self._backend_for, arg=partial,
+                    use_cache=True, remote_timeout=10,
+                    on_host=_show, t=self.t).unreachable
+                tail = self._lookup_tail(shown, first_err, unreachable)
+                if tail:
+                    self.send_message(tail)
                 return
 
         if text == "/status":
@@ -3778,78 +3946,17 @@ class TelegramBot:
                 # Bare `/status` — every managed host (#7); None on a
                 # single-host install, i.e. just the local machine.
                 _, status_targets, _ = self._resolve_targets("", write=False)
-            # Use docker inspect (not docker ps Status-string parsing) so health
-            # detection works on both Docker and Podman. Podman's REST API does
-            # not append `(healthy)` to the Status field — that's a Docker CLI
-            # cosmetic — but State.Health.Status is consistently provided by
-            # both. Reported by LeeNX in #28 for podman-compose containers.
-            #
-            # One (host, inspect-dict) pair per running container, hosts in
-            # registry order (#7). `status_targets` is None on a single-host
-            # install → exactly one pseudo-host whose backend is the bot's
-            # own and whose tag is empty, i.e. the original two calls.
-            inspected = []
-            # A host that cannot be reached returns a non-zero `ps` with
-            # empty output, which used to be indistinguishable from a host
-            # with nothing running: both fell through `continue` and the
-            # answer came back as "📊 0 Containers" with no mention that a
-            # machine was missing. @famewolf asked `/status @docknas` of an
-            # instance whose SSH could not authenticate and got exactly
-            # that — the reply neither said the host was unreachable nor
-            # which host it was about (#2).
-            from container_store import LOCAL_HOST
-            unreachable = []
-            def _mark_unreachable(_host, _why):
-                # The host's own diagnostic hint (SSH auth, wrong socket …)
-                # appended when hostdiag has one.
-                try:
-                    import hostdiag
-                    _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why,
-                                       t=self.t)
-                    if _h:
-                        _why += "\n" + _h
-                except Exception:
-                    pass
-                unreachable.append(
-                    (getattr(_host, "name", "") or LOCAL_HOST, _why))
-
-            for _host in (status_targets or [None]):
-                _b = self._backend_for(_host)
-                # A dead host does not answer at all: `ps` runs into its
-                # timeout and RAISES, where an SSH-auth failure merely
-                # returns non-zero. Both mean "unreachable", and neither
-                # may take the whole overview down — but a raise did,
-                # until a genuinely dead host (srv20) proved it: the
-                # timeout escaped this loop into the poll thread and
-                # `/status` produced nothing at all (#2).
-                # 10s like the Web UI: a host that cannot answer a
-                # liveness probe in ten seconds is unreachable for an
-                # interactive command — no reason to make everyone
-                # wait out the full 30s backend timeout for it.
-                try:
-                    ids_p = _b.run(["ps", "-q"], timeout=10)
-                except Exception as _e:
-                    _mark_unreachable(_host, clip(str(_e)))
-                    continue
-                if getattr(ids_p, "returncode", 0) != 0:
-                    _mark_unreachable(
-                        _host,
-                        clip(getattr(ids_p, "stderr", "") or "")
-                        or f"exit {ids_p.returncode}")
-                    continue
-                ids = [i for i in ids_p.stdout.strip().split("\n") if i]
-                if not ids:
-                    continue
-                try:
-                    ins_p = _b.run(["inspect", *ids], timeout=10)
-                except Exception as _e:
-                    _mark_unreachable(_host, clip(str(_e)))
-                    continue
-                try:
-                    _cfgs = json.loads(ins_p.stdout) or []
-                except (json.JSONDecodeError, ValueError):
-                    _cfgs = []
-                inspected.extend((_host, _c) for _c in _cfgs)
+            # The walk is the core's (W5): one host after the other, `ps -q`
+            # and `inspect` at ten seconds each, a dead or refused host
+            # listed with its SSH hint instead of taking the overview down
+            # (#2). `status_targets` None on a single-host install → one
+            # pseudo-host through the bot's own backend, untagged. What
+            # stays here is the answer: counts, summary, uptime, queue,
+            # chunking.
+            import status_render
+            inspected, unreachable = status_render.collect_overview(
+                status_targets, backend_for=self._backend_for, t=self.t,
+                use_cache=True)
             total = len(inspected)
             healthy = 0
             unhealthy = 0
@@ -3988,31 +4095,34 @@ class TelegramBot:
             # trusted before an update; one that silently covers half an
             # estate is worse than none.
             _, targets, _ = self._resolve_targets("", write=False)
+            import container_flags
             found = False
             pins_said = False
-            for host in (targets or [None]):
-                host_checker = self._checker_for(host, checker)
-                try:
-                    updates = host_checker.check_all(bot=self)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+
+            def _dry(hc):
+                nonlocal found, pins_said
+                updates = hc.updates
+                if hc.error is not None:
                     # One unreachable host must not stop the others being
                     # reported — same rule the scheduler follows (#7).
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name,
-                                             error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     if not pins_said:
                         self.send_message(
                             self.t("check_pin_list_unreadable"))
                         pins_said = True
-                    continue
+                    return
                 if updates:
                     found = True
                     self.send_message(self._build_dry_run(updates,
-                                                          host_checker))
+                                                          hc.checker))
+            container_flags.check_on_hosts(
+                targets, checker_for=lambda h: self._checker_for(h, checker),
+                use_cache=True,
+                debug_sink=self, on_host=_dry, t=self.t)
             if not found and not pins_said:
                 self.notify_no_updates()
 
@@ -4036,55 +4146,71 @@ class TelegramBot:
                 return
             # Resolve the names on every targeted host BEFORE announcing the
             # check, so a name that matches nowhere still answers with the
-            # plain "not found" and nothing else — exactly as before.
+            # plain "not found" and nothing else — exactly as before. A host
+            # that did not answer is named along with it (W3).
             selections = []
             first_err = None
+            unreachable = []
             for host in (targets or [None]):
-                names, err = self._select_containers(
-                    arg, backend=self._backend_for(host))
+                names, err, gone = self._select_containers(
+                    arg, backend=self._backend_for(host), host=host,
+                    read=True)
+                if gone is not None:
+                    unreachable.append(gone)
+                    continue
                 if err:
                     first_err = first_err or err
                     continue
                 selections.append((host, names))
+            # The lookup is over: a host that did not answer is said now,
+            # before the check starts on the ones that did.
+            tail = self._lookup_tail(bool(selections), first_err, unreachable)
+            if tail:
+                self.send_message(tail)
             if not selections:
-                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
+            import container_flags
             matched = sum(len(n) for _, n in selections)
             found = False
             pins_said = False
-            for host, names in selections:
-                nameset = set(names)
-                # Scope the check to the matched containers via `only=` (#53,
-                # @LeeNX) instead of checking everything and filtering after.
-                # A glob that hits nothing never reaches here — _select_containers
-                # already returned glob_no_match — so `nameset` is non-empty.
-                # Deliberate behaviour change: a scoped check no longer refreshes
-                # the pending state of the *other* containers as a side effect.
-                # That's intended — targeted means we only touch what was named —
-                # and the scheduled full check updates the rest anyway. check_all
-                # merges the scoped result into pending_updates.json rather than
-                # overwriting it, so the untouched entries stay put.
-                try:
-                    updates = self._checker_for(host, checker).check_all(
-                        bot=self, only=nameset)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so each host's set is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. check_all
+            # merges the scoped result into pending_updates.json rather than
+            # overwriting it, so the untouched entries stay put.
+            scoped = {host: set(names) for host, names in selections}
+
+            def _scoped_check(hc):
+                nonlocal found, pins_said
+                updates = hc.updates
+                if hc.error is not None:
                     # One unreachable host must not swallow the others'
                     # results — same rule the scheduler follows.
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     if not pins_said:
                         self.send_message(
                             self.t("check_pin_list_unreadable"))
                         pins_said = True
-                    continue
+                    return
                 if updates:
                     found = True
                     self.notify_updates(updates)
+            container_flags.check_on_hosts(
+                [host for host, _ in selections],
+                checker_for=lambda h: self._checker_for(h, checker),
+                use_cache=True,
+                only_for=scoped.__getitem__, debug_sink=self,
+                on_host=_scoped_check, t=self.t)
             if not found and not pins_said:
                 self.send_message(self.t("check_scoped_uptodate",
                                          count=matched, pattern=arg))
@@ -4097,9 +4223,6 @@ class TelegramBot:
             parts = text.split(maxsplit=1)
             if len(parts) < 2:
                 self.send_message(self.t("update_usage"))
-                return
-            if self.update_running:
-                self.send_message(self.t("update_already_running"))
                 return
             raw_arg = parts[1].strip()
             # `/update` changes things, so with no `@host` token it stays on
@@ -4115,48 +4238,83 @@ class TelegramBot:
                 # the "everything on nas" form.
                 self.send_message(self.t("update_usage"))
                 return
+            if self.update_running:
+                # Busy (Q16): no lookup and no check now — a check while
+                # an update runs sees the containers in flight as still
+                # outdated (#26). What the pending list already holds
+                # for the pattern goes to `run_updates`, which queues it
+                # behind the running update. A name the list does not
+                # hold gets "busy, try again" as before: nothing is
+                # remembered to be checked later (my decision of
+                # 18.11.2026). A glob may match more than the list holds;
+                # those were not checked, and the answer says so.
+                entries = self._pending_matching(arg, targets)
+                if not entries:
+                    self.send_message(self.t("update_already_running"))
+                    return
+                import lifecycle
+                note = (self.t("update_busy_glob_unchecked",
+                               pattern=raw_arg)
+                        if lifecycle.is_glob(arg) else None)
+                threading.Thread(target=self.run_updates, args=(checker,),
+                                 kwargs={"updates": entries,
+                                         "queued_note": note}).start()
+                return
             selections = []
             first_err = None
+            unreachable = []
             for host in (targets or [None]):
-                names, err = self._select_containers(
-                    arg, backend=self._backend_for(host))
+                names, err, gone = self._select_containers(
+                    arg, backend=self._backend_for(host), host=host)
+                if gone is not None:
+                    unreachable.append(gone)
+                    continue
                 if err:
                     first_err = first_err or err
                     continue
                 selections.append((host, names))
+            # Same as /check: the hosts that did not answer are said when
+            # the lookup ends, before anything is checked or updated.
+            tail = self._lookup_tail(bool(selections), first_err, unreachable)
+            if tail:
+                self.send_message(tail)
             if not selections:
-                self.send_message(first_err)
                 return
             self.send_message(self.t("checking_updates"))
+            import container_flags
             batches = []
             pins_unreadable = False
-            for host, names in selections:
-                nameset = set(names)
-                # Scope the check to the matched containers via `only=` (#53,
-                # @LeeNX) instead of checking everything and filtering after.
-                # A glob that hits nothing never reaches here — _select_containers
-                # already returned glob_no_match — so `nameset` is non-empty.
-                # Deliberate behaviour change: a scoped check no longer refreshes
-                # the pending state of the *other* containers as a side effect.
-                # That's intended — targeted means we only touch what was named —
-                # and the scheduled full check updates the rest anyway. The
-                # returned `updates` already contains only the matched containers
-                # that have a pending update, so run_updates below acts on exactly
-                # them, unchanged.
-                host_checker = self._checker_for(host, checker)
-                try:
-                    updates = host_checker.check_all(bot=self, only=nameset)
-                except Exception as e:
-                    if not self._multi():
-                        raise
+            # Scope the check to the matched containers via `only=` (#53,
+            # @LeeNX) instead of checking everything and filtering after.
+            # A glob that hits nothing never reaches here — _select_containers
+            # already returned glob_no_match — so each host's set is non-empty.
+            # Deliberate behaviour change: a scoped check no longer refreshes
+            # the pending state of the *other* containers as a side effect.
+            # That's intended — targeted means we only touch what was named —
+            # and the scheduled full check updates the rest anyway. The
+            # returned `updates` already contains only the matched containers
+            # that have a pending update, so run_updates below acts on exactly
+            # them, unchanged.
+            scoped = {host: set(names) for host, names in selections}
+
+            def _batch(hc):
+                nonlocal pins_unreadable
+                updates = hc.updates
+                if hc.error is not None:
                     self.send_message(self.t("host_check_failed",
-                                             host=host.name, error=human(e, self.t)))
-                    continue
+                                             host=hc.host.name,
+                                             error=human(hc.error, self.t)))
+                    return
                 if getattr(updates, "pin_list_unreadable", False):
                     pins_unreadable = True
-                    continue
+                    return
                 if updates:
-                    batches.append((host_checker, updates))
+                    batches.append((hc.checker, updates))
+            container_flags.check_on_hosts(
+                [host for host, _ in selections],
+                checker_for=lambda h: self._checker_for(h, checker),
+                only_for=scoped.__getitem__, debug_sink=self,
+                on_host=_batch, t=self.t)
             if pins_unreadable:
                 # Not "no update matches": nothing could be checked, and
                 # nothing may run (see `pin_list_unreadable`).
@@ -4313,24 +4471,23 @@ class TelegramBot:
             if host_err:
                 self.send_message(host_err)
                 return
-            if os.path.exists(self.config.pending_file):
-                with open(self.config.pending_file, encoding="utf-8") as f:
-                    pending = json.load(f)
-                if targets is not None:
-                    # The pending file holds every host's entries (#7);
-                    # show the ones belonging to the targeted hosts, and
-                    # say which host each is on via _display_name.
-                    from container_store import LOCAL_HOST
-                    wanted = {h.name for h in targets}
-                    pending = [u for u in pending if isinstance(u, dict)
-                               and (u.get("host") or LOCAL_HOST) in wanted]
-                if pending:
-                    if targets is None:
-                        names = [f"• `{u['name']}`" for u in pending]
-                    else:
-                        names = [f"• {self._display_name(u)}" for u in pending]
-                    self.send_message(self.t("pending_title") + "\n" + "\n".join(names))
-                    return
+            # A missing file and one nothing can read both list nothing;
+            # the unreadable one used to raise out of here unanswered.
+            import pending as _pending
+            pending = _pending.read(self.config.pending_file)
+            if targets is not None:
+                # The pending file holds every host's entries (#7);
+                # show the ones belonging to the targeted hosts, and
+                # say which host each is on via _display_name.
+                pending = _pending.entries_for(pending,
+                                               [h.name for h in targets])
+            if pending:
+                if targets is None:
+                    names = [f"• `{u['name']}`" for u in pending]
+                else:
+                    names = [f"• {self._display_name(u)}" for u in pending]
+                self.send_message(self.t("pending_title") + "\n" + "\n".join(names))
+                return
             self.send_message(self.t("no_pending"))
 
         elif text == "/debug":

@@ -17,6 +17,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "app", "web_ui.py")
 
 #: The flag that greys the button out, and the tooltip that explains it.
@@ -39,14 +41,17 @@ def main():
     src = open(SRC, encoding="utf-8").read()
     checks = {}
 
-    start = src.index("_monitor_only = checker.is_monitor_only")
-    end = src.index('actions = f\'<div class="btn-row">', start)
-    region = src[start:end]
-    base = src.count("\n", 0, start) + 1
+    _lbl = "web_ui.py: the status row's buttons"
+    start = srcslice.position(
+        src, "_monitor_only = checker.is_monitor_only", label=_lbl)
+    end = (None if start is None else srcslice.position(
+        src, 'actions = f\'<div class="btn-row">', start, label=_lbl))
+    region = None if end is None else src[start:end]
+    base = 0 if start is None else src.count("\n", 0, start) + 1
 
     offenders = []
     disabled_count = 0
-    for off, tag in buttons(region):
+    for off, tag in buttons(region or ""):
         # Only buttons the flag actually disables. A button that stays live
         # under monitor-only (the check button, deliberately) is not in
         # scope — knowing an update exists is the point of still watching.
@@ -58,7 +63,8 @@ def main():
             offenders.append((base + off, tag[:70]))
 
     checks["the row has buttons disabled by monitor-only"] = disabled_count >= 4
-    checks["every one of them names the reason"] = not offenders
+    checks["every one of them names the reason"] = (
+        region is not None and not offenders)
     for line, tag in offenders:
         print(f"    web_ui.py:{line}  {tag}")
 
@@ -66,9 +72,10 @@ def main():
     # so assert its precedence explicitly: monitor-only outranks the
     # label-authoritative note, because it is the reason for the disable.
     pin = re.search(r"_pin_title = \((.*?)\n\s*$", src, re.S | re.M)
-    pin_src = src[src.index("_pin_title = ("):src.index("pin_btn = (")]
+    pin_src = srcslice.section(src, "_pin_title = (", "pin_btn = (",
+                               label="web_ui.py: the pin button's title")
     checks["pin explains monitor-only first"] = (
-        pin_src.index(EXPLAIN) < pin_src.index("web_label_authoritative"))
+        srcslice.in_order(pin_src, EXPLAIN, "web_label_authoritative"))
 
     # And the marker that sits next to a name is not flush against it.
     css = open(os.path.join(os.path.dirname(__file__), "..", "app", "static",

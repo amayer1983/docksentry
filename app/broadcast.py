@@ -93,6 +93,22 @@ class Broadcast:
         except Exception as e:
             self.log(f"Could not report an update result: {e}")
 
+    def update_line(self, text):
+        """`update_result`'s other half: the line Telegram gets for one
+        container, as it runs and when it is done.
+
+        Telegram's alone, for the reason `update_result` is not
+        Telegram's: the plugins get the container's card, and "Updating
+        `web`…" and "✅ `web`: updated" sent to them as well is the
+        double report of #63. Sent as an answer, not an announcement —
+        somebody asked for this update, and quiet hours do not swallow
+        the result of it. The engine's queue drain reports through here
+        (Q13), so a queued update is said in the chat as a tap's is.
+        """
+        tg = self.telegram
+        if tg is not None and getattr(tg, "enabled", False):
+            tg.send_message(text)
+
     def tell(self, text, skip=()):
         """Every channel, and not silenced by quiet hours.
 

@@ -81,8 +81,9 @@ checks["…and does not start a thread either"] = (
 # ── wired in ─────────────────────────────────────────────────────────
 main_src = open(os.path.join(ROOT, "app", "main.py"), encoding="utf-8").read()
 checks["main starts it"] = "reaper.start()" in main_src
+import srcslice                                            # noqa: E402
 checks["…after the scheduler, never in the way of startup"] = (
-    main_src.index("scheduler.start()") < main_src.index("reaper.start()"))
+    srcslice.in_order(main_src, "scheduler.start()", "reaper.start()"))
 
 # ── the entrypoint stays what it was ─────────────────────────────────
 # Fixing the leak from inside is the whole point: changing ENTRYPOINT

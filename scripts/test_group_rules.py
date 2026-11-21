@@ -119,9 +119,15 @@ def _batch(members, waits=30, fail=None, group=None):
                           "restart_dependents": True,
                           "wait_seconds": waits}}
 
-    bot = types.SimpleNamespace()
+    # `bot` is the batch's `self`, so it is the engine: a real
+    # UpdateEngine made without __init__, given the three lock fields its
+    # constructor sets. A SimpleNamespace would hold the fields but none of
+    # the engine's methods, so a lock method the batch starts calling would
+    # crash this procedure instead of testing it.
+    bot = UpdateEngine.__new__(UpdateEngine)
     bot._update_lock = threading.Lock()
-    bot._run_queued_selfupdate = lambda: None
+    bot._queued_selfupdate = None
+    bot._swap_in_flight = False
     bot.config = types.SimpleNamespace(
         pending_file=os.path.join(tempfile.mkdtemp(), "p.json"))
     bot.store = _Store()

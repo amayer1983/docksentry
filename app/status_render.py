@@ -1,4 +1,4 @@
-"""One container detail, rendered for whichever chat asked (#2).
+"""What `/status` shows, collected once for whichever chat asked (#2).
 
 @NotRetarded compared `/status` on Discord and Telegram and found them
 disagreeing — Discord missing Docksentry itself, missing health, missing
@@ -24,7 +24,17 @@ misbehaves at 2 am:
   * ports, volumes, restart policy
   * Docksentry's own knowledge: pinned, auto-update, protected,
     trust-running, ask-major, group, note, pending update
+
+Not everything here is pure rendering. `collect_overview` is the bare
+`/status` overview's host walk and talks to the hosts itself: `ps -q`
+and `inspect` on every target through its backend, plus `hostdiag` for
+the SSH hint when a host does not answer. It returns data, not text;
+counting and markdown stay with the front end. `collect`, `lines` and
+`overview_line` never reach a host: inspect data and stats come in from
+the caller, `collect` only reads the state store it is handed.
 """
+
+from collections import namedtuple
 
 
 def _human(n):
@@ -280,3 +290,113 @@ def overview_line(name, state_info, *, host_tag="", version=""):
     if running and si.get("uptime"):
         bits.append(f"⏱ {si['uptime']}")
     return " — ".join(bits)
+
+
+#: What the /status overview walk found. `inspected`: one (host, inspect
+#: dict) per running container, hosts in the order they were given.
+#: `unreachable`: one (host name, why) per host that did not answer, the
+#: SSH hint under the words when hostdiag has one. The front end does the
+#: counting and the rendering.
+OverviewData = namedtuple("OverviewData", "inspected unreachable")
+
+
+def collect_overview(targets, *, backend_for, t, use_cache=False):
+    """Walk `targets` for the /status overview: `ps -q`, then `inspect`.
+
+    `targets` None is a single-host install: exactly one pseudo-host
+    whose backend is `backend_for(None)` and whose tag is empty, i.e.
+    the original two calls. One host after the other, in the order
+    given. `t` translates the SSH hint.
+
+    `use_cache=True` is for reads (W7; both chats' /status): a remote host
+    still in its cooldown gets no `ps -q` and is listed with its
+    remembered words, the seconds until it is asked again and, under
+    them, the hint those words get; every remote host that is asked
+    leaves its outcome in the memory — the words of its line, without
+    the hint under them. The default skips nobody and marks nobody dead,
+    but a host that answers is forgotten either way.
+
+    Use docker inspect (not docker ps Status-string parsing) so health
+    detection works on both Docker and Podman. Podman's REST API does
+    not append `(healthy)` to the Status field — that's a Docker CLI
+    cosmetic — but State.Health.Status is consistently provided by
+    both. Reported by LeeNX in #28 for podman-compose containers.
+    """
+    import json
+    import hosts as _hosts
+    from container_store import LOCAL_HOST
+    from errfmt import clip
+
+    inspected = []
+    # A host that cannot be reached returns a non-zero `ps` with
+    # empty output, which used to be indistinguishable from a host
+    # with nothing running: both fell through `continue` and the
+    # answer came back as "📊 0 Containers" with no mention that a
+    # machine was missing. @famewolf asked `/status @docknas` of an
+    # instance whose SSH could not authenticate and got exactly
+    # that — the reply neither said the host was unreachable nor
+    # which host it was about (#2).
+    unreachable = []
+
+    def _mark_unreachable(_host, _why):
+        if use_cache:
+            _hosts.remember(_host, _why)
+        # The host's own diagnostic hint (SSH auth, wrong socket …)
+        # appended when hostdiag has one.
+        try:
+            import hostdiag
+            _h = hostdiag.hint(getattr(_host, "endpoint", ""), _why, t=t)
+            if _h:
+                _why += "\n" + _h
+        except Exception:
+            pass
+        unreachable.append(
+            (getattr(_host, "name", "") or LOCAL_HOST, _why))
+
+    for _host in (targets or [None]):
+        _dead = _hosts.remembered_dead(_host) if use_cache else None
+        if _dead is not None:
+            _skip = _hosts.skipped_words(*_dead, t=t)
+            _h = _hosts.skipped_hint(_host, _dead[0], t=t)
+            unreachable.append((getattr(_host, "name", "") or LOCAL_HOST,
+                                _skip + ("\n" + _h if _h else "")))
+            continue
+        _b = backend_for(_host)
+        # A dead host does not answer at all: `ps` runs into its
+        # timeout and RAISES, where an SSH-auth failure merely
+        # returns non-zero. Both mean "unreachable", and neither
+        # may take the whole overview down — but a raise did,
+        # until a genuinely dead host (srv20) proved it: the
+        # timeout escaped this loop into the poll thread and
+        # `/status` produced nothing at all (#2).
+        # 10s like the Web UI: a host that cannot answer a
+        # liveness probe in ten seconds is unreachable for an
+        # interactive command — no reason to make everyone
+        # wait out the full 30s backend timeout for it.
+        try:
+            ids_p = _b.run(["ps", "-q"], timeout=10)
+        except Exception as _e:
+            _mark_unreachable(_host, clip(str(_e)))
+            continue
+        if getattr(ids_p, "returncode", 0) != 0:
+            _mark_unreachable(
+                _host,
+                clip(getattr(ids_p, "stderr", "") or "")
+                or f"exit {ids_p.returncode}")
+            continue
+        ids = [i for i in ids_p.stdout.strip().split("\n") if i]
+        if not ids:
+            _hosts.remember(_host, None)
+            continue
+        try:
+            ins_p = _b.run(["inspect", *ids], timeout=10)
+        except Exception as _e:
+            _mark_unreachable(_host, clip(str(_e)))
+            continue
+        _hosts.remember(_host, None)
+        try:
+            _cfgs = json.loads(ins_p.stdout) or []
+        except (json.JSONDecodeError, ValueError):
+            _cfgs = []
+        inspected.extend((_host, _c) for _c in _cfgs)
+    return OverviewData(inspected, unreachable)

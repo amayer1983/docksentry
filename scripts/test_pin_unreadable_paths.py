@@ -144,6 +144,10 @@ def _engine():
     eng._updating = {}
     eng._queued_selfupdate = None
     eng._swap_in_flight = False
+    # Since Q11c a single update runs through the shared batch, which
+    # reads the host's groups and cooldowns and the disk setting.
+    eng.store = _MajorStore()
+    eng.config = types.SimpleNamespace(disk_warn_auto_cleanup=False)
     return eng
 
 
@@ -168,6 +172,9 @@ class _MajorStore:
     def get_ask_before_major(self):
         return []
 
+    def get_cooldown(self, name):
+        return 0
+
 
 def _tg(ck, cfg):
     said = []
@@ -191,6 +198,8 @@ def _tg(ck, cfg):
         resolve_container_link=lambda *a, **k: "")
     bot._process_update_batch = (
         lambda *a, **k: UpdateEngine._process_update_batch(bot, *a, **k))
+    # The batch asks the pin check right before each update (Q16g).
+    bot.held_back = lambda *a, **k: UpdateEngine.held_back(bot, *a, **k)
     bot.mark_updating = bot.engine.mark_updating
     bot.clear_updating = bot.engine.clear_updating
     return bot, said
@@ -246,26 +255,32 @@ class _SyncThread:
         self._t(*self._a, **self._k)
 
 
+class _OnlyDb:
+    """The local CLI for `_typed`: `ps` lists one container, `db`, so the
+    glob is matched by the real lookup (`find_on_hosts`)."""
+
+    def run(self, args, **kw):
+        import subprocess
+        out = "db\n" if args and args[0] == "ps" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+
 def _typed(text, pin_bytes):
     """`text` typed into Telegram; (said, run_updates payload, notified)."""
     ck, cfg = _world(pin_bytes)
     stub = types.SimpleNamespace(update_running=False, bot_username="",
-                                 hosts=None, backend=None, sent=[],
+                                 hosts=None, backend=_OnlyDb(), sent=[],
                                  updated_with="unset", notified=None)
     stub._handle_message = types.MethodType(TelegramBot._handle_message, stub)
     stub._select_containers = types.MethodType(
         TelegramBot._select_containers, stub)
     for _m in ("_multi", "_resolve_targets", "_host_hint", "_backend_for",
-               "_checker_for", "_run_full_check"):
+               "_checker_for", "_run_full_check", "_lookup_tail"):
         setattr(stub, _m, types.MethodType(getattr(TelegramBot, _m), stub))
     stub._host_tag = TelegramBot._host_tag
     stub._is_glob = TelegramBot._is_glob
     stub._help_alias = TelegramBot._help_alias
     stub._check_auth = lambda chat_id, user_id, kind="message": True
-    # A glob, so the names come from `_match_glob` below and not from a
-    # container lookup this stand-in has no daemon for.
-    stub._match_glob = (lambda pattern, include_stopped=True, backend=None:
-                        ["db"])
     stub.t = get_translator("en")
     stub.send_message = lambda text, **kw: stub.sent.append(text)
     stub.notify_updates = (lambda updates, auto=False:
@@ -350,14 +365,40 @@ for label, text in (("/check", "/check"),
 # Discord
 # ═════════════════════════════════════════════════════════════════════
 class _Engine:
-    """The real lock; the batch is recorded instead of run."""
+    """The real lock and the engine's real door onto it; the batch is
+    recorded instead of run."""
+
+    claim_update = UpdateEngine.claim_update
+    release_update = UpdateEngine.release_update
+    # The release kicks the queue drain since Q13; with no queue here it
+    # starts nothing.
+    kick_drain = UpdateEngine.kick_drain
+    cleanup_guarded = UpdateEngine.cleanup_guarded
+    # The Web handlers claim or queue through the engine (Q14).
+    claim_or_queue_many = UpdateEngine.claim_or_queue_many
+    enqueue_updates = UpdateEngine.enqueue_updates
+    _queue_answer = UpdateEngine._queue_answer
+    # Pinned or excluded keys stay off the queue (Q16f); with no host
+    # registry and no local checker here, nobody is held back.
+    held_back = UpdateEngine.held_back
+    _held_answer = UpdateEngine._held_answer
+    _unqueue_held = UpdateEngine._unqueue_held
+    _checker_for_key = UpdateEngine._checker_for_key
+    # Queued keys go on in the batch's order (review of Q14); no store
+    # here, so they keep the order asked.
+    _in_group_order = UpdateEngine._in_group_order
+    updating = UpdateEngine.updating
 
     def __init__(self):
         self._update_lock = threading.Lock()
         self.update_running = False
         self.batches = []
+        self._update_queue = []
+        self._update_queue_lock = threading.Lock()
+        self._queued_at = {}
+        self._updating = {}
 
-    def _process_update_batch(self, updates, checker, *, auto):
+    def _process_update_batch(self, updates, checker, *, auto, held=None):
         self.batches.append([u["name"] for u in updates])
         for u in updates:
             checker.update_container(u["name"], u["image"])
@@ -590,6 +631,8 @@ for pins, readable in ((DAMAGED, False), (HEALTHY, True)):
     wbot = _WebBot(ck)
     wbot.config = cfg
     h = _handler(ck, cfg, wbot)
+    # The worker runs under the claim its handler took (Q14).
+    wbot.engine.claim_update()
     _quiet(h._run_web_update_batch, ["db"])
     if not readable:
         checks["the Web UI worker refuses with an unreadable pin list"] = (

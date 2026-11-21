@@ -18,9 +18,10 @@ names — measured, not guessed:
     ctx.t(key, **kw)            the translated text
     ctx.send_message(text)      where the report goes
     ctx.config                  the settings
-    ctx._swap_in_flight         set once the helper is launched, so the
-                                caller knows not to release the lock on
-                                a process that is about to be replaced
+    ctx._swap_in_flight         set right before the helper is launched
+                                (and taken down if it does not start),
+                                so the caller knows not to release the
+                                lock on a process about to be replaced
 
 The Telegram bot passes itself and behaves exactly as before. Anything
 that can answer those five names can drive a self-update — which is the
@@ -42,15 +43,23 @@ class Context:
     """What a self-update needs from whoever drives it, in one object.
 
     Assembled once in main.py and shared by both front ends, so neither
-    has to reach through the other to start one. Seven names, and the
+    has to reach through the other to start one. Eight names, and the
     decoupling test counts them out of this module rather than trusting
     the list:
 
         t / send_message      what it says, and where that goes
+        tell                  what every channel hears
         config                the settings
         _update_lock          the mutex every update flow shares
         _queued_selfupdate    what waits behind a running batch
-        _swap_in_flight       set once the helper is launched
+        _swap_in_flight       set right before the helper is launched
+        engine                the update queue's owner: its drainer is
+                              kicked after `start` gives the lock back,
+                              and the queue is named and dropped before
+                              the swap (Q16h). Both contexts that drive a
+                              self-update carry it already (this one and
+                              the Telegram bot); one without it (None)
+                              leaves the queue alone.
 
     `send_message` goes through the all-channel seam, not through
     Telegram. That is the fix for the half of this that was a bug: of the
@@ -190,6 +199,38 @@ def start(ctx, target=None, reply=None, reply_to=None):
             swap = False
         if not swap:
             ctx._update_lock.release()
+            _kick_queue(ctx)
+
+
+def _kick_queue(ctx):
+    """Start the engine's drainer after `start` gave its lock back.
+
+    `start` releases by hand (its claim outlives it once the helper
+    runs), so its release kicked nothing: a self-update that found
+    nothing left whatever had queued during it to the next sweep — the
+    Telegram poll loop, or the scheduler's tick 30 to 60 s later, and on
+    an install without Telegram only the latter (Q16h, measured on
+    f6824c8). Not after a swap: the lock stays
+    held then, and the queue was named and dropped before the helper
+    started (`swap`). Never raises — this runs in `start`'s `finally`.
+    """
+    try:
+        engine = ctx.engine
+        if engine is not None:
+            engine.kick_drain()
+    except Exception as e:                                  # noqa: BLE001
+        print(f"Queue drain after the self-update could not start: {e}")
+
+
+def _drop_queue(ctx):
+    """Name and drop the update queue before the helper starts (see
+    `UpdateEngine.drop_queue_for_swap`). Never raises."""
+    try:
+        engine = ctx.engine
+        if engine is not None:
+            engine.drop_queue_for_swap()
+    except Exception as e:                                  # noqa: BLE001
+        print(f"Could not drop the update queue before the swap: {e}")
 
 
 def run_queued(ctx):
@@ -654,16 +695,33 @@ def swap(ctx, config, own_name, own_image, reply_to=None):
         logpath = f"{ctx.config.data_dir}/selfupdate_helper.log"
         run_script = f"({update_script}) > {logpath} 2>&1"
     helper_args += ["docker:cli", "sh", "-c", run_script]
-    result = subprocess.run(helper_args, capture_output=True, text=True, timeout=30)
+    # The helper stops us within seconds of starting, and the update
+    # queue lives in memory. So before it starts: the swap flag goes up
+    # (nothing new is queued, every way in answers "updating itself"),
+    # and whatever is queued is named to every channel and dropped —
+    # whoever started this, and also when a release runs it from its
+    # `after` or a scheduled pass holds the drainer back. Until Q16h the
+    # queue went with the restart unnamed (measured on f6824c8). The
+    # pending entries stay. A helper that does not start takes the flag
+    # down again, and `start` gives the lock back as on every other
+    # path that ends without a swap.
+    ctx._swap_in_flight = True
+    try:
+        _drop_queue(ctx)
+        result = subprocess.run(helper_args, capture_output=True, text=True,
+                                timeout=30)
+    except BaseException:
+        ctx._swap_in_flight = False
+        raise
 
     if result.returncode != 0:
+        ctx._swap_in_flight = False
         ctx.send_message(ctx.t("selfupdate_failed", error=result.stderr[:200]))
         return
 
-    # The helper container will stop us in ~3 seconds. Keep the update
-    # lock held from here on (see _handle_selfupdate wrapper): nothing
-    # may start a container update in the final seconds of this process.
-    ctx._swap_in_flight = True
+    # The helper container will stop us in ~3 seconds. The update lock
+    # stays held from here on (see the `start` wrapper): nothing may
+    # start a container update in the final seconds of this process.
     print(f"Selfupdate helper started ({helper_name}). Waiting for shutdown...")
     import time
     time.sleep(30)

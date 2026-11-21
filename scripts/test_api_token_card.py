@@ -31,6 +31,8 @@ import re
 import sys
 import types
 
+import srcslice
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
 WEB_UI = os.path.join(os.path.dirname(__file__), "..", "app", "web_ui.py")
@@ -41,8 +43,8 @@ src = open(WEB_UI, encoding="utf-8").read()
 
 
 def card_source():
-    i = src.index("def _api_token_card")
-    return src[i:src.index("\n        def _help", i)]
+    return srcslice.section(src, "def _api_token_card", "\n        def _help",
+                            label="web_ui.py: _api_token_card")
 
 
 card = card_source()
@@ -52,56 +54,63 @@ card = card_source()
 # colon and nothing else. Asserted against the source rather than a
 # rendered page: a page test proves the current inputs are safe, this
 # proves the code cannot leak a token it was never given.
-checks["the card splits each entry on the colon"] = 'partition(":")' in card
+checks["the card splits each entry on the colon"] = (
+    card is not None and 'partition(":")' in card)
 checks["…and renders only the name"] = (
-    "_e(label)" in card and "_e(token" not in card)
+    card is not None and "_e(label)" in card and "_e(token" not in card)
 # The secret half never reaches the output: no `{...token...}` anywhere in
 # an interpolation. Checked this way rather than by counting mentions,
 # because the only thing that matters is whether it can be *rendered*.
-checks["…the secret half is never interpolated into the page"] = not [
-    m for m in re.findall(r"\{[^{}]*\}", card)
-    if re.search(r"\btoken\b", m) and "token_seen" not in m
-    and "api_tokens" not in m]
+checks["…the secret half is never interpolated into the page"] = (
+    card is not None and not [
+        m for m in re.findall(r"\{[^{}]*\}", card)
+        if re.search(r"\btoken\b", m) and "token_seen" not in m
+        and "api_tokens" not in m])
 checks["…and is only ever tested for emptiness"] = (
-    "if not token.strip():" in card)
+    card is not None and "if not token.strip():" in card)
 # A form would imply it can be saved here. It cannot — the value lives in
 # the environment, and a field that silently fails to save is worse than
 # no field at all.
 checks["it is not a form"] = (
-    "<input" not in card and "<textarea" not in card)
+    card is not None and "<input" not in card and "<textarea" not in card)
 
 # ── the states it has to distinguish ─────────────────────────────────
-checks["it says when nothing is configured"] = "web_api_tokens_none" in card
+checks["it says when nothing is configured"] = (
+    card is not None and "web_api_tokens_none" in card)
 checks["it flags an entry with no secret after the colon"] = (
-    "web_api_tokens_broken" in card and "token.strip()" in card)
+    card is not None
+    and "web_api_tokens_broken" in card and "token.strip()" in card)
 checks["it says when the environment is being overruled"] = (
-    'env_override("api_tokens")' in card and
+    card is not None and 'env_override("api_tokens")' in card and
     "web_api_tokens_overruled" in card)
 # The overruling notice must appear in BOTH renderings — the empty case is
 # exactly where it matters most, because that is the state a set variable
 # gets overruled INTO.
 checks["…in the empty case too, which is where it matters"] = (
-    card.count("{overruled}") == 2)
+    card is not None and card.count("{overruled}") == 2)
+_notice = srcslice.section(card, "overruled =", "if not configured",
+                           label="web_api_tokens: the overruled notice")
 checks["…and the notice never leaks the values either"] = (
-    "web_api_tokens_overruled" in card and "config.api_tokens" not in
-    card.split("overruled =")[1].split("if not configured")[0])
+    _notice is not None
+    and "web_api_tokens_overruled" in card
+    and "config.api_tokens" not in _notice)
 
 # ── last-used is recorded at one seam ────────────────────────────────
 # `_api_token_name` is what both endpoints authenticate through, so the
 # third endpoint to be added is covered without anyone remembering to.
-i = src.index("def _api_token_name")
-seam = src[i:src.index("\n        def ", i + 10)]
+seam = srcslice.section(src, "def _api_token_name", "\n        def ",
+                        label="web_ui.py: _api_token_name")
 checks["usage is recorded where the token is verified"] = (
-    "token_seen" in seam and "time.time()" in seam)
+    seam is not None and "token_seen" in seam and "time.time()" in seam)
 checks["…only after compare_digest succeeds"] = (
-    seam.index("compare_digest") < seam.index("token_seen"))
+    srcslice.in_order(seam, "compare_digest", "token_seen"))
 checks["…and nowhere else"] = src.count("seen[label] = time.time()") == 1
 # In memory on purpose: a Prometheus scraper hits /metrics every few
 # seconds and a file written that often would be a lot of I/O to learn
 # "still being scraped". The page has to admit that a restart clears it,
 # or "never used" reads as "safe to revoke".
 checks["the page admits a restart clears the record"] = (
-    "web_api_tokens_hint" in card)
+    card is not None and "web_api_tokens_hint" in card)
 en = json.load(open(os.path.join(LANG, "en.json"), encoding="utf-8"))
 checks["…in those words"] = "restart" in en["web_api_tokens_hint"].lower()
 checks["the empty-usage wording does not claim 'never'"] = (
@@ -131,18 +140,20 @@ checks["no string mentions a token value"] = not any(
 # "audit", so searching the page for the word everyone actually uses — the
 # word in the docs, the changelog and the issue tracker — found nothing on
 # the one page that has it.
-i = src.index('id="audit"')
-head = src[i:i + 300]
+head = srcslice.section(src, 'id="audit"', length=300,
+                        label="web_ui.py: the audit section")
 checks["the audit section has an anchor"] = 'class="card" id="audit"' in src
-checks["…and carries the untranslated word"] = "Audit-Trail" in head
+checks["…and carries the untranslated word"] = (
+    head is not None and "Audit-Trail" in head)
 checks["…as a quieter second label, not as the heading"] = (
-    'class="h2-alt"' in head)
+    head is not None and 'class="h2-alt"' in head)
 css = open(os.path.join(os.path.dirname(__file__), "..", "app", "static",
                         "app.css"), encoding="utf-8").read()
 checks["…and that class is styled"] = ".h2-alt {" in css
 # It must not be a translated string, or it would be translated away again
 # in the 15 languages where it is needed most.
-checks["…and is not itself translatable"] = 't("Audit' not in head
+checks["…and is not itself translatable"] = (
+    head is not None and 't("Audit' not in head)
 
 # ── render it for real and prove the secret is not in the output ─────
 # The whole point of this file is "the tokens never reach the page", and

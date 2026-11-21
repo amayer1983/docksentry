@@ -17,6 +17,8 @@ import os
 import re
 import sys
 
+import srcslice
+
 APP = os.path.join(os.path.dirname(__file__), "..", "app")
 sys.path.insert(0, APP)
 
@@ -25,16 +27,16 @@ def main():
     checks = {}
 
     src = open(os.path.join(APP, "web_ui.py")).read()
-    i = src.index("_ICONS = {")
-    j = src.index("\n}", i)
-    defined = set(re.findall(r'"([a-z_]+)":', src[i:j]))
+    body = srcslice.section(src, "_ICONS = {", "\n}",
+                            label="web_ui.py: _ICONS")
+    defined = set(re.findall(r'"([a-z_]+)":', body or ""))
 
     used = set()
     for f in glob.glob(os.path.join(APP, "*.py")):
         used |= set(re.findall(r'_ICONS\[["\']([a-z_]+)["\']\]', open(f).read()))
 
     missing = used - defined
-    checks["every used icon key is defined"] = not missing
+    checks["every used icon key is defined"] = body is not None and not missing
     if missing:
         print(f"    missing: {sorted(missing)}")
     checks["there are icons at all"] = len(defined) >= 8
@@ -47,11 +49,11 @@ def main():
     # Every glyph is wrapped so the CSS can size it. A bare emoji inherits
     # the button's text metrics and sits a few pixels off from its
     # neighbours.
-    body = src[i:j]
-    entries = re.findall(r'"([a-z_]+)":\s*\'([^\']*)\'', body)
-    checks["every glyph is wrapped for sizing"] = all(
+    entries = re.findall(r'"([a-z_]+)":\s*\'([^\']*)\'', body or "")
+    checks["every glyph is wrapped for sizing"] = body is not None and all(
         'class="ic"' in v for _, v in entries)
-    checks["all entries parsed"] = len(entries) == len(defined)
+    checks["all entries parsed"] = (
+        body is not None and len(entries) == len(defined))
 
     failed = [k for k, v in checks.items() if not v]
     for k, v in checks.items():

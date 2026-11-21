@@ -287,9 +287,10 @@ checks["…with the version badge the bot used to leave out"] = (
 
 # Inheriting the transport would post the bot's message to the webhook —
 # the one thing this subclass must not share.
+import srcslice  # noqa: E402
+_post = srcslice.method_source(DiscordBotNotifier, "post")
 checks["the bot channel still speaks through the bot"] = (
-    "create_message" in
-    __import__("inspect").getsource(DiscordBotNotifier.post))
+    _post is not None and "create_message" in _post)
 checks["…and is still discovered as its own channel"] = (
     DiscordBotNotifier.name == "discordbot" and
     DiscordBotNotifier.OWNS == ("discord_bot_channel",))
