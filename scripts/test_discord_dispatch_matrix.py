@@ -313,6 +313,13 @@ class Row:
             self.engine._update_lock.acquire()
         elif kind == "unlock":
             self.engine._update_lock.release()
+        elif kind == "release":
+            # The holder lets go through the door, as every flow does:
+            # the release kicks the engine's drainer (Q13), which runs
+            # what Discord queued (Q15).
+            self.engine.release_update()
+        elif kind == "enqueue":
+            self.engine.enqueue_updates(list(args))
         elif kind == "age":
             import discord_bot
             CLOCK[0] += discord_bot.CONFIRM_TTL + 1
@@ -455,6 +462,7 @@ class Row:
         live = sorted(r["action"] for r in self.bot._confirmations.values())
         out = {"pending": pending, "confirmations": live,
                "locked": self.engine._update_lock.locked(),
+               "queued": [k for k, _w in self.engine.queued_updates()],
                "queued_selfupdate": self.engine._queued_selfupdate,
                "shutdown_armed": self.bot._shutdown_after_answer,
                "audit": audit, "files": files}
@@ -701,6 +709,26 @@ EXTRA = [
     # the lock held by another flow
     ("lock: /update container:web", [
         ("lock",), _c("update", ("container", "web")), ("unlock",)]),
+    # Q15: queued while the lock is held, run when it is given back.
+    ("lock: /update container:web, then released", [
+        ("lock",), _c("update", ("container", "web")), ("release",)]),
+    ("lock: /update container:web twice", [
+        ("lock",), _c("update", ("container", "web")),
+        _c("update", ("container", "web")), ("unlock",)]),
+    ("lock: /update container:web host:all, then released", [
+        ("lock",), _c("update", ("container", "web"), ("host", "all")),
+        ("release",)]),
+    ("lock: /update container:web, queue full", [
+        ("lock",), ("enqueue",) + tuple(f"q{i}" for i in range(10)),
+        _c("update", ("container", "web")), ("unlock",)]),
+    ("lock: /update container:web host:all, queue nearly full", [
+        ("lock",), ("enqueue",) + tuple(f"q{i}" for i in range(9)),
+        _c("update", ("container", "web"), ("host", "all")), ("unlock",)]),
+    # Three hosts with `web` pending on a free lock: one claim, every
+    # host's batch under it, nothing queued.
+    ("/update container:web host:all, three hosts pending", [
+        ("add_pending", "web", "nginx:1.25", "flaky"),
+        _c("update", ("container", "web"), ("host", "all"))]),
     ("lock: /check", [("lock",), _c("check"), ("unlock",)]),
     ("lock: /cleanup", [("lock",), _c("cleanup"), ("unlock",)]),
     ("lock: /stop container:web", [
@@ -771,6 +799,16 @@ SCENARIOS = [
         ("press", "updateall")]),
     ("updateall: lock taken before the press", [
         _c("updateall"), ("lock",), ("press", "updateall"), ("unlock",)]),
+    # Q15: the approved set is queued, and runs when the lock is free.
+    ("updateall: lock taken before the press, then released", [
+        _c("updateall"), ("lock",), ("press", "updateall"), ("release",)]),
+    ("updateall host:all: lock taken before the press, then released", [
+        _c("updateall", ("host", "all")), ("lock",), ("press", "updateall"),
+        ("release",)]),
+    # Only what was approved goes on the queue, not what turned up since.
+    ("updateall: new pending, lock taken before the press, then released", [
+        _c("updateall"), ("add_pending", "db", "postgres:16", "local"),
+        ("lock",), ("press", "updateall"), ("release",)]),
     # ── restore ─────────────────────────────────────────────────────
     ("restore: press, press again", [
         _restore("ok"), ("press", "restore"), ("press", "restore")]),
@@ -880,10 +918,6 @@ PINNED_FOR = {}
 for _setup_ in SETUPS:
     PINNED_FOR[(_setup_, "auto container host:all")] = (
         "A2: autocomplete with `host: all` lists the local host")
-    PINNED_FOR[(_setup_, "lock: /update container:web")] = (
-        "Q15: busy /update says nothing was started")
-    PINNED_FOR[(_setup_, "updateall: lock taken before the press")] = (
-        "Q15: a confirmed /updateall on a held lock says nothing was started")
     PINNED_FOR[(_setup_, "/audit container:web")] = (
         "D14: /audit has no host option and reads every host")
 for _r_ in ("/status host:all", "/status container:web host:all",
@@ -1491,10 +1525,15 @@ BRANCH_NOTES = {
              "passed as --tail, the heading is fixed.",
     "/update": ":1413 → :2486. Write targeting, matched against the "
                "pending list by prefix (`_match_in`, :1644), lock taken "
-               "non-blocking (busy = nothing started), one batch per host.",
+               "non-blocking, one batch per host under one claim. Busy "
+               "since Q15: the containers go on the engine's queue "
+               "(`claim_or_queue_many`) and the answer gives their place; "
+               "the drainer runs them on the release, results through the "
+               "broadcast.",
     "/updateall": ":1415 → :2547 asks first (approved set in the token); "
                   "the press re-reads the file and runs only what was "
-                  "approved (:2583).",
+                  "approved (:2583); on a held lock it queues exactly that "
+                  "(Q15).",
     "/restart": ":1417 bare restarts Docksentry (go_down after the answer), "
                 ":1422 with a container goes to lifecycle.",
     "/stop": ":1422 → :2654, plan first, then a confirmation; the press "
@@ -1522,7 +1561,9 @@ BRANCH_NOTES = {
                     "the named host or local (nothing or `all` named → "
                     "local, since A2 by name rather than registry order), "
                     "3 s and a remembered dead host not asked since W7d.",
-    "lock": "the update lock held from outside for one command.",
+    "lock": "the update lock held from outside for one command; "
+            "`release` gives it back through the door (the drainer runs "
+            "what was queued), `unlock` raw (it stays queued).",
 }
 
 
@@ -1569,6 +1610,50 @@ def trap_checks():
     return results
 
 
+#: Q15: a busy /update or confirmed /updateall is queued, and its result
+#: arrives later — never as an edit of the answer that said "queued".
+Q15_RELEASED = ("lock: /update container:web, then released",
+                "lock: /update container:web host:all, then released",
+                "updateall: lock taken before the press, then released",
+                "updateall host:all: lock taken before the press, then "
+                "released",
+                "updateall: new pending, lock taken before the press, then "
+                "released")
+
+
+def q15_checks(recs):
+    """On top of the table, so a regenerated one cannot quietly take it
+    back: the answer says 'queued — position N', the release runs each
+    queued container once and posts its card in the channel, edits no
+    interaction, and nothing is left on the queue or the lock."""
+    queued = re.compile(r"`([^`]+)` is queued — position (\d+)\.")
+    for setup in SETUPS:
+        for name in Q15_RELEASED:
+            rec = recs.get((setup, name))
+            if rec is None:
+                yield f"[{setup}] Q15 {name}: the row ran", False
+                continue
+            steps = rec["steps"]
+            rel = [st for st in steps if st["do"] == "release"]
+            ask = [st for st in steps[:steps.index(rel[0])] if st.get("out")]
+            said = queued.findall(ask[-1]["out"][-1]) if ask else []
+            yield (f"[{setup}] Q15 {name}: answered queued, places 1..n",
+                   bool(said) and [int(p) for _n, p in said]
+                   == list(range(1, len(said) + 1)))
+            out = rel[0].get("out", [])
+            cards = [ln for ln in out if ln.startswith("[rest] <channel")]
+            yield (f"[{setup}] Q15 {name}: the release runs each queued "
+                   f"container once and posts its card",
+                   bool(said)
+                   and len(rel[0].get("events", [])) == len(said)
+                   and len(cards) == len(said))
+            yield (f"[{setup}] Q15 {name}: and edits no interaction",
+                   not any(ln.startswith("<edit") for ln in out))
+            st = rec["state"]
+            yield (f"[{setup}] Q15 {name}: nothing left queued or locked",
+                   "queued" not in st and "locked" not in st)
+
+
 def check():
     failed = 0
     for label, ok in trap_checks():
@@ -1610,6 +1695,9 @@ def check():
                     print(f"      →   {k}: expected {exp.get(k)!r}")
                     print(f"      →   {k}: got      {got.get(k)!r}")
     for label, ok in twin_checks(recs):
+        print(f"  {'PASS' if ok else 'FAIL'}  {label}")
+        failed += not ok
+    for label, ok in q15_checks(recs):
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
         failed += not ok
     for label, ok in w3d_checks():
@@ -1682,6 +1770,7 @@ def main():
 # ── expected, generated by --snapshot from main (8a74ba7); the 16 A2
 # ── rows from core-split after A2, the 22 /status overview rows after
 # ── W5d, the 29 /status, /check and autocomplete rows after W7d,
+# ── the 4 busy rows and 18 new lock/updateall rows after Q15,
 # ── reviewed ──
 EXPECTED = {
     # ── /status ─────────────────────────────────────────────────────
@@ -4971,8 +5060,11 @@ EXPECTED = {
                'audit': ['{"action": "/settings", "actor": "u7", "source": "discord"}']}},
     # ── /update ─────────────────────────────────────────────────────
     # :1413 → :2486. Write targeting, matched against the pending list by
-    # prefix (`_match_in`, :1644), lock taken non-blocking (busy = nothing
-    # started), one batch per host.
+    # prefix (`_match_in`, :1644), lock taken non-blocking, one batch per
+    # host under one claim. Busy since Q15: the containers go on the
+    # engine's queue (`claim_or_queue_many`) and the answer gives their
+    # place; the drainer runs them on the release, results through the
+    # broadcast.
     ('multi', '/update'): {'steps': [{'do': 'cmd /update',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
@@ -5362,7 +5454,8 @@ EXPECTED = {
                          '"nosuch", "host": "zzz"}, "source": "discord"}']}},
     # ── /updateall ──────────────────────────────────────────────────
     # :1415 → :2547 asks first (approved set in the token); the press re-
-    # reads the file and runs only what was approved (:2583).
+    # reads the file and runs only what was approved (:2583); on a held lock
+    # it queues exactly that (Q15).
     ('multi', '/updateall'): {'steps': [{'do': 'cmd /updateall',
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
@@ -7257,17 +7350,21 @@ EXPECTED = {
      'state': {'pending': ['web@local', 'web@nas']}},
     ('one', 'modal submit'): {'steps': [{'do': 'event INTERACTION_CREATE 5'}], 'state': {'pending': ['web@local']}},
     # ── lock ────────────────────────────────────────────────────────
-    # the update lock held from outside for one command.
+    # the update lock held from outside for one command; `release` gives it
+    # back through the door (the drainer runs what was queued), `unlock` raw
+    # (it stays queued).
     ('multi', 'lock: /update container:web'): {'steps': [{'do': 'lock'},
                {'do': "cmd /update container:'web'",
                 'out': ['<ack deferred ephemeral>',
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
-                        '<edit> ⏳ An update is already running — nothing was started. Try '
-                        'again once it finishes.  []']},
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
+               'queued': ['web'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web"}, "source": "discord"}']}},
     ('one', 'lock: /update container:web'): {'steps': [{'do': 'lock'},
@@ -7276,12 +7373,297 @@ EXPECTED = {
                         '<edit> ⏳ Working on it — this can take a few minutes.\n'
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
-                        '<edit> ⏳ An update is already running — nothing was started. Try '
-                        'again once it finishes.  []']},
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
+               'queued': ['web'],
                'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
                          '"web"}, "source": "discord"}']}},
+    ('multi', 'lock: /update container:web, then released'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('one', 'lock: /update container:web, then released'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('multi', 'lock: /update container:web twice'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is already in the queue (waiting 0s) — it runs when its '
+                        'turn comes.  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queued': ['web'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}',
+                         '{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('one', 'lock: /update container:web twice'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is already in the queue (waiting 0s) — it runs when its '
+                        'turn comes.  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local'],
+               'queued': ['web'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}',
+                         '{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('multi', 'lock: /update container:web host:all, then released'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.\n'
+                        '🕒 `web @nas` is queued — position 2. It runs when its turn comes; '
+                        'the result goes to the notification channels, not here.\n'
+                        '⚠️ No pending updates found. @dead\n'
+                        '⚠️ No pending updates found. @refused\n'
+                        '⚠️ No pending updates found. @flaky  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ⏳ Updating `web @nas`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
+    ('one', 'lock: /update container:web host:all, then released'): {'steps': [{'do': 'lock'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
+    ('multi', 'lock: /update container:web, queue full'): {'steps': [{'do': 'lock'},
+               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
+                        'command again once it has worked through.  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('one', 'lock: /update container:web, queue full'): {'steps': [{'do': 'lock'},
+               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8 q9'},
+               {'do': "cmd /update container:'web'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
+                        'command again once it has worked through.  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web"}, "source": "discord"}']}},
+    ('multi', 'lock: /update container:web host:all, queue nearly full'): {'steps': [{'do': 'lock'},
+               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '⚠️ The update queue is full (10) — nothing was queued. Run the '
+                        'command again once it has worked through.\n'
+                        '⚠️ No pending updates found. @dead\n'
+                        '⚠️ No pending updates found. @refused\n'
+                        '⚠️ No pending updates found. @flaky  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local', 'web@nas'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
+    ('one', 'lock: /update container:web host:all, queue nearly full'): {'steps': [{'do': 'lock'},
+               {'do': 'enqueue q0 q1 q2 q3 q4 q5 q6 q7 q8'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> **Update**\n'
+                        '🕒 `web` is queued — position 10. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'unlock'}],
+     'state': {'pending': ['web@local'],
+               'queued': ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'web'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
+    ('multi', '/update container:web host:all, three hosts pending'): {'steps': [{'do': 'add_pending web nginx:1.25 flaky'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<edit> **Update**\n'
+                        '⚠️ No pending updates found. @dead\n'
+                        '⚠️ No pending updates found. @refused\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)\n'
+                        '✅ [web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)\n'
+                        '✅ [web](https://github.com/example/web/releases/latest) @flaky: '
+                        'updated (stand-in)  []'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format',
+                          'flaky': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web',
+                           'update_container@nas:web',
+                           'update_container@flaky:web']}],
+     'state': {'pending': None,
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
+    ('one', '/update container:web host:all, three hosts pending'): {'steps': [{'do': 'add_pending web nginx:1.25 flaky'},
+               {'do': "cmd /update container:'web' host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<edit> **Update**\n'
+                        '✅ [web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)  []'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['web@flaky'],
+               'audit': ['{"action": "/update", "actor": "u7", "detail": {"container": '
+                         '"web", "host": "all"}, "source": "discord"}']}},
     ('multi', 'lock: /check'): {'steps': [{'do': 'lock'},
                {'do': 'cmd /check',
                 'out': ['<ack deferred ephemeral>',
@@ -8441,10 +8823,12 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
-                        '<edit> ⏳ An update is already running — nothing was started. Try '
-                        'again once it finishes.  []']},
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local', 'web@nas'],
+               'queued': ['web'],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
     ('one', 'updateall: lock taken before the press'): {'steps': [{'do': 'cmd /updateall',
                 'out': ['<ack deferred ephemeral>',
@@ -8464,10 +8848,246 @@ EXPECTED = {
                         "If it runs past Discord's reply window I will post the result in "
                         'the channel instead.',
                         '<edit itok1> ⏳ Confirmed — working on it…  []',
-                        '<edit> ⏳ An update is already running — nothing was started. Try '
-                        'again once it finishes.  []']},
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
                {'do': 'unlock'}],
      'state': {'pending': ['web@local'],
+               'queued': ['web'],
+               'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
+    ('multi', 'updateall: lock taken before the press, then released'): {'steps': [{'do': 'cmd /updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **1** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 1 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['web@nas'],
+               'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
+    ('one', 'updateall: lock taken before the press, then released'): {'steps': [{'do': 'cmd /updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **1** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 1 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
+    ('multi', 'updateall host:all: lock taken before the press, then released'): {'steps': [{'do': "cmd /updateall host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **2** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '• `web` @nas — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 2 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.\n'
+                        '🕒 `web @nas` is queued — position 2. It runs when its turn comes; '
+                        'the result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ⏳ Updating `web @nas`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest) @nas: '
+                        'updated (stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format',
+                          'nas': 'inspect --format t=10, inspect --format t=5, inspect '
+                                 '--format'},
+                'events': ['update_container@local:web', 'update_container@nas:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/updateall", "actor": "u7", "detail": {"host": '
+                         '"all"}, "source": "discord"}']}},
+    ('one', 'updateall host:all: lock taken before the press, then released'): {'steps': [{'do': "cmd /updateall host:'all'",
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **1** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 1 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)',
+                        '<telegram> ✅ All updates completed.'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': [],
+               'audit': ['{"action": "/updateall", "actor": "u7", "detail": {"host": '
+                         '"all"}, "source": "discord"}']}},
+    ('multi', 'updateall: new pending, lock taken before the press, then released'): {'steps': [{'do': 'cmd /updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **1** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 1 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        'ℹ 1 newly pending container(s) appeared after you were asked and '
+                        'were NOT updated — run `/updateall` again for those.\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['web@nas', 'db@local'],
+               'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
+    ('one', 'updateall: new pending, lock taken before the press, then released'): {'steps': [{'do': 'cmd /updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit> ⚠ Update **1** container(s) on this host?\n'
+                        '• `web` — nginx:1.25\n'
+                        '\n'
+                        'Each one is pulled and recreated. Press the button to go ahead.  '
+                        '[Update 1 container(s)→ds:updateall:<tok1> | '
+                        'Cancel→ds:cancel:<tok1>]']},
+               {'do': 'add_pending db postgres:16 local'},
+               {'do': 'lock'},
+               {'do': 'press updateall',
+                'out': ['<ack deferred ephemeral>',
+                        '<edit> ⏳ Working on it — this can take a few minutes.\n'
+                        "If it runs past Discord's reply window I will post the result in "
+                        'the channel instead.',
+                        '<edit itok1> ⏳ Confirmed — working on it…  []',
+                        '<edit> **Update all**\n'
+                        'ℹ 1 newly pending container(s) appeared after you were asked and '
+                        'were NOT updated — run `/updateall` again for those.\n'
+                        '🕒 `web` is queued — position 1. It runs when its turn comes; the '
+                        'result goes to the notification channels, not here.  []']},
+               {'do': 'release',
+                'out': ['<telegram> ⏳ Updating `web`...',
+                        '[rest] <channel chan-1>   embeds=[{"title": "✅ Update OK: web", '
+                        '"description": '
+                        '"[**web**](https://github.com/example/web/releases/latest) '
+                        '(`nginx:1.25`)\\nupdated (stand-in)"}]',
+                        '<telegram> ✅ '
+                        '[web](https://github.com/example/web/releases/latest): updated '
+                        '(stand-in)'],
+                'hosts': {'local': 'inspect --format t=10, inspect --format t=5, inspect '
+                                   '--format'},
+                'events': ['update_container@local:web']}],
+     'state': {'pending': ['db@local'],
                'audit': ['{"action": "/updateall", "actor": "u7", "source": "discord"}']}},
     # ── restore ─────────────────────────────────────────────────────
     # the press runs `_run_restore`.

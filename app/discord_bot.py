@@ -2494,18 +2494,23 @@ class DiscordBot:
 
     # ── the commands that change things ───────────────────────────
     # Everything below either holds the engine's update mutex while it
-    # works, or refuses to work because something else holds it. There is
-    # exactly ONE such lock in the process — `UpdateEngine._update_lock`,
+    # works, or does not work now because something else holds it. There
+    # is exactly ONE such lock in the process — `UpdateEngine._update_lock`,
     # the same object `TelegramBot.run_updates` and the Web UI's update
     # button claim — and this file only ever reaches it through the
-    # engine's door (`claim_update` / `release_update`). A second lock
+    # engine's door (`claim_update` / `claim_or_queue_many` /
+    # `release_update`). A second lock
     # would put a Discord `/update` and a scheduled auto-update inside the
     # same container's recreate at the same time, which is the #53 window
     # all over again.
     #
-    # And when the lock is held we say so and stop. No queue, no wait: a
-    # slash command that silently sits on a mutex for six minutes and
-    # then acts is worse than one that tells you to try again.
+    # When an update holds the lock, /update and a confirmed /updateall
+    # do not wait on it: their containers go on the engine's queue
+    # (`claim_or_queue_many`, Q15) and the answer says where each one
+    # stands. The engine's drainer runs them once the lock is given back
+    # (Q13), and the result comes through the broadcast like any queued
+    # update's — never as an edit of this answer, which is spent by then.
+    # Until Q15 the answer was "nothing was started, try again".
 
     def _release_lock(self):
         """Release the shared mutex, then hand on any self-update that
@@ -2515,6 +2520,41 @@ class DiscordBot:
         Discord-triggered update would sit there until some other
         front-end happened to release the lock next."""
         self.engine.release_update(after=self._hand_on_selfupdate)
+
+    def _queued_lines(self, outcomes, labels):
+        """What a request the engine queued instead of claiming is told:
+        `claim_or_queue_many`'s outcomes, one `(key, i18n key, params)`
+        per container, as lines, each container named by `labels`
+        (queue key → "web @nas"). A request that did not fit was not
+        queued at all and says so once: the engine answers it as a whole
+        (my decision of 18.11.2026)."""
+        full = next((p for _k, a, p in outcomes
+                     if a == "update_queue_full"), None)
+        if full is not None:
+            return [self.t("chan_update_queue_full", max=full.get("max", 0))]
+        lines = []
+        for key, answer, params in outcomes:
+            name = labels.get(key, key)
+            if answer == "update_queued":
+                lines.append(self.t("chan_update_queued", name=name,
+                                    pos=params.get("pos", 0)))
+            elif answer == "update_already_queued":
+                from notify_retry import _ago
+                lines.append(self.t(
+                    "chan_update_already_queued", name=name,
+                    since=_ago(params.get("since_seconds", 0))))
+            else:
+                lines.append(self.t("update_same_running", name=name))
+        return lines
+
+    def _queue_labels(self, pairs):
+        """`{queue key: "web @nas"}` for `(host, name)` pairs — the key
+        the engine's queue and drainer know a container by, and the
+        name the way this chat tags hosts (`_label`)."""
+        from container_store import host_key
+        from update_engine import host_name_of
+        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"
+                for h, n in pairs}
 
     def _hand_on_selfupdate(self):
         """Start a self-update that queued behind our update or cleanup.
@@ -2593,8 +2633,11 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):
             return self.t("update_refused_pin_list")
-        if not self.engine.claim_update():
-            return self.t("chan_update_busy")
+        labels = self._queue_labels((h, t["name"]) for h, t in jobs)
+        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))
+        if not claimed:
+            return self._clip("**Update**\n" + "\n".join(
+                self._queued_lines(outcomes, labels) + errors))
         try:
             lines = list(errors)
             for host, target in jobs:
@@ -2697,8 +2740,14 @@ class DiscordBot:
         from update_checker import pin_list_unreadable
         if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):
             return self.t("update_refused_pin_list")
-        if not self.engine.claim_update():
-            return self.t("chan_update_busy")
+        # Only what was approved and is still pending goes on the queue:
+        # `batches` is exactly that.
+        labels = self._queue_labels(
+            (h, u["name"]) for h, entries in batches for u in entries)
+        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))
+        if not claimed:
+            return self._clip("**Update all**" + note + "\n" + "\n".join(
+                self._queued_lines(outcomes, labels)))
         try:
             lines = []
             for host, entries in batches:

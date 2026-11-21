@@ -149,8 +149,12 @@ def _ended(code, lines):
 
 def run_one(path):
     """Run a procedure and return (status, checks, skipped)."""
+    # 30 minutes, not 15. The ratchet (test_guard_mutations.py) is one
+    # procedure that runs hundreds of others, and it outgrew 15: 876 s on
+    # its own on 21.11.2026 with 768 entries, and past 900 s inside a
+    # full run, which ended this file with a TimeoutExpired traceback.
     r = subprocess.run([sys.executable, path], capture_output=True, text=True,
-                       cwd=ROOT, timeout=900)
+                       cwd=ROOT, timeout=1800)
     out = r.stdout + r.stderr
     checks = [(m.group(1) in ("✅", "PASS"), m.group(2))
               for m in (CHECK_RE.match(l) for l in out.split("\n")) if m]

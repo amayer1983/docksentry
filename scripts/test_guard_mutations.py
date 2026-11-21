@@ -4467,25 +4467,102 @@ GUARDED = [
      '        self.engine.release_update()\n',
      'test_discord_bot.py'),
 
-    ('Discord /update refuses while the update lock is held',
+    # Q15: a busy /update and a confirmed /updateall are queued on the
+    # engine and told where, instead of "nothing was started". Taking
+    # the claim alone (no queue) is what they did before.
+    ('Discord /update queues a busy request on the engine and says where',
      'app/discord_bot.py',
-     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):\n'
-     '            return self.t("update_refused_pin_list")\n'
-     '        if not self.engine.claim_update():\n',
-     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _t in jobs):\n'
-     '            return self.t("update_refused_pin_list")\n'
-     '        if False:\n',
+     '        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update**\\n"',
+     '        claimed, outcomes = self.engine.claim_update(), []\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update**\\n"',
      'test_update_lock_sites.py'),
 
     ('…and so does a confirmed Discord /updateall',
      'app/discord_bot.py',
-     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):\n'
-     '            return self.t("update_refused_pin_list")\n'
-     '        if not self.engine.claim_update():\n',
-     '        if any(pin_list_unreadable(self._checker_for(h)) for h, _e in batches):\n'
-     '            return self.t("update_refused_pin_list")\n'
-     '        if False:\n',
-     'test_update_lock_sites.py'),
+     '        claimed, outcomes = self.engine.claim_or_queue_many(list(labels))\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update all**" + note',
+     '        claimed, outcomes = self.engine.claim_update(), []\n'
+     '        if not claimed:\n'
+     '            return self._clip("**Update all**" + note',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…a queued /updateall still says what it left out and why",
+     'app/discord_bot.py',
+     '            return self._clip("**Update all**" + note + "\\n" + "\\n".join(\n',
+     '            return self._clip("**Update all**\\n" + "\\n".join(\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and queues only what was approved and is still pending",
+     'app/discord_bot.py',
+     '            (h, u["name"]) for h, entries in batches for u in entries)\n',
+     '            (h, u["name"]) for h in targets for u in self._pending_for(h))\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("a queued container is told its place in the queue",
+     'app/discord_bot.py',
+     '                lines.append(self.t("chan_update_queued", name=name,\n'
+     '                                    pos=params.get("pos", 0)))\n',
+     '                lines.append(self.t("chan_update_queued", name=name,\n'
+     '                                    pos=1))\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…a request that does not fit says the queue is full",
+     'app/discord_bot.py',
+     '        if full is not None:\n'
+     '            return [self.t("chan_update_queue_full", max=full.get("max", 0))]\n',
+     '        if False:\n'
+     '            return []\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…one already waiting says so, not 'queued'",
+     'app/discord_bot.py',
+     '            elif answer == "update_already_queued":\n'
+     '                from notify_retry import _ago\n',
+     '            elif False:\n'
+     '                from notify_retry import _ago\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…each queued container is named with its host",
+     'app/discord_bot.py',
+     '        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"\n',
+     '        return {host_key(host_name_of(h), n): n\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and queued under its host's key, so the drainer runs it there",
+     'app/discord_bot.py',
+     '        return {host_key(host_name_of(h), n): f"{n}{self._label(h)}"\n',
+     '        return {n: f"{n}{self._label(h)}"\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("the Discord matrix's release goes through the door and drains",
+     'scripts/test_discord_dispatch_matrix.py',
+     '            # what Discord queued (Q15).\n'
+     '            self.engine.release_update()\n',
+     '            # what Discord queued (Q15).\n'
+     '            self.engine._update_lock.release()\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("…and its state shows what is still queued",
+     'scripts/test_discord_dispatch_matrix.py',
+     '               "queued": [k for k, _w in self.engine.queued_updates()],\n',
+     '               "queued": [],\n',
+     'test_discord_dispatch_matrix.py'),
+
+    ("Discord's queue sentences exist in every language",
+     'app/lang/ja.json',
+     '  "chan_update_queued": "🕒 `{name}` をキューに追加しました — {pos} 番目。順番が来たら実行します。結果はここではなく通知チャンネルに届きます。",\n',
+     '',
+     'test_lang_parity.py'),
+
+    ("…with the placeholders Discord fills",
+     'app/lang/de.json',
+     '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {pos}.',
+     '  "chan_update_queued": "🕒 `{name}` eingereiht — Platz {position}.',
+     'test_reply_params.py'),
 
     ("the lock-site list sees a claim through the engine's cleanup guard",
      'scripts/test_update_lock_sites.py',

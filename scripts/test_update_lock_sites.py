@@ -4,18 +4,20 @@
 There is one update lock, `UpdateEngine._update_lock`. Thirteen functions
 claim it. Eleven go through the engine's door (`claim_update()` /
 `release_update(after=...)`, Q1/Q2): Telegram's four update flows and
-its scheduled self-update check, Discord's two update commands, the
-engine's queue drain (Q10: it holds each entry's claim through that
+its scheduled self-update check, Discord's two update commands (whose
+claim is `claim_or_queue_many` since Q15), the engine's queue drain (Q10: it holds each entry's claim through that
 entry), and the engine's own `cleanup_guarded`, which Telegram's and
 Discord's cleanup guards hand their work to (`engine.cleanup_guarded(...)`,
 counted as their claim). Telegram's per-container tap claims through
 `engine.claim_or_queue(...)` (Q7), which queues it when busy and hands
 back the answer as a key; so do the Web UI's update click and bulk
 update since Q14 (`claim_or_queue_many`), whose worker thread then
-runs under that claim and gives it back. `selfupdate.start` still claims
+runs under that claim and gives it back, and Discord's /update and
+confirmed /updateall since Q15. `selfupdate.start` still claims
 by hand with `acquire(blocking=False)`. Each one has
 its own answer for "somebody else holds it": Telegram's per-container
-tap queues, `/update all` and a confirmed major refuse, the scheduler
+tap, the Web UI's update and Discord's /update and /updateall queue,
+`/update all` and a confirmed major refuse, the scheduler
 skips its pass, a cleanup hands its caller a busy sentence, a
 self-update queues itself. The core split replaces the hand-written
 claims with one claim/release pair. Before that moves anything, this
@@ -142,10 +144,13 @@ LOCK_OPS = {
     ("telegram_bot.py", "TelegramBot.run_updates"):
         ("CLAIM", ["claim_update()",
                    "release_update(after=self._run_queued_selfupdate)"]),
+    # Discord's /update and confirmed /updateall claim through the
+    # engine's claim-or-queue (Q15): busy, their containers are queued
+    # and the answer says where.
     ("discord_bot.py", "DiscordBot._cmd_update"):
-        ("CLAIM", ["_release_lock()", "claim_update()"]),
+        ("CLAIM", ["_release_lock()", "claim_or_queue_many(list(labels))"]),
     ("discord_bot.py", "DiscordBot._do_updateall"):
-        ("CLAIM", ["_release_lock()", "claim_update()"]),
+        ("CLAIM", ["_release_lock()", "claim_or_queue_many(list(labels))"]),
     ("discord_bot.py", "DiscordBot._cleanup_guarded"):
         ("CLAIM", ["cleanup_guarded(checker, "
                    "after=self._hand_on_selfupdate)"]),
@@ -357,10 +362,22 @@ BUSY_MESSAGES = {
     # Discord
     ("discord_bot.py", "DiscordBot._cmd_check",
      "web_check_one_busy"): (1, "pre-gate"),
-    ("discord_bot.py", "DiscordBot._cmd_update",
-     "chan_update_busy"): (1, "claim"),
-    ("discord_bot.py", "DiscordBot._do_updateall",
-     "chan_update_busy"): (1, "claim"),
+    # claim_or_queue_many's answers for /update and a confirmed
+    # /updateall, turned into lines (Q15).
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_queue_full"): (1, "queue: the request did not fit"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_queue_full"): (1, "queue: the request did not fit"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_queued"): (1, "queue: queued"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_queued"): (1, "queue: queued, with its place"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_already_queued"): (1, "queue: already waiting"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "chan_update_already_queued"): (1, "queue: already waiting, since"),
+    ("discord_bot.py", "DiscordBot._queued_lines",
+     "update_same_running"): (1, "queue: the one running right now"),
     ("discord_bot.py", "DiscordBot._refuse_busy._say",
      "chan_busy_capacity"): (1, "other lock: the worker pool is full"),
     # Web
@@ -1274,18 +1291,22 @@ EXPECTED_BUSY = {
          'said': ['⚠️ Update already in progress...']},
     (('discord_bot.py', 'DiscordBot._cmd_update'),
      '/update container:web host:nas'):
-        {'keys': ['chan_update_busy'],
-         'kind': 'REJECT',
+        {'keys': ['chan_update_queued'],
+         'kind': 'QUEUE',
          'lock_after': 'held',
-         'returned': '⏳ An update is already running — nothing was started. Try again once it '
-                     'finishes.'},
+         'queue_after': ['nas/web'],
+         'returned': '**Update**\n'
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes; the '
+                     'result go…'},
     (('discord_bot.py', 'DiscordBot._do_updateall'),
      'updateall confirmed, host:nas'):
-        {'keys': ['chan_update_busy'],
-         'kind': 'REJECT',
+        {'keys': ['chan_update_queued'],
+         'kind': 'QUEUE',
          'lock_after': 'held',
-         'returned': '⏳ An update is already running — nothing was started. Try again once it '
-                     'finishes.'},
+         'queue_after': ['nas/web'],
+         'returned': '**Update all**\n'
+                     '🕒 `web @nas` is queued — position 1. It runs when its turn comes; the '
+                     'resul…'},
     (('discord_bot.py', 'DiscordBot._cleanup_guarded'),
      'image cleanup'):
         {'keys': ['cleanup_busy'],

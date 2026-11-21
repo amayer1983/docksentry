@@ -185,18 +185,47 @@ class FakeEngine:
     # The engine's own door, run on this real lock: the claims and the
     # cleanup guard the Discord bot goes through are the production
     # code, not a copy of it.
-    claim_update = UpdateEngine.claim_update
     release_update = UpdateEngine.release_update
-    # The release kicks the queue drain since Q13; with no queue here it
-    # starts nothing.
-    kick_drain = UpdateEngine.kick_drain
     update_claim = UpdateEngine.update_claim
     cleanup_guarded = UpdateEngine.cleanup_guarded
+    # The engine's queue, for real (Q15): a busy /update and a confirmed
+    # /updateall put their containers on it through claim_or_queue_many.
+    claim_or_queue_many = UpdateEngine.claim_or_queue_many
+    enqueue_updates = UpdateEngine.enqueue_updates
+    _queue_answer = UpdateEngine._queue_answer
+    _in_group_order = UpdateEngine._in_group_order
+    queued_waiting_seconds = UpdateEngine.queued_waiting_seconds
+    queued_updates = UpdateEngine.queued_updates
+    updating = UpdateEngine.updating
+    UPDATE_QUEUE_MAX = UpdateEngine.UPDATE_QUEUE_MAX
 
     def __init__(self):
         self._update_lock = threading.Lock()
         self.update_running = False
         self.batches = []
+        self._update_queue = []
+        self._queued_at = {}
+        self._update_queue_lock = threading.Lock()
+        self._updating = {}
+        #: Successful claims, so "one claim for the whole request" is
+        #: something this file can count.
+        self.claims = 0
+        #: What was on the queue each time a release kicked the drainer.
+        self.kicks = []
+
+    def claim_update(self):
+        ok = UpdateEngine.claim_update(self)
+        self.claims += bool(ok)
+        return ok
+
+    def kick_drain(self, after=None):
+        """The release's hand-off to the engine's drainer, recorded. The
+        drainer itself is the engine's and runs for real in the Discord
+        matrix (T4, the `… then released` rows)."""
+        self.kicks.append([k for k, _w in self.queued_updates()])
+
+    def queued(self):
+        return [k for k, _w in self.queued_updates()]
 
     def _process_update_batch(self, updates, checker, *, auto):
         self.batches.append(([u["name"] for u in updates], checker, auto))
@@ -737,7 +766,7 @@ checks["…and a rejected duration changed nothing"] = "**off**" in out
 # Stage-2 command surface: the commands that CHANGE things.
 #
 # Three properties carry most of the weight here:
-#   * one shared lock — held elsewhere means refuse, never queue;
+#   * one shared lock — held elsewhere means queue, never wait (Q15);
 #   * writes default to the LOCAL host;
 #   * an unknown host changes NOTHING, on any of them.
 # Each is asserted by looking at what was actually done (the engine's
@@ -805,19 +834,59 @@ checks["…and starts no update"] = engine.batches == []
 checks["…and leaves the pending file untouched"] = (
     _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
 
-# the lock is held → refuse, do not queue, do not wait
+# the lock is held → queue it with its place, run nothing now, never wait
+# (Q15; until then: "nothing was started, try again")
 engine._update_lock.acquire()
 engine.batches.clear()
 out = call("update", container="web")
-checks["/update refuses while the shared lock is held"] = (
-    "already running" in out)
+checks["/update queues while the shared lock is held"] = (
+    "`web` is queued — position 1" in out)
 checks["…and starts nothing"] = engine.batches == []
 checks["…and the pending file is untouched"] = (
     _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
-engine._update_lock.release()
-checks["…and the refusal did not swallow the lock"] = (
+checks["…and the container is on the engine's queue"] = (
+    engine.queued() == ["web"])
+out = call("update", container="web", host="nas")
+checks["another host's container queues behind it, position 2"] = (
+    "`web @nas` is queued — position 2" in out
+    and engine.queued() == ["web", "nas/web"])
+out = call("update", container="web")
+checks["the same one again says it is already waiting"] = (
+    "`web` is already in the queue" in out
+    and engine.queued() == ["web", "nas/web"])
+engine.kicks.clear()
+engine.release_update()
+checks["giving the lock back hands what was queued to the drainer"] = (
+    engine.kicks == [["web", "nas/web"]])
+checks["…and queueing did not take the lock"] = (
     engine._update_lock.acquire(blocking=False))
 engine._update_lock.release()
+checks["…and nothing ran here: the drainer runs it, not the command"] = (
+    engine.batches == [])
+engine._update_queue.clear()
+
+# a full queue takes nothing and says so
+engine._update_lock.acquire()
+engine.enqueue_updates([f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)])
+out = call("update", container="web")
+checks["/update on a full queue says it is full"] = (
+    "queue is full" in out and "nothing was queued" in out)
+checks["…and queues nothing"] = engine.queued() == [
+    f"q{i}" for i in range(engine.UPDATE_QUEUE_MAX)]
+engine._update_lock.release()
+engine._update_queue.clear()
+
+# a free lock: one claim for every host the request names, nothing queued
+_set_pending(BOTH_WEB)
+engine.batches.clear()
+engine.claims = 0
+out = call("update", container="web", host="all")
+checks["/update host:all on a free lock takes ONE claim for both hosts"] = (
+    engine.claims == 1 and [b[1] for b in engine.batches]
+    == [LOCAL_CHECKER, NAS_CHECKER])
+checks["…and queues nothing"] = engine.queued() == []
+checks["…and gives the lock back"] = not engine._update_lock.locked()
+_set_pending(BOTH_WEB)
 
 # ── /updateall: confirmation required ────────────────────────────────
 engine.batches.clear()
@@ -884,17 +953,38 @@ checks["/updateall on an unknown host errors"] = "Unknown host" in out
 checks["…and offers no button at all"] = not getattr(out, "components", None)
 checks["…and parks no confirmation"] = len(sbot._confirmations) == before_tokens
 
-# confirming while the lock is held: refuse, run nothing
+# confirming while the lock is held: queue what was approved, run nothing
+# now (Q15)
 _set_pending(BOTH_WEB)
 reply = call("updateall")
 confirm_id = reply.components[0]["components"][0]["custom_id"]
 engine.batches.clear()
 engine._update_lock.acquire()
 out = press(confirm_id)
-checks["a confirmed /updateall still refuses while the lock is held"] = (
-    "already running" in out)
+checks["a confirmed /updateall queues while the lock is held"] = (
+    "`web` is queued — position 1" in out)
 checks["…and updates nothing"] = engine.batches == []
+checks["…and queues exactly what it previewed (the local web)"] = (
+    engine.queued() == ["web"])
+checks["…and leaves the pending file to the drainer"] = (
+    _pending_keys() == [("local", "web"), ("nas", "plex"), ("nas", "web")])
+engine.kicks.clear()
+engine.release_update()
+checks["…which gets it when the lock is given back"] = (
+    engine.kicks == [["web"]])
+engine._update_queue.clear()
+
+# host:all, held: both hosts' approved containers, in one request
+_set_pending(BOTH_WEB)
+reply = call("updateall", host="all")
+confirm_id = reply.components[0]["components"][0]["custom_id"]
+engine._update_lock.acquire()
+out = press(confirm_id)
+checks["a confirmed /updateall host:all queues every approved container"] = (
+    engine.queued() == ["web", "nas/web", "nas/plex"]
+    and "`plex @nas` is queued — position 3" in out)
 engine._update_lock.release()
+engine._update_queue.clear()
 
 # the confirmation is bound to the person who asked
 who = {"member": {"user": {"id": "111"}}, "data": {"name": "updateall",
@@ -1361,6 +1451,26 @@ checks["…and explains that, rather than claiming nothing was pending"] = (
     "Nothing left to update" in out)
 checks["…and leaves the unapproved entry alone"] = (
     _pending_keys() == [("local", "db")])
+
+# The same rule on a held lock (Q15): only what was approved and is still
+# pending goes on the queue — not what a check found since, not what left.
+_set_pending([{"name": "web", "image": "nginx:2", "host": "local"},
+              {"name": "db", "image": "pg:16", "host": "local"}])
+reply = call("updateall")
+_uid = reply.components[0]["components"][0]["custom_id"]
+_set_pending([{"name": "db", "image": "pg:16", "host": "local"},
+              {"name": "cache", "image": "redis:7", "host": "local"}])
+engine.batches.clear()
+engine._update_lock.acquire()
+out = press(_uid)
+checks["a held /updateall queues only the approved containers still pending"] = (
+    engine.queued() == ["db"])
+checks["…says that one approved is gone and one is new"] = (
+    "no longer pending" in out and "appeared after" in out
+    and "`db` is queued — position 1" in out)
+checks["…and runs nothing now"] = engine.batches == []
+engine._update_lock.release()
+engine._update_queue.clear()
 
 
 # ═════════════════════════════════════════════════════════════════════

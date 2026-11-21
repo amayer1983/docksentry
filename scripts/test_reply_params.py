@@ -211,6 +211,47 @@ checks[f"…exist in all {len(LANGS)} languages with matching placeholders"] = (
 if _bad:
     print("  busy answers:", "; ".join(_bad))
 
+# ── Discord's lines for the same answers (Q15) ──────────────────────
+# A busy /update or confirmed /updateall renders the engine's answers
+# itself, in its own keys. Driven through the real `_queued_lines` on
+# every answer the engine gave above: each sentence it asks for exists
+# in every language with exactly the placeholders it fills.
+from discord_bot import DiscordBot  # noqa: E402
+
+
+class _Said:
+    def __init__(self):
+        self.asked = []
+
+    def t(self, key, **kw):
+        self.asked.append((key, set(kw)))
+        return key
+
+
+_said = _Said()
+_lines = getattr(DiscordBot, "_queued_lines", None)
+checks["Discord renders the engine's busy answers (_queued_lines)"] = (
+    _lines is not None)
+for key, params in answers if _lines is not None else ():
+    _lines(_said, [("web", key, params)], {"web": "web"})
+_dbad = []
+for key, given in _said.asked:
+    for lang, strings in LANGS.items():
+        if key not in strings:
+            _dbad.append(f"{lang}: no {key}")
+        elif placeholders(strings[key]) != given:
+            _dbad.append(f"{lang}: {key} wants "
+                         f"{sorted(placeholders(strings[key]))}, gets "
+                         f"{sorted(given)}")
+checks["Discord says every busy answer, in all languages, placeholders "
+       "filled"] = (
+    {k for k, _g in _said.asked} == {
+        "chan_update_queued", "chan_update_already_queued",
+        "chan_update_queue_full", "update_same_running"}
+    and not _dbad)
+if _dbad:
+    print("  Discord busy lines:", "; ".join(_dbad))
+
 failed = [k for k, v in checks.items() if not v]
 for k, v in checks.items():
     print(f"  {'PASS' if v else 'FAIL'} {k}")
