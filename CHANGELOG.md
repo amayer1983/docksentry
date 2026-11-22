@@ -2,6 +2,17 @@
 
 All notable changes to Docksentry (formerly Docker Telegram Updater) are documented here.
 
+## [2.19.2] - 2026-11-22
+
+A fix release for `:latest`. It carries everything from 2.19.1-beta.1
+(below) and two things found while testing the next beta.
+
+### Fixed
+- **A pin set after the update notification now holds.** The button, "Update all", `/updateall`, the major confirmation, Discord and the Web UI used to update a container I'd pinned or excluded after it showed up as pending. Only a typed `/update <name>` checked. Now every manual path leaves it alone, keeps its pending entry, and says why.
+- **A locked Web UI without a password now tells you why.** Since 2.19.0 an instance that was configured once and has no password stays locked, so a lost settings file can't hand it to the next visitor. It only ever said "401 - Login required". The login page, the 401 and the startup log now say that no password is set and that `WEB_PASSWORD` plus a restart is the way in.
+- **A damaged exit marker is set aside** instead of hiding the next hard kill (#63).
+- Everything listed under 2.19.1-beta.1: the Settings page saves again with a long stop timeout, a broken pin list stops manual updates, Telegram and the Discord bot hold a message on a 502, and the monitor starts straight away after a reboot.
+
 ## [2.19.1-beta.1] - 2026-11-18
 
 Fixes for what 2.19.0 got wrong, found by a second audit of the tree
