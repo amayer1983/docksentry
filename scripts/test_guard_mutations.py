@@ -1899,6 +1899,171 @@ GUARDED = [
      "    shutil.rmtree(tree, ignore_errors=True)\n",
      "test_ratchet_copy.py"),
 
+    # 22.11.2026: a pin set after the notification holds every manual
+    # update.
+    # Each one applied by hand in a copy: red, no traceback.
+    ('a pin set after the notification holds every manual update',
+     'app/update_engine.py',
+     '                why = None if auto else held_back(u_checker, u["name"])\n',
+     '                why = None\n',
+     'test_pin_held_manual.py'),
+
+    ('…while the scheduled pass is left as it was',
+     'app/update_engine.py',
+     '                why = None if auto else held_back(u_checker, u["name"])\n',
+     '                why = held_back(u_checker, u["name"])\n',
+     'test_pin_held_manual.py'),
+
+    ('…and the batch tells its caller which entry it held',
+     'app/update_engine.py',
+     '                    u[HELD] = why\n',
+     '                    pass\n',
+     'test_pin_held_manual.py'),
+
+    ('…and its line says why',
+     'app/update_engine.py',
+     '                    results.append(UpdateEngine._t(\n'
+     '                        self, f"update_held_{why}",\n'
+     '                        name=self._display_name(u)))\n',
+     '                    pass\n',
+     'test_pin_held_manual.py'),
+
+    ('…and a hold from an earlier run does not stick to the entry',
+     'app/update_engine.py',
+     '            u.pop(HELD, None)\n',
+     '            pass\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: a pin holds',
+     'app/update_engine.py',
+     '        if isinstance(pinned, (list, tuple, set, frozenset)) and name in pinned:\n',
+     '        if False:\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: an unreadable pin list holds everything',
+     'app/update_engine.py',
+     '        if pinned is EVERYTHING_PINNED:\n'
+     '            return "pin_list_unreadable"\n',
+     '        if False:\n'
+     '            return "pin_list_unreadable"\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: EXCLUDE_CONTAINERS holds, globs included',
+     'app/update_engine.py',
+     '    if isinstance(patterns, (list, tuple)) and name_matches(name, patterns):\n',
+     '    if False:\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: a docksentry.pin label holds',
+     'app/update_engine.py',
+     '            if flag(lab, "pin") is True:\n',
+     '            if False:\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: docksentry.enable=false holds',
+     'app/update_engine.py',
+     '            if flag(lab, "enable") is False or flag(lab, "exclude") is True:\n',
+     '            if flag(lab, "exclude") is True:\n',
+     'test_pin_held_manual.py'),
+
+    ('held_back: a docksentry.exclude label holds',
+     'app/update_engine.py',
+     '            if flag(lab, "enable") is False or flag(lab, "exclude") is True:\n',
+     '            if flag(lab, "enable") is False:\n',
+     'test_pin_held_manual.py'),
+
+    ('the Telegram button and a drained tap are held too',
+     'app/telegram_bot.py',
+     '            why = held_back(checker, container_name)\n',
+     '            why = None\n',
+     'test_pin_held_manual.py'),
+
+    ('confirming a major is not a way past a pin',
+     'app/telegram_bot.py',
+     '            why = held_back(checker, name)\n',
+     '            why = None\n',
+     'test_pin_held_manual.py'),
+
+    ('"Update all" without a snapshot keeps what it held pending',
+     'app/telegram_bot.py',
+     '            if from_snapshot or held:\n',
+     '            if from_snapshot:\n',
+     'test_pin_held_manual.py'),
+
+    ('…and removes only what it did not hold',
+     'app/telegram_bot.py',
+     '                self._remove_from_pending([pending_key(u) for u in updates\n'
+     '                                           if not u.get(HELD)])\n',
+     '                self._remove_from_pending([pending_key(u) for u in updates])\n',
+     'test_pin_held_manual.py'),
+
+    ('Discord /update keeps a held entry pending',
+     'app/discord_bot.py',
+     '                if not target.get(HELD):\n',
+     '                if True:\n',
+     'test_pin_held_manual.py'),
+
+    ('Discord /updateall keeps a held entry pending',
+     'app/discord_bot.py',
+     '                                    for u in entries if not u.get(HELD)])\n',
+     '                                    for u in entries])\n',
+     'test_pin_held_manual.py'),
+
+    ('the Web UI worker keeps a held entry pending',
+     'app/web_ui.py',
+     '                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets\n'
+     '                     if not u.get(HELD)])\n',
+     '                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets])\n',
+     'test_pin_held_manual.py'),
+
+    ('the Web UI row button says a pinned container was not updated',
+     'app/web_ui.py',
+     '                elif _held_for([key]):\n',
+     '                elif False:\n',
+     'test_pin_held_manual.py'),
+
+    ('the Web UI major confirmation is held on the page',
+     'app/web_ui.py',
+     '                if _held:\n'
+     '                    self._send_redirect(_held_redirect(_held))\n'
+     '                    return\n',
+     '                if False:\n'
+     '                    self._send_redirect(_held_redirect(_held))\n'
+     '                    return\n',
+     'test_pin_held_manual.py'),
+
+    ('the Web UI bulk bar names what it held',
+     'app/web_ui.py',
+     '                _held = _held_for(keys) if action == "update" else []\n',
+     '                _held = []\n',
+     'test_pin_held_manual.py'),
+
+    ('…and still starts the rest',
+     'app/web_ui.py',
+     '                    keys = [k for k in keys if k not in _skip]\n',
+     '                    keys = []\n',
+     'test_pin_held_manual.py'),
+
+    ('the status page shows which were not updated and why',
+     'app/web_ui.py',
+     '            elif _upd == "pinned":\n',
+     '            elif False:\n',
+     'test_pin_held_manual.py'),
+
+    ('…escaping the names it was handed',
+     'app/web_ui.py',
+     '                        f\'<li>{_e(t(f"update_held_{_why}", name=_who))}</li>\')\n',
+     '                        f\'<li>{t(f"update_held_{_why}", name=_who)}</li>\')\n',
+     'test_pin_held_manual.py'),
+
+    ('…and only for reasons it has a sentence for',
+     'app/web_ui.py',
+     '                    if not (_sep and _key and _why in (\n'
+     '                            "pinned", "excluded", "pinned_label",\n'
+     '                            "pin_list_unreadable")):\n',
+     '                    if not (_sep and _key):\n',
+     'test_pin_held_manual.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

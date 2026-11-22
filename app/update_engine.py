@@ -72,6 +72,65 @@ def host_store(owner, host):
     return scoped if scoped is not None else HostScopedStore(store, name)
 
 
+#: Set on an entry `_process_update_batch` did not update because
+#: `held_back` held it. The batch already mutates its entries in place
+#: (sorted, enriched, `netns_name`), and this is how a caller knows which
+#: pending entries to leave where they are.
+HELD = "held_back"
+
+
+def held_back(checker, name, *, labels=True):
+    """Why `name` must not be updated by hand right now, or None.
+
+      pin_list_unreadable  the pin list of `checker`'s host cannot be
+                           read, so every container counts as pinned
+      pinned               pinned (`/pin`, the Web UI)
+      pinned_label         a `docksentry.pin` label
+      excluded             `EXCLUDE_CONTAINERS`, or a
+                           `docksentry.exclude` / `docksentry.enable=false`
+                           label
+
+    The same rules and the same reads `get_running_containers` uses to
+    leave a container out of a check (`_get_pinned`, `name_matches`,
+    `label_bool`), on the checker that would do the update. A pending
+    entry passed them when it was found, but pinning it afterwards did
+    not touch the pending list. Measured on 0779842 with `db` pinned and
+    still pending, lock free: the Telegram button, "Update all" with and
+    without a snapshot, the major confirmation, Discord `/update` and
+    `/updateall`, and the Web UI row and bulk all recreated `db`.
+
+    `labels` costs one `inspect` on the container's host. A label read
+    that fails reads as no labels, as in a check. Anything that is not
+    the shape a real checker answers with (a test's mock) holds nothing.
+    """
+    from update_checker import (EVERYTHING_PINNED, UpdateChecker,
+                                name_matches)
+    read = getattr(checker, "_get_pinned", None)
+    if callable(read):
+        pinned = read()
+        if pinned is EVERYTHING_PINNED:
+            return "pin_list_unreadable"
+        if isinstance(pinned, (list, tuple, set, frozenset)) and name in pinned:
+            return "pinned"
+    patterns = getattr(getattr(checker, "config", None),
+                       "exclude_containers", None)
+    if isinstance(patterns, (list, tuple)) and name_matches(name, patterns):
+        return "excluded"
+    if labels:
+        get = getattr(checker, "get_container_labels", None)
+        try:
+            lab = get(name) if callable(get) else {}
+        except Exception:                                   # noqa: BLE001
+            lab = {}
+        if isinstance(lab, dict):
+            flag = UpdateChecker.label_bool
+            if flag(lab, "pin") is True:
+                return "pinned_label"
+            if flag(lab, "enable") is False or flag(lab, "exclude") is True:
+                return "excluded"
+    return None
+
+
 def _wait(seconds, engine=None):
     """Sit out `seconds`, unless the engine was handed another way to wait.
 
@@ -720,6 +779,7 @@ class UpdateEngine:
         prev_group = None
 
         for idx, u in enumerate(updates):
+            u.pop(HELD, None)
             gp = _gp(u)
             u_host = _host_of(u)
             cur_group = gp[0] if gp else None
@@ -777,6 +837,19 @@ class UpdateEngine:
                         f"❌ {self._display_name(u)}: host "
                         f"`{_host_of(u)}` is not managed any more — "
                         f"skipped rather than acting on the wrong machine")
+                    prev_group = abort_key
+                    continue
+                # Asked right before the update, on the checker that would
+                # do it, after any group pause or cooldown: a pin set since
+                # the entry was found has to hold here, on every manual
+                # path. Not on the scheduled one, whose list a check that
+                # applied the same rules has just built.
+                why = None if auto else held_back(u_checker, u["name"])
+                if why:
+                    u[HELD] = why
+                    results.append(UpdateEngine._t(
+                        self, f"update_held_{why}",
+                        name=self._display_name(u)))
                     prev_group = abort_key
                     continue
                 # Marked around this one call and nothing else, so the

@@ -1874,6 +1874,16 @@ class TelegramBot:
             # (parity with the auto-update + bulk-update flows, fixed in
             # v1.19.2/v1.19.3 after @NotRetarded surfaced the gap).
             self._enrich_with_source_url([target])
+            # A pin set after the notification, an exclusion or a label
+            # holds the tap, right before the update would run. The entry
+            # stays pending (see `update_engine.held_back`).
+            from update_engine import held_back
+            why = held_back(checker, container_name)
+            if why:
+                self.send_message(self.t(
+                    f"update_held_{why}",
+                    name=f"`{self._key_label(container_key)}`"))
+                return
             # Say what is running, where the rest of the program can see
             # it. The batch path has always done this; the single path
             # never did — so the Web UI showed no "updating" badge for a
@@ -2109,6 +2119,15 @@ class TelegramBot:
             # Resolve link once for both Telegram + Discord/webhook surfaces
             source_url = self.link_resolver.resolve_container_link(
                 name, image, host=host_name)
+            # Confirming a major is not a way past a pin: the deferred
+            # major stays where it is (see `update_engine.held_back`).
+            from update_engine import held_back
+            why = held_back(checker, name)
+            if why:
+                self.send_message(self.t(
+                    f"update_held_{why}",
+                    name=f"`{name}`" + self._entry_host_tag({"host": host_name})))
+                return
             try:
                 success, msg = checker.update_container(name, image, **compose)
             except Exception as e:
@@ -3012,11 +3031,17 @@ class TelegramBot:
             # explicit "do it now / yes to majors".
             results, _sc, _mp = self._process_update_batch(updates, updater, auto=False)
 
-            if from_snapshot:
+            # What the batch held back (a pin, an exclusion, a label) stays
+            # pending, so the whole file is only cleared when it held
+            # nothing.
+            from update_engine import HELD
+            held = any(u.get(HELD) for u in updates)
+            if from_snapshot or held:
                 # Remove only the processed containers from pending —
                 # the file may hold others the snapshot didn't include,
                 # including same-named ones on other hosts (#7).
-                self._remove_from_pending([pending_key(u) for u in updates])
+                self._remove_from_pending([pending_key(u) for u in updates
+                                           if not u.get(HELD)])
             else:
                 try:
                     os.remove(pending_file)

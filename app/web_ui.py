@@ -522,6 +522,34 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 return True
         return False
 
+    def _held_for(keys):
+        """`[(why, key)]` for the keys whose update a pin or an exclusion
+        holds right now (see `update_engine.held_back`).
+
+        Asked before a worker is started, so the click is answered on
+        the page that sent it. Without the labels: they cost an `inspect`
+        per container, on a host that may be slow to answer, and the
+        worker asks for them anyway right before each update.
+        """
+        from container_store import split_host_key
+        from update_engine import held_back
+        out = []
+        for key in keys:
+            host_name, name = split_host_key(key)
+            resolved = _resolve_host(host_name)
+            if resolved is None or not name:
+                continue
+            why = held_back(resolved[2], name, labels=False)
+            if why:
+                out.append((why, key))
+        return out
+
+    def _held_redirect(held):
+        """Where the page goes when `held` (from `_held_for`) is not
+        empty: the status page, told which and why."""
+        return "/?update=pinned&held=" + quote(
+            ",".join(f"{why}:{key}" for why, key in held), safe="/:,")
+
     class WebHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress default logging
@@ -2716,6 +2744,8 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     self._send_redirect("/?update=gone")
                 elif _pins_unreadable_for([key]):
                     self._send_redirect("/?update=pinlist")
+                elif _held_for([key]):
+                    self._send_redirect(_held_redirect(_held_for([key])))
                 elif (getattr(bot, "update_running", False)
                       or self._update_lock_held(bot)):
                     self._send_redirect("/?update=busy")
@@ -3503,6 +3533,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                         and _pins_unreadable_for([raw])):
                     self._send_redirect("/?update=pinlist")
                     return
+                _held = (_held_for([raw])
+                         if target is not None and action == "confirm"
+                         else [])
+                if _held:
+                    self._send_redirect(_held_redirect(_held))
+                    return
                 if target is not None and action == "confirm":
                     # `_confirm_major_update` takes the host key itself and
                     # resolves the checker for that host — the same call the
@@ -3529,11 +3565,17 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 if action == "update" and keys and _pins_unreadable_for(keys):
                     self._send_redirect("/?update=pinlist")
                     return
+                # Pinned or excluded ones are named on the page and left
+                # out; the rest still goes.
+                _held = _held_for(keys) if action == "update" else []
+                if _held:
+                    _skip = {k for _w, k in _held}
+                    keys = [k for k in keys if k not in _skip]
                 if action and keys:
                     threading.Thread(
                         target=self._api_bulk, args=(action, keys)
                     ).start()
-                self._send_redirect("/")
+                self._send_redirect(_held_redirect(_held) if _held else "/")
             else:
                 self._send_html("<h1>404</h1>", 404)
 
@@ -4432,6 +4474,32 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                     f'<h2>{_icon} {t("web_update_" + _upd + "_title")}</h2>'
                     f'<p class="card-intro">{t("web_update_" + _upd)}</p>'
                     f'</div>')
+            elif _upd == "pinned":
+                # `held=why:key,…` from `_held_redirect`. Only reasons
+                # there is a sentence for, and the names escaped.
+                from container_store import LOCAL_HOST as _LH, split_host_key
+                _lines = []
+                _raw = (parse_qs(urlparse(self.path).query).get("held")
+                        or [""])[0]
+                for _item in _raw.split(","):
+                    _why, _sep, _key = _item.partition(":")
+                    if not (_sep and _key and _why in (
+                            "pinned", "excluded", "pinned_label",
+                            "pin_list_unreadable")):
+                        continue
+                    _h, _n = split_host_key(_key)
+                    _who = _n if _h == _LH else f"{_n} @{_h}"
+                    _lines.append(
+                        f'<li>{_e(t(f"update_held_{_why}", name=_who))}</li>')
+                if _lines:
+                    update_banner = (
+                        f'<div class="card card-warn">'
+                        f'<h2>{_ICONS["alert"]} '
+                        f'{t("web_update_pinned_title")}</h2>'
+                        f'<p class="card-intro">'
+                        f'{t("web_update_pinned", count=len(_lines))}</p>'
+                        f'<ul>{"".join(_lines)}</ul>'
+                        f'</div>')
 
             leftover_banner = ""
             if leftovers:
@@ -7234,8 +7302,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # may hold others this action didn't touch — including another
                 # host's entry for a container of the same name, hence the
                 # (host, name) pairs.
+                # A container the batch held back (a pin, an exclusion, a
+                # label) stays pending.
+                from update_engine import HELD
                 bot._remove_from_pending(
-                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets])
+                    [(u.get("host") or _LOCAL_HOST, u["name"]) for u in targets
+                     if not u.get(HELD)])
                 if bot.enabled:
                     bot.send_message(bot.t("update_result") + "\n\n" + "\n".join(results))
             except Exception as e:

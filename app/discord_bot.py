@@ -2491,7 +2491,7 @@ class DiscordBot:
         already found", so a container that has none should say so
         instead of resolving fine and then doing nothing.
         """
-        from update_engine import host_name_of
+        from update_engine import HELD, host_name_of
         arg = (opts.get("container") or "").strip()
         if not arg:
             return self.t("update_usage")
@@ -2538,7 +2538,9 @@ class DiscordBot:
                 results, _ok, _major = self.engine._process_update_batch(
                     [target], checker, auto=False)
                 lines.extend(results)
-                self._drop_pending([(host_name_of(host), target["name"])])
+                # Held by a pin, an exclusion or a label: it stays pending.
+                if not target.get(HELD):
+                    self._drop_pending([(host_name_of(host), target["name"])])
         finally:
             self._release_lock()
         return self._clip("**Update**\n" + "\n".join(lines))
@@ -2590,7 +2592,7 @@ class DiscordBot:
         while the question sat unanswered — was never approved and is not
         touched. Approving 3 and getting 9 is not a confirmation.
         """
-        from update_engine import host_name_of
+        from update_engine import HELD, host_name_of
         targets = self._write_hosts_for(params.get("host"))
         if targets is None:
             return self._unknown_host(params.get("host"))
@@ -2642,7 +2644,7 @@ class DiscordBot:
                     entries, checker, auto=False)
                 lines.extend(results)
                 self._drop_pending([(host_name_of(host), u["name"])
-                                    for u in entries])
+                                    for u in entries if not u.get(HELD)])
         finally:
             self._release_lock()
         # The note goes at the TOP, not after the results: `_clip` cuts the
