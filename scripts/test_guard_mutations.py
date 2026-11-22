@@ -162,8 +162,9 @@ GUARDED = [
 
     ("losing the settings file does not open the Web UI",
      "app/web_ui.py",
-     "                return not (getattr(config, \"settings_quarantined\", False)\n                            or configured_before)",
-     "                return True",
+     '    return bool(getattr(config, "settings_quarantined", False)\n'
+     "                or configured_before)",
+     "    return False",
      "test_web_auth_gate.py"),
 
     ("a settings file of the wrong shape is damage, not a crash",
@@ -212,8 +213,9 @@ GUARDED = [
 
     ("a quarantined instance is still locked after a restart",
      "app/web_ui.py",
-     "                return not (getattr(config, \"settings_quarantined\", False)\n                            or configured_before)",
-     "                return not getattr(config, \"settings_quarantined\", False)",
+     '    return bool(getattr(config, "settings_quarantined", False)\n'
+     "                or configured_before)",
+     '    return bool(getattr(config, "settings_quarantined", False))',
      "test_web_auth_gate.py"),
 
     ("a rate limit answers in the user's language, not in German",
@@ -6507,6 +6509,44 @@ GUARDED = [
      '  "selfupdate_not_stopped": ',
      '  "selfupdate_not_stoppedx": ',
      'test_lang_parity.py'),
+    ('a Web UI locked without a password says so in its 401',
+     'app/web_ui.py',
+     '            if locked_without_password(config):\n'
+     '                # Otherwise the lock answers for a password nobody set.\n',
+     '            if False:\n'
+     '                # Otherwise the lock answers for a password nobody set.\n',
+     'test_web_locked_hint.py'),
+
+    ('…and on the login form',
+     'app/web_ui.py',
+     '            if locked_without_password(config):\n'
+     '                note += (f\'<p class="login-error">\'\n',
+     '            if False:\n'
+     '                note += (f\'<p class="login-error">\'\n',
+     'test_web_locked_hint.py'),
+
+    ('…instead of calling it password protected',
+     'app/web_ui.py',
+     '            intro = ("" if locked_without_password(config) else\n',
+     '            intro = ("" if False else\n',
+     'test_web_locked_hint.py'),
+
+    ('…and in the log at startup',
+     'app/web_ui.py',
+     '        if locked_without_password(self.config):\n'
+     '            print("Web UI is locked: no Web UI password is set, and this "\n',
+     '        if False:\n'
+     '            print("Web UI is locked: no Web UI password is set, and this "\n',
+     'test_web_locked_hint.py'),
+
+    ('…and says none of it once a password is set',
+     'app/web_ui.py',
+     '    if getattr(config, "web_password", "") or "":\n'
+     '        return False\n',
+     '    if False:\n'
+     '        return False\n',
+     'test_web_locked_hint.py'),
+
 ]
 
 #: Promises with no guard at all — measured, not suspected. Each was

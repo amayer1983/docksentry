@@ -798,6 +798,7 @@
   "web_login_password": "비밀번호",
   "web_login_submit": "로그인",
   "web_login_failed": "사용자 이름 또는 비밀번호가 올바르지 않습니다.",
+  "web_locked_no_password": "Web UI 비밀번호가 설정되어 있지 않습니다. 이 인스턴스는 이전에 설정된 적이 있으므로, 처음 접속하는 누구에게나 열리지 않도록 Web UI가 잠긴 상태로 유지됩니다. 들어가려면 컨테이너 환경에 WEB_PASSWORD를 설정하고 컨테이너를 다시 시작한 뒤 그 비밀번호로 로그인하세요.",
   "web_logout": "로그아웃",
   "web_username": "사용자 이름",
   "web_username_help": "선택 사항입니다. 비워 두면 모든 사용자 이름을 받아들이며, 이는 사용자 이름이 아예 없던 시절의 Docksentry 와 같습니다. 설정하면 그 이름만 허용됩니다.",

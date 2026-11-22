@@ -798,6 +798,7 @@
   "web_login_password": "Password",
   "web_login_submit": "Accedi",
   "web_login_failed": "Nome utente o password errati.",
+  "web_locked_no_password": "Non è impostata nessuna password per l'interfaccia web. Resta bloccata perché questa istanza è già stata configurata in precedenza, così non si apre al primo che passa. Per entrare, imposta WEB_PASSWORD nell'ambiente del container, riavvia il container e accedi con quella password.",
   "web_logout": "Esci",
   "web_username": "Nome utente",
   "web_username_help": "Facoltativo. Se lasciato vuoto accetta qualsiasi nome, come faceva Docksentry quando non ne esisteva nessuno. Se impostato, viene accettato solo quel nome.",

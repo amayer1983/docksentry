@@ -798,6 +798,7 @@
   "web_login_password": "Contraseña",
   "web_login_submit": "Iniciar sesión",
   "web_login_failed": "Usuario o contraseña incorrectos.",
+  "web_locked_no_password": "No hay ninguna contraseña definida para la interfaz web. Sigue bloqueada porque esta instancia ya se configuró antes, para que no se abra al primero que llegue. Para entrar, define WEB_PASSWORD en el entorno del contenedor, reinicia el contenedor e inicia sesión con esa contraseña.",
   "web_logout": "Cerrar sesión",
   "web_username": "Usuario",
   "web_username_help": "Opcional. Si se deja vacío se acepta cualquier usuario, como hacía Docksentry cuando no existía ninguno. Si lo defines, solo se acepta ese nombre.",

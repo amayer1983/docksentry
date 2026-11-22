@@ -798,6 +798,7 @@
   "web_login_password": "Mot de passe",
   "web_login_submit": "Se connecter",
   "web_login_failed": "Nom d'utilisateur ou mot de passe incorrect.",
+  "web_locked_no_password": "Aucun mot de passe n'est défini pour l'interface web. Elle reste verrouillée parce que cette instance a déjà été configurée, afin de ne pas s'ouvrir au premier venu. Pour entrer, définissez WEB_PASSWORD dans l'environnement du conteneur, redémarrez le conteneur, puis connectez-vous avec ce mot de passe.",
   "web_logout": "Se déconnecter",
   "web_username": "Nom d'utilisateur",
   "web_username_help": "Facultatif. Laissé vide, n'importe quel nom est accepté, comme le faisait Docksentry quand il n'y en avait aucun. Renseigné, seul ce nom est accepté.",

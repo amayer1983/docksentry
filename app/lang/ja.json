@@ -798,6 +798,7 @@
   "web_login_password": "パスワード",
   "web_login_submit": "サインイン",
   "web_login_failed": "ユーザー名またはパスワードが違います。",
+  "web_locked_no_password": "Web UI のパスワードが設定されていません。このインスタンスは以前に設定済みのため、最初に来た誰にでも開かないよう Web UI はロックされたままです。入るには、コンテナーの環境変数に WEB_PASSWORD を設定してコンテナーを再起動し、そのパスワードでサインインしてください。",
   "web_logout": "サインアウト",
   "web_username": "ユーザー名",
   "web_username_help": "任意。空のままなら任意のユーザー名を受け付けます（ユーザー名の概念がなかった頃の Docksentry と同じ動作です）。設定するとその名前だけを受け付けます。",

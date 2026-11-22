@@ -798,6 +798,7 @@
   "web_login_password": "Password",
   "web_login_submit": "Sign in",
   "web_login_failed": "Wrong username or password.",
+  "web_locked_no_password": "No Web UI password is set. The Web UI stays locked because this instance was configured before, so it does not open to whoever comes first. To get in, set WEB_PASSWORD in the container's environment, restart the container, and sign in with that password.",
   "web_logout": "Sign out",
   "web_username": "Username",
   "web_username_help": "Optional. Leave empty to accept any username, which is what Docksentry did before there was a username at all. Set it and only that name is accepted.",

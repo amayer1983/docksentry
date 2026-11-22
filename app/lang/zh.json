@@ -798,6 +798,7 @@
   "web_login_password": "密码",
   "web_login_submit": "登录",
   "web_login_failed": "用户名或密码错误。",
+  "web_locked_no_password": "尚未设置 Web 界面密码。由于此实例之前已配置过，Web 界面保持锁定，以免对第一个访问者开放。要进入，请在容器环境中设置 WEB_PASSWORD，重启容器，然后用该密码登录。",
   "web_logout": "退出登录",
   "web_username": "用户名",
   "web_username_help": "可选。留空则接受任意用户名，这正是 Docksentry 在还没有用户名概念时的行为。填写后只接受该名称。",

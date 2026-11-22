@@ -798,6 +798,7 @@
   "web_login_password": "Passwort",
   "web_login_submit": "Anmelden",
   "web_login_failed": "Benutzername oder Passwort falsch.",
+  "web_locked_no_password": "Es ist kein Passwort für die Web-Oberfläche gesetzt. Sie bleibt gesperrt, weil diese Instanz schon einmal eingerichtet wurde, damit sie sich nicht dem Erstbesten öffnet. Um hineinzukommen, setz WEB_PASSWORD in der Umgebung des Containers, starte den Container neu und melde dich mit diesem Passwort an.",
   "web_logout": "Abmelden",
   "web_username": "Benutzername",
   "web_username_help": "Optional. Leer lässt jeden Benutzernamen zu, so wie es war, als es gar keinen gab. Gesetzt wird nur dieser Name akzeptiert.",
