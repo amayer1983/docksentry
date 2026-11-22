@@ -785,6 +785,7 @@
   "web_login_password": "Wachtwoord",
   "web_login_submit": "Aanmelden",
   "web_login_failed": "Gebruikersnaam of wachtwoord onjuist.",
+  "web_locked_no_password": "Er is geen wachtwoord voor de webinterface ingesteld. Die blijft vergrendeld omdat deze instantie al eerder is ingericht, zodat hij niet openstaat voor de eerste de beste. Om binnen te komen: stel WEB_PASSWORD in de omgeving van de container in, herstart de container en log in met dat wachtwoord.",
   "web_logout": "Afmelden",
   "web_username": "Gebruikersnaam",
   "web_username_help": "Optioneel. Leeg laten accepteert elke gebruikersnaam, zoals Docksentry deed toen er nog geen bestond. Ingevuld wordt alleen die naam geaccepteerd.",

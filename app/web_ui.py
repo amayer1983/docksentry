@@ -419,6 +419,30 @@ class _ReplayedBody:
         return getattr(self._rest, name)
 
 
+def locked_without_password(config):
+    """True when the Web UI has no password and still stays shut.
+
+    "No password set → open" is right for an instance nobody has
+    configured yet, and wrong for one that has been: a settings.json
+    that was lost or quarantined took its password with it, and opening
+    up would hand the setup wizard to the first visitor (see
+    `_check_auth`). `.settings_seen` on disk answers "configured
+    before?" across a restart; `settings_quarantined` covers the start
+    that moved the file aside.
+
+    One function, because the gate and the sentences that explain it
+    must not disagree. Before the sentences existed the lock answered a
+    bare "401 - Login required" for a password nobody had set (measured
+    on the live 2.20.0-beta.1 instance, any user, empty password).
+    """
+    if getattr(config, "web_password", "") or "":
+        return False
+    ever = getattr(config, "settings_ever_saved", None)
+    configured_before = bool(ever()) if callable(ever) else False
+    return bool(getattr(config, "settings_quarantined", False)
+                or configured_before)
+
+
 def create_handler(config, checker, bot, store, password=None, backend=None,
                    hosts=None, restart_discord=None):
     """Create a request handler with access to app components.
@@ -1017,10 +1041,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                 # it answers the question this gate actually asks: has
                 # anybody ever configured this instance? A never-saved
                 # instance is a genuine first run and still opens.
-                ever = getattr(config, "settings_ever_saved", None)
-                configured_before = bool(ever()) if callable(ever) else False
-                return not (getattr(config, "settings_quarantined", False)
-                            or configured_before)
+                return not locked_without_password(config)
             if self._session_user() is not None:
                 return True
             auth = self.headers.get("Authorization", "")
@@ -1114,7 +1135,12 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
                                  'Basic realm="Docksentry"')
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b"<h1>401 - Login required</h1>")
+            body = "<h1>401 - Login required</h1>"
+            if locked_without_password(config):
+                # Otherwise the lock answers for a password nobody set.
+                t = _web_translator(config.language)
+                body += f"<p>{_e(t('web_locked_no_password'))}</p>"
+            self.wfile.write(body.encode())
 
         def _send_forbidden(self, reason="Forbidden"):
             self.send_response(403)
@@ -1684,6 +1710,13 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
             Basic Auth dialog could never say that.
             """
             note = (f'<p class="login-error">{_e(error)}</p>' if error else "")
+            # Locked with no password at all: say so, and how to get in,
+            # rather than ask for a password nobody has set.
+            if locked_without_password(config):
+                note += (f'<p class="login-error">'
+                         f'{_e(t("web_locked_no_password"))}</p>')
+            intro = ("" if locked_without_password(config) else
+                     f'<p class="login-intro">{_e(t("web_login_intro"))}</p>')
             # The username field starts empty on purpose, even when
             # WEB_USERNAME is set. Pre-filling it would hand the configured
             # name to every unauthenticated visitor, which undoes the point
@@ -1717,7 +1750,7 @@ def create_handler(config, checker, bot, store, password=None, backend=None,
     <img src="data:image/png;base64,{_LOGO_B64}" alt="">
     <h1>DOCK<span>SENTRY</span></h1>
   </div>
-  <p class="login-intro">{_e(t("web_login_intro"))}</p>
+  {intro}
   {note}
   <form method="POST" action="/login">
     <input type="hidden" name="next" value="{_e(nxt)}">
@@ -7663,6 +7696,11 @@ class WebUI:
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         print(f"Web UI started on port {self.port}")
+        if locked_without_password(self.config):
+            print("Web UI is locked: no Web UI password is set, and this "
+                  "instance was configured before, so it does not open to "
+                  "whoever comes first. To get in, set WEB_PASSWORD in the "
+                  "container's environment and restart the container.")
 
     def stop(self):
         if self.server:

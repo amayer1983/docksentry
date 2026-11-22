@@ -785,6 +785,7 @@
   "web_login_password": "Palavra-passe",
   "web_login_submit": "Iniciar sessão",
   "web_login_failed": "Utilizador ou palavra-passe incorretos.",
+  "web_locked_no_password": "Não há nenhuma senha definida para a interface web. Ela continua bloqueada porque esta instância já foi configurada antes, para não se abrir ao primeiro que chegar. Para entrar, defina WEB_PASSWORD no ambiente do contêiner, reinicie o contêiner e entre com essa senha.",
   "web_logout": "Terminar sessão",
   "web_username": "Utilizador",
   "web_username_help": "Opcional. Deixado vazio aceita qualquer utilizador, como o Docksentry fazia quando não existia nenhum. Definido, só esse nome é aceite.",

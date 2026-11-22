@@ -785,6 +785,7 @@
   "web_login_password": "Parola",
   "web_login_submit": "Oturum aç",
   "web_login_failed": "Kullanıcı adı veya parola yanlış.",
+  "web_locked_no_password": "Web arayüzü için bir parola ayarlanmamış. Bu örnek daha önce yapılandırıldığı için arayüz kilitli kalıyor, böylece ilk gelene açılmıyor. Girmek için kapsayıcının ortamında WEB_PASSWORD ayarlayın, kapsayıcıyı yeniden başlatın ve bu parolayla oturum açın.",
   "web_logout": "Oturumu kapat",
   "web_username": "Kullanıcı adı",
   "web_username_help": "İsteğe bağlı. Boş bırakılırsa her kullanıcı adı kabul edilir; Docksentry hiç kullanıcı adı yokken de böyle davranıyordu. Ayarlanırsa yalnızca o ad kabul edilir.",

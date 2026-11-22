@@ -785,6 +785,7 @@
   "web_login_password": "Hasło",
   "web_login_submit": "Zaloguj się",
   "web_login_failed": "Nieprawidłowa nazwa użytkownika lub hasło.",
+  "web_locked_no_password": "Nie ustawiono hasła do interfejsu WWW. Pozostaje on zablokowany, ponieważ ta instancja była już wcześniej skonfigurowana, więc nie otwiera się przed pierwszą lepszą osobą. Aby wejść, ustaw WEB_PASSWORD w środowisku kontenera, uruchom kontener ponownie i zaloguj się tym hasłem.",
   "web_logout": "Wyloguj się",
   "web_username": "Nazwa użytkownika",
   "web_username_help": "Opcjonalne. Puste pole akceptuje dowolną nazwę, tak jak Docksentry działał, zanim nazwa w ogóle istniała. Ustawione — akceptowana jest tylko ta nazwa.",
